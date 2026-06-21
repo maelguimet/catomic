@@ -285,22 +285,10 @@ mod phase1a_storage_parity {
     }
 
     fn seeded_char(seed: &mut u64) -> char {
-        // Bias toward letters/digits; occasional space and \n to test structure.
+        // Include multibyte to test UTF-8 boundary safety in PT (bytes vs chars).
+        const CHARS: &[char] = &['a', 'Z', 'é', '猫', '🙂', ' ', '\n', '0'];
         let r = next_seed(seed);
-        if (r % 19) == 0 {
-            return '\n';
-        }
-        if (r % 23) == 0 {
-            return ' ';
-        }
-        let base = (r % 62) as u8;
-        if base < 26 {
-            (b'a' + base) as char
-        } else if base < 52 {
-            (b'A' + (base - 26)) as char
-        } else {
-            (b'0' + (base - 52)) as char
-        }
+        CHARS[(r as usize) % CHARS.len()]
     }
 
     fn assert_state_parity(sb: &dyn Buffer, pt: &dyn Buffer, ctx: &str) {
@@ -409,5 +397,60 @@ mod phase1a_storage_parity {
         );
         // And observable state correct
         assert!(pt.to_string().contains("hello"));
+    }
+
+    #[test]
+    fn multibyte_utf8_parity_and_boundary_edits() {
+        // Explicit coverage for non-ASCII: inserts, deletes, backspaces around
+        // multi-byte chars and across newlines. PT must never slice in middle of UTF-8.
+        const MB: &str = "aé猫🙂\nb";
+        // Build via inserts on both, compare full state.
+        let mut sb: Box<dyn Buffer> = Box::new(SimpleBuffer::new());
+        let mut pt: Box<dyn Buffer> = Box::new(PieceTable::new());
+        for c in MB.chars() {
+            if c == '\n' {
+                sb.insert_newline();
+                pt.insert_newline();
+            } else {
+                sb.insert_char(c);
+                pt.insert_char(c);
+            }
+        }
+        assert_state_parity(&*sb, &*pt, "after build multibyte");
+
+        // Move to middle of multibyte region and exercise delete back/forward.
+        // Cursor after 'a' (col=1 on row 0)
+        sb.move_right();
+        pt.move_right();
+        // delete 'é' (multibyte)
+        sb.delete_forward();
+        pt.delete_forward();
+        assert_state_parity(&*sb, &*pt, "deleted first multibyte");
+
+        // backspace a multibyte
+        sb.move_right(); // over '猫' ?
+        pt.move_right();
+        sb.delete_back(); // remove '猫'
+        pt.delete_back();
+        assert_state_parity(&*sb, &*pt, "backspaced multibyte");
+
+        // cross newline: delete_back at start of second line should join
+        // current content after above: a (removed é) (removed 猫) 🙂 \n b ?
+        // simplify: move to start of line 1, backspace join
+        while sb.cursor().row < 1 {
+            sb.move_down();
+            pt.move_down();
+        }
+        sb.move_left(); // col0 of line1? wait adjust
+        pt.move_left();
+        // do a backspace at boundary
+        sb.delete_back();
+        pt.delete_back();
+        assert_state_parity(&*sb, &*pt, "join across newline with multibyte nearby");
+
+        // insert multibyte in middle
+        sb.insert_char('é');
+        pt.insert_char('é');
+        assert_state_parity(&*sb, &*pt, "insert multibyte mid doc");
     }
 }

@@ -675,4 +675,4 @@ Update this file as decisions are made or phases complete. Add concrete issues o
 
 ---
 
-**Current status**: Pre-implementation. Design documented. Phase 0 is intentionally tiny (goblin loop + Buffer trait with the recommended shape + explicit col model). Phases 1A–1C deliberately split the real boss fight (piece table + indexing + undo). Product Modes (Plain/Project) + explicit `Capabilities` bouncer + Mode Acceptance Tests now documented: Project services must not be *constructed* in Plain mode (not merely unused). Network LLM is unreachable in Plain until explicit `:meow`/`:bigmeow` + confirmation. Ready for Phase 0 code.
+**Current status**: Phase 0 complete (as of 2026-06-21). Goblin loop + Buffer trait + SimpleBuffer + raw terminal (with guard/panic cleanup) + basic render + open/edit/save/quit all working. Caps/shift support added. Golden tests (incl. mixed-case roundtrips), PTY smoke tests, perf smoke, and manual verification (cursor, typing, save, clean exit) all pass. Codebase tiny. Ready for Phase 1A.

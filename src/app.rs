@@ -54,11 +54,13 @@ impl App {
     pub fn run(&mut self) -> io::Result<()> {
         // Terminal setup is in the terminal module.
         let mut stdout = io::stdout();
-        term::setup(&mut stdout)?;
 
-        // Ensure terminal is restored on panic or early return.
-        // The guard calls teardown on drop (unwind or normal).
+        // Guard *before* any mutation. Its Drop guarantees best-effort
+        // teardown even on error paths after this point or partial setup.
+        // Do not trust only the happy-path explicit teardown.
         let _guard = term::TerminalGuard::new();
+
+        term::setup(&mut stdout)?;
 
         // Install panic hook to do best-effort restore even before unwind reaches guard.
         // We chain to the previous hook.
@@ -92,7 +94,7 @@ impl App {
             // (We do the render inside handle_key for now.)
         }
 
-        // Explicit teardown before guard also drops (idempotent).
+        // Explicit is still fine (idempotent), but guard Drop is the safety net.
         term::teardown(&mut stdout)?;
         Ok(())
     }

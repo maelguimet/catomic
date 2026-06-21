@@ -137,6 +137,28 @@ impl PieceTable {
     pub(crate) fn pieces_len(&self) -> usize {
         self.pieces.len()
     }
+
+    /// Incremental update for index when edit does not add/remove a '\n'.
+    /// Shifts subsequent line starts and total_bytes. Falls back to full rebuild
+    /// for newline cases (1B-b step 1: single-char no-nl first).
+    fn adjust_index_for_simple_delta(&mut self, at_byte: usize, delta: isize) {
+        if delta == 0 {
+            return;
+        }
+        let row = self.index.row_for_byte(at_byte);
+        let dpos = delta.unsigned_abs();
+        if delta > 0 {
+            for ls in &mut self.index.line_starts[(row + 1)..] {
+                *ls += dpos;
+            }
+            self.index.total_bytes += dpos;
+        } else {
+            for ls in &mut self.index.line_starts[(row + 1)..] {
+                *ls -= dpos;
+            }
+            self.index.total_bytes -= dpos;
+        }
+    }
 }
 
 impl Buffer for PieceTable {
@@ -190,14 +212,25 @@ impl Buffer for PieceTable {
     }
 
     fn insert_char(&mut self, ch: char) {
+        let was_nl = ch == '\n';
+        let at = self.cursor_byte_offset;
         self.insert_at_cursor(ch);
         self.coalesce();
-        self.rebuild_index();
+        if was_nl {
+            self.rebuild_index();
+        } else {
+            let delta = ch.len_utf8() as isize;
+            self.adjust_index_for_simple_delta(at, delta);
+            // cursor_byte_offset was already advanced inside insert_at_cursor
+        }
     }
 
     fn insert_newline(&mut self) {
+        let at = self.cursor_byte_offset;
         self.insert_at_cursor('\n');
         self.coalesce();
+        // newline always adds a line boundary: full update for now (step 1 of 1B-b)
+        let _ = at;
         self.rebuild_index();
     }
 
@@ -205,9 +238,13 @@ impl Buffer for PieceTable {
         if self.cursor.col > 0 {
             let end_b = self.byte_offset_at(self.cursor.row, self.cursor.col);
             let start_b = self.byte_offset_at(self.cursor.row, self.cursor.col - 1);
+            let delta = -((end_b - start_b) as isize);
             self.delete_byte_range(start_b, end_b);
             self.cursor.col -= 1;
             self.cursor_byte_offset = start_b;
+            self.coalesce();
+            // within-line non-nl char delete: incremental shift
+            self.adjust_index_for_simple_delta(start_b, delta);
         } else if self.cursor.row > 0 {
             let nl_pos = self.byte_offset_at(self.cursor.row, 0);
             if nl_pos > 0 {
@@ -217,9 +254,12 @@ impl Buffer for PieceTable {
                 self.cursor.col = prev_len;
                 self.cursor_byte_offset = self.byte_offset_at(self.cursor.row, self.cursor.col);
             }
+            self.coalesce();
+            self.rebuild_index(); // deleted a nl (join)
+        } else {
+            self.coalesce();
+            // no-op
         }
-        self.coalesce();
-        self.rebuild_index();
     }
 
     fn delete_forward(&mut self) {
@@ -227,17 +267,23 @@ impl Buffer for PieceTable {
         if self.cursor.col < len {
             let start_b = self.byte_offset_at(self.cursor.row, self.cursor.col);
             let end_b = self.byte_offset_at(self.cursor.row, self.cursor.col + 1);
+            let delta = -((end_b - start_b) as isize);
             self.delete_byte_range(start_b, end_b);
-            // col unchanged, byte already adjusted in delete
+            self.coalesce();
+            // within-line non-nl char delete
+            self.adjust_index_for_simple_delta(start_b, delta);
+            // col unchanged
         } else if self.cursor.row + 1 < self.line_count() {
             let next_start = self.byte_offset_at(self.cursor.row + 1, 0);
             if next_start > 0 {
                 let nl_pos = next_start - 1;
                 self.delete_byte_range(nl_pos, nl_pos + 1);
             }
+            self.coalesce();
+            self.rebuild_index(); // deleted nl (join)
+        } else {
+            self.coalesce();
         }
-        self.coalesce();
-        self.rebuild_index();
     }
 
     fn move_left(&mut self) {

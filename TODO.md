@@ -724,9 +724,10 @@ Update this file as decisions are made or phases complete. Add concrete issues o
   - PT golden/perf smokes added (previously only SimpleBuffer).
   - Coalescing wired + tested; module split done.
 - Phase 1B-b in progress: remove full-doc rebuild + piece-list scans from hot edit path.
-  - Current: every insert/delete does coalesce + full rebuild_index() (walks all bytes) + slice scans from 0.
-  - Target for 1B-b: incremental line_starts shift for simple (no-nl) edits; faster slice lookup (e.g. piece index or cached starts); 100k-line feel instant.
-- TODO.md paperwork updated; no more "Phase 1A only / no seeded" lies.
+  - non-newline insert_char uses adjust_index_for_simple_delta()
+  - within-line delete_back/delete_forward use adjust_index_for_simple_delta()
+  - insert_newline and newline-join deletes still use full rebuild_index()
+  - coalesce still runs after edits
+  - slice_to_string still scans pieces from the head / no piece-position index yet
+  - remaining 1B-b work is newline incremental handling, faster slice lookup/piece index, cursor move caching, and fragmented-piece performance tests
 - App / goblin untouched. No undo/LLM/Project.
-
-Next: incremental index (single-line first), address slice scan from head, cursor cache on moves. Ready for real 100k editing feel.

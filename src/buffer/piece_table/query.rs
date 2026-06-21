@@ -16,10 +16,16 @@ impl PieceTable {
         let mut acc = 0usize;
         for p in &self.pieces {
             let p_end = acc + p.len;
-            if p_end <= start || acc >= end {
+
+            if acc >= end {
+                break;
+            }
+
+            if p_end <= start {
                 acc = p_end;
                 continue;
             }
+
             // overlap
             let local_start = if acc < start { start - acc } else { 0 };
             let local_end = if p_end > end { end - acc } else { p.len };

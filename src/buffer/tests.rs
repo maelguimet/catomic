@@ -8,7 +8,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::buffer::{Buffer, PieceTable, SimpleBuffer};
+    use crate::buffer::{Buffer, SimpleBuffer};
 
     #[test]
     fn simple_buffer_basic_editing() {
@@ -401,57 +401,45 @@ mod phase1a_storage_parity {
 
     #[test]
     fn multibyte_utf8_parity_and_boundary_edits() {
-        // Explicit coverage for non-ASCII: inserts, deletes, backspaces around
-        // multi-byte chars and across newlines. PT must never slice in middle of UTF-8.
+        // Explicit coverage for non-ASCII using from_text (starts at top-left).
+        // Tests forward-delete, backspace, newline-join, insert around multibyte.
         const MB: &str = "aé猫🙂\nb";
-        // Build via inserts on both, compare full state.
-        let mut sb: Box<dyn Buffer> = Box::new(SimpleBuffer::new());
-        let mut pt: Box<dyn Buffer> = Box::new(PieceTable::new());
-        for c in MB.chars() {
-            if c == '\n' {
-                sb.insert_newline();
-                pt.insert_newline();
-            } else {
-                sb.insert_char(c);
-                pt.insert_char(c);
-            }
-        }
-        assert_state_parity(&*sb, &*pt, "after build multibyte");
+        let mut sb: Box<dyn Buffer> = Box::new(SimpleBuffer::from_text(MB));
+        let mut pt: Box<dyn Buffer> = Box::new(PieceTable::from_text(MB));
+        assert_state_parity(&*sb, &*pt, "initial from_text multibyte");
+        assert_eq!(pt.to_string(), MB);
 
-        // Move to middle of multibyte region and exercise delete back/forward.
-        // Cursor after 'a' (col=1 on row 0)
+        // delete 'é'
         sb.move_right();
         pt.move_right();
-        // delete 'é' (multibyte)
         sb.delete_forward();
         pt.delete_forward();
-        assert_state_parity(&*sb, &*pt, "deleted first multibyte");
+        assert_state_parity(&*sb, &*pt, "after delete é");
+        assert_eq!(pt.to_string(), "a猫🙂\nb");
 
-        // backspace a multibyte
-        sb.move_right(); // over '猫' ?
+        // delete '猫' with backspace
+        sb.move_right();
         pt.move_right();
-        sb.delete_back(); // remove '猫'
-        pt.delete_back();
-        assert_state_parity(&*sb, &*pt, "backspaced multibyte");
-
-        // cross newline: delete_back at start of second line should join
-        // current content after above: a (removed é) (removed 猫) 🙂 \n b ?
-        // simplify: move to start of line 1, backspace join
-        while sb.cursor().row < 1 {
-            sb.move_down();
-            pt.move_down();
-        }
-        sb.move_left(); // col0 of line1? wait adjust
-        pt.move_left();
-        // do a backspace at boundary
         sb.delete_back();
         pt.delete_back();
-        assert_state_parity(&*sb, &*pt, "join across newline with multibyte nearby");
+        assert_state_parity(&*sb, &*pt, "after backspace 猫");
+        assert_eq!(pt.to_string(), "a🙂\nb");
 
-        // insert multibyte in middle
+        // join across newline with delete_back
+        sb.move_down();
+        pt.move_down();
+        sb.move_left();
+        pt.move_left();
+        sb.delete_back();
+        pt.delete_back();
+        assert_state_parity(&*sb, &*pt, "after newline join");
+        assert_eq!(pt.to_string(), "a🙂b");
+
+        // insert 'é'
         sb.insert_char('é');
         pt.insert_char('é');
-        assert_state_parity(&*sb, &*pt, "insert multibyte mid doc");
+        assert_state_parity(&*sb, &*pt, "after insert é");
+        assert_eq!(pt.to_string(), "a🙂éb");
     }
 
     #[test]
@@ -483,8 +471,12 @@ mod phase1a_storage_parity {
         assert!(elapsed.as_millis() < 1000, "100k visible_lines too slow: {:?}", elapsed);
 
         // Spot correctness (uses index+slice)
-        assert!(pt.line(0).unwrap().contains("line0"));
-        assert!(pt.line(50_000).unwrap().contains("line50000"));
-        assert!(pt.line(nlines-1).unwrap().contains(&format!("line{}", nlines-1)));
+        assert_eq!(pt.visible_lines(0, 1)[0].content, "line0");
+        assert_eq!(pt.visible_lines(50_000, 1)[0].content, "line50000");
+        assert_eq!(pt.visible_lines(99_900, 1)[0].content, "line99900");
+
+        // TODO: this smoke uses a single-piece from_text() document, so validates
+        // LineIndex + query/slice paths but not fragmented-piece performance.
+        // Fragmented-piece render/visible_lines tests should be added later.
     }
 }

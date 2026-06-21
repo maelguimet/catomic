@@ -453,4 +453,38 @@ mod phase1a_storage_parity {
         pt.insert_char('é');
         assert_state_parity(&*sb, &*pt, "insert multibyte mid doc");
     }
+
+    #[test]
+    fn large_file_100k_visible_lines_smoke() {
+        // 1B-b target: visible_lines on 100k+ lines should feel instant even near middle/end.
+        // Use from_text (single piece) so test focuses on query/index path, not edit cost.
+        let nlines = 100_000usize;
+        let mut content = String::with_capacity(nlines * 10);
+        for i in 0..nlines {
+            content.push_str(&format!("line{i}"));
+            if i + 1 < nlines {
+                content.push('\n');
+            }
+        }
+        let pt = PieceTable::from_text(&content);
+        assert_eq!(pt.line_count(), nlines);
+
+        let start = std::time::Instant::now();
+        // top
+        let _ = pt.visible_lines(0, 24);
+        // middle
+        let _ = pt.visible_lines(50_000, 24);
+        // near end
+        let _ = pt.visible_lines(99_900, 24);
+        let elapsed = start.elapsed();
+
+        // Very loose for debug + current rebuild: <1s total for 3 windows is signal of progress.
+        // After 1B-b incremental, expect <<10ms.
+        assert!(elapsed.as_millis() < 1000, "100k visible_lines too slow: {:?}", elapsed);
+
+        // Spot correctness (uses index+slice)
+        assert!(pt.line(0).unwrap().contains("line0"));
+        assert!(pt.line(50_000).unwrap().contains("line50000"));
+        assert!(pt.line(nlines-1).unwrap().contains(&format!("line{}", nlines-1)));
+    }
 }

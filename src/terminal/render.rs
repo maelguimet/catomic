@@ -13,23 +13,27 @@ use std::io::Write;
 
 use crate::buffer::{Buffer, Cursor};
 
-/// Very basic render used while we bootstrap.
-/// Real implementation will be more sophisticated.
-pub fn render_buffer<W: Write>(
+/// Very basic full-screen render for Phase 0.
+/// Clears, writes visible content, positions cursor at buffer cursor.
+/// Uses char-index columns (per Phase 0 col semantics decision).
+pub fn render_buffer<W: Write + ?Sized>(
     out: &mut W,
     buffer: &dyn Buffer,
     _start_row: usize,
     _height: usize,
 ) -> std::io::Result<()> {
-    // Clear is done by caller in Phase 0 app.
+    // Full clear + home for Phase 0 simplicity.
+    write!(out, "\x1b[2J\x1b[1;1H")?;
+
     for line in buffer.lines() {
         writeln!(out, "{}", line)?;
     }
 
     let Cursor { row, col } = buffer.cursor();
-    // Move cursor to the right place (very naive).
-    // Real code will use crossterm cursor movement and account for line wrapping etc.
-    write!(out, "\x1b[{};{}H", row + 1, col + 1)?;
+    // 1-based ANSI coordinates. col is char index (scalar), not wcwidth.
+    let r = row.saturating_add(1);
+    let c = col.saturating_add(1);
+    write!(out, "\x1b[{};{}H", r, c)?;
     out.flush()?;
     Ok(())
 }

@@ -10,9 +10,7 @@
 
 use std::io::{self, Write};
 
-use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
-};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::{self, Buffer};
 use crate::mode::{Capabilities, Mode};
@@ -58,6 +56,19 @@ impl App {
         let mut stdout = io::stdout();
         term::setup(&mut stdout)?;
 
+        // Ensure terminal is restored on panic or early return.
+        // The guard calls teardown on drop (unwind or normal).
+        let _guard = term::TerminalGuard::new();
+
+        // Install panic hook to do best-effort restore even before unwind reaches guard.
+        // We chain to the previous hook.
+        let prev_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            // Try immediate restore.
+            let _ = term::teardown(&mut io::stdout());
+            prev_hook(info);
+        }));
+
         // Phase 0 render is extremely dumb.
         self.render(&mut stdout)?;
 
@@ -81,6 +92,7 @@ impl App {
             // (We do the render inside handle_key for now.)
         }
 
+        // Explicit teardown before guard also drops (idempotent).
         term::teardown(&mut stdout)?;
         Ok(())
     }
@@ -102,12 +114,16 @@ impl App {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                if let Some(ref path) = self.file_path {
-                    let text = self.buffer.to_string();
-                    // TODO: proper error handling + atomic write (file::io)
-                    std::fs::write(path, text)?;
-                } else {
-                    // Phase 0: no name, no save. Later: prompt.
+                let path = self
+                    .file_path
+                    .clone()
+                    .unwrap_or_else(|| "untitled.txt".to_string());
+                let text = self.buffer.to_string();
+                // Phase 0: simple write. If no prior path we now remember "untitled.txt".
+                std::fs::write(&path, text)?;
+                // Remember the path so subsequent saves work without picking default again.
+                if self.file_path.is_none() {
+                    self.file_path = Some(path);
                 }
                 self.render(&mut io::stdout())?;
             }
@@ -159,8 +175,7 @@ impl App {
             }
 
             KeyEvent {
-                code: KeyCode::Up,
-                ..
+                code: KeyCode::Up, ..
             } => {
                 self.buffer.move_up();
                 self.render(&mut io::stdout())?;
@@ -182,25 +197,8 @@ impl App {
     }
 
     fn render(&self, stdout: &mut dyn Write) -> io::Result<()> {
-        // Very minimal render for Phase 0.
-        // Use raw ANSI here because `execute!` doesn't love `dyn Write`.
-        // Real rendering moves to terminal::render with concrete writers.
-        write!(stdout, "\x1b[2J\x1b[1;1H")?; // clear + home
-
-        let lines = self.buffer.lines();
-        for (i, line) in lines.iter().enumerate() {
-            // Simple: write the line + newline.
-            write!(stdout, "{}\r\n", line)?;
-            // Phase 0 doesn't track cursor position yet in a real way.
-            let _ = i;
-        }
-
-        // Naive cursor: put it at end for Phase 0.
-        // Real cursor math lives in editor::cursor + buffer.
-        write!(stdout, "\r\n")?;
-
-        stdout.flush()?;
-        Ok(())
+        // Delegate to terminal render for Phase 0. Keep the loop caller simple.
+        term::render::render_buffer(stdout, &*self.buffer, 0, 24)
     }
 }
 

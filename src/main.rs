@@ -13,6 +13,9 @@ mod mode;
 mod project;
 mod terminal;
 
+#[cfg(test)]
+mod tests;
+
 use std::env;
 
 fn main() {

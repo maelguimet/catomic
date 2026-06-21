@@ -715,4 +715,14 @@ Update this file as decisions are made or phases complete. Add concrete issues o
 
 ---
 
-**Current status**: Phase 0 complete (as of 2026-06-21). Goblin loop + Buffer trait + SimpleBuffer + raw terminal (with guard/panic cleanup) + basic render + open/edit/save/quit all working. Caps/shift support added. Golden tests (incl. mixed-case roundtrips), PTY smoke tests, perf smoke, and manual verification (cursor, typing, save, clean exit) all pass. Codebase tiny. Ready for Phase 1A.
+**Current status**: Phase 1A complete (2026-06-21). See tightened definition above.
+- PieceTable (byte pieces + Source, UTF-8 boundary safe) + new/from_text implemented.
+- Queries scan (allowed); insert/delete/move full and correct.
+- SimpleBuffer::from_text cursor fixed to (0,0) before oracle use.
+- Parity tests (storage + insert + delete/join/move scripts) vs SimpleBuffer (oracle) + naive model pass.
+- Same golden scenarios covered via cross runs; goldens + PTY/perf still pass.
+- App swapped to PieceTable (goblin/render untouched).
+- No line index, no undo, no UI/scroll/Project changes.
+- Exit criteria met. Phase 1B (index + fast mapping) is next cleanly.
+
+Phase 0 artifacts remain for oracle/comparison. Codebase kept small. Ready for 1B.

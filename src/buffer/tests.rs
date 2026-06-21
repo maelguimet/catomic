@@ -387,4 +387,27 @@ mod phase1a_storage_parity {
         // Final exhaustive parity (also exercises to_string on larger result)
         assert_state_parity(&*sb, &*pt, "final");
     }
+
+    #[test]
+    fn coalescing_prevents_piece_explosion_on_appends() {
+        // Pure consecutive inserts (typing) must coalesce into few pieces.
+        let mut pt = PieceTable::new();
+        for c in "hello world this should be one or two pieces not hundreds".chars() {
+            if c == ' ' {
+                pt.insert_newline();
+            } else {
+                pt.insert_char(c);
+            }
+        }
+        // After coalescing on appends to Add, and some newlines splitting,
+        // we should have a small number of pieces (far less than char count).
+        let pcount = pt.pieces_len();
+        assert!(
+            pcount <= 10,
+            "expected coalescing to keep piece count low, got {}",
+            pcount
+        );
+        // And observable state correct
+        assert!(pt.to_string().contains("hello"));
+    }
 }

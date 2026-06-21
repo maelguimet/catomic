@@ -81,6 +81,7 @@ impl PieceTable {
     }
 
     /// Coalesce adjacent same-source contiguous pieces. Call after edit.
+    /// Rule: if same Source and p1.start + p1.len == p2.start then merge.
     pub(crate) fn coalesce(&mut self) {
         if self.pieces.len() < 2 {
             return;
@@ -102,6 +103,11 @@ impl PieceTable {
                 i += 1;
             }
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pieces_len(&self) -> usize {
+        self.pieces.len()
     }
 }
 

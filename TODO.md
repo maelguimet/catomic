@@ -719,8 +719,9 @@ Update this file as decisions are made or phases complete. Add concrete issues o
 - PieceTable (byte pieces + Source, UTF-8 boundary safe) + new/from_text implemented.
 - Queries scan (allowed); insert/delete/move full and correct.
 - SimpleBuffer::from_text cursor fixed to (0,0) before oracle use.
-- Parity tests (storage + insert + delete/join/move scripts) vs SimpleBuffer (oracle) + naive model pass.
-- Same golden scenarios covered via cross runs; goldens + PTY/perf still pass.
+- Scripted parity tests (storage + insert + delete/join/move sequences) vs SimpleBuffer (oracle) pass.
+  No seeded random/property tests yet (add before heavy 1B work).
+- Golden tests, PTY, and perf benchmarks still exercise SimpleBuffer only (not PieceTable or cross runs).
 - App swapped to PieceTable (goblin/render untouched).
 - No line index, no undo, no UI/scroll/Project changes.
 - Exit criteria met. Phase 1B (index + fast mapping) is next cleanly.

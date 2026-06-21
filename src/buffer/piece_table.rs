@@ -123,6 +123,121 @@ impl PieceTable {
             .map(|s| s.to_string())
             .collect()
     }
+
+    /// Compute byte offset in logical text for the given public (row, char-col).
+    /// Clamps row/col. Uses char iteration so col is scalar count, not bytes.
+    /// Scan is allowed (and expected) in Phase 1A.
+    fn byte_offset_at(&self, mut row: usize, mut col: usize) -> usize {
+        let text = self.logical_text();
+        if text.is_empty() {
+            return 0;
+        }
+        let lines: Vec<&str> = text.split('\n').collect();
+        if lines.is_empty() {
+            return 0;
+        }
+        row = row.min(lines.len().saturating_sub(1));
+        let line = lines[row];
+        let n_chars = line.chars().count();
+        col = col.min(n_chars);
+
+        // bytes for complete prior lines (each contribs its len + 1 for the \n)
+        let mut off = 0usize;
+        for i in 0..row {
+            off += lines[i].len() + 1;
+        }
+        // bytes for the first `col` chars on this line
+        let mut b = 0usize;
+        let mut seen = 0usize;
+        for ch in line.chars() {
+            if seen == col {
+                break;
+            }
+            b += ch.len_utf8();
+            seen += 1;
+        }
+        off + b
+    }
+
+    /// Find (piece_index, local_byte_offset) for a global logical byte offset.
+    /// If off is at or past end, returns (last, last.len) so inserts append.
+    fn split_point(&self, off: usize) -> (usize, usize) {
+        let mut acc = 0usize;
+        for (i, p) in self.pieces.iter().enumerate() {
+            if off <= acc + p.len {
+                return (i, off - acc);
+            }
+            acc += p.len;
+        }
+        let last = self.pieces.len() - 1;
+        (last, self.pieces[last].len)
+    }
+
+    /// Core insert used by both insert_char and insert_newline.
+    /// Appends the char (scalar) to `add`, splits the piece at the cursor byte
+    /// offset, inserts a new Add piece, updates cursor (col++ or row++/col=0).
+    /// Maintains the never-split-inside-UTF8-char invariant by using char-based
+    /// offset calculation.
+    fn insert_at_cursor(&mut self, ch: char) {
+        let insert_byte = self.byte_offset_at(self.cursor.row, self.cursor.col);
+        let add_start = self.add.len();
+        self.add.push(ch);
+        let added_len = ch.len_utf8();
+
+        if self.pieces.is_empty() {
+            self.pieces.push(Piece {
+                source: Source::Add,
+                start: add_start,
+                len: added_len,
+            });
+            if ch == '\n' {
+                self.cursor.row += 1;
+                self.cursor.col = 0;
+            } else {
+                self.cursor.col += 1;
+            }
+            return;
+        }
+
+        let (pidx, local) = self.split_point(insert_byte);
+        let pc = self.pieces[pidx].clone();
+
+        let mut new_pieces: Vec<Piece> = Vec::with_capacity(self.pieces.len() + 2);
+        for (i, p) in self.pieces.iter().enumerate() {
+            if i == pidx {
+                if local > 0 {
+                    new_pieces.push(Piece {
+                        source: pc.source,
+                        start: pc.start,
+                        len: local,
+                    });
+                }
+                new_pieces.push(Piece {
+                    source: Source::Add,
+                    start: add_start,
+                    len: added_len,
+                });
+                let rlen = pc.len - local;
+                if rlen > 0 {
+                    new_pieces.push(Piece {
+                        source: pc.source,
+                        start: pc.start + local,
+                        len: rlen,
+                    });
+                }
+            } else {
+                new_pieces.push(p.clone());
+            }
+        }
+        self.pieces = new_pieces;
+
+        if ch == '\n' {
+            self.cursor.row += 1;
+            self.cursor.col = 0;
+        } else {
+            self.cursor.col += 1;
+        }
+    }
 }
 
 impl Buffer for PieceTable {
@@ -161,11 +276,12 @@ impl Buffer for PieceTable {
         self.logical_lines()
     }
 
-    // Storage-only task (1A step 1). Real implementations come next.
-    // No-ops keep trait object constructible and avoid compile issues for
-    // query-focused parity tests. Do not add undo here.
-    fn insert_char(&mut self, _ch: char) {}
-    fn insert_newline(&mut self) {}
+    fn insert_char(&mut self, ch: char) {
+        self.insert_at_cursor(ch);
+    }
+    fn insert_newline(&mut self) {
+        self.insert_at_cursor('\n');
+    }
     fn delete_back(&mut self) {}
     fn delete_forward(&mut self) {}
 

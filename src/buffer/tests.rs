@@ -148,4 +148,53 @@ mod phase1a_storage_parity {
         assert_eq!(pt.cursor().row, 0);
         assert_eq!(pt.cursor().col, 0);
     }
+
+    fn assert_insert_parity(script: &[(bool, char)]) {
+        // script: (is_newline, ch)  -- newline ignores ch or uses '\n'
+        let mut sb = SimpleBuffer::new();
+        let mut pt = PieceTable::new();
+        for &(nl, ch) in script {
+            if nl {
+                sb.insert_newline();
+                pt.insert_newline();
+            } else {
+                sb.insert_char(ch);
+                pt.insert_char(ch);
+            }
+            assert_eq!(pt.to_string(), sb.to_string(), "to_string drifted mid-script");
+            assert_eq!(pt.cursor(), sb.cursor(), "cursor drifted mid-script");
+        }
+        assert_eq!(pt.to_string(), sb.to_string());
+        assert_eq!(pt.lines(), sb.lines());
+        assert_eq!(pt.cursor(), sb.cursor());
+    }
+
+    #[test]
+    fn insert_parity_typing_from_home() {
+        // Pure appends + newlines; cursor managed by insert logic only.
+        let script: Vec<(bool, char)> = "Hello".chars().map(|c| (false, c)).collect();
+        assert_insert_parity(&script);
+    }
+
+    #[test]
+    fn insert_parity_with_newlines() {
+        let mut script = vec![];
+        for c in "ab".chars() { script.push((false, c)); }
+        script.push((true, '\n'));
+        for c in "cd".chars() { script.push((false, c)); }
+        script.push((true, '\n'));
+        for c in "e".chars() { script.push((false, c)); }
+        assert_insert_parity(&script);
+        // final: "ab\ncd\ne"
+    }
+
+    #[test]
+    fn insert_parity_mixed_case_and_trailing_nl() {
+        let mut script = vec![];
+        for c in "HeLLo".chars() { script.push((false, c)); }
+        script.push((true, '\n'));
+        for c in "world".chars() { script.push((false, c)); }
+        script.push((true, '\n')); // trailing nl
+        assert_insert_parity(&script);
+    }
 }

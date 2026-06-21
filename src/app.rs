@@ -147,9 +147,9 @@ impl App {
             }
 
             // Basic movement + editing (Phase 0)
-            // Accept any Char that is not control (allows SHIFT for uppercase,
-            // symbols like ! @ etc.). Specific Ctrl+S / Ctrl+Q arms above take
-            // precedence for CONTROL combos.
+            // Accept any Char that is not control. Apply SHIFT modifier for
+            // uppercase letters (crossterm may report lowercase + SHIFT).
+            // Specific Ctrl+S / Ctrl+Q arms above take precedence for CONTROL.
             KeyEvent {
                 code: KeyCode::Char(c),
                 modifiers,
@@ -160,7 +160,14 @@ impl App {
                 } else if c == '\n' || c == '\r' {
                     self.buffer.insert_newline();
                 } else if !c.is_control() {
-                    self.buffer.insert_char(c);
+                    let ch = if modifiers.contains(KeyModifiers::SHIFT)
+                        && c.is_ascii_lowercase()
+                    {
+                        c.to_ascii_uppercase()
+                    } else {
+                        c
+                    };
+                    self.buffer.insert_char(ch);
                 }
                 self.render(&mut io::stdout())?;
             }

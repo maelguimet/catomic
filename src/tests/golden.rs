@@ -35,8 +35,8 @@ mod tests {
         // Simulate: open empty (or with initial content), type, newline, etc.
         let mut b = SimpleBuffer::new();
 
-        // Type "hello"
-        for c in "hello".chars() {
+        // Type "HeLLo" (mixed case to test uppercase save roundtrip)
+        for c in "HeLLo".chars() {
             b.insert_char(c);
         }
         // newline + "world"
@@ -50,8 +50,8 @@ mod tests {
         b.move_left(); // before 'l'
         b.insert_char('X');
 
-        // Expected after edits: "hello\nworXld"
-        let expected = "hello\nworXld";
+        // Expected after edits: "HeLLo\nworXld"
+        let expected = "HeLLo\nworXld";
 
         // Simulate save
         let content = b.to_string();

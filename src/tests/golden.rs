@@ -73,12 +73,10 @@ mod tests {
         cleanup(&out_path);
 
         let mut b = SimpleBuffer::from_text("abc\ndef");
-        // from_text places cursor at end: row=1, col=3 ("def".len)
-        // Move to start of line 1 (col=0)
-        b.move_left();
-        b.move_left();
-        b.move_left();
-        // Now at row=1, col=0. delete_back should join lines.
+        // from_text now starts cursor at (0,0) (editor convention).
+        // Move to start of line 1, then backspace to join.
+        b.move_down();
+        // Now at row=1, col=0. delete_back joins lines.
         b.delete_back();
 
         let expected = "abcdef";
@@ -107,8 +105,9 @@ mod tests {
         let on_disk = fs::read_to_string(&out_path).unwrap();
         assert_eq!(on_disk, input_with_nl, "trailing newline must be preserved exactly");
 
-        // Also: cursor after open of trailing-nl file should be on the final (empty) line
-        assert_eq!(b.cursor().row, 2);
+        // from_text now starts at (0, 0) per editor convention (fixed pre-1A oracle use).
+        // Trailing-nl shape is still preserved in to_string().
+        assert_eq!(b.cursor().row, 0);
         assert_eq!(b.cursor().col, 0);
 
         cleanup(&out_path);

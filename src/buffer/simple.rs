@@ -34,16 +34,14 @@ impl SimpleBuffer {
             normalized.split('\n').map(|l| l.to_string()).collect()
         };
 
-        let line_count = lines.len().max(1);
-        let last_row = line_count - 1;
-        let last_col = lines.get(last_row).map(|l| l.chars().count()).unwrap_or(0);
+        let lines = if lines.is_empty() { vec![String::new()] } else { lines };
 
+        // Editor convention: from_text (open file) starts cursor at top-left,
+        // same as new(). Previously placed at EOF; fixed before using
+        // SimpleBuffer as oracle for PieceTable parity tests.
         Self {
-            lines: if lines.is_empty() { vec![String::new()] } else { lines },
-            cursor: Cursor {
-                row: last_row,
-                col: last_col,
-            },
+            lines,
+            cursor: Cursor { row: 0, col: 0 },
         }
     }
 

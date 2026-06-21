@@ -147,14 +147,19 @@ impl App {
             }
 
             // Basic movement + editing (Phase 0)
+            // Accept any Char that is not control (allows SHIFT for uppercase,
+            // symbols like ! @ etc.). Specific Ctrl+S / Ctrl+Q arms above take
+            // precedence for CONTROL combos.
             KeyEvent {
                 code: KeyCode::Char(c),
-                modifiers: KeyModifiers::NONE,
+                modifiers,
                 ..
             } => {
-                if c == '\n' || c == '\r' {
+                if modifiers.contains(KeyModifiers::CONTROL) {
+                    // Other Ctrl+letter combos ignored in Phase 0
+                } else if c == '\n' || c == '\r' {
                     self.buffer.insert_newline();
-                } else {
+                } else if !c.is_control() {
                     self.buffer.insert_char(c);
                 }
                 self.render(&mut io::stdout())?;

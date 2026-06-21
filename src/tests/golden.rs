@@ -89,4 +89,28 @@ mod tests {
 
         cleanup(&out_path);
     }
+
+    #[test]
+    fn golden_trailing_newline_preserved() {
+        // Exercise from_text + to_string + file write roundtrip for shape
+        // that ends with a final newline (the exact hole .lines() had).
+        let out_path = temp_path("trailing.txt");
+        cleanup(&out_path);
+
+        let input_with_nl = "line1\nline2\n"; // note final \n
+        let b = SimpleBuffer::from_text(input_with_nl);
+
+        // No edits, just open + immediate "save"
+        let content = b.to_string();
+        fs::write(&out_path, &content).unwrap();
+
+        let on_disk = fs::read_to_string(&out_path).unwrap();
+        assert_eq!(on_disk, input_with_nl, "trailing newline must be preserved exactly");
+
+        // Also: cursor after open of trailing-nl file should be on the final (empty) line
+        assert_eq!(b.cursor().row, 2);
+        assert_eq!(b.cursor().col, 0);
+
+        cleanup(&out_path);
+    }
 }

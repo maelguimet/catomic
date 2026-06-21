@@ -107,26 +107,30 @@ impl PieceTable {
 
 impl Buffer for PieceTable {
     fn line_count(&self) -> usize {
-        // For 1B transition keep using logical for now; will switch to index.
-        let s = self.logical_text();
-        if s.is_empty() {
-            1
-        } else {
-            s.split('\n').count()
-        }
+        self.index.line_count()
     }
 
     fn line(&self, row: usize) -> Option<Cow<'_, str>> {
-        // Transition: still materializes lines via logical. Will use slice+index.
-        self.logical_lines().into_iter().nth(row).map(Cow::Owned)
+        let n = self.index.line_count();
+        if row >= n {
+            return None;
+        }
+        let start = self.index.line_start_byte(row);
+        let end = self.index.line_end_byte(row);
+        let content = self.slice_to_string(start, end);
+        Some(Cow::Owned(content))
     }
 
     fn visible_lines(&self, start: usize, height: usize) -> Vec<LineView> {
-        let all = self.logical_lines();
-        let end = (start + height).min(all.len());
+        let n = self.index.line_count();
+        let end = (start + height).min(n);
         (start..end)
-            .map(|r| LineView {
-                content: all[r].clone(),
+            .map(|r| {
+                let s = self.index.line_start_byte(r);
+                let e = self.index.line_end_byte(r);
+                LineView {
+                    content: self.slice_to_string(s, e),
+                }
             })
             .collect()
     }
@@ -136,11 +140,19 @@ impl Buffer for PieceTable {
     }
 
     fn to_string(&self) -> String {
-        self.logical_text()
+        // to_string / save is not a hot per-keypath; slice is fine too.
+        self.slice_to_string(0, self.index.total_bytes)
     }
 
     fn lines(&self) -> Vec<String> {
-        self.logical_lines()
+        let n = self.index.line_count();
+        (0..n)
+            .map(|r| {
+                let s = self.index.line_start_byte(r);
+                let e = self.index.line_end_byte(r);
+                self.slice_to_string(s, e)
+            })
+            .collect()
     }
 
     fn insert_char(&mut self, ch: char) {

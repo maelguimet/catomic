@@ -41,9 +41,9 @@ impl App {
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
                 Err(e) => return Err(e),
             };
-            Box::new(buffer::SimpleBuffer::from_text(&content))
+            Box::new(buffer::PieceTable::from_text(&content))
         } else {
-            Box::new(buffer::SimpleBuffer::new())
+            Box::new(buffer::PieceTable::new())
         };
 
         Ok(App {

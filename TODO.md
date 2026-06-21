@@ -359,27 +359,67 @@ No status messages. No dirty prompts. No resize handling/polish. No page up/down
 
 **Important**: Do the `Buffer` interface first. Write the goblin loop against the interface. The concrete `Vec<String>` thing is just the first implementation behind it. This is the only way Phases 1A–1C won't become surgery.
 
-### Phase 1A — Piece Table Core (no undo)
+### Phase 1A — Piece Table Core (correctness-first; queries may scan; no undo, no line index)
 
-The `Buffer` interface and goblin loop already exist. Do **not** build significant UI or features on top of a toy buffer.
+**Tightened definition (2026-06-21)**: Phase 1A removes a prior contradiction ("piece table core, no line index" vs requiring O(1) line ops). Phase 1A is strictly correctness-first PieceTable storage + edits behind the stable `Buffer` trait. Phase 1B is the separate optimization + index phase.
 
-- Implement a piece table (original buffer + add buffer + pieces) that satisfies the *exact* `Buffer` trait from Phase 0.
-  - `insert_char`, `delete_back`, `delete_forward`, `line_count`, `line(row)`, `visible_lines`, `cursor`, `save_text`.
-  - Keep all public methods on the trait stable.
-- The goblin loop + render must continue to work with zero (or one-line) changes when you swap `SimpleBuffer` for the piece table impl.
-- Focus only on the data structure and basic edit operations. No undo history yet.
-- Document the col model you actually implemented (still char index for this subphase).
+Allowed (may be slow, scans ok):
+- `line_count()`, `line(row)`, `visible_lines()`
+- cursor row/col <-> internal offset mapping (scan to find char position on row)
+
+Forbidden in 1A:
+- undo/redo (1C)
+- line index / incremental cursor mapping accel (1B)
+- scrolling / viewport / UI changes
+- Project / LLM / config / any new subsystems
+- Full-file clones or hot-path quadratic work beyond what's needed for correctness
+
+**Internal coordinates decision (do before coding)**:
+- Public API (and `Cursor`): `row` (line) + `col` (Unicode scalar / char count within line). Matches Phase 0 SimpleBuffer.
+- Piece table internal: byte offsets only.
+  ```rust
+  enum Source { Original, Add }
+  struct Piece {
+      source: Source,
+      start: usize, // byte offset into the source String
+      len: usize,   // byte length
+  }
+  ```
+- Invariant: `Piece` ranges are always on UTF-8 character boundaries. Never split a multi-byte char. (Conversion from public (row, char-col) to byte offset scans pieces + counts scalars within affected lines. Slow ok for 1A.)
+- `to_string()` and `line()` must reconstruct correctly.
+
+**API requirements** (add before heavy impl):
+- `PieceTable::new() -> Self`
+- `PieceTable::from_text(text: &str) -> Self`
+
+**Pre-work / oracle hygiene**:
+- `SimpleBuffer::from_text` cursor position changed from "EOF" to `(0, 0)` (matches `new()` and "open a file, start at top" editor convention). Update all golden tests and comments that asserted the old EOF behavior before using SimpleBuffer as the reference oracle for PieceTable parity tests. Otherwise the oracle teaches bad cursor religion to the new impl.
+
+**Implementation order (small coherent tasks)**:
+1. PieceTable storage only (Source, Piece, PieceTable struct with original/add/pieces/cursor; from_text + to_string; line_count/line/visible_lines/cursor as scans; no edits yet). Tests for empty/single-line/trailing-nl/CRLF parity with SimpleBuffer.
+2. insert_char + insert_newline only.
+3. delete_back + delete_forward + movement.
+4. Wire App (and/or test paths) to use `PieceTable::from_text` (or a build flag / test dual-run). Keep goblin loop + render untouched.
+5. Property tests: same edit script run against SimpleBuffer vs PieceTable (or vs naive String model) must match on to_string / lines / cursor / roundtrips.
+
+The goblin loop + render must continue to work with zero (or one-line) changes when you swap `SimpleBuffer` for the piece table impl. Keep all public trait methods stable.
+
+Focus only on the data structure and basic edit operations. **No undo history yet.** (That sentence is how projects get haunted.)
+
+Document the col model (char index / scalar within line for this subphase; internal bytes).
 
 **Exit criteria**:
-- You can replace the v0 buffer with the piece table impl and the editor still types and saves correctly.
-- Basic unit tests for the piece table (insert/delete at start/middle/end, various line lengths).
-- `visible_lines` and random `line(row)` access are O(1) or amortized cheap for the operations Phase 0 needs.
+- PieceTable can replace SimpleBuffer and the editor still types/saves/moves correctly on real usage.
+- PieceTable passes **the exact same golden tests** that SimpleBuffer passes (when tests are pointed at it).
+- Property tests vs dumb String model (or cross-impl parity) pass.
+- No line index code, no undo code, no scrolling/UI changes landed.
 
 **Phase 1A acceptance tests**:
-- Property tests: random sequences of inserts/deletes on the piece table must produce identical results (and same `line()` / `save_text()`) as a dumb reference `String` model.
-- Golden tests for basic edits.
+- Golden roundtrips (basic edits, delete+join, trailing newline preservation, CRLF normalization) using PieceTable.
+- Property / script tests: random (or seeded) sequences of insert/newline/delete/move produce identical observable state (`to_string`, `line(i)`, `cursor`, `lines()`) as SimpleBuffer (the oracle) and/or a naive `String` model.
+- from_text(empty), single-line, trailing \n, \r\n inputs produce byte-identical to_string() to SimpleBuffer.
 
-### Phase 1B — Line Index + Cursor Mapping
+### Phase 1B — Line Index + Cursor Mapping (optimization phase)
 
 - Build (or integrate) a line index on top of / inside the piece table so `line_count`, `line(row)`, and cursor <-> offset conversions are fast and correct.
 - Proper maintenance of row/col when inserting and deleting (including across piece boundaries).

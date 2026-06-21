@@ -23,13 +23,17 @@ impl SimpleBuffer {
     }
 
     pub fn from_text(text: &str) -> Self {
-        if text.is_empty() {
-            return Self::new();
-        }
-        let lines: Vec<String> = text
-            .lines()
-            .map(|l| l.to_string())
-            .collect();
+        // Normalize line endings (Phase 0 is Linux-first, saves use \n).
+        // Use split('\n') (not .lines()) so a trailing '\n' produces a final
+        // empty string entry. This preserves "file ends with newline" shape
+        // across open + save.
+        let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+        let lines: Vec<String> = if normalized.is_empty() {
+            vec![String::new()]
+        } else {
+            normalized.split('\n').map(|l| l.to_string()).collect()
+        };
+
         let line_count = lines.len().max(1);
         let last_row = line_count - 1;
         let last_col = lines.get(last_row).map(|l| l.chars().count()).unwrap_or(0);

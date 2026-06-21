@@ -238,6 +238,64 @@ impl PieceTable {
             self.cursor.col += 1;
         }
     }
+
+    /// Delete logical byte range [start, end). May span pieces.
+    /// Rebuilds pieces list skipping the deleted bytes. Preserves boundaries.
+    /// Ensures at least one (empty) piece remains.
+    fn delete_byte_range(&mut self, start: usize, end: usize) {
+        if start >= end {
+            return;
+        }
+        let mut new_pieces: Vec<Piece> = Vec::new();
+        let mut acc = 0usize;
+        for p in &self.pieces {
+            let p_end = acc + p.len;
+            if p_end <= start || acc >= end {
+                new_pieces.push(p.clone());
+            } else {
+                // keep left (before start)
+                if acc < start {
+                    let l = start - acc;
+                    if l > 0 {
+                        new_pieces.push(Piece {
+                            source: p.source,
+                            start: p.start,
+                            len: l,
+                        });
+                    }
+                }
+                // keep right (after end)
+                if p_end > end {
+                    let r_local = end - acc;
+                    let rlen = p.len - (end - acc);
+                    if rlen > 0 {
+                        new_pieces.push(Piece {
+                            source: p.source,
+                            start: p.start + r_local,
+                            len: rlen,
+                        });
+                    }
+                }
+                // overlapped bytes dropped (no emit)
+            }
+            acc = p_end;
+        }
+        if new_pieces.is_empty() {
+            new_pieces.push(Piece {
+                source: Source::Original,
+                start: 0,
+                len: 0,
+            });
+        }
+        self.pieces = new_pieces;
+    }
+
+    fn current_line_char_len(&self, row: usize) -> usize {
+        self.logical_lines()
+            .get(row)
+            .map(|l| l.chars().count())
+            .unwrap_or(0)
+    }
 }
 
 impl Buffer for PieceTable {
@@ -282,11 +340,73 @@ impl Buffer for PieceTable {
     fn insert_newline(&mut self) {
         self.insert_at_cursor('\n');
     }
-    fn delete_back(&mut self) {}
-    fn delete_forward(&mut self) {}
 
-    fn move_left(&mut self) {}
-    fn move_right(&mut self) {}
-    fn move_up(&mut self) {}
-    fn move_down(&mut self) {}
+    fn delete_back(&mut self) {
+        if self.cursor.col > 0 {
+            let end_b = self.byte_offset_at(self.cursor.row, self.cursor.col);
+            let start_b = self.byte_offset_at(self.cursor.row, self.cursor.col - 1);
+            self.delete_byte_range(start_b, end_b);
+            self.cursor.col -= 1;
+        } else if self.cursor.row > 0 {
+            let nl_pos = self.byte_offset_at(self.cursor.row, 0);
+            if nl_pos > 0 {
+                let prev_len = self.current_line_char_len(self.cursor.row - 1);
+                self.delete_byte_range(nl_pos - 1, nl_pos);
+                self.cursor.row -= 1;
+                self.cursor.col = prev_len;
+            }
+        }
+    }
+
+    fn delete_forward(&mut self) {
+        let len = self.current_line_char_len(self.cursor.row);
+        if self.cursor.col < len {
+            let start_b = self.byte_offset_at(self.cursor.row, self.cursor.col);
+            let end_b = self.byte_offset_at(self.cursor.row, self.cursor.col + 1);
+            self.delete_byte_range(start_b, end_b);
+            // col unchanged
+        } else if self.cursor.row + 1 < self.line_count() {
+            let next_start = self.byte_offset_at(self.cursor.row + 1, 0);
+            if next_start > 0 {
+                let nl_pos = next_start - 1;
+                self.delete_byte_range(nl_pos, nl_pos + 1);
+                // col stays at the (old) end of this line; now joined
+            }
+        }
+    }
+
+    fn move_left(&mut self) {
+        if self.cursor.col > 0 {
+            self.cursor.col -= 1;
+        } else if self.cursor.row > 0 {
+            self.cursor.row -= 1;
+            self.cursor.col = self.current_line_char_len(self.cursor.row);
+        }
+    }
+
+    fn move_right(&mut self) {
+        let len = self.current_line_char_len(self.cursor.row);
+        if self.cursor.col < len {
+            self.cursor.col += 1;
+        } else if self.cursor.row + 1 < self.line_count() {
+            self.cursor.row += 1;
+            self.cursor.col = 0;
+        }
+    }
+
+    fn move_up(&mut self) {
+        if self.cursor.row > 0 {
+            self.cursor.row -= 1;
+            let len = self.current_line_char_len(self.cursor.row);
+            self.cursor.col = self.cursor.col.min(len);
+        }
+    }
+
+    fn move_down(&mut self) {
+        if self.cursor.row + 1 < self.line_count() {
+            self.cursor.row += 1;
+            let len = self.current_line_char_len(self.cursor.row);
+            self.cursor.col = self.cursor.col.min(len);
+        }
+    }
 }

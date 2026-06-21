@@ -197,4 +197,56 @@ mod phase1a_storage_parity {
         script.push((true, '\n')); // trailing nl
         assert_insert_parity(&script);
     }
+
+    fn assert_edit_parity(ops: impl Fn(&mut dyn Buffer)) {
+        let mut sb: Box<dyn Buffer> = Box::new(SimpleBuffer::new());
+        let mut pt: Box<dyn Buffer> = Box::new(PieceTable::new());
+        ops(&mut *sb);
+        ops(&mut *pt);
+        assert_eq!(pt.to_string(), sb.to_string());
+        assert_eq!(pt.cursor(), sb.cursor());
+        assert_eq!(pt.lines(), sb.lines());
+    }
+
+    #[test]
+    fn delete_parity_backspace_mid_and_join() {
+        assert_edit_parity(|b| {
+            for c in "abc\ndef".chars() {
+                if c == '\n' { b.insert_newline(); } else { b.insert_char(c); }
+            }
+            // cursor at end "def".len=3 row1
+            b.move_left(); b.move_left(); b.move_left(); // to col0 row1
+            b.delete_back(); // join -> "abcdef" , cursor to row0 col=3
+        });
+    }
+
+    #[test]
+    fn delete_parity_forward_and_back() {
+        assert_edit_parity(|b| {
+            for c in "hello".chars() { b.insert_char(c); }
+            // at col5
+            b.move_left(); // before o
+            b.move_left(); // before l
+            b.delete_forward(); // remove 'l' -> "helo" , cursor before 'o' still col=3? wait col was 3 before l? simulate carefully
+            // simpler: backspace a few
+            b.delete_back();
+            b.delete_back();
+        });
+    }
+
+    #[test]
+    fn move_and_delete_parity_sequences() {
+        assert_edit_parity(|b| {
+            for c in "one\ntwo\nthree".chars() {
+                if c=='\n' { b.insert_newline(); } else { b.insert_char(c); }
+            }
+            // cursor after "three" row2 col5
+            b.move_up();
+            b.move_left();
+            b.move_left();
+            b.delete_back(); // remove 'e' from "three" -> "thre" on row1?
+            b.move_down();
+            b.delete_back(); // join logic etc.
+        });
+    }
 }

@@ -435,7 +435,7 @@ Document the col model (char index / scalar within line for this subphase; inter
 ### Phase 1C — Undo/Redo
 
 - Add undo/redo on top of the now-working piece table + line index.
-- The immutable-ish nature of pieces makes this natural (keep a stack of operations or previous piece states).
+- **Do not** store previous full text (tempting, easy, cursed). The right shape is an operation log that records *inverse edits* against the piece table (e.g. the inverse of an insert is a delete of that range), probably grouped into transactions later.
 - Undo must correctly restore cursor position.
 - Wire `Ctrl+Z` / `Ctrl+Y` (or `Ctrl+Shift+Z`) in the goblin loop.
 - Keep the loop and render unchanged.

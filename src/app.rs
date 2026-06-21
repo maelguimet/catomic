@@ -34,8 +34,13 @@ impl App {
         let caps = Capabilities::from_mode(mode);
 
         let buffer: Box<dyn Buffer> = if let Some(path) = initial_path {
-            // Phase 0: dead-simple load into SimpleBuffer
-            let content = std::fs::read_to_string(path).unwrap_or_default();
+            // Distinguish missing file (start empty, but remember path so save creates it)
+            // from real errors (permission, utf8, is-dir, etc). Silent empty was data-loss bait.
+            let content = match std::fs::read_to_string(path) {
+                Ok(c) => c,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+                Err(e) => return Err(e),
+            };
             Box::new(buffer::SimpleBuffer::from_text(&content))
         } else {
             Box::new(buffer::SimpleBuffer::new())

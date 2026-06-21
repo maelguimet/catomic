@@ -715,15 +715,18 @@ Update this file as decisions are made or phases complete. Add concrete issues o
 
 ---
 
-**Current status**: Phase 1A complete (2026-06-21). See tightened definition above.
-- PieceTable (byte pieces + Source, UTF-8 boundary safe) + new/from_text implemented.
-- Queries scan (allowed); insert/delete/move full and correct.
-- SimpleBuffer::from_text cursor fixed to (0,0) before oracle use.
-- Scripted parity tests (storage + insert + delete/join/move sequences) vs SimpleBuffer (oracle) pass.
-  No seeded random/property tests yet (add before heavy 1B work).
-- Golden tests, PTY, and perf benchmarks still exercise SimpleBuffer only (not PieceTable or cross runs).
-- App swapped to PieceTable (goblin/render untouched).
-- No line index, no undo, no UI/scroll/Project changes.
-- Exit criteria met. Phase 1B (index + fast mapping) is next cleanly.
+**Current status** (2026-06):
+- Phase 1A complete: PieceTable behind Buffer, parity correct, app using it.
+- Phase 1B-a complete:
+  - Real LineIndex (in buffer/line_index.rs) with rebuild bridge.
+  - Queries (line_count, line, visible_lines, to_string, lines) use index + slice_to_string (no full logical_text materialization in render path).
+  - cursor_byte_offset present; seeded random + multibyte (é猫🙂 etc) parity tests (incl. boundary delete/backspace/nl joins).
+  - PT golden/perf smokes added (previously only SimpleBuffer).
+  - Coalescing wired + tested; module split done.
+- Phase 1B-b in progress: remove full-doc rebuild + piece-list scans from hot edit path.
+  - Current: every insert/delete does coalesce + full rebuild_index() (walks all bytes) + slice scans from 0.
+  - Target for 1B-b: incremental line_starts shift for simple (no-nl) edits; faster slice lookup (e.g. piece index or cached starts); 100k-line feel instant.
+- TODO.md paperwork updated; no more "Phase 1A only / no seeded" lies.
+- App / goblin untouched. No undo/LLM/Project.
 
-Phase 0 artifacts remain for oracle/comparison. Codebase kept small. Ready for 1B.
+Next: incremental index (single-line first), address slice scan from head, cursor cache on moves. Ready for real 100k editing feel.

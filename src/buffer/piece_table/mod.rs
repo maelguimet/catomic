@@ -11,16 +11,16 @@
 //! Phase: 1B.
 
 mod edit;
-mod index;
 mod query;
 mod types;
 
 use std::borrow::Cow;
 
+use crate::buffer::line_index::LineIndex;
 use crate::buffer::{Buffer, Cursor, LineView};
 
 pub use types::PieceTable;
-use types::{LineIndex, Piece, Source};
+use types::{Piece, Source};
 
 impl PieceTable {
     pub fn new() -> Self {
@@ -29,7 +29,7 @@ impl PieceTable {
             start: 0,
             len: 0,
         }];
-        let index = LineIndex::rebuild_from_pieces("", "", &pieces);
+        let index = Self::build_index("", "", &pieces);
         Self {
             original: String::new(),
             add: String::new(),
@@ -62,7 +62,7 @@ impl PieceTable {
                 }],
             )
         };
-        let index = LineIndex::rebuild_from_pieces(&original, "", &pieces);
+        let index = Self::build_index(&original, "", &pieces);
         Self {
             original,
             add: String::new(),
@@ -74,8 +74,36 @@ impl PieceTable {
     }
 
     /// Rebuild index from current pieces. Call after every structural edit (1B bridge).
+    /// Walks bytes in pieces to locate \n ; kept here because it needs Piece/Source.
+    /// Common index builder (used by ctors and rebuild). Avoids depending on
+    /// external rebuild in LineIndex (which would need Piece/Source types).
+    fn build_index(original: &str, add: &str, pieces: &[Piece]) -> LineIndex {
+        let mut line_starts = vec![0usize];
+        let mut acc: usize = 0;
+        for p in pieces {
+            let src = match p.source {
+                Source::Original => original,
+                Source::Add => add,
+            };
+            let pbytes = &src.as_bytes()[p.start..p.start + p.len];
+            for (i, &b) in pbytes.iter().enumerate() {
+                if b == b'\n' {
+                    line_starts.push(acc + i + 1);
+                }
+            }
+            acc += p.len;
+        }
+        if line_starts.is_empty() {
+            line_starts.push(0);
+        }
+        LineIndex {
+            line_starts,
+            total_bytes: acc,
+        }
+    }
+
     pub(crate) fn rebuild_index(&mut self) {
-        self.index = LineIndex::rebuild_from_pieces(&self.original, &self.add, &self.pieces);
+        self.index = Self::build_index(&self.original, &self.add, &self.pieces);
         // Re-sync byte offset from current (row,col) using the fresh index
         self.cursor_byte_offset = self.byte_offset_at(self.cursor.row, self.cursor.col);
     }

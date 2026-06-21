@@ -12,6 +12,7 @@
 //! Phase: 1B
 
 use crate::buffer::Cursor;
+use crate::buffer::line_index::LineIndex;
 
 /// Source buffer for a piece.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,22 +31,8 @@ pub(crate) struct Piece {
     pub(crate) len: usize,
 }
 
-/// Line index over logical byte offsets (rebuild-first in 1B).
-#[derive(Clone, Debug, Default)]
-pub(crate) struct LineIndex {
-    /// Byte offsets of the start of each logical line.
-    pub(crate) line_starts: Vec<usize>,
-    pub(crate) total_bytes: usize,
-}
-
-impl LineIndex {
-    pub(crate) fn new() -> Self {
-        Self {
-            line_starts: vec![0],
-            total_bytes: 0,
-        }
-    }
-}
+// LineIndex lives in crate::buffer::line_index (single definition, no duplicate).
+// PT stores and uses it.
 
 /// PieceTable with original + add + pieces + index + cached cursor offset.
 #[derive(Clone, Debug)]

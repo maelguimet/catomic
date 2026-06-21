@@ -1,0 +1,23 @@
+[package]
+name = "catomic"
+version = "0.1.0"
+edition = "2021"
+authors = ["maelguimet"]
+description = "Nano that isn't afraid of useful shortcuts. Fast, obvious terminal editor."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/maelguimet/catomic"
+
+[dependencies]
+crossterm = "0.28"
+
+[dev-dependencies]
+# PTY / golden / perf test helpers will land here (e.g. portable-pty, tempfile, etc.)
+
+[[bin]]
+name = "catomic"
+path = "src/main.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

@@ -1,0 +1,31 @@
+# Rust / Cargo
+/target
+**/*.rs.bk
+
+# Build artifacts
+debug/
+*.o
+*.so
+*.rlib
+*.dll
+*.dylib
+
+# Generated docs
+/doc
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*~
+*.swo
+.DS_Store
+
+# OS
+Thumbs.db
+ehthumbs.db
+
+# Misc
+.env
+.env.*
+*.log

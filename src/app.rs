@@ -1,0 +1,211 @@
+//! App state + the one blessed goblin loop.
+//!
+//! Per TODO.md:
+//! - "Keep the main (goblin) loop extremely boring and in one obvious place."
+//! - Phase 0: ultra-minimal MVP. Cursor, insert, delete, open, save, quit.
+//! - Buffer trait lives in `buffer`.
+//!
+//! This module owns high-level state (current buffer, mode, capabilities,
+//! terminal handle, etc.) and the event loop.
+
+use std::io::{self, Write};
+
+use crossterm::{
+    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
+};
+
+use crate::buffer::{self, Buffer};
+use crate::mode::{Capabilities, Mode};
+use crate::terminal as term;
+
+/// High-level application state for the editor.
+pub struct App {
+    pub mode: Mode,
+    pub caps: Capabilities,
+    /// The active buffer (trait object for now; concrete type behind it).
+    pub buffer: Box<dyn Buffer>,
+    /// Path of the file being edited, if any.
+    pub file_path: Option<String>,
+    /// Whether we should exit the loop.
+    pub should_quit: bool,
+}
+
+impl App {
+    pub fn new(initial_path: Option<&str>) -> io::Result<Self> {
+        let mode = Mode::Plain; // Start in Plain by default. User can switch later.
+        let caps = Capabilities::from_mode(mode);
+
+        let buffer: Box<dyn Buffer> = if let Some(path) = initial_path {
+            // Phase 0: dead-simple load into SimpleBuffer
+            let content = std::fs::read_to_string(path).unwrap_or_default();
+            Box::new(buffer::SimpleBuffer::from_text(&content))
+        } else {
+            Box::new(buffer::SimpleBuffer::new())
+        };
+
+        Ok(App {
+            mode,
+            caps,
+            buffer,
+            file_path: initial_path.map(|s| s.to_string()),
+            should_quit: false,
+        })
+    }
+
+    /// The main goblin loop. Keep it obvious.
+    pub fn run(&mut self) -> io::Result<()> {
+        // Terminal setup is in the terminal module.
+        let mut stdout = io::stdout();
+        term::setup(&mut stdout)?;
+
+        // Phase 0 render is extremely dumb.
+        self.render(&mut stdout)?;
+
+        while !self.should_quit {
+            // Blocking read for Phase 0. Later we may need non-blocking + resize.
+            if event::poll(std::time::Duration::from_millis(100))? {
+                match event::read()? {
+                    Event::Key(key) => {
+                        self.handle_key(key)?;
+                    }
+                    Event::Resize(_w, _h) => {
+                        // Phase 0 ignores resize for simplicity (see TODO).
+                        // Later: re-render with new dimensions.
+                    }
+                    _ => {}
+                }
+            }
+
+            // In a real tight loop we would only render on dirty.
+            // For Phase 0 we re-render after every interesting key.
+            // (We do the render inside handle_key for now.)
+        }
+
+        term::teardown(&mut stdout)?;
+        Ok(())
+    }
+
+    fn handle_key(&mut self, key: KeyEvent) -> io::Result<()> {
+        match key {
+            // Quit
+            KeyEvent {
+                code: KeyCode::Char('q'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.should_quit = true;
+            }
+
+            // Save (Ctrl+S)
+            KeyEvent {
+                code: KeyCode::Char('s'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                if let Some(ref path) = self.file_path {
+                    let text = self.buffer.to_string();
+                    // TODO: proper error handling + atomic write (file::io)
+                    std::fs::write(path, text)?;
+                } else {
+                    // Phase 0: no name, no save. Later: prompt.
+                }
+                self.render(&mut io::stdout())?;
+            }
+
+            // Basic movement + editing (Phase 0)
+            KeyEvent {
+                code: KeyCode::Char(c),
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => {
+                if c == '\n' || c == '\r' {
+                    self.buffer.insert_newline();
+                } else {
+                    self.buffer.insert_char(c);
+                }
+                self.render(&mut io::stdout())?;
+            }
+
+            KeyEvent {
+                code: KeyCode::Backspace,
+                ..
+            } => {
+                self.buffer.delete_back();
+                self.render(&mut io::stdout())?;
+            }
+
+            KeyEvent {
+                code: KeyCode::Delete,
+                ..
+            } => {
+                self.buffer.delete_forward();
+                self.render(&mut io::stdout())?;
+            }
+
+            KeyEvent {
+                code: KeyCode::Left,
+                ..
+            } => {
+                self.buffer.move_left();
+                self.render(&mut io::stdout())?;
+            }
+
+            KeyEvent {
+                code: KeyCode::Right,
+                ..
+            } => {
+                self.buffer.move_right();
+                self.render(&mut io::stdout())?;
+            }
+
+            KeyEvent {
+                code: KeyCode::Up,
+                ..
+            } => {
+                self.buffer.move_up();
+                self.render(&mut io::stdout())?;
+            }
+
+            KeyEvent {
+                code: KeyCode::Down,
+                ..
+            } => {
+                self.buffer.move_down();
+                self.render(&mut io::stdout())?;
+            }
+
+            // TODO: Enter, arrows, page up/down, etc.
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    fn render(&self, stdout: &mut dyn Write) -> io::Result<()> {
+        // Very minimal render for Phase 0.
+        // Use raw ANSI here because `execute!` doesn't love `dyn Write`.
+        // Real rendering moves to terminal::render with concrete writers.
+        write!(stdout, "\x1b[2J\x1b[1;1H")?; // clear + home
+
+        let lines = self.buffer.lines();
+        for (i, line) in lines.iter().enumerate() {
+            // Simple: write the line + newline.
+            write!(stdout, "{}\r\n", line)?;
+            // Phase 0 doesn't track cursor position yet in a real way.
+            let _ = i;
+        }
+
+        // Naive cursor: put it at end for Phase 0.
+        // Real cursor math lives in editor::cursor + buffer.
+        write!(stdout, "\r\n")?;
+
+        stdout.flush()?;
+        Ok(())
+    }
+}
+
+/// Public entry called from main.rs.
+pub fn run(initial_file: Option<&str>) -> io::Result<()> {
+    let mut app = App::new(initial_file)?;
+    app.run()
+}

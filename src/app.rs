@@ -128,6 +128,17 @@ impl App {
                 self.render(&mut io::stdout())?;
             }
 
+            // Enter produces KeyCode::Enter (not Char('\n')). Handle explicitly.
+            // The Char \n/\r check below catches any that might arrive via paste
+            // or other terminal paths.
+            KeyEvent {
+                code: KeyCode::Enter,
+                ..
+            } => {
+                self.buffer.insert_newline();
+                self.render(&mut io::stdout())?;
+            }
+
             // Basic movement + editing (Phase 0)
             KeyEvent {
                 code: KeyCode::Char(c),
@@ -189,7 +200,6 @@ impl App {
                 self.render(&mut io::stdout())?;
             }
 
-            // TODO: Enter, arrows, page up/down, etc.
             _ => {}
         }
 

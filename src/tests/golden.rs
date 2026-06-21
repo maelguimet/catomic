@@ -103,7 +103,10 @@ mod tests {
         fs::write(&out_path, &content).unwrap();
 
         let on_disk = fs::read_to_string(&out_path).unwrap();
-        assert_eq!(on_disk, input_with_nl, "trailing newline must be preserved exactly");
+        assert_eq!(
+            on_disk, input_with_nl,
+            "trailing newline must be preserved exactly"
+        );
 
         // from_text now starts at (0, 0) per editor convention (fixed pre-1A oracle use).
         // Trailing-nl shape is still preserved in to_string().

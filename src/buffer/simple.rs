@@ -34,7 +34,11 @@ impl SimpleBuffer {
             normalized.split('\n').map(|l| l.to_string()).collect()
         };
 
-        let lines = if lines.is_empty() { vec![String::new()] } else { lines };
+        let lines = if lines.is_empty() {
+            vec![String::new()]
+        } else {
+            lines
+        };
 
         // Editor convention: from_text (open file) starts cursor at top-left,
         // same as new(). Previously placed at EOF; fixed before using

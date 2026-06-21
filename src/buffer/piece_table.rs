@@ -302,14 +302,15 @@ impl Buffer for PieceTable {
     fn line_count(&self) -> usize {
         // "".split('\n').count() == 1, "a\nb\n".split => 3  (matches SimpleBuffer)
         let s = self.logical_text();
-        if s.is_empty() { 1 } else { s.split('\n').count() }
+        if s.is_empty() {
+            1
+        } else {
+            s.split('\n').count()
+        }
     }
 
     fn line(&self, row: usize) -> Option<Cow<'_, str>> {
-        self.logical_lines()
-            .into_iter()
-            .nth(row)
-            .map(Cow::Owned)
+        self.logical_lines().into_iter().nth(row).map(Cow::Owned)
     }
 
     fn visible_lines(&self, start: usize, height: usize) -> Vec<LineView> {

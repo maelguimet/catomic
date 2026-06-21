@@ -21,9 +21,9 @@ pub mod undo;
 #[cfg(test)]
 mod tests;
 
+pub use piece_table::PieceTable;
 /// Public re-exports for the rest of the crate.
 pub use simple::SimpleBuffer;
-pub use piece_table::PieceTable;
 
 /// Core cursor position.
 /// For Phase 0: row = line index, col = char index within the line.

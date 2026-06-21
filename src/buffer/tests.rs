@@ -161,7 +161,11 @@ mod phase1a_storage_parity {
                 sb.insert_char(ch);
                 pt.insert_char(ch);
             }
-            assert_eq!(pt.to_string(), sb.to_string(), "to_string drifted mid-script");
+            assert_eq!(
+                pt.to_string(),
+                sb.to_string(),
+                "to_string drifted mid-script"
+            );
             assert_eq!(pt.cursor(), sb.cursor(), "cursor drifted mid-script");
         }
         assert_eq!(pt.to_string(), sb.to_string());
@@ -179,11 +183,17 @@ mod phase1a_storage_parity {
     #[test]
     fn insert_parity_with_newlines() {
         let mut script = vec![];
-        for c in "ab".chars() { script.push((false, c)); }
+        for c in "ab".chars() {
+            script.push((false, c));
+        }
         script.push((true, '\n'));
-        for c in "cd".chars() { script.push((false, c)); }
+        for c in "cd".chars() {
+            script.push((false, c));
+        }
         script.push((true, '\n'));
-        for c in "e".chars() { script.push((false, c)); }
+        for c in "e".chars() {
+            script.push((false, c));
+        }
         assert_insert_parity(&script);
         // final: "ab\ncd\ne"
     }
@@ -191,9 +201,13 @@ mod phase1a_storage_parity {
     #[test]
     fn insert_parity_mixed_case_and_trailing_nl() {
         let mut script = vec![];
-        for c in "HeLLo".chars() { script.push((false, c)); }
+        for c in "HeLLo".chars() {
+            script.push((false, c));
+        }
         script.push((true, '\n'));
-        for c in "world".chars() { script.push((false, c)); }
+        for c in "world".chars() {
+            script.push((false, c));
+        }
         script.push((true, '\n')); // trailing nl
         assert_insert_parity(&script);
     }
@@ -212,10 +226,16 @@ mod phase1a_storage_parity {
     fn delete_parity_backspace_mid_and_join() {
         assert_edit_parity(|b| {
             for c in "abc\ndef".chars() {
-                if c == '\n' { b.insert_newline(); } else { b.insert_char(c); }
+                if c == '\n' {
+                    b.insert_newline();
+                } else {
+                    b.insert_char(c);
+                }
             }
             // cursor at end "def".len=3 row1
-            b.move_left(); b.move_left(); b.move_left(); // to col0 row1
+            b.move_left();
+            b.move_left();
+            b.move_left(); // to col0 row1
             b.delete_back(); // join -> "abcdef" , cursor to row0 col=3
         });
     }
@@ -223,12 +243,14 @@ mod phase1a_storage_parity {
     #[test]
     fn delete_parity_forward_and_back() {
         assert_edit_parity(|b| {
-            for c in "hello".chars() { b.insert_char(c); }
+            for c in "hello".chars() {
+                b.insert_char(c);
+            }
             // at col5
             b.move_left(); // before o
             b.move_left(); // before l
             b.delete_forward(); // remove 'l' -> "helo" , cursor before 'o' still col=3? wait col was 3 before l? simulate carefully
-            // simpler: backspace a few
+                                // simpler: backspace a few
             b.delete_back();
             b.delete_back();
         });
@@ -238,7 +260,11 @@ mod phase1a_storage_parity {
     fn move_and_delete_parity_sequences() {
         assert_edit_parity(|b| {
             for c in "one\ntwo\nthree".chars() {
-                if c=='\n' { b.insert_newline(); } else { b.insert_char(c); }
+                if c == '\n' {
+                    b.insert_newline();
+                } else {
+                    b.insert_char(c);
+                }
             }
             // cursor after "three" row2 col5
             b.move_up();

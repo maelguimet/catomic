@@ -160,9 +160,7 @@ impl App {
                 } else if c == '\n' || c == '\r' {
                     self.buffer.insert_newline();
                 } else if !c.is_control() {
-                    let ch = if modifiers.contains(KeyModifiers::SHIFT)
-                        && c.is_ascii_lowercase()
-                    {
+                    let ch = if modifiers.contains(KeyModifiers::SHIFT) && c.is_ascii_lowercase() {
                         c.to_ascii_uppercase()
                     } else {
                         c

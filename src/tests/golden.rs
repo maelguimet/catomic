@@ -11,7 +11,7 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
 
-    use crate::buffer::{Buffer, SimpleBuffer};
+    use crate::buffer::{Buffer, PieceTable, SimpleBuffer};
 
     fn temp_path(name: &str) -> PathBuf {
         let mut p = std::env::temp_dir();
@@ -113,6 +113,58 @@ mod tests {
         assert_eq!(b.cursor().row, 0);
         assert_eq!(b.cursor().col, 0);
 
+        cleanup(&out_path);
+    }
+
+    // PieceTable golden smoke (Phase 1B): same scenarios must produce identical
+    // on-disk bytes. SimpleBuffer versions remain as historical/oracle reference.
+    #[test]
+    fn pt_golden_basic_edit_save_roundtrip() {
+        let out_path = temp_path("pt_basic.txt");
+        cleanup(&out_path);
+
+        let mut b: Box<dyn Buffer> = Box::new(PieceTable::new());
+        for c in "HeLLo".chars() { b.insert_char(c); }
+        b.insert_newline();
+        for c in "world".chars() { b.insert_char(c); }
+        b.move_left();
+        b.move_left();
+        b.insert_char('X');
+
+        let expected = "HeLLo\nworXld";
+        let content = b.to_string();
+        fs::write(&out_path, &content).expect("write pt golden");
+        let on_disk = fs::read_to_string(&out_path).expect("read pt golden");
+        assert_eq!(on_disk, expected);
+        cleanup(&out_path);
+    }
+
+    #[test]
+    fn pt_golden_delete_and_join() {
+        let out_path = temp_path("pt_delete.txt");
+        cleanup(&out_path);
+
+        let mut b: Box<dyn Buffer> = Box::new(PieceTable::from_text("abc\ndef"));
+        b.move_down();
+        b.delete_back();
+
+        let expected = "abcdef";
+        let content = b.to_string();
+        fs::write(&out_path, &content).unwrap();
+        assert_eq!(fs::read_to_string(&out_path).unwrap(), expected);
+        cleanup(&out_path);
+    }
+
+    #[test]
+    fn pt_golden_trailing_newline_preserved() {
+        let out_path = temp_path("pt_trailing.txt");
+        cleanup(&out_path);
+
+        let input_with_nl = "line1\nline2\n";
+        let b: Box<dyn Buffer> = Box::new(PieceTable::from_text(input_with_nl));
+        let content = b.to_string();
+        fs::write(&out_path, &content).unwrap();
+        assert_eq!(fs::read_to_string(&out_path).unwrap(), input_with_nl);
         cleanup(&out_path);
     }
 }

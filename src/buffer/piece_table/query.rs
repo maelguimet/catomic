@@ -35,29 +35,6 @@ impl PieceTable {
         out
     }
 
-    /// Full logical text. Retained for to_string and as fallback during 1B transition.
-    /// Hot query paths (line/visible) should use slice + index instead.
-    pub(crate) fn logical_text(&self) -> String {
-        let cap: usize = self.pieces.iter().map(|p| p.len).sum();
-        let mut out = String::with_capacity(cap);
-        for p in &self.pieces {
-            let src = match p.source {
-                Source::Original => &self.original,
-                Source::Add => &self.add,
-            };
-            out.push_str(&src[p.start..p.start + p.len]);
-        }
-        out
-    }
-
-    pub(crate) fn logical_lines(&self) -> Vec<String> {
-        // During transition may still be used by some paths.
-        self.logical_text()
-            .split('\n')
-            .map(|s| s.to_string())
-            .collect()
-    }
-
     /// Find (piece_index, local_byte_offset) for a global logical byte offset.
     pub(crate) fn split_point(&self, off: usize) -> (usize, usize) {
         let mut acc = 0usize;

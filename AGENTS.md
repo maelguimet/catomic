@@ -10,26 +10,24 @@ See also: [TODO.md](./TODO.md), [README.md](./README.md), and `docs/` (architect
 
 Build the cursor before the cathedral.
 
-Current phase: **Phase 0 only**.
+Current phase: **Phase 1B only**.
+
+Phase 1A is complete:
+- PieceTable exists behind Buffer
+- correctness-first scans allowed
+- no undo
+- no line index
 
 Allowed now:
-
-* raw terminal setup/cleanup
-* goblin loop
-* `Buffer` trait
-* `SimpleBuffer`
-* open/edit/save/quit
-* basic render
+* line index
+* cursor/offset mapping acceleration
+* query optimization
+* tests/benchmarks for PieceTable
 
 Forbidden now:
-
-* plugins
-* LSP
-* markdown polish
-* repo scanning
-* LLM features
-* project tooling
-* clever abstractions not needed for Phase 0
+* undo/redo
+* LLM/project/config work
+* UI feature expansion
 
 ## Workflow
 

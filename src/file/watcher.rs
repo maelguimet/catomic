@@ -7,28 +7,29 @@
 //!   and mpsc receiver for events (notify manages its internal polling thread).
 //! Must not: be constructed unless Capabilities::file_watch; must not imply or
 //!   construct any Project services (linters, lsp, repo_scan, llm, etc.).
-//!   Signals are not consumed by the runtime event loop (no auto reload).
 //! Invariants: if !file_watch -> Ok(None) before any notify/fs; watches only the
 //!   target's parent dir (non-recursive); events filtered to exact target by
 //!   lexical absolute path compare; try_recv drains at most one.
-//! Phase: 2-x foundation (notify impl + pure helpers); 2-z/2-ac: App owns lifecycle
-//! and consumes signals as hints (Unchanged/NoPath from watcher ignored to avoid noise).
-//! Signals remain hints only; no auto-reload.
+//! Phase: 2-ad (stale pending polish + hygiene); prior: 2-x/2-z/2-ac App owns
+//!   best-effort lifecycle and consumes via app/watch helper (hints only).
 //!
 //! Dependency justification (per AGENTS.md):
 //! 1. std has no portable filesystem event notification API.
 //! 2. Used only by `file::watcher`.
 //! 3. Plain-safe only when `Capabilities::file_watch` is true.
-//! 4. FileWatcher is now App-owned best-effort when `Capabilities::file_watch`
-//!    and a file path exist. Signals not yet consumed by runtime event loop.
+//! 4. FileWatcher is App-owned best-effort when `Capabilities::file_watch`
+//!    and a file path exist. App runtime checks once per loop via watch helper
+//!    (try_recv only inside check_file_watcher_once). Signals are hints only.
 //! 5. Removable by deleting the watcher wrapper + the dependency.
 //!
-//! Contract:
-//! - File watching allowed in Plain when `Capabilities::file_watch`.
-//! - Must not imply repo/LSP/network/Project services.
-//! - Construction remains explicitly gated; no background work in hot paths.
-//! - No auto reload; watcher signals are hints only. Metadata observation
-//!   (observe_external_file) remains the source of truth. Watcher signals are runtime hints only.
+//! Current truth:
+//! - App owns FileWatcher (best-effort) when file_watch + path.
+//! - Runtime polls via check_file_watcher_once_and_render (once/iter).
+//! - Signals are hints only; no auto reload; no content read here.
+//! - Unchanged/NoPath from watcher are ignored unless they clear a stale
+//!   pending_reload (see apply_file_watch_signal).
+//! - Metadata observation (observe_external_file) is the source of truth.
+//! - Manual Ctrl+R and save conflict paths are independent.
 
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};

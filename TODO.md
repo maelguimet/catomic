@@ -792,5 +792,10 @@ Update this file as decisions are made or phases complete. Add concrete issues o
   - Clears on content edits/success; movement untouched.
   - If status kind changes between presses: update pending/msg, do not force.
   - Required app::tests::file_state cases added (external mod/delete, force, Absent->Present, change-between, edit-clears, untitled).
-  - Limitations: no watcher/reload UI yet; same-variant external drift (e.g. another mod while Modified pending) treated as same conflict and forces; Unknown primarily at io level (App tests document); still metadata-only (len/mtime), no content check. All Phase 2-l/m tests remain green.
+  - Limitations (addressed in 2-p): no watcher/reload UI yet; (prior) same-variant drift forced; Unknown primarily at io level; metadata-only (len/mtime). All Phase 2-l/m tests remain green.
 - Phase 2-o (narrow cleanup): extracted save logic to src/app/save.rs (mod.rs <500); split file_state tests into dirty/snapshot/save_conflict submodules under tests/file_state/. All original test names preserved. No behavior change. See Phase 2-n for the hardening TODO (store conflict token not just status variant).
+- Phase 2-p (narrow hardening): save-conflict now binds pending to observed (path + status + live FileSnapshot) via observe_external_file, not status variant alone.
+  - Modified force only on identical live snapshot; Deleted/Unknown match by kind; drift between first/second S updates token and refuses again.
+  - Added 6 targeted save_conflict tests for drift, Absent-appear, cross-status, and regression same-snapshot force.
+  - Prior 2-n "same-variant drift treated as same" limitation addressed (no watcher/reload still; metadata-only unchanged).
+  - Dead do_atomic_save forwarder removed while touching app/mod.rs. All prior tests green.

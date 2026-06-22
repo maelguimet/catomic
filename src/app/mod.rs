@@ -436,23 +436,53 @@ impl App {
         external_file_status(&self.file)
     }
 
-    /// Manual external-file status check (Phase 2-r narrow pass).
-    /// Sets a user message describing current ExternalFileStatus using existing
-    /// metadata-only snapshot. Detection/report only: MUST NOT mutate buffer,
-    /// dirty, saved_history_position, disk_snapshot, any pending_*, viewport, or quit state.
-    /// May set message. Does not render (caller does).
+    /// Manual external-file status check + reload arm (Phase 2-s).
+    /// Uses existing metadata-only external_file_status + observe.
+    /// For NoPath/Unchanged/Unknown: sets status message, does not arm reload.
+    /// For Modified/Deleted: sets arming message (warns on dirty), arms pending_reload
+    /// bound to current observed (path + status + live snapshot).
+    /// NEVER mutates buffer/dirty/snapshot/history/quit on first press.
+    /// Does not render (caller does).
     fn check_external_file_status(&mut self) {
-        use crate::file::io::ExternalFileStatus;
+        use crate::file::io::{observe_external_file, ExternalFileStatus};
         let status = self.external_file_status();
-        let text = match status {
-            ExternalFileStatus::NoPath => "No file path.".to_string(),
-            ExternalFileStatus::Unchanged => "File unchanged on disk.".to_string(),
-            ExternalFileStatus::Modified => "File changed on disk.".to_string(),
-            ExternalFileStatus::Deleted => "File deleted on disk.".to_string(),
-            ExternalFileStatus::Unknown(kind) => format!("File status check failed: {:?}", kind),
-        };
-        self.message = Some(text);
-        // Explicit: no clears, no refreshes, no reveals, no side effects on state.
+        let current_path = self.file.path.clone();
+        let baseline = self.file.disk_snapshot.as_ref();
+        let obs = observe_external_file(
+            current_path.as_ref().map(|p| p.as_path()),
+            baseline,
+        );
+
+        match status {
+            ExternalFileStatus::NoPath => {
+                self.message = Some("No file path.".to_string());
+                self.pending_reload = None;
+            }
+            ExternalFileStatus::Unchanged => {
+                self.message = Some("File unchanged on disk.".to_string());
+                self.pending_reload = None;
+            }
+            ExternalFileStatus::Unknown(kind) => {
+                self.message = Some(format!("File status check failed: {:?}", kind));
+                self.pending_reload = None;
+            }
+            ExternalFileStatus::Modified | ExternalFileStatus::Deleted => {
+                // Arm reload confirmation. Bind to live obs snapshot for drift detection.
+                if let Some(ref p) = current_path {
+                    self.pending_reload = Some(reload::PendingReload {
+                        path: p.clone(),
+                        status: status.clone(),
+                        snapshot: obs.live_snapshot,
+                    });
+                } else {
+                    self.pending_reload = None;
+                }
+                let dirty = self.file.dirty;
+                let text = reload::reload_arm_message(&status, dirty);
+                self.message = Some(text);
+                // Do not touch any state besides message + pending_reload.
+            }
+        }
     }
 
     fn render(&self, stdout: &mut dyn Write) -> io::Result<()> {

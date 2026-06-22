@@ -341,7 +341,12 @@ fn app_file_state_manual_check_external_modified_reports_changed_no_mutation() {
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
 
-    assert_eq!(app.message.as_deref(), Some("File changed on disk."));
+    // Phase 2-s: first press on Modified now arms reload confirmation (no mutate)
+    assert_eq!(
+        app.message.as_deref(),
+        Some("File changed on disk. Press Ctrl+R again to reload from disk.")
+    );
+    assert!(app.pending_reload.is_some(), "first Modified should arm reload pending");
     assert_eq!(app.file.dirty, dirty_before);
     assert_eq!(app.file.disk_snapshot, snap_before);
 
@@ -367,7 +372,12 @@ fn app_file_state_manual_check_external_deleted_reports_deleted_no_mutation() {
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
 
-    assert_eq!(app.message.as_deref(), Some("File deleted on disk."));
+    // Phase 2-s: first press on Deleted arms clear confirmation (no mutate)
+    assert_eq!(
+        app.message.as_deref(),
+        Some("File deleted on disk. Press Ctrl+R again to clear buffer.")
+    );
+    assert!(app.pending_reload.is_some(), "first Deleted should arm reload pending");
     assert_eq!(app.file.dirty, dirty_before);
     assert_eq!(app.file.disk_snapshot, snap_before);
 

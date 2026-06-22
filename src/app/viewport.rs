@@ -9,12 +9,17 @@
 
 use std::io::Write;
 
-use crate::app::App;  // to mutate self.screen etc, or take pieces
+use crate::app::App; // to mutate self.screen etc, or take pieces
 use crate::terminal as term;
 
 /// Smallest helper seam for resize (and testability of it) without redesigning event loop.
 /// Updates screen size, clamps for zero-size safety, reveals cursor, then renders.
-pub(crate) fn handle_resize(app: &mut App, w: u16, h: u16, out: &mut dyn Write) -> std::io::Result<()> {
+pub(crate) fn handle_resize(
+    app: &mut App,
+    w: u16,
+    h: u16,
+    out: &mut dyn Write,
+) -> std::io::Result<()> {
     app.screen.update_size(w, h);
     app.screen.clamp_scroll();
     clamp_viewport_to_buffer(app);

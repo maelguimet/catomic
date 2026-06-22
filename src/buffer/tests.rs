@@ -640,20 +640,27 @@ mod phase1a_storage_parity {
         let mut pt = PieceTable::new();
         let mut text = String::new();
         let mut snapshots: Vec<String> = vec![String::new()];
+        let mut redo_snapshots: Vec<String> = vec![];
         let steps = 40;
         for step in 0..steps {
             let r = next_seed(&mut seed) % 100;
             if r < 8 && snapshots.len() > 1 {
+                let cur = text.clone();
                 pt.undo();
-                if let Some(prev) = snapshots.pop() { text = prev; }
-            } else if r < 12 && !snapshots.is_empty() {
-                // simulate redo by re-applying last? but for simplicity, just redo and re-push text if changed
+                if let Some(prev) = snapshots.pop() {
+                    redo_snapshots.push(cur);
+                    text = prev;
+                }
+            } else if r < 12 && !redo_snapshots.is_empty() {
+                let cur = text.clone();
                 pt.redo();
-                // oracle redo would require forward log; just sync from pt for this check
-                text = pt.to_string();
-                // keep snapshot list simple
+                if let Some(next) = redo_snapshots.pop() {
+                    snapshots.push(cur);
+                    text = next;
+                }
             } else {
                 // edit
+                redo_snapshots.clear();
                 snapshots.push(text.clone());
                 let ch = if (next_seed(&mut seed) % 5) == 0 { '\n' } else { 'a' };
                 if ch == '\n' {

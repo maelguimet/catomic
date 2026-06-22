@@ -12,6 +12,7 @@ use super::make_key;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 mod dirty;
+mod file_size;
 mod save_conflict;
 mod snapshot;
 mod watcher_acceptance;

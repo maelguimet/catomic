@@ -142,6 +142,14 @@ pub(crate) fn handle_reload_key(app: &mut super::App, out: &mut dyn Write) -> io
                                     app.file.disk_snapshot = Some(s);
                                 }
                             }
+                            // Update size metadata to reloaded on-disk file (metadata only).
+                            if let Ok(sz) = crate::file::size::file_size_bytes(p) {
+                                app.file.size_bytes = Some(sz);
+                                app.file.size_tier =
+                                    Some(crate::file::size::classify_file_size(sz));
+                            } else {
+                                // Should not happen for successful read of Present; keep prior.
+                            }
                             app.message = Some(reload_success_message());
                             app.pending_reload = None;
                             app.pending_save_conflict = None;
@@ -160,6 +168,9 @@ pub(crate) fn handle_reload_key(app: &mut super::App, out: &mut dyn Write) -> io
                     app.file.saved_history_position = new_pos;
                     app.file.dirty = false;
                     app.file.disk_snapshot = Some(FileSnapshot::Absent);
+                    // Deleted on disk: no present file size known.
+                    app.file.size_bytes = None;
+                    app.file.size_tier = None;
                     app.message = Some(reload_cleared_message());
                     app.pending_reload = None;
                     app.pending_save_conflict = None;

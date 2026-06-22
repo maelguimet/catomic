@@ -12,12 +12,17 @@ use std::path::PathBuf;
 
 use crate::buffer::Buffer;
 use crate::file::io::{ExternalFileStatus, FileSnapshot};
+use crate::file::size::{self as file_size, FileSizeTier};
 
-/// Minimal explicit file state (Phase 2-a / 2-j).
+/// Minimal explicit file state (Phase 2-a / 2-j / 2B size metadata).
 /// path: target for save (None until first save picks "untitled.txt").
 /// dirty: true if current edit_history_position() != saved_history_position.
 /// saved_history_position: token from buffer at last successful open/save.
 /// disk_snapshot: captured on-disk (len+mtime or Absent) at last open or successful save.
+/// size_bytes / size_tier: metadata-only (fs::metadata len) captured on open for
+///   existing path, after successful save, and on confirmed reload of Modified content.
+/// None when no on-disk file is present/known (App::new(None), open missing, or
+///   after confirmed reload of Deleted). Never synthesized from buffer content len.
 /// Starts clean (saved token captured) for open-existing and open-missing-file.
 /// disk_snapshot is None only for no-path (untitled) buffers.
 #[derive(Clone, Debug, Default)]
@@ -29,6 +34,11 @@ pub struct FileState {
     /// On-disk snapshot captured at open or after successful save.
     /// None only when no path remembered. Absent explicitly represents missing-at-capture.
     pub disk_snapshot: Option<FileSnapshot>,
+    /// Size metadata from fs::metadata (never from full read or buffer).
+    /// None means no present on-disk file size is known (no path, missing at open,
+    /// or post-Deleted reload). Small files report Some(0) or small positive len + Small tier.
+    pub size_bytes: Option<u64>,
+    pub size_tier: Option<FileSizeTier>,
 }
 
 /// Refresh dirty from exact buffer history position vs last saved token.

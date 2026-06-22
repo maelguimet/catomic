@@ -138,6 +138,17 @@ pub(crate) fn do_atomic_save(app: &mut super::App, out: &mut dyn Write) -> io::R
                 }
                 // else: leave old snapshot (Absent or prior Present); token already clean.
             }
+            // Update size metadata from post-save metadata (preferred) or written len fallback.
+            // Size must not affect behavior in this pass.
+            if let Ok(sz) = crate::file::size::file_size_bytes(&target) {
+                app.file.size_bytes = Some(sz);
+                app.file.size_tier = Some(crate::file::size::classify_file_size(sz));
+            } else {
+                // Fallback to bytes we just wrote when post-write stat failed (rare).
+                let len = text.len() as u64;
+                app.file.size_bytes = Some(len);
+                app.file.size_tier = Some(crate::file::size::classify_file_size(len));
+            }
             app.pending_quit_confirm = false;
             app.pending_save_conflict = None;
             app.pending_reload = None;

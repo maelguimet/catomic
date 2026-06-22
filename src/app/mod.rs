@@ -96,6 +96,19 @@ impl App {
         } else {
             None
         };
+        // Capture size metadata (metadata only, alongside snapshot for existing path).
+        // - existing file: Some(len) + tier from classify
+        // - missing path (new file remembered): None (per 2B policy)
+        // - no path: None
+        // Never falls back to buffer.to_string().len().
+        let (size_bytes, size_tier) = if let Some(p) = initial_path {
+            match crate::file::size::file_size_bytes(p) {
+                Ok(sz) => (Some(sz), Some(crate::file::size::classify_file_size(sz))),
+                Err(_) => (None, None),
+            }
+        } else {
+            (None, None)
+        };
         // Build base App first, then attach watcher via best-effort helper.
         // This keeps watcher construction failure non-fatal and avoids
         // partial-construction gymnastics in the Result path.
@@ -108,6 +121,8 @@ impl App {
                 dirty: false,
                 saved_history_position: initial_pos,
                 disk_snapshot,
+                size_bytes,
+                size_tier,
             },
             file_watcher: None,
             should_quit: false,

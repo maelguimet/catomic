@@ -483,6 +483,36 @@ mod tests {
     }
 
     #[test]
+    fn app_dirty_ctrl_q_first_renders_warning_immediately() {
+        // Regression for invisible warning: first dirty Ctrl+Q must emit render
+        // containing the message on bottom row (via the writer seam).
+        let mut app = App::new(None).unwrap();
+        app.handle_key(make_key(KeyCode::Char('x'), KeyModifiers::NONE))
+            .unwrap();
+        assert!(app.file.dirty);
+        assert!(app.message.is_none());
+
+        let mut out: Vec<u8> = Vec::new();
+        app.handle_key_with(
+            &mut out,
+            make_key(KeyCode::Char('q'), KeyModifiers::CONTROL),
+        )
+        .unwrap();
+
+        assert!(!app.should_quit, "first dirty Q does not quit");
+        assert!(app.pending_quit_confirm);
+        let rendered = String::from_utf8_lossy(&out);
+        assert!(
+            rendered.contains("Unsaved changes") && rendered.contains("Ctrl+Q again"),
+            "warning message text must appear in render output"
+        );
+        assert!(
+            rendered.contains("\x1b[K"),
+            "render must clear bottom row with \\x1b[K even for message"
+        );
+    }
+
+    #[test]
     fn app_ctrl_s_after_dirty_clears_dirty_and_pending() {
         let mut tmp = std::env::temp_dir();
         tmp.push(format!(

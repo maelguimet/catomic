@@ -23,6 +23,8 @@ pub use file_state::FileState;
 
 use file_state::{mark_saved, refresh_dirty};
 
+mod viewport;
+
 /// High-level application state for the editor.
 pub struct App {
     pub mode: Mode,
@@ -379,25 +381,14 @@ impl App {
     /// Smallest helper seam for resize (and testability of it) without redesigning event loop.
     /// Updates screen size, clamps for zero-size safety, reveals cursor, then renders.
     fn handle_resize(&mut self, w: u16, h: u16, out: &mut dyn Write) -> io::Result<()> {
-        self.screen.update_size(w, h);
-        self.screen.clamp_scroll();
-        self.clamp_viewport_to_buffer();
-        self.reveal_cursor();
-        self.render(out)
+        viewport::handle_resize(self, w, h, out)
     }
 
     /// Reveal the current cursor row/col so they are visible in the content area.
     /// Called after cursor movement and content mutations (insert, delete, undo/redo).
     /// Clamps first for zero-size terminals so reveal_* see a sane starting point.
     fn reveal_cursor(&mut self) {
-        self.screen.clamp_scroll();
-        self.clamp_viewport_to_buffer();
-        let c = self.buffer.cursor();
-        self.screen.reveal_row(c.row);
-        self.screen.reveal_col(c.col);
-        // Re-clamp after reveal: reveal_col may target a col on a now-shorter line,
-        // leaving scroll_left > (line_len - vw). Clamp pulls it back.
-        self.clamp_viewport_to_buffer();
+        viewport::reveal_cursor(self)
     }
 
     /// Buffer-aware clamp so scroll offsets cannot exceed useful buffer content.
@@ -408,42 +399,7 @@ impl App {
     /// Private App helper keeps Screen buffer-agnostic.
     /// Called from resize and reveal paths.
     fn clamp_viewport_to_buffer(&mut self) {
-        // Vertical
-        let lc = self.buffer.line_count();
-        let vh = self.screen.visible_height();
-        if vh == 0 {
-            self.screen.scroll_top = 0;
-        } else if lc <= vh {
-            self.screen.scroll_top = 0;
-        } else {
-            let max_top = lc - vh;
-            if self.screen.scroll_top > max_top {
-                self.screen.scroll_top = max_top;
-            }
-        }
-
-        // Horizontal: scalar char count on the *current cursor line* only.
-        // Matches Phase 2 scalar limitation; movement/delete/undo to shorter line
-        // must not leave scroll_left stranded.
-        // Max uses line_len + 1 - vw (saturating) to be consistent with reveal_col's
-        // "col + 1 - vw" for end-of-line cursor (col can == line_len). This preserves
-        // reveal behavior and keeps cursor visible while still clamping high scrolls
-        // on shorter lines to avoid empty space.
-        let c = self.buffer.cursor();
-        let line_len = self
-            .buffer
-            .line(c.row)
-            .map(|s| s.chars().count())
-            .unwrap_or(0);
-        let vw = self.screen.visible_width();
-        if vw == 0 {
-            self.screen.scroll_left = 0;
-        } else {
-            let max_left = line_len.saturating_add(1).saturating_sub(vw);
-            if self.screen.scroll_left > max_left {
-                self.screen.scroll_left = max_left;
-            }
-        }
+        viewport::clamp_viewport_to_buffer(self)
     }
 
     fn render(&self, stdout: &mut dyn Write) -> io::Result<()> {

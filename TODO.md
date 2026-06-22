@@ -784,8 +784,10 @@ Key unresolved limitations that still matter:
 
 - Phase 2-ac (broader pass): polished runtime watcher signal behavior (apply_file_watch_signal now returns bool for visible outcome; watcher Changed/Deleted + Unchanged/NoPath observations are ignored to avoid self-save noise — no message overwrite, no arm, no render; Error/Modified/Deleted/Unknown remain visible). Added cfg(test)-only queued-signal seam (tiny InnerWatcher TestStub + inject_signal/new_for_test in FileWatcher; replace helper in watch; no public API, real new unchanged, no live OS). Added deterministic queued-signal + render tests (watcher_runtime.rs split for size hygiene). Manual Ctrl+R and save-conflict semantics untouched. Stale comments cleaned. Key unresolved limitations noted (see below). All mandated tests + full suite green; rustfmt --check on touched; git diff --check clean.
 
-Key unresolved limitations (still current after 2-ac):
-- watcher signals are runtime hints only; unchanged/no-path watcher observations are ignored (to suppress self-save noise);
+- Phase 2-ad (broader pass): watcher Unchanged/NoPath now clear a stale pending_reload (if present) and surface the corresponding status message, returning visible so the loop renders once; when no pending they continue to be fully ignored (no overwrite). Added required deterministic stale-pending cleanup tests (watcher runtime + direct apply seams). Tightened one-call-one-signal test to prove two visible queued signals are each consumed by separate calls with observable true + render. Split watcher.rs tests to watcher_tests.rs (main file <300). Fixed stale "not consumed / not yet consumed" wording in watcher.rs with truthful description of current App-owned + once-per-loop helper model. Added optional ignored live smoke. All mandated tests + full suite green; rustfmt --check; git diff --check clean. (See final response for hashes and explicit behavior note.)
+
+Key unresolved limitations (still current after 2-ad):
+- watcher signals are runtime hints only; Unchanged/NoPath watcher observations clear stale pending_reload when armed, otherwise ignored (to suppress self-save noise);
 - no auto-reload; Modified/Deleted from watcher (or Ctrl+R) only arm confirmation;
 - no default live OS notify tests (deterministic seams only; ignored smoke optional);
 - metadata-only external detection (len+mtime) and same-size/same-mtime overwrite limitation remain.

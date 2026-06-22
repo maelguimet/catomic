@@ -96,3 +96,24 @@ pub(crate) fn apply_file_watch_signal(
         }
     }
 }
+
+/// Non-runtime single drain of the file watcher (at most one try_recv).
+///
+/// If no watcher or no signal ready: returns false, no mutation.
+/// If a signal is received: calls apply_file_watch_signal and returns true.
+/// Does not loop, drain, or coalesce. Does not render.
+///
+/// try_recv is called ONLY from this helper (never from run/handle_key/etc.).
+/// This is an explicit seam; not wired into the goblin loop in 2-aa.
+pub(crate) fn check_file_watcher_once(app: &mut super::App) -> bool {
+    let signal = match &app.file_watcher {
+        Some(w) => w.try_recv(),
+        None => None,
+    };
+    if let Some(s) = signal {
+        apply_file_watch_signal(app, s);
+        true
+    } else {
+        false
+    }
+}

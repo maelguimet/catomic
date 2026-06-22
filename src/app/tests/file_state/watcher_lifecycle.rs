@@ -295,3 +295,47 @@ fn apply_file_watch_signal_error_sets_message_only() {
 
     let _ = std::fs::remove_file(&p);
 }
+
+// Phase 2-aa: check_file_watcher_once (non-runtime seam) tests.
+// Only tests no-watcher and "watcher present but no queued signal" (stable, no live wait).
+// Real event delivery would require OS notify which is out of scope for deterministic tests.
+
+#[test]
+fn check_file_watcher_once_no_watcher_returns_false_no_mutation() {
+    let mut app = App::new(None).unwrap();
+    assert!(app.file_watcher.is_none());
+
+    let before_msg = app.message.clone();
+    let before_pend = app.pending_reload.clone();
+    let before_dirty = app.file.dirty;
+
+    let had = crate::app::watch::check_file_watcher_once(&mut app);
+    assert!(!had);
+    assert_eq!(app.message, before_msg);
+    assert_eq!(app.pending_reload, before_pend);
+    assert_eq!(app.file.dirty, before_dirty);
+}
+
+#[test]
+fn check_file_watcher_once_with_watcher_no_signal_returns_false_no_mutation() {
+    // Construct App with a real temp file -> watcher Some (parent exists).
+    // Immediately after new there should be no pending notify event in the mpsc.
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!("catomic_2aa_check_nosig_{}.txt", std::process::id()));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "DATA").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    assert!(app.file_watcher.is_some(), "expect watcher for existing parent");
+
+    let before_msg = app.message.clone();
+    let before_pend = app.pending_reload.clone();
+
+    let had = crate::app::watch::check_file_watcher_once(&mut app);
+    assert!(!had, "no queued signal expected immediately after construct");
+    assert_eq!(app.message, before_msg);
+    assert_eq!(app.pending_reload, before_pend);
+
+    let _ = std::fs::remove_file(&p);
+}

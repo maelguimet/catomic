@@ -21,7 +21,7 @@ use crate::terminal as term;
 mod file_state;
 pub use file_state::FileState;
 
-use file_state::{mark_saved, refresh_dirty};
+use file_state::{external_file_status, mark_saved, refresh_dirty};
 
 mod viewport;
 
@@ -416,6 +416,14 @@ impl App {
     /// Called from resize and reveal paths.
     fn clamp_viewport_to_buffer(&mut self) {
         viewport::clamp_viewport_to_buffer(self)
+    }
+
+    /// Returns whether (and how) the on-disk file differs from our last captured snapshot.
+    /// Used by future watch/reload to decide action; for 2-l this is detection only.
+    /// Must not mutate buffer, file state (dirty/snapshot), message, pending, viewport, or history.
+    /// NoPath for untitled; delegates to file_state helper (std metadata compare only).
+    fn external_file_status(&self) -> crate::file::io::ExternalFileStatus {
+        external_file_status(&self.file)
     }
 
     fn render(&self, stdout: &mut dyn Write) -> io::Result<()> {

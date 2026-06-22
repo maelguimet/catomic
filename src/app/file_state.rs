@@ -11,7 +11,7 @@
 use std::path::PathBuf;
 
 use crate::buffer::Buffer;
-use crate::file::io::FileSnapshot;
+use crate::file::io::{ExternalFileStatus, FileSnapshot};
 
 /// Minimal explicit file state (Phase 2-a / 2-j).
 /// path: target for save (None until first save picks "untitled.txt").
@@ -42,4 +42,31 @@ pub(crate) fn refresh_dirty(file: &mut FileState, buffer: &dyn Buffer) {
 pub(crate) fn mark_saved(file: &mut FileState, buffer: &dyn Buffer) {
     file.saved_history_position = buffer.edit_history_position();
     file.dirty = false;
+}
+
+/// Compute ExternalFileStatus by comparing live on-disk metadata to the last captured snapshot.
+/// Pure: does not read buffer content, does not mutate FileState or any App fields.
+/// Path None -> NoPath.
+/// Path present + snapshot None (edge): live probe, treat present as Unchanged (post-our-write), absent Deleted.
+/// Other errors surface as Unknown(kind).
+pub(crate) fn external_file_status(file: &FileState) -> ExternalFileStatus {
+    let Some(ref p) = file.path else {
+        return ExternalFileStatus::NoPath;
+    };
+    let snap = match &file.disk_snapshot {
+        Some(s) => s,
+        None => {
+            // Path known (e.g. after first save where post-write stat was racy) but no snapshot.
+            // Do not mutate. Live capture to decide: if absent now -> Deleted, else Unchanged.
+            return match crate::file::io::capture_file_snapshot(p) {
+                Ok(FileSnapshot::Present { .. }) => ExternalFileStatus::Unchanged,
+                Ok(FileSnapshot::Absent) => ExternalFileStatus::Deleted,
+                Err(e) => ExternalFileStatus::Unknown(e.kind()),
+            };
+        }
+    };
+    match crate::file::io::compare_to_snapshot(p, snap) {
+        Ok(status) => status,
+        Err(e) => ExternalFileStatus::Unknown(e.kind()),
+    }
 }

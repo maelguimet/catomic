@@ -193,7 +193,11 @@ fn apply_file_watch_signal_changed_external_modified_arms_like_first_ctrl_r() {
     crate::app::watch::apply_file_watch_signal(&mut app, sig);
 
     // Same arming as first Ctrl+R on Modified (clean case)
-    assert!(app.message.as_deref().unwrap_or("").contains("changed on disk"));
+    assert!(app
+        .message
+        .as_deref()
+        .unwrap_or("")
+        .contains("changed on disk"));
     assert!(app.pending_reload.is_some());
     assert_eq!(app.buffer.to_string(), "ORIG"); // no reload
     assert!(!app.file.dirty);
@@ -204,7 +208,10 @@ fn apply_file_watch_signal_changed_external_modified_arms_like_first_ctrl_r() {
 #[test]
 fn apply_file_watch_signal_changed_dirty_external_arms_with_discard_warning() {
     let mut tmp = std::env::temp_dir();
-    tmp.push(format!("catomic_2aa_sig_mod_dirty_{}.txt", std::process::id()));
+    tmp.push(format!(
+        "catomic_2aa_sig_mod_dirty_{}.txt",
+        std::process::id()
+    ));
     let p = tmp.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&p);
     std::fs::write(&p, "BASE").unwrap();
@@ -321,19 +328,28 @@ fn check_file_watcher_once_with_watcher_no_signal_returns_false_no_mutation() {
     // Construct App with a real temp file -> watcher Some (parent exists).
     // Immediately after new there should be no pending notify event in the mpsc.
     let mut tmp = std::env::temp_dir();
-    tmp.push(format!("catomic_2aa_check_nosig_{}.txt", std::process::id()));
+    tmp.push(format!(
+        "catomic_2aa_check_nosig_{}.txt",
+        std::process::id()
+    ));
     let p = tmp.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&p);
     std::fs::write(&p, "DATA").unwrap();
 
     let mut app = App::new(Some(&p)).unwrap();
-    assert!(app.file_watcher.is_some(), "expect watcher for existing parent");
+    assert!(
+        app.file_watcher.is_some(),
+        "expect watcher for existing parent"
+    );
 
     let before_msg = app.message.clone();
     let before_pend = app.pending_reload.clone();
 
     let had = crate::app::watch::check_file_watcher_once(&mut app);
-    assert!(!had, "no queued signal expected immediately after construct");
+    assert!(
+        !had,
+        "no queued signal expected immediately after construct"
+    );
     assert_eq!(app.message, before_msg);
     assert_eq!(app.pending_reload, before_pend);
 

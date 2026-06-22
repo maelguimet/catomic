@@ -760,3 +760,4 @@ Update this file as decisions are made or phases complete. Add concrete issues o
   - Tests cover all required cases (clean Q, dirty sequences, save clear, error keep-dirty+msg, edit clears pending+message, explicit temp lifecycle, render msg emission).
   - Limitation: Quit confirmation is key-driven only; full prompt/status UX is still minimal.
   - No file watching, no big-file tiers, no multi-buffer, no selection etc (per scope).
+- Phase 2-c (terminal size / Screen for render height): render now uses App.screen (default 80x24 conservative; post-setup size() + Resize update); hardcoded 24 removed from App::render. Limitation: still full \x1b[2J clear, no real scrolling or viewport yet.

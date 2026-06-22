@@ -140,7 +140,8 @@ impl App {
             // - dirty + !pending: set pending=true + warning message; do NOT quit
             // - dirty + pending: quit (force, without save)
             // Movement keys leave pending/message as-is (simplest behavior; documented).
-            // Actual content edits (insert/delete/undo/redo) clear pending_confirm.
+            // Actual content-mutating edits (insert/delete/undo/redo) clear BOTH pending_confirm and message
+            // (so stale quit warnings disappear after typing). Save success also clears them.
             KeyEvent {
                 code: KeyCode::Char('q'),
                 modifiers: KeyModifiers::CONTROL,
@@ -203,6 +204,7 @@ impl App {
                 self.buffer.insert_newline();
                 self.file.dirty = true;
                 self.pending_quit_confirm = false;
+                self.message = None;
                 self.render(out)?;
             }
 
@@ -223,6 +225,7 @@ impl App {
                 self.buffer.undo();
                 self.file.dirty = true;
                 self.pending_quit_confirm = false;
+                self.message = None;
                 self.render(out)?;
             }
             KeyEvent {
@@ -235,6 +238,7 @@ impl App {
                 self.buffer.redo();
                 self.file.dirty = true;
                 self.pending_quit_confirm = false;
+                self.message = None;
                 self.render(out)?;
             }
             KeyEvent {
@@ -247,6 +251,7 @@ impl App {
                 self.buffer.redo();
                 self.file.dirty = true;
                 self.pending_quit_confirm = false;
+                self.message = None;
                 self.render(out)?;
             }
             KeyEvent {
@@ -257,6 +262,7 @@ impl App {
                 self.buffer.redo();
                 self.file.dirty = true;
                 self.pending_quit_confirm = false;
+                self.message = None;
                 self.render(out)?;
             }
 
@@ -275,6 +281,7 @@ impl App {
                     self.buffer.insert_newline();
                     self.file.dirty = true;
                     self.pending_quit_confirm = false;
+                    self.message = None;
                 } else if !c.is_control() {
                     let ch = if modifiers.contains(KeyModifiers::SHIFT) && c.is_ascii_lowercase() {
                         c.to_ascii_uppercase()
@@ -284,6 +291,7 @@ impl App {
                     self.buffer.insert_char(ch);
                     self.file.dirty = true;
                     self.pending_quit_confirm = false;
+                    self.message = None;
                 }
                 self.render(out)?;
             }
@@ -295,6 +303,7 @@ impl App {
                 self.buffer.delete_back();
                 self.file.dirty = true;
                 self.pending_quit_confirm = false;
+                self.message = None;
                 self.render(out)?;
             }
 
@@ -305,6 +314,7 @@ impl App {
                 self.buffer.delete_forward();
                 self.file.dirty = true;
                 self.pending_quit_confirm = false;
+                self.message = None;
                 self.render(out)?;
             }
 

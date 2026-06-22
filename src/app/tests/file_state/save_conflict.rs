@@ -396,3 +396,300 @@ fn app_file_state_edit_after_pending_clears_confirmation() {
 
     let _ = std::fs::remove_file(&p);
 }
+
+// Phase 2-p same-variant drift hardening tests (status variant stays Modified/Deleted
+// but live snapshot differs; must refuse again and update token, not force).
+
+#[test]
+fn app_file_state_external_change_after_first_modified_refusal_refuses_again() {
+    // After first Modified refusal, another external change produces a different live snapshot.
+    // Second Ctrl+S must refuse again (do not overwrite) and update the pending token.
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!("catomic_2p_mod_drift_{}.txt", std::process::id()));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "ORIG").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    std::fs::write(&p, "EXT1").unwrap(); // first external mod
+
+    app.handle_key(make_key(KeyCode::Char('a'), KeyModifiers::NONE))
+        .unwrap();
+    assert!(app.file.dirty);
+
+    // first S: refuse, record token with snapshot of EXT1
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(app.file.dirty);
+    assert!(app.pending_save_conflict.is_some());
+    assert!(app.message.as_deref().unwrap_or("").contains("changed"));
+    let first_pending_snap = app.pending_save_conflict.as_ref().unwrap().snapshot.clone();
+
+    // external changes again (different snapshot)
+    std::fs::write(&p, "EXT1EXT2").unwrap();
+
+    // second S: must refuse again, not force, pending snapshot updated
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(app.file.dirty, "drift must keep dirty (no overwrite)");
+    let disk = std::fs::read_to_string(&p).unwrap();
+    assert_eq!(
+        disk, "EXT1EXT2",
+        "must not have overwritten on drifted Modified"
+    );
+    assert!(app.pending_save_conflict.is_some());
+    let second_pending_snap = app.pending_save_conflict.as_ref().unwrap().snapshot.clone();
+    assert_ne!(
+        second_pending_snap, first_pending_snap,
+        "pending snapshot must update on drift"
+    );
+
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
+fn app_file_state_third_ctrl_s_force_saves_after_drift_refusals_when_snapshot_stable() {
+    // After two refusals due to drift, a third Ctrl+S with no further external change
+    // (same live snapshot as the last pending) must force-save.
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!(
+        "catomic_2p_mod_drift_then_force_{}.txt",
+        std::process::id()
+    ));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "BASE").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    std::fs::write(&p, "E1").unwrap();
+    app.handle_key(make_key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
+
+    // first S refuses
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(app.file.dirty);
+
+    // external drift
+    std::fs::write(&p, "E1E2").unwrap();
+    // second S refuses again
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(app.file.dirty);
+
+    // no more external change; third S must force now (snapshot matches current pending)
+    let expected = app.buffer.to_string();
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+
+    assert!(!app.file.dirty, "third S with stable snapshot must force");
+    assert!(app.pending_save_conflict.is_none());
+    assert_eq!(std::fs::read_to_string(&p).unwrap(), expected);
+
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
+fn app_file_state_modified_pending_then_external_delete_refuses_deleted_then_force_recreates() {
+    // Pending Modified; external deletes before second S -> refuses as Deleted (updates token);
+    // next (third) S force-recreates the file.
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!(
+        "catomic_2p_mod_then_del_{}.txt",
+        std::process::id()
+    ));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "KEEP").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    std::fs::write(&p, "EXTMOD").unwrap(); // Modified
+    app.handle_key(make_key(KeyCode::Char('1'), KeyModifiers::NONE))
+        .unwrap();
+
+    // first S: Modified refuse
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(
+        app.pending_save_conflict.as_ref().unwrap().status
+            == crate::file::io::ExternalFileStatus::Modified
+    );
+
+    // external delete
+    let _ = std::fs::remove_file(&p);
+
+    // second S: now Deleted, refuse, update pending
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(app.file.dirty);
+    assert_eq!(
+        app.pending_save_conflict.as_ref().map(|p| &p.status),
+        Some(&crate::file::io::ExternalFileStatus::Deleted)
+    );
+    let msg = app.message.as_deref().unwrap_or("");
+    assert!(
+        msg.contains("deleted"),
+        "must surface Deleted message: {}",
+        msg
+    );
+    assert!(
+        !std::path::Path::new(&p).exists(),
+        "must not recreate on refuse"
+    );
+
+    // third S: force recreate
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(!app.file.dirty);
+    assert!(std::path::Path::new(&p).exists());
+    let on_disk = std::fs::read_to_string(&p).unwrap();
+    assert!(on_disk.contains('1'), "forced content present");
+
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
+fn app_file_state_deleted_pending_then_external_reappears_refuses_modified_then_force() {
+    // Pending Deleted; external re-creates file before second S -> refuses as Modified;
+    // next S force-saves (overwrites the reappeared file).
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!(
+        "catomic_2p_del_then_reappear_{}.txt",
+        std::process::id()
+    ));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "DELBASE").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap(); // clean post-open save
+    assert!(!app.file.dirty);
+
+    // external delete -> set Deleted pending on first S
+    let _ = std::fs::remove_file(&p);
+    app.handle_key(make_key(KeyCode::Char('y'), KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert_eq!(
+        app.pending_save_conflict.as_ref().map(|p| &p.status),
+        Some(&crate::file::io::ExternalFileStatus::Deleted)
+    );
+
+    // external reappears (different file content)
+    std::fs::write(&p, "REAPPEARED").unwrap();
+
+    // second S: Modified (from the reappeared), refuse, record appeared snapshot
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(app.file.dirty);
+    assert_eq!(
+        app.pending_save_conflict.as_ref().map(|p| &p.status),
+        Some(&crate::file::io::ExternalFileStatus::Modified)
+    );
+    // disk still the external reappeared, not our buffer
+    assert_eq!(std::fs::read_to_string(&p).unwrap(), "REAPPEARED");
+
+    // third S: now same snapshot -> force
+    let our = app.buffer.to_string();
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(!app.file.dirty);
+    let on_disk = std::fs::read_to_string(&p).unwrap();
+    assert_ne!(on_disk, "REAPPEARED");
+    assert!(on_disk.contains('y') || on_disk == our);
+
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
+fn app_file_state_absent_baseline_appear_then_drift_refuses_not_force() {
+    // Open Absent; external appears -> first S records the appeared snapshot in pending.
+    // External changes the appeared file again -> second S refuses (not force).
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!(
+        "catomic_2p_absent_appear_drift_{}.txt",
+        std::process::id()
+    ));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+
+    let mut app = App::new(Some(&p)).unwrap();
+    assert_eq!(
+        app.file.disk_snapshot,
+        Some(crate::file::io::FileSnapshot::Absent)
+    );
+
+    // external appears
+    std::fs::write(&p, "APPEAR1").unwrap();
+    app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::NONE))
+        .unwrap();
+
+    // first S: Modified (from Absent), refuse, pending snapshot = APPEAR1's
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(app.file.dirty);
+    assert_eq!(
+        app.pending_save_conflict.as_ref().map(|p| &p.status),
+        Some(&crate::file::io::ExternalFileStatus::Modified)
+    );
+    let snap1 = app.pending_save_conflict.as_ref().unwrap().snapshot.clone();
+    assert!(matches!(
+        snap1,
+        Some(crate::file::io::FileSnapshot::Present { .. })
+    ));
+
+    // external mutates the appeared file (new snapshot)
+    std::fs::write(&p, "APPEAR1MORE").unwrap();
+
+    // second S: still Modified but different snapshot -> refuse again, do not force
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(app.file.dirty);
+    assert_eq!(std::fs::read_to_string(&p).unwrap(), "APPEAR1MORE");
+    let snap2 = app.pending_save_conflict.as_ref().unwrap().snapshot.clone();
+    assert_ne!(snap2, snap1, "must have recorded the new appeared snapshot");
+
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
+fn app_file_state_regression_same_modified_snapshot_still_force_saves_on_second_ctrl_s() {
+    // Unchanged live snapshot for a pending Modified: second Ctrl+S must still force.
+    // This preserves the original Phase 2-n same-conflict force behavior when disk is stable.
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!(
+        "catomic_2p_same_snap_force_{}.txt",
+        std::process::id()
+    ));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "STABLE").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    std::fs::write(&p, "STABLEEXT").unwrap(); // external mod
+
+    app.handle_key(make_key(KeyCode::Char('q'), KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::NONE))
+        .unwrap();
+    let expected = app.buffer.to_string();
+
+    // first S refuses
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(app.file.dirty);
+    assert!(app.pending_save_conflict.is_some());
+
+    // no external change
+    // second S: same snapshot -> force
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+
+    assert!(!app.file.dirty);
+    assert!(app.pending_save_conflict.is_none());
+    assert_eq!(std::fs::read_to_string(&p).unwrap(), expected);
+
+    let _ = std::fs::remove_file(&p);
+}

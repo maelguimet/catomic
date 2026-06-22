@@ -18,18 +18,8 @@ use crate::file;
 use crate::mode::{Capabilities, Mode};
 use crate::terminal as term;
 
-/// Minimal explicit file state (Phase 2-a / 2-j).
-/// path: target for save (None until first save picks "untitled.txt").
-/// dirty: true if current edit_history_position() != saved_history_position.
-/// saved_history_position: token from buffer at last successful open/save.
-/// Starts clean (saved token captured) for open-existing and open-missing-file.
-#[derive(Clone, Debug, Default)]
-pub struct FileState {
-    pub path: Option<PathBuf>,
-    pub dirty: bool,
-    /// History position token captured at last open or successful save.
-    pub saved_history_position: u64,
-}
+mod file_state;
+pub use file_state::FileState;
 
 /// High-level application state for the editor.
 pub struct App {
@@ -200,7 +190,7 @@ impl App {
                         if self.file.path.is_none() {
                             self.file.path = Some(path);
                         }
-                        self.mark_saved();
+                        file_state::mark_saved(&mut self.file, &*self.buffer);
                         self.pending_quit_confirm = false;
                         self.message = None;
                     }
@@ -220,7 +210,7 @@ impl App {
                 ..
             } => {
                 self.buffer.insert_newline();
-                self.refresh_dirty_from_buffer_history();
+                file_state::refresh_dirty(&mut self.file, &*self.buffer);
                 self.pending_quit_confirm = false;
                 self.message = None;
                 self.reveal_cursor();
@@ -241,7 +231,7 @@ impl App {
                 && !modifiers.contains(KeyModifiers::SHIFT) =>
             {
                 self.buffer.undo();
-                self.refresh_dirty_from_buffer_history();
+                file_state::refresh_dirty(&mut self.file, &*self.buffer);
                 self.pending_quit_confirm = false;
                 self.message = None;
                 self.reveal_cursor();
@@ -255,7 +245,7 @@ impl App {
                 && modifiers.contains(KeyModifiers::SHIFT) =>
             {
                 self.buffer.redo();
-                self.refresh_dirty_from_buffer_history();
+                file_state::refresh_dirty(&mut self.file, &*self.buffer);
                 self.pending_quit_confirm = false;
                 self.message = None;
                 self.reveal_cursor();
@@ -269,7 +259,7 @@ impl App {
                 && modifiers.contains(KeyModifiers::SHIFT) =>
             {
                 self.buffer.redo();
-                self.refresh_dirty_from_buffer_history();
+                file_state::refresh_dirty(&mut self.file, &*self.buffer);
                 self.pending_quit_confirm = false;
                 self.message = None;
                 self.reveal_cursor();
@@ -281,7 +271,7 @@ impl App {
                 ..
             } if modifiers.contains(KeyModifiers::CONTROL) => {
                 self.buffer.redo();
-                self.refresh_dirty_from_buffer_history();
+                file_state::refresh_dirty(&mut self.file, &*self.buffer);
                 self.pending_quit_confirm = false;
                 self.message = None;
                 self.reveal_cursor();
@@ -301,7 +291,7 @@ impl App {
                     // Other Ctrl+letter combos ignored in Phase 0
                 } else if c == '\n' || c == '\r' {
                     self.buffer.insert_newline();
-                    self.refresh_dirty_from_buffer_history();
+                    file_state::refresh_dirty(&mut self.file, &*self.buffer);
                     self.pending_quit_confirm = false;
                     self.message = None;
                 } else if !c.is_control() {
@@ -311,7 +301,7 @@ impl App {
                         c
                     };
                     self.buffer.insert_char(ch);
-                    self.refresh_dirty_from_buffer_history();
+                    file_state::refresh_dirty(&mut self.file, &*self.buffer);
                     self.pending_quit_confirm = false;
                     self.message = None;
                 }
@@ -324,7 +314,7 @@ impl App {
                 ..
             } => {
                 self.buffer.delete_back();
-                self.refresh_dirty_from_buffer_history();
+                file_state::refresh_dirty(&mut self.file, &*self.buffer);
                 self.pending_quit_confirm = false;
                 self.message = None;
                 self.reveal_cursor();
@@ -336,7 +326,7 @@ impl App {
                 ..
             } => {
                 self.buffer.delete_forward();
-                self.refresh_dirty_from_buffer_history();
+                file_state::refresh_dirty(&mut self.file, &*self.buffer);
                 self.pending_quit_confirm = false;
                 self.message = None;
                 self.reveal_cursor();
@@ -452,19 +442,6 @@ impl App {
                 self.screen.scroll_left = max_left;
             }
         }
-    }
-
-    /// Refresh dirty from exact buffer history position vs last saved token.
-    /// Call after any content mutation (edit, undo, redo). Movement must not call.
-    fn refresh_dirty_from_buffer_history(&mut self) {
-        let pos = self.buffer.edit_history_position();
-        self.file.dirty = pos != self.file.saved_history_position;
-    }
-
-    /// Mark the current history position as the clean save point (after successful save).
-    fn mark_saved(&mut self) {
-        self.file.saved_history_position = self.buffer.edit_history_position();
-        self.file.dirty = false;
     }
 
     fn render(&self, stdout: &mut dyn Write) -> io::Result<()> {

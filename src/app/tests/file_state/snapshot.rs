@@ -717,14 +717,37 @@ fn app_file_state_reload_modified_read_failure_keeps_state_and_pending() {
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
 
-    assert_eq!(app.buffer.to_string(), before_buffer, "buffer must not change on read fail");
-    assert_eq!(app.file.dirty, before_dirty, "dirty must not change on read fail");
-    assert_eq!(app.file.saved_history_position, before_saved, "saved pos must not change on read fail");
-    assert_eq!(app.file.disk_snapshot, before_snap, "snapshot must not change on read fail");
-    assert!(app.pending_reload.is_some(), "pending must be kept on read fail to allow retry");
+    assert_eq!(
+        app.buffer.to_string(),
+        before_buffer,
+        "buffer must not change on read fail"
+    );
+    assert_eq!(
+        app.file.dirty, before_dirty,
+        "dirty must not change on read fail"
+    );
+    assert_eq!(
+        app.file.saved_history_position, before_saved,
+        "saved pos must not change on read fail"
+    );
+    assert_eq!(
+        app.file.disk_snapshot, before_snap,
+        "snapshot must not change on read fail"
+    );
+    assert!(
+        app.pending_reload.is_some(),
+        "pending must be kept on read fail to allow retry"
+    );
     let msg = app.message.as_deref().unwrap_or("");
-    assert!(msg.starts_with("Reload error:"), "msg must be Reload error, got: {}", msg);
-    assert!(!msg.contains("Reloaded"), "must not claim success on read failure");
+    assert!(
+        msg.starts_with("Reload error:"),
+        "msg must be Reload error, got: {}",
+        msg
+    );
+    assert!(
+        !msg.contains("Reloaded"),
+        "must not claim success on read failure"
+    );
 
     let _ = std::fs::remove_file(&p);
 }
@@ -734,7 +757,10 @@ fn app_file_state_reload_modified_read_failure_keeps_state_and_pending() {
 #[test]
 fn app_file_state_generic_newline_clears_reload_pending() {
     let mut tmp = std::env::temp_dir();
-    tmp.push(format!("catomic_2t_newline_clear_{}.txt", std::process::id()));
+    tmp.push(format!(
+        "catomic_2t_newline_clear_{}.txt",
+        std::process::id()
+    ));
     let p = tmp.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&p);
     std::fs::write(&p, "BASE").unwrap();

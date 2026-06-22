@@ -761,3 +761,4 @@ Key unresolved limitations that still matter:
 
 - Phase 2-r (narrow pass): manual external-file status check (Ctrl+R; message only via existing snapshot; no reload/mutation).
 - Phase 2-s (narrow pass): manual reload via two-step Ctrl+R using status foundation (Modified reloads content, Deleted clears buffer; drift re-arms; no watcher).
+- Phase 2-t (narrow harden): newline clear fix, read-fail no-lie, logic extracted to reload.rs; no watcher.

@@ -16,7 +16,7 @@ use crossterm::event::{KeyCode, KeyModifiers};
 // Never trust signal variant for content action; no reload, no dirty/snapshot changes.
 
 #[test]
-fn apply_file_watch_signal_changed_on_unchanged_disk_sets_unchanged_message() {
+fn apply_file_watch_signal_changed_on_unchanged_disk_ignores_to_avoid_noise() {
     let mut tmp = std::env::temp_dir();
     tmp.push(format!("catomic_2aa_sig_unch_{}.txt", std::process::id()));
     let p = tmp.to_string_lossy().to_string();
@@ -25,14 +25,19 @@ fn apply_file_watch_signal_changed_on_unchanged_disk_sets_unchanged_message() {
 
     let mut app = App::new(Some(&p)).unwrap();
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
-        .unwrap(); // ensure clean snapshot
+        .unwrap(); // ensure clean snapshot + possible "Saved." (but we set sentinel)
     assert!(!app.file.dirty);
 
-    // Simulate a Changed signal (e.g. from watcher)
-    let sig = crate::file::watcher::FileWatchSignal::Changed;
-    crate::app::watch::apply_file_watch_signal(&mut app, sig);
+    // Set a sentinel message that must be preserved (simulates "Saved." after real save)
+    app.message = Some("Saved.".to_string());
 
-    assert_eq!(app.message.as_deref(), Some("File unchanged on disk."));
+    // Simulate a Changed signal for our own write (unchanged vs snapshot)
+    let sig = crate::file::watcher::FileWatchSignal::Changed;
+    let visible = crate::app::watch::apply_file_watch_signal(&mut app, sig);
+
+    // Must be ignored: no overwrite of message, no arm, no mutation
+    assert!(!visible, "watcher unchanged must report not visible");
+    assert_eq!(app.message.as_deref(), Some("Saved."), "must not overwrite prior message with unchanged");
     assert!(app.pending_reload.is_none());
     assert_eq!(app.buffer.to_string(), "BASE");
     assert!(!app.file.dirty);

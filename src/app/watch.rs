@@ -2,16 +2,18 @@
 //!
 //! Purpose: manage construction/refresh/clear of the optional FileWatcher on App
 //! and provide explicit seams for signal handling.
-//! Owns: refresh/clear, apply_file_watch_signal (hint -> observe + arm only),
+//! Owns: refresh/clear, apply_file_watch_signal (hint -> observe + arm only for visible cases),
 //!   check_file_watcher_once (single try_recv + apply), check_file_watcher_once_and_render.
 //! Must not: be called from handle_key / save / reload / render paths; perform reloads;
 //!   mutate dirty/snapshot/history; trust signal kind without fresh metadata observe;
 //!   expand Project/LLM/UI; call try_recv outside check_file_watcher_once.
-//! Invariants: signals are hints only; always delegate to observe_external_file +
-//!   reload::apply_check_observation for arming (same as first Ctrl+R); no auto
-//!   reload or content mutation; construction failure remains non-fatal.
-//!   check_file_watcher_once may be called from App::run once per loop iteration.
-//! Phase: 2-ab (runtime loop integration as hint-only; no auto-reload).
+//! Invariants: signals are hints only; watcher signals for Unchanged/NoPath are ignored
+//!   (no message overwrite, no arm, no render) to avoid self-save noise; only
+//!   Modified/Deleted/Unknown/Error from watcher path are user-visible; manual Ctrl+R
+//!   semantics (apply_check_observation) are unchanged; no auto reload or content mutation;
+//!   construction failure remains non-fatal. check_file_watcher_once may be called from
+//!   App::run once per loop iteration.
+//! Phase: 2-ac (runtime watcher signal polish; deterministic queued tests).
 //!
 //! The only sites that set app.file.path are:
 //! - App::new (initial_path or None)
@@ -67,19 +69,26 @@ pub(crate) fn has_file_watcher(app: &super::App) -> bool {
 /// Apply a single FileWatchSignal (hint only).
 ///
 /// Always performs a fresh `observe_external_file` against the current
-/// app.file.path + disk_snapshot. Delegates arming/message to
-/// reload::apply_check_observation (identical to first-press manual Ctrl+R).
+/// app.file.path + disk_snapshot.
 ///
-/// - Changed/Deleted: may arm pending_reload + set arm message; never trusts
-///   the signal kind for action; never mutates buffer/dirty/snapshot/history.
-/// - Error: sets "File watcher error: {e}"; leaves other state alone (prefer
-///   not to clear pending_reload without concrete reason).
+/// Returns true if this produced a user-visible change (message or pending
+/// set, render worth doing). Returns false for Unchanged/NoPath watcher
+/// observations (suppress to avoid self-save/unchanged noise overwriting
+/// e.g. "Saved.").
 ///
-/// Must not be called from the runtime event loop in this pass.
+/// - Changed/Deleted + (Modified/Deleted/Unknown) obs => delegate to
+///   apply_check_observation (arms), return true.
+/// - Changed/Deleted + (Unchanged/NoPath) => ignore completely (no msg change,
+///   no arm, no clear), return false.
+/// - Error => set "File watcher error: {e}", return true.
+///
+/// Manual Ctrl+R path (reload::apply_check_observation) is NOT affected and
+/// still surfaces "File unchanged on disk." for Unchanged.
 pub(crate) fn apply_file_watch_signal(
     app: &mut super::App,
     signal: crate::file::watcher::FileWatchSignal,
-) {
+) -> bool {
+    use crate::file::io::ExternalFileStatus;
     use crate::file::watcher::FileWatchSignal;
 
     match signal {
@@ -87,46 +96,59 @@ pub(crate) fn apply_file_watch_signal(
             let current_path = app.file.path.clone();
             let baseline = app.file.disk_snapshot.as_ref();
             let obs = observe_external_file(current_path.as_ref().map(|p| p.as_path()), baseline);
-            super::reload::apply_check_observation(app, &obs);
+            match obs.status {
+                ExternalFileStatus::Unchanged | ExternalFileStatus::NoPath => {
+                    // Ignore watcher signal to avoid self-save noise.
+                    // Do not touch message, pending_reload, dirty, buffer, snapshot, or render.
+                    false
+                }
+                ExternalFileStatus::Modified
+                | ExternalFileStatus::Deleted
+                | ExternalFileStatus::Unknown(_) => {
+                    super::reload::apply_check_observation(app, &obs);
+                    true
+                }
+            }
         }
         FileWatchSignal::Error(e) => {
             app.message = Some(format!("File watcher error: {}", e));
             // Do not mutate buffer/dirty/snapshot/history.
-            // Prefer not to clear pending_reload unless a concrete reason exists
-            // (none for a pure watcher error in this design).
+            // Prefer not to clear pending_reload unless a concrete reason exists.
+            true
         }
     }
 }
 
-/// Non-runtime single drain of the file watcher (at most one try_recv).
+/// Single (at most one) try_recv + apply drain of the file watcher.
 ///
 /// If no watcher or no signal ready: returns false, no mutation.
-/// If a signal is received: calls apply_file_watch_signal and returns true.
-/// Does not loop, drain, or coalesce. Does not render.
+/// If a signal is received: calls apply_file_watch_signal and returns its
+/// visible-change result. A signal that mapped to Unchanged/NoPath is
+/// consumed but returns false (no render, no message change).
 ///
 /// try_recv is called ONLY from this helper (never from run/handle_key/etc.).
-/// This is an explicit seam; not wired into the goblin loop in 2-aa.
+/// Still at most one signal per call.
 pub(crate) fn check_file_watcher_once(app: &mut super::App) -> bool {
     let signal = match &app.file_watcher {
         Some(w) => w.try_recv(),
         None => None,
     };
     if let Some(s) = signal {
-        apply_file_watch_signal(app, s);
-        true
+        apply_file_watch_signal(app, s)
     } else {
         false
     }
 }
 
-/// Runtime seam: check watcher at most once, render only if a signal was handled.
+/// Runtime seam: check watcher at most once, render only if a signal produced visible change.
 ///
-/// Calls check_file_watcher_once (which does at most one try_recv + apply).
-/// If a signal was received and applied (may arm pending_reload or set message),
-/// renders once via app.render(out).
+/// Calls check_file_watcher_once (at most one try_recv + apply).
+/// Only renders if the received signal produced a visible outcome
+/// (i.e. apply returned true). Unchanged/NoPath signals are consumed but
+/// produce no render and leave prior message (e.g. "Saved.") intact.
 ///
-/// Returns Ok(true) if a signal was handled (and render attempted), Ok(false) otherwise.
-/// Errors only from render.
+/// Returns Ok(true) if a signal was received AND produced visible state
+/// (render attempted), Ok(false) otherwise. Errors only from render.
 ///
 /// Must be called at most once per event loop iteration from App::run.
 /// Must not be called from handle_key, save, reload, or render.

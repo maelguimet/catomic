@@ -900,11 +900,22 @@ mod phase1a_storage_parity {
 
         pt.insert_char('X'); // branch
         let p_branch = pt.edit_history_position();
-        assert!(p_branch != saved_like, "new edit after undo must move away from prior position");
+        assert!(
+            p_branch != saved_like,
+            "new edit after undo must move away from prior position"
+        );
         // redo should be cleared: no change
         pt.redo();
-        assert_eq!(pt.to_string(), "aX", "redo after new branch edit must be no-op");
-        assert_eq!(pt.edit_history_position(), p_branch, "position must stay at branch point");
+        assert_eq!(
+            pt.to_string(),
+            "aX",
+            "redo after new branch edit must be no-op"
+        );
+        assert_eq!(
+            pt.edit_history_position(),
+            p_branch,
+            "position must stay at branch point"
+        );
     }
 
     #[test]
@@ -926,7 +937,11 @@ mod phase1a_storage_parity {
 
         // redo back
         pt.redo();
-        assert_eq!(pt.edit_history_position(), saved, "redo back to saved point must match token");
+        assert_eq!(
+            pt.edit_history_position(),
+            saved,
+            "redo back to saved point must match token"
+        );
 
         // new independent edit after undo to saved
         pt.undo();

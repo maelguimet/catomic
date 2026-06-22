@@ -247,11 +247,18 @@ fn app_edit_after_quit_warning_clears_pending() {
 fn app_file_state_new_and_open_initialize_saved_history_token_and_clean() {
     let app = App::new(None).unwrap();
     assert!(!app.file.dirty, "new starts clean");
-    assert_eq!(app.file.saved_history_position, app.buffer.edit_history_position(), "saved token must match initial buffer position");
+    assert_eq!(
+        app.file.saved_history_position,
+        app.buffer.edit_history_position(),
+        "saved token must match initial buffer position"
+    );
 
     let app2 = App::new(Some("nonexistent_for_token_test.txt")).unwrap();
     assert!(!app2.file.dirty, "open missing starts clean");
-    assert_eq!(app2.file.saved_history_position, app2.buffer.edit_history_position());
+    assert_eq!(
+        app2.file.saved_history_position,
+        app2.buffer.edit_history_position()
+    );
 }
 
 #[test]
@@ -266,26 +273,33 @@ fn app_file_state_insert_then_save_then_undo_redo_exact_dirty() {
     let saved0 = app.file.saved_history_position;
 
     // insert makes dirty
-    app.handle_key(make_key(KeyCode::Char('x'), KeyModifiers::NONE)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
     assert!(app.file.dirty, "insert makes dirty");
     assert!(app.buffer.edit_history_position() != saved0);
 
     // save marks clean at new token
-    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
     assert!(!app.file.dirty, "save clears dirty");
     let saved_after = app.file.saved_history_position;
     assert!(saved_after != saved0);
     assert_eq!(saved_after, app.buffer.edit_history_position());
 
     // undo back to prior (away from saved) => dirty
-    app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::CONTROL)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::CONTROL))
+        .unwrap();
     assert!(app.file.dirty, "undo away from saved token makes dirty");
     assert_eq!(app.buffer.edit_history_position(), saved0);
 
     // redo back to saved => clean
-    app.handle_key(make_key(KeyCode::Char('y'), KeyModifiers::CONTROL)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('y'), KeyModifiers::CONTROL))
+        .unwrap();
     assert!(!app.file.dirty, "redo to saved token clears dirty");
-    assert_eq!(app.file.saved_history_position, app.buffer.edit_history_position());
+    assert_eq!(
+        app.file.saved_history_position,
+        app.buffer.edit_history_position()
+    );
 
     let _ = std::fs::remove_file(&p);
 }
@@ -293,26 +307,37 @@ fn app_file_state_insert_then_save_then_undo_redo_exact_dirty() {
 #[test]
 fn app_file_state_undo_to_clean_then_redo_makes_dirty_again() {
     let mut tmp = std::env::temp_dir();
-    tmp.push(format!("catomic_test_2j_undo_clean_{}.txt", std::process::id()));
+    tmp.push(format!(
+        "catomic_test_2j_undo_clean_{}.txt",
+        std::process::id()
+    ));
     let p = tmp.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&p);
 
     let mut app = App::new(Some(&p)).unwrap();
-    app.handle_key(make_key(KeyCode::Char('a'), KeyModifiers::NONE)).unwrap();
-    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('a'), KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
     assert!(!app.file.dirty);
     let clean_pos = app.file.saved_history_position;
 
-    app.handle_key(make_key(KeyCode::Char('b'), KeyModifiers::NONE)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('b'), KeyModifiers::NONE))
+        .unwrap();
     assert!(app.file.dirty);
 
     // undo the 'b' back exactly to saved
-    app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::CONTROL)).unwrap();
-    assert!(!app.file.dirty, "undo to saved content must clear dirty exactly");
+    app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(
+        !app.file.dirty,
+        "undo to saved content must clear dirty exactly"
+    );
     assert_eq!(app.buffer.edit_history_position(), clean_pos);
 
     // redo away
-    app.handle_key(make_key(KeyCode::Char('y'), KeyModifiers::CONTROL)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('y'), KeyModifiers::CONTROL))
+        .unwrap();
     assert!(app.file.dirty, "redo away from saved must set dirty");
 
     let _ = std::fs::remove_file(&p);
@@ -321,26 +346,35 @@ fn app_file_state_undo_to_clean_then_redo_makes_dirty_again() {
 #[test]
 fn app_file_state_save_sets_new_clean_point_undo_redo_roundtrip() {
     let mut tmp = std::env::temp_dir();
-    tmp.push(format!("catomic_test_2j_save_point_{}.txt", std::process::id()));
+    tmp.push(format!(
+        "catomic_test_2j_save_point_{}.txt",
+        std::process::id()
+    ));
     let p = tmp.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&p);
 
     let mut app = App::new(Some(&p)).unwrap();
-    app.handle_key(make_key(KeyCode::Char('1'), KeyModifiers::NONE)).unwrap();
-    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('1'), KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
     let s1 = app.file.saved_history_position;
 
-    app.handle_key(make_key(KeyCode::Char('2'), KeyModifiers::NONE)).unwrap();
-    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('2'), KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
     let s2 = app.file.saved_history_position;
     assert!(s2 != s1, "second save must update saved token");
     assert!(!app.file.dirty);
 
     // undo to s1
-    app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::CONTROL)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::CONTROL))
+        .unwrap();
     assert!(app.file.dirty);
     // redo to s2
-    app.handle_key(make_key(KeyCode::Char('y'), KeyModifiers::CONTROL)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('y'), KeyModifiers::CONTROL))
+        .unwrap();
     assert!(!app.file.dirty);
     assert_eq!(app.file.saved_history_position, s2);
 
@@ -354,12 +388,14 @@ fn app_file_state_noop_undo_redo_on_clean_stays_clean() {
     let p0 = app.buffer.edit_history_position();
 
     // no-op undo on clean
-    app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::CONTROL)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::CONTROL))
+        .unwrap();
     assert!(!app.file.dirty, "no-op undo must not dirty a clean buffer");
     assert_eq!(app.buffer.edit_history_position(), p0);
 
     // no-op redo on clean
-    app.handle_key(make_key(KeyCode::Char('y'), KeyModifiers::CONTROL)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('y'), KeyModifiers::CONTROL))
+        .unwrap();
     assert!(!app.file.dirty, "no-op redo must not dirty a clean buffer");
     assert_eq!(app.buffer.edit_history_position(), p0);
 }
@@ -367,21 +403,29 @@ fn app_file_state_noop_undo_redo_on_clean_stays_clean() {
 #[test]
 fn app_file_state_movement_render_resize_do_not_affect_dirty() {
     let mut tmp = std::env::temp_dir();
-    tmp.push(format!("catomic_test_2j_move_dirty_{}.txt", std::process::id()));
+    tmp.push(format!(
+        "catomic_test_2j_move_dirty_{}.txt",
+        std::process::id()
+    ));
     let p = tmp.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&p);
 
     let mut app = App::new(Some(&p)).unwrap();
     // make dirty via content
-    app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::NONE)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::NONE))
+        .unwrap();
     assert!(app.file.dirty);
     let pos_dirty = app.buffer.edit_history_position();
 
     // movement must not change dirty
-    app.handle_key(make_key(KeyCode::Left, KeyModifiers::NONE)).unwrap();
-    app.handle_key(make_key(KeyCode::Right, KeyModifiers::NONE)).unwrap();
-    app.handle_key(make_key(KeyCode::Up, KeyModifiers::NONE)).unwrap();
-    app.handle_key(make_key(KeyCode::Down, KeyModifiers::NONE)).unwrap();
+    app.handle_key(make_key(KeyCode::Left, KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key(make_key(KeyCode::Right, KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key(make_key(KeyCode::Up, KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key(make_key(KeyCode::Down, KeyModifiers::NONE))
+        .unwrap();
     assert!(app.file.dirty);
     assert_eq!(app.buffer.edit_history_position(), pos_dirty);
 
@@ -397,9 +441,11 @@ fn app_file_state_movement_render_resize_do_not_affect_dirty() {
     assert_eq!(app.buffer.edit_history_position(), pos_dirty);
 
     // now save to clean, movements still must not flip it
-    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
     assert!(!app.file.dirty);
-    app.handle_key(make_key(KeyCode::Left, KeyModifiers::NONE)).unwrap();
+    app.handle_key(make_key(KeyCode::Left, KeyModifiers::NONE))
+        .unwrap();
     assert!(!app.file.dirty);
 
     let _ = std::fs::remove_file(&p);

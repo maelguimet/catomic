@@ -19,9 +19,9 @@ use std::borrow::Cow;
 use crate::buffer::line_index::LineIndex;
 use crate::buffer::{Buffer, Cursor, LineView};
 
+use crate::buffer::undo::{CursorState, PieceEdit, Transaction};
 pub use types::PieceTable;
 use types::{Piece, Source};
-use crate::buffer::undo::{CursorState, PieceEdit, Transaction};
 
 impl PieceTable {
     pub fn new() -> Self {
@@ -298,7 +298,10 @@ impl Buffer for PieceTable {
             let tx = Transaction {
                 before,
                 after,
-                edits: vec![PieceEdit::Insert { at, pieces: inserted }],
+                edits: vec![PieceEdit::Insert {
+                    at,
+                    pieces: inserted,
+                }],
                 id: 0,
             };
             self.undo_stack.record(tx);
@@ -317,7 +320,10 @@ impl Buffer for PieceTable {
             let tx = Transaction {
                 before,
                 after,
-                edits: vec![PieceEdit::Insert { at, pieces: inserted }],
+                edits: vec![PieceEdit::Insert {
+                    at,
+                    pieces: inserted,
+                }],
                 id: 0,
             };
             self.undo_stack.record(tx);
@@ -341,7 +347,10 @@ impl Buffer for PieceTable {
                 let tx = Transaction {
                     before,
                     after,
-                    edits: vec![PieceEdit::Delete { at: start_b, pieces: removed }],
+                    edits: vec![PieceEdit::Delete {
+                        at: start_b,
+                        pieces: removed,
+                    }],
                     id: 0,
                 };
                 self.undo_stack.record(tx);
@@ -362,7 +371,10 @@ impl Buffer for PieceTable {
                     let tx = Transaction {
                         before,
                         after,
-                        edits: vec![PieceEdit::Delete { at: nl_pos - 1, pieces: removed }],
+                        edits: vec![PieceEdit::Delete {
+                            at: nl_pos - 1,
+                            pieces: removed,
+                        }],
                         id: 0,
                     };
                     self.undo_stack.record(tx);
@@ -392,7 +404,10 @@ impl Buffer for PieceTable {
                 let tx = Transaction {
                     before,
                     after,
-                    edits: vec![PieceEdit::Delete { at: start_b, pieces: removed }],
+                    edits: vec![PieceEdit::Delete {
+                        at: start_b,
+                        pieces: removed,
+                    }],
                     id: 0,
                 };
                 self.undo_stack.record(tx);
@@ -411,7 +426,10 @@ impl Buffer for PieceTable {
                     let tx = Transaction {
                         before,
                         after,
-                        edits: vec![PieceEdit::Delete { at: nl_pos, pieces: removed }],
+                        edits: vec![PieceEdit::Delete {
+                            at: nl_pos,
+                            pieces: removed,
+                        }],
                         id: 0,
                     };
                     self.undo_stack.record(tx);

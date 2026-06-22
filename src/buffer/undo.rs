@@ -10,8 +10,8 @@
 //! - Redo of insert re-uses stored piece descriptors (no re-append to add buffer).
 //! Phase: 1C
 
-use crate::buffer::Cursor;
 use crate::buffer::piece_table::types::Piece;
+use crate::buffer::Cursor;
 
 /// Cursor snapshot for a transaction boundary.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -35,14 +35,8 @@ pub(crate) struct Transaction {
 /// Piece-level delta: either inserted pieces or deleted pieces at a byte offset.
 #[derive(Clone, Debug)]
 pub(crate) enum PieceEdit {
-    Insert {
-        at: usize,
-        pieces: Vec<Piece>,
-    },
-    Delete {
-        at: usize,
-        pieces: Vec<Piece>,
-    },
+    Insert { at: usize, pieces: Vec<Piece> },
+    Delete { at: usize, pieces: Vec<Piece> },
 }
 
 /// Stack of transactions supporting undo and redo.

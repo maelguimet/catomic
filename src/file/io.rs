@@ -97,6 +97,18 @@ pub enum ExternalFileStatus {
     Unknown(std::io::ErrorKind),
 }
 
+/// Observation of a path at a point in time: the status relative to a baseline
+/// plus the live on-disk snapshot observed during the check. Used to bind
+/// save-conflict confirmation to a concrete disk state, not merely a status
+/// variant (e.g. distinguish two different Modified observations).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExternalFileObservation {
+    pub status: ExternalFileStatus,
+    /// Live snapshot captured at observation time.
+    /// None for NoPath or when live capture failed (Unknown without usable snap).
+    pub live_snapshot: Option<FileSnapshot>,
+}
+
 /// Capture current on-disk state for `path` using std::fs::metadata only.
 /// NotFound is mapped to Absent (explicit). Other errors (perm, etc.) bubble up.
 pub fn capture_file_snapshot(path: impl AsRef<Path>) -> io::Result<FileSnapshot> {
@@ -138,6 +150,53 @@ pub fn compare_to_snapshot(
                 Ok(ExternalFileStatus::Modified)
             }
         }
+    }
+}
+
+/// Observe external state for an optional remembered path against an optional baseline snapshot.
+/// Returns both the status (for messaging/decision) and the live snapshot seen now.
+/// - path None -> NoPath, live None.
+/// - path Some + baseline None: mirrors the edge probe in external_file_status (Present->Unchanged, Absent->Deleted).
+/// - path Some + baseline Some: delegates to compare_to_snapshot for status; live is separate capture.
+/// Metadata errors surface as Unknown; live_snapshot may be None in hard error cases.
+/// Metadata-only; no content read or hash.
+pub fn observe_external_file(
+    path: Option<&Path>,
+    baseline: Option<&FileSnapshot>,
+) -> ExternalFileObservation {
+    let Some(p) = path else {
+        return ExternalFileObservation {
+            status: ExternalFileStatus::NoPath,
+            live_snapshot: None,
+        };
+    };
+    // Capture live once.
+    let live = capture_file_snapshot(p).ok();
+    let status = match baseline {
+        None => {
+            // Path known but no baseline snapshot (edge after first save or similar).
+            // Treat present as Unchanged (as-if post our write), absent as Deleted.
+            match &live {
+                Some(FileSnapshot::Present { .. }) => ExternalFileStatus::Unchanged,
+                Some(FileSnapshot::Absent) => ExternalFileStatus::Deleted,
+                None => {
+                    // Capture failed; surface as Unknown using a generic kind is not ideal.
+                    // Re-attempt a direct metadata to get the real error kind.
+                    match fs::metadata(p) {
+                        Err(e) => ExternalFileStatus::Unknown(e.kind()),
+                        Ok(_) => ExternalFileStatus::Unchanged, // raced to exist
+                    }
+                }
+            }
+        }
+        Some(snap) => match compare_to_snapshot(p, snap) {
+            Ok(st) => st,
+            Err(e) => ExternalFileStatus::Unknown(e.kind()),
+        },
+    };
+    ExternalFileObservation {
+        status,
+        live_snapshot: live,
     }
 }
 
@@ -305,6 +364,86 @@ mod tests {
                 other
             ),
         }
+        cleanup(&reg);
+    }
+
+    // Phase 2-p: observe_external_file lower-level tests.
+    // Verify live snapshot distinguishes different Modified states; covers Deleted/Unknown.
+
+    #[test]
+    fn observe_external_modified_live_snapshot_identity() {
+        // Same baseline; external change between two observes must produce different live snapshots.
+        let p = temp_path("obs_mod_identity.txt");
+        cleanup(&p);
+        fs::write(&p, "BASE").unwrap();
+        let base_snap = capture_file_snapshot(&p).unwrap();
+
+        // First observation (no drift yet): should be Unchanged, live == base
+        let obs1 = observe_external_file(Some(&p), Some(&base_snap));
+        assert_eq!(obs1.status, ExternalFileStatus::Unchanged);
+        assert_eq!(obs1.live_snapshot, Some(base_snap.clone()));
+
+        // External change (append)
+        fs::write(&p, "BASEEXT").unwrap();
+
+        // Second observation against same baseline: Modified, live differs from base
+        let obs2 = observe_external_file(Some(&p), Some(&base_snap));
+        assert_eq!(obs2.status, ExternalFileStatus::Modified);
+        assert!(obs2.live_snapshot.is_some());
+        let live2 = obs2.live_snapshot.unwrap();
+        assert_ne!(
+            live2, base_snap,
+            "live snapshot after external change must differ"
+        );
+
+        // Third observation (no further change): same live as obs2
+        let obs3 = observe_external_file(Some(&p), Some(&base_snap));
+        assert_eq!(obs3.status, ExternalFileStatus::Modified);
+        assert_eq!(obs3.live_snapshot, Some(live2));
+
+        cleanup(&p);
+    }
+
+    #[test]
+    fn observe_external_deleted_yields_deleted_and_absent() {
+        let p = temp_path("obs_del.txt");
+        cleanup(&p);
+        fs::write(&p, "TODEL").unwrap();
+        let base = capture_file_snapshot(&p).unwrap();
+
+        let _ = fs::remove_file(&p);
+
+        let obs = observe_external_file(Some(&p), Some(&base));
+        assert_eq!(obs.status, ExternalFileStatus::Deleted);
+        assert_eq!(obs.live_snapshot, Some(FileSnapshot::Absent));
+
+        cleanup(&p);
+    }
+
+    #[test]
+    fn observe_external_unknown_on_non_notfound_meta_error() {
+        use std::io;
+
+        let reg = temp_path("obs_unknown_reg.txt");
+        cleanup(&reg);
+        fs::write(&reg, "x").unwrap();
+        let base = FileSnapshot::Present {
+            len: 1,
+            mtime: None,
+        };
+
+        let bad = reg.join("child");
+        let obs = observe_external_file(Some(&bad), Some(&base));
+        match obs.status {
+            ExternalFileStatus::Unknown(kind) => {
+                assert_ne!(kind, io::ErrorKind::NotFound);
+            }
+            other => panic!("expected Unknown, got {:?}", other),
+        }
+        // live may be None on hard error
+        assert!(
+            obs.live_snapshot.is_none() || matches!(obs.live_snapshot, Some(FileSnapshot::Absent))
+        );
         cleanup(&reg);
     }
 }

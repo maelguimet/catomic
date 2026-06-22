@@ -748,3 +748,14 @@ Update this file as decisions are made or phases complete. Add concrete issues o
   - Dirty flag is conservative; undoing back to saved content may still show dirty until exact save-point tracking lands.
   - Tests: atomic unit (bytes/overwrite/no-temp), app/file-state lifecycle via keys, golden that exercises atomic helper for exact save content.
   - Existing undo-across-save golden tests still pass. All Phase 1 tests green.
+
+- Phase 2-b (dirty quit guard + minimal message state) in progress / foundation:
+  - App has message: Option<String>, pending_quit_confirm: bool.
+  - Ctrl+Q: clean quits; dirty first press sets pending + short warning message (no quit); second press quits.
+  - Actual content edits clear pending_quit_confirm (movement does not; simplest documented behavior).
+  - Successful Ctrl+S: clears dirty, pending, and message.
+  - Save error via atomic: keeps dirty=true, sets "Save error: ..." message; no panic.
+  - Minimal render bottom line: shows message text when present (reserves last row, no colors/UI redesign).
+  - Tests cover all required cases (clean Q, dirty sequences, save clear, error keep-dirty+msg, edit clears pending, explicit temp lifecycle).
+  - Limitation: Quit confirmation is key-driven only; full prompt/status UX is still minimal.
+  - No file watching, no big-file tiers, no multi-buffer, no selection etc (per scope).

@@ -380,9 +380,10 @@ impl App {
     }
 
     /// Smallest helper seam for resize (and testability of it) without redesigning event loop.
-    /// Updates screen size, reveals cursor row under new height, then renders.
+    /// Updates screen size, clamps for zero-size safety, reveals cursor, then renders.
     fn handle_resize(&mut self, w: u16, h: u16, out: &mut dyn Write) -> io::Result<()> {
         self.screen.update_size(w, h);
+        self.screen.clamp_scroll();
         self.reveal_cursor();
         self.render(out)
     }

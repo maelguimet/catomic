@@ -387,11 +387,12 @@ impl App {
         self.render(out)
     }
 
-    /// Reveal the current cursor row so it is visible in the content area.
+    /// Reveal the current cursor row/col so they are visible in the content area.
     /// Called after cursor movement and content mutations (insert, delete, undo/redo).
     fn reveal_cursor(&mut self) {
-        let row = self.buffer.cursor().row;
-        self.screen.reveal_row(row);
+        let c = self.buffer.cursor();
+        self.screen.reveal_row(c.row);
+        self.screen.reveal_col(c.col);
     }
 
     fn render(&self, stdout: &mut dyn Write) -> io::Result<()> {

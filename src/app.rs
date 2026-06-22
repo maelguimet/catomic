@@ -93,6 +93,12 @@ impl App {
 
         term::setup(&mut stdout)?;
 
+        // Read actual terminal size using crossterm; keep conservative default on failure
+        // (e.g. non-tty or test envs). Linux-first/simple: no extra handling.
+        if let Ok((w, h)) = crossterm::terminal::size() {
+            self.screen.update_size(w, h);
+        }
+
         // Install panic hook to do best-effort restore even before unwind reaches guard.
         // We chain to the previous hook.
         let prev_hook = std::panic::take_hook();

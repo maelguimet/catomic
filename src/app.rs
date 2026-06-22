@@ -840,4 +840,123 @@ mod tests {
         );
         assert!(!out.is_empty(), "resize must render");
     }
+
+    // Phase 2-e app/render horizontal reveal tests
+
+    #[test]
+    fn app_typing_past_visible_width_updates_scroll_left() {
+        let mut app = App::new(None).unwrap();
+        app.screen.width = 5; // vw=5
+        app.screen.height = 6;
+        app.screen.scroll_left = 0;
+
+        // Type 8 chars on one line: cursor col will become 8
+        let mut sink: Vec<u8> = Vec::new();
+        for _ in 0..8 {
+            app.handle_key_with(&mut sink, make_key(KeyCode::Char('x'), KeyModifiers::NONE))
+                .unwrap();
+        }
+        assert_eq!(app.buffer.cursor().col, 8);
+        // vw=5; col=8 >= 0+5 => scroll_left should become 8+1-5=4
+        assert!(
+            app.screen.scroll_left >= 4,
+            "typing past width must update scroll_left; got {}",
+            app.screen.scroll_left
+        );
+    }
+
+    #[test]
+    fn app_render_after_horizontal_reveal_omits_earlier_chars_and_shows_cursor_side() {
+        let mut app = App::new(None).unwrap();
+        app.screen.width = 6; // vw=6
+        app.screen.height = 4;
+        app.screen.scroll_left = 0;
+
+        // Build a long distinguishable line: "0123456789ABCDEF" (16 chars), cursor at end col=16
+        for c in "0123456789ABCDEF".chars() {
+            app.buffer.insert_char(c);
+        }
+        assert_eq!(app.buffer.cursor().col, 16);
+
+        // Force reveal via down/up or just call (but use key path for full)
+        // Move left then right many to trigger reveals; simpler: direct reveal then capture render.
+        // But per pattern, drive with keys to exercise reveal_cursor.
+        let mut sink: Vec<u8> = Vec::new();
+        // Ensure at far right
+        // We are already at col=16. A Right does nothing (clamp?), Left then Rights to re-reveal.
+        for _ in 0..5 {
+            app.handle_key_with(&mut sink, make_key(KeyCode::Left, KeyModifiers::NONE))
+                .unwrap();
+        }
+        // now col ~11; scroll may be 0 still. Move right past edge.
+        for _ in 0..10 {
+            app.handle_key_with(&mut sink, make_key(KeyCode::Right, KeyModifiers::NONE))
+                .unwrap();
+        }
+        assert!(
+            app.screen.scroll_left > 0,
+            "must have scrolled horizontally; scroll_left={}",
+            app.screen.scroll_left
+        );
+
+        // Capture render output
+        let mut out: Vec<u8> = Vec::new();
+        app.render(&mut out).unwrap();
+        let rendered = String::from_utf8_lossy(&out);
+
+        // Early chars (e.g. "01") should be omitted from content region when scrolled
+        // (they are before scroll_left)
+        assert!(
+            !rendered.contains("01"),
+            "early line chars must be omitted after horiz scroll; scroll_left={}\n{}",
+            app.screen.scroll_left,
+            rendered
+        );
+        // Cursor side content should be present (near end, e.g. some later digit/letter)
+        // At least one char from the right side should appear.
+        let has_late = rendered.contains("A")
+            || rendered.contains("B")
+            || rendered.contains("C")
+            || rendered.contains("D")
+            || rendered.contains("E")
+            || rendered.contains("F");
+        assert!(
+            has_late,
+            "cursor-side content should be rendered; scroll_left={}\n{}",
+            app.screen.scroll_left,
+            rendered
+        );
+    }
+
+    #[test]
+    fn app_resize_narrower_reveals_current_cursor_column() {
+        let mut app = App::new(None).unwrap();
+        // Long line, cursor at high col
+        for c in "ABCDEFGHIJKLMNOP".chars() {
+            app.buffer.insert_char(c);
+        }
+        assert_eq!(app.buffer.cursor().col, 16);
+        // Wide viewport: no scroll
+        app.screen.width = 30;
+        app.screen.scroll_left = 0;
+
+        // Resize narrower: width=5 => vw=5; 16 >=0+5 => reveal sets scroll_left=16+1-5=12
+        let mut out: Vec<u8> = Vec::new();
+        app.handle_resize(5, 10, &mut out).unwrap();
+
+        assert_eq!(app.screen.width, 5);
+        assert!(
+            app.screen.scroll_left > 0,
+            "narrow resize must reveal cursor col; scroll_left={}",
+            app.screen.scroll_left
+        );
+        let vw = app.screen.visible_width();
+        assert!(
+            app.screen.scroll_left <= 16 && 16 < app.screen.scroll_left + vw,
+            "cursor col 16 must be visible after narrow resize; scroll_left={}, vw={}",
+            app.screen.scroll_left,
+            vw
+        );
+        assert!(!out.is_empty(), "resize must render");
+    }
 }

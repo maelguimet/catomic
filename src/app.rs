@@ -544,10 +544,17 @@ mod tests {
 
     #[test]
     fn app_save_error_keeps_dirty_and_sets_error_message() {
+        // Use a dedicated subdir under temp (never bare temp_dir or root sibling)
+        // so that path points to a directory -> atomic_write fails as intended.
+        let mut bad = std::env::temp_dir();
+        bad.push(format!("catomic_bad_save_dir_{}", std::process::id()));
+        // ensure clean and is a dir
+        let _ = std::fs::remove_dir_all(&bad);
+        std::fs::create_dir_all(&bad).expect("create dedicated bad dir");
+        assert!(bad.is_dir());
+
         let mut app = App::new(None).unwrap();
-        // Force a path that will fail atomic write (use a directory as target file)
-        let bad_dir = std::env::temp_dir();
-        app.file.path = Some(bad_dir);
+        app.file.path = Some(bad.clone());
         app.file.dirty = true;
         app.message = None;
 
@@ -561,6 +568,9 @@ mod tests {
             "save error should set message, got: {:?}",
             app.message
         );
+
+        // cleanup dedicated dir only
+        let _ = std::fs::remove_dir_all(&bad);
     }
 
     #[test]

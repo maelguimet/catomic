@@ -39,7 +39,15 @@ pub fn atomic_write_string(path: impl AsRef<Path>, contents: &str) -> io::Result
     let file_name = target
         .file_name()
         .unwrap_or_else(|| std::ffi::OsStr::new("untitled.txt"));
-    let tmp_name = format!("{}.tmp.{}", file_name.to_string_lossy(), std::process::id());
+    // Include thread id so parallel tests (same pid) using default "untitled.txt" first-save
+    // do not collide on the sibling .tmp.<pid> during concurrent create_new.
+    let tid = format!("{:?}", std::thread::current().id());
+    let tmp_name = format!(
+        "{}.tmp.{}.{}",
+        file_name.to_string_lossy(),
+        std::process::id(),
+        tid
+    );
     let temp_path: PathBuf = parent.join(tmp_name);
 
     // Inner closure so we can cleanup temp exactly on failure path.

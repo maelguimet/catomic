@@ -72,6 +72,37 @@ impl App {
         let mode = Mode::Plain; // Start in Plain by default. User can switch later.
         let caps = Capabilities::from_mode(mode);
 
+        // Phase 2-ag: decide open policy from metadata BEFORE reading content.
+        // - Probe size first for existing path.
+        // - Extreme: refuse immediately (no read_to_string, no watcher, no App).
+        // - Hard meta error (non-NotFound): propagate (App::new must not guess).
+        // - Large/Huge: remember to set initial warning message after construction.
+        // - Small/missing: proceed as before.
+        // None path or missing: unchanged (empty buffer, size None).
+        let mut pre_size: Option<u64> = None;
+        let mut pre_tier: Option<crate::file::size::FileSizeTier> = None;
+        if let Some(p) = initial_path {
+            match crate::file::size::file_size_bytes(p) {
+                Ok(sz) => {
+                    let tier = crate::file::size::classify_file_size(sz);
+                    if tier == crate::file::size::FileSizeTier::Extreme {
+                        let msg = crate::file::size::open_size_refusal_message(sz);
+                        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, msg));
+                    }
+                    // Small/Large/Huge: capture for FileState and possible warning.
+                    pre_size = Some(sz);
+                    pre_tier = Some(tier);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    // Missing remembered path: proceed to read (yields empty), size stays None.
+                }
+                Err(e) => {
+                    // Hard metadata error other than NotFound: error rather than guess.
+                    return Err(e);
+                }
+            }
+        }
+
         let buffer: Box<dyn Buffer> = if let Some(path) = initial_path {
             // Distinguish missing file (start empty, but remember path so save creates it)
             // from real errors (permission, utf8, is-dir, etc). Silent empty was data-loss bait.
@@ -96,19 +127,11 @@ impl App {
         } else {
             None
         };
-        // Capture size metadata (metadata only, alongside snapshot for existing path).
-        // - existing file: Some(len) + tier from classify
-        // - missing path (new file remembered): None (per 2B policy)
-        // - no path: None
-        // Never falls back to buffer.to_string().len().
-        let (size_bytes, size_tier) = if let Some(p) = initial_path {
-            match crate::file::size::file_size_bytes(p) {
-                Ok(sz) => (Some(sz), Some(crate::file::size::classify_file_size(sz))),
-                Err(_) => (None, None),
-            }
-        } else {
-            (None, None)
-        };
+        // Size: prefer pre-probed (for Large/Huge warning path and to avoid re-stat).
+        // For missing: pre None, remains None. For Small present: pre has it.
+        // Never synthesize from buffer len. (See also save.rs post-write fallback contract.)
+        let size_bytes = pre_size;
+        let size_tier = pre_tier;
         // Build base App first, then attach watcher via best-effort helper.
         // This keeps watcher construction failure non-fatal and avoids
         // partial-construction gymnastics in the Result path.
@@ -133,6 +156,18 @@ impl App {
             // Conservative default matching prior hardcoded 24; no real term required for unit tests.
             screen: term::screen::Screen::new(80, 24),
         };
+        // For Large/Huge existing files: set initial warning message (after construction, before watcher).
+        // Small: no warning. Missing/None path: no change.
+        if let (Some(sz), Some(tier)) = (app.file.size_bytes, app.file.size_tier) {
+            if matches!(
+                tier,
+                crate::file::size::FileSizeTier::Large | crate::file::size::FileSizeTier::Huge
+            ) {
+                if let Some(w) = crate::file::size::open_size_warning_message(sz, tier) {
+                    app.message = Some(w);
+                }
+            }
+        }
         watch::refresh_file_watcher(&mut app);
         Ok(app)
     }

@@ -768,3 +768,5 @@ Key unresolved limitations that still matter:
 - Phase 2-t (narrow harden): newline clear fix, read-fail no-lie, logic extracted to reload.rs; no watcher.
 - Phase 2-u (narrow cleanup): observe single-capture via pure helper; one ExternalFileObservation for Ctrl+R status+arm; handle reuses obs (no double observe); tightened generic newline regression; no watcher/background/polling/hash/full-read/new deps.
 - Phase 2-v (narrow cleanup): genuine single-capture observe_external_file (preserve Result, no fs::metadata fallback on error); live_snapshot=None + Unknown on hard meta error; NotFound still Absent; no watcher/background/polling/hash/full-read/new deps.
+
+- Phase 2-w (narrow foundation): added explicit `file_watch: bool` cap (Plain+Project both true; is_plain_safe unchanged); FileWatcher::new now takes &Capabilities (returns Option); fixed stale "must not Plain" contract in watcher header + minimal sketches in TODO/0001. No notify dep, no impl, no threads, no polling, no App ctor, no reload changes.

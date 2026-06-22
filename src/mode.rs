@@ -119,11 +119,7 @@ impl Capabilities {
     /// Returns true if this capability set is safe for Plain mode.
     /// Used in tests and assertions.
     pub fn is_plain_safe(&self) -> bool {
-        !self.linters
-            && !self.lsp
-            && !self.repo_scan
-            && !self.repo_llm
-            && !self.network_llm
+        !self.linters && !self.lsp && !self.repo_scan && !self.repo_llm && !self.network_llm
     }
 }
 
@@ -155,7 +151,8 @@ mod tests {
     fn file_watch_is_plain_safe_and_distinct_from_project_flags() {
         let plain = Capabilities::from_mode(Mode::Plain);
         assert!(plain.file_watch, "file_watch allowed in Plain");
-        assert!(plain.is_plain_safe(), "file_watch must not make Plain unsafe");
+        let safe = plain.is_plain_safe();
+        assert!(safe, "file_watch must not make Plain unsafe");
         assert!(!plain.repo_scan && !plain.lsp && !plain.network_llm);
 
         let proj = Capabilities::from_mode(Mode::Project);

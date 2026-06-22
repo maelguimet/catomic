@@ -43,6 +43,20 @@ impl Screen {
         self.width as usize
     }
 
+    /// Force scroll offsets to safe values for zero-size terminals.
+    /// If visible_height() == 0, force scroll_top = 0.
+    /// If visible_width() == 0, force scroll_left = 0.
+    /// Nonzero dimensions leave existing offsets unchanged (Screen has no buffer size info).
+    /// Called on resize and defensively in reveal paths for zero-size safety.
+    pub fn clamp_scroll(&mut self) {
+        if self.visible_height() == 0 {
+            self.scroll_top = 0;
+        }
+        if self.visible_width() == 0 {
+            self.scroll_left = 0;
+        }
+    }
+
     /// Ensure `row` is visible within the content area (using visible_height()).
     /// Bottom row is reserved for message/status; content viewport height is visible_height().
     /// If visible height is 0, scroll_top is forced to 0.
@@ -214,5 +228,70 @@ mod tests {
         let mut s = Screen::new(1, 5);
         s.reveal_col(10);
         assert_eq!(s.scroll_left, 10);
+    }
+
+    // Phase 2-f: clamp_scroll invariant tests for zero-size / tiny terminals
+
+    #[test]
+    fn clamp_scroll_zero_height_forces_scroll_top_zero() {
+        let mut s = Screen::new(80, 0);
+        s.scroll_top = 42;
+        s.scroll_left = 7;
+        s.clamp_scroll();
+        assert_eq!(s.scroll_top, 0, "zero height must force scroll_top=0");
+        assert_eq!(s.scroll_left, 7, "nonzero width leaves scroll_left alone");
+    }
+
+    #[test]
+    fn clamp_scroll_zero_width_forces_scroll_left_zero() {
+        let mut s = Screen::new(0, 10);
+        s.scroll_left = 99;
+        s.scroll_top = 3;
+        s.clamp_scroll();
+        assert_eq!(s.scroll_left, 0, "zero width must force scroll_left=0");
+        assert_eq!(s.scroll_top, 3, "nonzero height leaves scroll_top alone");
+    }
+
+    #[test]
+    fn clamp_scroll_nonzero_dimensions_preserve_offsets() {
+        let mut s = Screen::new(40, 12); // vh=11, vw=40
+        s.scroll_top = 5;
+        s.scroll_left = 12;
+        s.clamp_scroll();
+        assert_eq!(s.scroll_top, 5);
+        assert_eq!(s.scroll_left, 12);
+    }
+
+    #[test]
+    fn reveal_row_and_col_still_satisfy_after_repeated_calls() {
+        // After multiple reveals, the cursor should be inside the viewport.
+        let mut s = Screen::new(10, 6); // vh=5, vw=10
+        s.scroll_top = 0;
+        s.scroll_left = 0;
+
+        // Simulate a cursor wandering and repeated reveal
+        for row in 0..20 {
+            s.reveal_row(row);
+            let vh = s.visible_height();
+            assert!(row >= s.scroll_top && row < s.scroll_top + vh,
+                "row {} must be visible after reveal; scroll_top={}", row, s.scroll_top);
+        }
+
+        for col in 0..30 {
+            s.reveal_col(col);
+            let vw = s.visible_width();
+            assert!(col >= s.scroll_left && col < s.scroll_left + vw,
+                "col {} must be visible after reveal; scroll_left={}", col, s.scroll_left);
+        }
+    }
+
+    #[test]
+    fn clamp_scroll_zero_size_both_forces_both() {
+        let mut s = Screen::new(0, 0);
+        s.scroll_top = 123;
+        s.scroll_left = 77;
+        s.clamp_scroll();
+        assert_eq!(s.scroll_top, 0);
+        assert_eq!(s.scroll_left, 0);
     }
 }

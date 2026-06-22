@@ -232,8 +232,7 @@ impl App {
             //   - KeyCode::Char('z') + CONTROL + SHIFT
             //   - KeyCode::Char('Z') + CONTROL + SHIFT
             // Place before generic Char so CONTROL combos fire. No other UI changes.
-            // Mark dirty conservatively (undo/redo can mutate); exact save-point
-            // tracking is future.
+            // Dirty is computed exactly from edit_history_position vs saved token (Phase 2-j).
             KeyEvent {
                 code: KeyCode::Char('z'),
                 modifiers,

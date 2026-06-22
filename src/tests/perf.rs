@@ -176,7 +176,11 @@ mod tests {
 
         generate_dense_ascii_file(&p, size).expect("generate small dense");
         let meta = fs::metadata(&p).expect("meta");
-        assert_eq!(meta.len(), size, "generated dense must report exact requested size");
+        assert_eq!(
+            meta.len(),
+            size,
+            "generated dense must report exact requested size"
+        );
 
         cleanup_perf(&p);
     }
@@ -189,7 +193,8 @@ mod tests {
 
         generate_dense_ascii_file(&p, size).expect("gen");
         // content is ASCII; App::new must open and record size_bytes + Small tier
-        let app = crate::app::App::new(Some(&p.to_string_lossy())).expect("App::new small gen file");
+        let app =
+            crate::app::App::new(Some(&p.to_string_lossy())).expect("App::new small gen file");
         assert!(app.file.path.is_some());
         assert_eq!(app.file.size_bytes, Some(size));
         assert_eq!(
@@ -211,7 +216,8 @@ mod tests {
         let mut app = crate::app::App::new(Some(&p.to_string_lossy())).expect("open smoke");
         // basic render smoke via public seam (captured writer)
         let mut out: Vec<u8> = Vec::new();
-        app.render(&mut out).expect("render must not panic on small generated");
+        app.render(&mut out)
+            .expect("render must not panic on small generated");
         // at least some bytes or at least no crash
         let _ = out.len();
 
@@ -238,7 +244,10 @@ mod tests {
             crate::app::App::new(Some(&p.to_string_lossy())).expect("open 10mib")
         });
 
-        assert_eq!(app.file.size_tier, Some(crate::file::size::FileSizeTier::Large));
+        assert_eq!(
+            app.file.size_tier,
+            Some(crate::file::size::FileSizeTier::Large)
+        );
         let msg = app.message.as_deref().unwrap_or("");
         assert!(
             msg.contains("Large file") && msg.contains("Editing may be slower"),
@@ -278,7 +287,10 @@ mod tests {
         let app = match app_res {
             Ok(a) => a,
             Err(e) => {
-                eprintln!("App::new 100mib returned error (env limit?): {}; cleaning", e);
+                eprintln!(
+                    "App::new 100mib returned error (env limit?): {}; cleaning",
+                    e
+                );
                 cleanup_perf(&p);
                 return;
             }
@@ -316,7 +328,10 @@ mod tests {
         match measure_elapsed("create sparse 1g+", || try_generate_sparse_file(&p, size)) {
             Ok(()) => {}
             Err(e) => {
-                eprintln!("sparse >1GiB not supported on this FS ({}); skipping cleanly", e);
+                eprintln!(
+                    "sparse >1GiB not supported on this FS ({}); skipping cleanly",
+                    e
+                );
                 cleanup_perf(&p);
                 return;
             }

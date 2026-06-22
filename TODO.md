@@ -745,7 +745,7 @@ Update this file as decisions are made or phases complete. Add concrete issues o
   - App saves exclusively through atomic_write_string (Ctrl+S); remembers untitled.txt when needed.
   - Dirty=false after open (existing or missing-file); =true on insert/newline/delete/undo/redo keys; =false after successful save.
   - No dirty on movement/render.
-  - Dirty flag is conservative; undoing back to saved content may still show dirty until exact save-point tracking lands.
+  - Dirty flag is conservative (Phase 2-a historical); exact save-point token tracking landed in Phase 2-j (see below).
   - Tests: atomic unit (bytes/overwrite/no-temp), app/file-state lifecycle via keys, golden that exercises atomic helper for exact save content.
   - Existing undo-across-save golden tests still pass. All Phase 1 tests green.
 

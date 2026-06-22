@@ -146,6 +146,30 @@ impl App {
                 self.render(&mut io::stdout())?;
             }
 
+            // Undo / Redo (Phase 1C). Ctrl+Z undo; Ctrl+Y and Ctrl+Shift+Z redo.
+            // Place before generic Char so CONTROL combos fire (Ctrl+Z etc are Char + CONTROL).
+            // No other UI changes.
+            KeyEvent {
+                code: KeyCode::Char('z'),
+                modifiers,
+                ..
+            } if modifiers.contains(KeyModifiers::CONTROL) => {
+                if modifiers.contains(KeyModifiers::SHIFT) {
+                    self.buffer.redo();
+                } else {
+                    self.buffer.undo();
+                }
+                self.render(&mut io::stdout())?;
+            }
+            KeyEvent {
+                code: KeyCode::Char('y'),
+                modifiers,
+                ..
+            } if modifiers.contains(KeyModifiers::CONTROL) => {
+                self.buffer.redo();
+                self.render(&mut io::stdout())?;
+            }
+
             // Basic movement + editing (Phase 0)
             // Accept any Char that is not control. Apply SHIFT modifier for
             // uppercase letters (crossterm may report lowercase + SHIFT).
@@ -183,29 +207,6 @@ impl App {
                 ..
             } => {
                 self.buffer.delete_forward();
-                self.render(&mut io::stdout())?;
-            }
-
-            // Undo / Redo (Phase 1C). Ctrl+Z undo; Ctrl+Y and Ctrl+Shift+Z redo.
-            // No other UI changes.
-            KeyEvent {
-                code: KeyCode::Char('z'),
-                modifiers,
-                ..
-            } if modifiers.contains(KeyModifiers::CONTROL) => {
-                if modifiers.contains(KeyModifiers::SHIFT) {
-                    self.buffer.redo();
-                } else {
-                    self.buffer.undo();
-                }
-                self.render(&mut io::stdout())?;
-            }
-            KeyEvent {
-                code: KeyCode::Char('y'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => {
-                self.buffer.redo();
                 self.render(&mut io::stdout())?;
             }
 

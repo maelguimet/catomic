@@ -684,3 +684,83 @@ fn app_delete_and_backspace_after_horiz_scroll_reduce_scroll_left_when_cursor_be
     // Delete forward does not move cursor col, but may change content; scroll_left should stay sensible (no increase here)
     assert!(app.screen.scroll_left <= pre + 1); // allow small tolerance; main is no explosion
 }
+
+// Phase 2-h: buffer-aware viewport clamp tests (vertical first)
+
+#[test]
+fn app_viewport_clamp_scroll_top_to_zero_when_buffer_shorter_than_viewport() {
+    let mut app = App::new(None).unwrap();
+    // 3 lines total (start + 2 newlines)
+    app.buffer.insert_newline();
+    app.buffer.insert_newline();
+    assert_eq!(app.buffer.line_count(), 3);
+
+    app.screen.height = 11; // vh = 10
+    app.screen.scroll_top = 5; // push beyond valid (max should be 0)
+
+    app.reveal_cursor();
+
+    assert_eq!(
+        app.screen.scroll_top, 0,
+        "buffer shorter than viewport must clamp scroll_top to 0"
+    );
+}
+
+#[test]
+fn app_viewport_clamps_scroll_top_after_manual_push_then_resize_or_reveal() {
+    let mut app = App::new(None).unwrap();
+    // Build 20 lines (0..19), cursor ends at row 19
+    for _ in 0..19 {
+        app.buffer.insert_newline();
+    }
+    assert_eq!(app.buffer.cursor().row, 19);
+    let lc = app.buffer.line_count();
+    assert_eq!(lc, 20);
+
+    app.screen.height = 6; // vh=5
+    let vh = app.screen.visible_height();
+    assert_eq!(vh, 5);
+    let max_valid = lc - vh; // 15
+
+    // Manually push beyond
+    app.screen.scroll_top = 99;
+
+    // Via resize seam
+    let mut out: Vec<u8> = Vec::new();
+    app.handle_resize(80, 6, &mut out).unwrap();
+    assert!(
+        app.screen.scroll_top <= max_valid,
+        "after push+resize, scroll_top must clamp to <= max_valid={}; got {}",
+        max_valid,
+        app.screen.scroll_top
+    );
+
+    // Via direct reveal after re-push
+    app.screen.scroll_top = 99;
+    app.reveal_cursor();
+    assert!(
+        app.screen.scroll_top <= max_valid,
+        "after push+reveal, scroll_top must clamp to <= max_valid={}; got {}",
+        max_valid,
+        app.screen.scroll_top
+    );
+}
+
+#[test]
+fn app_viewport_zero_size_regression_from_phase_2f_still_holds() {
+    // Explicit regression: the 2-f zero cases must continue to hold after buffer clamp.
+    let mut app = App::new(None).unwrap();
+    app.screen.scroll_top = 42;
+    app.screen.scroll_left = 17;
+    app.screen.width = 20;
+    app.screen.height = 10;
+
+    let mut out: Vec<u8> = Vec::new();
+    app.handle_resize(0, 0, &mut out).unwrap();
+
+    assert_eq!(app.screen.width, 0);
+    assert_eq!(app.screen.height, 0);
+    assert_eq!(app.screen.scroll_top, 0, "zero height still forces scroll_top=0");
+    assert_eq!(app.screen.scroll_left, 0, "zero width still forces scroll_left=0");
+    assert!(!out.is_empty());
+}

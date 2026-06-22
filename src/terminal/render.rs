@@ -54,11 +54,7 @@ pub fn render_buffer<W: Write + ?Sized>(
     // If cursor is outside the current slice we still emit a position
     // (terminal may clip; Phase 0 has no scroll).
     let Cursor { row, col } = buffer.cursor();
-    let screen_row = if row >= start {
-        row - start + 1
-    } else {
-        1
-    };
+    let screen_row = if row >= start { row - start + 1 } else { 1 };
     // 1-based. col is scalar index per Phase 0 decision.
     let screen_col = col.saturating_add(1);
     write!(out, "\x1b[{};{}H", screen_row, screen_col)?;

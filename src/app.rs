@@ -362,7 +362,10 @@ mod tests {
 
         let app2 = App::new(Some("existing.txt")).unwrap();
         assert!(!app2.file.dirty, "open (even missing file) starts clean");
-        assert_eq!(app2.file.path.as_deref(), Some(std::path::Path::new("existing.txt")));
+        assert_eq!(
+            app2.file.path.as_deref(),
+            Some(std::path::Path::new("existing.txt"))
+        );
     }
 
     #[test]
@@ -381,7 +384,10 @@ mod tests {
 
         let mut app = App::new(Some(&test_path)).unwrap();
         assert!(!app.file.dirty);
-        assert_eq!(app.file.path.as_deref(), Some(std::path::Path::new(&test_path)));
+        assert_eq!(
+            app.file.path.as_deref(),
+            Some(std::path::Path::new(&test_path))
+        );
 
         // char insert marks dirty
         app.handle_key(KeyEvent {
@@ -532,7 +538,10 @@ mod tests {
         // any content edit clears pending (movement would not)
         app.handle_key(make_key(KeyCode::Char('!'), KeyModifiers::NONE))
             .unwrap();
-        assert!(!app.pending_quit_confirm, "edit after warning clears pending");
+        assert!(
+            !app.pending_quit_confirm,
+            "edit after warning clears pending"
+        );
         // message may remain or not per current minimal; pending cleared is required
     }
 }

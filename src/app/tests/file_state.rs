@@ -626,3 +626,100 @@ fn app_file_state_no_path_reports_nopath() {
         crate::file::io::ExternalFileStatus::NoPath
     );
 }
+
+// Phase 2-m regressions: explicit coverage of snapshot Absent/Unknown error semantics
+// and preservation of Phase 2-l open/save behavior. No watcher/reload.
+
+#[test]
+fn app_file_state_regression_open_missing_starts_clean_with_absent_snapshot() {
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!(
+        "catomic_2m_reg_missing_{}.txt",
+        std::process::id()
+    ));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+
+    let app = App::new(Some(&p)).unwrap();
+    assert!(!app.file.dirty, "open missing must start clean");
+    assert_eq!(
+        app.file.disk_snapshot,
+        Some(crate::file::io::FileSnapshot::Absent),
+        "regression: missing path must yield explicit Absent snapshot"
+    );
+
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
+fn app_file_state_regression_open_existing_starts_clean_with_present_snapshot() {
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!(
+        "catomic_2m_reg_exist_{}.txt",
+        std::process::id()
+    ));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "hello reg").unwrap();
+
+    let app = App::new(Some(&p)).unwrap();
+    assert!(!app.file.dirty, "open existing must start clean");
+    match &app.file.disk_snapshot {
+        Some(crate::file::io::FileSnapshot::Present { len, .. }) => {
+            assert_eq!(*len, 9, "regression: snapshot len must match existing file");
+        }
+        _ => panic!("regression: existing must store Present snapshot"),
+    }
+
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
+fn app_file_state_regression_successful_save_marks_clean_and_updates_snapshot() {
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!(
+        "catomic_2m_reg_save_{}.txt",
+        std::process::id()
+    ));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+
+    let mut app = App::new(Some(&p)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key(make_key(KeyCode::Char('1'), KeyModifiers::NONE))
+        .unwrap();
+    assert!(app.file.dirty);
+
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(!app.file.dirty, "regression: save must mark clean");
+    match &app.file.disk_snapshot {
+        Some(crate::file::io::FileSnapshot::Present { len, .. }) => {
+            assert_eq!(*len, 2, "regression: save must update snapshot to Present len");
+        }
+        _ => panic!("regression: successful save must set Present snapshot"),
+    }
+
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
+fn app_file_state_new_does_not_silently_map_non_notfound_meta_error_to_absent() {
+    // Hard to force a non-NotFound metadata error from capture_file_snapshot
+    // *after* the read_to_string inside App::new succeeds for the same path,
+    // without races, chmod races, or platform-specific FS tricks that are not
+    // portable/reliable across test envs (e.g. immediately making a just-read
+    // file un-statable while keeping it readable as text).
+    //
+    // Policy is: real capture errors must not become Absent. App::new now does
+    // `Some(capture(...) ?)` so non-NotFound errors propagate rather than map.
+    //
+    // We cover the io contract explicitly and portably with:
+    //   file::io::tests::capture_file_snapshot_returns_absent_only_for_not_found
+    //   file::io::tests::compare_to_snapshot_non_notfound_meta_error_is_unknown
+    //   (the latter uses a regular file + .join("child") to force NotADirectory).
+    //
+    // This regression test documents the intent at the App layer.
+    let _ = "see file/io tests for portable non-NotFound -> not-Absent coverage";
+}

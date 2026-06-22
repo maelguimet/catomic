@@ -16,6 +16,7 @@ mod save_conflict;
 mod snapshot;
 mod watcher_lifecycle;
 mod watcher_live;
+mod watcher_pending;
 mod watcher_runtime;
 mod watcher_signal;
 

@@ -8,20 +8,14 @@
 //!              uses `use super::*;` to access private App methods (e.g. handle_key_with).
 //! Phase: 2-g cleanup (no behavior change).
 
+mod editing;
 mod file_state;
 mod viewport;
 
 use super::*;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+pub(super) use editing::make_key;
+
 // Phase 2-b quit guard + message tests (via simulated keys; no real terminal)
 // (actual tests moved to file_state.rs and other submodules for size)
-
-pub(super) fn make_key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
-    KeyEvent {
-        code,
-        modifiers,
-        kind: crossterm::event::KeyEventKind::Press,
-        state: crossterm::event::KeyEventState::NONE,
-    }
-}

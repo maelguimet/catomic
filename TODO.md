@@ -96,7 +96,7 @@ struct Capabilities {
 **Construction rules** (the bouncer):
 - At startup (and on any explicit mode switch), compute one `Capabilities` from the current `Mode`.
 - A subsystem (linter runner, project scanner, LSP client, repo LLM broker, network LLM client, etc.) is **only instantiated** when its corresponding flag is `true`.
-- File watching (when `file_watch`) is Plain-allowed but real construction remains explicitly gated; current pass implements none of notify/background.
+- File watching (when `file_watch`) is Plain-allowed. App owns a best-effort gated FileWatcher (notify) when a watchable path exists; runtime loop checks once per iteration via a non-blocking helper (signals are hints only; fresh observe_external_file + apply_check_observation is truth). No auto-reload; Modified/Deleted only arm manual confirmation (Ctrl+R). Unchanged/NoPath suppress self-save noise (or clear stale pending). Deterministic seams in tests; live smoke is ignored/manual.
 - "Constructed but dormant", "lazy but the factory lives at startup", or "we have the object but we promise not to call it" all fail the rule. If the capability is false, the type must not be present in the running application at all.
 - Plain mode **must** produce:
   - `linters: false`, `lsp: false`, `repo_scan: false`, `repo_llm: false`
@@ -786,8 +786,35 @@ Key unresolved limitations that still matter:
 
 - Phase 2-ad (broader pass): watcher Unchanged/NoPath now clear a stale pending_reload (if present) and surface the corresponding status message, returning visible so the loop renders once; when no pending they continue to be fully ignored (no overwrite). Added required deterministic stale-pending cleanup tests (watcher runtime + direct apply seams). Tightened one-call-one-signal test to prove two visible queued signals are each consumed by separate calls with observable true + render. Split watcher.rs tests to watcher_tests.rs (main file <300). Fixed stale "not consumed / not yet consumed" wording in watcher.rs with truthful description of current App-owned + once-per-loop helper model. Added optional ignored live smoke. All mandated tests + full suite green; rustfmt --check; git diff --check clean. (See final response for hashes and explicit behavior note.)
 
-Key unresolved limitations (still current after 2-ad):
-- watcher signals are runtime hints only; Unchanged/NoPath watcher observations clear stale pending_reload when armed, otherwise ignored (to suppress self-save noise);
-- no auto-reload; Modified/Deleted from watcher (or Ctrl+R) only arm confirmation;
-- no default live OS notify tests (deterministic seams only; ignored smoke optional);
-- metadata-only external detection (len+mtime) and same-size/same-mtime overwrite limitation remain.
+- Phase 2-ae (broader pass): close external-file/watch safety arc (test hygiene, acceptance coverage, docs). Split oversized watcher_* app tests (pending module added; each <300 lines). Added deterministic watcher + manual Ctrl+R acceptance tests (arm then second press reloads/clears/discard-warn/re-arms). Live smoke tightened (ignore reason, bounded, skip-clean, no CI reliance). Removed stale current-state "no watcher / not consumed / non-runtime / implements none" wording (except clearly historical notes for 2-l/2-s etc). Added "External-file safety current state after 2-ae" note + concrete Phase 2A acceptance checklist. No auto-reload, no content read outside confirmed Ctrl+R, no new deps, no manual threads, no save-conflict or manual Ctrl+R behavior changes. All required tests green.
+
+Key unresolved limitations (still current after 2-ae):
+- watcher signals are runtime hints only; App-owned best-effort; runtime checks watcher once per loop via helper (try_recv inside check_file_watcher_once only); Unchanged/NoPath from watcher clear stale pending_reload when armed, otherwise fully ignored (suppress self-save noise);
+- no auto-reload; Modified/Deleted (from watcher or Ctrl+R) only arm confirmation; second Ctrl+R performs actual reload using fresh observe + pending match (or clears for Deleted);
+- no content read from watcher signal path except the existing confirmed Ctrl+R reload path;
+- metadata-only external detection (len+mtime via observe_external_file / capture / compare); same-size/same-mtime overwrite limitation remains (no hash/content);
+- default test suite uses deterministic queued-signal seams only (TestStub/inject + replace_file_watcher_for_test); live OS notify smoke is ignored/manual and must not be required for CI;
+- big-file tiers, size classification, perf harness, and large-file guardrails remain unfinished (next phase work).
+
+External-file safety current state after 2-ae:
+- manual Ctrl+R status/reload exists and is the confirmation path (first press arms, second performs if snapshot matches; drift re-arms).
+- save conflict guard exists (first S refuses on Modified/Deleted/Unknown against live snapshot; second forces only on exact match).
+- watcher exists and is App-owned best-effort (gated by caps.file_watch + watchable parent path; constructed in Plain on new(path) and after first successful save from untitled).
+- runtime checks watcher once per loop (check_file_watcher_once_and_render near top of run); try_recv only inside that helper.
+- signals are hints only; source of truth is always fresh metadata observation (observe_external_file) + apply_check_observation (same path used by Ctrl+R).
+- Modified/Deleted arm pending (like first Ctrl+R); Unchanged/NoPath from watcher suppress noise or clear stale pending only.
+- no auto-reload ever; no content read except on confirmed Ctrl+R second press.
+- same-size/same-mtime limitation remains (metadata-only).
+- tests: deterministic seams cover arming + manual follow-up; live smoke is #[ignore] and manual.
+
+Phase 2A external-file safety acceptance checklist (concrete):
+- open file captures disk snapshot (Present or explicit Absent).
+- successful save updates disk_snapshot + clears dirty + clears pending_reload/quit/save-conflict.
+- external modified/deleted is detected by manual Ctrl+R (arms with correct message).
+- save conflict: first press refuses (keeps dirty, sets msg, records pending); second forces only on identical observation.
+- Ctrl+R reload confirmation handles Modified (reload content + snapshot + "Reloaded") and Deleted (clear buffer + Absent + cleared msg).
+- watcher signal only arms/updates status (via helper); never reloads or mutates content/dirty/snapshot.
+- watcher self-save noise suppressed (Unchanged/NoPath ignored when no pending).
+- stale watcher pending clears when disk resolves (Unchanged/NoPath with prior pending surfaces msg + clears).
+- tests cover deterministic seams (apply + queued + render) + manual Ctrl+R follow-ups.
+- live notify smoke is ignored/manual; never runs in default cargo test.

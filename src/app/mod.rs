@@ -40,12 +40,13 @@ pub struct App {
     pub message: Option<String>,
     /// When true, a second Ctrl+Q while dirty will force quit (no save).
     pub pending_quit_confirm: bool,
-    /// When Some, records the ExternalFileStatus observed on a first Ctrl+S that
-    /// refused due to external change (Modified/Deleted/Unknown). Used so that a
-    /// second Ctrl+S can force only for the same still-conflicting status.
+    /// When Some, records a token bound to the concrete observed disk state
+    /// (path + ExternalFileStatus + live FileSnapshot) at the time of a first
+    /// Ctrl+S refusal. Second Ctrl+S forces only if a fresh observation matches
+    /// the token (for Modified: identical snapshot; Deleted/Unknown by kind).
     /// Cleared on content edits, successful save, and path changes.
     /// Movement/resize/render must not touch it.
-    pub pending_save_conflict: Option<crate::file::io::ExternalFileStatus>,
+    pub pending_save_conflict: Option<save::PendingSaveConflict>,
     /// Terminal screen size and scroll state. Single source of truth for render height.
     /// Initialized conservatively; updated from crossterm after setup and on resize.
     pub screen: term::screen::Screen,
@@ -413,12 +414,6 @@ impl App {
     /// NoPath for untitled; delegates to file_state helper (std metadata compare only).
     fn external_file_status(&self) -> crate::file::io::ExternalFileStatus {
         external_file_status(&self.file)
-    }
-
-    /// Forward to extracted implementation in save module (Phase 2-o slimming).
-    /// No behavior change.
-    fn do_atomic_save(&mut self, out: &mut dyn Write) -> io::Result<()> {
-        save::do_atomic_save(self, out)
     }
 
     fn render(&self, stdout: &mut dyn Write) -> io::Result<()> {

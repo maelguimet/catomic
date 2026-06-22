@@ -315,7 +315,10 @@ fn app_file_state_status_change_between_confirms_does_not_force() {
     // first S -> pending Modified
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(app.pending_save_conflict == Some(crate::file::io::ExternalFileStatus::Modified));
+    assert_eq!(
+        app.pending_save_conflict.as_ref().map(|p| &p.status),
+        Some(&crate::file::io::ExternalFileStatus::Modified)
+    );
 
     // between: change external to Deleted
     let _ = std::fs::remove_file(&p);
@@ -327,8 +330,8 @@ fn app_file_state_status_change_between_confirms_does_not_force() {
     assert!(app.file.dirty, "must still be dirty (no force write)");
     // pending should now reflect the new status (Deleted)
     assert_eq!(
-        app.pending_save_conflict,
-        Some(crate::file::io::ExternalFileStatus::Deleted)
+        app.pending_save_conflict.as_ref().map(|p| &p.status),
+        Some(&crate::file::io::ExternalFileStatus::Deleted)
     );
     let msg = app.message.as_deref().unwrap_or("");
     assert!(

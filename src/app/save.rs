@@ -16,6 +16,20 @@ use std::path::PathBuf;
 use crate::file;
 use crate::file::io::{ExternalFileStatus, FileSnapshot};
 
+/// Token recorded on first save refusal for a conflict.
+/// Binds to the specific observed disk state (path + status + live snapshot at refusal time),
+/// not only the status variant. This prevents force-saving when the disk has drifted
+/// again under the same variant (e.g. Modified at t1 vs Modified at t2).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PendingSaveConflict {
+    /// The target path at the time the conflict was recorded.
+    pub path: PathBuf,
+    pub status: ExternalFileStatus,
+    /// Live snapshot observed when we refused. For Modified this distinguishes
+    /// different external states; for Deleted/Unknown kind-matching suffices.
+    pub snapshot: Option<FileSnapshot>,
+}
+
 /// Returns the exact refusal message text used for a given external status.
 /// Used by guard to avoid duplicating strings.
 pub(crate) fn save_conflict_message(status: &ExternalFileStatus) -> String {
@@ -38,18 +52,58 @@ pub(crate) fn save_conflict_message(status: &ExternalFileStatus) -> String {
 
 /// Thin entry for the entire save flow (normal or force-conflict).
 /// Keeps the match arm in mod.rs to a single obvious call.
+/// Phase 2-p: decision uses ExternalFileObservation (status + live snapshot) so that
+/// a pending confirmation is bound to the specific disk state seen on first refusal.
 pub(crate) fn handle_save(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
-    let status = app.external_file_status();
-    if status == ExternalFileStatus::NoPath || status == ExternalFileStatus::Unchanged {
+    let current_path = app.file.path.clone();
+    let baseline = app.file.disk_snapshot.as_ref();
+    let obs = crate::file::io::observe_external_file(
+        current_path.as_ref().map(|p| p.as_path()),
+        baseline,
+    );
+
+    if obs.status == ExternalFileStatus::NoPath || obs.status == ExternalFileStatus::Unchanged {
         app.pending_save_conflict = None;
-        do_atomic_save(app, out)
-    } else if app.pending_save_conflict.as_ref() == Some(&status) {
-        // same conflict still live -> allow force this time
+        return do_atomic_save(app, out);
+    }
+
+    // Conflict status: decide force only if pending token matches the *current observed* state.
+    let should_force = match &app.pending_save_conflict {
+        Some(pend) => {
+            if let Some(ref cp) = current_path {
+                if pend.path == *cp {
+                    match (&pend.status, &obs.status) {
+                        (ExternalFileStatus::Modified, ExternalFileStatus::Modified) => {
+                            pend.snapshot == obs.live_snapshot
+                        }
+                        (ExternalFileStatus::Deleted, ExternalFileStatus::Deleted) => true,
+                        (ExternalFileStatus::Unknown(k1), ExternalFileStatus::Unknown(k2)) => {
+                            k1 == k2
+                        }
+                        _ => false,
+                    }
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        }
+        None => false,
+    };
+
+    if should_force {
         do_atomic_save(app, out)
     } else {
-        // first time seeing this conflict, or status drifted: refuse, remember for confirm
-        app.pending_save_conflict = Some(status.clone());
-        app.message = Some(save_conflict_message(&status));
+        // First time seeing this concrete conflict, or the live state drifted:
+        // refuse, record a fresh token bound to the *current* observation (incl. snapshot).
+        let target_path = current_path.expect("conflict status requires a path");
+        app.pending_save_conflict = Some(PendingSaveConflict {
+            path: target_path,
+            status: obs.status.clone(),
+            snapshot: obs.live_snapshot,
+        });
+        app.message = Some(save_conflict_message(&obs.status));
         app.render(out)
     }
 }

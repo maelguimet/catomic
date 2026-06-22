@@ -12,7 +12,7 @@
 
 mod edit;
 mod query;
-mod types;
+pub(crate) mod types;
 
 use std::borrow::Cow;
 

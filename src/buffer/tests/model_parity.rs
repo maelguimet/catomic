@@ -72,8 +72,7 @@ impl DumbModel {
             }
         }
         if line_start == 0
-            && (self.cursor == 0
-                || self.chars.get(self.cursor.saturating_sub(1)) != Some(&'\n'))
+            && (self.cursor == 0 || self.chars.get(self.cursor.saturating_sub(1)) != Some(&'\n'))
         {
             // already top line
             let col = self.cursor - line_start;

@@ -17,14 +17,14 @@
 #[cfg(test)]
 mod basic;
 #[cfg(test)]
-mod storage_parity;
-#[cfg(test)]
 mod edit_parity;
 #[cfg(test)]
-mod undo_redo;
+mod history_position;
 #[cfg(test)]
 mod model_parity;
 #[cfg(test)]
-mod history_position;
+mod storage_parity;
+#[cfg(test)]
+mod undo_redo;
 
 // (All tests extracted; no more catch-all temp mod.)

@@ -1,6 +1,6 @@
-//! Mutation logic for PieceTable: insert, delete, basic movement (Phase 1B).
+//! Mutation logic for PieceTable: insert, delete, basic movement, undo/redo splice (Phases 1B-1C).
 //!
-//! Coalescing and index maintenance will be wired here.
+//! Coalescing and index maintenance will be wired here. History deltas returned for tx recording.
 
 use super::types::{Piece, PieceTable, Source};
 

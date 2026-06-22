@@ -1,15 +1,15 @@
-//! Core types for PieceTable (Phase 1B).
+//! Core types for PieceTable (Phases 1B-1C).
 //!
 //! Source, Piece, LineIndex (data), PieceTable struct definition.
 //!
 //! Purpose: own the storage model and construction.
-//! Owns: original/add buffers, pieces list, line index, cursor state + byte offset cache.
+//! Owns: original/add buffers, pieces list, line index, cursor state + byte offset cache, undo_stack + recording flag.
 //! Must not: perform heavy UI or project work.
 //! Invariants:
 //! - Pieces are non-overlapping, cover the logical document, byte ranges respect char boundaries.
 //! - LineIndex reflects the logical newlines in the piece concatenation.
 //! - cursor_byte_offset always matches the byte position of (cursor.row, cursor.col).
-//! Phase: 1B
+//! Phase: 1B-1C
 
 use crate::buffer::Cursor;
 use crate::buffer::line_index::LineIndex;

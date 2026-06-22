@@ -1,14 +1,14 @@
-//! Piece table core implementing Buffer (Phase 1B).
+//! Piece table core implementing Buffer (Phases 1B-1C).
 //!
 //! Purpose: correct + optimized text storage (piece table + line index) behind Buffer.
-//! Owns: original/add, pieces, LineIndex (rebuilt after edits), cursor + byte offset cache.
-//! Must not: undo/redo (1C), LLM/project/config, UI expansion.
+//! Owns: original/add, pieces, LineIndex, cursor + byte offset cache, undo/redo tx stack.
+//! Must not: LLM/project/config, UI expansion.
 //! Invariants:
 //! - Pieces UTF-8 char-boundary safe, cover logical doc.
 //! - index consistent after edit (rebuild bridge first; incremental later).
 //! - cursor_byte_offset always matches (row, col) position.
 //! - Queries (line/visible) use slice + index, no full materialization.
-//! Phase: 1B.
+//! Phase: 1B-1C.
 
 mod edit;
 mod query;

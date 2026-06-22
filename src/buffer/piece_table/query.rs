@@ -1,4 +1,4 @@
-//! Query methods and helpers for PieceTable (Phase 1B).
+//! Query methods and helpers for PieceTable (Phases 1B-1C).
 //!
 //! Includes slice_to_string (avoids full materialization), logical helpers,
 //! split_point, and within-line measurements that will use the LineIndex.

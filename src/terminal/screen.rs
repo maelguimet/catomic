@@ -149,4 +149,70 @@ mod tests {
         s.reveal_row(10);
         assert_eq!(s.scroll_top, 10);
     }
+
+    // Phase 2-e: reveal_col unit tests (scalar columns, visible_width = width)
+
+    #[test]
+    fn reveal_col_left_of_viewport_scrolls_left() {
+        let mut s = Screen::new(10, 5); // vw=10
+        s.scroll_left = 5;
+        s.reveal_col(2);
+        assert_eq!(s.scroll_left, 2, "col left of viewport must scroll to it");
+    }
+
+    #[test]
+    fn reveal_col_right_of_viewport_scrolls_right() {
+        let mut s = Screen::new(5, 5); // vw=5, visible [0,4] if scroll=0
+        s.scroll_left = 0;
+        s.reveal_col(5); // 5 >= 0+5 => scroll = 5+1-5=1
+        assert_eq!(
+            s.scroll_left, 1,
+            "col right of viewport scrolls so it is last visible"
+        );
+    }
+
+    #[test]
+    fn reveal_col_already_visible_does_not_move() {
+        let mut s = Screen::new(10, 5); // vw=10
+        s.scroll_left = 3; // visible [3,12]
+        s.reveal_col(3);
+        assert_eq!(s.scroll_left, 3);
+        s.reveal_col(7);
+        assert_eq!(s.scroll_left, 3);
+        s.reveal_col(12); // 3+10-1=12 still inside
+        assert_eq!(s.scroll_left, 3);
+    }
+
+    #[test]
+    fn reveal_col_zero_width_is_safe() {
+        let mut s = Screen::new(0, 5);
+        s.scroll_left = 42;
+        s.reveal_col(100);
+        assert_eq!(s.scroll_left, 0);
+
+        let mut s = Screen::new(0, 5);
+        s.scroll_left = 7;
+        s.reveal_col(0);
+        assert_eq!(s.scroll_left, 0);
+    }
+
+    #[test]
+    fn reveal_col_one_width_behaves_sanely() {
+        // width=1 => vw=1; only one char visible at a time
+        let mut s = Screen::new(1, 5);
+        s.scroll_left = 0;
+        s.reveal_col(0);
+        assert_eq!(s.scroll_left, 0, "col 0 visible in 1-col area");
+
+        s.reveal_col(1);
+        assert_eq!(
+            s.scroll_left, 1,
+            "scroll to keep col 1 as the single visible char"
+        );
+
+        // larger jump
+        let mut s = Screen::new(1, 5);
+        s.reveal_col(10);
+        assert_eq!(s.scroll_left, 10);
+    }
 }

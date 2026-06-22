@@ -7,13 +7,13 @@
 //! Must not: be called from handle_key / save / reload / render paths; perform reloads;
 //!   mutate dirty/snapshot/history; trust signal kind without fresh metadata observe;
 //!   expand Project/LLM/UI; call try_recv outside check_file_watcher_once.
-//! Invariants: signals are hints only; watcher signals for Unchanged/NoPath are ignored
-//!   (no message overwrite, no arm, no render) to avoid self-save noise; only
-//!   Modified/Deleted/Unknown/Error from watcher path are user-visible; manual Ctrl+R
-//!   semantics (apply_check_observation) are unchanged; no auto reload or content mutation;
-//!   construction failure remains non-fatal. check_file_watcher_once may be called from
-//!   App::run once per loop iteration.
-//! Phase: 2-ac (runtime watcher signal polish; deterministic queued tests).
+//! Invariants: signals are hints only; watcher Unchanged/NoPath observations are ignored
+//!   (no message/pending change, no render) when no pending_reload is armed (to avoid
+//!   self-save noise); when a pending_reload exists they clear it, set a status message,
+//!   and return visible (so runtime renders once); Modified/Deleted/Unknown/Error remain
+//!   user-visible; manual Ctrl+R (apply_check_observation) semantics unchanged; no auto
+//!   reload or content mutation; construction failure non-fatal.
+//! Phase: 2-ad (stale pending cleanup on watcher resolution).
 //!
 //! The only sites that set app.file.path are:
 //! - App::new (initial_path or None)
@@ -82,18 +82,23 @@ pub(crate) fn replace_file_watcher_for_test(
 /// app.file.path + disk_snapshot.
 ///
 /// Returns true if this produced a user-visible change (message or pending
-/// set, render worth doing). Returns false for Unchanged/NoPath watcher
-/// observations (suppress to avoid self-save/unchanged noise overwriting
-/// e.g. "Saved.").
+/// set, render worth doing).
 ///
-/// - Changed/Deleted + (Modified/Deleted/Unknown) obs => delegate to
-///   apply_check_observation (arms), return true.
-/// - Changed/Deleted + (Unchanged/NoPath) => ignore completely (no msg change,
-///   no arm, no clear), return false.
-/// - Error => set "File watcher error: {e}", return true.
+/// - Changed/Deleted + (Modified/Deleted/Unknown) => delegate to
+///   apply_check_observation (arms pending), return true.
+/// - Changed/Deleted + Unchanged:
+///   * if pending_reload was set: clear it, set "File unchanged on disk.",
+///     return true (stale arm resolved).
+///   * else: ignore completely (no msg change, no render), return false.
+/// - Changed/Deleted + NoPath:
+///   * if pending_reload was set: clear it, set "No file path.", return true.
+///   * else: ignore completely.
+/// - Error => set "File watcher error: {e}", return true. Do not clear pending
+///   unless a future test proves a reason.
 ///
 /// Manual Ctrl+R path (reload::apply_check_observation) is NOT affected and
-/// still surfaces "File unchanged on disk." for Unchanged.
+/// still surfaces "File unchanged on disk." / "No file path." for those cases
+/// even without a prior pending.
 pub(crate) fn apply_file_watch_signal(
     app: &mut super::App,
     signal: crate::file::watcher::FileWatchSignal,
@@ -107,10 +112,28 @@ pub(crate) fn apply_file_watch_signal(
             let baseline = app.file.disk_snapshot.as_ref();
             let obs = observe_external_file(current_path.as_ref().map(|p| p.as_path()), baseline);
             match obs.status {
-                ExternalFileStatus::Unchanged | ExternalFileStatus::NoPath => {
-                    // Ignore watcher signal to avoid self-save noise.
-                    // Do not touch message, pending_reload, dirty, buffer, snapshot, or render.
-                    false
+                ExternalFileStatus::Unchanged => {
+                    if app.pending_reload.is_some() {
+                        // Watcher observed resolution of a prior external change.
+                        // Clear the stale pending arm (no content change occurred)
+                        // and surface a status message so the user sees the resolution.
+                        app.pending_reload = None;
+                        app.message = Some("File unchanged on disk.".to_string());
+                        true
+                    } else {
+                        // No pending arm; ignore to avoid self-save noise overwriting
+                        // e.g. "Saved.". Matches Phase 2-ac behavior when nothing to clear.
+                        false
+                    }
+                }
+                ExternalFileStatus::NoPath => {
+                    if app.pending_reload.is_some() {
+                        app.pending_reload = None;
+                        app.message = Some("No file path.".to_string());
+                        true
+                    } else {
+                        false
+                    }
                 }
                 ExternalFileStatus::Modified
                 | ExternalFileStatus::Deleted
@@ -133,8 +156,10 @@ pub(crate) fn apply_file_watch_signal(
 ///
 /// If no watcher or no signal ready: returns false, no mutation.
 /// If a signal is received: calls apply_file_watch_signal and returns its
-/// visible-change result. A signal that mapped to Unchanged/NoPath is
-/// consumed but returns false (no render, no message change).
+/// visible-change result. A watcher Unchanged/NoPath signal returns false
+/// (and leaves state/message untouched) when no pending_reload was armed;
+/// when a pending existed it returns true after clearing it + setting a
+/// resolution message (render will occur).
 ///
 /// try_recv is called ONLY from this helper (never from run/handle_key/etc.).
 /// Still at most one signal per call.
@@ -154,8 +179,13 @@ pub(crate) fn check_file_watcher_once(app: &mut super::App) -> bool {
 ///
 /// Calls check_file_watcher_once (at most one try_recv + apply).
 /// Only renders if the received signal produced a visible outcome
-/// (i.e. apply returned true). Unchanged/NoPath signals are consumed but
-/// produce no render and leave prior message (e.g. "Saved.") intact.
+/// (i.e. apply returned true).
+///
+/// Unchanged/NoPath from watcher:
+/// - when no prior pending_reload: consumed, no render, prior message intact (e.g. "Saved.").
+/// - when pending_reload existed: clears it, sets a resolution message, returns true -> renders.
+///
+/// Modified/Deleted/Error (and Unchanged/NoPath that clear a stale pending) render.
 ///
 /// Returns Ok(true) if a signal was received AND produced visible state
 /// (render attempted), Ok(false) otherwise. Errors only from render.

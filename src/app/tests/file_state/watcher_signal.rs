@@ -286,3 +286,167 @@ fn check_file_watcher_once_and_render_watcher_no_signal_returns_false_writes_not
 }
 
 // Queued + render cases live in watcher_runtime.rs (uses the cfg(test) seam).
+
+// Phase 2-ad: stale pending_reload cleared by watcher Unchanged/NoPath observations.
+// When no pending: Unchanged/NoPath still fully ignored (no msg, no render).
+// Manual Ctrl+R Unchanged/NoPath behavior is unchanged (always surfaces message).
+
+#[test]
+fn watcher_unchanged_clears_stale_pending_and_sets_message() {
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!(
+        "catomic_2ad_sig_unch_clr_{}.txt",
+        std::process::id()
+    ));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "BASE").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(!app.file.dirty);
+
+    // Simulate prior external mod arm (as if a watcher Changed had armed)
+    std::fs::write(&p, "EXT").unwrap();
+    let sig = crate::file::watcher::FileWatchSignal::Changed;
+    let _ = crate::app::watch::apply_file_watch_signal(&mut app, sig);
+    assert!(app.pending_reload.is_some(), "precondition: pending armed");
+
+    // Revert disk content to match baseline snapshot's len; update snapshot mtime
+    // so next observe sees Unchanged vs the *current known baseline state*.
+    // (This exercises the watcher "resolution" branch without mtime syscalls.)
+    std::fs::write(&p, "BASE").unwrap();
+    // Refresh snapshot to the just-written state so observe classifies it Unchanged.
+    if let Ok(s) = crate::file::io::capture_file_snapshot(std::path::Path::new(&p)) {
+        app.file.disk_snapshot = Some(s);
+    }
+
+    app.message = Some("Saved.".to_string()); // sentinel that should be overwritten on resolution
+    let before_dirty = app.file.dirty;
+
+    let visible = crate::app::watch::apply_file_watch_signal(
+        &mut app,
+        crate::file::watcher::FileWatchSignal::Changed,
+    );
+
+    assert!(
+        visible,
+        "Unchanged with prior pending must be visible (clear + msg)"
+    );
+    assert!(
+        app.pending_reload.is_none(),
+        "stale pending must be cleared"
+    );
+    assert_eq!(
+        app.message.as_deref(),
+        Some("File unchanged on disk."),
+        "must surface unchanged resolution message"
+    );
+    assert_eq!(app.file.dirty, before_dirty);
+    assert_eq!(app.buffer.to_string(), "BASE"); // no reload of content
+
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
+fn watcher_unchanged_with_no_pending_ignores_and_preserves_saved() {
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!(
+        "catomic_2ad_sig_unch_nopend_{}.txt",
+        std::process::id()
+    ));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "BASE").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(!app.file.dirty);
+
+    app.message = Some("Saved.".to_string());
+    let before_pend = app.pending_reload.clone();
+
+    // Disk is already at baseline; Changed -> observe Unchanged, no pending => ignore
+    let visible = crate::app::watch::apply_file_watch_signal(
+        &mut app,
+        crate::file::watcher::FileWatchSignal::Changed,
+    );
+
+    assert!(!visible);
+    assert_eq!(app.message.as_deref(), Some("Saved."));
+    assert_eq!(app.pending_reload, before_pend);
+
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
+fn watcher_nopath_with_pending_clears_it() {
+    // NoPath observation while a watcher may be attached is possible if path is
+    // cleared after watcher construction (or via direct helper test). We exercise
+    // the apply seam directly: path=None + pending present => clear + msg + visible.
+    let mut app = App::new(None).unwrap();
+    // Force a path + watcher for realism of "had watcher", then drop the path.
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!(
+        "catomic_2ad_nopath_pend_{}.txt",
+        std::process::id()
+    ));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "X").unwrap();
+    app.file.path = Some(std::path::PathBuf::from(&p));
+    // Attach a test watcher for the path (lifecycle not under test here).
+    let (tw, _tx) = crate::file::watcher::FileWatcher::new_for_test(app.file.path.clone().unwrap());
+    crate::app::watch::replace_file_watcher_for_test(&mut app, tw);
+
+    // Arm a pending as if prior Modified had happened.
+    app.pending_reload = Some(crate::app::reload::PendingReload {
+        path: app.file.path.clone().unwrap(),
+        status: crate::file::io::ExternalFileStatus::Modified,
+        snapshot: app.file.disk_snapshot.clone(),
+    });
+    app.message = Some("prior".to_string());
+
+    // Now remove path (simulates transition); apply a Changed signal.
+    app.file.path = None;
+
+    let visible = crate::app::watch::apply_file_watch_signal(
+        &mut app,
+        crate::file::watcher::FileWatchSignal::Changed,
+    );
+
+    assert!(
+        visible,
+        "NoPath with pending must report visible to render the resolution"
+    );
+    assert!(app.pending_reload.is_none());
+    assert_eq!(app.message.as_deref(), Some("No file path."));
+
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
+fn manual_ctrl_r_unchanged_shows_message_even_with_no_pending() {
+    // Explicit coverage per 2-ad: manual path must always surface the message for
+    // Unchanged, independent of pending state. (reload::apply_check_observation)
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!("catomic_2ad_man_unch_{}.txt", std::process::id()));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "HELLO").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(app.pending_reload.is_none());
+
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+
+    assert_eq!(app.message.as_deref(), Some("File unchanged on disk."));
+    assert!(app.pending_reload.is_none());
+
+    let _ = std::fs::remove_file(&p);
+}

@@ -767,3 +767,10 @@ Update this file as decisions are made or phases complete. Add concrete issues o
 - Phase 2-g (narrow cleanup): split App tests into src/app/tests.rs child module (use super::*; access preserved); app.rs reduced to 424 lines. No behavior change.
 - Phase 2-h (buffer-aware viewport clamp): private App clamp_viewport_to_buffer() (uses buffer line_count + line for scalar limits); called in resize/reveal; vertical/horiz clamping after shrink/resize/move/delete/undo (scroll_top <= max or 0; scroll_left based on cursor line len). Added app tests for manual push+reveal/resize clamp, short buffer->0, horiz move-to-shorter + delete shorten, zero regression. Reveal preserved. Limitations remain: scalar char only (no wcwidth/grapheme), no predictive/smart viewport, clamp is reactive.
 - Phase 2-i (narrow cleanup): split oversized src/app/tests.rs (>800 lines) into focused submodules under app::tests (viewport.rs, file_state.rs, editing.rs) while keeping tests.rs as small hub with pub(super) helpers. All tests descendants of app module (use super::super::*;); no behavior/API change, test names stable, paths now qualified under subs. app.rs 475 lines. rustfmt + full tests green.
+- Phase 2-j (exact dirty via save-point token): conservative dirty=true on undo/redo replaced by exact token compare using Buffer::edit_history_position().
+  - UndoStack now maintains current_id (monotonic, assigned on record; rewound on undo, restored on redo).
+  - Save/open capture token; dirty = (current != saved). Undo back to saved clears dirty; redo away sets it; no-op undo/redo on clean stays clean; movement/render/resize untouched.
+  - App helpers: refresh_dirty_from_buffer_history, mark_saved. App file_state tests cover all specified cases + quit guards preserved.
+  - PieceTable tests for token advance/branch.
+  - No full-buffer to_string compares on hot paths. SimpleBuffer: constant-0 stub only.
+  - Remaining limitations: token is u64 internal (not exposed beyond minimal Buffer query); no multi-buffer or external-edit integration yet; still scalar char model.

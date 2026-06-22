@@ -788,21 +788,22 @@ Key unresolved limitations that still matter:
 
 - Phase 2-ae (broader pass): close external-file/watch safety arc (test hygiene, acceptance coverage, docs). Split oversized watcher_* app tests (pending module added; each <300 lines per claim at time). Added deterministic watcher + manual Ctrl+R acceptance tests (arm then second press reloads/clears/discard-warn/re-arms). Live smoke tightened (ignore reason, bounded, skip-clean, no CI reliance). Removed stale current-state "no watcher / not consumed / non-runtime / implements none" wording (except clearly historical notes for 2-l/2-s etc). Added "External-file safety current state after 2-ae" note + concrete Phase 2A acceptance checklist. No auto-reload, no content read outside confirmed Ctrl+R, no new deps, no manual threads, no save-conflict or manual Ctrl+R behavior changes. All required tests green.
 
-Key unresolved limitations (still current after 2-ae; 2-af added size classification only):
-- (size classification + FileState metadata now exist as 2B foundation; no guardrails or perf yet)
+Key unresolved limitations (still current after 2-ag):
+- (size classification + pre-read guardrails + Large/Huge warn + Extreme refuse now exist; no lazy/perf harness/large-file mode yet)
+- watcher signals are runtime hints only; App-owned best-effort; runtime checks watcher once per loop via helper (try_recv inside check_file_watcher_once only); Unchanged/NoPath from watcher clear stale pending_reload when armed, otherwise fully ignored (suppress self-save noise);
 - watcher signals are runtime hints only; App-owned best-effort; runtime checks watcher once per loop via helper (try_recv inside check_file_watcher_once only); Unchanged/NoPath from watcher clear stale pending_reload when armed, otherwise fully ignored (suppress self-save noise);
 - no auto-reload; Modified/Deleted (from watcher or Ctrl+R) only arm confirmation; second Ctrl+R performs actual reload using fresh observe + pending match (or clears for Deleted);
 - no content read from watcher signal path except the existing confirmed Ctrl+R reload path;
 - metadata-only external detection (len+mtime via observe_external_file / capture / compare); same-size/same-mtime overwrite limitation remains (no hash/content);
 - default test suite uses deterministic queued-signal seams only (TestStub/inject + replace_file_watcher_for_test); live OS notify smoke is ignored/manual and must not be required for CI;
-- big-file tiers, size classification, perf harness, and large-file guardrails remain unfinished (2B work started in 2-af).
+- big-file tiers, perf harness, and large-file mode remain unfinished (open guardrails + metadata bookkeeping landed in 2-af/2-ag).
 - Phase 2-af (broader pass) began Phase 2B big-file discipline foundation while closing watcher test hygiene: split watcher_pending (>400) into watcher_pending (stale cleanup only) + watcher_acceptance (<300 each); fixed false "each <300" wording via split. Added src/file/size.rs (FileSizeTier + SMALL/LARGE/HUGE consts at binary 10/100/1024 MiB; pure classify + label; file_size_bytes metadata helper). Threaded size_bytes/Optional<tier> into FileState (None for no-path/missing/deleted). App::new captures size (None for missing); save and confirmed Ctrl+R Modified update from post meta (fallback len only on meta fail after write); Deleted clears to None. Focused file_size tests (new App::new cases, save from untitled/existing, reload Modified/Deleted, failed save no-update, no side effects on snapshot/conflict). No open refusal, no lazy, no perf harness, no large-file mode, no >small allocs in default tests, no watcher/reload behavior change. All mandated tests (file::size, file::io, watcher_*, file_state::*, app::, full) green; fmt; diff--check; commits per AGENTS.
 
 Next intended Phase 2B steps (after this foundation):
-- open-size guardrails / user messages (e.g. at 10 MiB+ boundaries)
 - perf harness using generated temp files (no 100 MB+ committed in tree)
-- exercise 10 MiB / 100 MiB / 1 GiB criteria for classification + any early limits
+- exercise 10 MiB / 100 MiB / 1 GiB criteria + any early limits in harness (no default-test large reads)
 - identify render + buffer query hotspots for large files (measure first)
+- (open-size guardrails / pre-read decision / Large/Huge warn / Extreme refuse completed in 2-ag)
 
 External-file safety current state after 2-ae:
 - manual Ctrl+R status/reload exists and is the confirmation path (first press arms, second performs if snapshot matches; drift re-arms).
@@ -828,3 +829,5 @@ Phase 2A external-file safety acceptance checklist (concrete):
 - live notify smoke is ignored/manual; never runs in default cargo test.
 
 Phase 2-af (2B start) note: external-file safety arc closed by 2-ae; 2-af added pure size classification (file::size) + App/FileState size metadata bookkeeping only. No changes to snapshot/conflict/reload/watcher behavior or messages.
+
+- Phase 2-ag (broader pass): pre-read open-size guardrails added. OpenSizeDecision + open_size_decision / open_size_warning_message / open_size_refusal_message / format_file_size pure helpers + exhaustive threshold + message + formatter tests in file::size. App::new now probes size via file_size_bytes before any read_to_string: Extreme refuses (io::Error InvalidData containing "File too large to open safely") with no read, no watcher, no App; Large/Huge proceed to read then set initial app.message warning after construction; Small unchanged. Added focused split tests (file_size_open.rs): Small existing no warning; Large (~10 MiB generated temp) warning; Extreme sparse via set_len (skip-clean if fs limit); missing = empty+None+no-warn; small invalid UTF-8 still errors. Replaced weak global-untitled size tolerance test with deterministic explicit-path first-save size update test (no contended "untitled.txt", no chdir). Clarified FileState + save.rs docs: size is metadata-first (fs::metadata); the sole allowed content-derived case is post-successful-save len fallback when stat of our own write fails (no extra read; file::size::file_size_bytes strictly metadata-only). No lazy loading, no mmap, no rope, no new deps, no 100 MiB/1 GiB reads in default tests, no committed large fixtures, no flaky timing, no watcher/reload/save-conflict/manual-Ctrl+R behavior changes beyond size/open bookkeeping. All required tests (file::size, file::io, file_state::*, watcher_*, app::, full), rustfmt --check, git diff --check, commits per AGENTS. Phase 2B now has pre-read guardrails + Large/Huge warn + Extreme refuse; perf harness and large-file mode still future.

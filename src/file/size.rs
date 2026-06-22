@@ -281,10 +281,7 @@ mod tests {
             open_size_decision(HUGE_FILE_LIMIT_BYTES + 1),
             OpenSizeDecision::Refuse
         );
-        assert_eq!(
-            open_size_decision(u64::MAX),
-            OpenSizeDecision::Refuse
-        );
+        assert_eq!(open_size_decision(u64::MAX), OpenSizeDecision::Refuse);
     }
 
     #[test]
@@ -297,7 +294,9 @@ mod tests {
         let h = open_size_warning_message(LARGE_FILE_LIMIT_BYTES + 1, FileSizeTier::Huge)
             .expect("warning for huge");
         assert!(h.contains("Large file"));
-        assert!(open_size_warning_message(HUGE_FILE_LIMIT_BYTES + 1, FileSizeTier::Extreme).is_none());
+        assert!(
+            open_size_warning_message(HUGE_FILE_LIMIT_BYTES + 1, FileSizeTier::Extreme).is_none()
+        );
     }
 
     #[test]

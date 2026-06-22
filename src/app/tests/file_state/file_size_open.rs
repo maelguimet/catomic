@@ -17,7 +17,11 @@ use std::io::Write;
 
 fn temp_path(name: &str) -> std::path::PathBuf {
     let mut p = std::env::temp_dir();
-    p.push(format!("catomic_fsize_open_{}_{}", std::process::id(), name));
+    p.push(format!(
+        "catomic_fsize_open_{}_{}",
+        std::process::id(),
+        name
+    ));
     p
 }
 
@@ -33,7 +37,10 @@ fn small_existing_opens_with_no_large_file_warning() {
 
     let app = App::new(Some(&p.to_string_lossy())).unwrap();
     assert!(app.file.path.is_some());
-    assert_eq!(app.file.size_tier, Some(crate::file::size::FileSizeTier::Small));
+    assert_eq!(
+        app.file.size_tier,
+        Some(crate::file::size::FileSizeTier::Small)
+    );
     // No large-file warning for Small.
     let msg = app.message.as_deref().unwrap_or("");
     assert!(

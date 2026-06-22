@@ -25,11 +25,11 @@ mod tests {
         b.move_right();
         b.insert_char('!');
         let mut out: Vec<u8> = Vec::new();
-        render_buffer(&mut out, &b, 0, 10, None).expect("render");
+        render_buffer(&mut out, &b, 0, 0, 10, 80, None).expect("render");
         b.move_down();
         b.insert_char('X');
         let mut out2: Vec<u8> = Vec::new();
-        render_buffer(&mut out2, &b, 0, 10, None).expect("render2");
+        render_buffer(&mut out2, &b, 0, 0, 10, 80, None).expect("render2");
         let elapsed = start.elapsed();
 
         // In debug/test this may exceed 16ms occasionally due to harness.
@@ -54,11 +54,11 @@ mod tests {
         b.move_right();
         b.insert_char('!');
         let mut out: Vec<u8> = Vec::new();
-        render_buffer(&mut out, &b, 0, 10, None).expect("render");
+        render_buffer(&mut out, &b, 0, 0, 10, 80, None).expect("render");
         b.move_down();
         b.insert_char('X');
         let mut out2: Vec<u8> = Vec::new();
-        render_buffer(&mut out2, &b, 0, 10, None).expect("render2");
+        render_buffer(&mut out2, &b, 0, 0, 10, 80, None).expect("render2");
         let elapsed = start.elapsed();
 
         assert!(
@@ -75,7 +75,7 @@ mod tests {
         // must place text after positioning to last row + \x1b[K clear.
         let b = SimpleBuffer::from_text("one line");
         let mut out: Vec<u8> = Vec::new();
-        render_buffer(&mut out, &b, 0, 3, Some("Unsaved changes. Press Ctrl+Q again to quit without saving, Ctrl+S to save."))
+        render_buffer(&mut out, &b, 0, 0, 3, 80, Some("Unsaved changes. Press Ctrl+Q again to quit without saving, Ctrl+S to save."))
             .expect("render with msg");
 
         let s = String::from_utf8_lossy(&out);

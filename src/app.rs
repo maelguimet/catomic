@@ -403,7 +403,9 @@ impl App {
             stdout,
             &*self.buffer,
             self.screen.scroll_top,
+            self.screen.scroll_left,
             self.screen.height as usize,
+            self.screen.width as usize,
             self.message.as_deref(),
         )
     }

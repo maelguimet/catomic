@@ -413,6 +413,8 @@ mod tests {
 
         let _ = fs::remove_file(&p);
 
+        // NotFound -> Ok(Absent) inside capture; observe must report Deleted + Some(Absent),
+        // *not* Unknown. (Hard non-NotFound errors are the ones that become Unknown + None.)
         let obs = observe_external_file(Some(&p), Some(&base));
         assert_eq!(obs.status, ExternalFileStatus::Deleted);
         assert_eq!(obs.live_snapshot, Some(FileSnapshot::Absent));
@@ -440,10 +442,9 @@ mod tests {
             }
             other => panic!("expected Unknown, got {:?}", other),
         }
-        // live may be None on hard error
-        assert!(
-            obs.live_snapshot.is_none() || matches!(obs.live_snapshot, Some(FileSnapshot::Absent))
-        );
+        // Hard error (non-NotFound) must have live_snapshot None.
+        // NotFound is turned into Ok(Absent) by capture_file_snapshot itself.
+        assert!(obs.live_snapshot.is_none());
         cleanup(&reg);
     }
 

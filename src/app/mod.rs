@@ -24,8 +24,8 @@ pub use file_state::FileState;
 
 use file_state::{external_file_status, mark_saved, refresh_dirty};
 
-mod save;
 mod reload;
+mod save;
 mod viewport;
 
 /// High-level application state for the editor.
@@ -230,11 +230,17 @@ impl App {
                 );
 
                 let should_perform = match (&self.pending_reload, &obs.status) {
-                    (Some(pend), ExternalFileStatus::Modified) if pend.path == current_path.clone().unwrap_or_default() => {
-                        pend.status == ExternalFileStatus::Modified && pend.snapshot == obs.live_snapshot
+                    (Some(pend), ExternalFileStatus::Modified)
+                        if pend.path == current_path.clone().unwrap_or_default() =>
+                    {
+                        pend.status == ExternalFileStatus::Modified
+                            && pend.snapshot == obs.live_snapshot
                     }
-                    (Some(pend), ExternalFileStatus::Deleted) if pend.path == current_path.clone().unwrap_or_default() => {
-                        pend.status == ExternalFileStatus::Deleted && pend.snapshot == obs.live_snapshot
+                    (Some(pend), ExternalFileStatus::Deleted)
+                        if pend.path == current_path.clone().unwrap_or_default() =>
+                    {
+                        pend.status == ExternalFileStatus::Deleted
+                            && pend.snapshot == obs.live_snapshot
                     }
                     _ => false,
                 };
@@ -250,7 +256,10 @@ impl App {
                                     self.file.saved_history_position = new_pos;
                                     self.file.dirty = false;
                                     if let Ok(s) = crate::file::io::capture_file_snapshot(p) {
-                                        if matches!(s, crate::file::io::FileSnapshot::Present { .. }) {
+                                        if matches!(
+                                            s,
+                                            crate::file::io::FileSnapshot::Present { .. }
+                                        ) {
                                             self.file.disk_snapshot = Some(s);
                                         }
                                     }
@@ -262,7 +271,8 @@ impl App {
                                 let new_pos = self.buffer.edit_history_position();
                                 self.file.saved_history_position = new_pos;
                                 self.file.dirty = false;
-                                self.file.disk_snapshot = Some(crate::file::io::FileSnapshot::Absent);
+                                self.file.disk_snapshot =
+                                    Some(crate::file::io::FileSnapshot::Absent);
                                 self.message = Some(reload::reload_cleared_message());
                             }
                             _ => {}
@@ -513,10 +523,7 @@ impl App {
         let status = self.external_file_status();
         let current_path = self.file.path.clone();
         let baseline = self.file.disk_snapshot.as_ref();
-        let obs = observe_external_file(
-            current_path.as_ref().map(|p| p.as_path()),
-            baseline,
-        );
+        let obs = observe_external_file(current_path.as_ref().map(|p| p.as_path()), baseline);
 
         match status {
             ExternalFileStatus::NoPath => {

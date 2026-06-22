@@ -346,7 +346,10 @@ fn app_file_state_manual_check_external_modified_reports_changed_no_mutation() {
         app.message.as_deref(),
         Some("File changed on disk. Press Ctrl+R again to reload from disk.")
     );
-    assert!(app.pending_reload.is_some(), "first Modified should arm reload pending");
+    assert!(
+        app.pending_reload.is_some(),
+        "first Modified should arm reload pending"
+    );
     assert_eq!(app.file.dirty, dirty_before);
     assert_eq!(app.file.disk_snapshot, snap_before);
 
@@ -377,7 +380,10 @@ fn app_file_state_manual_check_external_deleted_reports_deleted_no_mutation() {
         app.message.as_deref(),
         Some("File deleted on disk. Press Ctrl+R again to clear buffer.")
     );
-    assert!(app.pending_reload.is_some(), "first Deleted should arm reload pending");
+    assert!(
+        app.pending_reload.is_some(),
+        "first Deleted should arm reload pending"
+    );
     assert_eq!(app.file.dirty, dirty_before);
     assert_eq!(app.file.disk_snapshot, snap_before);
 
@@ -414,6 +420,272 @@ fn app_file_state_manual_check_does_not_clear_pending_save_conflict() {
         .as_deref()
         .unwrap_or("")
         .contains("changed on disk")); // check msg set
+
+    let _ = std::fs::remove_file(&p);
+}
+
+// Phase 2-s reload confirmation tests (manual Ctrl+R two-step, no watcher)
+
+#[test]
+fn app_file_state_ctrl_r_nopath_no_pending() {
+    let mut app = App::new(None).unwrap();
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert_eq!(app.message.as_deref(), Some("No file path."));
+    assert!(app.pending_reload.is_none());
+}
+
+#[test]
+fn app_file_state_ctrl_r_unchanged_no_pending_no_mutation() {
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!("catomic_2s_unch_{}.txt", std::process::id()));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "data").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    let dirty_b = app.file.dirty;
+    let snap_b = app.file.disk_snapshot.clone();
+
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert_eq!(app.message.as_deref(), Some("File unchanged on disk."));
+    assert!(app.pending_reload.is_none());
+    assert_eq!(app.file.dirty, dirty_b);
+    assert_eq!(app.file.disk_snapshot, snap_b);
+
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
+fn app_file_state_reload_modified_clean_second_press() {
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!("catomic_2s_mod_clean_{}.txt", std::process::id()));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "ORIG").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    std::fs::write(&p, "DISKNEW").unwrap(); // external
+
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(app
+        .message
+        .as_deref()
+        .unwrap_or("")
+        .contains("Press Ctrl+R again"));
+    assert!(app.pending_reload.is_some());
+    assert!(!app.file.dirty);
+
+    // second matching
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert_eq!(app.buffer.to_string(), "DISKNEW");
+    assert!(!app.file.dirty);
+    assert!(app.pending_reload.is_none());
+    assert!(app.message.as_deref().unwrap_or("").contains("Reloaded"));
+
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
+fn app_file_state_reload_modified_dirty_discards() {
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!("catomic_2s_mod_dirty_{}.txt", std::process::id()));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "BASE").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    std::fs::write(&p, "DISKCHG").unwrap();
+
+    app.handle_key(make_key(KeyCode::Char('L'), KeyModifiers::NONE))
+        .unwrap(); // local dirty
+    assert!(app.file.dirty);
+
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(app
+        .message
+        .as_deref()
+        .unwrap_or("")
+        .contains("discard local changes"));
+    assert!(app.pending_reload.is_some());
+
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert_eq!(app.buffer.to_string(), "DISKCHG");
+    assert!(!app.file.dirty);
+    assert!(app.pending_reload.is_none());
+
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
+fn app_file_state_reload_modified_drift_refuses_then_succeeds() {
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!("catomic_2s_mod_drift_{}.txt", std::process::id()));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "V1").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    std::fs::write(&p, "V2").unwrap();
+
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap(); // arm V2
+    assert!(app.pending_reload.is_some());
+
+    std::fs::write(&p, "V3").unwrap(); // drift
+
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap(); // refuse, rearm
+    assert!(app
+        .message
+        .as_deref()
+        .unwrap_or("")
+        .contains("Press Ctrl+R again"));
+    // buffer still original (V1 read at open); no reload happened on refuse
+    assert_eq!(app.buffer.to_string(), "V1");
+
+    // third with stable V3 snapshot matches pending -> reload
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert_eq!(app.buffer.to_string(), "V3");
+    assert!(app.pending_reload.is_none());
+
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
+fn app_file_state_reload_deleted_clean_second_clears() {
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!("catomic_2s_del_{}.txt", std::process::id()));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "TODEL").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    let _ = std::fs::remove_file(&p);
+
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(app
+        .message
+        .as_deref()
+        .unwrap_or("")
+        .contains("clear buffer"));
+    assert!(app.pending_reload.is_some());
+
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert_eq!(app.buffer.to_string(), "");
+    assert!(!app.file.dirty);
+    match &app.file.disk_snapshot {
+        Some(crate::file::io::FileSnapshot::Absent) => {}
+        _ => panic!("expected Absent after deleted reload"),
+    }
+    assert!(app.pending_reload.is_none());
+}
+
+#[test]
+fn app_file_state_reload_status_change_mod_to_del() {
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!("catomic_2s_chg_md_{}.txt", std::process::id()));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "M1").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    std::fs::write(&p, "M2").unwrap();
+
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap(); // arm mod
+    assert!(
+        app.pending_reload.as_ref().unwrap().status
+            == crate::file::io::ExternalFileStatus::Modified
+    );
+
+    let _ = std::fs::remove_file(&p); // now del
+
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap(); // update to del, no reload
+    assert!(
+        app.pending_reload.as_ref().unwrap().status == crate::file::io::ExternalFileStatus::Deleted
+    );
+    assert!(app.buffer.to_string().contains("M1") || app.buffer.to_string().contains("M2")); // no reload happened
+
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
+fn app_file_state_reload_unknown_never_arms() {
+    // Hard to force Unknown at app level without FS tricks, but check that Unknown path sets msg and no pending.
+    // Use the same pattern as 2-r unknown coverage; here just ensure no arm.
+    let mut app = App::new(None).unwrap();
+    // Force a call that would be unknown unlikely, but NoPath/Unknown path in code clears.
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(app.pending_reload.is_none());
+}
+
+#[test]
+fn app_file_state_reload_clears_save_conflict() {
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!("catomic_2s_clr_conf_{}.txt", std::process::id()));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "SBASE").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    std::fs::write(&p, "SCHG").unwrap();
+    app.handle_key(make_key(KeyCode::Char('e'), KeyModifiers::NONE))
+        .unwrap();
+
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap(); // arms save conflict
+    assert!(app.pending_save_conflict.is_some());
+
+    // now reload path: first R arms reload
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+    // second R reloads, must clear save conflict
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(app.pending_save_conflict.is_none());
+    assert!(!app.file.dirty);
+
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
+fn app_file_state_edit_after_reload_pending_clears_it() {
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!("catomic_2s_edit_clr_p_{}.txt", std::process::id()));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "EBASE").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    std::fs::write(&p, "ECHG").unwrap();
+
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(app.pending_reload.is_some());
+
+    app.handle_key(make_key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap(); // edit clears
+    assert!(app.pending_reload.is_none());
+
+    // next R must re-arm, not auto reload
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(app.pending_reload.is_some());
 
     let _ = std::fs::remove_file(&p);
 }

@@ -41,7 +41,8 @@ pub(crate) fn reload_arm_message(status: &ExternalFileStatus, dirty: bool) -> St
         }
         ExternalFileStatus::Deleted => {
             if dirty {
-                "File deleted on disk. Press Ctrl+R again to clear buffer (discard local changes).".to_string()
+                "File deleted on disk. Press Ctrl+R again to clear buffer (discard local changes)."
+                    .to_string()
             } else {
                 "File deleted on disk. Press Ctrl+R again to clear buffer.".to_string()
             }

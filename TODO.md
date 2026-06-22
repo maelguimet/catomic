@@ -760,3 +760,4 @@ Key unresolved limitations that still matter:
 - rendering still full clear/no partial redraw unless already changed.
 
 - Phase 2-r (narrow pass): manual external-file status check (Ctrl+R; message only via existing snapshot; no reload/mutation).
+- Phase 2-s (narrow pass): manual reload via two-step Ctrl+R using status foundation (Modified reloads content, Deleted clears buffer; drift re-arms; no watcher).

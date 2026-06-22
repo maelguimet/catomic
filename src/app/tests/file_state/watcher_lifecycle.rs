@@ -28,10 +28,7 @@ fn app_new_no_path_has_no_file_watcher() {
 #[test]
 fn app_new_with_existing_temp_file_gets_watcher_under_plain_caps() {
     let mut tmp = std::env::temp_dir();
-    tmp.push(format!(
-        "catomic_2z_exist_{}.txt",
-        std::process::id()
-    ));
+    tmp.push(format!("catomic_2z_exist_{}.txt", std::process::id()));
     let p = tmp.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&p);
     std::fs::write(&p, "hello 2z").unwrap();
@@ -80,7 +77,10 @@ fn app_new_with_nonexistent_parent_succeeds_but_watcher_none() {
     let _ = std::fs::remove_dir_all(bad.parent().unwrap());
 
     let app = App::new(Some(bad.to_str().unwrap())).unwrap();
-    assert!(app.file.path.is_some(), "path must be remembered even if unwatchable");
+    assert!(
+        app.file.path.is_some(),
+        "path must be remembered even if unwatchable"
+    );
     assert!(
         app.file_watcher.is_none(),
         "watcher must be None when parent dir does not exist (ctor non-fatal)"
@@ -128,7 +128,10 @@ fn refresh_after_path_assign_on_watchable_parent_sets_watcher() {
     // Simulate the exact state after a successful first-save path assignment:
     // a concrete path in a real, watchable parent (temp dir exists).
     let mut target = std::env::temp_dir();
-    target.push(format!("catomic_2z_helper_refresh_{}.txt", std::process::id()));
+    target.push(format!(
+        "catomic_2z_helper_refresh_{}.txt",
+        std::process::id()
+    ));
     // target file need not exist for parent watcher to succeed.
     let _ = std::fs::remove_file(&target);
     app.file.path = Some(target.clone());

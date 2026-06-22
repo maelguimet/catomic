@@ -42,6 +42,9 @@ pub struct App {
     pub message: Option<String>,
     /// When true, a second Ctrl+Q while dirty will force quit (no save).
     pub pending_quit_confirm: bool,
+    /// Terminal screen size and scroll state. Single source of truth for render height.
+    /// Initialized conservatively; updated from crossterm after setup and on resize.
+    pub screen: term::screen::Screen,
 }
 
 impl App {
@@ -73,6 +76,8 @@ impl App {
             should_quit: false,
             message: None,
             pending_quit_confirm: false,
+            // Conservative default matching prior hardcoded 24; no real term required for unit tests.
+            screen: term::screen::Screen::new(80, 24),
         })
     }
 

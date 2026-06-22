@@ -15,6 +15,7 @@ mod dirty;
 mod save_conflict;
 mod snapshot;
 mod watcher_lifecycle;
+mod watcher_runtime;
 mod watcher_signal;
 
 // Phase 2-b quit guard + message tests (via simulated keys; no real terminal)

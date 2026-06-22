@@ -138,6 +138,9 @@ impl FileWatcher {
     /// FileWatchSignal (incl. Error) prefer inject_signal.
     pub(crate) fn new_for_test(target: PathBuf) -> (Self, Sender<notify::Result<Event>>) {
         let (tx, rx) = mpsc::channel();
+        // Match real ctor: store the normalized form so is_relevant filtering
+        // during tx-injected raw events behaves identically.
+        let target = normalize_path(&target);
         let fw = Self {
             _watcher: InnerWatcher::TestStub,
             target,

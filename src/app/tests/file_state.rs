@@ -12,8 +12,8 @@ use super::make_key;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 mod dirty;
-mod snapshot;
 mod save_conflict;
+mod snapshot;
 
 // Phase 2-b quit guard + message tests (via simulated keys; no real terminal)
 
@@ -86,7 +86,3 @@ fn app_dirty_ctrl_q_first_renders_warning_immediately() {
 }
 
 // (hub ends cleanly)
-
-
-
-

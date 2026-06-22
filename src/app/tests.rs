@@ -764,3 +764,99 @@ fn app_viewport_zero_size_regression_from_phase_2f_still_holds() {
     assert_eq!(app.screen.scroll_left, 0, "zero width still forces scroll_left=0");
     assert!(!out.is_empty());
 }
+
+// Phase 2-h horizontal clamp cases (shorter line on move/delete)
+
+#[test]
+fn app_horiz_scroll_clamps_left_when_moving_to_shorter_line() {
+    let mut app = App::new(None).unwrap();
+    app.screen.width = 5; // vw=5
+    app.screen.height = 4;
+
+    // Build: line 0 short "abc" (len=3 <=vw), line 1 long
+    let mut sink: Vec<u8> = Vec::new();
+    for c in "abc".chars() {
+        app.handle_key_with(&mut sink, make_key(KeyCode::Char(c), KeyModifiers::NONE))
+            .unwrap();
+    }
+    app.handle_key_with(&mut sink, make_key(KeyCode::Enter, KeyModifiers::NONE))
+        .unwrap();
+    for c in "ABCDEFGHIJKLMNOPQRST".chars() {
+        app.handle_key_with(&mut sink, make_key(KeyCode::Char(c), KeyModifiers::NONE))
+            .unwrap();
+    }
+    // cursor row=1, col=20
+    assert_eq!(app.buffer.cursor().row, 1);
+
+    // Establish horiz scroll on long line (lefts then rights)
+    for _ in 0..20 {
+        app.handle_key_with(&mut sink, make_key(KeyCode::Left, KeyModifiers::NONE))
+            .unwrap();
+    }
+    for _ in 0..15 {
+        app.handle_key_with(&mut sink, make_key(KeyCode::Right, KeyModifiers::NONE))
+            .unwrap();
+    }
+    let sl_long = app.screen.scroll_left;
+    assert!(
+        sl_long > 0,
+        "need horiz scroll on long line; got {}",
+        sl_long
+    );
+
+    // Move up to shorter line; reveal must clamp scroll_left (len=3 <=5 => 0)
+    app.handle_key_with(&mut sink, make_key(KeyCode::Up, KeyModifiers::NONE))
+        .unwrap();
+    assert_eq!(app.buffer.cursor().row, 0);
+    assert_eq!(
+        app.screen.scroll_left, 0,
+        "scroll_left must clamp to 0 after move to shorter line; got {}",
+        app.screen.scroll_left
+    );
+}
+
+#[test]
+fn app_horiz_scroll_clamps_after_backspace_shortens_scrolled_line() {
+    let mut app = App::new(None).unwrap();
+    app.screen.width = 5; // vw=5
+    app.screen.height = 4;
+
+    let mut sink: Vec<u8> = Vec::new();
+    // Long line
+    for c in "ABCDEFGHIJKLMNOPQRST".chars() {
+        app.handle_key_with(&mut sink, make_key(KeyCode::Char(c), KeyModifiers::NONE))
+            .unwrap();
+    }
+    // scroll to right
+    for _ in 0..20 {
+        app.handle_key_with(&mut sink, make_key(KeyCode::Left, KeyModifiers::NONE))
+            .unwrap();
+    }
+    for _ in 0..15 {
+        app.handle_key_with(&mut sink, make_key(KeyCode::Right, KeyModifiers::NONE))
+            .unwrap();
+    }
+    assert!(app.screen.scroll_left > 0);
+
+    // Backspace enough to make line short (20 -> ~4)
+    for _ in 0..16 {
+        app.handle_key_with(&mut sink, make_key(KeyCode::Backspace, KeyModifiers::NONE))
+            .unwrap();
+    }
+
+    let line_len = app.buffer.line(0).map(|s| s.chars().count()).unwrap_or(0);
+    let vw = app.screen.visible_width();
+    // With our clamp using +1-vw, max is line_len+1-vw or 0
+    let max_allowed = line_len.saturating_add(1).saturating_sub(vw);
+    assert!(
+        app.screen.scroll_left <= max_allowed,
+        "after bs shorten, scroll_left={} must <= {} (len={} vw={})",
+        app.screen.scroll_left,
+        max_allowed,
+        line_len,
+        vw
+    );
+    if line_len <= vw {
+        assert_eq!(app.screen.scroll_left, 0);
+    }
+}

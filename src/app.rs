@@ -150,11 +150,11 @@ impl App {
             // Place before generic Char so CONTROL combos fire (Ctrl+Z etc are Char + CONTROL).
             // No other UI changes.
             KeyEvent {
-                code: KeyCode::Char('z'),
+                code: KeyCode::Char(c),
                 modifiers,
                 ..
-            } if modifiers.contains(KeyModifiers::CONTROL) => {
-                if modifiers.contains(KeyModifiers::SHIFT) {
+            } if (c == 'z' || c == 'Z') && modifiers.contains(KeyModifiers::CONTROL) => {
+                if modifiers.contains(KeyModifiers::SHIFT) || c == 'Z' {
                     self.buffer.redo();
                 } else {
                     self.buffer.undo();

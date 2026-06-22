@@ -142,7 +142,10 @@ mod tests {
             crate::file::watch_path::watch_parent(std::path::Path::new("dir/sub/file.txt")),
             PathBuf::from("dir/sub")
         );
-        assert_eq!(crate::file::watch_path::watch_parent(std::path::Path::new("bare.txt")), PathBuf::from("."));
+        assert_eq!(
+            crate::file::watch_path::watch_parent(std::path::Path::new("bare.txt")),
+            PathBuf::from(".")
+        );
         assert_eq!(
             crate::file::watch_path::watch_parent(std::path::Path::new("/abs/path/to/file.rs")),
             PathBuf::from("/abs/path/to")

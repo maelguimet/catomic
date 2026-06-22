@@ -6,5 +6,5 @@
 
 pub mod io;
 pub mod recovery;
-pub mod watcher;
 pub(crate) mod watch_path;
+pub mod watcher;

@@ -772,3 +772,5 @@ Key unresolved limitations that still matter:
 - Phase 2-w (narrow foundation): added explicit `file_watch: bool` cap (Plain+Project both true; is_plain_safe unchanged); FileWatcher::new now takes &Capabilities (returns Option); fixed stale "must not Plain" contract in watcher header + minimal sketches in TODO/0001. No notify dep, no impl, no threads, no polling, no App ctor, no reload changes.
 
 - Phase 2-x (narrow pass): real notify-backed FileWatcher (gated ctor returning Result<Option>, FileWatchSignal, try_recv, parent-dir watch + lexical filter, pure helpers). Deterministic helper tests only (no live fs events, no App wiring). notify 8.x added with justification; App, reload, event loop untouched.
+
+- Phase 2-y (narrow cleanup): extracted pure helpers to file::watch_path (pub(crate)); replaced absolutize with real lexical Component normalize (., .., root safe); added parent-after-norm + rename-hint tests/comments. No App wiring, no new deps, no live events.

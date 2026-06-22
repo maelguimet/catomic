@@ -39,6 +39,12 @@ pub struct App {
     pub message: Option<String>,
     /// When true, a second Ctrl+Q while dirty will force quit (no save).
     pub pending_quit_confirm: bool,
+    /// When Some, records the ExternalFileStatus observed on a first Ctrl+S that
+    /// refused due to external change (Modified/Deleted/Unknown). Used so that a
+    /// second Ctrl+S can force only for the same still-conflicting status.
+    /// Cleared on content edits, successful save, and path changes.
+    /// Movement/resize/render must not touch it.
+    pub pending_save_conflict: Option<crate::file::io::ExternalFileStatus>,
     /// Terminal screen size and scroll state. Single source of truth for render height.
     /// Initialized conservatively; updated from crossterm after setup and on resize.
     pub screen: term::screen::Screen,
@@ -86,6 +92,7 @@ impl App {
             should_quit: false,
             message: None,
             pending_quit_confirm: false,
+            pending_save_conflict: None,
             // Conservative default matching prior hardcoded 24; no real term required for unit tests.
             screen: term::screen::Screen::new(80, 24),
         })

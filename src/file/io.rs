@@ -78,7 +78,10 @@ pub fn atomic_write_string(path: impl AsRef<Path>, contents: &str) -> io::Result
 /// mtime is best-effort (None on platforms/FS where unavailable).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FileSnapshot {
-    Present { len: u64, mtime: Option<std::time::SystemTime> },
+    Present {
+        len: u64,
+        mtime: Option<std::time::SystemTime>,
+    },
     Absent,
 }
 
@@ -113,7 +116,10 @@ pub fn capture_file_snapshot(path: impl AsRef<Path>) -> io::Result<FileSnapshot>
 /// Compare live disk for `path` against a prior `snap`.
 /// Returns Unchanged / Modified / Deleted accordingly.
 /// Metadata errors become Unknown(kind). Does not read file content.
-pub fn compare_to_snapshot(path: impl AsRef<Path>, snap: &FileSnapshot) -> io::Result<ExternalFileStatus> {
+pub fn compare_to_snapshot(
+    path: impl AsRef<Path>,
+    snap: &FileSnapshot,
+) -> io::Result<ExternalFileStatus> {
     let current = match capture_file_snapshot(path.as_ref()) {
         Ok(s) => s,
         Err(e) => return Ok(ExternalFileStatus::Unknown(e.kind())),
@@ -142,11 +148,7 @@ mod tests {
 
     fn temp_path(name: &str) -> PathBuf {
         let mut p = std::env::temp_dir();
-        p.push(format!(
-            "catomic_atomic_{}_{}",
-            std::process::id(),
-            name
-        ));
+        p.push(format!("catomic_atomic_{}_{}", std::process::id(), name));
         p
     }
 
@@ -202,7 +204,9 @@ mod tests {
             for ent in rd.flatten() {
                 let n = ent.file_name();
                 let s = n.to_string_lossy();
-                if s.starts_with(&format!("{}.tmp.", base)) && s.contains(&format!(".tmp.{}", std::process::id())) {
+                if s.starts_with(&format!("{}.tmp.", base))
+                    && s.contains(&format!(".tmp.{}", std::process::id()))
+                {
                     cleanup(&out);
                     panic!("temp file remained after success: {}", s);
                 }
@@ -236,6 +240,10 @@ mod tests {
         // ensure absent
         let _ = fs::remove_file(&p);
         let snap = capture_file_snapshot(&p).expect("capture must not error on missing");
-        assert_eq!(snap, FileSnapshot::Absent, "missing must be explicit Absent");
+        assert_eq!(
+            snap,
+            FileSnapshot::Absent,
+            "missing must be explicit Absent"
+        );
     }
 }

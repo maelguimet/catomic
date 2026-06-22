@@ -477,7 +477,10 @@ fn app_file_state_open_existing_stores_snapshot_and_clean() {
 #[test]
 fn app_file_state_open_missing_stores_absent_snapshot_and_clean() {
     let mut tmp = std::env::temp_dir();
-    tmp.push(format!("catomic_2l_open_missing_{}.txt", std::process::id()));
+    tmp.push(format!(
+        "catomic_2l_open_missing_{}.txt",
+        std::process::id()
+    ));
     let p = tmp.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&p);
 
@@ -502,11 +505,14 @@ fn app_file_state_save_success_updates_snapshot_len() {
 
     let mut app = App::new(Some(&p)).unwrap();
     // type something
-    app.handle_key(make_key(KeyCode::Char('x'), KeyModifiers::NONE)).unwrap();
-    app.handle_key(make_key(KeyCode::Char('y'), KeyModifiers::NONE)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key(make_key(KeyCode::Char('y'), KeyModifiers::NONE))
+        .unwrap();
     assert!(app.file.dirty);
 
-    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
     assert!(!app.file.dirty);
     match &app.file.disk_snapshot {
         Some(crate::file::io::FileSnapshot::Present { len, .. }) => {
@@ -531,15 +537,22 @@ fn app_file_state_save_failure_leaves_snapshot_unchanged() {
     // seed a path and a snapshot (as if previously saved cleanly)
     app.file.path = Some(bad.clone());
     // capture a fake snapshot for the dir (will be Absent or error but we set manually to a sentinel)
-    app.file.disk_snapshot = Some(crate::file::io::FileSnapshot::Present { len: 42, mtime: None });
+    app.file.disk_snapshot = Some(crate::file::io::FileSnapshot::Present {
+        len: 42,
+        mtime: None,
+    });
     app.file.dirty = true;
 
     let before = app.file.disk_snapshot.clone();
 
-    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
 
     assert!(app.file.dirty, "save error keeps dirty");
-    assert_eq!(app.file.disk_snapshot, before, "snapshot must be unchanged on save failure");
+    assert_eq!(
+        app.file.disk_snapshot, before,
+        "snapshot must be unchanged on save failure"
+    );
 
     let _ = std::fs::remove_dir_all(&bad);
 }
@@ -583,7 +596,8 @@ fn app_file_state_external_delete_reports_deleted_no_mutation() {
     std::fs::write(&p, "content").unwrap();
 
     let mut app = App::new(Some(&p)).unwrap();
-    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL)).unwrap(); // ensure clean + snap
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap(); // ensure clean + snap
     assert!(!app.file.dirty);
     let before_dirty = app.file.dirty;
     let before_msg = app.message.clone();

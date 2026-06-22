@@ -324,8 +324,21 @@ mod tests {
 
     #[test]
     fn app_dirty_lifecycle_via_keys() {
-        let mut app = App::new(None).unwrap();
+        // Use explicit temp path for the test so we NEVER write bare "untitled.txt"
+        // into the repo cwd. App::new with a path (even non-existing) starts clean
+        // and save will target that path instead of defaulting.
+        let mut tmp = std::env::temp_dir();
+        tmp.push(format!(
+            "catomic_test_dirty_lifecycle_{}_{}.txt",
+            std::process::id(),
+            "lifecycle"
+        ));
+        let test_path = tmp.to_string_lossy().to_string();
+        let _ = std::fs::remove_file(&test_path); // ensure clean start
+
+        let mut app = App::new(Some(&test_path)).unwrap();
         assert!(!app.file.dirty);
+        assert_eq!(app.file.path.as_deref(), Some(std::path::Path::new(&test_path)));
 
         // char insert marks dirty
         app.handle_key(KeyEvent {
@@ -337,7 +350,7 @@ mod tests {
         .unwrap();
         assert!(app.file.dirty, "edit marks dirty");
 
-        // save (via atomic) clears dirty, sets default path
+        // save (via atomic) clears dirty; uses explicit path (no untitled.txt)
         app.handle_key(KeyEvent {
             code: KeyCode::Char('s'),
             modifiers: KeyModifiers::CONTROL,
@@ -358,9 +371,7 @@ mod tests {
         .unwrap();
         assert!(app.file.dirty, "post-save edit marks dirty again");
 
-        // cleanup the default save target this test may have written in cwd
-        if let Some(p) = &app.file.path {
-            let _ = std::fs::remove_file(p);
-        }
+        // Clean up ONLY the temp path created/used by this test.
+        let _ = std::fs::remove_file(&test_path);
     }
 }

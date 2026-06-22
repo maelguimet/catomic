@@ -70,7 +70,10 @@ mod tests {
         let mut s = Screen::new(80, 10); // vh = 9, content rows [scroll_top, scroll_top+8]
         s.scroll_top = 0;
         s.reveal_row(9);
-        assert_eq!(s.scroll_top, 1, "row below must scroll so it becomes last visible content row");
+        assert_eq!(
+            s.scroll_top, 1,
+            "row below must scroll so it becomes last visible content row"
+        );
     }
 
     #[test]
@@ -107,7 +110,10 @@ mod tests {
         assert_eq!(s.scroll_top, 0, "row 0 visible in 1-line content area");
 
         s.reveal_row(1);
-        assert_eq!(s.scroll_top, 1, "scroll to keep row 1 as the single visible content row");
+        assert_eq!(
+            s.scroll_top, 1,
+            "scroll to keep row 1 as the single visible content row"
+        );
 
         // larger jump
         let mut s = Screen::new(80, 2);

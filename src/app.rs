@@ -661,7 +661,10 @@ mod tests {
     fn app_new_has_default_screen_size_and_scroll() {
         let app = App::new(None).unwrap();
         assert_eq!(app.screen.width, 80, "default width");
-        assert_eq!(app.screen.height, 24, "default height (matches prior hardcoded)");
+        assert_eq!(
+            app.screen.height, 24,
+            "default height (matches prior hardcoded)"
+        );
         assert_eq!(app.screen.scroll_top, 0);
     }
 
@@ -674,11 +677,8 @@ mod tests {
 
         // trigger render via content path that calls render (uses handle_key_with seam)
         let mut out: Vec<u8> = Vec::new();
-        app.handle_key_with(
-            &mut out,
-            make_key(KeyCode::Char('x'), KeyModifiers::NONE),
-        )
-        .unwrap();
+        app.handle_key_with(&mut out, make_key(KeyCode::Char('x'), KeyModifiers::NONE))
+            .unwrap();
 
         let rendered = String::from_utf8_lossy(&out);
         // bottom row clear/pos for height=10
@@ -720,7 +720,8 @@ mod tests {
         // Use Enter key via seam to exercise the path that does reveal (captures output, keeps test quiet).
         let mut sink: Vec<u8> = Vec::new();
         for _ in 0..9 {
-            app.handle_key_with(&mut sink, make_key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+            app.handle_key_with(&mut sink, make_key(KeyCode::Enter, KeyModifiers::NONE))
+                .unwrap();
         }
         // Now we have 10 lines (rows 0-9), cursor at row=9, col=0 (after 9 newlines from empty start)
         assert_eq!(app.buffer.cursor().row, 9);
@@ -763,14 +764,16 @@ mod tests {
         app.screen.scroll_top = 0;
         // Move up to row 0 first (we are at 9), then down 9 times with small vh to trigger reveal on the way.
         for _ in 0..9 {
-            app.handle_key_with(&mut sink, make_key(KeyCode::Up, KeyModifiers::NONE)).unwrap();
+            app.handle_key_with(&mut sink, make_key(KeyCode::Up, KeyModifiers::NONE))
+                .unwrap();
         }
         assert_eq!(app.buffer.cursor().row, 0);
         app.screen.scroll_top = 0;
 
         // Now move down past the visible area
         for _ in 0..9 {
-            app.handle_key_with(&mut sink, make_key(KeyCode::Down, KeyModifiers::NONE)).unwrap();
+            app.handle_key_with(&mut sink, make_key(KeyCode::Down, KeyModifiers::NONE))
+                .unwrap();
         }
         assert_eq!(app.buffer.cursor().row, 9);
         assert!(

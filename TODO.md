@@ -793,3 +793,4 @@ Update this file as decisions are made or phases complete. Add concrete issues o
   - If status kind changes between presses: update pending/msg, do not force.
   - Required app::tests::file_state cases added (external mod/delete, force, Absent->Present, change-between, edit-clears, untitled).
   - Limitations: no watcher/reload UI yet; same-variant external drift (e.g. another mod while Modified pending) treated as same conflict and forces; Unknown primarily at io level (App tests document); still metadata-only (len/mtime), no content check. All Phase 2-l/m tests remain green.
+- Phase 2-o (narrow cleanup): extracted save logic to src/app/save.rs (mod.rs <500); split file_state tests into dirty/snapshot/save_conflict submodules under tests/file_state/. All original test names preserved. No behavior change. See Phase 2-n for the hardening TODO (store conflict token not just status variant).

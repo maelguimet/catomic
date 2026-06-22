@@ -14,6 +14,8 @@
 
 use std::path::PathBuf;
 
+use crate::mode::Capabilities;
+
 /// Placeholder watcher.
 pub struct FileWatcher {
     // notify::RecommendedWatcher etc.
@@ -24,8 +26,11 @@ impl FileWatcher {
     /// Placeholder. May be constructed in Plain only when `Capabilities::file_watch`
     /// is true; must not construct Project services.
     /// Real impl will require the gate; current pass does not use notify.
-    pub fn new(_path: PathBuf) -> Self {
+    pub fn new(_path: PathBuf, caps: &Capabilities) -> Option<Self> {
+        if !caps.file_watch {
+            return None;
+        }
         // TODO: set up notify (later, after contract)
-        Self { _path }
+        Some(Self { _path })
     }
 }

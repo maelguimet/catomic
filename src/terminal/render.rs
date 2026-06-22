@@ -98,7 +98,10 @@ mod tests {
         );
         // Still does safe clear + final cursor positioning
         assert!(s.contains("\x1b[2J\x1b[1;1H"), "still clears");
-        assert!(s.contains("\x1b[1;1H"), "safe cursor pos at 1;1 for empty viewport");
+        assert!(
+            s.contains("\x1b[1;1H"),
+            "safe cursor pos at 1;1 for empty viewport"
+        );
     }
 
     #[test]
@@ -151,6 +154,9 @@ mod tests {
         assert_eq!(default_s, explicit_s);
 
         // And contains first visible slice (no start_col skip)
-        assert!(default_s.contains("012345"), "first 6 chars of first line visible with start_col=0");
+        assert!(
+            default_s.contains("012345"),
+            "first 6 chars of first line visible with start_col=0"
+        );
     }
 }

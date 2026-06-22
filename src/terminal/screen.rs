@@ -273,15 +273,23 @@ mod tests {
         for row in 0..20 {
             s.reveal_row(row);
             let vh = s.visible_height();
-            assert!(row >= s.scroll_top && row < s.scroll_top + vh,
-                "row {} must be visible after reveal; scroll_top={}", row, s.scroll_top);
+            assert!(
+                row >= s.scroll_top && row < s.scroll_top + vh,
+                "row {} must be visible after reveal; scroll_top={}",
+                row,
+                s.scroll_top
+            );
         }
 
         for col in 0..30 {
             s.reveal_col(col);
             let vw = s.visible_width();
-            assert!(col >= s.scroll_left && col < s.scroll_left + vw,
-                "col {} must be visible after reveal; scroll_left={}", col, s.scroll_left);
+            assert!(
+                col >= s.scroll_left && col < s.scroll_left + vw,
+                "col {} must be visible after reveal; scroll_left={}",
+                col,
+                s.scroll_left
+            );
         }
     }
 

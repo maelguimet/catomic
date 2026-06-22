@@ -979,8 +979,14 @@ mod tests {
 
         assert_eq!(app.screen.width, 0);
         assert_eq!(app.screen.height, 0);
-        assert_eq!(app.screen.scroll_top, 0, "zero height resize must clamp scroll_top");
-        assert_eq!(app.screen.scroll_left, 0, "zero width resize must clamp scroll_left");
+        assert_eq!(
+            app.screen.scroll_top, 0,
+            "zero height resize must clamp scroll_top"
+        );
+        assert_eq!(
+            app.screen.scroll_left, 0,
+            "zero width resize must clamp scroll_left"
+        );
         // render on zero size must be safe (no panic, some output for clear/pos)
         assert!(!out.is_empty());
     }
@@ -1027,13 +1033,16 @@ mod tests {
         );
 
         // Down/up and insert should still reveal without panic on nonzero size
-        app.handle_key_with(&mut sink, make_key(KeyCode::Down, KeyModifiers::NONE)).unwrap();
-        app.handle_key_with(&mut sink, make_key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+        app.handle_key_with(&mut sink, make_key(KeyCode::Down, KeyModifiers::NONE))
+            .unwrap();
+        app.handle_key_with(&mut sink, make_key(KeyCode::Enter, KeyModifiers::NONE))
+            .unwrap();
         assert!(app.screen.scroll_top <= app.buffer.cursor().row);
     }
 
     #[test]
-    fn app_delete_and_backspace_after_horiz_scroll_reduce_scroll_left_when_cursor_before_viewport() {
+    fn app_delete_and_backspace_after_horiz_scroll_reduce_scroll_left_when_cursor_before_viewport()
+    {
         let mut app = App::new(None).unwrap();
         app.screen.width = 5; // vw=5
         app.screen.height = 4;
@@ -1041,15 +1050,18 @@ mod tests {
 
         // Build a line longer than width and scroll to have content on right
         let mut sink: Vec<u8> = Vec::new();
-        for c in "ABCDEFGHIJKLMNOPQRST".chars() { // 20 chars, col ends at 20
+        for c in "ABCDEFGHIJKLMNOPQRST".chars() {
+            // 20 chars, col ends at 20
             app.buffer.insert_char(c);
         }
         // cursor col=20; force reveal via keys to set scroll
         for _ in 0..20 {
-            app.handle_key_with(&mut sink, make_key(KeyCode::Left, KeyModifiers::NONE)).unwrap();
+            app.handle_key_with(&mut sink, make_key(KeyCode::Left, KeyModifiers::NONE))
+                .unwrap();
         }
         for _ in 0..15 {
-            app.handle_key_with(&mut sink, make_key(KeyCode::Right, KeyModifiers::NONE)).unwrap();
+            app.handle_key_with(&mut sink, make_key(KeyCode::Right, KeyModifiers::NONE))
+                .unwrap();
         }
         let initial_sl = app.screen.scroll_left;
         assert!(
@@ -1065,7 +1077,8 @@ mod tests {
         // Simpler: backspace repeatedly and check scroll decreases when appropriate.
         let mut last_sl = app.screen.scroll_left;
         for _ in 0..10 {
-            app.handle_key_with(&mut sink, make_key(KeyCode::Backspace, KeyModifiers::NONE)).unwrap();
+            app.handle_key_with(&mut sink, make_key(KeyCode::Backspace, KeyModifiers::NONE))
+                .unwrap();
             if app.buffer.cursor().col < last_sl {
                 // once cursor is before the old scroll window, reveal should have pulled scroll_left down
                 assert!(
@@ -1081,7 +1094,8 @@ mod tests {
         app.screen.scroll_left = 8;
         app.buffer.move_right(); // may clamp internally but ok
         let pre = app.screen.scroll_left;
-        app.handle_key_with(&mut sink, make_key(KeyCode::Delete, KeyModifiers::NONE)).unwrap();
+        app.handle_key_with(&mut sink, make_key(KeyCode::Delete, KeyModifiers::NONE))
+            .unwrap();
         // Delete forward does not move cursor col, but may change content; scroll_left should stay sensible (no increase here)
         assert!(app.screen.scroll_left <= pre + 1); // allow small tolerance; main is no explosion
     }

@@ -154,6 +154,8 @@ impl App {
 
             // Save (Ctrl+S) -- now routes through atomic write. Save never creates undo.
             // If no path, defaults to "untitled.txt" and remembers it.
+            // On success: dirty=false, clear pending + message.
+            // On error: keep dirty=true, set short error message, do not panic.
             KeyEvent {
                 code: KeyCode::Char('s'),
                 modifiers: KeyModifiers::CONTROL,
@@ -165,11 +167,20 @@ impl App {
                     .clone()
                     .unwrap_or_else(|| PathBuf::from("untitled.txt"));
                 let text = self.buffer.to_string();
-                file::io::atomic_write_string(&path, &text)?;
-                if self.file.path.is_none() {
-                    self.file.path = Some(path);
+                match file::io::atomic_write_string(&path, &text) {
+                    Ok(()) => {
+                        if self.file.path.is_none() {
+                            self.file.path = Some(path);
+                        }
+                        self.file.dirty = false;
+                        self.pending_quit_confirm = false;
+                        self.message = None;
+                    }
+                    Err(e) => {
+                        self.message = Some(format!("Save error: {}", e));
+                        // keep dirty; do not clear pending (if user had quit warn, error is shown)
+                    }
                 }
-                self.file.dirty = false;
                 self.render(&mut io::stdout())?;
             }
 
@@ -182,6 +193,7 @@ impl App {
             } => {
                 self.buffer.insert_newline();
                 self.file.dirty = true;
+                self.pending_quit_confirm = false;
                 self.render(&mut io::stdout())?;
             }
 
@@ -201,6 +213,7 @@ impl App {
             {
                 self.buffer.undo();
                 self.file.dirty = true;
+                self.pending_quit_confirm = false;
                 self.render(&mut io::stdout())?;
             }
             KeyEvent {
@@ -212,6 +225,7 @@ impl App {
             {
                 self.buffer.redo();
                 self.file.dirty = true;
+                self.pending_quit_confirm = false;
                 self.render(&mut io::stdout())?;
             }
             KeyEvent {
@@ -223,6 +237,7 @@ impl App {
             {
                 self.buffer.redo();
                 self.file.dirty = true;
+                self.pending_quit_confirm = false;
                 self.render(&mut io::stdout())?;
             }
             KeyEvent {
@@ -232,6 +247,7 @@ impl App {
             } if modifiers.contains(KeyModifiers::CONTROL) => {
                 self.buffer.redo();
                 self.file.dirty = true;
+                self.pending_quit_confirm = false;
                 self.render(&mut io::stdout())?;
             }
 
@@ -249,6 +265,7 @@ impl App {
                 } else if c == '\n' || c == '\r' {
                     self.buffer.insert_newline();
                     self.file.dirty = true;
+                    self.pending_quit_confirm = false;
                 } else if !c.is_control() {
                     let ch = if modifiers.contains(KeyModifiers::SHIFT) && c.is_ascii_lowercase() {
                         c.to_ascii_uppercase()
@@ -257,6 +274,7 @@ impl App {
                     };
                     self.buffer.insert_char(ch);
                     self.file.dirty = true;
+                    self.pending_quit_confirm = false;
                 }
                 self.render(&mut io::stdout())?;
             }
@@ -267,6 +285,7 @@ impl App {
             } => {
                 self.buffer.delete_back();
                 self.file.dirty = true;
+                self.pending_quit_confirm = false;
                 self.render(&mut io::stdout())?;
             }
 
@@ -276,6 +295,7 @@ impl App {
             } => {
                 self.buffer.delete_forward();
                 self.file.dirty = true;
+                self.pending_quit_confirm = false;
                 self.render(&mut io::stdout())?;
             }
 

@@ -14,6 +14,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 mod dirty;
 mod save_conflict;
 mod snapshot;
+mod watcher_acceptance;
 mod watcher_lifecycle;
 mod watcher_live;
 mod watcher_pending;

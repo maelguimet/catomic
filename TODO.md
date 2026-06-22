@@ -723,11 +723,17 @@ Update this file as decisions are made or phases complete. Add concrete issues o
   - cursor_byte_offset present; seeded random + multibyte (é猫🙂 etc) parity tests (incl. boundary delete/backspace/nl joins).
   - PT golden/perf smokes added (previously only SimpleBuffer).
   - Coalescing wired + tested; module split done.
-- Phase 1B-b in progress: remove full-doc rebuild + piece-list scans from hot edit path.
-  - non-newline insert_char uses adjust_index_for_simple_delta()
-  - within-line delete_back/delete_forward use adjust_index_for_simple_delta()
-  - insert_newline and newline-join deletes still use full rebuild_index()
-  - coalesce still runs after edits
-  - slice_to_string still scans pieces from the head / no piece-position index yet
-  - remaining 1B-b work is newline incremental handling, faster slice lookup/piece index, cursor move caching, and fragmented-piece performance tests
-- App / goblin untouched. No undo/LLM/Project.
+- Phase 1B-b complete:
+  - row_for_byte uses binary search (was linear).
+  - piece_starts prefix + binary find_piece_for_byte: slice_to_string/split_point no longer head-scan for normal spans; bounded lookup.
+  - non-newline edits use adjust_index_for_simple_delta().
+  - newline insert and newline-join deletes use incremental adjust (no full rebuild).
+  - App / goblin has only required undo key bindings.
+- Phase 1C complete:
+  - Undo/redo using piece-level Transactions (CursorState + PieceEdit Insert/Delete of Vec<Piece> descriptors). No full-text snapshots.
+  - Redo of insert reuses stored pieces (no re-append to add). Save is not undoable; undo only affects buffer.
+  - No-op edits produce no history entries. History apply suppresses recording.
+  - New edit after undo clears redo.
+  - Keys: Ctrl+Z (undo), Ctrl+Y / Ctrl+Shift+Z (redo) wired (and precedence fixed).
+  - Undo tests (insert/delete/newline/join/multibyte/no-op + reuse + clear-redo).
+- No LLM/Project in Plain.

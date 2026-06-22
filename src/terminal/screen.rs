@@ -13,6 +13,7 @@ pub struct Screen {
     pub width: u16,
     pub height: u16,
     pub scroll_top: usize,
+    pub scroll_left: usize,
 }
 
 impl Screen {
@@ -21,6 +22,7 @@ impl Screen {
             width,
             height,
             scroll_top: 0,
+            scroll_left: 0,
         }
     }
 

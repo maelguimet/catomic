@@ -760,8 +760,14 @@ fn app_viewport_zero_size_regression_from_phase_2f_still_holds() {
 
     assert_eq!(app.screen.width, 0);
     assert_eq!(app.screen.height, 0);
-    assert_eq!(app.screen.scroll_top, 0, "zero height still forces scroll_top=0");
-    assert_eq!(app.screen.scroll_left, 0, "zero width still forces scroll_left=0");
+    assert_eq!(
+        app.screen.scroll_top, 0,
+        "zero height still forces scroll_top=0"
+    );
+    assert_eq!(
+        app.screen.scroll_left, 0,
+        "zero width still forces scroll_left=0"
+    );
     assert!(!out.is_empty());
 }
 

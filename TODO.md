@@ -758,3 +758,5 @@ Key unresolved limitations that still matter:
 - same-length/same-mtime overwrite limitation,
 - big-file tiers/perf still unfinished,
 - rendering still full clear/no partial redraw unless already changed.
+
+- Phase 2-r (narrow pass): manual external-file status check (Ctrl+R; message only via existing snapshot; no reload/mutation).

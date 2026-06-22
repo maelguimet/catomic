@@ -127,13 +127,29 @@ impl App {
 
     fn handle_key(&mut self, key: KeyEvent) -> io::Result<()> {
         match key {
-            // Quit
+            // Quit (Ctrl+Q)
+            // - clean: quit immediately
+            // - dirty + !pending: set pending=true + warning message; do NOT quit
+            // - dirty + pending: quit (force, without save)
+            // Movement keys leave pending/message as-is (simplest behavior; documented).
+            // Actual content edits (insert/delete/undo/redo) clear pending_confirm.
             KeyEvent {
                 code: KeyCode::Char('q'),
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                self.should_quit = true;
+                if !self.file.dirty {
+                    self.should_quit = true;
+                } else if self.pending_quit_confirm {
+                    self.should_quit = true;
+                } else {
+                    self.pending_quit_confirm = true;
+                    self.message = Some(
+                        "Unsaved changes. Press Ctrl+Q again to quit without saving, Ctrl+S to save."
+                            .to_string(),
+                    );
+                    // do not quit
+                }
             }
 
             // Save (Ctrl+S) -- now routes through atomic write. Save never creates undo.

@@ -30,6 +30,7 @@ impl PieceTable {
             len: 0,
         }];
         let index = Self::build_index("", "", &pieces);
+        let piece_starts = vec![0];
         Self {
             original: String::new(),
             add: String::new(),
@@ -37,6 +38,7 @@ impl PieceTable {
             index,
             cursor: Cursor { row: 0, col: 0 },
             cursor_byte_offset: 0,
+            piece_starts,
         }
     }
 
@@ -63,6 +65,8 @@ impl PieceTable {
             )
         };
         let index = Self::build_index(&original, "", &pieces);
+        // Initial piece (even if len 0) always starts at 0.
+        let piece_starts = vec![0];
         Self {
             original,
             add: String::new(),
@@ -70,6 +74,7 @@ impl PieceTable {
             index,
             cursor: Cursor { row: 0, col: 0 },
             cursor_byte_offset: 0,
+            piece_starts,
         }
     }
 
@@ -112,6 +117,7 @@ impl PieceTable {
     /// Rule: if same Source and p1.start + p1.len == p2.start then merge.
     pub(crate) fn coalesce(&mut self) {
         if self.pieces.len() < 2 {
+            self.sync_piece_starts();
             return;
         }
         let mut i = 0;
@@ -130,6 +136,17 @@ impl PieceTable {
             } else {
                 i += 1;
             }
+        }
+        self.sync_piece_starts();
+    }
+
+    /// Keep piece_starts parallel to pieces after any structural mutation.
+    fn sync_piece_starts(&mut self) {
+        self.piece_starts.clear();
+        let mut acc = 0usize;
+        for p in &self.pieces {
+            self.piece_starts.push(acc);
+            acc += p.len;
         }
     }
 

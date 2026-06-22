@@ -7,14 +7,15 @@ use super::types::{PieceTable, Source};
 
 impl PieceTable {
     /// Return the logical text for the byte range [start, end).
-    /// Walks only the relevant pieces. Core primitive for index-driven queries.
+    /// Uses piece_starts for bounded lookup of start piece (no full head scan).
     pub(crate) fn slice_to_string(&self, start: usize, end: usize) -> String {
-        if start >= end {
+        if start >= end || self.pieces.is_empty() {
             return String::new();
         }
         let mut out = String::new();
-        let mut acc = 0usize;
-        for p in &self.pieces {
+        let mut i = self.find_piece_for_byte(start);
+        let mut acc = self.piece_starts.get(i).copied().unwrap_or(0);
+        for p in &self.pieces[i..] {
             let p_end = acc + p.len;
 
             if acc >= end {
@@ -41,17 +42,37 @@ impl PieceTable {
         out
     }
 
+    /// Binary search on piece_starts for the piece containing or nearest before off.
+    /// Returns index clamped to last piece.
+    fn find_piece_for_byte(&self, off: usize) -> usize {
+        let ps = &self.piece_starts;
+        let np = ps.len();
+        if np == 0 {
+            return 0;
+        }
+        let mut lo = 0usize;
+        let mut hi = np;
+        while lo < hi {
+            let mid = (lo + hi) / 2;
+            if ps[mid] <= off {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        lo.saturating_sub(1).min(np - 1)
+    }
+
     /// Find (piece_index, local_byte_offset) for a global logical byte offset.
     pub(crate) fn split_point(&self, off: usize) -> (usize, usize) {
-        let mut acc = 0usize;
-        for (i, p) in self.pieces.iter().enumerate() {
-            if off <= acc + p.len {
-                return (i, off - acc);
-            }
-            acc += p.len;
+        if self.pieces.is_empty() {
+            return (0, 0);
         }
-        let last = self.pieces.len() - 1;
-        (last, self.pieces[last].len)
+        let i = self.find_piece_for_byte(off);
+        let pstart = self.piece_starts[i];
+        let plen = self.pieces[i].len;
+        let local = off.saturating_sub(pstart).min(plen);
+        (i, local)
     }
 
     /// Char length of a logical line (uses index when possible + slice).

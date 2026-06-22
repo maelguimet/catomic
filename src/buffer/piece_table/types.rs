@@ -45,4 +45,7 @@ pub struct PieceTable {
     /// Cached global logical byte offset for the cursor.
     /// Avoids full rebuild on every edit for offset calculation.
     pub(crate) cursor_byte_offset: usize,
+    /// Prefix sums of piece lengths (parallel to pieces). Enables fast
+    /// piece lookup for queries/edits without head scans on every op.
+    pub(crate) piece_starts: Vec<usize>,
 }

@@ -19,6 +19,7 @@ impl PieceTable {
                 start: add_start,
                 len: added_len,
             });
+            self.sync_piece_starts();
             self.cursor_byte_offset = added_len;
             if ch == '\n' {
                 self.cursor.row += 1;
@@ -60,6 +61,7 @@ impl PieceTable {
             }
         }
         self.pieces = new_pieces;
+        self.sync_piece_starts();
 
         // Coalesce will be called by caller after index work in full 1B
         self.cursor_byte_offset = insert_byte + added_len;
@@ -116,6 +118,7 @@ impl PieceTable {
             });
         }
         self.pieces = new_pieces;
+        self.sync_piece_starts();
 
         // Adjust cursor byte
         if self.cursor_byte_offset > end {

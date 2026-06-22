@@ -10,24 +10,23 @@ See also: [TODO.md](./TODO.md), [README.md](./README.md), and `docs/` (architect
 
 Build the cursor before the cathedral.
 
-Current phase: **Phase 1B only**.
+Current phase: **Phase 2**.
 
-Phase 1A is complete:
-- PieceTable exists behind Buffer
-- correctness-first scans allowed
-- no undo
-- no line index
+Phases 1A + 1B-a + 1B-b + 1C are complete:
+- PieceTable + LineIndex + cursor mapping + query accel behind Buffer
+- piece-level undo/redo (transactions, no snapshots)
+- minimal key bindings for undo/redo
 
 Allowed now:
 * line index
 * cursor/offset mapping acceleration
 * query optimization
 * tests/benchmarks for PieceTable
+* undo/redo (Phase 1C done)
 
 Forbidden now:
-* undo/redo
 * LLM/project/config work
-* UI feature expansion
+* UI feature expansion (beyond phase needs)
 
 ## Workflow
 

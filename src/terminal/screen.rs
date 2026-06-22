@@ -60,6 +60,26 @@ impl Screen {
         }
         // else: row already inside [scroll_top, scroll_top + vh), unchanged
     }
+
+    /// Ensure `col` (scalar char index) is visible within the content width.
+    /// Uses visible_width() as the viewport width (no reservation).
+    /// If visible width is 0, forces scroll_left = 0.
+    /// Scrolls left if col is before viewport; scrolls so col is the last visible
+    /// char when it is past the right edge.
+    /// Uses saturating arithmetic; never panics.
+    pub fn reveal_col(&mut self, col: usize) {
+        let vw = self.visible_width();
+        if vw == 0 {
+            self.scroll_left = 0;
+            return;
+        }
+        if col < self.scroll_left {
+            self.scroll_left = col;
+        } else if col >= self.scroll_left.saturating_add(vw) {
+            self.scroll_left = col.saturating_add(1).saturating_sub(vw);
+        }
+        // else: col already inside [scroll_left, scroll_left + vw), unchanged
+    }
 }
 
 #[cfg(test)]

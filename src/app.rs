@@ -9,12 +9,24 @@
 //! terminal handle, etc.) and the event loop.
 
 use std::io::{self, Write};
+use std::path::PathBuf;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::{self, Buffer};
+use crate::file;
 use crate::mode::{Capabilities, Mode};
 use crate::terminal as term;
+
+/// Minimal explicit file state (Phase 2-a).
+/// path: target for save (None until first save picks "untitled.txt").
+/// dirty: true if buffer has unsaved edits since last save/open.
+/// Starts false for open-existing and open-missing-file cases.
+#[derive(Clone, Debug, Default)]
+pub struct FileState {
+    pub path: Option<PathBuf>,
+    pub dirty: bool,
+}
 
 /// High-level application state for the editor.
 pub struct App {
@@ -22,8 +34,8 @@ pub struct App {
     pub caps: Capabilities,
     /// The active buffer (trait object for now; concrete type behind it).
     pub buffer: Box<dyn Buffer>,
-    /// Path of the file being edited, if any.
-    pub file_path: Option<String>,
+    /// File path and dirty tracking.
+    pub file: FileState,
     /// Whether we should exit the loop.
     pub should_quit: bool,
 }
@@ -50,7 +62,10 @@ impl App {
             mode,
             caps,
             buffer,
-            file_path: initial_path.map(|s| s.to_string()),
+            file: FileState {
+                path: initial_path.map(|s| PathBuf::from(s)),
+                dirty: false,
+            },
             should_quit: false,
         })
     }
@@ -115,23 +130,24 @@ impl App {
                 self.should_quit = true;
             }
 
-            // Save (Ctrl+S)
+            // Save (Ctrl+S) -- now routes through atomic write. Save never creates undo.
+            // If no path, defaults to "untitled.txt" and remembers it.
             KeyEvent {
                 code: KeyCode::Char('s'),
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
                 let path = self
-                    .file_path
+                    .file
+                    .path
                     .clone()
-                    .unwrap_or_else(|| "untitled.txt".to_string());
+                    .unwrap_or_else(|| PathBuf::from("untitled.txt"));
                 let text = self.buffer.to_string();
-                // Phase 0: simple write. If no prior path we now remember "untitled.txt".
-                std::fs::write(&path, text)?;
-                // Remember the path so subsequent saves work without picking default again.
-                if self.file_path.is_none() {
-                    self.file_path = Some(path);
+                file::io::atomic_write_string(&path, &text)?;
+                if self.file.path.is_none() {
+                    self.file.path = Some(path);
                 }
+                self.file.dirty = false;
                 self.render(&mut io::stdout())?;
             }
 
@@ -143,6 +159,7 @@ impl App {
                 ..
             } => {
                 self.buffer.insert_newline();
+                self.file.dirty = true;
                 self.render(&mut io::stdout())?;
             }
 
@@ -151,6 +168,8 @@ impl App {
             //   - KeyCode::Char('z') + CONTROL + SHIFT
             //   - KeyCode::Char('Z') + CONTROL + SHIFT
             // Place before generic Char so CONTROL combos fire. No other UI changes.
+            // Mark dirty conservatively (undo/redo can mutate); exact save-point
+            // tracking is future.
             KeyEvent {
                 code: KeyCode::Char('z'),
                 modifiers,
@@ -159,6 +178,7 @@ impl App {
                 && !modifiers.contains(KeyModifiers::SHIFT) =>
             {
                 self.buffer.undo();
+                self.file.dirty = true;
                 self.render(&mut io::stdout())?;
             }
             KeyEvent {
@@ -169,6 +189,7 @@ impl App {
                 && modifiers.contains(KeyModifiers::SHIFT) =>
             {
                 self.buffer.redo();
+                self.file.dirty = true;
                 self.render(&mut io::stdout())?;
             }
             KeyEvent {
@@ -179,6 +200,7 @@ impl App {
                 && modifiers.contains(KeyModifiers::SHIFT) =>
             {
                 self.buffer.redo();
+                self.file.dirty = true;
                 self.render(&mut io::stdout())?;
             }
             KeyEvent {
@@ -187,6 +209,7 @@ impl App {
                 ..
             } if modifiers.contains(KeyModifiers::CONTROL) => {
                 self.buffer.redo();
+                self.file.dirty = true;
                 self.render(&mut io::stdout())?;
             }
 
@@ -203,6 +226,7 @@ impl App {
                     // Other Ctrl+letter combos ignored in Phase 0
                 } else if c == '\n' || c == '\r' {
                     self.buffer.insert_newline();
+                    self.file.dirty = true;
                 } else if !c.is_control() {
                     let ch = if modifiers.contains(KeyModifiers::SHIFT) && c.is_ascii_lowercase() {
                         c.to_ascii_uppercase()
@@ -210,6 +234,7 @@ impl App {
                         c
                     };
                     self.buffer.insert_char(ch);
+                    self.file.dirty = true;
                 }
                 self.render(&mut io::stdout())?;
             }
@@ -219,6 +244,7 @@ impl App {
                 ..
             } => {
                 self.buffer.delete_back();
+                self.file.dirty = true;
                 self.render(&mut io::stdout())?;
             }
 
@@ -227,6 +253,7 @@ impl App {
                 ..
             } => {
                 self.buffer.delete_forward();
+                self.file.dirty = true;
                 self.render(&mut io::stdout())?;
             }
 

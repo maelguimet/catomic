@@ -104,6 +104,11 @@ impl FileWatcher {
 
 /// Map a relevant notify event to a signal. Create/Modify -> Changed,
 /// Remove -> Deleted. Other kinds for the target are ignored for now.
+///
+/// Rename/name events: notify commonly represents a rename involving the
+/// target as EventKind::Modify(ModifyKind::Name(_)). These hit the Modify
+/// arm and yield Changed. This is only a hint/wakeup; the definitive
+/// decision (reload vs conflict) always uses metadata observation later.
 fn map_event_to_signal(target: &std::path::Path, event: &notify::Event) -> Option<FileWatchSignal> {
     if !is_relevant(target, event) {
         return None;
@@ -225,6 +230,26 @@ mod tests {
             ],
         );
         assert!(crate::file::watch_path::is_relevant(&target, &ev));
+        assert_eq!(
+            map_event_to_signal(&target, &ev),
+            Some(FileWatchSignal::Changed)
+        );
+    }
+
+    #[test]
+    fn rename_name_event_on_target_currently_yields_changed_as_hint() {
+        // notify rename often appears as Modify(Name). We map Modify -> Changed.
+        // Comment in map_event_to_signal explains why: hint only; metadata is truth.
+        let target = PathBuf::from("/abs/w/test.txt");
+        // simulate a name-modify event (no need for full RenameMode for this)
+        let ev = make_event(
+            EventKind::Modify(notify::event::ModifyKind::Name(
+                notify::event::RenameMode::Any,
+            )),
+            vec![PathBuf::from("/abs/w/test.txt")],
+        );
+        assert!(crate::file::watch_path::is_relevant(&target, &ev));
+        // currently maps via Modify arm
         assert_eq!(
             map_event_to_signal(&target, &ev),
             Some(FileWatchSignal::Changed)

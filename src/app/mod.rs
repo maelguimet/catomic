@@ -24,6 +24,7 @@ pub use file_state::FileState;
 use file_state::{external_file_status, mark_saved, refresh_dirty};
 
 mod save;
+mod reload;
 mod viewport;
 
 /// High-level application state for the editor.
@@ -47,6 +48,11 @@ pub struct App {
     /// Cleared on content edits, successful save, and path changes.
     /// Movement/resize/render must not touch it.
     pub pending_save_conflict: Option<save::PendingSaveConflict>,
+    /// Pending reload confirmation (Phase 2-s). Armed by first Ctrl+R on Modified/Deleted
+    /// when status indicates disk differs. Second Ctrl+R reloads only on exact snapshot match.
+    /// Cleared by content edits (insert/delete/undo/redo), successful save, path changes.
+    /// Movement/resize/render do not clear. NoPath/Unchanged/Unknown do not arm.
+    pub pending_reload: Option<reload::PendingReload>,
     /// Terminal screen size and scroll state. Single source of truth for render height.
     /// Initialized conservatively; updated from crossterm after setup and on resize.
     pub screen: term::screen::Screen,
@@ -95,6 +101,7 @@ impl App {
             message: None,
             pending_quit_confirm: false,
             pending_save_conflict: None,
+            pending_reload: None,
             // Conservative default matching prior hardcoded 24; no real term required for unit tests.
             screen: term::screen::Screen::new(80, 24),
         })

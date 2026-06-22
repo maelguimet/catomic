@@ -779,6 +779,8 @@ fn app_file_state_generic_newline_clears_reload_pending() {
         app.pending_reload.is_none(),
         "generic newline must clear pending_reload"
     );
+    // Concrete expected state immediately after the generic newline (no reload yet).
+    assert_eq!(app.buffer.to_string(), "\nBASE");
 
     // next R must re-arm, not perform reload (since pending was cleared)
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
@@ -787,9 +789,8 @@ fn app_file_state_generic_newline_clears_reload_pending() {
         app.pending_reload.is_some(),
         "after clear, next R must re-arm"
     );
-    // buffer should still be original (from open), not reloaded yet
-    // (we didn't do second R after arm)
-    assert!(app.buffer.to_string().contains("BASE") || app.buffer.to_string().is_empty());
+    // Concrete state: generic newline inserted at start; reload not performed.
+    assert_eq!(app.buffer.to_string(), "\nBASE");
 
     let _ = std::fs::remove_file(&p);
 }

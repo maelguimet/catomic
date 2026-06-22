@@ -64,13 +64,12 @@ impl App {
 
         // Capture initial history position as the clean save point (open or new).
         let initial_pos = buffer.edit_history_position();
-        // Capture disk snapshot (std metadata only). For remembered path that is missing:
-        // Absent snapshot stored explicitly; never makes new() fail or dirty.
+        // Capture disk snapshot (std metadata only).
+        // - Ok(Present) or Ok(Absent from NotFound) stored as-is.
+        // - Real metadata errors (non-NotFound) are propagated as Err from new();
+        //   we do not silently map them to Absent (Phase 2-m hardening).
         let disk_snapshot = if let Some(p) = initial_path {
-            match crate::file::io::capture_file_snapshot(p) {
-                Ok(s) => Some(s),
-                Err(_) => Some(crate::file::io::FileSnapshot::Absent),
-            }
+            Some(crate::file::io::capture_file_snapshot(p)?)
         } else {
             None
         };
@@ -206,9 +205,15 @@ impl App {
                             self.file.path = Some(target.clone());
                         }
                         mark_saved(&mut self.file, &*self.buffer);
-                        // Success: update disk snapshot for the saved path. Failure path leaves prior snapshot.
+                        // Success: update disk snapshot for the saved path.
+                        // - Failure to capture post-save leaves prior snapshot unchanged.
+                        // - Never overwrite with Absent (even if capture returns it after write);
+                        //   do not mark dirty or corrupt saved token on meta failure.
                         if let Ok(s) = file::io::capture_file_snapshot(&target) {
-                            self.file.disk_snapshot = Some(s);
+                            if matches!(s, file::io::FileSnapshot::Present { .. }) {
+                                self.file.disk_snapshot = Some(s);
+                            }
+                            // else: leave old snapshot (Absent or prior Present); token already clean.
                         }
                         self.pending_quit_confirm = false;
                         self.message = None;

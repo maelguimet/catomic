@@ -337,8 +337,9 @@ impl App {
     }
 
     fn render(&self, stdout: &mut dyn Write) -> io::Result<()> {
-        // Delegate to terminal render for Phase 0. Keep the loop caller simple.
-        term::render::render_buffer(stdout, &*self.buffer, 0, 24)
+        // Delegate to terminal render. Pass message for bottom-line display.
+        // Minimal: only message text (no filename/dirty marker added yet).
+        term::render::render_buffer(stdout, &*self.buffer, 0, 24, self.message.as_deref())
     }
 }
 

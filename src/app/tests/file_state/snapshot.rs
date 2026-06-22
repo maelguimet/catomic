@@ -689,3 +689,42 @@ fn app_file_state_edit_after_reload_pending_clears_it() {
 
     let _ = std::fs::remove_file(&p);
 }
+
+// Phase 2-t: generic Char('\n') / Char('\r') must clear pending_reload (paste etc path)
+
+#[test]
+fn app_file_state_generic_newline_clears_reload_pending() {
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!("catomic_2t_newline_clear_{}.txt", std::process::id()));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "BASE").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    std::fs::write(&p, "MOD").unwrap(); // external change
+
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(app.pending_reload.is_some(), "first R should arm");
+
+    // generic newline (the \n/\r Char path, e.g. from paste) must clear it
+    app.handle_key(make_key(KeyCode::Char('\n'), KeyModifiers::NONE))
+        .unwrap();
+    assert!(
+        app.pending_reload.is_none(),
+        "generic newline must clear pending_reload"
+    );
+
+    // next R must re-arm, not perform reload (since pending was cleared)
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(
+        app.pending_reload.is_some(),
+        "after clear, next R must re-arm"
+    );
+    // buffer should still be original (from open), not reloaded yet
+    // (we didn't do second R after arm)
+    assert!(app.buffer.to_string().contains("BASE") || app.buffer.to_string().is_empty());
+
+    let _ = std::fs::remove_file(&p);
+}

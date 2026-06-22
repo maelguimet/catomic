@@ -392,6 +392,7 @@ impl App {
                     refresh_dirty(&mut self.file, &*self.buffer);
                     self.pending_quit_confirm = false;
                     self.pending_save_conflict = None;
+                    self.pending_reload = None;
                     self.message = None;
                 } else if !c.is_control() {
                     let ch = if modifiers.contains(KeyModifiers::SHIFT) && c.is_ascii_lowercase() {

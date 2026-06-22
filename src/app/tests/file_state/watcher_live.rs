@@ -1,23 +1,25 @@
-//! Ignored live OS notify smoke tests (Phase 2-ad).
+//! Ignored live OS notify smoke tests (Phase 2-ad / 2-ae tighten).
 //!
 //! Purpose: isolated home for live-timing-dependent watcher smokes so that
-//! watcher_runtime.rs and watcher_signal.rs stay focused on deterministic
-//! seams and under preferred line limits.
+//! watcher_* deterministic files stay focused and under line limits.
 //! Owns: the single #[ignore] live_smoke_* test(s).
 //! Must not: run in default cargo test; add non-ignored tests; change
-//!   behavior or add sleeps in hot paths.
-//! Invariants: marked ignore; uses real (non-teststub) watcher path only
-//!   when available; bounded checks only.
-//! Phase: 2-ad.
+//!   behavior or add sleeps in hot paths; assume reliable delivery.
+//! Invariants: marked ignore; uses real (non-teststub) watcher only when
+//!   construction succeeds; bounded waits only; skips cleanly if no watcher.
+//!   This smoke is metadata-only (len+mtime) and subject to same-size/same-mtime
+//!   limitation; CI must never depend on it.
+//! Phase: 2-ae (docs hygiene; behavior unchanged).
 
 use super::super::super::*;
 use super::super::make_key;
 use crossterm::event::{KeyCode, KeyModifiers};
 
 #[test]
-#[ignore = "live OS notify timing smoke; run manually with --ignored"]
+#[ignore = "live OS notify timing smoke (metadata-only; unreliable on CI; run manually with --ignored)"]
 fn live_smoke_watcher_sees_external_change_and_arms() {
-    // Only runs when explicitly requested; keeps default suite deterministic.
+    // Only runs when explicitly requested (cargo test -- --ignored).
+    // Default full suite must stay fully deterministic (seams only).
     let mut tmp = std::env::temp_dir();
     tmp.push(format!("catomic_2ad_live_smoke_{}.txt", std::process::id()));
     let p = tmp.to_string_lossy().to_string();
@@ -37,7 +39,8 @@ fn live_smoke_watcher_sees_external_change_and_arms() {
     // External write (another "process").
     std::fs::write(&p, "LIVEEXT").unwrap();
 
-    // Bounded non-blocking checks; real delivery is best-effort and env-dependent.
+    // Bounded non-blocking checks only; real delivery best-effort/env-dependent.
+    // Never assume notify fires reliably (same-size/same-mtime races possible).
     let mut armed = false;
     for _ in 0..20 {
         let mut out: Vec<u8> = Vec::new();

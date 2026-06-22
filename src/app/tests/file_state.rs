@@ -633,10 +633,7 @@ fn app_file_state_no_path_reports_nopath() {
 #[test]
 fn app_file_state_regression_open_missing_starts_clean_with_absent_snapshot() {
     let mut tmp = std::env::temp_dir();
-    tmp.push(format!(
-        "catomic_2m_reg_missing_{}.txt",
-        std::process::id()
-    ));
+    tmp.push(format!("catomic_2m_reg_missing_{}.txt", std::process::id()));
     let p = tmp.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&p);
 
@@ -654,10 +651,7 @@ fn app_file_state_regression_open_missing_starts_clean_with_absent_snapshot() {
 #[test]
 fn app_file_state_regression_open_existing_starts_clean_with_present_snapshot() {
     let mut tmp = std::env::temp_dir();
-    tmp.push(format!(
-        "catomic_2m_reg_exist_{}.txt",
-        std::process::id()
-    ));
+    tmp.push(format!("catomic_2m_reg_exist_{}.txt", std::process::id()));
     let p = tmp.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&p);
     std::fs::write(&p, "hello reg").unwrap();
@@ -677,10 +671,7 @@ fn app_file_state_regression_open_existing_starts_clean_with_present_snapshot() 
 #[test]
 fn app_file_state_regression_successful_save_marks_clean_and_updates_snapshot() {
     let mut tmp = std::env::temp_dir();
-    tmp.push(format!(
-        "catomic_2m_reg_save_{}.txt",
-        std::process::id()
-    ));
+    tmp.push(format!("catomic_2m_reg_save_{}.txt", std::process::id()));
     let p = tmp.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&p);
 
@@ -696,7 +687,10 @@ fn app_file_state_regression_successful_save_marks_clean_and_updates_snapshot() 
     assert!(!app.file.dirty, "regression: save must mark clean");
     match &app.file.disk_snapshot {
         Some(crate::file::io::FileSnapshot::Present { len, .. }) => {
-            assert_eq!(*len, 2, "regression: save must update snapshot to Present len");
+            assert_eq!(
+                *len, 2,
+                "regression: save must update snapshot to Present len"
+            );
         }
         _ => panic!("regression: successful save must set Present snapshot"),
     }

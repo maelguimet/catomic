@@ -26,9 +26,10 @@
 //! - Must not imply repo/LSP/network/Project services.
 //! - Construction remains explicitly gated; no background work in hot paths.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
 
+use crate::file::watch_path::{is_relevant, normalize_path, watch_parent};
 use crate::mode::Capabilities;
 use notify::{self, Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
@@ -101,39 +102,9 @@ impl FileWatcher {
     }
 }
 
-/// Derive the directory to watch (parent of target, or "." for bare names).
-fn watch_parent(target: &Path) -> PathBuf {
-    match target.parent() {
-        Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
-        _ => PathBuf::from("."),
-    }
-}
-
-/// Convert to absolute lexical path without requiring existence (no canonicalize).
-/// This keeps tests deterministic and allows watching non-existent targets.
-fn normalize_path(p: &Path) -> PathBuf {
-    if p.is_absolute() {
-        p.to_path_buf()
-    } else {
-        let base = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        base.join(p)
-    }
-}
-
-/// Return true if any path in the event matches the (normalized) target.
-fn is_relevant(target: &Path, event: &Event) -> bool {
-    let norm_target = normalize_path(target);
-    for p in &event.paths {
-        if normalize_path(p) == norm_target {
-            return true;
-        }
-    }
-    false
-}
-
 /// Map a relevant notify event to a signal. Create/Modify -> Changed,
 /// Remove -> Deleted. Other kinds for the target are ignored for now.
-fn map_event_to_signal(target: &Path, event: &Event) -> Option<FileWatchSignal> {
+fn map_event_to_signal(target: &std::path::Path, event: &notify::Event) -> Option<FileWatchSignal> {
     if !is_relevant(target, event) {
         return None;
     }
@@ -163,12 +134,12 @@ mod tests {
     #[test]
     fn watch_parent_chosen_correctly() {
         assert_eq!(
-            watch_parent(Path::new("dir/sub/file.txt")),
+            crate::file::watch_path::watch_parent(std::path::Path::new("dir/sub/file.txt")),
             PathBuf::from("dir/sub")
         );
-        assert_eq!(watch_parent(Path::new("bare.txt")), PathBuf::from("."));
+        assert_eq!(crate::file::watch_path::watch_parent(std::path::Path::new("bare.txt")), PathBuf::from("."));
         assert_eq!(
-            watch_parent(Path::new("/abs/path/to/file.rs")),
+            crate::file::watch_path::watch_parent(std::path::Path::new("/abs/path/to/file.rs")),
             PathBuf::from("/abs/path/to")
         );
     }
@@ -176,12 +147,12 @@ mod tests {
     #[test]
     fn normalize_does_not_require_file_existence() {
         let missing = PathBuf::from("/tmp/does_not_exist_$$_2x/missing.txt");
-        let n = normalize_path(&missing);
+        let n = crate::file::watch_path::normalize_path(&missing);
         assert!(n.is_absolute());
         assert!(n.ends_with("missing.txt"));
         // relative also becomes abs lexical
         let rel = PathBuf::from("rel/dir/target.md");
-        let nr = normalize_path(&rel);
+        let nr = crate::file::watch_path::normalize_path(&rel);
         assert!(nr.is_absolute());
     }
 
@@ -200,7 +171,7 @@ mod tests {
             EventKind::Create(CreateKind::File),
             vec![PathBuf::from("/abs/w/test.txt")],
         );
-        assert!(is_relevant(&target, &ev));
+        assert!(crate::file::watch_path::is_relevant(&target, &ev));
         assert_eq!(
             map_event_to_signal(&target, &ev),
             Some(FileWatchSignal::Changed)
@@ -225,7 +196,7 @@ mod tests {
             EventKind::Remove(RemoveKind::File),
             vec![PathBuf::from("/abs/w/test.txt")],
         );
-        assert!(is_relevant(&target, &ev));
+        assert!(crate::file::watch_path::is_relevant(&target, &ev));
         assert_eq!(
             map_event_to_signal(&target, &ev),
             Some(FileWatchSignal::Deleted)
@@ -239,7 +210,7 @@ mod tests {
             EventKind::Modify(notify::event::ModifyKind::Any),
             vec![PathBuf::from("/abs/w/sibling.txt")],
         );
-        assert!(!is_relevant(&target, &ev));
+        assert!(!crate::file::watch_path::is_relevant(&target, &ev));
         assert_eq!(map_event_to_signal(&target, &ev), None);
     }
 
@@ -253,7 +224,7 @@ mod tests {
                 PathBuf::from("/abs/w/test.txt"),
             ],
         );
-        assert!(is_relevant(&target, &ev));
+        assert!(crate::file::watch_path::is_relevant(&target, &ev));
         assert_eq!(
             map_event_to_signal(&target, &ev),
             Some(FileWatchSignal::Changed)

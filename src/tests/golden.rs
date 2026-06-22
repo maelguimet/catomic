@@ -211,4 +211,37 @@ mod tests {
 
         cleanup(&out_path);
     }
+
+    #[test]
+    fn golden_save_uses_atomic_helper_writes_exact() {
+        // Explicitly exercises the atomic write path (used by real Ctrl+S)
+        // and asserts exact content is written, same as prior direct fs paths.
+        let out_path = temp_path("atomic_save_golden.txt");
+        cleanup(&out_path);
+
+        let expected = "line one\nline two\n";
+        // Use the atomic helper directly (mirrors what App save now does)
+        crate::file::io::atomic_write_string(&out_path, expected)
+            .expect("atomic save in golden");
+
+        let on_disk = fs::read_to_string(&out_path).expect("read after atomic");
+        assert_eq!(on_disk, expected, "golden save via atomic must write exact bytes");
+
+        // No temp sibling should linger
+        let parent = out_path.parent().unwrap();
+        let base = out_path.file_name().unwrap().to_string_lossy();
+        if let Ok(rd) = fs::read_dir(parent) {
+            for e in rd.flatten() {
+                let s = e.file_name().to_string_lossy().to_string();
+                if s.starts_with(&format!("{}.tmp.", base))
+                    && s.contains(&format!(".tmp.{}", std::process::id()))
+                {
+                    cleanup(&out_path);
+                    panic!("atomic golden left temp: {}", s);
+                }
+            }
+        }
+
+        cleanup(&out_path);
+    }
 }

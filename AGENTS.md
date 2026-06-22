@@ -10,9 +10,9 @@ See also: [TODO.md](./TODO.md), [README.md](./README.md), and `docs/` (architect
 
 Build the cursor before the cathedral.
 
-Current phase: **Phase 2**.
+Current phase: Phase 1 acceptance hardening / Phase 2 preparation.
 
-Phases 1A + 1B-a + 1B-b + 1C are complete:
+Phases 1A, 1B-b, and 1C are complete:
 - PieceTable + LineIndex + cursor mapping + query accel behind Buffer
 - piece-level undo/redo (transactions, no snapshots)
 - minimal key bindings for undo/redo
@@ -23,6 +23,9 @@ Allowed now:
 * query optimization
 * tests/benchmarks for PieceTable
 * undo/redo (Phase 1C done)
+* Phase 1 acceptance hardening and Phase 2 preparation work
+
+Phase 2 feature work is allowed only after Phase 1 acceptance tests are green.
 
 Forbidden now:
 * LLM/project/config work

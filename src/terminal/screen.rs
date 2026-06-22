@@ -33,4 +33,22 @@ impl Screen {
     pub fn visible_height(&self) -> usize {
         self.height.saturating_sub(1) as usize // leave room for status later
     }
+
+    /// Ensure `row` is visible within the content area (using visible_height()).
+    /// Bottom row is reserved for message/status; content viewport height is visible_height().
+    /// If visible height is 0, scroll_top is forced to 0.
+    /// Uses saturating arithmetic; never panics.
+    pub fn reveal_row(&mut self, row: usize) {
+        let vh = self.visible_height();
+        if vh == 0 {
+            self.scroll_top = 0;
+            return;
+        }
+        if row < self.scroll_top {
+            self.scroll_top = row;
+        } else if row >= self.scroll_top.saturating_add(vh) {
+            self.scroll_top = row.saturating_add(1).saturating_sub(vh);
+        }
+        // else: row already inside [scroll_top, scroll_top + vh), unchanged
+    }
 }

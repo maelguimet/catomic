@@ -6,9 +6,8 @@
 //! Owns: the notify RecommendedWatcher (kept alive), normalized target path,
 //!   and mpsc receiver for events (notify manages its internal polling thread).
 //! Must not: be constructed unless Capabilities::file_watch; must not imply or
-//!   construct any Project services (linters, lsp, repo_scan, llm, etc.); must
-//!   not be wired into App, event loop, or reload paths in this pass; no manual
-//!   threads, no async, no debouncer.
+//!   construct any Project services (linters, lsp, repo_scan, llm, etc.).
+//!   Signals are not consumed by the runtime event loop (no auto reload).
 //! Invariants: if !file_watch -> Ok(None) before any notify/fs; watches only the
 //!   target's parent dir (non-recursive); events filtered to exact target by
 //!   lexical absolute path compare; try_recv drains at most one.
@@ -19,13 +18,16 @@
 //! 1. std has no portable filesystem event notification API.
 //! 2. Used only by `file::watcher`.
 //! 3. Plain-safe only when `Capabilities::file_watch` is true.
-//! 4. Not constructed in App in this pass.
+//! 4. FileWatcher is now App-owned best-effort when `Capabilities::file_watch`
+//!    and a file path exist. Signals not yet consumed by runtime event loop.
 //! 5. Removable by deleting the watcher wrapper + the dependency.
 //!
 //! Contract:
 //! - File watching allowed in Plain when `Capabilities::file_watch`.
 //! - Must not imply repo/LSP/network/Project services.
 //! - Construction remains explicitly gated; no background work in hot paths.
+//! - No auto reload; watcher signals are hints only. Metadata observation
+//!   (observe_external_file) remains the source of truth.
 
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};

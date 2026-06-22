@@ -305,3 +305,57 @@ pub fn run(initial_file: Option<&str>) -> io::Result<()> {
     let mut app = App::new(initial_file)?;
     app.run()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    #[test]
+    fn app_file_state_new_starts_clean() {
+        let app = App::new(None).unwrap();
+        assert!(!app.file.dirty, "new app without path starts clean");
+        assert!(app.file.path.is_none());
+
+        let app2 = App::new(Some("existing.txt")).unwrap();
+        assert!(!app2.file.dirty, "open (even missing file) starts clean");
+        assert_eq!(app2.file.path.as_deref(), Some(std::path::Path::new("existing.txt")));
+    }
+
+    #[test]
+    fn app_dirty_lifecycle_via_keys() {
+        let mut app = App::new(None).unwrap();
+        assert!(!app.file.dirty);
+
+        // char insert marks dirty
+        app.handle_key(KeyEvent {
+            code: KeyCode::Char('a'),
+            modifiers: KeyModifiers::NONE,
+            kind: crossterm::event::KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        })
+        .unwrap();
+        assert!(app.file.dirty, "edit marks dirty");
+
+        // save (via atomic) clears dirty, sets default path
+        app.handle_key(KeyEvent {
+            code: KeyCode::Char('s'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: crossterm::event::KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        })
+        .unwrap();
+        assert!(!app.file.dirty, "successful save marks clean");
+        assert!(app.file.path.is_some());
+
+        // edit after save marks dirty again
+        app.handle_key(KeyEvent {
+            code: KeyCode::Char('b'),
+            modifiers: KeyModifiers::NONE,
+            kind: crossterm::event::KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        })
+        .unwrap();
+        assert!(app.file.dirty, "post-save edit marks dirty again");
+    }
+}

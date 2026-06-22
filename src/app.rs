@@ -118,9 +118,10 @@ impl App {
                     Event::Key(key) => {
                         self.handle_key(key)?;
                     }
-                    Event::Resize(_w, _h) => {
-                        // Phase 0 ignores resize for simplicity (see TODO).
-                        // Later: re-render with new dimensions.
+                    Event::Resize(w, h) => {
+                        // Update screen from resize event and render immediately.
+                        // No scroll/viewport/debounce yet (per Phase 2-c narrow scope).
+                        self.handle_resize(w, h, &mut stdout)?;
                     }
                     _ => {}
                 }
@@ -364,6 +365,13 @@ impl App {
         }
 
         Ok(())
+    }
+
+    /// Smallest helper seam for resize (and testability of it) without redesigning event loop.
+    /// Updates screen size/scroll and renders to provided writer.
+    fn handle_resize(&mut self, w: u16, h: u16, out: &mut dyn Write) -> io::Result<()> {
+        self.screen.update_size(w, h);
+        self.render(out)
     }
 
     fn render(&self, stdout: &mut dyn Write) -> io::Result<()> {

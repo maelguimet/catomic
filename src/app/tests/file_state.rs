@@ -13,6 +13,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 mod dirty;
 mod file_size;
+mod file_size_open;
 mod save_conflict;
 mod snapshot;
 mod watcher_acceptance;

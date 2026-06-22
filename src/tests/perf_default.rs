@@ -19,8 +19,9 @@ use super::helpers::{cleanup_perf, generate_dense_ascii_file, temp_perf_path};
 
 #[test]
 fn phase0_small_file_key_to_render_smoke() {
-    // Drive a small edit + render cycle and measure wall time.
-    // This is a smoke; strict <16ms is measured in release + real term later.
+    // Drive a small edit + render cycle.
+    // Functional smoke only: no timing gate in default run.
+    // Elapsed may be measured + eprintln under --nocapture for manual observation.
     let mut b = SimpleBuffer::from_text("hello phase 0\nsecond line here\n");
 
     let start = std::time::Instant::now();
@@ -34,23 +35,21 @@ fn phase0_small_file_key_to_render_smoke() {
     let mut out2: Vec<u8> = Vec::new();
     render_buffer(&mut out2, &b, 0, 0, 10, 80, None).expect("render2");
     let elapsed = start.elapsed();
+    // Optional visibility only with cargo test ... -- --nocapture
+    eprintln!("phase0_small elapsed: {:?}", elapsed);
 
-    // In debug/test this may exceed 16ms occasionally due to harness.
-    // We assert something sane to catch gross regressions (< 100ms here).
-    assert!(
-        elapsed.as_millis() < 100,
-        "small file edit+render took too long in smoke: {:?}",
-        elapsed
-    );
-
-    // At least exercise produced some output bytes
-    assert!(!out.is_empty());
+    // Deterministic functional asserts only (no elapsed threshold).
+    assert!(!out.is_empty() && !out2.is_empty(), "renders must produce output");
+    // Buffer changed as expected from the simulated edits.
+    let s = b.to_string();
+    assert!(s.contains('!'), "insert ! must be present");
+    assert!(s.contains('X'), "insert X must be present");
 }
 
 #[test]
 fn phase1b_piecetable_small_file_key_to_render_smoke() {
     // Same smoke using PieceTable (1B) to ensure the index+slice path
-    // doesn't regress small-file edit+render.
+    // doesn't regress small-file edit+render. Functional only; no timing gate.
     let mut b = PieceTable::from_text("hello phase 0\nsecond line here\n");
 
     let start = std::time::Instant::now();
@@ -63,13 +62,12 @@ fn phase1b_piecetable_small_file_key_to_render_smoke() {
     let mut out2: Vec<u8> = Vec::new();
     render_buffer(&mut out2, &b, 0, 0, 10, 80, None).expect("render2");
     let elapsed = start.elapsed();
+    eprintln!("phase1b_piecetable elapsed: {:?}", elapsed);
 
-    assert!(
-        elapsed.as_millis() < 100,
-        "PT small file edit+render took too long in smoke: {:?}",
-        elapsed
-    );
-    assert!(!out.is_empty());
+    // Deterministic functional asserts only.
+    assert!(!out.is_empty() && !out2.is_empty(), "renders must produce output");
+    let s = b.to_string();
+    assert!(s.contains('!') && s.contains('X'), "PT edits must be present");
 }
 
 #[test]

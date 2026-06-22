@@ -138,13 +138,16 @@ pub(crate) fn do_atomic_save(app: &mut super::App, out: &mut dyn Write) -> io::R
                 }
                 // else: leave old snapshot (Absent or prior Present); token already clean.
             }
-            // Update size metadata from post-save metadata (preferred) or written len fallback.
-            // Size must not affect behavior in this pass.
+            // Update size metadata (metadata-first): prefer post-save fs::metadata.
+            // Only content-derived fallback allowed here: the exact len we just wrote,
+            // when stat after our atomic_write fails (rare; we produced these bytes).
+            // file::size::file_size_bytes remains strictly metadata-only.
+            // Size bookkeeping must not affect save/reload/watcher behavior.
             if let Ok(sz) = crate::file::size::file_size_bytes(&target) {
                 app.file.size_bytes = Some(sz);
                 app.file.size_tier = Some(crate::file::size::classify_file_size(sz));
             } else {
-                // Fallback to bytes we just wrote when post-write stat failed (rare).
+                // Post-write stat failed: record len of bytes we just wrote (no re-read).
                 let len = text.len() as u64;
                 app.file.size_bytes = Some(len);
                 app.file.size_tier = Some(crate::file::size::classify_file_size(len));

@@ -19,10 +19,14 @@ use crate::file::size::{self as file_size, FileSizeTier};
 /// dirty: true if current edit_history_position() != saved_history_position.
 /// saved_history_position: token from buffer at last successful open/save.
 /// disk_snapshot: captured on-disk (len+mtime or Absent) at last open or successful save.
-/// size_bytes / size_tier: metadata-only (fs::metadata len) captured on open for
+/// size_bytes / size_tier: metadata-first (fs::metadata len) captured on open for
 ///   existing path, after successful save, and on confirmed reload of Modified content.
+/// The only allowed content-derived fallback is inside the post-successful-save path
+///   (save.rs): when fs::metadata after our own atomic write fails, we record the exact
+///   len of the bytes we just wrote (no extra read occurs). file::size::file_size_bytes
+///   itself remains strictly metadata-only.
 /// None when no on-disk file is present/known (App::new(None), open missing, or
-///   after confirmed reload of Deleted). Never synthesized from buffer content len.
+///   after confirmed reload of Deleted).
 /// Starts clean (saved token captured) for open-existing and open-missing-file.
 /// disk_snapshot is None only for no-path (untitled) buffers.
 #[derive(Clone, Debug, Default)]
@@ -34,9 +38,10 @@ pub struct FileState {
     /// On-disk snapshot captured at open or after successful save.
     /// None only when no path remembered. Absent explicitly represents missing-at-capture.
     pub disk_snapshot: Option<FileSnapshot>,
-    /// Size metadata from fs::metadata (never from full read or buffer).
-    /// None means no present on-disk file size is known (no path, missing at open,
-    /// or post-Deleted reload). Small files report Some(0) or small positive len + Small tier.
+    /// Size metadata-first from fs::metadata (see module doc for the narrow post-save
+    /// len fallback only). None means no present on-disk file size is known (no path,
+    /// missing at open, or post-Deleted reload). Small files report Some(0) or small
+    /// positive len + Small tier.
     pub size_bytes: Option<u64>,
     pub size_tier: Option<FileSizeTier>,
 }

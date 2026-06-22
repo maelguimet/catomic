@@ -72,11 +72,17 @@ fn app_new_missing_has_empty_buffer_and_size_none() {
 }
 
 #[test]
-fn successful_save_from_untitled_updates_size_metadata() {
-    // First save from new (None) exercises the assign + size update path.
-    // Pre-clean the conventional "untitled.txt" to reduce parallel-suite collision
-    // on cwd name (other untitled tests do the same).
-    let _ = fs::remove_file("untitled.txt");
+fn successful_save_with_explicit_first_path_updates_size_metadata() {
+    // Safer replacement for prior "from_untitled" size test.
+    // Avoids global "untitled.txt" contention entirely. We pre-assign a unique target
+    // path (as if user had a remembered name before first write) so save path is
+    // deterministic and does not touch the conventional default.
+    // Exercises the size capture + tier after successful first write to a path.
+    let p = temp_path("first_save_explicit.txt");
+    cleanup(&p);
+    // ensure absent so first write creates it
+    let _ = fs::remove_file(&p);
+
     let mut app = App::new(None).unwrap();
     app.handle_key(make_key(KeyCode::Char('x'), KeyModifiers::NONE))
         .unwrap();
@@ -84,47 +90,32 @@ fn successful_save_from_untitled_updates_size_metadata() {
         .unwrap();
     assert!(app.file.dirty);
     assert!(app.file.size_bytes.is_none());
+    assert!(app.file.path.is_none());
+
+    // Target an explicit path for this save (unique, no global name).
+    // Set snapshot to Absent to match "remembered missing path" open-missing contract
+    // so observe reports Unchanged (not Deleted) and save proceeds without conflict.
+    app.file.path = Some(p.clone());
+    app.file.disk_snapshot = Some(crate::file::io::FileSnapshot::Absent);
 
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
 
-    // Size/path update proves first-save bookkeeping ran (mark_saved + size capture).
-    // Do not hard-assert !dirty here: parallel tests sharing "untitled.txt" in cwd
-    // can occasionally cause an intervening observe to classify as conflict (dirty kept)
-    // even though write succeeded; the size update is the signal we care about.
-    if app.file.dirty {
-        // tolerate only if we have size (save path taken) and no error msg
-        assert!(app.file.size_bytes.is_some());
-        let msg = app.message.as_deref().unwrap_or("");
-        assert!(
-            !msg.contains("Save error"),
-            "unexpected save error in untitled size test: {}",
-            msg
-        );
-    }
-    // path now set (may be the conventional name contended by parallel tests)
-    assert!(app.file.path.is_some());
-    // Size updated from None proves bookkeeping executed for first save from new.
-    // Allow 1 (sibling 'u' from save_conflict untitled test may have won rename race on
-    // conventional "untitled.txt") or 2 (our "xy"). Pre-existing latent race on default name.
+    assert!(!app.file.dirty, "save to explicit path must clear dirty");
+    assert!(app.file.path.as_ref() == Some(&p));
     let got = app
         .file
         .size_bytes
-        .expect("size metadata must be Some after successful first save");
+        .expect("size must be recorded after successful save to explicit path");
     let buf_len = app.buffer.to_string().len() as u64;
-    assert!(
-        got == buf_len || got == 1 || got == 2,
-        "got size {:?} after untitled save (buf {})",
-        got,
-        buf_len
-    );
+    assert_eq!(got, buf_len, "size must match written content len");
     assert_eq!(
         app.file.size_tier,
         Some(crate::file::size::FileSizeTier::Small)
     );
+    assert!(p.exists(), "target must have been created");
 
-    // best effort cleanup of conventional name
-    let _ = fs::remove_file("untitled.txt");
+    cleanup(&p);
 }
 
 #[test]

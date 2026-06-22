@@ -15,6 +15,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::{self, Buffer};
 use crate::file;
+use crate::file::io::ExternalFileStatus;
 use crate::mode::{Capabilities, Mode};
 use crate::terminal as term;
 
@@ -210,17 +211,73 @@ impl App {
                 save::handle_save(self, out)?;
             }
 
-            // Manual external file status check (Phase 2-r). Uses Ctrl+R for "check/refresh status"
-            // (not yet reload). Binds to narrow check helper; detection + message only.
-            // No reload, no buffer/dirty/snapshot/pending/viewport mutations.
-            // Ctrl+R was unbound (other Ctrl+letter fall to ignored); chosen after inspection.
+            // Manual reload check (Phase 2-s). Ctrl+R is two-step for Modified/Deleted.
+            // First: reports status + arms pending (using existing metadata snapshot).
+            // Second (if pending matches current obs snapshot): performs reload/clear.
+            // Drift between presses: re-arms with new status, no reload.
+            // Always metadata driven; full read only on actual reload action.
             KeyEvent {
                 code: KeyCode::Char('r'),
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                self.check_external_file_status();
-                self.render(out)?;
+                // Check if we have a pending reload and current obs matches it exactly.
+                let current_path = self.file.path.clone();
+                let baseline = self.file.disk_snapshot.as_ref();
+                let obs = crate::file::io::observe_external_file(
+                    current_path.as_ref().map(|p| p.as_path()),
+                    baseline,
+                );
+
+                let should_perform = match (&self.pending_reload, &obs.status) {
+                    (Some(pend), ExternalFileStatus::Modified) if pend.path == current_path.clone().unwrap_or_default() => {
+                        pend.status == ExternalFileStatus::Modified && pend.snapshot == obs.live_snapshot
+                    }
+                    (Some(pend), ExternalFileStatus::Deleted) if pend.path == current_path.clone().unwrap_or_default() => {
+                        pend.status == ExternalFileStatus::Deleted && pend.snapshot == obs.live_snapshot
+                    }
+                    _ => false,
+                };
+
+                if should_perform {
+                    // Perform the reload/clear. This is the only place buffer is replaced from disk.
+                    if let Some(ref p) = current_path {
+                        match obs.status {
+                            ExternalFileStatus::Modified => {
+                                if let Ok(content) = std::fs::read_to_string(p) {
+                                    self.buffer = Box::new(buffer::PieceTable::from_text(&content));
+                                    let new_pos = self.buffer.edit_history_position();
+                                    self.file.saved_history_position = new_pos;
+                                    self.file.dirty = false;
+                                    if let Ok(s) = crate::file::io::capture_file_snapshot(p) {
+                                        if matches!(s, crate::file::io::FileSnapshot::Present { .. }) {
+                                            self.file.disk_snapshot = Some(s);
+                                        }
+                                    }
+                                }
+                                self.message = Some(reload::reload_success_message());
+                            }
+                            ExternalFileStatus::Deleted => {
+                                self.buffer = Box::new(buffer::PieceTable::new());
+                                let new_pos = self.buffer.edit_history_position();
+                                self.file.saved_history_position = new_pos;
+                                self.file.dirty = false;
+                                self.file.disk_snapshot = Some(crate::file::io::FileSnapshot::Absent);
+                                self.message = Some(reload::reload_cleared_message());
+                            }
+                            _ => {}
+                        }
+                    }
+                    self.pending_reload = None;
+                    self.pending_save_conflict = None;
+                    self.pending_quit_confirm = false;
+                    // After content replacement, reveal to keep cursor sane.
+                    self.reveal_cursor();
+                    self.render(out)?;
+                } else {
+                    self.check_external_file_status();
+                    self.render(out)?;
+                }
             }
 
             // Enter produces KeyCode::Enter (not Char('\n')). Handle explicitly.
@@ -234,6 +291,7 @@ impl App {
                 refresh_dirty(&mut self.file, &*self.buffer);
                 self.pending_quit_confirm = false;
                 self.pending_save_conflict = None;
+                self.pending_reload = None;
                 self.message = None;
                 self.reveal_cursor();
                 self.render(out)?;
@@ -256,6 +314,7 @@ impl App {
                 refresh_dirty(&mut self.file, &*self.buffer);
                 self.pending_quit_confirm = false;
                 self.pending_save_conflict = None;
+                self.pending_reload = None;
                 self.message = None;
                 self.reveal_cursor();
                 self.render(out)?;
@@ -271,6 +330,7 @@ impl App {
                 refresh_dirty(&mut self.file, &*self.buffer);
                 self.pending_quit_confirm = false;
                 self.pending_save_conflict = None;
+                self.pending_reload = None;
                 self.message = None;
                 self.reveal_cursor();
                 self.render(out)?;
@@ -286,6 +346,7 @@ impl App {
                 refresh_dirty(&mut self.file, &*self.buffer);
                 self.pending_quit_confirm = false;
                 self.pending_save_conflict = None;
+                self.pending_reload = None;
                 self.message = None;
                 self.reveal_cursor();
                 self.render(out)?;
@@ -299,6 +360,7 @@ impl App {
                 refresh_dirty(&mut self.file, &*self.buffer);
                 self.pending_quit_confirm = false;
                 self.pending_save_conflict = None;
+                self.pending_reload = None;
                 self.message = None;
                 self.reveal_cursor();
                 self.render(out)?;
@@ -331,6 +393,7 @@ impl App {
                     refresh_dirty(&mut self.file, &*self.buffer);
                     self.pending_quit_confirm = false;
                     self.pending_save_conflict = None;
+                    self.pending_reload = None;
                     self.message = None;
                 }
                 self.reveal_cursor();
@@ -345,6 +408,7 @@ impl App {
                 refresh_dirty(&mut self.file, &*self.buffer);
                 self.pending_quit_confirm = false;
                 self.pending_save_conflict = None;
+                self.pending_reload = None;
                 self.message = None;
                 self.reveal_cursor();
                 self.render(out)?;
@@ -358,6 +422,7 @@ impl App {
                 refresh_dirty(&mut self.file, &*self.buffer);
                 self.pending_quit_confirm = false;
                 self.pending_save_conflict = None;
+                self.pending_reload = None;
                 self.message = None;
                 self.reveal_cursor();
                 self.render(out)?;

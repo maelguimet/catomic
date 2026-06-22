@@ -819,3 +819,102 @@ fn app_file_state_unknown_status_at_app_level_covered_via_io_contract() {
     // force would follow same pending logic.
     let _ = "see file/io for Unknown; guard uses same status for refusal+force";
 }
+
+#[test]
+fn app_file_state_second_ctrl_s_force_saves_after_same_modified_conflict() {
+    // After first refusal on Modified, second Ctrl+S with same status pending
+    // must force-write, clear dirty, update snapshot, disk == buffer.
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!("catomic_2n_force_mod_{}.txt", std::process::id()));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "BASE").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    std::fs::write(&p, "BASEEXT").unwrap(); // external mod -> will be Modified
+
+    app.handle_key(make_key(KeyCode::Char('1'), KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key(make_key(KeyCode::Char('2'), KeyModifiers::NONE))
+        .unwrap();
+    assert!(app.file.dirty);
+    let expected = app.buffer.to_string();
+    // cursor after open is at start; '1''2' inserts at 0 -> "12BASE..." but we only care it is our local version
+    assert!(expected.starts_with("12"), "local edits present: {}", expected);
+
+    // first S refuses
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(app.file.dirty);
+    assert!(app.pending_save_conflict.is_some());
+    assert!(app.message.as_deref().unwrap_or("").contains("changed"));
+
+    // no external change since; second S should force
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+
+    assert!(!app.file.dirty, "force save must clear dirty");
+    assert!(app.pending_save_conflict.is_none());
+    assert!(app.message.is_none());
+    match &app.file.disk_snapshot {
+        Some(crate::file::io::FileSnapshot::Present { len, .. }) => {
+            assert_eq!(*len, expected.len() as u64, "force save must update snapshot len");
+        }
+        _ => panic!("force save must set Present snapshot"),
+    }
+
+    let on_disk = std::fs::read_to_string(&p).unwrap();
+    assert_eq!(on_disk, expected, "disk after force must contain buffer text");
+
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
+fn app_file_state_external_delete_first_refuse_second_force_recreates() {
+    // External delete -> Deleted status; first S refuses (no recreate), second force-saves (recreates).
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!("catomic_2n_force_del_{}.txt", std::process::id()));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "TODEL").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('a'), KeyModifiers::NONE))
+        .unwrap();
+    // ensure we have a clean snapshot by explicit save first (so Deleted is against post-open save)
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(!app.file.dirty);
+
+    // external delete
+    let _ = std::fs::remove_file(&p);
+
+    // local dirty again
+    app.handle_key(make_key(KeyCode::Char('b'), KeyModifiers::NONE))
+        .unwrap();
+    assert!(app.file.dirty);
+
+    // first S: refuse (Deleted)
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(app.file.dirty);
+    let msg = app.message.as_deref().unwrap_or("");
+    assert!(
+        msg.contains("deleted on disk") && msg.contains("recreate"),
+        "deleted refusal msg, got {:?}",
+        app.message
+    );
+    assert!(!std::path::Path::new(&p).exists(), "first refuse must not recreate");
+
+    // second S: force recreate
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+
+    assert!(!app.file.dirty);
+    assert!(std::path::Path::new(&p).exists(), "force must recreate");
+    let on_disk = std::fs::read_to_string(&p).unwrap();
+    // buffer now has original + 'a' + 'b' (the pre-delete save had 'a', then +b)
+    assert!(on_disk.contains('a') && on_disk.contains('b'), "disk must have forced content: {}", on_disk);
+
+    let _ = std::fs::remove_file(&p);
+}

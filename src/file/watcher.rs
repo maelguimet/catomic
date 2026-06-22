@@ -30,7 +30,7 @@
 //!   (observe_external_file) remains the source of truth.
 
 use std::path::PathBuf;
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, Sender};
 
 use crate::file::watch_path::{is_relevant, normalize_path, watch_parent};
 use crate::mode::Capabilities;
@@ -53,11 +53,24 @@ pub enum FileWatchSignal {
 /// are filtered to the target using lexical absolute paths (no canonicalize).
 pub struct FileWatcher {
     /// Held to keep the watcher alive (notify uses it for its internal thread).
-    _watcher: RecommendedWatcher,
+    /// In tests a TestStub variant allows construction without a live notify thread.
+    _watcher: InnerWatcher,
     /// Normalized (absolute lexical) target path for filtering.
     target: PathBuf,
     /// Receives events from the notify callback.
     rx: Receiver<notify::Result<Event>>,
+    /// Test-only direct signal injection (takes precedence in try_recv).
+    /// Allows deterministic queued Error/Changed without OS or notify::Error construction.
+    #[cfg(test)]
+    test_inject: std::sync::Mutex<Option<FileWatchSignal>>,
+}
+
+/// Internal backend so real construction keeps the notify thread while
+/// tests can own a channel-only or directly injectable watcher.
+enum InnerWatcher {
+    Real(RecommendedWatcher),
+    #[cfg(test)]
+    TestStub,
 }
 
 impl FileWatcher {
@@ -88,19 +101,58 @@ impl FileWatcher {
         watcher.watch(&parent, RecursiveMode::NonRecursive)?;
 
         Ok(Some(Self {
-            _watcher: watcher,
+            _watcher: InnerWatcher::Real(watcher),
             target,
             rx,
+            #[cfg(test)]
+            test_inject: std::sync::Mutex::new(None),
         }))
     }
 
     /// Non-blocking receive of at most one signal.
     /// Returns None if no event is ready.
     pub fn try_recv(&self) -> Option<FileWatchSignal> {
+        // Test injection has precedence for deterministic seams (no OS timing,
+        // covers Error signals without synthesizing notify errors).
+        #[cfg(test)]
+        {
+            if let Ok(mut g) = self.test_inject.lock() {
+                if let Some(s) = g.take() {
+                    return Some(s);
+                }
+            }
+        }
         match self.rx.try_recv() {
             Ok(Ok(event)) => map_event_to_signal(&self.target, &event),
             Ok(Err(err)) => Some(FileWatchSignal::Error(err.to_string())),
             Err(_) => None,
+        }
+    }
+}
+
+#[cfg(test)]
+impl FileWatcher {
+    /// Test-only seam: construct a FileWatcher with no live notify thread or FS watch.
+    /// Returns the watcher (for install into App) and a Sender for raw events
+    /// (exercises map_event_to_signal for Changed/Deleted). For direct
+    /// FileWatchSignal (incl. Error) prefer inject_signal.
+    pub(crate) fn new_for_test(target: PathBuf) -> (Self, Sender<notify::Result<Event>>) {
+        let (tx, rx) = mpsc::channel();
+        let fw = Self {
+            _watcher: InnerWatcher::TestStub,
+            target,
+            rx,
+            test_inject: std::sync::Mutex::new(None),
+        };
+        (fw, tx)
+    }
+
+    /// Queue a FileWatchSignal to be returned on the next try_recv.
+    /// Takes precedence over the channel. Allows deterministic tests for
+    /// Error and bypasses notify event mapping when desired.
+    pub(crate) fn inject_signal(&self, s: FileWatchSignal) {
+        if let Ok(mut g) = self.test_inject.lock() {
+            *g = Some(s);
         }
     }
 }

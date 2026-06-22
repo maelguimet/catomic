@@ -66,6 +66,16 @@ pub(crate) fn has_file_watcher(app: &super::App) -> bool {
     app.file_watcher.is_some()
 }
 
+/// Install a pre-constructed FileWatcher (typically a test seam one) into the App.
+/// Replaces any prior watcher. Used only by deterministic queued-signal tests.
+#[cfg(test)]
+pub(crate) fn replace_file_watcher_for_test(
+    app: &mut super::App,
+    w: crate::file::watcher::FileWatcher,
+) {
+    app.file_watcher = Some(w);
+}
+
 /// Apply a single FileWatchSignal (hint only).
 ///
 /// Always performs a fresh `observe_external_file` against the current

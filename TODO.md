@@ -739,3 +739,12 @@ Update this file as decisions are made or phases complete. Add concrete issues o
   - Added golden undo-across-save test (actual fs write + buffer undo + disk unchanged assertion).
 - PTY harness for full key-driven (Ctrl+S then Ctrl+Z) save/undo is still stub-only (see src/tests/pty.rs); semantics covered at golden + unit level.
 - No LLM/Project in Plain.
+- Phase 2-a (foundation) complete:
+  - atomic_write_string helper: same-dir temp, create_new, full write+flush+sync_all, rename, best-effort parent dir fsync on Unix; temp cleanup on error.
+  - FileState { path: Option<PathBuf>, dirty: bool } replaces raw Option<String>.
+  - App saves exclusively through atomic_write_string (Ctrl+S); remembers untitled.txt when needed.
+  - Dirty=false after open (existing or missing-file); =true on insert/newline/delete/undo/redo keys; =false after successful save.
+  - No dirty on movement/render.
+  - Dirty flag is conservative; undoing back to saved content may still show dirty until exact save-point tracking lands.
+  - Tests: atomic unit (bytes/overwrite/no-temp), app/file-state lifecycle via keys, golden that exercises atomic helper for exact save content.
+  - Existing undo-across-save golden tests still pass. All Phase 1 tests green.

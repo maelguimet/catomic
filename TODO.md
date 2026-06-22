@@ -763,3 +763,4 @@ Key unresolved limitations that still matter:
 - Phase 2-s (narrow pass): manual reload via two-step Ctrl+R using status foundation (Modified reloads content, Deleted clears buffer; drift re-arms; no watcher).
 - Phase 2-t (narrow harden): newline clear fix, read-fail no-lie, logic extracted to reload.rs; no watcher.
 - Phase 2-u (narrow cleanup): observe single-capture via pure helper; one ExternalFileObservation for Ctrl+R status+arm; handle reuses obs (no double observe); tightened generic newline regression; no watcher/background/polling/hash/full-read/new deps.
+- Phase 2-v (narrow cleanup): genuine single-capture observe_external_file (preserve Result, no fs::metadata fallback on error); live_snapshot=None + Unknown on hard meta error; NotFound still Absent; no watcher/background/polling/hash/full-read/new deps.

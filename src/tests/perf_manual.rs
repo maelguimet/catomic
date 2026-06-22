@@ -10,7 +10,7 @@
 
 #![cfg(test)]
 
-use super::helpers::{cleanup_perf, generate_dense_ascii_file, measure_elapsed, temp_perf_path, try_generate_sparse_file};
+use super::helpers::{cleanup_perf, generate_dense_ascii_file, measure_sample, print_perf_sample, temp_perf_path, try_generate_sparse_file};
 
 #[test]
 #[ignore = "manual big-file perf smoke; generates and opens ~10 MiB"]
@@ -21,14 +21,16 @@ fn manual_open_10mib_generated_file_smoke() {
     cleanup_perf(&p);
 
     eprintln!("generating ~10 MiB dense (streaming)...");
-    let _ = measure_elapsed("generate 10mib", || {
+    let ((), gen_sample) = measure_sample("generate 10mib", Some(size), || {
         generate_dense_ascii_file(&p, size).expect("gen 10mib")
     });
+    print_perf_sample(&gen_sample);
 
     eprintln!("opening via App::new ...");
-    let app = measure_elapsed("App::new 10mib", || {
+    let (app, open_sample) = measure_sample("App::new 10mib", Some(size), || {
         crate::app::App::new(Some(&p.to_string_lossy())).expect("open 10mib")
     });
+    print_perf_sample(&open_sample);
 
     assert_eq!(
         app.file.size_tier,
@@ -41,9 +43,12 @@ fn manual_open_10mib_generated_file_smoke() {
         app.message
     );
 
-    // cheap render smoke
+    // cheap render smoke (also measured for baseline)
     let mut out: Vec<u8> = Vec::new();
-    let _ = app.render(&mut out);
+    let (_, render_sample) = measure_sample("render 10mib", Some(size), || {
+        let _ = app.render(&mut out);
+    });
+    print_perf_sample(&render_sample);
 
     cleanup_perf(&p);
     eprintln!("manual 10mib smoke complete");
@@ -59,20 +64,27 @@ fn manual_open_100mib_generated_file_smoke() {
 
     eprintln!("generating ~100 MiB dense (streaming chunks)...");
     // May take time + disk; manual only.
-    let gen_res = measure_elapsed("generate 100mib", || generate_dense_ascii_file(&p, size));
-    if let Err(e) = gen_res {
-        eprintln!("generate 100mib failed (disk space?): {}; skipping", e);
-        cleanup_perf(&p);
-        return;
-    }
+    let gen_res = measure_sample("generate 100mib", Some(size), || generate_dense_ascii_file(&p, size));
+    let (gen_ok, gen_sample) = match gen_res {
+        (Ok(()), s) => (true, s),
+        (Err(e), s) => {
+            print_perf_sample(&s);
+            eprintln!("generate 100mib failed (disk space?): {}; skipping", e);
+            cleanup_perf(&p);
+            return;
+        }
+    };
+    let _ = gen_ok;
+    print_perf_sample(&gen_sample);
 
     eprintln!("opening via App::new (expect Huge warning)...");
-    let app_res = measure_elapsed("App::new 100mib", || {
+    let app_res = measure_sample("App::new 100mib", Some(size), || {
         crate::app::App::new(Some(&p.to_string_lossy()))
     });
-    let app = match app_res {
-        Ok(a) => a,
-        Err(e) => {
+    let (app, open_sample) = match app_res {
+        (Ok(a), s) => (a, s),
+        (Err(e), s) => {
+            print_perf_sample(&s);
             eprintln!(
                 "App::new 100mib returned error (env limit?): {}; cleaning",
                 e
@@ -81,6 +93,7 @@ fn manual_open_100mib_generated_file_smoke() {
             return;
         }
     };
+    print_perf_sample(&open_sample);
 
     // May be Huge (our choice of LARGE+1)
     assert!(
@@ -97,7 +110,10 @@ fn manual_open_100mib_generated_file_smoke() {
     );
 
     let mut out: Vec<u8> = Vec::new();
-    let _ = app.render(&mut out);
+    let (_, render_sample) = measure_sample("render 100mib", Some(size), || {
+        let _ = app.render(&mut out);
+    });
+    print_perf_sample(&render_sample);
 
     cleanup_perf(&p);
     eprintln!("manual 100mib smoke complete");
@@ -111,9 +127,11 @@ fn manual_sparse_extreme_refusal_smoke() {
     cleanup_perf(&p);
 
     eprintln!("creating sparse >1 GiB (set_len, no write)...");
-    match measure_elapsed("create sparse 1g+", || try_generate_sparse_file(&p, size)) {
-        Ok(()) => {}
+    let (set_res, set_sample) = measure_sample("create sparse 1g+", Some(size), || try_generate_sparse_file(&p, size));
+    match set_res {
+        Ok(()) => { print_perf_sample(&set_sample); }
         Err(e) => {
+            print_perf_sample(&set_sample);
             eprintln!(
                 "sparse >1GiB not supported on this FS ({}); skipping cleanly",
                 e
@@ -125,9 +143,10 @@ fn manual_sparse_extreme_refusal_smoke() {
 
     // Must refuse before content read (we wrote zero bytes).
     eprintln!("App::new on sparse extreme (should refuse fast)...");
-    let res = measure_elapsed("App::new extreme sparse", || {
+    let (res, app_sample) = measure_sample("App::new extreme sparse", Some(size), || {
         crate::app::App::new(Some(&p.to_string_lossy()))
     });
+    print_perf_sample(&app_sample);
     assert!(res.is_err(), "Extreme must refuse");
     let estr = format!("{}", res.err().unwrap());
     assert!(

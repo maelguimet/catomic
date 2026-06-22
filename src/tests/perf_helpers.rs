@@ -79,3 +79,40 @@ pub(crate) fn measure_elapsed<T>(label: &str, f: impl FnOnce() -> T) -> T {
     eprintln!("{}: {:?}", label, d);
     v
 }
+
+/// Minimal no-deps sample for manual baseline reporting.
+/// label is stable identifier for later parsing; bytes is on-disk size if known.
+#[derive(Clone, Debug)]
+pub(crate) struct PerfSample {
+    pub label: &'static str,
+    pub bytes: Option<u64>,
+    pub elapsed: std::time::Duration,
+}
+
+/// Measure + return both result and a PerfSample (no threshold, no file write).
+/// Intended for #[ignore] manual tests only. Use print_perf_sample for stable output.
+#[allow(dead_code)]
+pub(crate) fn measure_sample<T>(
+    label: &'static str,
+    bytes: Option<u64>,
+    f: impl FnOnce() -> T,
+) -> (T, PerfSample) {
+    let start = Instant::now();
+    let v = f();
+    let elapsed = start.elapsed();
+    let sample = PerfSample { label, bytes, elapsed };
+    (v, sample)
+}
+
+/// Emit a single stable line for capture in manual runs.
+/// Format: PERF sample: label=... bytes=... elapsed_ms=...
+/// No JSON, no files, no deps.
+#[allow(dead_code)]
+pub(crate) fn print_perf_sample(s: &PerfSample) {
+    let ms = s.elapsed.as_millis();
+    let b = match s.bytes {
+        Some(n) => n.to_string(),
+        None => "n/a".to_string(),
+    };
+    eprintln!("PERF sample: label={} bytes={} elapsed_ms={}", s.label, b, ms);
+}

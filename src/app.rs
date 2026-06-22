@@ -119,8 +119,8 @@ impl App {
                         self.handle_key(key)?;
                     }
                     Event::Resize(w, h) => {
-                        // Update screen from resize event and render immediately.
-                        // No scroll/viewport/debounce yet (per Phase 2-c narrow scope).
+                        // Update screen size, reveal cursor (vert/horiz if implemented this pass),
+                        // render immediately. No debounce/smart viewport.
                         self.handle_resize(w, h, &mut stdout)?;
                     }
                     _ => {}

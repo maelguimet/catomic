@@ -250,21 +250,32 @@ impl App {
                     if let Some(ref p) = current_path {
                         match obs.status {
                             ExternalFileStatus::Modified => {
-                                if let Ok(content) = std::fs::read_to_string(p) {
-                                    self.buffer = Box::new(buffer::PieceTable::from_text(&content));
-                                    let new_pos = self.buffer.edit_history_position();
-                                    self.file.saved_history_position = new_pos;
-                                    self.file.dirty = false;
-                                    if let Ok(s) = crate::file::io::capture_file_snapshot(p) {
-                                        if matches!(
-                                            s,
-                                            crate::file::io::FileSnapshot::Present { .. }
-                                        ) {
-                                            self.file.disk_snapshot = Some(s);
+                                match std::fs::read_to_string(p) {
+                                    Ok(content) => {
+                                        self.buffer = Box::new(buffer::PieceTable::from_text(&content));
+                                        let new_pos = self.buffer.edit_history_position();
+                                        self.file.saved_history_position = new_pos;
+                                        self.file.dirty = false;
+                                        if let Ok(s) = crate::file::io::capture_file_snapshot(p) {
+                                            if matches!(
+                                                s,
+                                                crate::file::io::FileSnapshot::Present { .. }
+                                            ) {
+                                                self.file.disk_snapshot = Some(s);
+                                            }
                                         }
+                                        self.message = Some(reload::reload_success_message());
+                                        self.pending_reload = None;
+                                        self.pending_save_conflict = None;
+                                        self.pending_quit_confirm = false;
+                                        self.reveal_cursor();
+                                    }
+                                    Err(e) => {
+                                        self.message = Some(format!("Reload error: {}", e));
+                                        // Do not mutate buffer/dirty/snapshot/pendings on read failure.
+                                        // User can retry Ctrl+R.
                                     }
                                 }
-                                self.message = Some(reload::reload_success_message());
                             }
                             ExternalFileStatus::Deleted => {
                                 self.buffer = Box::new(buffer::PieceTable::new());
@@ -274,15 +285,17 @@ impl App {
                                 self.file.disk_snapshot =
                                     Some(crate::file::io::FileSnapshot::Absent);
                                 self.message = Some(reload::reload_cleared_message());
+                                self.pending_reload = None;
+                                self.pending_save_conflict = None;
+                                self.pending_quit_confirm = false;
+                                self.reveal_cursor();
                             }
                             _ => {}
                         }
                     }
-                    self.pending_reload = None;
-                    self.pending_save_conflict = None;
-                    self.pending_quit_confirm = false;
-                    // After content replacement, reveal to keep cursor sane.
-                    self.reveal_cursor();
+                    // Only render once (for success or error paths that reach here)
+                    // For Modified error, we still need to render the error msg.
+                    // Note: for error we did not clear, and did not reveal (no content change).
                     self.render(out)?;
                 } else {
                     self.check_external_file_status();

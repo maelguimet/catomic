@@ -690,6 +690,45 @@ fn app_file_state_edit_after_reload_pending_clears_it() {
     let _ = std::fs::remove_file(&p);
 }
 
+// Phase 2-t: Modified reload read failure must not lie (no fake success, keep pending)
+
+#[test]
+fn app_file_state_reload_modified_read_failure_keeps_state_and_pending() {
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!("catomic_2t_badutf_{}.txt", std::process::id()));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "VALID").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    // external write invalid UTF-8 (will cause read_to_string error on reload)
+    std::fs::write(&p, [0xffu8, 0xfe]).unwrap();
+
+    // first R arms (metadata detects Modified)
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(app.pending_reload.is_some());
+    let before_buffer = app.buffer.to_string();
+    let before_dirty = app.file.dirty;
+    let before_saved = app.file.saved_history_position;
+    let before_snap = app.file.disk_snapshot.clone();
+
+    // second R: attempt reload, should fail read, not lie, keep state + pending
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+
+    assert_eq!(app.buffer.to_string(), before_buffer, "buffer must not change on read fail");
+    assert_eq!(app.file.dirty, before_dirty, "dirty must not change on read fail");
+    assert_eq!(app.file.saved_history_position, before_saved, "saved pos must not change on read fail");
+    assert_eq!(app.file.disk_snapshot, before_snap, "snapshot must not change on read fail");
+    assert!(app.pending_reload.is_some(), "pending must be kept on read fail to allow retry");
+    let msg = app.message.as_deref().unwrap_or("");
+    assert!(msg.starts_with("Reload error:"), "msg must be Reload error, got: {}", msg);
+    assert!(!msg.contains("Reloaded"), "must not claim success on read failure");
+
+    let _ = std::fs::remove_file(&p);
+}
+
 // Phase 2-t: generic Char('\n') / Char('\r') must clear pending_reload (paste etc path)
 
 #[test]

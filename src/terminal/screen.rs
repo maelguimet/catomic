@@ -36,6 +36,13 @@ impl Screen {
         self.height.saturating_sub(1) as usize // leave room for status later
     }
 
+    /// How many columns of content we can show (scalar char count for now).
+    /// Uses terminal width directly as content area (no status/sidebar reservation).
+    /// If width is 0, returns 0. No wcwidth/grapheme logic.
+    pub fn visible_width(&self) -> usize {
+        self.width as usize
+    }
+
     /// Ensure `row` is visible within the content area (using visible_height()).
     /// Bottom row is reserved for message/status; content viewport height is visible_height().
     /// If visible height is 0, scroll_top is forced to 0.

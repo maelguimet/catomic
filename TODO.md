@@ -736,4 +736,6 @@ Update this file as decisions are made or phases complete. Add concrete issues o
   - New edit after undo clears redo.
   - Keys: Ctrl+Z (undo), Ctrl+Y / Ctrl+Shift+Z (redo) wired (and precedence fixed).
   - Undo tests (insert/delete/newline/join/multibyte/no-op + reuse + clear-redo).
+  - Added golden undo-across-save test (actual fs write + buffer undo + disk unchanged assertion).
+- PTY harness for full key-driven (Ctrl+S then Ctrl+Z) save/undo is still stub-only (see src/tests/pty.rs); semantics covered at golden + unit level.
 - No LLM/Project in Plain.

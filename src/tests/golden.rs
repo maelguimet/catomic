@@ -167,4 +167,40 @@ mod tests {
         assert_eq!(fs::read_to_string(&out_path).unwrap(), input_with_nl);
         cleanup(&out_path);
     }
+
+    #[test]
+    fn pt_golden_undo_after_save_affects_only_buffer_not_disk() {
+        // Save (write to disk) itself must not create an undo entry.
+        // Undo after save mutates only the buffer state; does not roll back disk.
+        let out_path = temp_path("pt_undo_save.txt");
+        cleanup(&out_path);
+
+        let mut b: Box<dyn Buffer> = Box::new(PieceTable::new());
+        b.insert_char('h');
+        b.insert_char('i');
+        let saved = b.to_string(); // "hi"
+        fs::write(&out_path, &saved).unwrap();
+
+        // Post-save edits
+        b.insert_newline();
+        b.insert_char('!');
+        assert_eq!(b.to_string(), "hi\n!");
+
+        // Undo post-save work; buffer changes, disk must not.
+        b.undo();
+        assert_eq!(b.to_string(), "hi\n");
+        assert_eq!(fs::read_to_string(&out_path).unwrap(), saved, "disk must be unaffected by undo");
+
+        b.undo();
+        assert_eq!(b.to_string(), "hi");
+        assert_eq!(fs::read_to_string(&out_path).unwrap(), saved);
+
+        // Further edit after crossing the save point still works (history not polluted by save)
+        b.insert_char('X');
+        assert_eq!(b.to_string(), "hiX");
+        b.undo();
+        assert_eq!(b.to_string(), "hi");
+
+        cleanup(&out_path);
+    }
 }

@@ -246,4 +246,65 @@ mod tests {
             "missing must be explicit Absent"
         );
     }
+
+    // Phase 2-m: harden Absent vs error semantics.
+    // capture_file_snapshot must return Absent ONLY for actual missing (NotFound).
+    // Other metadata errors must surface as Err, not be turned into Absent.
+    #[test]
+    fn capture_file_snapshot_returns_absent_only_for_not_found() {
+        // Existing file: must be Present, never Absent.
+        let p = temp_path("absent_only_existing.txt");
+        cleanup(&p);
+        fs::write(&p, "data").unwrap();
+        let snap = capture_file_snapshot(&p).expect("capture existing");
+        assert!(
+            matches!(snap, FileSnapshot::Present { .. }),
+            "existing must be Present, not Absent"
+        );
+
+        // Missing: explicit Absent.
+        let _ = fs::remove_file(&p);
+        let snap = capture_file_snapshot(&p).expect("capture missing");
+        assert_eq!(snap, FileSnapshot::Absent, "missing must be Absent");
+
+        // Re-create and confirm again not Absent.
+        fs::write(&p, "again").unwrap();
+        let snap = capture_file_snapshot(&p).expect("capture re-existing");
+        assert!(matches!(snap, FileSnapshot::Present { .. }));
+        cleanup(&p);
+    }
+
+    // Phase 2-m: compare_to_snapshot on non-NotFound metadata error must yield Unknown(kind),
+    // not Deleted/Modified/Unchanged. Linux std-only: stat file-as-dir via join("child").
+    #[test]
+    fn compare_to_snapshot_non_notfound_meta_error_is_unknown() {
+        use std::io;
+
+        let reg = temp_path("regfile_for_notadir.txt");
+        cleanup(&reg);
+        fs::write(&reg, "x").unwrap();
+
+        // regular_file.join("child") reliably produces NotADirectory (or similar non-NotFound) on Linux.
+        let bad = reg.join("child");
+        let snap = FileSnapshot::Present {
+            len: 1,
+            mtime: None,
+        };
+        let status = compare_to_snapshot(&bad, &snap)
+            .expect("compare_to_snapshot must not propagate hard error for meta fail");
+        match status {
+            ExternalFileStatus::Unknown(kind) => {
+                assert_ne!(
+                    kind,
+                    io::ErrorKind::NotFound,
+                    "non-NotFound meta error must not be reported as NotFound"
+                );
+            }
+            other => panic!(
+                "expected Unknown(kind) for non-NotFound meta error (e.g. NotADirectory), got {:?}",
+                other
+            ),
+        }
+        cleanup(&reg);
+    }
 }

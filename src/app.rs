@@ -633,4 +633,54 @@ mod tests {
             "edit after warning also clears stale message"
         );
     }
+
+    #[test]
+    fn app_new_has_default_screen_size_and_scroll() {
+        let app = App::new(None).unwrap();
+        assert_eq!(app.screen.width, 80, "default width");
+        assert_eq!(app.screen.height, 24, "default height (matches prior hardcoded)");
+        assert_eq!(app.screen.scroll_top, 0);
+    }
+
+    #[test]
+    fn app_render_respects_screen_height_via_captured_writer() {
+        let mut app = App::new(None).unwrap();
+        // set non-default height (no real term)
+        app.screen.height = 10;
+        app.screen.scroll_top = 0;
+
+        // trigger render via content path that calls render (uses handle_key_with seam)
+        let mut out: Vec<u8> = Vec::new();
+        app.handle_key_with(
+            &mut out,
+            make_key(KeyCode::Char('x'), KeyModifiers::NONE),
+        )
+        .unwrap();
+
+        let rendered = String::from_utf8_lossy(&out);
+        // bottom row clear/pos for height=10
+        assert!(
+            rendered.contains("\x1b[10;1H"),
+            "render must use screen height for bottom row positioning"
+        );
+        assert!(rendered.contains("\x1b[K"), "clears using \\x1b[K");
+    }
+
+    #[test]
+    fn app_handle_resize_updates_screen_and_renders() {
+        let mut app = App::new(None).unwrap();
+        assert_eq!(app.screen.height, 24);
+
+        let mut out: Vec<u8> = Vec::new();
+        app.handle_resize(50, 15, &mut out).unwrap();
+
+        assert_eq!(app.screen.width, 50);
+        assert_eq!(app.screen.height, 15);
+        let rendered = String::from_utf8_lossy(&out);
+        assert!(
+            rendered.contains("\x1b[15;1H"),
+            "resize render must position using new screen height"
+        );
+        assert!(!out.is_empty(), "resize must have triggered a render");
+    }
 }

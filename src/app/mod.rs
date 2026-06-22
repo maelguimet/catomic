@@ -211,96 +211,13 @@ impl App {
                 save::handle_save(self, out)?;
             }
 
-            // Manual reload check (Phase 2-s). Ctrl+R is two-step for Modified/Deleted.
-            // First: reports status + arms pending (using existing metadata snapshot).
-            // Second (if pending matches current obs snapshot): performs reload/clear.
-            // Drift between presses: re-arms with new status, no reload.
-            // Always metadata driven; full read only on actual reload action.
+            // Manual reload check (Phase 2-s). Thin call; decision + perform logic lives in reload.rs.
             KeyEvent {
                 code: KeyCode::Char('r'),
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                // Check if we have a pending reload and current obs matches it exactly.
-                let current_path = self.file.path.clone();
-                let baseline = self.file.disk_snapshot.as_ref();
-                let obs = crate::file::io::observe_external_file(
-                    current_path.as_ref().map(|p| p.as_path()),
-                    baseline,
-                );
-
-                let should_perform = match (&self.pending_reload, &obs.status) {
-                    (Some(pend), ExternalFileStatus::Modified)
-                        if pend.path == current_path.clone().unwrap_or_default() =>
-                    {
-                        pend.status == ExternalFileStatus::Modified
-                            && pend.snapshot == obs.live_snapshot
-                    }
-                    (Some(pend), ExternalFileStatus::Deleted)
-                        if pend.path == current_path.clone().unwrap_or_default() =>
-                    {
-                        pend.status == ExternalFileStatus::Deleted
-                            && pend.snapshot == obs.live_snapshot
-                    }
-                    _ => false,
-                };
-
-                if should_perform {
-                    // Perform the reload/clear. This is the only place buffer is replaced from disk.
-                    if let Some(ref p) = current_path {
-                        match obs.status {
-                            ExternalFileStatus::Modified => {
-                                match std::fs::read_to_string(p) {
-                                    Ok(content) => {
-                                        self.buffer = Box::new(buffer::PieceTable::from_text(&content));
-                                        let new_pos = self.buffer.edit_history_position();
-                                        self.file.saved_history_position = new_pos;
-                                        self.file.dirty = false;
-                                        if let Ok(s) = crate::file::io::capture_file_snapshot(p) {
-                                            if matches!(
-                                                s,
-                                                crate::file::io::FileSnapshot::Present { .. }
-                                            ) {
-                                                self.file.disk_snapshot = Some(s);
-                                            }
-                                        }
-                                        self.message = Some(reload::reload_success_message());
-                                        self.pending_reload = None;
-                                        self.pending_save_conflict = None;
-                                        self.pending_quit_confirm = false;
-                                        self.reveal_cursor();
-                                    }
-                                    Err(e) => {
-                                        self.message = Some(format!("Reload error: {}", e));
-                                        // Do not mutate buffer/dirty/snapshot/pendings on read failure.
-                                        // User can retry Ctrl+R.
-                                    }
-                                }
-                            }
-                            ExternalFileStatus::Deleted => {
-                                self.buffer = Box::new(buffer::PieceTable::new());
-                                let new_pos = self.buffer.edit_history_position();
-                                self.file.saved_history_position = new_pos;
-                                self.file.dirty = false;
-                                self.file.disk_snapshot =
-                                    Some(crate::file::io::FileSnapshot::Absent);
-                                self.message = Some(reload::reload_cleared_message());
-                                self.pending_reload = None;
-                                self.pending_save_conflict = None;
-                                self.pending_quit_confirm = false;
-                                self.reveal_cursor();
-                            }
-                            _ => {}
-                        }
-                    }
-                    // Only render once (for success or error paths that reach here)
-                    // For Modified error, we still need to render the error msg.
-                    // Note: for error we did not clear, and did not reveal (no content change).
-                    self.render(out)?;
-                } else {
-                    self.check_external_file_status();
-                    self.render(out)?;
-                }
+                reload::handle_reload_key(self, out)?;
             }
 
             // Enter produces KeyCode::Enter (not Char('\n')). Handle explicitly.
@@ -502,7 +419,7 @@ impl App {
     /// Reveal the current cursor row/col so they are visible in the content area.
     /// Called after cursor movement and content mutations (insert, delete, undo/redo).
     /// Clamps first for zero-size terminals so reveal_* see a sane starting point.
-    fn reveal_cursor(&mut self) {
+    pub(crate) fn reveal_cursor(&mut self) {
         viewport::reveal_cursor(self)
     }
 
@@ -532,7 +449,7 @@ impl App {
     /// bound to current observed (path + status + live snapshot).
     /// NEVER mutates buffer/dirty/snapshot/history/quit on first press.
     /// Does not render (caller does).
-    fn check_external_file_status(&mut self) {
+    pub(crate) fn check_external_file_status(&mut self) {
         use crate::file::io::{observe_external_file, ExternalFileStatus};
         let status = self.external_file_status();
         let current_path = self.file.path.clone();
@@ -571,7 +488,7 @@ impl App {
         }
     }
 
-    fn render(&self, stdout: &mut dyn Write) -> io::Result<()> {
+    pub(crate) fn render(&self, stdout: &mut dyn Write) -> io::Result<()> {
         // Delegate to terminal render. Pass message for bottom-line display.
         // Use screen as single source for height/scroll (no more hardcoded 24).
         // Minimal: only message text (no filename/dirty marker etc).

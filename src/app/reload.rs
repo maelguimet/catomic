@@ -1,19 +1,21 @@
 //! Manual reload-from-disk confirmation (Phase 2-s narrow pass).
 //!
-//! Purpose: owns the pending reload confirmation token and helpers for the
-//! two-step Ctrl+R manual reload flow (status check -> arm -> confirm reload).
+//! Purpose: owns the pending reload confirmation token, message helpers,
+//! and the Ctrl+R decision + perform logic (extracted in 2-t for mod.rs hygiene).
 //! Uses only metadata (ExternalFileStatus + FileSnapshot) via observe_external_file.
-//! Owns: PendingReload struct, message helpers, arming/perform logic helpers.
+//! Owns: PendingReload struct, arm/perform helpers, handle_reload_key.
 //! Must not: watcher, background, polling, full content scans for *detection*,
 //!   config, Project, LLM, or any non-manual reload path.
 //! Invariants: pending is bound to concrete (path + status + live snapshot);
 //!   second press only acts on exact match; any content mutation clears it;
 //!   movement/render do not clear it.
-//! Phase: 2-s.
+//! Phase: 2-s / 2-t cleanup.
 
+use std::io::{self, Write};
 use std::path::PathBuf;
 
-use crate::file::io::{ExternalFileStatus, FileSnapshot};
+use crate::buffer;
+use crate::file::io::{observe_external_file, ExternalFileStatus, FileSnapshot};
 
 /// Token recorded on first Ctrl+R when reload would change buffer state.
 /// Binds to the specific observed disk state so that drift between presses
@@ -62,4 +64,83 @@ pub(crate) fn reload_success_message() -> String {
 /// Success message after clearing buffer due to deleted file.
 pub(crate) fn reload_cleared_message() -> String {
     "Buffer cleared (file deleted on disk).".to_string()
+}
+
+/// Handle Ctrl+R for manual reload (decision + arm or perform).
+/// Extracted from App::handle_key_with so mod.rs stays thin.
+/// Computes one observation for the path; if matches pending exactly then
+/// perform (with proper read-fail handling); else delegate to check for arm/status.
+pub(crate) fn handle_reload_key(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    let current_path = app.file.path.clone();
+    let baseline = app.file.disk_snapshot.as_ref();
+    let obs = observe_external_file(
+        current_path.as_ref().map(|p| p.as_path()),
+        baseline,
+    );
+
+    let should_perform = match (&app.pending_reload, &obs.status) {
+        (Some(pend), ExternalFileStatus::Modified)
+            if pend.path == current_path.clone().unwrap_or_default() =>
+        {
+            pend.status == ExternalFileStatus::Modified && pend.snapshot == obs.live_snapshot
+        }
+        (Some(pend), ExternalFileStatus::Deleted)
+            if pend.path == current_path.clone().unwrap_or_default() =>
+        {
+            pend.status == ExternalFileStatus::Deleted && pend.snapshot == obs.live_snapshot
+        }
+        _ => false,
+    };
+
+    if should_perform {
+        if let Some(ref p) = current_path {
+            match obs.status {
+                ExternalFileStatus::Modified => {
+                    match std::fs::read_to_string(p) {
+                        Ok(content) => {
+                            app.buffer = Box::new(buffer::PieceTable::from_text(&content));
+                            let new_pos = app.buffer.edit_history_position();
+                            app.file.saved_history_position = new_pos;
+                            app.file.dirty = false;
+                            if let Ok(s) = crate::file::io::capture_file_snapshot(p) {
+                                if matches!(
+                                    s,
+                                    FileSnapshot::Present { .. }
+                                ) {
+                                    app.file.disk_snapshot = Some(s);
+                                }
+                            }
+                            app.message = Some(reload_success_message());
+                            app.pending_reload = None;
+                            app.pending_save_conflict = None;
+                            app.pending_quit_confirm = false;
+                            app.reveal_cursor();
+                        }
+                        Err(e) => {
+                            app.message = Some(format!("Reload error: {}", e));
+                            // no state mutation, pending kept for retry
+                        }
+                    }
+                }
+                ExternalFileStatus::Deleted => {
+                    app.buffer = Box::new(buffer::PieceTable::new());
+                    let new_pos = app.buffer.edit_history_position();
+                    app.file.saved_history_position = new_pos;
+                    app.file.dirty = false;
+                    app.file.disk_snapshot = Some(FileSnapshot::Absent);
+                    app.message = Some(reload_cleared_message());
+                    app.pending_reload = None;
+                    app.pending_save_conflict = None;
+                    app.pending_quit_confirm = false;
+                    app.reveal_cursor();
+                }
+                _ => {}
+            }
+        }
+        app.render(out)?;
+    } else {
+        app.check_external_file_status();
+        app.render(out)?;
+    }
+    Ok(())
 }

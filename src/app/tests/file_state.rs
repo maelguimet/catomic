@@ -740,7 +740,10 @@ fn app_file_state_no_path_untitled_save_works_without_conflict_check() {
 
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(!app.file.dirty, "untitled first save must succeed without conflict guard");
+    assert!(
+        !app.file.dirty,
+        "untitled first save must succeed without conflict guard"
+    );
     assert!(app.pending_save_conflict.is_none());
     assert!(app.message.is_none());
     // path now remembered (even if we defaulted the name)
@@ -791,7 +794,10 @@ fn app_file_state_first_ctrl_s_refuses_on_external_modified_keeps_dirty_and_disk
 
     // Disk must be untouched (still external content, not buffer content)
     let disk_after = std::fs::read_to_string(&p).unwrap();
-    assert_eq!(disk_after, "ORIGEXT", "first conflict S must not overwrite disk");
+    assert_eq!(
+        disk_after, "ORIGEXT",
+        "first conflict S must not overwrite disk"
+    );
     assert_ne!(disk_after, disk_before, "external did change it");
 
     // buffer kept the local edit; disk must not match buffer (would have overwritten if not refused)
@@ -801,7 +807,10 @@ fn app_file_state_first_ctrl_s_refuses_on_external_modified_keeps_dirty_and_disk
         "first conflict S must not overwrite; disk must differ from buffer"
     );
     // edit did happen (buffer longer or different from original open)
-    assert!(buf_text.len() != 4 || buf_text != "ORIG", "local edit should be present in buffer");
+    assert!(
+        buf_text.len() != 4 || buf_text != "ORIG",
+        "local edit should be present in buffer"
+    );
 
     let _ = std::fs::remove_file(&p);
 }
@@ -840,7 +849,11 @@ fn app_file_state_second_ctrl_s_force_saves_after_same_modified_conflict() {
     assert!(app.file.dirty);
     let expected = app.buffer.to_string();
     // cursor after open is at start; '1''2' inserts at 0 -> "12BASE..." but we only care it is our local version
-    assert!(expected.starts_with("12"), "local edits present: {}", expected);
+    assert!(
+        expected.starts_with("12"),
+        "local edits present: {}",
+        expected
+    );
 
     // first S refuses
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
@@ -858,13 +871,20 @@ fn app_file_state_second_ctrl_s_force_saves_after_same_modified_conflict() {
     assert!(app.message.is_none());
     match &app.file.disk_snapshot {
         Some(crate::file::io::FileSnapshot::Present { len, .. }) => {
-            assert_eq!(*len, expected.len() as u64, "force save must update snapshot len");
+            assert_eq!(
+                *len,
+                expected.len() as u64,
+                "force save must update snapshot len"
+            );
         }
         _ => panic!("force save must set Present snapshot"),
     }
 
     let on_disk = std::fs::read_to_string(&p).unwrap();
-    assert_eq!(on_disk, expected, "disk after force must contain buffer text");
+    assert_eq!(
+        on_disk, expected,
+        "disk after force must contain buffer text"
+    );
 
     let _ = std::fs::remove_file(&p);
 }
@@ -904,7 +924,10 @@ fn app_file_state_external_delete_first_refuse_second_force_recreates() {
         "deleted refusal msg, got {:?}",
         app.message
     );
-    assert!(!std::path::Path::new(&p).exists(), "first refuse must not recreate");
+    assert!(
+        !std::path::Path::new(&p).exists(),
+        "first refuse must not recreate"
+    );
 
     // second S: force recreate
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
@@ -914,7 +937,11 @@ fn app_file_state_external_delete_first_refuse_second_force_recreates() {
     assert!(std::path::Path::new(&p).exists(), "force must recreate");
     let on_disk = std::fs::read_to_string(&p).unwrap();
     // buffer now has original + 'a' + 'b' (the pre-delete save had 'a', then +b)
-    assert!(on_disk.contains('a') && on_disk.contains('b'), "disk must have forced content: {}", on_disk);
+    assert!(
+        on_disk.contains('a') && on_disk.contains('b'),
+        "disk must have forced content: {}",
+        on_disk
+    );
 
     let _ = std::fs::remove_file(&p);
 }
@@ -925,7 +952,10 @@ fn app_file_state_external_delete_first_refuse_second_force_recreates() {
 fn app_file_state_absent_snapshot_external_appears_first_refuse_then_force() {
     // Open missing (Absent snapshot); external appears (Modified); first S refuses; second force-saves.
     let mut tmp = std::env::temp_dir();
-    tmp.push(format!("catomic_2n_absent_then_present_{}.txt", std::process::id()));
+    tmp.push(format!(
+        "catomic_2n_absent_then_present_{}.txt",
+        std::process::id()
+    ));
     let p = tmp.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&p);
 
@@ -962,7 +992,10 @@ fn app_file_state_absent_snapshot_external_appears_first_refuse_then_force() {
     assert!(!app.file.dirty);
     assert!(app.pending_save_conflict.is_none());
     let on_disk = std::fs::read_to_string(&p).unwrap();
-    assert_ne!(on_disk, "APPEARED", "force must have overwritten the appeared file");
+    assert_ne!(
+        on_disk, "APPEARED",
+        "force must have overwritten the appeared file"
+    );
     assert!(on_disk.contains('y') || on_disk == our_text || on_disk.len() >= 1);
 
     let _ = std::fs::remove_file(&p);
@@ -973,7 +1006,10 @@ fn app_file_state_status_change_between_confirms_does_not_force() {
     // Pending Modified; between presses external delete changes status to Deleted;
     // second S must not force (detects change), must update pending + msg instead.
     let mut tmp = std::env::temp_dir();
-    tmp.push(format!("catomic_2n_status_change_{}.txt", std::process::id()));
+    tmp.push(format!(
+        "catomic_2n_status_change_{}.txt",
+        std::process::id()
+    ));
     let p = tmp.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&p);
     std::fs::write(&p, "CHG").unwrap();
@@ -998,10 +1034,20 @@ fn app_file_state_status_change_between_confirms_does_not_force() {
 
     assert!(app.file.dirty, "must still be dirty (no force write)");
     // pending should now reflect the new status (Deleted)
-    assert_eq!(app.pending_save_conflict, Some(crate::file::io::ExternalFileStatus::Deleted));
+    assert_eq!(
+        app.pending_save_conflict,
+        Some(crate::file::io::ExternalFileStatus::Deleted)
+    );
     let msg = app.message.as_deref().unwrap_or("");
-    assert!(msg.contains("deleted"), "msg should be updated for new status: {}", msg);
-    assert!(!std::path::Path::new(&p).exists(), "must not have force-written on status change");
+    assert!(
+        msg.contains("deleted"),
+        "msg should be updated for new status: {}",
+        msg
+    );
+    assert!(
+        !std::path::Path::new(&p).exists(),
+        "must not have force-written on status change"
+    );
 
     let _ = std::fs::remove_file(&p);
 }
@@ -1011,7 +1057,10 @@ fn app_file_state_edit_after_pending_clears_confirmation() {
     // Pending conflict from first S; a content edit must clear the pending (and message),
     // so subsequent Ctrl+S treats it as fresh and will refuse/confirm again rather than force.
     let mut tmp = std::env::temp_dir();
-    tmp.push(format!("catomic_2n_edit_clears_pending_{}.txt", std::process::id()));
+    tmp.push(format!(
+        "catomic_2n_edit_clears_pending_{}.txt",
+        std::process::id()
+    ));
     let p = tmp.to_string_lossy().to_string();
     let _ = std::fs::remove_file(&p);
     std::fs::write(&p, "EBASE").unwrap();
@@ -1043,7 +1092,10 @@ fn app_file_state_edit_after_pending_clears_confirmation() {
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.file.dirty);
-    assert!(app.pending_save_conflict.is_some(), "after cleared, next S must set pending again (re-confirm)");
+    assert!(
+        app.pending_save_conflict.is_some(),
+        "after cleared, next S must set pending again (re-confirm)"
+    );
     // did not write (disk still external)
     assert_eq!(std::fs::read_to_string(&p).unwrap(), "EBASEMOD");
 

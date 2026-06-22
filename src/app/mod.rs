@@ -40,7 +40,8 @@ pub struct App {
     /// Gated, best-effort FileWatcher owned by App.
     /// Some only when caps.file_watch && file.path.is_some() && parent watchable.
     /// Construction failure never prevents opening or editing the file.
-    /// Signals are not consumed in 2-z (no polling, no try_recv, no reload behavior).
+    /// Watcher signals are consumed only by the runtime loop via watch::check_file_watcher_once
+    /// (once per iteration, as hints only). Signals never auto-reload content.
     /// Lifecycle is refreshed only after successful path-state changes (new + save-none->path).
     pub file_watcher: Option<file::watcher::FileWatcher>,
     /// Whether we should exit the loop.
@@ -152,6 +153,17 @@ impl App {
         self.render(&mut stdout)?;
 
         while !self.should_quit {
+            // Check watcher once per iteration (hint only). Uses the non-blocking seam
+            // so we do not block the 100ms poll cycle. If a Changed/Deleted signal is
+            // present, check_file_watcher_once does one try_recv + fresh observe_external_file
+            // + apply_check_observation (arms pending like first Ctrl+R). Render only if handled.
+            // Do not call try_recv directly; only through the helper.
+            // Must not be called from handle_key/save/reload/render.
+            // If both signal + key arrive in one iteration: simple loop may render twice; acceptable.
+            if watch::check_file_watcher_once_and_render(self, &mut stdout)? {
+                // message/pending updated; render already emitted by helper
+            }
+
             // Blocking read for Phase 0. Later we may need non-blocking + resize.
             if event::poll(std::time::Duration::from_millis(100))? {
                 match event::read()? {

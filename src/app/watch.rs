@@ -1,17 +1,17 @@
 //! FileWatcher lifecycle owned by App (gated, best-effort).
 //!
 //! Purpose: manage construction/refresh/clear of the optional FileWatcher on App
-//! and provide explicit non-runtime seams for (future) signal handling.
+//! and provide explicit seams for signal handling.
 //! Owns: refresh/clear, apply_file_watch_signal (hint -> observe + arm only),
-//!   check_file_watcher_once (non-runtime single try_recv + apply).
-//! Must not: be called from App::run / handle_key / save / reload / render paths
-//!   (runtime wiring is future work); perform reloads; mutate dirty/snapshot/history;
-//!   trust signal kind without fresh metadata observe; expand Project/LLM/UI.
-//!   try_recv only inside check_file_watcher_once (non-runtime helper).
+//!   check_file_watcher_once (single try_recv + apply), check_file_watcher_once_and_render.
+//! Must not: be called from handle_key / save / reload / render paths; perform reloads;
+//!   mutate dirty/snapshot/history; trust signal kind without fresh metadata observe;
+//!   expand Project/LLM/UI; call try_recv outside check_file_watcher_once.
 //! Invariants: signals are hints only; always delegate to observe_external_file +
 //!   reload::apply_check_observation for arming (same as first Ctrl+R); no auto
 //!   reload or content mutation; construction failure remains non-fatal.
-//! Phase: 2-aa (signal helper seams only; no runtime consumption yet).
+//!   check_file_watcher_once may be called from App::run once per loop iteration.
+//! Phase: 2-ab (runtime loop integration as hint-only; no auto-reload).
 //!
 //! The only sites that set app.file.path are:
 //! - App::new (initial_path or None)
@@ -19,6 +19,7 @@
 //! Callers of refresh after a successful path state change keep the watcher in sync.
 //! Future path transitions must also refresh/clear via this helper.
 
+use std::io::{self, Write};
 use std::path::PathBuf;
 
 use crate::file;
@@ -115,5 +116,28 @@ pub(crate) fn check_file_watcher_once(app: &mut super::App) -> bool {
         true
     } else {
         false
+    }
+}
+
+/// Runtime seam: check watcher at most once, render only if a signal was handled.
+///
+/// Calls check_file_watcher_once (which does at most one try_recv + apply).
+/// If a signal was received and applied (may arm pending_reload or set message),
+/// renders once via app.render(out).
+///
+/// Returns Ok(true) if a signal was handled (and render attempted), Ok(false) otherwise.
+/// Errors only from render.
+///
+/// Must be called at most once per event loop iteration from App::run.
+/// Must not be called from handle_key, save, reload, or render.
+pub(crate) fn check_file_watcher_once_and_render(
+    app: &mut super::App,
+    out: &mut dyn Write,
+) -> io::Result<bool> {
+    if check_file_watcher_once(app) {
+        app.render(out)?;
+        Ok(true)
+    } else {
+        Ok(false)
     }
 }

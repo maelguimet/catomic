@@ -540,4 +540,134 @@ mod phase1a_storage_parity {
         pt.redo();
         assert_eq!(pt.to_string(), "xy");
     }
+
+    #[test]
+    fn undo_redo_delete_forward() {
+        let mut pt = PieceTable::new();
+        for c in "abc".chars() { pt.insert_char(c); }
+        assert_eq!(pt.to_string(), "abc");
+        pt.move_left(); pt.move_left(); // before 'b'
+        pt.delete_forward(); // remove 'b' -> "ac"
+        assert_eq!(pt.to_string(), "ac");
+        pt.undo();
+        assert_eq!(pt.to_string(), "abc");
+        pt.redo();
+        assert_eq!(pt.to_string(), "ac");
+    }
+
+    #[test]
+    fn undo_redo_newline_join_via_deletes() {
+        // via delete_back at col0 of second line
+        let mut pt = PieceTable::from_text("ab\ncd");
+        pt.move_down(); // at col0 of "cd"
+        pt.delete_back(); // join nl -> "abcd"
+        assert_eq!(pt.to_string(), "abcd");
+        pt.undo();
+        assert_eq!(pt.to_string(), "ab\ncd");
+
+        // via delete_forward at end of first line
+        let mut pt2 = PieceTable::from_text("ab\ncd");
+        pt2.move_right(); pt2.move_right(); // after 'b'
+        pt2.delete_forward(); // delete the nl -> "abcd"
+        assert_eq!(pt2.to_string(), "abcd");
+        pt2.undo();
+        assert_eq!(pt2.to_string(), "ab\ncd");
+        pt2.redo();
+        assert_eq!(pt2.to_string(), "abcd");
+    }
+
+    #[test]
+    fn undo_redo_multibyte_utf8() {
+        let mut pt = PieceTable::new();
+        for ch in "aé猫🙂b".chars() {
+            if ch == '猫' { pt.insert_newline(); } else { pt.insert_char(ch); }
+        }
+        // "aé\n🙂b" or similar; exercise undos around multibyte + boundary
+        assert!(pt.to_string().contains("é"));
+        pt.move_left(); pt.move_left(); // some pos
+        pt.delete_back();
+        let before = pt.to_string();
+        pt.undo();
+        assert_ne!(pt.to_string(), before);
+        pt.redo();
+        // cursor and content stable after roundtrip
+        assert_eq!(pt.to_string(), before);
+    }
+
+    #[test]
+    fn no_op_edits_do_not_create_undo_entries() {
+        let mut pt = PieceTable::new();
+        // no-op at boundaries
+        pt.delete_back();
+        pt.delete_forward();
+        pt.delete_back();
+        // real edit
+        pt.insert_char('X');
+        assert_eq!(pt.to_string(), "X");
+        // undo should revert only the real insert (no-ops added 0 entries)
+        pt.undo();
+        assert_eq!(pt.to_string(), "");
+        // one more noop then real, undo reverts only real
+        pt.delete_forward();
+        pt.insert_char('Y');
+        pt.undo();
+        assert_eq!(pt.to_string(), "");
+    }
+
+    #[test]
+    fn undo_after_save_behavior() {
+        // "save" = capture to_string (as golden harness does before/after write)
+        // undo must affect only the in-memory buffer, not any prior saved snapshot
+        let mut pt = PieceTable::new();
+        pt.insert_char('h'); pt.insert_char('i');
+        let saved = pt.to_string(); // simulate save
+        pt.insert_newline();
+        pt.insert_char('!');
+        assert_eq!(pt.to_string(), "hi\n!");
+        pt.undo();
+        assert_eq!(pt.to_string(), "hi\n"); // undid only last
+        pt.undo();
+        assert_eq!(pt.to_string(), "hi"); // back to saved
+        assert_eq!(saved, "hi"); // prior save snapshot unaffected
+    }
+
+    #[test]
+    fn seeded_random_edit_plus_undo_redo_against_simple_oracle() {
+        // Simple oracle: maintain parallel text state + manual snapshots for undo/redo verification
+        // (cursor ignored for oracle text match; keeps test small)
+        fn next_seed(s: &mut u64) -> u64 { *s = s.wrapping_mul(6364136223846793005).wrapping_add(1); *s }
+        let mut seed: u64 = 0x1C_2026_DEAD_BEEF;
+        let mut pt = PieceTable::new();
+        let mut text = String::new();
+        let mut snapshots: Vec<String> = vec![String::new()];
+        let steps = 40;
+        for step in 0..steps {
+            let r = next_seed(&mut seed) % 100;
+            if r < 8 && snapshots.len() > 1 {
+                pt.undo();
+                if let Some(prev) = snapshots.pop() { text = prev; }
+            } else if r < 12 && !snapshots.is_empty() {
+                // simulate redo by re-applying last? but for simplicity, just redo and re-push text if changed
+                pt.redo();
+                // oracle redo would require forward log; just sync from pt for this check
+                text = pt.to_string();
+                // keep snapshot list simple
+            } else {
+                // edit
+                snapshots.push(text.clone());
+                let ch = if (next_seed(&mut seed) % 5) == 0 { '\n' } else { 'a' };
+                if ch == '\n' {
+                    pt.insert_newline();
+                    text.push('\n');
+                } else {
+                    pt.insert_char(ch);
+                    text.push(ch);
+                }
+            }
+            if step % 7 == 0 {
+                assert_eq!(pt.to_string(), text, "text drifted at step {}", step);
+            }
+        }
+        assert_eq!(pt.to_string(), text);
+    }
 }

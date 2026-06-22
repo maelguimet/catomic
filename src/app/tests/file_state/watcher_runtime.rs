@@ -204,7 +204,11 @@ fn queued_error_is_visible_and_does_not_mutate() {
     let _ = std::fs::remove_file(&p);
 }
 
-// one call processes at most one queued signal (even if two are present)
+// one call processes at most one queued signal (even if two are present).
+// Deterministic mpsc seam: two visible Modified signals must each be
+// consumed by a separate call (at most one per call). Both produce visible
+// outcome (arm/refresh message + render) because watcher path does not
+// update the disk_snapshot used by observe.
 #[test]
 fn one_call_processes_at_most_one_signal() {
     let mut tmp = std::env::temp_dir();
@@ -214,32 +218,46 @@ fn one_call_processes_at_most_one_signal() {
     std::fs::write(&p, "ONE").unwrap();
 
     let mut app = App::new(Some(&p)).unwrap();
-    // make external mod so first signal will be visible
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    // external mod makes observe report Modified for both signals
+    // (disk_snapshot is not mutated by the watcher arm path)
     std::fs::write(&p, "ONEEXT").unwrap();
 
     let path = app.file.path.clone().unwrap();
     let (tw, tx) = crate::file::watcher::FileWatcher::new_for_test(path.clone());
     crate::app::watch::replace_file_watcher_for_test(&mut app, tw);
 
-    // queue two raw events via the channel (exercises real recv path)
+    // Queue two raw relevant events through the test channel (not live notify).
     let ev = make_modify_event(&path);
-    // send two
     let _ = tx.send(Ok(ev.clone()));
     let _ = tx.send(Ok(ev));
 
+    // First call consumes at most one.
     let mut out1: Vec<u8> = Vec::new();
     let r1 = crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out1).unwrap();
-    assert!(r1, "first signal should be handled");
+    assert!(r1, "first signal must return true (visible Modified)");
+    assert!(!out1.is_empty(), "first must have rendered");
 
-    // second call must be able to see the remaining one (or none if coalesced
-    // inside notify, but our mpsc has both); the key is the *call* only took one.
+    // Second call must still be able to consume the second queued signal.
     let mut out2: Vec<u8> = Vec::new();
     let r2 = crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out2).unwrap();
-    // It is acceptable for r2 to be true (second signal) or, if the test env
-    // drops dups, false. We only assert that a *single* call did not drain both
-    // in one go beyond the documented "at most one".
-    // To keep simple per instructions, just ensure we didn't panic and state is sane.
-    let _ = r2;
+    assert!(
+        r2,
+        "second signal must return true (second visible Modified)"
+    );
+    assert!(!out2.is_empty(), "second must have rendered");
+
+    // State remains sane; no content mutation; both signals were observable.
+    assert_eq!(app.buffer.to_string(), "ONE", "buffer content unchanged");
+    assert!(!app.file.dirty, "dirty state sane");
+    // pending may be set (or re-set); message from arm path is present.
+    let msg = app.message.as_deref().unwrap_or("");
+    assert!(
+        msg.contains("changed on disk") || msg.contains("Ctrl+R"),
+        "message should reflect arm from one of the visible signals: got {:?}",
+        app.message
+    );
 
     let _ = std::fs::remove_file(&p);
 }

@@ -593,14 +593,18 @@ mod tests {
         app.handle_key(make_key(KeyCode::Char('q'), KeyModifiers::CONTROL))
             .unwrap();
         assert!(app.pending_quit_confirm);
+        assert!(app.message.is_some());
 
-        // any content edit clears pending (movement would not)
+        // content-mutating edit clears BOTH pending and message (movements do not)
         app.handle_key(make_key(KeyCode::Char('!'), KeyModifiers::NONE))
             .unwrap();
         assert!(
             !app.pending_quit_confirm,
             "edit after warning clears pending"
         );
-        // message may remain or not per current minimal; pending cleared is required
+        assert!(
+            app.message.is_none(),
+            "edit after warning also clears stale message"
+        );
     }
 }

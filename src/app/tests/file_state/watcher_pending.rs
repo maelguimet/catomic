@@ -289,7 +289,11 @@ fn watcher_changed_external_modified_then_manual_ctrl_r_second_reloads() {
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
 
-    assert_eq!(app.buffer.to_string(), "EXTCONTENT", "buffer must be external content");
+    assert_eq!(
+        app.buffer.to_string(),
+        "EXTCONTENT",
+        "buffer must be external content"
+    );
     assert!(!app.file.dirty, "dirty must be false after reload");
     match &app.file.disk_snapshot {
         Some(crate::file::io::FileSnapshot::Present { .. }) => {}
@@ -339,7 +343,11 @@ fn watcher_deleted_then_manual_ctrl_r_second_clears_buffer() {
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
 
-    assert_eq!(app.buffer.to_string(), "", "buffer must be empty after deleted reload");
+    assert_eq!(
+        app.buffer.to_string(),
+        "",
+        "buffer must be empty after deleted reload"
+    );
     assert!(!app.file.dirty);
     assert_eq!(
         app.file.disk_snapshot,

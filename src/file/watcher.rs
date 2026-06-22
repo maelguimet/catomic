@@ -103,10 +103,10 @@ impl FileWatcher {
 
 /// Derive the directory to watch (parent of target, or "." for bare names).
 fn watch_parent(target: &Path) -> PathBuf {
-    target
-        .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| PathBuf::from("."))
+    match target.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
+        _ => PathBuf::from("."),
+    }
 }
 
 /// Convert to absolute lexical path without requiring existence (no canonicalize).
@@ -141,5 +141,122 @@ fn map_event_to_signal(target: &Path, event: &Event) -> Option<FileWatchSignal> 
         EventKind::Create(_) | EventKind::Modify(_) => Some(FileWatchSignal::Changed),
         EventKind::Remove(_) => Some(FileWatchSignal::Deleted),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mode::{Capabilities, Mode};
+    use notify::event::{CreateKind, RemoveKind};
+    use std::path::PathBuf;
+
+    #[test]
+    fn file_watch_false_returns_ok_none_even_for_nonsense() {
+        // Force false even if Plain normally enables it.
+        let mut caps = Capabilities::from_mode(Mode::Plain);
+        caps.file_watch = false;
+        let res = FileWatcher::new(PathBuf::from("/no/such/!!!/path.txt"), &caps);
+        assert!(matches!(res, Ok(None)));
+    }
+
+    #[test]
+    fn watch_parent_chosen_correctly() {
+        assert_eq!(
+            watch_parent(Path::new("dir/sub/file.txt")),
+            PathBuf::from("dir/sub")
+        );
+        assert_eq!(watch_parent(Path::new("bare.txt")), PathBuf::from("."));
+        assert_eq!(
+            watch_parent(Path::new("/abs/path/to/file.rs")),
+            PathBuf::from("/abs/path/to")
+        );
+    }
+
+    #[test]
+    fn normalize_does_not_require_file_existence() {
+        let missing = PathBuf::from("/tmp/does_not_exist_$$_2x/missing.txt");
+        let n = normalize_path(&missing);
+        assert!(n.is_absolute());
+        assert!(n.ends_with("missing.txt"));
+        // relative also becomes abs lexical
+        let rel = PathBuf::from("rel/dir/target.md");
+        let nr = normalize_path(&rel);
+        assert!(nr.is_absolute());
+    }
+
+    fn make_event(kind: EventKind, paths: Vec<PathBuf>) -> Event {
+        Event {
+            kind,
+            paths,
+            attrs: Default::default(),
+        }
+    }
+
+    #[test]
+    fn relevant_target_create_modify_maps_to_changed() {
+        let target = PathBuf::from("/abs/w/test.txt");
+        let ev = make_event(
+            EventKind::Create(CreateKind::File),
+            vec![PathBuf::from("/abs/w/test.txt")],
+        );
+        assert!(is_relevant(&target, &ev));
+        assert_eq!(
+            map_event_to_signal(&target, &ev),
+            Some(FileWatchSignal::Changed)
+        );
+
+        let ev2 = make_event(
+            EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Content,
+            )),
+            vec![PathBuf::from("/abs/w/test.txt")],
+        );
+        assert_eq!(
+            map_event_to_signal(&target, &ev2),
+            Some(FileWatchSignal::Changed)
+        );
+    }
+
+    #[test]
+    fn target_remove_maps_to_deleted() {
+        let target = PathBuf::from("/abs/w/test.txt");
+        let ev = make_event(
+            EventKind::Remove(RemoveKind::File),
+            vec![PathBuf::from("/abs/w/test.txt")],
+        );
+        assert!(is_relevant(&target, &ev));
+        assert_eq!(
+            map_event_to_signal(&target, &ev),
+            Some(FileWatchSignal::Deleted)
+        );
+    }
+
+    #[test]
+    fn sibling_file_event_is_ignored() {
+        let target = PathBuf::from("/abs/w/test.txt");
+        let ev = make_event(
+            EventKind::Modify(notify::event::ModifyKind::Any),
+            vec![PathBuf::from("/abs/w/sibling.txt")],
+        );
+        assert!(!is_relevant(&target, &ev));
+        assert_eq!(map_event_to_signal(&target, &ev), None);
+    }
+
+    #[test]
+    fn event_with_multiple_paths_including_target_is_accepted() {
+        let target = PathBuf::from("/abs/w/test.txt");
+        let ev = make_event(
+            EventKind::Create(CreateKind::File),
+            vec![
+                PathBuf::from("/abs/w/other"),
+                PathBuf::from("/abs/w/test.txt"),
+            ],
+        );
+        assert!(is_relevant(&target, &ev));
+        assert_eq!(
+            map_event_to_signal(&target, &ev),
+            Some(FileWatchSignal::Changed)
+        );
     }
 }

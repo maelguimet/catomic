@@ -404,6 +404,9 @@ mod tests {
         let app = App::new(None).unwrap();
         assert!(!app.file.dirty, "new app without path starts clean");
         assert!(app.file.path.is_none());
+        // screen field added in 2-c; verify default here too (no behavior change)
+        assert_eq!(app.screen.height, 24);
+        assert_eq!(app.screen.scroll_top, 0);
 
         let app2 = App::new(Some("existing.txt")).unwrap();
         assert!(!app2.file.dirty, "open (even missing file) starts clean");

@@ -38,6 +38,10 @@ pub struct App {
     pub file: FileState,
     /// Whether we should exit the loop.
     pub should_quit: bool,
+    /// Minimal message for user (error, quit warning, etc.). Cleared on edits or explicit.
+    pub message: Option<String>,
+    /// When true, a second Ctrl+Q while dirty will force quit (no save).
+    pub pending_quit_confirm: bool,
 }
 
 impl App {
@@ -67,6 +71,8 @@ impl App {
                 dirty: false,
             },
             should_quit: false,
+            message: None,
+            pending_quit_confirm: false,
         })
     }
 

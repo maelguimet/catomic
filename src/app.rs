@@ -217,6 +217,7 @@ impl App {
                 self.file.dirty = true;
                 self.pending_quit_confirm = false;
                 self.message = None;
+                self.reveal_cursor();
                 self.render(out)?;
             }
 
@@ -238,6 +239,7 @@ impl App {
                 self.file.dirty = true;
                 self.pending_quit_confirm = false;
                 self.message = None;
+                self.reveal_cursor();
                 self.render(out)?;
             }
             KeyEvent {
@@ -251,6 +253,7 @@ impl App {
                 self.file.dirty = true;
                 self.pending_quit_confirm = false;
                 self.message = None;
+                self.reveal_cursor();
                 self.render(out)?;
             }
             KeyEvent {
@@ -264,6 +267,7 @@ impl App {
                 self.file.dirty = true;
                 self.pending_quit_confirm = false;
                 self.message = None;
+                self.reveal_cursor();
                 self.render(out)?;
             }
             KeyEvent {
@@ -275,6 +279,7 @@ impl App {
                 self.file.dirty = true;
                 self.pending_quit_confirm = false;
                 self.message = None;
+                self.reveal_cursor();
                 self.render(out)?;
             }
 
@@ -305,6 +310,7 @@ impl App {
                     self.pending_quit_confirm = false;
                     self.message = None;
                 }
+                self.reveal_cursor();
                 self.render(out)?;
             }
 
@@ -316,6 +322,7 @@ impl App {
                 self.file.dirty = true;
                 self.pending_quit_confirm = false;
                 self.message = None;
+                self.reveal_cursor();
                 self.render(out)?;
             }
 
@@ -327,6 +334,7 @@ impl App {
                 self.file.dirty = true;
                 self.pending_quit_confirm = false;
                 self.message = None;
+                self.reveal_cursor();
                 self.render(out)?;
             }
 
@@ -335,6 +343,7 @@ impl App {
                 ..
             } => {
                 self.buffer.move_left();
+                self.reveal_cursor();
                 self.render(out)?;
             }
 
@@ -343,6 +352,7 @@ impl App {
                 ..
             } => {
                 self.buffer.move_right();
+                self.reveal_cursor();
                 self.render(out)?;
             }
 
@@ -350,6 +360,7 @@ impl App {
                 code: KeyCode::Up, ..
             } => {
                 self.buffer.move_up();
+                self.reveal_cursor();
                 self.render(out)?;
             }
 
@@ -358,6 +369,7 @@ impl App {
                 ..
             } => {
                 self.buffer.move_down();
+                self.reveal_cursor();
                 self.render(out)?;
             }
 
@@ -368,10 +380,18 @@ impl App {
     }
 
     /// Smallest helper seam for resize (and testability of it) without redesigning event loop.
-    /// Updates screen size/scroll and renders to provided writer.
+    /// Updates screen size, reveals cursor row under new height, then renders.
     fn handle_resize(&mut self, w: u16, h: u16, out: &mut dyn Write) -> io::Result<()> {
         self.screen.update_size(w, h);
+        self.reveal_cursor();
         self.render(out)
+    }
+
+    /// Reveal the current cursor row so it is visible in the content area.
+    /// Called after cursor movement and content mutations (insert, delete, undo/redo).
+    fn reveal_cursor(&mut self) {
+        let row = self.buffer.cursor().row;
+        self.screen.reveal_row(row);
     }
 
     fn render(&self, stdout: &mut dyn Write) -> io::Result<()> {

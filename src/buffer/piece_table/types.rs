@@ -48,4 +48,8 @@ pub struct PieceTable {
     /// Prefix sums of piece lengths (parallel to pieces). Enables fast
     /// piece lookup for queries/edits without head scans on every op.
     pub(crate) piece_starts: Vec<usize>,
+    /// Undo/redo history (piece deltas only; no full snapshots).
+    pub(crate) undo_stack: crate::buffer::undo::UndoStack,
+    /// If false, structural edits do not record transactions (suppress during apply).
+    pub(crate) recording: bool,
 }

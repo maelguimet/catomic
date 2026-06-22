@@ -21,6 +21,7 @@ use crate::buffer::{Buffer, Cursor, LineView};
 
 pub use types::PieceTable;
 use types::{Piece, Source};
+use crate::buffer::undo::{CursorState, PieceEdit, Transaction};
 
 impl PieceTable {
     pub fn new() -> Self {
@@ -39,6 +40,8 @@ impl PieceTable {
             cursor: Cursor { row: 0, col: 0 },
             cursor_byte_offset: 0,
             piece_starts,
+            undo_stack: crate::buffer::undo::UndoStack::new(),
+            recording: true,
         }
     }
 
@@ -75,6 +78,8 @@ impl PieceTable {
             cursor: Cursor { row: 0, col: 0 },
             cursor_byte_offset: 0,
             piece_starts,
+            undo_stack: crate::buffer::undo::UndoStack::new(),
+            recording: true,
         }
     }
 
@@ -147,6 +152,13 @@ impl PieceTable {
         for p in &self.pieces {
             self.piece_starts.push(acc);
             acc += p.len;
+        }
+    }
+
+    fn capture_cursor_state(&self) -> CursorState {
+        CursorState {
+            cursor: self.cursor,
+            byte_offset: self.cursor_byte_offset,
         }
     }
 
@@ -270,8 +282,9 @@ impl Buffer for PieceTable {
 
     fn insert_char(&mut self, ch: char) {
         let was_nl = ch == '\n';
+        let before = self.capture_cursor_state();
         let at = self.cursor_byte_offset;
-        self.insert_at_cursor(ch);
+        let inserted = self.insert_at_cursor(ch);
         self.coalesce();
         if was_nl {
             self.rebuild_index();
@@ -280,14 +293,33 @@ impl Buffer for PieceTable {
             self.adjust_index_for_simple_delta(at, delta);
             // cursor_byte_offset was already advanced inside insert_at_cursor
         }
+        if self.recording && !inserted.is_empty() {
+            let after = self.capture_cursor_state();
+            let tx = Transaction {
+                before,
+                after,
+                edits: vec![PieceEdit::Insert { at, pieces: inserted }],
+            };
+            self.undo_stack.record(tx);
+        }
     }
 
     fn insert_newline(&mut self) {
+        let before = self.capture_cursor_state();
         let at = self.cursor_byte_offset;
-        self.insert_at_cursor('\n');
+        let inserted = self.insert_at_cursor('\n');
         self.coalesce();
         // Use incremental for the added boundary (no full text scan).
         self.adjust_index_for_newline_insert(at);
+        if self.recording && !inserted.is_empty() {
+            let after = self.capture_cursor_state();
+            let tx = Transaction {
+                before,
+                after,
+                edits: vec![PieceEdit::Insert { at, pieces: inserted }],
+            };
+            self.undo_stack.record(tx);
+        }
     }
 
     fn delete_back(&mut self) {
@@ -295,23 +327,45 @@ impl Buffer for PieceTable {
             let end_b = self.byte_offset_at(self.cursor.row, self.cursor.col);
             let start_b = self.byte_offset_at(self.cursor.row, self.cursor.col - 1);
             let delta = -((end_b - start_b) as isize);
-            self.delete_byte_range(start_b, end_b);
+            let before = self.capture_cursor_state();
+            let removed = self.delete_byte_range(start_b, end_b);
             self.cursor.col -= 1;
             self.cursor_byte_offset = start_b;
             self.coalesce();
             // within-line non-nl char delete: incremental shift
             self.adjust_index_for_simple_delta(start_b, delta);
+            if self.recording && !removed.is_empty() {
+                let after = self.capture_cursor_state();
+                let tx = Transaction {
+                    before,
+                    after,
+                    edits: vec![PieceEdit::Delete { at: start_b, pieces: removed }],
+                };
+                self.undo_stack.record(tx);
+            }
         } else if self.cursor.row > 0 {
             let nl_pos = self.byte_offset_at(self.cursor.row, 0);
             if nl_pos > 0 {
                 let prev_len = self.current_line_char_len(self.cursor.row - 1);
-                self.delete_byte_range(nl_pos - 1, nl_pos);
+                let before = self.capture_cursor_state();
+                let removed = self.delete_byte_range(nl_pos - 1, nl_pos);
                 self.cursor.row -= 1;
                 self.cursor.col = prev_len;
                 self.cursor_byte_offset = self.byte_offset_at(self.cursor.row, self.cursor.col);
+                self.coalesce();
+                self.adjust_index_for_newline_delete(nl_pos - 1);
+                if self.recording && !removed.is_empty() {
+                    let after = self.capture_cursor_state();
+                    let tx = Transaction {
+                        before,
+                        after,
+                        edits: vec![PieceEdit::Delete { at: nl_pos - 1, pieces: removed }],
+                    };
+                    self.undo_stack.record(tx);
+                }
+            } else {
+                self.coalesce();
             }
-            self.coalesce();
-            self.adjust_index_for_newline_delete(nl_pos - 1);
         } else {
             self.coalesce();
             // no-op
@@ -324,18 +378,38 @@ impl Buffer for PieceTable {
             let start_b = self.byte_offset_at(self.cursor.row, self.cursor.col);
             let end_b = self.byte_offset_at(self.cursor.row, self.cursor.col + 1);
             let delta = -((end_b - start_b) as isize);
-            self.delete_byte_range(start_b, end_b);
+            let before = self.capture_cursor_state();
+            let removed = self.delete_byte_range(start_b, end_b);
             self.coalesce();
             // within-line non-nl char delete
             self.adjust_index_for_simple_delta(start_b, delta);
+            if self.recording && !removed.is_empty() {
+                let after = self.capture_cursor_state();
+                let tx = Transaction {
+                    before,
+                    after,
+                    edits: vec![PieceEdit::Delete { at: start_b, pieces: removed }],
+                };
+                self.undo_stack.record(tx);
+            }
             // col unchanged
         } else if self.cursor.row + 1 < self.line_count() {
             let next_start = self.byte_offset_at(self.cursor.row + 1, 0);
             if next_start > 0 {
                 let nl_pos = next_start - 1;
-                self.delete_byte_range(nl_pos, nl_pos + 1);
+                let before = self.capture_cursor_state();
+                let removed = self.delete_byte_range(nl_pos, nl_pos + 1);
                 self.coalesce();
                 self.adjust_index_for_newline_delete(nl_pos);
+                if self.recording && !removed.is_empty() {
+                    let after = self.capture_cursor_state();
+                    let tx = Transaction {
+                        before,
+                        after,
+                        edits: vec![PieceEdit::Delete { at: nl_pos, pieces: removed }],
+                    };
+                    self.undo_stack.record(tx);
+                }
             } else {
                 self.coalesce();
             }
@@ -365,10 +439,57 @@ impl Buffer for PieceTable {
     }
 
     fn undo(&mut self) {
-        // Real implementation added in 1C steps below.
+        if let Some(tx) = self.undo_stack.pop_undo() {
+            let was_recording = self.recording;
+            self.recording = false;
+
+            // Apply inverses (LIFO single tx; edits reversed for safety if multi).
+            for e in tx.edits.iter().rev() {
+                match e {
+                    PieceEdit::Insert { at, pieces } => {
+                        let len: usize = pieces.iter().map(|p| p.len).sum();
+                        self.delete_byte_range(*at, *at + len);
+                    }
+                    PieceEdit::Delete { at, pieces } => {
+                        self.insert_pieces_at(*at, pieces);
+                    }
+                }
+            }
+            self.coalesce();
+            self.rebuild_index();
+
+            self.cursor = tx.before.cursor;
+            self.cursor_byte_offset = tx.before.byte_offset;
+
+            self.undo_stack.push_redo(tx);
+            self.recording = was_recording;
+        }
     }
 
     fn redo(&mut self) {
-        // Real implementation added in 1C steps below.
+        if let Some(tx) = self.undo_stack.pop_redo() {
+            let was_recording = self.recording;
+            self.recording = false;
+
+            for e in &tx.edits {
+                match e {
+                    PieceEdit::Insert { at, pieces } => {
+                        self.insert_pieces_at(*at, pieces);
+                    }
+                    PieceEdit::Delete { at, pieces } => {
+                        let len: usize = pieces.iter().map(|p| p.len).sum();
+                        self.delete_byte_range(*at, *at + len);
+                    }
+                }
+            }
+            self.coalesce();
+            self.rebuild_index();
+
+            self.cursor = tx.after.cursor;
+            self.cursor_byte_offset = tx.after.byte_offset;
+
+            self.undo_stack.push_undo(tx);
+            self.recording = was_recording;
+        }
     }
 }

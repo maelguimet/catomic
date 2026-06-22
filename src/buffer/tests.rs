@@ -479,4 +479,65 @@ mod phase1a_storage_parity {
         // LineIndex + query/slice paths but not fragmented-piece performance.
         // Fragmented-piece render/visible_lines tests should be added later.
     }
+
+    #[test]
+    fn undo_redo_basic_and_new_edit_clears_redo() {
+        let mut pt = PieceTable::new();
+        pt.insert_char('a');
+        pt.insert_char('b');
+        pt.insert_newline();
+        pt.insert_char('c');
+        assert_eq!(pt.to_string(), "ab\nc");
+
+        // undo last insert 'c'
+        pt.undo();
+        assert_eq!(pt.to_string(), "ab\n");
+        assert_eq!(pt.cursor().row, 1);
+        assert_eq!(pt.cursor().col, 0);
+
+        // undo newline
+        pt.undo();
+        assert_eq!(pt.to_string(), "ab");
+
+        // redo the newline
+        pt.redo();
+        assert_eq!(pt.to_string(), "ab\n");
+
+        // redo 'c'
+        pt.redo();
+        assert_eq!(pt.to_string(), "ab\nc");
+
+        // new edit after undo clears redo stack
+        pt.undo(); // back to "ab\n"
+        pt.insert_char('X');
+        assert_eq!(pt.to_string(), "ab\nX");
+        // redo should now be no-op (cleared)
+        pt.redo();
+        assert_eq!(pt.to_string(), "ab\nX");
+    }
+
+    #[test]
+    fn undo_delete_and_redo_reuses_pieces_no_dupe_add() {
+        let mut pt = PieceTable::new();
+        for c in "xyz".chars() {
+            pt.insert_char(c);
+        }
+        assert_eq!(pt.to_string(), "xyz");
+        let add_before = pt.add.len();
+        let pieces_before = pt.pieces_len();
+
+        // delete 'z' (last)
+        pt.delete_back();
+        assert_eq!(pt.to_string(), "xy");
+
+        pt.undo();
+        assert_eq!(pt.to_string(), "xyz");
+        // Redo insert must not have appended extra text to add buffer.
+        assert_eq!(pt.add.len(), add_before, "redo must not grow add buffer");
+        // Piece count should not explode from re-adding same range.
+        assert!(pt.pieces_len() <= pieces_before + 2);
+
+        pt.redo();
+        assert_eq!(pt.to_string(), "xy");
+    }
 }

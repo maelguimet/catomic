@@ -186,6 +186,29 @@ impl App {
                 self.render(&mut io::stdout())?;
             }
 
+            // Undo / Redo (Phase 1C). Ctrl+Z undo; Ctrl+Y and Ctrl+Shift+Z redo.
+            // No other UI changes.
+            KeyEvent {
+                code: KeyCode::Char('z'),
+                modifiers,
+                ..
+            } if modifiers.contains(KeyModifiers::CONTROL) => {
+                if modifiers.contains(KeyModifiers::SHIFT) {
+                    self.buffer.redo();
+                } else {
+                    self.buffer.undo();
+                }
+                self.render(&mut io::stdout())?;
+            }
+            KeyEvent {
+                code: KeyCode::Char('y'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.buffer.redo();
+                self.render(&mut io::stdout())?;
+            }
+
             KeyEvent {
                 code: KeyCode::Left,
                 ..

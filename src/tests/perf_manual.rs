@@ -10,7 +10,10 @@
 
 #![cfg(test)]
 
-use super::helpers::{cleanup_perf, generate_dense_ascii_file, measure_sample, print_perf_sample, temp_perf_path, try_generate_sparse_file};
+use super::helpers::{
+    cleanup_perf, generate_dense_ascii_file, measure_sample, print_perf_sample, temp_perf_path,
+    try_generate_sparse_file,
+};
 
 #[test]
 #[ignore = "manual big-file perf smoke; generates and opens ~10 MiB"]
@@ -64,7 +67,9 @@ fn manual_open_100mib_generated_file_smoke() {
 
     eprintln!("generating ~100 MiB dense (streaming chunks)...");
     // May take time + disk; manual only.
-    let gen_res = measure_sample("generate 100mib", Some(size), || generate_dense_ascii_file(&p, size));
+    let gen_res = measure_sample("generate 100mib", Some(size), || {
+        generate_dense_ascii_file(&p, size)
+    });
     let (gen_ok, gen_sample) = match gen_res {
         (Ok(()), s) => (true, s),
         (Err(e), s) => {
@@ -127,9 +132,13 @@ fn manual_sparse_extreme_refusal_smoke() {
     cleanup_perf(&p);
 
     eprintln!("creating sparse >1 GiB (set_len, no write)...");
-    let (set_res, set_sample) = measure_sample("create sparse 1g+", Some(size), || try_generate_sparse_file(&p, size));
+    let (set_res, set_sample) = measure_sample("create sparse 1g+", Some(size), || {
+        try_generate_sparse_file(&p, size)
+    });
     match set_res {
-        Ok(()) => { print_perf_sample(&set_sample); }
+        Ok(()) => {
+            print_perf_sample(&set_sample);
+        }
         Err(e) => {
             print_perf_sample(&set_sample);
             eprintln!(

@@ -100,7 +100,11 @@ pub(crate) fn measure_sample<T>(
     let start = Instant::now();
     let v = f();
     let elapsed = start.elapsed();
-    let sample = PerfSample { label, bytes, elapsed };
+    let sample = PerfSample {
+        label,
+        bytes,
+        elapsed,
+    };
     (v, sample)
 }
 
@@ -114,5 +118,8 @@ pub(crate) fn print_perf_sample(s: &PerfSample) {
         Some(n) => n.to_string(),
         None => "n/a".to_string(),
     };
-    eprintln!("PERF sample: label={} bytes={} elapsed_ms={}", s.label, b, ms);
+    eprintln!(
+        "PERF sample: label={} bytes={} elapsed_ms={}",
+        s.label, b, ms
+    );
 }

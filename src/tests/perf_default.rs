@@ -39,7 +39,10 @@ fn phase0_small_file_key_to_render_smoke() {
     eprintln!("phase0_small elapsed: {:?}", elapsed);
 
     // Deterministic functional asserts only (no elapsed threshold).
-    assert!(!out.is_empty() && !out2.is_empty(), "renders must produce output");
+    assert!(
+        !out.is_empty() && !out2.is_empty(),
+        "renders must produce output"
+    );
     // Buffer changed as expected from the simulated edits.
     let s = b.to_string();
     assert!(s.contains('!'), "insert ! must be present");
@@ -65,9 +68,15 @@ fn phase1b_piecetable_small_file_key_to_render_smoke() {
     eprintln!("phase1b_piecetable elapsed: {:?}", elapsed);
 
     // Deterministic functional asserts only.
-    assert!(!out.is_empty() && !out2.is_empty(), "renders must produce output");
+    assert!(
+        !out.is_empty() && !out2.is_empty(),
+        "renders must produce output"
+    );
     let s = b.to_string();
-    assert!(s.contains('!') && s.contains('X'), "PT edits must be present");
+    assert!(
+        s.contains('!') && s.contains('X'),
+        "PT edits must be present"
+    );
 }
 
 #[test]
@@ -127,8 +136,7 @@ fn perf_harness_app_new_small_generated_records_size() {
 
     generate_dense_ascii_file(&p, size).expect("gen");
     // content is ASCII; App::new must open and record size_bytes + Small tier
-    let app =
-        crate::app::App::new(Some(&p.to_string_lossy())).expect("App::new small gen file");
+    let app = crate::app::App::new(Some(&p.to_string_lossy())).expect("App::new small gen file");
     assert!(app.file.path.is_some());
     assert_eq!(app.file.size_bytes, Some(size));
     assert_eq!(

@@ -126,6 +126,14 @@ impl App {
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> io::Result<()> {
+        let mut out = io::stdout();
+        self.handle_key_with(&mut out, key)
+    }
+
+    /// Route key handling + associated renders through a writer.
+    /// Smallest seam so tests can capture render side-effects for e.g. Ctrl+Q message.
+    /// The public-in-module handle_key keeps the run loop and existing calls unchanged.
+    fn handle_key_with(&mut self, out: &mut dyn Write, key: KeyEvent) -> io::Result<()> {
         match key {
             // Quit (Ctrl+Q)
             // - clean: quit immediately
@@ -181,7 +189,7 @@ impl App {
                         // keep dirty; do not clear pending (if user had quit warn, error is shown)
                     }
                 }
-                self.render(&mut io::stdout())?;
+                self.render(out)?;
             }
 
             // Enter produces KeyCode::Enter (not Char('\n')). Handle explicitly.
@@ -194,7 +202,7 @@ impl App {
                 self.buffer.insert_newline();
                 self.file.dirty = true;
                 self.pending_quit_confirm = false;
-                self.render(&mut io::stdout())?;
+                self.render(out)?;
             }
 
             // Undo / Redo (Phase 1C). Ctrl+Z undo; Ctrl+Y and Ctrl+Shift+Z redo.
@@ -214,7 +222,7 @@ impl App {
                 self.buffer.undo();
                 self.file.dirty = true;
                 self.pending_quit_confirm = false;
-                self.render(&mut io::stdout())?;
+                self.render(out)?;
             }
             KeyEvent {
                 code: KeyCode::Char('z'),
@@ -226,7 +234,7 @@ impl App {
                 self.buffer.redo();
                 self.file.dirty = true;
                 self.pending_quit_confirm = false;
-                self.render(&mut io::stdout())?;
+                self.render(out)?;
             }
             KeyEvent {
                 code: KeyCode::Char('Z'),
@@ -238,7 +246,7 @@ impl App {
                 self.buffer.redo();
                 self.file.dirty = true;
                 self.pending_quit_confirm = false;
-                self.render(&mut io::stdout())?;
+                self.render(out)?;
             }
             KeyEvent {
                 code: KeyCode::Char('y'),
@@ -248,7 +256,7 @@ impl App {
                 self.buffer.redo();
                 self.file.dirty = true;
                 self.pending_quit_confirm = false;
-                self.render(&mut io::stdout())?;
+                self.render(out)?;
             }
 
             // Basic movement + editing (Phase 0)
@@ -276,7 +284,7 @@ impl App {
                     self.file.dirty = true;
                     self.pending_quit_confirm = false;
                 }
-                self.render(&mut io::stdout())?;
+                self.render(out)?;
             }
 
             KeyEvent {
@@ -286,7 +294,7 @@ impl App {
                 self.buffer.delete_back();
                 self.file.dirty = true;
                 self.pending_quit_confirm = false;
-                self.render(&mut io::stdout())?;
+                self.render(out)?;
             }
 
             KeyEvent {
@@ -296,7 +304,7 @@ impl App {
                 self.buffer.delete_forward();
                 self.file.dirty = true;
                 self.pending_quit_confirm = false;
-                self.render(&mut io::stdout())?;
+                self.render(out)?;
             }
 
             KeyEvent {
@@ -304,7 +312,7 @@ impl App {
                 ..
             } => {
                 self.buffer.move_left();
-                self.render(&mut io::stdout())?;
+                self.render(out)?;
             }
 
             KeyEvent {
@@ -312,14 +320,14 @@ impl App {
                 ..
             } => {
                 self.buffer.move_right();
-                self.render(&mut io::stdout())?;
+                self.render(out)?;
             }
 
             KeyEvent {
                 code: KeyCode::Up, ..
             } => {
                 self.buffer.move_up();
-                self.render(&mut io::stdout())?;
+                self.render(out)?;
             }
 
             KeyEvent {
@@ -327,7 +335,7 @@ impl App {
                 ..
             } => {
                 self.buffer.move_down();
-                self.render(&mut io::stdout())?;
+                self.render(out)?;
             }
 
             _ => {}

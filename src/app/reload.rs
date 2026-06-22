@@ -15,7 +15,9 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 
 use crate::buffer;
-use crate::file::io::{observe_external_file, ExternalFileObservation, ExternalFileStatus, FileSnapshot};
+use crate::file::io::{
+    observe_external_file, ExternalFileObservation, ExternalFileStatus, FileSnapshot,
+};
 
 /// Token recorded on first Ctrl+R when reload would change buffer state.
 /// Binds to the specific observed disk state so that drift between presses

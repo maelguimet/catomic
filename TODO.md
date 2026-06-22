@@ -78,6 +78,8 @@ struct Capabilities {
     markdown: bool,
     /// Local, current-buffer-only word completion. Zero processes, zero indexes.
     local_completion: bool,
+    /// File watching (Plain-safe external edit detection; does not imply Project).
+    file_watch: bool,
     /// Linter execution (manual or otherwise).
     linters: bool,
     /// LSP client.
@@ -94,10 +96,12 @@ struct Capabilities {
 **Construction rules** (the bouncer):
 - At startup (and on any explicit mode switch), compute one `Capabilities` from the current `Mode`.
 - A subsystem (linter runner, project scanner, LSP client, repo LLM broker, network LLM client, etc.) is **only instantiated** when its corresponding flag is `true`.
+- File watching (when `file_watch`) is Plain-allowed but real construction remains explicitly gated; current pass implements none of notify/background.
 - "Constructed but dormant", "lazy but the factory lives at startup", or "we have the object but we promise not to call it" all fail the rule. If the capability is false, the type must not be present in the running application at all.
 - Plain mode **must** produce:
   - `linters: false`, `lsp: false`, `repo_scan: false`, `repo_llm: false`
   - `network_llm: false` (network is unreachable until the user does an explicit current-file LLM action *and* confirms the endpoint + context)
+  - `file_watch: true` (Plain-safe; file watching must not imply repo/LSP/network/Project services)
   - `markdown: true`, `local_completion: true` are the main optional positives.
 - Code Mode (Project) can turn the rest on, but still lazily and only on demand within the allowed set.
 

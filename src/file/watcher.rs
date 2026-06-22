@@ -5,7 +5,12 @@
 //! - External change on dirty buffer → warning + choice (reload / keep / save as)
 //! - Optional small diff preview
 //!
-//! Must not be constructed in Plain mode (see Capabilities).
+//! Contract (Phase 2-w):
+//! - File watching is allowed in Plain when `Capabilities::file_watch` is true.
+//! - File watching must not imply repo scanning, indexing, LSP, diagnostics,
+//!   network, or Project mode.
+//! - Real watcher construction must still be explicit and gated by Capabilities.
+//! - The current pass does not implement notify/background watching.
 
 use std::path::PathBuf;
 
@@ -16,9 +21,11 @@ pub struct FileWatcher {
 }
 
 impl FileWatcher {
-    /// Only construct when Capabilities::repo_scan or general file watch is allowed.
+    /// Placeholder. May be constructed in Plain only when `Capabilities::file_watch`
+    /// is true; must not construct Project services.
+    /// Real impl will require the gate; current pass does not use notify.
     pub fn new(_path: PathBuf) -> Self {
-        // TODO: set up notify
+        // TODO: set up notify (later, after contract)
         Self { _path }
     }
 }

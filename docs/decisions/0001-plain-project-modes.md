@@ -62,6 +62,8 @@ enum Mode {
 struct Capabilities {
     markdown: bool,
     local_completion: bool,
+    /// Plain-safe file watching (external edits). Does not imply Project services.
+    file_watch: bool,
     linters: bool,
     lsp: bool,
     repo_scan: bool,
@@ -76,6 +78,7 @@ struct Capabilities {
 - "Lazy but the factory exists", `OnceLock`, or dormant objects that allocate on startup are failures.
 - Tests must assert **non-construction**, not merely non-use.
 - Plain mode must produce `linters`, `lsp`, `repo_scan`, `repo_llm`, `network_llm` = false.
+- `file_watch: true` is allowed (and required) in Plain; it is a Plain-safe file subsystem.
 - `local_completion` and `markdown` may be true in Plain (current-buffer only).
 
 See AGENTS.md "Plain vs Project" and "Capabilities" sections for the condensed form.

@@ -122,6 +122,11 @@ pub(crate) fn do_atomic_save(app: &mut super::App, out: &mut dyn Write) -> io::R
         Ok(()) => {
             if app.file.path.is_none() {
                 app.file.path = Some(target.clone());
+                // Successful first save created the path (None -> "untitled.txt" or named).
+                // Refresh watcher lifecycle so App owns a watcher for the new path.
+                // Only on success; errors do not assign or refresh.
+                // (See: the only other site that sets file.path is App::new.)
+                super::watch::refresh_file_watcher(app);
             }
             super::file_state::mark_saved(&mut app.file, &*app.buffer);
             // Success: update disk snapshot for the saved path (same for force or normal).

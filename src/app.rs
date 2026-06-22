@@ -417,4 +417,122 @@ mod tests {
         // Clean up ONLY the temp path created/used by this test.
         let _ = std::fs::remove_file(&test_path);
     }
+
+    // Phase 2-b quit guard + message tests (via simulated keys; no real terminal)
+
+    fn make_key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers,
+            kind: crossterm::event::KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        }
+    }
+
+    #[test]
+    fn app_quit_clean_immediately() {
+        let mut app = App::new(None).unwrap();
+        assert!(!app.file.dirty);
+        assert!(!app.should_quit);
+        app.handle_key(make_key(KeyCode::Char('q'), KeyModifiers::CONTROL))
+            .unwrap();
+        assert!(app.should_quit, "clean Ctrl+Q quits immediately");
+    }
+
+    #[test]
+    fn app_quit_dirty_first_sets_pending_and_message_second_quits() {
+        let mut app = App::new(None).unwrap();
+        // make dirty
+        app.handle_key(make_key(KeyCode::Char('x'), KeyModifiers::NONE))
+            .unwrap();
+        assert!(app.file.dirty);
+        assert!(!app.pending_quit_confirm);
+        assert!(app.message.is_none());
+
+        // first Ctrl+Q: no quit, sets pending + msg
+        app.handle_key(make_key(KeyCode::Char('q'), KeyModifiers::CONTROL))
+            .unwrap();
+        assert!(!app.should_quit, "first dirty Q does not quit");
+        assert!(app.pending_quit_confirm);
+        let msg = app.message.as_deref().unwrap_or("");
+        assert!(
+            msg.contains("Unsaved changes") && msg.contains("Ctrl+Q again"),
+            "message should warn: got {:?}",
+            app.message
+        );
+
+        // second Ctrl+Q: quits
+        app.handle_key(make_key(KeyCode::Char('q'), KeyModifiers::CONTROL))
+            .unwrap();
+        assert!(app.should_quit, "second dirty Q quits");
+    }
+
+    #[test]
+    fn app_ctrl_s_after_dirty_clears_dirty_and_pending() {
+        let mut tmp = std::env::temp_dir();
+        tmp.push(format!(
+            "catomic_test_save_clears_pending_{}.txt",
+            std::process::id()
+        ));
+        let p = tmp.to_string_lossy().to_string();
+        let _ = std::fs::remove_file(&p);
+
+        let mut app = App::new(Some(&p)).unwrap();
+        app.handle_key(make_key(KeyCode::Char('y'), KeyModifiers::NONE))
+            .unwrap();
+        assert!(app.file.dirty);
+
+        // trigger quit warn
+        app.handle_key(make_key(KeyCode::Char('q'), KeyModifiers::CONTROL))
+            .unwrap();
+        assert!(app.pending_quit_confirm);
+
+        // Ctrl+S: success clears dirty + pending + msg
+        app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+            .unwrap();
+        assert!(!app.file.dirty);
+        assert!(!app.pending_quit_confirm);
+        assert!(app.message.is_none());
+
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn app_save_error_keeps_dirty_and_sets_error_message() {
+        let mut app = App::new(None).unwrap();
+        // Force a path that will fail atomic write (use a directory as target file)
+        let bad_dir = std::env::temp_dir();
+        app.file.path = Some(bad_dir);
+        app.file.dirty = true;
+        app.message = None;
+
+        app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+            .unwrap();
+
+        assert!(app.file.dirty, "save error must keep dirty=true");
+        let msg = app.message.as_deref().unwrap_or("");
+        assert!(
+            msg.contains("Save error") || msg.contains("error"),
+            "save error should set message, got: {:?}",
+            app.message
+        );
+    }
+
+    #[test]
+    fn app_edit_after_quit_warning_clears_pending() {
+        let mut app = App::new(None).unwrap();
+        app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::NONE))
+            .unwrap();
+        assert!(app.file.dirty);
+
+        app.handle_key(make_key(KeyCode::Char('q'), KeyModifiers::CONTROL))
+            .unwrap();
+        assert!(app.pending_quit_confirm);
+
+        // any content edit clears pending (movement would not)
+        app.handle_key(make_key(KeyCode::Char('!'), KeyModifiers::NONE))
+            .unwrap();
+        assert!(!app.pending_quit_confirm, "edit after warning clears pending");
+        // message may remain or not per current minimal; pending cleared is required
+    }
 }

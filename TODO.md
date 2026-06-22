@@ -757,7 +757,8 @@ Update this file as decisions are made or phases complete. Add concrete issues o
 - Phase 2-a (foundation) complete: see archive for b–p details; active goals and exit criteria remain in the Phase 2 section above.
 
 Key unresolved limitations that still matter:
-- no watcher/reload UI yet,
+- watcher signals are hints only (runtime loop polls once/iter via helper); no auto-reload,
+- no live OS notify integration tests (deterministic seams only),
 - metadata-only external detection,
 - same-length/same-mtime overwrite limitation,
 - big-file tiers/perf still unfinished,
@@ -778,3 +779,5 @@ Key unresolved limitations that still matter:
 - Phase 2-z (narrow pass): App now owns gated FileWatcher (best-effort construct on new(path) and after successful first save from untitled). Lifecycle via app/watch.rs refresh/clear. No signal consumption, no try_recv in runtime, no reload behavior. Focused non-live tests only.
 
 - Phase 2-aa (narrow pass): non-runtime signal helper seams only (apply_file_watch_signal + check_file_watcher_once in app/watch). try_recv only inside the drain helper. Signals are hints; always fresh observe + apply_check_observation (arms like first Ctrl+R). No runtime wiring, no auto-reload, no behavior change to manual paths. Deterministic tests only.
+
+- Phase 2-ab (broader pass): wired check_file_watcher_once_and_render into App::run (once per iteration, near top before poll); signals consumed only via the helper as hints (never auto-reload content, never direct try_recv in mod.rs, never from handle/save/reload/render). Deterministic no-watcher + no-signal seam tests via the render helper (arm-via-OS left for integration). Split watcher_signal tests out of lifecycle; updated stale comments. No new deps/threads/async. All required tests green.

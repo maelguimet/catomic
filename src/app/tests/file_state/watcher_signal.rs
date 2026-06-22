@@ -233,8 +233,7 @@ fn check_file_watcher_once_and_render_no_watcher_returns_false_writes_nothing() 
     assert!(app.file_watcher.is_none());
 
     let mut out: Vec<u8> = Vec::new();
-    let had =
-        crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out).unwrap();
+    let had = crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out).unwrap();
     assert!(!had, "no watcher => no signal handled");
     assert!(
         out.is_empty(),
@@ -261,8 +260,7 @@ fn check_file_watcher_once_and_render_watcher_no_signal_returns_false_writes_not
     );
 
     let mut out: Vec<u8> = Vec::new();
-    let had =
-        crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out).unwrap();
+    let had = crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out).unwrap();
     assert!(
         !had,
         "fresh watcher with no queued event must not report handled"

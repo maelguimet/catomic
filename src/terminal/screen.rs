@@ -6,7 +6,7 @@
 //! - Mapping between buffer (row, col) <-> screen (x, y)
 //! - Future: virtual scrolling, large file viewport limits
 //!
-//! Phase 0 largely ignores this (hardcoded 24 lines, no real viewport).
+//! Screen owns size + scroll state. Real viewport/reveal behavior is still minimal.
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Screen {

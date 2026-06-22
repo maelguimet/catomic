@@ -78,6 +78,12 @@ pub trait Buffer {
     /// Redo the most recently undone edit. No-op if redo stack empty.
     fn redo(&mut self);
 
+    /// Returns a token representing current position in the edit history.
+    /// Used for exact dirty tracking: dirty iff position != saved token.
+    /// Tokens are equal only when at the exact same point in undo/redo history.
+    /// No content comparison; based on undo stack position for PieceTable.
+    fn edit_history_position(&self) -> u64;
+
     // TODO later:
     // fn move_to(&mut self, row: usize, col: usize);
     // fn insert_str(&mut self, s: &str);

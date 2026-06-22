@@ -299,6 +299,7 @@ impl Buffer for PieceTable {
                 before,
                 after,
                 edits: vec![PieceEdit::Insert { at, pieces: inserted }],
+                id: 0,
             };
             self.undo_stack.record(tx);
         }
@@ -317,6 +318,7 @@ impl Buffer for PieceTable {
                 before,
                 after,
                 edits: vec![PieceEdit::Insert { at, pieces: inserted }],
+                id: 0,
             };
             self.undo_stack.record(tx);
         }
@@ -340,6 +342,7 @@ impl Buffer for PieceTable {
                     before,
                     after,
                     edits: vec![PieceEdit::Delete { at: start_b, pieces: removed }],
+                    id: 0,
                 };
                 self.undo_stack.record(tx);
             }
@@ -360,6 +363,7 @@ impl Buffer for PieceTable {
                         before,
                         after,
                         edits: vec![PieceEdit::Delete { at: nl_pos - 1, pieces: removed }],
+                        id: 0,
                     };
                     self.undo_stack.record(tx);
                 }
@@ -389,6 +393,7 @@ impl Buffer for PieceTable {
                     before,
                     after,
                     edits: vec![PieceEdit::Delete { at: start_b, pieces: removed }],
+                    id: 0,
                 };
                 self.undo_stack.record(tx);
             }
@@ -407,6 +412,7 @@ impl Buffer for PieceTable {
                         before,
                         after,
                         edits: vec![PieceEdit::Delete { at: nl_pos, pieces: removed }],
+                        id: 0,
                     };
                     self.undo_stack.record(tx);
                 }
@@ -491,5 +497,9 @@ impl Buffer for PieceTable {
             self.undo_stack.push_undo(tx);
             self.recording = was_recording;
         }
+    }
+
+    fn edit_history_position(&self) -> u64 {
+        self.undo_stack.current_history_position()
     }
 }

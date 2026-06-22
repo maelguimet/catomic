@@ -193,4 +193,10 @@ impl Buffer for SimpleBuffer {
     fn redo(&mut self) {
         // SimpleBuffer has no undo history (Phase 1C is PieceTable only for now).
     }
+
+    fn edit_history_position(&self) -> u64 {
+        // SimpleBuffer undo is a no-op stub; constant position is sufficient
+        // for compilation and for any tests that construct it directly.
+        0
+    }
 }

@@ -357,5 +357,10 @@ mod tests {
         })
         .unwrap();
         assert!(app.file.dirty, "post-save edit marks dirty again");
+
+        // cleanup the default save target this test may have written in cwd
+        if let Some(p) = &app.file.path {
+            let _ = std::fs::remove_file(p);
+        }
     }
 }

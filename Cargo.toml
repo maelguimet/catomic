@@ -9,6 +9,7 @@ repository = "https://github.com/maelguimet/catomic"
 
 [dependencies]
 crossterm = "0.28"
+notify = "8.2.0"
 
 [dev-dependencies]
 # PTY / golden / perf test helpers will land here (e.g. portable-pty, tempfile, etc.)

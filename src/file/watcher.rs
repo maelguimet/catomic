@@ -5,12 +5,18 @@
 //! - External change on dirty buffer → warning + choice (reload / keep / save as)
 //! - Optional small diff preview
 //!
-//! Contract (Phase 2-w):
+//! Dependency justification (per AGENTS.md):
+//! 1. std has no portable filesystem event notification API.
+//! 2. Used only by `file::watcher`.
+//! 3. Plain-safe only when `Capabilities::file_watch` is true.
+//! 4. Not constructed in App in this pass.
+//! 5. Removable by deleting the watcher wrapper + the dependency.
+//!
+//! Contract:
 //! - File watching is allowed in Plain when `Capabilities::file_watch` is true.
 //! - File watching must not imply repo scanning, indexing, LSP, diagnostics,
 //!   network, or Project mode.
 //! - Real watcher construction must still be explicit and gated by Capabilities.
-//! - The current pass does not implement notify/background watching.
 
 use std::path::PathBuf;
 

@@ -363,4 +363,12 @@ impl Buffer for PieceTable {
         self.move_down_internal();
         self.cursor_byte_offset = self.byte_offset_at(self.cursor.row, self.cursor.col);
     }
+
+    fn undo(&mut self) {
+        // Real implementation added in 1C steps below.
+    }
+
+    fn redo(&mut self) {
+        // Real implementation added in 1C steps below.
+    }
 }

@@ -70,6 +70,14 @@ pub trait Buffer {
     fn move_up(&mut self);
     fn move_down(&mut self);
 
+    // --- Undo/redo (Phase 1C) ---
+    /// Undo the most recent edit. No-op if undo stack empty.
+    /// Application of history must not itself record history entries.
+    fn undo(&mut self);
+
+    /// Redo the most recently undone edit. No-op if redo stack empty.
+    fn redo(&mut self);
+
     // TODO later:
     // fn move_to(&mut self, row: usize, col: usize);
     // fn insert_str(&mut self, s: &str);

@@ -185,4 +185,12 @@ impl Buffer for SimpleBuffer {
             self.cursor.col = self.cursor.col.min(len);
         }
     }
+
+    fn undo(&mut self) {
+        // SimpleBuffer has no undo history (Phase 1C is PieceTable only for now).
+    }
+
+    fn redo(&mut self) {
+        // SimpleBuffer has no undo history (Phase 1C is PieceTable only for now).
+    }
 }

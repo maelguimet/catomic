@@ -165,12 +165,15 @@ fn compare_live_snapshot_to_baseline(
 
 /// Observe external state for an optional remembered path against an optional baseline snapshot.
 /// Returns both the status (for messaging/decision) and the live snapshot seen now.
-/// Single-capture: live disk state is captured once; status is derived from it.
+/// Single-capture: live disk state is captured *once* via capture_file_snapshot (including error paths);
+/// status is derived from that single result. No second fs::metadata.
 /// - path None -> NoPath, live None.
-/// - path Some + baseline None: edge probe (Present->Unchanged, Absent->Deleted).
-/// - path Some + baseline Some: status from captured live vs baseline via pure compare.
-/// Metadata errors surface as Unknown(kind); live_snapshot None on hard capture failure.
-/// Metadata-only; no content read or hash.
+/// - capture Ok(Present), baseline None -> Unchanged.
+/// - capture Ok(Absent), baseline None -> Deleted.
+/// - capture Err(e), baseline None -> Unknown(e.kind()), live None.
+/// - capture Ok(live), baseline Some -> compare via pure helper.
+/// - capture Err(e), baseline Some -> Unknown(e.kind()), live None.
+/// NotFound maps to Absent inside capture (never Unknown). No content read or hash.
 pub fn observe_external_file(
     path: Option<&Path>,
     baseline: Option<&FileSnapshot>,
@@ -181,38 +184,19 @@ pub fn observe_external_file(
             live_snapshot: None,
         };
     };
-    // Capture live exactly once for this observation.
-    let live = capture_file_snapshot(p).ok();
-    let status = match baseline {
-        None => {
-            // Path known but no baseline snapshot (edge after first save or similar).
-            // Treat present as Unchanged (as-if post our write), absent as Deleted.
-            match &live {
-                Some(FileSnapshot::Present { .. }) => ExternalFileStatus::Unchanged,
-                Some(FileSnapshot::Absent) => ExternalFileStatus::Deleted,
-                None => {
-                    // Capture failed; surface real error kind.
-                    match fs::metadata(p) {
-                        Err(e) => ExternalFileStatus::Unknown(e.kind()),
-                        Ok(_) => ExternalFileStatus::Unchanged, // raced to exist
-                    }
-                }
-            }
-        }
-        Some(snap) => match &live {
-            Some(l) => compare_live_snapshot_to_baseline(l, snap),
-            None => {
-                // Capture failed under a baseline: surface real error kind.
-                match fs::metadata(p) {
-                    Err(e) => ExternalFileStatus::Unknown(e.kind()),
-                    Ok(_) => ExternalFileStatus::Unchanged, // raced
-                }
-            }
-        },
+    // Capture exactly once; preserve the full Result so error paths do not re-stat.
+    let live_result = capture_file_snapshot(p);
+    let live_snapshot = live_result.as_ref().ok().cloned();
+    let status = match (&live_result, baseline) {
+        (Ok(FileSnapshot::Present { .. }), None) => ExternalFileStatus::Unchanged,
+        (Ok(FileSnapshot::Absent), None) => ExternalFileStatus::Deleted,
+        (Err(e), None) => ExternalFileStatus::Unknown(e.kind()),
+        (Ok(live), Some(base)) => compare_live_snapshot_to_baseline(live, base),
+        (Err(e), Some(_)) => ExternalFileStatus::Unknown(e.kind()),
     };
     ExternalFileObservation {
         status,
-        live_snapshot: live,
+        live_snapshot,
     }
 }
 

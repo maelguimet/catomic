@@ -923,8 +923,7 @@ mod tests {
         assert!(
             has_late,
             "cursor-side content should be rendered; scroll_left={}\n{}",
-            app.screen.scroll_left,
-            rendered
+            app.screen.scroll_left, rendered
         );
     }
 

@@ -75,12 +75,26 @@ mod tests {
         // must place text after positioning to last row + \x1b[K clear.
         let b = SimpleBuffer::from_text("one line");
         let mut out: Vec<u8> = Vec::new();
-        render_buffer(&mut out, &b, 0, 0, 3, 80, Some("Unsaved changes. Press Ctrl+Q again to quit without saving, Ctrl+S to save."))
-            .expect("render with msg");
+        render_buffer(
+            &mut out,
+            &b,
+            0,
+            0,
+            3,
+            80,
+            Some("Unsaved changes. Press Ctrl+Q again to quit without saving, Ctrl+S to save."),
+        )
+        .expect("render with msg");
 
         let s = String::from_utf8_lossy(&out);
-        assert!(s.contains("\x1b[3;1H"), "positions to reserved bottom row (height=3)");
+        assert!(
+            s.contains("\x1b[3;1H"),
+            "positions to reserved bottom row (height=3)"
+        );
         assert!(s.contains("\x1b[K"), "clears the message row with \\x1b[K");
-        assert!(s.contains("Unsaved changes"), "message text emitted after clear");
+        assert!(
+            s.contains("Unsaved changes"),
+            "message text emitted after clear"
+        );
     }
 }

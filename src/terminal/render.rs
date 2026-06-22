@@ -48,7 +48,10 @@ pub fn render_buffer<W: Write + ?Sized>(
         let rendered = if content_w == 0 {
             String::new()
         } else {
-            line.chars().skip(start_col).take(content_w).collect::<String>()
+            line.chars()
+                .skip(start_col)
+                .take(content_w)
+                .collect::<String>()
         };
         write!(out, "{}", rendered)?;
     }

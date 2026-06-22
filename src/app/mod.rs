@@ -21,6 +21,8 @@ use crate::terminal as term;
 mod file_state;
 pub use file_state::FileState;
 
+use file_state::{mark_saved, refresh_dirty};
+
 /// High-level application state for the editor.
 pub struct App {
     pub mode: Mode,
@@ -190,7 +192,7 @@ impl App {
                         if self.file.path.is_none() {
                             self.file.path = Some(path);
                         }
-                        file_state::mark_saved(&mut self.file, &*self.buffer);
+                        mark_saved(&mut self.file, &*self.buffer);
                         self.pending_quit_confirm = false;
                         self.message = None;
                     }
@@ -210,7 +212,7 @@ impl App {
                 ..
             } => {
                 self.buffer.insert_newline();
-                file_state::refresh_dirty(&mut self.file, &*self.buffer);
+                refresh_dirty(&mut self.file, &*self.buffer);
                 self.pending_quit_confirm = false;
                 self.message = None;
                 self.reveal_cursor();
@@ -231,7 +233,7 @@ impl App {
                 && !modifiers.contains(KeyModifiers::SHIFT) =>
             {
                 self.buffer.undo();
-                file_state::refresh_dirty(&mut self.file, &*self.buffer);
+                refresh_dirty(&mut self.file, &*self.buffer);
                 self.pending_quit_confirm = false;
                 self.message = None;
                 self.reveal_cursor();
@@ -245,7 +247,7 @@ impl App {
                 && modifiers.contains(KeyModifiers::SHIFT) =>
             {
                 self.buffer.redo();
-                file_state::refresh_dirty(&mut self.file, &*self.buffer);
+                refresh_dirty(&mut self.file, &*self.buffer);
                 self.pending_quit_confirm = false;
                 self.message = None;
                 self.reveal_cursor();
@@ -259,7 +261,7 @@ impl App {
                 && modifiers.contains(KeyModifiers::SHIFT) =>
             {
                 self.buffer.redo();
-                file_state::refresh_dirty(&mut self.file, &*self.buffer);
+                refresh_dirty(&mut self.file, &*self.buffer);
                 self.pending_quit_confirm = false;
                 self.message = None;
                 self.reveal_cursor();
@@ -271,7 +273,7 @@ impl App {
                 ..
             } if modifiers.contains(KeyModifiers::CONTROL) => {
                 self.buffer.redo();
-                file_state::refresh_dirty(&mut self.file, &*self.buffer);
+                refresh_dirty(&mut self.file, &*self.buffer);
                 self.pending_quit_confirm = false;
                 self.message = None;
                 self.reveal_cursor();
@@ -291,7 +293,7 @@ impl App {
                     // Other Ctrl+letter combos ignored in Phase 0
                 } else if c == '\n' || c == '\r' {
                     self.buffer.insert_newline();
-                    file_state::refresh_dirty(&mut self.file, &*self.buffer);
+                    refresh_dirty(&mut self.file, &*self.buffer);
                     self.pending_quit_confirm = false;
                     self.message = None;
                 } else if !c.is_control() {
@@ -301,7 +303,7 @@ impl App {
                         c
                     };
                     self.buffer.insert_char(ch);
-                    file_state::refresh_dirty(&mut self.file, &*self.buffer);
+                    refresh_dirty(&mut self.file, &*self.buffer);
                     self.pending_quit_confirm = false;
                     self.message = None;
                 }
@@ -314,7 +316,7 @@ impl App {
                 ..
             } => {
                 self.buffer.delete_back();
-                file_state::refresh_dirty(&mut self.file, &*self.buffer);
+                refresh_dirty(&mut self.file, &*self.buffer);
                 self.pending_quit_confirm = false;
                 self.message = None;
                 self.reveal_cursor();
@@ -326,7 +328,7 @@ impl App {
                 ..
             } => {
                 self.buffer.delete_forward();
-                file_state::refresh_dirty(&mut self.file, &*self.buffer);
+                refresh_dirty(&mut self.file, &*self.buffer);
                 self.pending_quit_confirm = false;
                 self.message = None;
                 self.reveal_cursor();

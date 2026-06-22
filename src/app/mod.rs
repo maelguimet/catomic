@@ -27,6 +27,7 @@ use file_state::{external_file_status, mark_saved, refresh_dirty};
 mod reload;
 mod save;
 mod viewport;
+mod watch;
 
 /// High-level application state for the editor.
 pub struct App {
@@ -36,6 +37,12 @@ pub struct App {
     pub buffer: Box<dyn Buffer>,
     /// File path and dirty tracking.
     pub file: FileState,
+    /// Gated, best-effort FileWatcher owned by App.
+    /// Some only when caps.file_watch && file.path.is_some() && parent watchable.
+    /// Construction failure never prevents opening or editing the file.
+    /// Signals are not consumed in 2-z (no polling, no try_recv, no reload behavior).
+    /// Lifecycle is refreshed only after successful path-state changes (new + save-none->path).
+    pub file_watcher: Option<file::watcher::FileWatcher>,
     /// Whether we should exit the loop.
     pub should_quit: bool,
     /// Minimal message for user (error, quit warning, etc.). Cleared on edits or explicit.
@@ -88,7 +95,10 @@ impl App {
         } else {
             None
         };
-        Ok(App {
+        // Build base App first, then attach watcher via best-effort helper.
+        // This keeps watcher construction failure non-fatal and avoids
+        // partial-construction gymnastics in the Result path.
+        let mut app = App {
             mode,
             caps,
             buffer,
@@ -98,6 +108,7 @@ impl App {
                 saved_history_position: initial_pos,
                 disk_snapshot,
             },
+            file_watcher: None,
             should_quit: false,
             message: None,
             pending_quit_confirm: false,
@@ -105,7 +116,9 @@ impl App {
             pending_reload: None,
             // Conservative default matching prior hardcoded 24; no real term required for unit tests.
             screen: term::screen::Screen::new(80, 24),
-        })
+        };
+        watch::refresh_file_watcher(&mut app);
+        Ok(app)
     }
 
     /// The main goblin loop. Keep it obvious.

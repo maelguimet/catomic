@@ -203,6 +203,19 @@ impl App {
                 save::handle_save(self, out)?;
             }
 
+            // Manual external file status check (Phase 2-r). Uses Ctrl+R for "check/refresh status"
+            // (not yet reload). Binds to narrow check helper; detection + message only.
+            // No reload, no buffer/dirty/snapshot/pending/viewport mutations.
+            // Ctrl+R was unbound (other Ctrl+letter fall to ignored); chosen after inspection.
+            KeyEvent {
+                code: KeyCode::Char('r'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.check_external_file_status();
+                self.render(out)?;
+            }
+
             // Enter produces KeyCode::Enter (not Char('\n')). Handle explicitly.
             // The Char \n/\r check below catches any that might arrive via paste
             // or other terminal paths.
@@ -414,6 +427,25 @@ impl App {
     /// NoPath for untitled; delegates to file_state helper (std metadata compare only).
     fn external_file_status(&self) -> crate::file::io::ExternalFileStatus {
         external_file_status(&self.file)
+    }
+
+    /// Manual external-file status check (Phase 2-r narrow pass).
+    /// Sets a user message describing current ExternalFileStatus using existing
+    /// metadata-only snapshot. Detection/report only: MUST NOT mutate buffer,
+    /// dirty, saved_history_position, disk_snapshot, any pending_*, viewport, or quit state.
+    /// May set message. Does not render (caller does).
+    fn check_external_file_status(&mut self) {
+        use crate::file::io::ExternalFileStatus;
+        let status = self.external_file_status();
+        let text = match status {
+            ExternalFileStatus::NoPath => "No file path.".to_string(),
+            ExternalFileStatus::Unchanged => "File unchanged on disk.".to_string(),
+            ExternalFileStatus::Modified => "File changed on disk.".to_string(),
+            ExternalFileStatus::Deleted => "File deleted on disk.".to_string(),
+            ExternalFileStatus::Unknown(kind) => format!("File status check failed: {:?}", kind),
+        };
+        self.message = Some(text);
+        // Explicit: no clears, no refreshes, no reveals, no side effects on state.
     }
 
     fn render(&self, stdout: &mut dyn Write) -> io::Result<()> {

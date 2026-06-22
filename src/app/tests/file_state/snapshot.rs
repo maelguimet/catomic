@@ -277,3 +277,133 @@ fn app_file_state_new_does_not_silently_map_non_notfound_meta_error_to_absent() 
     // This regression test documents the intent at the App layer.
     let _ = "see file/io tests for portable non-NotFound -> not-Absent coverage";
 }
+
+// Phase 2-r: manual external status check (Ctrl+R driven; message only, no reload, no mutations)
+
+#[test]
+fn app_file_state_manual_check_no_path_sets_message_no_dirty_mutation() {
+    let mut app = App::new(None).unwrap();
+    assert!(app.file.path.is_none());
+    assert!(!app.file.dirty);
+    let dirty_before = app.file.dirty;
+    let snap_before = app.file.disk_snapshot.clone();
+    let pend_before = app.pending_save_conflict.clone();
+
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+
+    assert_eq!(app.message.as_deref(), Some("No file path."));
+    assert_eq!(app.file.dirty, dirty_before);
+    assert_eq!(app.file.disk_snapshot, snap_before);
+    assert_eq!(app.pending_save_conflict, pend_before);
+}
+
+#[test]
+fn app_file_state_manual_check_unchanged_sets_message_no_mutation() {
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!("catomic_2r_unchanged_{}.txt", std::process::id()));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "hello").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap(); // ensure clean snapshot
+    assert!(!app.file.dirty);
+    let dirty_before = app.file.dirty;
+    let snap_before = app.file.disk_snapshot.clone();
+
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+
+    assert_eq!(app.message.as_deref(), Some("File unchanged on disk."));
+    assert_eq!(app.file.dirty, dirty_before);
+    assert_eq!(app.file.disk_snapshot, snap_before);
+
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
+fn app_file_state_manual_check_external_modified_reports_changed_no_mutation() {
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!("catomic_2r_ext_mod_{}.txt", std::process::id()));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "base").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    let dirty_before = app.file.dirty;
+    let snap_before = app.file.disk_snapshot.clone();
+
+    // external change
+    std::fs::write(&p, "baseEXT").unwrap();
+
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+
+    assert_eq!(app.message.as_deref(), Some("File changed on disk."));
+    assert_eq!(app.file.dirty, dirty_before);
+    assert_eq!(app.file.disk_snapshot, snap_before);
+
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
+fn app_file_state_manual_check_external_deleted_reports_deleted_no_mutation() {
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!("catomic_2r_ext_del_{}.txt", std::process::id()));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "tobedel").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    let dirty_before = app.file.dirty;
+    let snap_before = app.file.disk_snapshot.clone();
+
+    let _ = std::fs::remove_file(&p);
+
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+
+    assert_eq!(app.message.as_deref(), Some("File deleted on disk."));
+    assert_eq!(app.file.dirty, dirty_before);
+    assert_eq!(app.file.disk_snapshot, snap_before);
+
+    // re-create for cleanup safety not needed
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
+fn app_file_state_manual_check_does_not_clear_pending_save_conflict() {
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!("catomic_2r_pend_{}.txt", std::process::id()));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "ORIG").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    std::fs::write(&p, "ORIGEXT").unwrap(); // make external modified
+    app.handle_key(make_key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
+    assert!(app.file.dirty);
+
+    // first S sets pending conflict
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(app.pending_save_conflict.is_some());
+    let pend_before = app.pending_save_conflict.clone();
+
+    // manual check must not clear it
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert_eq!(app.pending_save_conflict, pend_before);
+    assert!(app
+        .message
+        .as_deref()
+        .unwrap_or("")
+        .contains("changed on disk")); // check msg set
+
+    let _ = std::fs::remove_file(&p);
+}

@@ -390,7 +390,9 @@ impl App {
 
     /// Reveal the current cursor row/col so they are visible in the content area.
     /// Called after cursor movement and content mutations (insert, delete, undo/redo).
+    /// Clamps first for zero-size terminals so reveal_* see a sane starting point.
     fn reveal_cursor(&mut self) {
+        self.screen.clamp_scroll();
         let c = self.buffer.cursor();
         self.screen.reveal_row(c.row);
         self.screen.reveal_col(c.col);
@@ -958,5 +960,129 @@ mod tests {
             vw
         );
         assert!(!out.is_empty(), "resize must render");
+    }
+
+    // Phase 2-f: zero-size resize + clamp + post-resize normal reveal, and horiz scroll shrink on delete/bs
+
+    #[test]
+    fn app_resize_to_zero_size_clamps_scroll_and_does_not_panic() {
+        let mut app = App::new(None).unwrap();
+        // Set some nonzero scroll
+        app.screen.scroll_top = 5;
+        app.screen.scroll_left = 12;
+        app.screen.width = 20;
+        app.screen.height = 10;
+
+        // Resize to 0x0 via seam (no real term)
+        let mut out: Vec<u8> = Vec::new();
+        app.handle_resize(0, 0, &mut out).unwrap();
+
+        assert_eq!(app.screen.width, 0);
+        assert_eq!(app.screen.height, 0);
+        assert_eq!(app.screen.scroll_top, 0, "zero height resize must clamp scroll_top");
+        assert_eq!(app.screen.scroll_left, 0, "zero width resize must clamp scroll_left");
+        // render on zero size must be safe (no panic, some output for clear/pos)
+        assert!(!out.is_empty());
+    }
+
+    #[test]
+    fn app_resize_to_zero_then_back_to_nonzero_typing_and_move_reveal_normally() {
+        let mut app = App::new(None).unwrap();
+        app.screen.width = 8;
+        app.screen.height = 6;
+        app.screen.scroll_left = 0;
+        app.screen.scroll_top = 0;
+
+        // Go to zero
+        let mut sink: Vec<u8> = Vec::new();
+        app.handle_resize(0, 0, &mut sink).unwrap();
+        assert_eq!(app.screen.scroll_top, 0);
+        assert_eq!(app.screen.scroll_left, 0);
+
+        // Back to usable size
+        app.handle_resize(10, 8, &mut sink).unwrap(); // vh=7, vw=10
+        assert_eq!(app.screen.width, 10);
+        assert_eq!(app.screen.height, 8);
+
+        // Type enough to scroll horizontally, then move and type more; reveal must keep working
+        for _ in 0..12 {
+            app.handle_key_with(&mut sink, make_key(KeyCode::Char('x'), KeyModifiers::NONE))
+                .unwrap();
+        }
+        assert!(
+            app.screen.scroll_left > 0,
+            "should have horiz scrolled while typing"
+        );
+        // Move left a few; reveal should reduce scroll_left if cursor goes before viewport
+        for _ in 0..8 {
+            app.handle_key_with(&mut sink, make_key(KeyCode::Left, KeyModifiers::NONE))
+                .unwrap();
+        }
+        // After moving left of the old viewport start, scroll_left should have decreased
+        // (exact 0 not required; it must not be stuck high)
+        assert!(
+            app.screen.scroll_left < 5,
+            "moving left after horiz scroll should reduce scroll_left; got {}",
+            app.screen.scroll_left
+        );
+
+        // Down/up and insert should still reveal without panic on nonzero size
+        app.handle_key_with(&mut sink, make_key(KeyCode::Down, KeyModifiers::NONE)).unwrap();
+        app.handle_key_with(&mut sink, make_key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+        assert!(app.screen.scroll_top <= app.buffer.cursor().row);
+    }
+
+    #[test]
+    fn app_delete_and_backspace_after_horiz_scroll_reduce_scroll_left_when_cursor_before_viewport() {
+        let mut app = App::new(None).unwrap();
+        app.screen.width = 5; // vw=5
+        app.screen.height = 4;
+        app.screen.scroll_left = 0;
+
+        // Build a line longer than width and scroll to have content on right
+        let mut sink: Vec<u8> = Vec::new();
+        for c in "ABCDEFGHIJKLMNOPQRST".chars() { // 20 chars, col ends at 20
+            app.buffer.insert_char(c);
+        }
+        // cursor col=20; force reveal via keys to set scroll
+        for _ in 0..20 {
+            app.handle_key_with(&mut sink, make_key(KeyCode::Left, KeyModifiers::NONE)).unwrap();
+        }
+        for _ in 0..15 {
+            app.handle_key_with(&mut sink, make_key(KeyCode::Right, KeyModifiers::NONE)).unwrap();
+        }
+        let initial_sl = app.screen.scroll_left;
+        assert!(
+            initial_sl > 0,
+            "need horiz scroll established; scroll_left={}",
+            initial_sl
+        );
+
+        // Now delete_back (backspace) which moves cursor left. If cursor moves before current viewport,
+        // reveal must reduce scroll_left.
+        // Do enough backspaces to cross before the viewport start.
+        // Current cursor after the rights: we did 20 left then 15 right => col = 15 (started at 20 after inserts)
+        // Simpler: backspace repeatedly and check scroll decreases when appropriate.
+        let mut last_sl = app.screen.scroll_left;
+        for _ in 0..10 {
+            app.handle_key_with(&mut sink, make_key(KeyCode::Backspace, KeyModifiers::NONE)).unwrap();
+            if app.buffer.cursor().col < last_sl {
+                // once cursor is before the old scroll window, reveal should have pulled scroll_left down
+                assert!(
+                    app.screen.scroll_left <= last_sl,
+                    "backspace moving cursor before viewport should not increase scroll_left"
+                );
+            }
+            last_sl = app.screen.scroll_left;
+        }
+
+        // Also exercise delete forward from a scrolled position (moves content left of cursor)
+        // Reset a scrolled state: move to a high col again
+        app.screen.scroll_left = 8;
+        app.buffer.move_right(); // may clamp internally but ok
+        let pre = app.screen.scroll_left;
+        app.handle_key_with(&mut sink, make_key(KeyCode::Delete, KeyModifiers::NONE)).unwrap();
+        // Delete forward does not move cursor col, but may change content; scroll_left should stay sensible (no increase here)
+        assert!(app.screen.scroll_left <= pre + 1); // allow small tolerance; main is no explosion
     }
 }

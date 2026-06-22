@@ -362,8 +362,15 @@ impl App {
 
     fn render(&self, stdout: &mut dyn Write) -> io::Result<()> {
         // Delegate to terminal render. Pass message for bottom-line display.
-        // Minimal: only message text (no filename/dirty marker added yet).
-        term::render::render_buffer(stdout, &*self.buffer, 0, 24, self.message.as_deref())
+        // Use screen as single source for height/scroll (no more hardcoded 24).
+        // Minimal: only message text (no filename/dirty marker etc).
+        term::render::render_buffer(
+            stdout,
+            &*self.buffer,
+            self.screen.scroll_top,
+            self.screen.height as usize,
+            self.message.as_deref(),
+        )
     }
 }
 

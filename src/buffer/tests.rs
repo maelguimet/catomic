@@ -468,7 +468,11 @@ mod phase1a_storage_parity {
 
         // Very loose for debug + current rebuild: <1s total for 3 windows is signal of progress.
         // After 1B-b incremental, expect <<10ms.
-        assert!(elapsed.as_millis() < 1000, "100k visible_lines too slow: {:?}", elapsed);
+        assert!(
+            elapsed.as_millis() < 1000,
+            "100k visible_lines too slow: {:?}",
+            elapsed
+        );
 
         // Spot correctness (uses index+slice)
         assert_eq!(pt.visible_lines(0, 1)[0].content, "line0");
@@ -544,9 +548,12 @@ mod phase1a_storage_parity {
     #[test]
     fn undo_redo_delete_forward() {
         let mut pt = PieceTable::new();
-        for c in "abc".chars() { pt.insert_char(c); }
+        for c in "abc".chars() {
+            pt.insert_char(c);
+        }
         assert_eq!(pt.to_string(), "abc");
-        pt.move_left(); pt.move_left(); // before 'b'
+        pt.move_left();
+        pt.move_left(); // before 'b'
         pt.delete_forward(); // remove 'b' -> "ac"
         assert_eq!(pt.to_string(), "ac");
         pt.undo();
@@ -567,7 +574,8 @@ mod phase1a_storage_parity {
 
         // via delete_forward at end of first line
         let mut pt2 = PieceTable::from_text("ab\ncd");
-        pt2.move_right(); pt2.move_right(); // after 'b'
+        pt2.move_right();
+        pt2.move_right(); // after 'b'
         pt2.delete_forward(); // delete the nl -> "abcd"
         assert_eq!(pt2.to_string(), "abcd");
         pt2.undo();
@@ -580,11 +588,16 @@ mod phase1a_storage_parity {
     fn undo_redo_multibyte_utf8() {
         let mut pt = PieceTable::new();
         for ch in "aé猫🙂b".chars() {
-            if ch == '猫' { pt.insert_newline(); } else { pt.insert_char(ch); }
+            if ch == '猫' {
+                pt.insert_newline();
+            } else {
+                pt.insert_char(ch);
+            }
         }
         // "aé\n🙂b" or similar; exercise undos around multibyte + boundary
         assert!(pt.to_string().contains("é"));
-        pt.move_left(); pt.move_left(); // some pos
+        pt.move_left();
+        pt.move_left(); // some pos
         pt.delete_back();
         let before = pt.to_string();
         pt.undo();
@@ -619,7 +632,8 @@ mod phase1a_storage_parity {
         // "save" = capture to_string (as golden harness does before/after write)
         // undo must affect only the in-memory buffer, not any prior saved snapshot
         let mut pt = PieceTable::new();
-        pt.insert_char('h'); pt.insert_char('i');
+        pt.insert_char('h');
+        pt.insert_char('i');
         let saved = pt.to_string(); // simulate save
         pt.insert_newline();
         pt.insert_char('!');
@@ -693,7 +707,10 @@ mod phase1a_storage_parity {
                     break;
                 }
             }
-            if line_start == 0 && (self.cursor == 0 || self.chars.get(self.cursor.saturating_sub(1)) != Some(&'\n')) {
+            if line_start == 0
+                && (self.cursor == 0
+                    || self.chars.get(self.cursor.saturating_sub(1)) != Some(&'\n'))
+            {
                 // already top line
                 let col = self.cursor - line_start;
                 if line_start > 0 {
@@ -740,7 +757,11 @@ mod phase1a_storage_parity {
             }
             let col = self.cursor.saturating_sub(
                 // current line start
-                (0..self.cursor).rev().find(|&i| self.chars[i] == '\n').map(|i| i+1).unwrap_or(0)
+                (0..self.cursor)
+                    .rev()
+                    .find(|&i| self.chars[i] == '\n')
+                    .map(|i| i + 1)
+                    .unwrap_or(0),
             );
             let next_len = next_end - next_start;
             self.cursor = next_start + col.min(next_len);
@@ -768,7 +789,10 @@ mod phase1a_storage_parity {
         // Independent dumb String model (Vec<char> + char cursor) with its own
         // undo_stack/redo_stack. Every op applied to both PT and model.
         // Assert text equality after every operation. Deterministic seed.
-        fn next_seed(s: &mut u64) -> u64 { *s = s.wrapping_mul(6364136223846793005u64).wrapping_add(1); *s }
+        fn next_seed(s: &mut u64) -> u64 {
+            *s = s.wrapping_mul(6364136223846793005u64).wrapping_add(1);
+            *s
+        }
         let mut seed: u64 = 0x1C_2026_DEAD_BEEF;
         let mut pt = PieceTable::new();
         let mut model = DumbModel::new();
@@ -778,7 +802,11 @@ mod phase1a_storage_parity {
             match r {
                 0..=44 => {
                     // insert char or newline
-                    let ch = if (next_seed(&mut seed) % 7) == 0 { '\n' } else { seeded_char_for_model(&mut seed) };
+                    let ch = if (next_seed(&mut seed) % 7) == 0 {
+                        '\n'
+                    } else {
+                        seeded_char_for_model(&mut seed)
+                    };
                     if ch == '\n' {
                         pt.insert_newline();
                         model.insert_newline();
@@ -826,7 +854,12 @@ mod phase1a_storage_parity {
                     model.insert_char(ch);
                 }
             }
-            assert_eq!(pt.to_string(), model.text(), "text drifted at step {}", step);
+            assert_eq!(
+                pt.to_string(),
+                model.text(),
+                "text drifted at step {}",
+                step
+            );
         }
         assert_eq!(pt.to_string(), model.text());
     }

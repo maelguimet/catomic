@@ -124,9 +124,13 @@ mod tests {
         cleanup(&out_path);
 
         let mut b: Box<dyn Buffer> = Box::new(PieceTable::new());
-        for c in "HeLLo".chars() { b.insert_char(c); }
+        for c in "HeLLo".chars() {
+            b.insert_char(c);
+        }
         b.insert_newline();
-        for c in "world".chars() { b.insert_char(c); }
+        for c in "world".chars() {
+            b.insert_char(c);
+        }
         b.move_left();
         b.move_left();
         b.insert_char('X');
@@ -189,7 +193,11 @@ mod tests {
         // Undo post-save work; buffer changes, disk must not.
         b.undo();
         assert_eq!(b.to_string(), "hi\n");
-        assert_eq!(fs::read_to_string(&out_path).unwrap(), saved, "disk must be unaffected by undo");
+        assert_eq!(
+            fs::read_to_string(&out_path).unwrap(),
+            saved,
+            "disk must be unaffected by undo"
+        );
 
         b.undo();
         assert_eq!(b.to_string(), "hi");

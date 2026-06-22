@@ -155,7 +155,9 @@ impl App {
                 code: KeyCode::Char('z'),
                 modifiers,
                 ..
-            } if modifiers.contains(KeyModifiers::CONTROL) && !modifiers.contains(KeyModifiers::SHIFT) => {
+            } if modifiers.contains(KeyModifiers::CONTROL)
+                && !modifiers.contains(KeyModifiers::SHIFT) =>
+            {
                 self.buffer.undo();
                 self.render(&mut io::stdout())?;
             }
@@ -163,7 +165,9 @@ impl App {
                 code: KeyCode::Char('z'),
                 modifiers,
                 ..
-            } if modifiers.contains(KeyModifiers::CONTROL) && modifiers.contains(KeyModifiers::SHIFT) => {
+            } if modifiers.contains(KeyModifiers::CONTROL)
+                && modifiers.contains(KeyModifiers::SHIFT) =>
+            {
                 self.buffer.redo();
                 self.render(&mut io::stdout())?;
             }
@@ -171,7 +175,9 @@ impl App {
                 code: KeyCode::Char('Z'),
                 modifiers,
                 ..
-            } if modifiers.contains(KeyModifiers::CONTROL) && modifiers.contains(KeyModifiers::SHIFT) => {
+            } if modifiers.contains(KeyModifiers::CONTROL)
+                && modifiers.contains(KeyModifiers::SHIFT) =>
+            {
                 self.buffer.redo();
                 self.render(&mut io::stdout())?;
             }

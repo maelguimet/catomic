@@ -219,3 +219,63 @@ fn check_file_watcher_once_with_watcher_no_signal_returns_false_no_mutation() {
 
     let _ = std::fs::remove_file(&p);
 }
+
+// Phase 2-ab: deterministic runtime seam tests for the check-and-render helper.
+// These exercise the loop integration point without live notify or event injection.
+// A real queued Changed/Deleted from the OS would cause the helper to return true,
+// render, and arm (via the existing apply path); that delivery path is integration-only
+// (see TODO.md: no live OS notify integration tests in default/CI suite).
+// We cover the stable no-signal cases + assert no spurious render.
+
+#[test]
+fn check_file_watcher_once_and_render_no_watcher_returns_false_writes_nothing() {
+    let mut app = App::new(None).unwrap();
+    assert!(app.file_watcher.is_none());
+
+    let mut out: Vec<u8> = Vec::new();
+    let had =
+        crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out).unwrap();
+    assert!(!had, "no watcher => no signal handled");
+    assert!(
+        out.is_empty(),
+        "must not call render when no signal (output len={})",
+        out.len()
+    );
+}
+
+#[test]
+fn check_file_watcher_once_and_render_watcher_no_signal_returns_false_writes_nothing() {
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!(
+        "catomic_2ab_render_nosig_{}.txt",
+        std::process::id()
+    ));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "SEAMDATA").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    assert!(
+        app.file_watcher.is_some(),
+        "parent watcher present for test"
+    );
+
+    let mut out: Vec<u8> = Vec::new();
+    let had =
+        crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out).unwrap();
+    assert!(
+        !had,
+        "fresh watcher with no queued event must not report handled"
+    );
+    assert!(
+        out.is_empty(),
+        "must not render on no-signal (would emit buffer bytes)"
+    );
+
+    let _ = std::fs::remove_file(&p);
+}
+
+// Note: a deterministic "signal queued => helper true + arms + renders" test would
+// require either (a) live FS notify wait (flaky, forbidden for default tests) or
+// (b) a test seam to inject into the watcher's mpsc (would expand watcher surface).
+// Per instructions, skipped; runtime delivery covered by the apply tests + manual later.

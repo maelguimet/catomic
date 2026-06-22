@@ -784,3 +784,12 @@ Update this file as decisions are made or phases complete. Add concrete issues o
   - Required tests in file/io and app::tests::file_state all pass.
   - Limitation (documented): same-length + same-mtime external overwrite is not detected (no content hash or full read this pass).
   - No notify, no background, no event loop polling, no reload UI, no conflict UX. Future 2+ will build watcher + handling on this.
+- Phase 2-n (narrow pass): save-conflict guard (first+second Ctrl+S) using existing snapshot + ExternalFileStatus.
+  - Added pending_save_conflict on App; factored do_atomic_save; guard in Ctrl+S before write.
+  - First S on Modified/Deleted/Unknown for path: refuse, keep dirty, set message, record pending.
+  - Second S with same still-conflicting status: force (updates saved token + disk snapshot).
+  - Unchanged or NoPath (untitled): normal save, no check.
+  - Clears on content edits/success; movement untouched.
+  - If status kind changes between presses: update pending/msg, do not force.
+  - Required app::tests::file_state cases added (external mod/delete, force, Absent->Present, change-between, edit-clears, untitled).
+  - Limitations: no watcher/reload UI yet; same-variant external drift (e.g. another mod while Modified pending) treated as same conflict and forces; Unknown primarily at io level (App tests document); still metadata-only (len/mtime), no content check. All Phase 2-l/m tests remain green.

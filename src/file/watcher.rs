@@ -12,7 +12,8 @@
 //! Invariants: if !file_watch -> Ok(None) before any notify/fs; watches only the
 //!   target's parent dir (non-recursive); events filtered to exact target by
 //!   lexical absolute path compare; try_recv drains at most one.
-//! Phase: 2-x narrow foundation (real notify impl, no App usage yet).
+//! Phase: 2-x foundation (notify impl + pure helpers); 2-z: App owns lifecycle
+//! (construct/refresh/clear after path state changes). Signals still not consumed.
 //!
 //! Dependency justification (per AGENTS.md):
 //! 1. std has no portable filesystem event notification API.

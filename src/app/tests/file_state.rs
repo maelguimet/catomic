@@ -320,7 +320,12 @@ fn app_file_state_undo_to_clean_then_redo_makes_dirty_again() {
 
 #[test]
 fn app_file_state_save_sets_new_clean_point_undo_redo_roundtrip() {
-    let mut app = App::new(None).unwrap();
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!("catomic_test_2j_save_point_{}.txt", std::process::id()));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+
+    let mut app = App::new(Some(&p)).unwrap();
     app.handle_key(make_key(KeyCode::Char('1'), KeyModifiers::NONE)).unwrap();
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL)).unwrap();
     let s1 = app.file.saved_history_position;
@@ -338,6 +343,8 @@ fn app_file_state_save_sets_new_clean_point_undo_redo_roundtrip() {
     app.handle_key(make_key(KeyCode::Char('y'), KeyModifiers::CONTROL)).unwrap();
     assert!(!app.file.dirty);
     assert_eq!(app.file.saved_history_position, s2);
+
+    let _ = std::fs::remove_file(&p);
 }
 
 #[test]

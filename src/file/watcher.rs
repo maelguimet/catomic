@@ -11,8 +11,9 @@
 //! Invariants: if !file_watch -> Ok(None) before any notify/fs; watches only the
 //!   target's parent dir (non-recursive); events filtered to exact target by
 //!   lexical absolute path compare; try_recv drains at most one.
-//! Phase: 2-x foundation (notify impl + pure helpers); 2-z: App owns lifecycle
-//! (construct/refresh/clear after path state changes). Signals still not consumed.
+//! Phase: 2-x foundation (notify impl + pure helpers); 2-z/2-ac: App owns lifecycle
+//! and consumes signals as hints (Unchanged/NoPath from watcher ignored to avoid noise).
+//! Signals remain hints only; no auto-reload.
 //!
 //! Dependency justification (per AGENTS.md):
 //! 1. std has no portable filesystem event notification API.
@@ -27,7 +28,7 @@
 //! - Must not imply repo/LSP/network/Project services.
 //! - Construction remains explicitly gated; no background work in hot paths.
 //! - No auto reload; watcher signals are hints only. Metadata observation
-//!   (observe_external_file) remains the source of truth.
+//!   (observe_external_file) remains the source of truth. Watcher signals are runtime hints only.
 
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};

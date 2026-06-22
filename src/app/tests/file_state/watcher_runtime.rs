@@ -62,10 +62,7 @@ fn queued_changed_external_modified_arms_and_renders() {
 
     assert!(had, "should report handled for visible Modified");
     assert!(!out.is_empty(), "must have rendered");
-    assert!(
-        app.pending_reload.is_some(),
-        "must arm pending_reload"
-    );
+    assert!(app.pending_reload.is_some(), "must arm pending_reload");
     let msg = app.message.as_deref().unwrap_or("");
     assert!(
         msg.contains("changed on disk") && msg.contains("Ctrl+R again"),
@@ -153,7 +150,11 @@ fn queued_changed_on_unchanged_ignored_no_render() {
 
     assert!(!had, "unchanged watcher signal must not report handled");
     assert!(out.is_empty(), "must not render on ignored");
-    assert_eq!(app.message.as_deref(), Some("Saved."), "must preserve prior message");
+    assert_eq!(
+        app.message.as_deref(),
+        Some("Saved."),
+        "must preserve prior message"
+    );
     assert_eq!(app.pending_reload, before_pend);
     assert_eq!(app.buffer.to_string(), "BASE");
     assert!(!app.file.dirty);

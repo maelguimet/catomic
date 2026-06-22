@@ -1,11 +1,14 @@
-//! Focused deterministic tests for watcher signal application and check seam (Phase 2-aa/2-ab).
+//! Focused deterministic tests for watcher signal application and check seam.
 //!
-//! Purpose: exercise apply_file_watch_signal + check_file_watcher_once + (future) runtime helper seam.
-//! Owns: signal hint behavior tests (arms like Ctrl+R, no auto reload, no mutation of content/dirty/snap).
-//! Must not: rely on live OS notify delivery; introduce flakiness; test reload content paths; change manual Ctrl+R semantics.
-//! Invariants: signals are hints only; always fresh observe + apply_check_observation; same arming as first Ctrl+R;
-//!              direct apply tests and check-on-no-signal tests remain stable.
-//! Phase: 2-aa (seams) + 2-ab (runtime wiring + split cleanup).
+//! Purpose: exercise apply_file_watch_signal + check_file_watcher_once directly
+//!   (no render). These cover hint behavior and the suppression of Unchanged/NoPath
+//!   from the watcher path (ignored to avoid self-save noise).
+//! Owns: direct apply + simple check seam tests.
+//! Must not: rely on live OS notify delivery; test reload content paths; change
+//!   manual Ctrl+R (reload::apply_check_observation) semantics.
+//! Invariants: signals are hints only; watcher Unchanged/NoPath observations are
+//!   ignored (no message, no arm); direct apply + no-signal check tests stable.
+//! Phase: 2-ac.
 
 use super::super::super::*;
 use super::super::make_key;
@@ -37,7 +40,11 @@ fn apply_file_watch_signal_changed_on_unchanged_disk_ignores_to_avoid_noise() {
 
     // Must be ignored: no overwrite of message, no arm, no mutation
     assert!(!visible, "watcher unchanged must report not visible");
-    assert_eq!(app.message.as_deref(), Some("Saved."), "must not overwrite prior message with unchanged");
+    assert_eq!(
+        app.message.as_deref(),
+        Some("Saved."),
+        "must not overwrite prior message with unchanged"
+    );
     assert!(app.pending_reload.is_none());
     assert_eq!(app.buffer.to_string(), "BASE");
     assert!(!app.file.dirty);
@@ -172,7 +179,7 @@ fn apply_file_watch_signal_error_sets_message_only() {
     let _ = std::fs::remove_file(&p);
 }
 
-// Phase 2-aa: check_file_watcher_once (non-runtime seam) tests.
+// check_file_watcher_once (no-render seam) tests. Stable no-OS cases.
 // Only tests no-watcher and "watcher present but no queued signal" (stable, no live wait).
 // Real event delivery would require OS notify which is out of scope for deterministic tests.
 
@@ -278,7 +285,4 @@ fn check_file_watcher_once_and_render_watcher_no_signal_returns_false_writes_not
     let _ = std::fs::remove_file(&p);
 }
 
-// Note: a deterministic "signal queued => helper true + arms + renders" test would
-// require either (a) live FS notify wait (flaky, forbidden for default tests) or
-// (b) a test seam to inject into the watcher's mpsc (would expand watcher surface).
-// Per instructions, skipped; runtime delivery covered by the apply tests + manual later.
+// Queued + render cases live in watcher_runtime.rs (uses the cfg(test) seam).

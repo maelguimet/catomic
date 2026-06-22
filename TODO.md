@@ -781,3 +781,11 @@ Key unresolved limitations that still matter:
 - Phase 2-aa (narrow pass): non-runtime signal helper seams only (apply_file_watch_signal + check_file_watcher_once in app/watch). try_recv only inside the drain helper. Signals are hints; always fresh observe + apply_check_observation (arms like first Ctrl+R). No runtime wiring, no auto-reload, no behavior change to manual paths. Deterministic tests only.
 
 - Phase 2-ab (broader pass): wired check_file_watcher_once_and_render into App::run (once per iteration, near top before poll); signals consumed only via the helper as hints (never auto-reload content, never direct try_recv in mod.rs, never from handle/save/reload/render). Deterministic no-watcher + no-signal seam tests via the render helper (arm-via-OS left for integration). Split watcher_signal tests out of lifecycle; updated stale comments. No new deps/threads/async. All required tests green.
+
+- Phase 2-ac (broader pass): polished runtime watcher signal behavior (apply_file_watch_signal now returns bool for visible outcome; watcher Changed/Deleted + Unchanged/NoPath observations are ignored to avoid self-save noise — no message overwrite, no arm, no render; Error/Modified/Deleted/Unknown remain visible). Added cfg(test)-only queued-signal seam (tiny InnerWatcher TestStub + inject_signal/new_for_test in FileWatcher; replace helper in watch; no public API, real new unchanged, no live OS). Added deterministic queued-signal + render tests (watcher_runtime.rs split for size hygiene). Manual Ctrl+R and save-conflict semantics untouched. Stale comments cleaned. Key unresolved limitations noted (see below). All mandated tests + full suite green; rustfmt --check on touched; git diff --check clean.
+
+Key unresolved limitations (still current after 2-ac):
+- watcher signals are runtime hints only; unchanged/no-path watcher observations are ignored (to suppress self-save noise);
+- no auto-reload; Modified/Deleted from watcher (or Ctrl+R) only arm confirmation;
+- no default live OS notify tests (deterministic seams only; ignored smoke optional);
+- metadata-only external detection (len+mtime) and same-size/same-mtime overwrite limitation remain.

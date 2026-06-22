@@ -57,6 +57,10 @@ pub struct Capabilities {
     /// No background process, no project index.
     pub local_completion: bool,
 
+    /// File watching (external edit detection). Plain-safe subsystem.
+    /// Gated explicitly; does not imply Project services.
+    pub file_watch: bool,
+
     /// Linter execution (on demand).
     pub linters: bool,
 
@@ -79,6 +83,7 @@ impl Capabilities {
         Self {
             markdown: true,
             local_completion: true,
+            file_watch: true,
             linters: false,
             lsp: false,
             repo_scan: false,
@@ -93,6 +98,7 @@ impl Capabilities {
         Self {
             markdown: true,
             local_completion: true,
+            file_watch: true,
             linters: true,
             lsp: true, // later, if it earns its keep
             repo_scan: true,
@@ -129,6 +135,7 @@ mod tests {
     fn plain_mode_has_no_project_capabilities() {
         let caps = Capabilities::from_mode(Mode::Plain);
         assert!(caps.is_plain_safe());
+        assert!(caps.file_watch);
         assert!(!caps.linters);
         assert!(!caps.repo_scan);
         assert!(!caps.repo_llm);
@@ -138,8 +145,20 @@ mod tests {
     #[test]
     fn project_mode_enables_everything() {
         let caps = Capabilities::from_mode(Mode::Project);
+        assert!(caps.file_watch);
         assert!(caps.linters);
         assert!(caps.repo_scan);
         assert!(caps.repo_llm);
+    }
+
+    #[test]
+    fn file_watch_is_plain_safe_and_distinct_from_project_flags() {
+        let plain = Capabilities::from_mode(Mode::Plain);
+        assert!(plain.file_watch, "file_watch allowed in Plain");
+        assert!(plain.is_plain_safe(), "file_watch must not make Plain unsafe");
+        assert!(!plain.repo_scan && !plain.lsp && !plain.network_llm);
+
+        let proj = Capabilities::from_mode(Mode::Project);
+        assert!(proj.file_watch, "file_watch also in Project");
     }
 }

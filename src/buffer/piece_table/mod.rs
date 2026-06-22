@@ -156,8 +156,7 @@ impl PieceTable {
     }
 
     /// Incremental update for index when edit does not add/remove a '\n'.
-    /// Shifts subsequent line starts and total_bytes. Falls back to full rebuild
-    /// for newline cases (1B-b step 1: single-char no-nl first).
+    /// Shifts subsequent line starts and total_bytes.
     fn adjust_index_for_simple_delta(&mut self, at_byte: usize, delta: isize) {
         if delta == 0 {
             return;
@@ -175,6 +174,47 @@ impl PieceTable {
             }
             self.index.total_bytes -= dpos;
         }
+    }
+
+    /// Incremental line index update for inserting a single '\n' at at_byte.
+    /// Inserts the new line boundary and shifts tail. Does not rescan text.
+    fn adjust_index_for_newline_insert(&mut self, at_byte: usize) {
+        let row = self.index.row_for_byte(at_byte);
+        // Shift subsequent line starts for the added byte.
+        for ls in &mut self.index.line_starts[(row + 1)..] {
+            *ls += 1;
+        }
+        let new_line_start = at_byte + 1;
+        self.index.line_starts.insert(row + 1, new_line_start);
+        self.index.total_bytes += 1;
+    }
+
+    /// Incremental line index update for deleting a '\n' at nl_pos.
+    /// Removes the following line boundary and shifts tail. Does not rescan.
+    fn adjust_index_for_newline_delete(&mut self, nl_pos: usize) {
+        let boundary = nl_pos + 1;
+        // Find index of the exact boundary being removed.
+        let mut idx: Option<usize> = None;
+        for (i, &ls) in self.index.line_starts.iter().enumerate().skip(1) {
+            if ls == boundary {
+                idx = Some(i);
+                break;
+            }
+        }
+        let idx = match idx {
+            Some(i) => i,
+            None => {
+                // Defensive: fall back (should not happen in normal nl join).
+                self.rebuild_index();
+                return;
+            }
+        };
+        // Shift the boundary and tail down by 1 for removed byte.
+        for ls in &mut self.index.line_starts[idx..] {
+            *ls = ls.saturating_sub(1);
+        }
+        self.index.line_starts.remove(idx);
+        self.index.total_bytes = self.index.total_bytes.saturating_sub(1);
     }
 }
 
@@ -246,9 +286,8 @@ impl Buffer for PieceTable {
         let at = self.cursor_byte_offset;
         self.insert_at_cursor('\n');
         self.coalesce();
-        // newline always adds a line boundary: full update for now (step 1 of 1B-b)
-        let _ = at;
-        self.rebuild_index();
+        // Use incremental for the added boundary (no full text scan).
+        self.adjust_index_for_newline_insert(at);
     }
 
     fn delete_back(&mut self) {
@@ -272,7 +311,7 @@ impl Buffer for PieceTable {
                 self.cursor_byte_offset = self.byte_offset_at(self.cursor.row, self.cursor.col);
             }
             self.coalesce();
-            self.rebuild_index(); // deleted a nl (join)
+            self.adjust_index_for_newline_delete(nl_pos - 1);
         } else {
             self.coalesce();
             // no-op
@@ -295,9 +334,11 @@ impl Buffer for PieceTable {
             if next_start > 0 {
                 let nl_pos = next_start - 1;
                 self.delete_byte_range(nl_pos, nl_pos + 1);
+                self.coalesce();
+                self.adjust_index_for_newline_delete(nl_pos);
+            } else {
+                self.coalesce();
             }
-            self.coalesce();
-            self.rebuild_index(); // deleted nl (join)
         } else {
             self.coalesce();
         }

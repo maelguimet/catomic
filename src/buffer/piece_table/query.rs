@@ -13,7 +13,7 @@ impl PieceTable {
             return String::new();
         }
         let mut out = String::new();
-        let mut i = self.find_piece_for_byte(start);
+        let i = self.find_piece_for_byte(start);
         let mut acc = self.piece_starts.get(i).copied().unwrap_or(0);
         for p in &self.pieces[i..] {
             let p_end = acc + p.len;

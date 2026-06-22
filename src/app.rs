@@ -706,4 +706,132 @@ mod tests {
         );
         assert!(!out.is_empty(), "resize must have triggered a render");
     }
+
+    // Phase 2-d app-level reveal/scroll_top tests (via seams + captured render)
+
+    #[test]
+    fn app_cursor_down_past_visible_updates_scroll_top() {
+        let mut app = App::new(None).unwrap();
+        // Small content viewport: height=6 => visible_height=5 content rows (0..4)
+        app.screen.height = 6;
+        app.screen.scroll_top = 0;
+
+        // Create 10 lines (0..9) by newlines; cursor ends after last insert at end of last line.
+        // Use Enter key via seam to exercise the path that does reveal (captures output, keeps test quiet).
+        let mut sink: Vec<u8> = Vec::new();
+        for _ in 0..9 {
+            app.handle_key_with(&mut sink, make_key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+        }
+        // Now we have 10 lines (rows 0-9), cursor at row=9, col=0 (after 9 newlines from empty start)
+        assert_eq!(app.buffer.cursor().row, 9);
+
+        // With vh=5, row 9 is way below (0+5=5), so reveal must have scrolled on last Enter.
+        // scroll_top should be at least 9 +1 -5 = 5
+        assert!(
+            app.screen.scroll_top >= 5,
+            "down past viewport must update scroll_top; got {}",
+            app.screen.scroll_top
+        );
+    }
+
+    #[test]
+    fn app_render_after_reveal_omits_earlier_lines_and_shows_cursor_row() {
+        let mut app = App::new(None).unwrap();
+        app.screen.height = 6; // vh=5
+        app.screen.scroll_top = 0;
+
+        // Build lines with unique markers: insert "L0\nL1\n...L9"
+        // Simpler: repeated Enter then type a marker char on each line? Use direct buffer for setup clarity.
+        // Then drive a Down that will reveal via the key path.
+        for i in 0..10 {
+            if i > 0 {
+                app.buffer.insert_newline();
+            }
+            // put a distinguishable token at start of each line
+            app.buffer.insert_char('L');
+            // i as rough marker by repeating a char; keep simple: use digits for later lines
+            let marker = char::from(b'0' + (i % 10) as u8);
+            app.buffer.insert_char(marker);
+        }
+        // cursor now at row=9, col=2 on "L9"
+        assert_eq!(app.buffer.cursor().row, 9);
+
+        // Force a scroll by simulating many downs via keys (each calls reveal_cursor)
+        // Use handle_key_with + sink to exercise reveal path without spamming test stdout.
+        let mut sink: Vec<u8> = Vec::new();
+        // Start from top by resetting scroll; then down past.
+        app.screen.scroll_top = 0;
+        // Move up to row 0 first (we are at 9), then down 9 times with small vh to trigger reveal on the way.
+        for _ in 0..9 {
+            app.handle_key_with(&mut sink, make_key(KeyCode::Up, KeyModifiers::NONE)).unwrap();
+        }
+        assert_eq!(app.buffer.cursor().row, 0);
+        app.screen.scroll_top = 0;
+
+        // Now move down past the visible area
+        for _ in 0..9 {
+            app.handle_key_with(&mut sink, make_key(KeyCode::Down, KeyModifiers::NONE)).unwrap();
+        }
+        assert_eq!(app.buffer.cursor().row, 9);
+        assert!(
+            app.screen.scroll_top > 0,
+            "must have scrolled; scroll_top={}",
+            app.screen.scroll_top
+        );
+
+        // Capture a render; earlier lines (e.g. L0) must not be in the emitted content region.
+        let mut out: Vec<u8> = Vec::new();
+        app.render(&mut out).unwrap();
+        let rendered = String::from_utf8_lossy(&out);
+
+        // The render writes visible_lines(scroll_top, content_h). First line content after clear should not be L0/L1 if scrolled.
+        // Check absence of a unique early marker that would be before scroll_top.
+        assert!(
+            !rendered.contains("L0"),
+            "early line content must not be emitted when scrolled; scroll_top={}\nout: {}",
+            app.screen.scroll_top,
+            rendered
+        );
+        // Cursor row's content should be present (L9 or similar)
+        assert!(
+            rendered.contains("L9"),
+            "cursor row content must be emitted; got scroll_top={} rendered=\n{}",
+            app.screen.scroll_top,
+            rendered
+        );
+    }
+
+    #[test]
+    fn app_resize_smaller_reveals_cursor_row() {
+        let mut app = App::new(None).unwrap();
+        // Create 16 lines (0..15) with cursor at row 15
+        for _ in 0..15 {
+            app.buffer.insert_newline();
+        }
+        assert_eq!(app.buffer.cursor().row, 15);
+        // Large viewport so currently no scroll
+        app.screen.height = 30;
+        app.screen.scroll_top = 0;
+
+        // Now resize to a small height where 15 would be offscreen if not revealed.
+        // height=10 => vh=9; 15 >= 0+9 => reveal will set scroll_top = 15+1-9=7
+        let mut out: Vec<u8> = Vec::new();
+        app.handle_resize(40, 10, &mut out).unwrap();
+
+        assert_eq!(app.screen.height, 10);
+        assert!(
+            app.screen.scroll_top > 0,
+            "resize to smaller must reveal; scroll_top={}",
+            app.screen.scroll_top
+        );
+        // 15 should now be inside [scroll_top, scroll_top+8]
+        let vh = app.screen.visible_height();
+        assert!(
+            app.screen.scroll_top <= 15 && 15 < app.screen.scroll_top + vh,
+            "cursor row 15 must be visible after small resize; scroll_top={}, vh={}",
+            app.screen.scroll_top,
+            vh
+        );
+        assert!(!out.is_empty(), "resize must render");
+    }
 }

@@ -775,3 +775,12 @@ Update this file as decisions are made or phases complete. Add concrete issues o
   - No full-buffer to_string compares on hot paths. SimpleBuffer: constant-0 stub only.
   - Remaining limitations: token is u64 internal (not exposed beyond minimal Buffer query); no multi-buffer or external-edit integration yet; still scalar char model.
 - Phase 2-k (narrow cleanup): split src/buffer/tests.rs (was >800 lines post 2-j) into focused subs under buffer::tests (basic, storage_parity, edit_parity, undo_redo, model_parity, history_position). Hub now ~30 lines. All original test names preserved, paths updated (e.g. buffer::tests::undo_redo::*). No behavior change. app.rs stale comment updated. All tests green.
+- Phase 2-l (narrow pass): on-disk file snapshot foundation (no watcher).
+  - Added FileSnapshot (Present{len, mtime} / Absent) + ExternalFileStatus (NoPath/Unchanged/Modified/Deleted/Unknown) in file/io using only std::fs::metadata.
+  - capture_file_snapshot: missing -> explicit Absent (no error); other IO errs propagate or Unknown.
+  - Stored in FileState.disk_snapshot on App::new (existing=Present, missing=Absent, none=None) and on successful Ctrl+S.
+  - Save failure leaves snapshot unchanged.
+  - New App::external_file_status() (delegates to pure file_state helper): detection only; never mutates state.
+  - Required tests in file/io and app::tests::file_state all pass.
+  - Limitation (documented): same-length + same-mtime external overwrite is not detected (no content hash or full read this pass).
+  - No notify, no background, no event loop polling, no reload UI, no conflict UX. Future 2+ will build watcher + handling on this.

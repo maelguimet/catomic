@@ -64,6 +64,16 @@ impl App {
 
         // Capture initial history position as the clean save point (open or new).
         let initial_pos = buffer.edit_history_position();
+        // Capture disk snapshot (std metadata only). For remembered path that is missing:
+        // Absent snapshot stored explicitly; never makes new() fail or dirty.
+        let disk_snapshot = if let Some(p) = initial_path {
+            match crate::file::io::capture_file_snapshot(p) {
+                Ok(s) => Some(s),
+                Err(_) => Some(crate::file::io::FileSnapshot::Absent),
+            }
+        } else {
+            None
+        };
         Ok(App {
             mode,
             caps,
@@ -72,6 +82,7 @@ impl App {
                 path: initial_path.map(|s| PathBuf::from(s)),
                 dirty: false,
                 saved_history_position: initial_pos,
+                disk_snapshot,
             },
             should_quit: false,
             message: None,
@@ -183,24 +194,29 @@ impl App {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                let path = self
+                let target = self
                     .file
                     .path
                     .clone()
                     .unwrap_or_else(|| PathBuf::from("untitled.txt"));
                 let text = self.buffer.to_string();
-                match file::io::atomic_write_string(&path, &text) {
+                match file::io::atomic_write_string(&target, &text) {
                     Ok(()) => {
                         if self.file.path.is_none() {
-                            self.file.path = Some(path);
+                            self.file.path = Some(target.clone());
                         }
                         mark_saved(&mut self.file, &*self.buffer);
+                        // Success: update disk snapshot for the saved path. Failure path leaves prior snapshot.
+                        if let Ok(s) = file::io::capture_file_snapshot(&target) {
+                            self.file.disk_snapshot = Some(s);
+                        }
                         self.pending_quit_confirm = false;
                         self.message = None;
                     }
                     Err(e) => {
                         self.message = Some(format!("Save error: {}", e));
                         // keep dirty; do not clear pending (if user had quit warn, error is shown)
+                        // snapshot intentionally NOT updated on failure
                     }
                 }
                 self.render(out)?;

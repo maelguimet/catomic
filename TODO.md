@@ -776,3 +776,5 @@ Key unresolved limitations that still matter:
 - Phase 2-y (narrow cleanup): extracted pure helpers to file::watch_path (pub(crate)); replaced absolutize with real lexical Component normalize (., .., root safe); added parent-after-norm + rename-hint tests/comments. No App wiring, no new deps, no live events.
 
 - Phase 2-z (narrow pass): App now owns gated FileWatcher (best-effort construct on new(path) and after successful first save from untitled). Lifecycle via app/watch.rs refresh/clear. No signal consumption, no try_recv in runtime, no reload behavior. Focused non-live tests only.
+
+- Phase 2-aa (narrow pass): non-runtime signal helper seams only (apply_file_watch_signal + check_file_watcher_once in app/watch). try_recv only inside the drain helper. Signals are hints; always fresh observe + apply_check_observation (arms like first Ctrl+R). No runtime wiring, no auto-reload, no behavior change to manual paths. Deterministic tests only.

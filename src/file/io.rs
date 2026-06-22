@@ -127,6 +127,7 @@ pub fn capture_file_snapshot(path: impl AsRef<Path>) -> io::Result<FileSnapshot>
 
 /// Compare live disk for `path` against a prior `snap`.
 /// Returns Unchanged / Modified / Deleted accordingly.
+/// Captures live metadata once, then uses pure compare.
 /// Metadata errors become Unknown(kind). Does not read file content.
 pub fn compare_to_snapshot(
     path: impl AsRef<Path>,
@@ -136,18 +137,27 @@ pub fn compare_to_snapshot(
         Ok(s) => s,
         Err(e) => return Ok(ExternalFileStatus::Unknown(e.kind())),
     };
-    match (snap, &current) {
-        (FileSnapshot::Absent, FileSnapshot::Absent) => Ok(ExternalFileStatus::Unchanged),
-        (FileSnapshot::Absent, FileSnapshot::Present { .. }) => Ok(ExternalFileStatus::Modified),
-        (FileSnapshot::Present { .. }, FileSnapshot::Absent) => Ok(ExternalFileStatus::Deleted),
+    Ok(compare_live_snapshot_to_baseline(&current, snap))
+}
+
+/// Pure comparison of an already-captured live snapshot against a baseline.
+/// Never performs I/O. Enables single-capture observations.
+fn compare_live_snapshot_to_baseline(
+    live: &FileSnapshot,
+    baseline: &FileSnapshot,
+) -> ExternalFileStatus {
+    match (baseline, live) {
+        (FileSnapshot::Absent, FileSnapshot::Absent) => ExternalFileStatus::Unchanged,
+        (FileSnapshot::Absent, FileSnapshot::Present { .. }) => ExternalFileStatus::Modified,
+        (FileSnapshot::Present { .. }, FileSnapshot::Absent) => ExternalFileStatus::Deleted,
         (
             FileSnapshot::Present { len: l1, mtime: t1 },
             FileSnapshot::Present { len: l2, mtime: t2 },
         ) => {
             if l1 == l2 && t1 == t2 {
-                Ok(ExternalFileStatus::Unchanged)
+                ExternalFileStatus::Unchanged
             } else {
-                Ok(ExternalFileStatus::Modified)
+                ExternalFileStatus::Modified
             }
         }
     }
@@ -155,10 +165,11 @@ pub fn compare_to_snapshot(
 
 /// Observe external state for an optional remembered path against an optional baseline snapshot.
 /// Returns both the status (for messaging/decision) and the live snapshot seen now.
+/// Single-capture: live disk state is captured once; status is derived from it.
 /// - path None -> NoPath, live None.
-/// - path Some + baseline None: mirrors the edge probe in external_file_status (Present->Unchanged, Absent->Deleted).
-/// - path Some + baseline Some: delegates to compare_to_snapshot for status; live is separate capture.
-/// Metadata errors surface as Unknown; live_snapshot may be None in hard error cases.
+/// - path Some + baseline None: edge probe (Present->Unchanged, Absent->Deleted).
+/// - path Some + baseline Some: status from captured live vs baseline via pure compare.
+/// Metadata errors surface as Unknown(kind); live_snapshot None on hard capture failure.
 /// Metadata-only; no content read or hash.
 pub fn observe_external_file(
     path: Option<&Path>,
@@ -170,7 +181,7 @@ pub fn observe_external_file(
             live_snapshot: None,
         };
     };
-    // Capture live once.
+    // Capture live exactly once for this observation.
     let live = capture_file_snapshot(p).ok();
     let status = match baseline {
         None => {
@@ -180,8 +191,7 @@ pub fn observe_external_file(
                 Some(FileSnapshot::Present { .. }) => ExternalFileStatus::Unchanged,
                 Some(FileSnapshot::Absent) => ExternalFileStatus::Deleted,
                 None => {
-                    // Capture failed; surface as Unknown using a generic kind is not ideal.
-                    // Re-attempt a direct metadata to get the real error kind.
+                    // Capture failed; surface real error kind.
                     match fs::metadata(p) {
                         Err(e) => ExternalFileStatus::Unknown(e.kind()),
                         Ok(_) => ExternalFileStatus::Unchanged, // raced to exist
@@ -189,9 +199,15 @@ pub fn observe_external_file(
                 }
             }
         }
-        Some(snap) => match compare_to_snapshot(p, snap) {
-            Ok(st) => st,
-            Err(e) => ExternalFileStatus::Unknown(e.kind()),
+        Some(snap) => match &live {
+            Some(l) => compare_live_snapshot_to_baseline(l, snap),
+            None => {
+                // Capture failed under a baseline: surface real error kind.
+                match fs::metadata(p) {
+                    Err(e) => ExternalFileStatus::Unknown(e.kind()),
+                    Ok(_) => ExternalFileStatus::Unchanged, // raced
+                }
+            }
         },
     };
     ExternalFileObservation {
@@ -445,5 +461,56 @@ mod tests {
             obs.live_snapshot.is_none() || matches!(obs.live_snapshot, Some(FileSnapshot::Absent))
         );
         cleanup(&reg);
+    }
+
+    // Phase 2-u: single-capture observe + pure helper coverage at API level.
+    // Ensure status derives from the *captured* live snapshot + baseline (no double capture smell).
+
+    #[test]
+    fn observe_single_capture_derives_status_from_captured_live() {
+        let p = temp_path("obs_single_cap.txt");
+        cleanup(&p);
+        fs::write(&p, "V1").unwrap();
+        let base = capture_file_snapshot(&p).unwrap();
+
+        // Same state: Unchanged, live == base
+        let obs1 = observe_external_file(Some(&p), Some(&base));
+        assert_eq!(obs1.status, ExternalFileStatus::Unchanged);
+        assert_eq!(obs1.live_snapshot, Some(base.clone()));
+
+        // External change: Modified with a *different* live snapshot
+        fs::write(&p, "V1EXT").unwrap();
+        let obs2 = observe_external_file(Some(&p), Some(&base));
+        assert_eq!(obs2.status, ExternalFileStatus::Modified);
+        let live2 = obs2.live_snapshot.expect("live must be present");
+        assert_ne!(live2, base, "live after change must differ from baseline");
+
+        // Re-observe same changed state yields same live snapshot object (equality)
+        let obs3 = observe_external_file(Some(&p), Some(&base));
+        assert_eq!(obs3.status, ExternalFileStatus::Modified);
+        assert_eq!(obs3.live_snapshot, Some(live2.clone()));
+
+        cleanup(&p);
+    }
+
+    #[test]
+    fn compare_to_snapshot_still_works_after_refactor() {
+        let p = temp_path("cmp_refac.txt");
+        cleanup(&p);
+        fs::write(&p, "A").unwrap();
+        let base = capture_file_snapshot(&p).unwrap();
+
+        assert_eq!(
+            compare_to_snapshot(&p, &base).unwrap(),
+            ExternalFileStatus::Unchanged
+        );
+
+        fs::write(&p, "AB").unwrap();
+        assert_eq!(
+            compare_to_snapshot(&p, &base).unwrap(),
+            ExternalFileStatus::Modified
+        );
+
+        cleanup(&p);
     }
 }

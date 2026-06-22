@@ -147,18 +147,32 @@ impl App {
             }
 
             // Undo / Redo (Phase 1C). Ctrl+Z undo; Ctrl+Y and Ctrl+Shift+Z redo.
-            // Place before generic Char so CONTROL combos fire (Ctrl+Z etc are Char + CONTROL).
-            // No other UI changes.
+            // Redo must handle both common terminal reports for Ctrl+Shift+Z:
+            //   - KeyCode::Char('z') + CONTROL + SHIFT
+            //   - KeyCode::Char('Z') + CONTROL + SHIFT
+            // Place before generic Char so CONTROL combos fire. No other UI changes.
             KeyEvent {
-                code: KeyCode::Char(c),
+                code: KeyCode::Char('z'),
                 modifiers,
                 ..
-            } if (c == 'z' || c == 'Z') && modifiers.contains(KeyModifiers::CONTROL) => {
-                if modifiers.contains(KeyModifiers::SHIFT) || c == 'Z' {
-                    self.buffer.redo();
-                } else {
-                    self.buffer.undo();
-                }
+            } if modifiers.contains(KeyModifiers::CONTROL) && !modifiers.contains(KeyModifiers::SHIFT) => {
+                self.buffer.undo();
+                self.render(&mut io::stdout())?;
+            }
+            KeyEvent {
+                code: KeyCode::Char('z'),
+                modifiers,
+                ..
+            } if modifiers.contains(KeyModifiers::CONTROL) && modifiers.contains(KeyModifiers::SHIFT) => {
+                self.buffer.redo();
+                self.render(&mut io::stdout())?;
+            }
+            KeyEvent {
+                code: KeyCode::Char('Z'),
+                modifiers,
+                ..
+            } if modifiers.contains(KeyModifiers::CONTROL) && modifiers.contains(KeyModifiers::SHIFT) => {
+                self.buffer.redo();
                 self.render(&mut io::stdout())?;
             }
             KeyEvent {

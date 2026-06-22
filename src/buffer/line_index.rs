@@ -58,18 +58,23 @@ impl LineIndex {
     }
 
     pub(crate) fn row_for_byte(&self, byte: usize) -> usize {
-        let n = self.line_starts.len();
+        let starts = &self.line_starts;
+        let n = starts.len();
         if n == 0 {
             return 0;
         }
-        let mut row = 0;
-        for i in 1..n {
-            if byte < self.line_starts[i] {
-                break;
+        // Binary search for the rightmost start <= byte.
+        let mut lo = 0usize;
+        let mut hi = n;
+        while lo < hi {
+            let mid = (lo + hi) / 2;
+            if starts[mid] <= byte {
+                lo = mid + 1;
+            } else {
+                hi = mid;
             }
-            row = i;
         }
-        row.min(n - 1)
+        lo.saturating_sub(1).min(n - 1)
     }
 
     // NOTE: rebuild_from_pieces lives with PieceTable (it needs internal Piece + Source).

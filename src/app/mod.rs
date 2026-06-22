@@ -23,6 +23,7 @@ pub use file_state::FileState;
 
 use file_state::{external_file_status, mark_saved, refresh_dirty};
 
+mod save;
 mod viewport;
 
 /// High-level application state for the editor.
@@ -191,49 +192,14 @@ impl App {
                 }
             }
 
-            // Save (Ctrl+S) -- guarded using external_file_status snapshot foundation (Phase 2-n).
-            // NoPath (untitled) or Unchanged: write normally via atomic helper.
-            // Modified/Deleted/Unknown on existing path: first press refuses write,
-            // keeps dirty, sets specific message, and records pending_save_conflict.
-            // Second identical Ctrl+S (same pending + still conflicting): force-writes.
-            // If status became Unchanged or changed: normal or refuse-with-update (no blind force).
-            // Force success updates token + snapshot exactly as normal save.
-            // Write error (normal/force): keeps dirty, leaves snapshot, sets error msg.
-            // Edits clear pending; movement/render do not.
+            // Save (Ctrl+S) -- thin arm; real logic + guard lives in save module
+            // (extracted Phase 2-o to keep this file focused). Semantics unchanged.
             KeyEvent {
                 code: KeyCode::Char('s'),
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                let status = self.external_file_status();
-                if status == crate::file::io::ExternalFileStatus::NoPath
-                    || status == crate::file::io::ExternalFileStatus::Unchanged
-                {
-                    self.pending_save_conflict = None;
-                    self.do_atomic_save(out)?;
-                } else if self.pending_save_conflict.as_ref() == Some(&status) {
-                    // same conflict still live -> allow force this time
-                    self.do_atomic_save(out)?;
-                } else {
-                    // first time seeing this conflict, or status drifted: refuse, remember for confirm
-                    self.pending_save_conflict = Some(status.clone());
-                    self.message = Some(match status {
-                        crate::file::io::ExternalFileStatus::Modified => {
-                            "File changed on disk. Press Ctrl+S again to overwrite.".to_string()
-                        }
-                        crate::file::io::ExternalFileStatus::Deleted => {
-                            "File was deleted on disk. Press Ctrl+S again to recreate.".to_string()
-                        }
-                        crate::file::io::ExternalFileStatus::Unknown(_) => {
-                            "File status check failed. Press Ctrl+S again to overwrite.".to_string()
-                        }
-                        crate::file::io::ExternalFileStatus::NoPath
-                        | crate::file::io::ExternalFileStatus::Unchanged => {
-                            unreachable!()
-                        }
-                    });
-                    self.render(out)?;
-                }
+                save::handle_save(self, out)?;
             }
 
             // Enter produces KeyCode::Enter (not Char('\n')). Handle explicitly.
@@ -449,44 +415,10 @@ impl App {
         external_file_status(&self.file)
     }
 
-    /// Factor of the atomic write + post-success bookkeeping.
-    /// Used by both normal and force-save paths to avoid duplication.
-    /// Success: mark_saved, update snapshot (Present only), clear pendings+message.
-    /// Error: set "Save error: ..." message; dirty and snapshot left unchanged.
-    /// Always ends by rendering.
+    /// Forward to extracted implementation in save module (Phase 2-o slimming).
+    /// No behavior change.
     fn do_atomic_save(&mut self, out: &mut dyn Write) -> io::Result<()> {
-        let target = self
-            .file
-            .path
-            .clone()
-            .unwrap_or_else(|| PathBuf::from("untitled.txt"));
-        let text = self.buffer.to_string();
-        match file::io::atomic_write_string(&target, &text) {
-            Ok(()) => {
-                if self.file.path.is_none() {
-                    self.file.path = Some(target.clone());
-                }
-                mark_saved(&mut self.file, &*self.buffer);
-                // Success: update disk snapshot for the saved path (same for force or normal).
-                // - Failure to capture post-save leaves prior snapshot unchanged.
-                // - Never overwrite with Absent; do not corrupt saved token on meta failure.
-                if let Ok(s) = file::io::capture_file_snapshot(&target) {
-                    if matches!(s, file::io::FileSnapshot::Present { .. }) {
-                        self.file.disk_snapshot = Some(s);
-                    }
-                    // else: leave old snapshot (Absent or prior Present); token already clean.
-                }
-                self.pending_quit_confirm = false;
-                self.pending_save_conflict = None;
-                self.message = None;
-            }
-            Err(e) => {
-                self.message = Some(format!("Save error: {}", e));
-                // keep dirty; do not clear save conflict (user may still want to force after fixing env)
-                // snapshot intentionally NOT updated on failure
-            }
-        }
-        self.render(out)
+        save::do_atomic_save(self, out)
     }
 
     fn render(&self, stdout: &mut dyn Write) -> io::Result<()> {

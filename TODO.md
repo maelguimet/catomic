@@ -791,7 +791,6 @@ Key unresolved limitations that still matter:
 Key unresolved limitations (still current after 2-ag):
 - (size classification + pre-read guardrails + Large/Huge warn + Extreme refuse now exist; no lazy/perf harness/large-file mode yet)
 - watcher signals are runtime hints only; App-owned best-effort; runtime checks watcher once per loop via helper (try_recv inside check_file_watcher_once only); Unchanged/NoPath from watcher clear stale pending_reload when armed, otherwise fully ignored (suppress self-save noise);
-- watcher signals are runtime hints only; App-owned best-effort; runtime checks watcher once per loop via helper (try_recv inside check_file_watcher_once only); Unchanged/NoPath from watcher clear stale pending_reload when armed, otherwise fully ignored (suppress self-save noise);
 - no auto-reload; Modified/Deleted (from watcher or Ctrl+R) only arm confirmation; second Ctrl+R performs actual reload using fresh observe + pending match (or clears for Deleted);
 - no content read from watcher signal path except the existing confirmed Ctrl+R reload path;
 - metadata-only external detection (len+mtime via observe_external_file / capture / compare); same-size/same-mtime overwrite limitation remains (no hash/content);
@@ -800,9 +799,9 @@ Key unresolved limitations (still current after 2-ag):
 - Phase 2-af (broader pass) began Phase 2B big-file discipline foundation while closing watcher test hygiene: split watcher_pending (>400) into watcher_pending (stale cleanup only) + watcher_acceptance (<300 each); fixed false "each <300" wording via split. Added src/file/size.rs (FileSizeTier + SMALL/LARGE/HUGE consts at binary 10/100/1024 MiB; pure classify + label; file_size_bytes metadata helper). Threaded size_bytes/Optional<tier> into FileState (None for no-path/missing/deleted). App::new captures size (None for missing); save and confirmed Ctrl+R Modified update from post meta (fallback len only on meta fail after write); Deleted clears to None. Focused file_size tests (new App::new cases, save from untitled/existing, reload Modified/Deleted, failed save no-update, no side effects on snapshot/conflict). No open refusal, no lazy, no perf harness, no large-file mode, no >small allocs in default tests, no watcher/reload behavior change. All mandated tests (file::size, file::io, watcher_*, file_state::*, app::, full) green; fmt; diff--check; commits per AGENTS.
 
 Next intended Phase 2B steps (after this foundation):
-- perf harness using generated temp files (no 100 MB+ committed in tree)
-- exercise 10 MiB / 100 MiB / 1 GiB criteria + any early limits in harness (no default-test large reads)
-- identify render + buffer query hotspots for large files (measure first)
+- run manual baseline commands (see Phase 2-ai) on representative hardware and record PERF sample numbers
+- decide initial time/memory budgets + identify first hotspots from the data (measure, do not guess)
+- (perf harness split + no-deps helpers + non-timing defaults + manual baseline reporting completed in 2-ai)
 - (open-size guardrails / pre-read decision / Large/Huge warn / Extreme refuse completed in 2-ag)
 
 External-file safety current state after 2-ae:
@@ -838,3 +837,12 @@ Phase 2-af (2B start) note: external-file safety arc closed by 2-ae; 2-af added 
     cargo test manual_open_100mib_generated_file_smoke -- --ignored --nocapture
     cargo test manual_sparse_extreme_refusal_smoke -- --ignored --nocapture
   Phase 2B now has: size classification + pre-read guardrails, no-deps generated-file helper, cheap default harness smokes, ignored manual 10/100/sparse-1G smokes, no perf thresholds, no lazy/large-file mode yet. All mandated tests + full suite + fmt + diff--check + commits per AGENTS.
+
+- Phase 2-ai (broader pass): split src/tests/perf.rs (hub + perf_helpers.rs + perf_default.rs + perf_manual.rs, all <300 lines, #[path] style, identical discovery via cargo test tests::perf and bare names). Removed default timing gates (phase0/phase1b + harness now assert only deterministic functional: non-empty render, buffer changed as expected, exact size, App size metadata; elapsed may eprintln under --nocapture only, never fail). Added tiny no-deps PerfSample + measure_sample + print_perf_sample in helpers; wired ignored manual tests to emit stable "PERF sample: label=... bytes=... elapsed_ms=..." for generate/App::new/render (and set_len/App for sparse). Manual tests kept: manual_open_10mib... (Large warn + samples), manual_open_100mib... (Huge/Large + skip clean), manual_sparse_extreme_refusal_smoke (refuse + samples). No 1 GiB dense. Optional manual_render not added (open already covers render smoke). No thresholds, no lazy/mmap/rope/new-deps/committed-fixtures/default-large-reads/open-policy/watcher-reload/save-conflict/render or buffer edits. All required tests + full suite green; rustfmt (touched); diff--check; commits per AGENTS.
+  Exact commands:
+    cargo test manual_open_10mib_generated_file_smoke -- --ignored --nocapture
+    cargo test manual_open_100mib_generated_file_smoke -- --ignored --nocapture
+    cargo test manual_sparse_extreme_refusal_smoke -- --ignored --nocapture
+    cargo test tests::perf -- --nocapture   # (shows default eprintln elapsed if any + harness)
+  Note: no perf thresholds yet. Next pass: run the manual baselines on target hardware, record numbers, decide initial budgets and hotspots (without optimizing yet).
+  Phase 2B now has a split no-deps perf harness with non-timing default smokes and ignored manual baseline reporting (PERF sample lines), but still no lazy loading, mmap, rope rewrite, perf thresholds, default 100 MiB/1 GiB reads, new deps, or watcher/reload/save-conflict behavior changes.

@@ -156,6 +156,7 @@ impl App {
                         "Unsaved changes. Press Ctrl+Q again to quit without saving, Ctrl+S to save."
                             .to_string(),
                     );
+                    self.render(out)?;
                     // do not quit
                 }
             }

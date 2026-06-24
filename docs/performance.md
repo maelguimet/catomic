@@ -69,6 +69,8 @@ cargo test manual_open_100mib_generated_file_smoke -- --ignored --nocapture
 cargo test manual_sparse_extreme_refusal_smoke -- --ignored --nocapture
 /usr/bin/time -v <each manual above>
 ```
+(The 10/100 manual tests now also emit finer open-path phase samples:
+metadata, read_to_string, PieceTable::from_text, App::new, render.)
 
 ### PERF sample lines (exact from --nocapture)
 10 MiB (SMALL+1, Large tier + warning):
@@ -90,6 +92,23 @@ Sparse extreme >1 GiB (set_len, refusal before read):
 PERF sample: label=create sparse 1g+ bytes=1073741825 elapsed_ms=0
 PERF sample: label=App::new extreme sparse bytes=1073741825 elapsed_ms=0
 ```
+
+Open-path phase samples (metadata / read_to_string / PieceTable::from_text) are emitted by the same ignored 10/100 tests (labels added post 2-ak, 2-al round). They were not executed/recorded with numbers on this hardware in the 2-am pass; see "available but not yet recorded" note below and TODO next-steps.
+
+### Open path phase breakdown (added 2-am; available but not yet recorded on this pass)
+Finer-grained manual samples for the open/materialization path were added to the existing ignored tests. Numbers below are not captured for this hardware/round.
+
+Commands (emit all phases + prior labels):
+```
+cargo test manual_open_10mib_generated_file_smoke -- --ignored --nocapture
+cargo test manual_open_100mib_generated_file_smoke -- --ignored --nocapture
+```
+
+Clarification:
+- Generation time is test-fixture cost (dense streaming write), not editor cost.
+- `read_to_string` and `PieceTable::from_text` are the useful split for the observed open/materialization hotspot under full materialization.
+- `App::new` remains the end-to-end open measurement (includes size probe + history token setup).
+- These (and all current numbers) are observational only; not budgets, not gates, not pass/fail criteria.
 
 ### Memory (Max RSS from /usr/bin/time -v)
 - 10 MiB run: 34456 kB
@@ -124,6 +143,7 @@ All numbers remain advisory. Do not turn these into `#[test]` pass/fail gates in
 - Render numbers are currently cheap in these synthetic tests (full clear of small viewport over a buffer that has already been built); this is not proof of scalable redraw behavior under editing/resizing for large files.
 - Render still performs a full clear every frame; as of later hygiene passes it avoids allocating a temporary String for every visible sliced line (writes scalar chars directly), but this is not a scalable redraw strategy.
 - The correct next optimization area is likely open/materialization (and/or viewport-aware queries), but no implementation work on lazy/mmap/rope or buffer changes occurs in the current round. Decision should be made from the hotspot inventory + more data, not vibes.
+- As of the 2-am round, the ignored manual open tests emit stable phase samples for the open path: "metadata", "read_to_string", "PieceTable::from_text", "App::new" (end-to-end), and "render". These are still observational only. Generation time is fixture cost. `read_to_string` + `PieceTable::from_text` provide the useful split of the materialization hotspot. `App::new` remains the full open measurement. No budgets or gates.
 
 See TODO.md for the current next-intended pointer into this inventory.
 

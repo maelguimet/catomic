@@ -800,7 +800,7 @@ Key unresolved limitations (still current post 2-al):
 
 Next intended Phase 2B steps (post 2-al):
 - Use advisory budgets + hotspot inventory (see docs/performance.md) to choose a narrow implementation target.
-- Continue more measurements on target hardware if needed before committing to an optimization.
+- Continue more measurements on target hardware if needed before committing to an optimization. The ignored manual open tests now emit phase splits (metadata / read_to_string / PieceTable::from_text / App::new / render) for the open/materialization path.
 - Keep manual large-file tests ignored; do not add or enable default 10/100 MiB or 1 GiB tests.
 - Do not enforce thresholds yet; budgets remain advisory and must not become pass/fail gates in this or the immediate next pass.
 

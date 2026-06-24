@@ -795,14 +795,15 @@ Key unresolved limitations (still current after 2-aj):
 - no content read from watcher signal path except the existing confirmed Ctrl+R reload path;
 - metadata-only external detection (len+mtime via observe_external_file / capture / compare); same-size/same-mtime overwrite limitation remains (no hash/content);
 - default test suite uses deterministic queued-signal seams only (TestStub/inject + replace_file_watcher_for_test); live OS notify smoke is ignored/manual and must not be required for CI;
-- big-file tiers/perf: open guardrails + metadata + split harness + manual baselines + initial persistent "large-file mode" bottom status marker now exist (Phase 2-aj); 100 MiB/1 GiB still full read into memory (no lazy); no thresholds declared yet.
+- big-file tiers/perf: open guardrails + metadata + split harness + manual baselines (recorded) + initial persistent "large-file mode" bottom status marker now exist (Phase 2-aj); 100 MiB/1 GiB still full read + full materialization (no lazy storage mode); status size label is on-disk metadata only; no thresholds declared or enforced yet.
 - Phase 2-af (broader pass) began Phase 2B big-file discipline foundation while closing watcher test hygiene: split watcher_pending (>400) into watcher_pending (stale cleanup only) + watcher_acceptance (<300 each); fixed false "each <300" wording via split. Added src/file/size.rs (FileSizeTier + SMALL/LARGE/HUGE consts at binary 10/100/1024 MiB; pure classify + label; file_size_bytes metadata helper). Threaded size_bytes/Optional<tier> into FileState (None for no-path/missing/deleted). App::new captures size (None for missing); save and confirmed Ctrl+R Modified update from post meta (fallback len only on meta fail after write); Deleted clears to None. Focused file_size tests (new App::new cases, save from untitled/existing, reload Modified/Deleted, failed save no-update, no side effects on snapshot/conflict). No open refusal, no lazy, no perf harness, no large-file mode, no >small allocs in default tests, no watcher/reload behavior change. All mandated tests (file::size, file::io, watcher_*, file_state::*, app::, full) green; fmt; diff--check; commits per AGENTS.
 
-Next intended Phase 2B steps (after this foundation):
-- run manual baseline commands (see Phase 2-ai) on representative hardware and record PERF sample numbers
-- decide initial time/memory budgets + identify first hotspots from the data (measure, do not guess)
-- (perf harness split + no-deps helpers + non-timing defaults + manual baseline reporting completed in 2-ai)
-- (open-size guardrails / pre-read decision / Large/Huge warn / Extreme refuse completed in 2-ag)
+Next intended Phase 2B steps (after 2-aj baseline/status foundation):
+- baselines exist (recorded 2026-06-24 on this hardware) for 10 MiB Large open/App::new/render and 100 MiB Huge; also sparse extreme >1 GiB refusal (metadata-only, near-instant)
+- candidate budgets need to be proposed in docs/performance.md but must not be turned into failing assertions yet
+- first hotspot inventory needs to be documented (from the recorded numbers; generation is fixture cost, App::new dominates due to full read+PieceTable, MaxRSS shows full materialization cost, render currently cheap in synthetic full-clear)
+- large/huge still do full content read + full PieceTable materialization on open (no lazy/large-file storage mode exists yet); status "large-file mode" marker is UI label only
+- status line size is last-known on-disk metadata (from fs::metadata or post-save fallback), not live buffer byte length; never scan buffer for status
 
 External-file safety current state after 2-ae:
 - manual Ctrl+R status/reload exists and is the confirmation path (first press arms, second performs if snapshot matches; drift re-arms).

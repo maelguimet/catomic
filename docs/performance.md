@@ -47,8 +47,8 @@ Never add full-file scans, full-buffer clones, background work, or network calls
 
 ## Phase 2B manual baseline (2026-06-24)
 
-Captured before any Phase 2B implementation changes in this round.
-Observational only; no pass/fail thresholds yet. Manual runs are ignored by default.
+Captured on 2026-06-24 before the 2-aj hygiene/status-foundation changes in that round (open extraction, status line addition, perf harness split), not before all Phase 2B work.
+Baselines are observational only (local hardware, specific build); no pass/fail thresholds yet. Manual runs are ignored by default.
 
 ### Environment
 - Date: 2026-06-24
@@ -78,7 +78,7 @@ PERF sample: label=App::new 10mib bytes=10485761 elapsed_ms=130
 PERF sample: label=render 10mib bytes=10485761 elapsed_ms=3
 ```
 
-100 MiB (LARGE+1, Huge/Large tier + warning):
+100 MiB (LARGE+1 == 100 MiB + 1 byte; Huge tier by current thresholds + warning):
 ```
 PERF sample: label=generate 100mib bytes=104857601 elapsed_ms=3347
 PERF sample: label=App::new 100mib bytes=104857601 elapsed_ms=1224
@@ -100,9 +100,9 @@ Note: these are wall-time / RSS for the full test harness invocation on this mac
 
 Caveat: measurements are observational only for this hardware and build. No budgets or "pass" criteria are declared yet. Do not treat numbers as universal. Future passes may add budgets after more data and hotspot identification.
 
-### Current Phase 2B large-file handling (as of this pass)
-- Large (>10 MiB <=100) / Huge (>100 MiB <=1 GiB) on open: full read still occurs; warning message is set initially; size/tier recorded in FileState.
-- After any content edit clears the transient message, bottom row now shows persistent status line containing tier label + "large-file mode" marker (plus path/dirty/size).
-- Extreme (>1 GiB): refused before any content read_to_string (no App, no watcher).
-- Status is shown only when no higher-priority message is present; messages always override.
-- No lazy loading, no mmap, no rope; 100 MiB/1 GiB are still fully materialized.
+### Current Phase 2B large-file handling (as of post 2-aj)
+- Large (>10 MiB <=100 MiB) / Huge (>100 MiB <=1 GiB) on open: full read still occurs; warning message set initially (transient); size_bytes/size_tier (from fs::metadata) recorded in FileState.
+- After content edit clears transient message, bottom row shows persistent status containing tier + "large-file mode" marker (plus path/dirty + size label). The size shown is last-known on-disk metadata, not live buffer byte length. No buffer scan or to_string is done for status.
+- Extreme (>1 GiB): refused before any content read_to_string (no App constructed, no watcher).
+- Status only when no higher-priority message present; messages always fully override.
+- No lazy loading, no mmap, no rope rewrite; 100 MiB/1 GiB still fully read and materialized into PieceTable. The "large-file mode" marker is a UI/status label only; there is no distinct large-file storage path yet.

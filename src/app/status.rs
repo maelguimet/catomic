@@ -9,7 +9,7 @@
 //! Invariants: plain/project labels stable; [untitled] for no path; size uses
 //!   existing format_file_size; Large/Huge get explicit "large-file mode" marker
 //!   in addition to tier; never called for content decisions.
-//! Phase: 2-aj (first visible large-file status without storage/render changes).
+//! Phase: 2-aj (first visible large-file status + disk <size> on-disk metadata labeling); post 2-ak hygiene.
 
 use std::path::Path;
 

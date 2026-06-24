@@ -11,18 +11,18 @@
 use std::io::{self, Write};
 use std::path::PathBuf;
 
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{self, Event, KeyEvent};
 
 use crate::buffer::{self, Buffer};
 use crate::file;
-use crate::file::io::ExternalFileStatus;
+
 use crate::mode::{Capabilities, Mode};
 use crate::terminal as term;
 
 mod file_state;
 pub use file_state::FileState;
 
-use file_state::{external_file_status, mark_saved, refresh_dirty};
+use file_state::external_file_status;
 
 mod open;
 mod reload;

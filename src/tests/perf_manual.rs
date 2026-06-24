@@ -29,6 +29,32 @@ fn manual_open_10mib_generated_file_smoke() {
     });
     print_perf_sample(&gen_sample);
 
+    // Phase breakdown for open/materialization hotspot (manual only, ignored).
+    // metadata: fs metadata probe (size decision path).
+    // read_to_string + PieceTable::from_text are the split of materialization cost.
+    // App::new remains the end-to-end measurement (re-reads internally).
+    // Content string is dropped promptly after the PT phase; no duplicate giant retained.
+    eprintln!("phase: metadata 10mib");
+    let ((), meta_sample) = measure_sample("metadata 10mib", Some(size), || {
+        let _ = std::fs::metadata(&p).expect("metadata 10mib");
+    });
+    print_perf_sample(&meta_sample);
+
+    {
+        eprintln!("phase: read_to_string 10mib");
+        let (content, rs) = measure_sample("read_to_string 10mib", Some(size), || {
+            std::fs::read_to_string(&p).expect("read_to_string 10mib")
+        });
+        print_perf_sample(&rs);
+
+        eprintln!("phase: PieceTable::from_text 10mib");
+        let (_, pts) = measure_sample("PieceTable::from_text 10mib", Some(size), || {
+            crate::buffer::PieceTable::from_text(&content)
+        });
+        print_perf_sample(&pts);
+        // content drops here; do not carry giant string into App::new measurement
+    }
+
     eprintln!("opening via App::new ...");
     let (app, open_sample) = measure_sample("App::new 10mib", Some(size), || {
         crate::app::App::new(Some(&p.to_string_lossy())).expect("open 10mib")
@@ -81,6 +107,27 @@ fn manual_open_100mib_generated_file_smoke() {
     };
     let _ = gen_ok;
     print_perf_sample(&gen_sample);
+
+    // Phase breakdown (same labels/shape as 10mib). Scoped to drop content promptly.
+    eprintln!("phase: metadata 100mib");
+    let ((), meta_sample) = measure_sample("metadata 100mib", Some(size), || {
+        let _ = std::fs::metadata(&p).expect("metadata 100mib");
+    });
+    print_perf_sample(&meta_sample);
+
+    {
+        eprintln!("phase: read_to_string 100mib");
+        let (content, rs) = measure_sample("read_to_string 100mib", Some(size), || {
+            std::fs::read_to_string(&p).expect("read_to_string 100mib")
+        });
+        print_perf_sample(&rs);
+
+        eprintln!("phase: PieceTable::from_text 100mib");
+        let (_, pts) = measure_sample("PieceTable::from_text 100mib", Some(size), || {
+            crate::buffer::PieceTable::from_text(&content)
+        });
+        print_perf_sample(&pts);
+    }
 
     eprintln!("opening via App::new (expect Huge warning)...");
     let app_res = measure_sample("App::new 100mib", Some(size), || {

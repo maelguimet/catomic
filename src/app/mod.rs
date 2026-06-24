@@ -27,6 +27,7 @@ use file_state::{external_file_status, mark_saved, refresh_dirty};
 mod open;
 mod reload;
 mod save;
+mod status;
 mod viewport;
 mod watch;
 
@@ -494,9 +495,22 @@ impl App {
     }
 
     pub(crate) fn render(&self, stdout: &mut dyn Write) -> io::Result<()> {
-        // Delegate to terminal render. Pass message for bottom-line display.
-        // Use screen as single source for height/scroll (no more hardcoded 24).
-        // Minimal: only message text (no filename/dirty marker etc).
+        // Delegate to terminal render. Render decides the bottom annotation:
+        // - if app.message is Some: show the transient (warning/error/quit etc.)
+        // - else: show persistent status line (mode/path/dirty/size/tier + large-file marker)
+        // App owns the decision string; terminal::render stays generic (receives Option<&str>).
+        // Screen is single source for dims.
+        let bottom: Option<String> = if let Some(ref m) = self.message {
+            Some(m.clone())
+        } else {
+            Some(status::format_status_line(
+                matches!(self.mode, Mode::Plain),
+                self.file.path.as_deref(),
+                self.file.dirty,
+                self.file.size_bytes,
+                self.file.size_tier,
+            ))
+        };
         term::render::render_buffer(
             stdout,
             &*self.buffer,
@@ -504,7 +518,7 @@ impl App {
             self.screen.scroll_left,
             self.screen.height as usize,
             self.screen.width as usize,
-            self.message.as_deref(),
+            bottom.as_deref(),
         )
     }
 }

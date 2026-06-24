@@ -93,7 +93,7 @@ PERF sample: label=create sparse 1g+ bytes=1073741825 elapsed_ms=0
 PERF sample: label=App::new extreme sparse bytes=1073741825 elapsed_ms=0
 ```
 
-Open-path phase samples (metadata / read_to_string / PieceTable::from_text) are emitted by the same ignored 10/100 tests (labels added post 2-ak, 2-al round). They were not executed/recorded with numbers on this hardware in the 2-am pass; see "available but not yet recorded" note below and TODO next-steps.
+Open-path phase samples (metadata / read_to_string / PieceTable::from_text) are emitted by the same ignored 10/100 tests (labels added in the 2-am round). They were not executed/recorded with numbers on this hardware in the 2-am pass; see "available but not yet recorded" note below and TODO next-steps.
 
 ### Open path phase breakdown (added 2-am; available but not yet recorded on this pass)
 Finer-grained manual samples for the open/materialization path were added to the existing ignored tests. Numbers below are not captured for this hardware/round.
@@ -147,7 +147,7 @@ All numbers remain advisory. Do not turn these into `#[test]` pass/fail gates in
 
 See TODO.md for the current next-intended pointer into this inventory.
 
-### Current Phase 2B large-file handling (as of post 2-al; includes later render/input hygiene)
+### Current Phase 2B large-file handling (as of post 2-am)
 - Large (>10 MiB <=100 MiB) / Huge (>100 MiB <=1 GiB) on open: full read still occurs; warning message set initially (transient); size_bytes/size_tier recorded in FileState (derived from a single initial metadata snapshot captured in open planning; still not a lazy or partial materialization path).
 - Initial open metadata/snapshot is now single-capture/derived (see 2-am), but content is still fully read and materialized into PieceTable for Large/Huge. Extreme refuses pre-read.
 - After content edit clears transient message, bottom row shows persistent status containing tier + "large-file mode" marker (plus path/dirty + "disk <size>" label). The size shown is last-known on-disk metadata (fs::metadata or narrow post-save fallback), not live buffer byte length. No buffer scan or to_string() for status.

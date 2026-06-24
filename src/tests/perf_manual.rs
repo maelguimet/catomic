@@ -3,7 +3,7 @@
 //! Owns: manual_open_10mib_generated_file_smoke, manual_open_100mib_..., manual_sparse_extreme...
 //! Must not: run on default `cargo test`; enforce timing thresholds; read 1 GiB dense;
 //!   add committed fixtures or new deps.
-//! Invariants: 10 MiB uses SMALL+1 for Large; 100 MiB uses LARGE+1 (Huge or Large allowed);
+//! Invariants: 10 MiB uses SMALL+1 for Large; 100 MiB uses LARGE+1 (Huge by current thresholds; warning path expected);
 //!   sparse Extreme >HUGE uses set_len only and expects clean skip or refusal before read;
 //!   same test names preserved for TODO command compatibility.
 //! Phase: 2-ai (split scaffold; enhancements for baseline reporting come after split).

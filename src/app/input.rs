@@ -18,6 +18,22 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use super::file_state::refresh_dirty;
 use super::{reload, save};
 
+/// Common post-content-mutation cleanup used by insert, delete, newline, undo, redo paths.
+/// Centralizes the exact sequence that must run after any buffer-mutating key:
+/// refresh dirty from history token, clear all transient pending confirmations and
+/// messages, reveal cursor, and render. Movement paths deliberately do not call this.
+/// Behavior must remain identical to the prior inlined blocks (including no-op undo/redo
+/// and boundary backspace/delete still clearing pending state).
+fn finish_content_edit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    refresh_dirty(&mut app.file, &*app.buffer);
+    app.pending_quit_confirm = false;
+    app.pending_save_conflict = None;
+    app.pending_reload = None;
+    app.message = None;
+    app.reveal_cursor();
+    app.render(out)
+}
+
 /// Thin entry called from the run loop (and a few tests).
 pub(crate) fn handle_key(app: &mut super::App, key: KeyEvent) -> io::Result<()> {
     let mut out = io::stdout();
@@ -87,13 +103,7 @@ pub(crate) fn handle_key_with(
             ..
         } => {
             app.buffer.insert_newline();
-            refresh_dirty(&mut app.file, &*app.buffer);
-            app.pending_quit_confirm = false;
-            app.pending_save_conflict = None;
-            app.pending_reload = None;
-            app.message = None;
-            app.reveal_cursor();
-            app.render(out)?;
+            finish_content_edit(app, out)?;
         }
 
         // Undo / Redo (Phase 1C). Ctrl+Z undo; Ctrl+Y and Ctrl+Shift+Z redo.
@@ -110,13 +120,7 @@ pub(crate) fn handle_key_with(
             && !modifiers.contains(KeyModifiers::SHIFT) =>
         {
             app.buffer.undo();
-            refresh_dirty(&mut app.file, &*app.buffer);
-            app.pending_quit_confirm = false;
-            app.pending_save_conflict = None;
-            app.pending_reload = None;
-            app.message = None;
-            app.reveal_cursor();
-            app.render(out)?;
+            finish_content_edit(app, out)?;
         }
         KeyEvent {
             code: KeyCode::Char('z'),
@@ -126,13 +130,7 @@ pub(crate) fn handle_key_with(
             && modifiers.contains(KeyModifiers::SHIFT) =>
         {
             app.buffer.redo();
-            refresh_dirty(&mut app.file, &*app.buffer);
-            app.pending_quit_confirm = false;
-            app.pending_save_conflict = None;
-            app.pending_reload = None;
-            app.message = None;
-            app.reveal_cursor();
-            app.render(out)?;
+            finish_content_edit(app, out)?;
         }
         KeyEvent {
             code: KeyCode::Char('Z'),
@@ -142,13 +140,7 @@ pub(crate) fn handle_key_with(
             && modifiers.contains(KeyModifiers::SHIFT) =>
         {
             app.buffer.redo();
-            refresh_dirty(&mut app.file, &*app.buffer);
-            app.pending_quit_confirm = false;
-            app.pending_save_conflict = None;
-            app.pending_reload = None;
-            app.message = None;
-            app.reveal_cursor();
-            app.render(out)?;
+            finish_content_edit(app, out)?;
         }
         KeyEvent {
             code: KeyCode::Char('y'),
@@ -156,13 +148,7 @@ pub(crate) fn handle_key_with(
             ..
         } if modifiers.contains(KeyModifiers::CONTROL) => {
             app.buffer.redo();
-            refresh_dirty(&mut app.file, &*app.buffer);
-            app.pending_quit_confirm = false;
-            app.pending_save_conflict = None;
-            app.pending_reload = None;
-            app.message = None;
-            app.reveal_cursor();
-            app.render(out)?;
+            finish_content_edit(app, out)?;
         }
 
         // Basic movement + editing (Phase 0)
@@ -175,14 +161,11 @@ pub(crate) fn handle_key_with(
             ..
         } => {
             if modifiers.contains(KeyModifiers::CONTROL) {
-                // Other Ctrl+letter combos ignored in Phase 0
+                // Other Ctrl+letter combos ignored in Phase 0; still reveal/render (existing behavior)
             } else if c == '\n' || c == '\r' {
                 app.buffer.insert_newline();
-                refresh_dirty(&mut app.file, &*app.buffer);
-                app.pending_quit_confirm = false;
-                app.pending_save_conflict = None;
-                app.pending_reload = None;
-                app.message = None;
+                finish_content_edit(app, out)?;
+                return Ok(());
             } else if !c.is_control() {
                 let ch = if modifiers.contains(KeyModifiers::SHIFT) && c.is_ascii_lowercase() {
                     c.to_ascii_uppercase()
@@ -190,11 +173,8 @@ pub(crate) fn handle_key_with(
                     c
                 };
                 app.buffer.insert_char(ch);
-                refresh_dirty(&mut app.file, &*app.buffer);
-                app.pending_quit_confirm = false;
-                app.pending_save_conflict = None;
-                app.pending_reload = None;
-                app.message = None;
+                finish_content_edit(app, out)?;
+                return Ok(());
             }
             app.reveal_cursor();
             app.render(out)?;
@@ -205,13 +185,7 @@ pub(crate) fn handle_key_with(
             ..
         } => {
             app.buffer.delete_back();
-            refresh_dirty(&mut app.file, &*app.buffer);
-            app.pending_quit_confirm = false;
-            app.pending_save_conflict = None;
-            app.pending_reload = None;
-            app.message = None;
-            app.reveal_cursor();
-            app.render(out)?;
+            finish_content_edit(app, out)?;
         }
 
         KeyEvent {
@@ -219,13 +193,7 @@ pub(crate) fn handle_key_with(
             ..
         } => {
             app.buffer.delete_forward();
-            refresh_dirty(&mut app.file, &*app.buffer);
-            app.pending_quit_confirm = false;
-            app.pending_save_conflict = None;
-            app.pending_reload = None;
-            app.message = None;
-            app.reveal_cursor();
-            app.render(out)?;
+            finish_content_edit(app, out)?;
         }
 
         KeyEvent {

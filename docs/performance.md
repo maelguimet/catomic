@@ -127,7 +127,7 @@ All numbers remain advisory. Do not turn these into `#[test]` pass/fail gates in
 
 See TODO.md for the current next-intended pointer into this inventory.
 
-### Current Phase 2B large-file handling (as of post 2-aj)
+### Current Phase 2B large-file handling (as of post 2-al; includes later render/input hygiene)
 - Large (>10 MiB <=100 MiB) / Huge (>100 MiB <=1 GiB) on open: full read still occurs; warning message set initially (transient); size_bytes/size_tier (from fs::metadata) recorded in FileState.
 - After content edit clears transient message, bottom row shows persistent status containing tier + "large-file mode" marker (plus path/dirty + "disk <size>" label). The size shown is last-known on-disk metadata (fs::metadata or narrow post-save fallback), not live buffer byte length. No buffer scan or to_string() for status.
 - Extreme (>1 GiB): refused before any content read_to_string (no App constructed, no watcher).

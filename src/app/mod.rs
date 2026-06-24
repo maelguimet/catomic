@@ -76,13 +76,11 @@ impl App {
         let mode = Mode::Plain; // Start in Plain by default. User can switch later.
         let caps = Capabilities::from_mode(mode);
 
-        // Size/guardrail decision extracted (see open.rs). Uses OpenSizeDecision.
-        // Behavior preserved exactly:
-        // - None/missing: size None, no message.
-        // - Small: size recorded, no warning.
-        // - Large/Huge: size + tier recorded, warning message prepared.
-        // - Extreme: Err before any read_to_string.
-        // - Hard meta err: propagated.
+        // Size/guardrail + initial snapshot extracted (see open.rs).
+        // Single capture_file_snapshot in prepare supplies both size decision
+        // and disk_snapshot (no duplicate metadata probe in the happy path).
+        // Behavior preserved exactly for all App::new cases (None/missing/Small/
+        // Large/Huge/Extreme/hard-meta/invalid-utf8-after-small-probe).
         let meta = open::prepare_open_file_meta(initial_path)?;
 
         let buffer: Box<dyn Buffer> = if let Some(path) = initial_path {
@@ -100,16 +98,14 @@ impl App {
 
         // Capture initial history position as the clean save point (open or new).
         let initial_pos = buffer.edit_history_position();
-        // Capture disk snapshot (std metadata only).
-        // - Ok(Present) or Ok(Absent from NotFound) stored as-is.
-        // - Real metadata errors (non-NotFound) are propagated as Err from new();
-        //   we do not silently map them to Absent (Phase 2-m hardening).
-        let disk_snapshot = if let Some(p) = initial_path {
-            Some(crate::file::io::capture_file_snapshot(p)?)
-        } else {
-            None
-        };
-        // Size from extracted meta (None for missing/none-path). Never synthesize from buffer.
+        // Use the single initial disk snapshot captured inside prepare_open_file_meta.
+        // No second metadata probe here. prepare already returned Err for hard meta
+        // errors and for Extreme (before we reach this read). Behavior preserved:
+        // - None path: snapshot=None
+        // - missing: snapshot=Some(Absent)
+        // - present: snapshot=Some(Present) with len+mtime from the same probe used for size
+        let disk_snapshot = meta.disk_snapshot;
+        // Size derived in prepare from the same snapshot (None for missing/none-path).
         // See also save.rs for the narrow post-write len fallback contract.
         // Build base App first, then attach watcher via best-effort helper.
         // This keeps watcher construction failure non-fatal and avoids

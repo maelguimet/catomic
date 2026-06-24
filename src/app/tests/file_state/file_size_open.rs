@@ -48,6 +48,14 @@ fn small_existing_opens_with_no_large_file_warning() {
         "Small must not set large-file warning, got: {:?}",
         app.message
     );
+    // Direct proof for single-capture: present file carries Present snapshot whose len
+    // matches the derived size_bytes (same probe used for guardrail decision).
+    match &app.file.disk_snapshot {
+        Some(crate::file::io::FileSnapshot::Present { len, .. }) => {
+            assert_eq!(*len, app.file.size_bytes.unwrap());
+        }
+        _ => panic!("small existing must carry Present snapshot"),
+    }
 
     cleanup(&p);
 }
@@ -151,6 +159,12 @@ fn missing_file_opens_empty_with_size_none_and_no_warning() {
         !msg.contains("Large file") && !msg.contains("too large"),
         "missing must not produce size warning, got: {:?}",
         app.message
+    );
+    // Direct proof for single-capture cleanup: missing carries explicit Absent snapshot.
+    assert_eq!(
+        app.file.disk_snapshot,
+        Some(crate::file::io::FileSnapshot::Absent),
+        "missing must carry explicit Absent snapshot from the initial capture"
     );
 }
 

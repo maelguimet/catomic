@@ -500,26 +500,36 @@ impl App {
         // - else: show persistent status line (mode/path/dirty/size/tier + large-file marker)
         // App owns the decision string; terminal::render stays generic (receives Option<&str>).
         // Screen is single source for dims.
-        let bottom: Option<String> = if let Some(ref m) = self.message {
-            Some(m.clone())
+        // Avoid cloning self.message: pass Some(m.as_str()) directly.
+        // Status is built locally only for the no-message path and passed as &str.
+        if let Some(ref m) = self.message {
+            term::render::render_buffer(
+                stdout,
+                &*self.buffer,
+                self.screen.scroll_top,
+                self.screen.scroll_left,
+                self.screen.height as usize,
+                self.screen.width as usize,
+                Some(m.as_str()),
+            )
         } else {
-            Some(status::format_status_line(
+            let status = status::format_status_line(
                 matches!(self.mode, Mode::Plain),
                 self.file.path.as_deref(),
                 self.file.dirty,
                 self.file.size_bytes,
                 self.file.size_tier,
-            ))
-        };
-        term::render::render_buffer(
-            stdout,
-            &*self.buffer,
-            self.screen.scroll_top,
-            self.screen.scroll_left,
-            self.screen.height as usize,
-            self.screen.width as usize,
-            bottom.as_deref(),
-        )
+            );
+            term::render::render_buffer(
+                stdout,
+                &*self.buffer,
+                self.screen.scroll_top,
+                self.screen.scroll_left,
+                self.screen.height as usize,
+                self.screen.width as usize,
+                Some(status.as_str()),
+            )
+        }
     }
 }
 

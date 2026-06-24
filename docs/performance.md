@@ -32,7 +32,14 @@ When adding expensive work, document:
 
 ## Testing and Measurement
 
-Use the perf harness in `src/tests/perf.rs`.
+Perf harness is split (for size hygiene):
+- src/tests/perf.rs (tiny hub with #[path] declarations)
+- src/tests/perf_helpers.rs (no-deps generators, measure/print sample)
+- src/tests/perf_default.rs (cheap non-ignored smokes + functional asserts only)
+- src/tests/perf_manual.rs (#[ignore] 10/100 MiB + sparse extreme for baselines)
+
+Use `cargo test tests::perf -- --nocapture` (defaults) and the manual ignored commands
+(see Phase 2B baseline section below).
 
 Profile before optimizing redraw or buffer access.
 
@@ -92,3 +99,10 @@ PERF sample: label=App::new extreme sparse bytes=1073741825 elapsed_ms=0
 Note: these are wall-time / RSS for the full test harness invocation on this machine (not pure editor hot path). Generate time includes FS streaming writes. App::new includes read + PieceTable build + size capture. Render is cheap full-clear for these runs.
 
 Caveat: measurements are observational only for this hardware and build. No budgets or "pass" criteria are declared yet. Do not treat numbers as universal. Future passes may add budgets after more data and hotspot identification.
+
+### Current Phase 2B large-file handling (as of this pass)
+- Large (>10 MiB <=100) / Huge (>100 MiB <=1 GiB) on open: full read still occurs; warning message is set initially; size/tier recorded in FileState.
+- After any content edit clears the transient message, bottom row now shows persistent status line containing tier label + "large-file mode" marker (plus path/dirty/size).
+- Extreme (>1 GiB): refused before any content read_to_string (no App, no watcher).
+- Status is shown only when no higher-priority message is present; messages always override.
+- No lazy loading, no mmap, no rope; 100 MiB/1 GiB are still fully materialized.

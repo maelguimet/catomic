@@ -16,7 +16,9 @@ impl Patch {
     pub fn from_llm_output(text: &str) -> Option<Self> {
         // Very naive: later use a proper diff parser.
         if text.contains("diff --git") || text.contains("@@") {
-            Some(Patch { raw: text.to_string() })
+            Some(Patch {
+                raw: text.to_string(),
+            })
         } else {
             None
         }

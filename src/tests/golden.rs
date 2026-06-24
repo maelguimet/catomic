@@ -221,11 +221,13 @@ mod tests {
 
         let expected = "line one\nline two\n";
         // Use the atomic helper directly (mirrors what App save now does)
-        crate::file::io::atomic_write_string(&out_path, expected)
-            .expect("atomic save in golden");
+        crate::file::io::atomic_write_string(&out_path, expected).expect("atomic save in golden");
 
         let on_disk = fs::read_to_string(&out_path).expect("read after atomic");
-        assert_eq!(on_disk, expected, "golden save via atomic must write exact bytes");
+        assert_eq!(
+            on_disk, expected,
+            "golden save via atomic must write exact bytes"
+        );
 
         // No temp sibling should linger
         let parent = out_path.parent().unwrap();

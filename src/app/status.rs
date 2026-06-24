@@ -31,7 +31,10 @@ pub(crate) fn format_status_line(
     size_tier: Option<FileSizeTier>,
 ) -> String {
     let mode = if is_plain { "plain" } else { "project" };
-    let name = match path.and_then(|p| p.file_name()).map(|s| s.to_string_lossy().into_owned()) {
+    let name = match path
+        .and_then(|p| p.file_name())
+        .map(|s| s.to_string_lossy().into_owned())
+    {
         Some(n) if !n.is_empty() => n,
         _ => "[untitled]".to_string(),
     };
@@ -76,33 +79,85 @@ mod tests {
 
     #[test]
     fn after_edit_shows_modified() {
-        let s = format_status_line(true, p("notes.txt").as_deref(), true, Some(123), Some(FileSizeTier::Small));
+        let s = format_status_line(
+            true,
+            p("notes.txt").as_deref(),
+            true,
+            Some(123),
+            Some(FileSizeTier::Small),
+        );
         assert!(s.contains("modified"), "status: {}", s);
         assert!(s.contains("notes.txt"), "status: {}", s);
-        assert!(s.contains("disk "), "dirty small still shows disk size label: {}", s);
+        assert!(
+            s.contains("disk "),
+            "dirty small still shows disk size label: {}",
+            s
+        );
     }
 
     #[test]
     fn small_file_shows_size_and_tier() {
-        let s = format_status_line(true, p("small.txt").as_deref(), false, Some(4096), Some(FileSizeTier::Small));
-        assert!(s.contains("4.0 KiB") || s.contains("4 KiB") || s.contains("4096"), "status: {}", s);
+        let s = format_status_line(
+            true,
+            p("small.txt").as_deref(),
+            false,
+            Some(4096),
+            Some(FileSizeTier::Small),
+        );
+        assert!(
+            s.contains("4.0 KiB") || s.contains("4 KiB") || s.contains("4096"),
+            "status: {}",
+            s
+        );
         assert!(s.contains("small"), "status: {}", s);
-        assert!(s.contains("disk "), "size label must indicate on-disk metadata: {}", s);
+        assert!(
+            s.contains("disk "),
+            "size label must indicate on-disk metadata: {}",
+            s
+        );
     }
 
     #[test]
     fn large_tier_shows_large_file_mode_marker() {
-        let s = format_status_line(true, p("big.log").as_deref(), false, Some(10*1024*1024 + 1), Some(FileSizeTier::Large));
-        assert!(s.contains("large-file mode"), "large status must include marker: {}", s);
+        let s = format_status_line(
+            true,
+            p("big.log").as_deref(),
+            false,
+            Some(10 * 1024 * 1024 + 1),
+            Some(FileSizeTier::Large),
+        );
+        assert!(
+            s.contains("large-file mode"),
+            "large status must include marker: {}",
+            s
+        );
         assert!(s.contains("large"), "status: {}", s);
-        assert!(s.contains("disk "), "large size must be labeled disk metadata: {}", s);
+        assert!(
+            s.contains("disk "),
+            "large size must be labeled disk metadata: {}",
+            s
+        );
     }
 
     #[test]
     fn huge_includes_marker_and_size() {
-        let s = format_status_line(true, p("/tmp/huge.bin").as_deref(), true, Some(200*1024*1024), Some(FileSizeTier::Huge));
-        assert!(s.contains("large-file mode"), "huge also gets marker: {}", s);
+        let s = format_status_line(
+            true,
+            p("/tmp/huge.bin").as_deref(),
+            true,
+            Some(200 * 1024 * 1024),
+            Some(FileSizeTier::Huge),
+        );
+        assert!(
+            s.contains("large-file mode"),
+            "huge also gets marker: {}",
+            s
+        );
         assert!(s.contains("MiB"), "size label: {}", s);
-        assert!(s.contains("disk "), "huge size must be labeled disk metadata: {}", s);
+        assert!(
+            s.contains("disk "),
+            "huge size must be labeled disk metadata: {}",
+            s
+        );
     }
 }

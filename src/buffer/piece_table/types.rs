@@ -11,8 +11,8 @@
 //! - cursor_byte_offset always matches the byte position of (cursor.row, cursor.col).
 //! Phase: 1B-1C
 
-use crate::buffer::Cursor;
 use crate::buffer::line_index::LineIndex;
+use crate::buffer::Cursor;
 
 /// Source buffer for a piece.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

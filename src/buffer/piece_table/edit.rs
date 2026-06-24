@@ -100,7 +100,8 @@ impl PieceTable {
         let (pidx, local) = self.split_point(at);
         let pc = self.pieces[pidx].clone();
 
-        let mut new_pieces: Vec<Piece> = Vec::with_capacity(self.pieces.len() + to_insert.len() + 1);
+        let mut new_pieces: Vec<Piece> =
+            Vec::with_capacity(self.pieces.len() + to_insert.len() + 1);
         for (i, p) in self.pieces.iter().enumerate() {
             if i == pidx {
                 if local > 0 {

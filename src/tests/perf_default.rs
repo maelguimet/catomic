@@ -181,24 +181,45 @@ fn render_uses_status_line_when_message_none_and_message_overrides() {
     let mut out: Vec<u8> = Vec::new();
     app.render(&mut out).expect("render status");
     let s = String::from_utf8_lossy(&out);
-    let has_status_marker = s.contains("plain") || s.contains("saved") || s.contains("small") || s.contains("B ");
-    assert!(has_status_marker, "expected status line when no message, got bottom: last lines ~{}", s.chars().rev().take(120).collect::<String>().chars().rev().collect::<String>());
+    let has_status_marker =
+        s.contains("plain") || s.contains("saved") || s.contains("small") || s.contains("B ");
+    assert!(
+        has_status_marker,
+        "expected status line when no message, got bottom: last lines ~{}",
+        s.chars()
+            .rev()
+            .take(120)
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect::<String>()
+    );
     // size must be labeled as disk metadata, not implied live buffer size
-    assert!(s.contains("disk "), "status size must be labeled as disk/on-disk metadata when present: {}", s);
+    assert!(
+        s.contains("disk "),
+        "status size must be labeled as disk/on-disk metadata when present: {}",
+        s
+    );
 
     // Force message: must appear (overrides)
     app.message = Some("OVERRIDE-XYZ-42".to_string());
     let mut out2: Vec<u8> = Vec::new();
     app.render(&mut out2).expect("render msg");
     let s2 = String::from_utf8_lossy(&out2);
-    assert!(s2.contains("OVERRIDE-XYZ-42"), "message must take precedence on bottom row");
+    assert!(
+        s2.contains("OVERRIDE-XYZ-42"),
+        "message must take precedence on bottom row"
+    );
 
     // Clear message (as content edit would): status returns
     app.message = None;
     let mut out3: Vec<u8> = Vec::new();
     app.render(&mut out3).expect("render status again");
     let s3 = String::from_utf8_lossy(&out3);
-    assert!(s3.contains("plain") || s3.contains("saved"), "status should return after clearing message");
+    assert!(
+        s3.contains("plain") || s3.contains("saved"),
+        "status should return after clearing message"
+    );
 
     cleanup_perf(&p);
 }

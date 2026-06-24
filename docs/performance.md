@@ -100,6 +100,32 @@ Note: these are wall-time / RSS for the full test harness invocation on this mac
 
 Caveat: measurements are observational only for this hardware and build. No budgets or "pass" criteria are declared yet. Do not treat numbers as universal. Future passes may add budgets after more data and hotspot identification.
 
+### Candidate Phase 2B budgets — not enforced yet
+
+These are starting-point advisory targets derived from the 2026-06-24 recorded baselines above. They are **not** wired into tests as assertions. They are local-machine dependent and must be revisited with more samples on representative hardware before any enforcement.
+
+Suggested initial candidates (open/App::new includes full read + PieceTable construction for the still-full-materialization path):
+
+- 10 MiB Large open/App::new: target under ~500 ms on comparable hardware (baseline ~130 ms)
+- 10 MiB render (full-clear synthetic): target under ~20 ms (baseline ~3 ms)
+- 10 MiB MaxRSS (full test invocation): target under ~100 MiB (baseline ~34 MiB)
+- 100 MiB Huge open/App::new: target under ~2500 ms on comparable hardware (baseline ~1224 ms)
+- 100 MiB render (full-clear synthetic): target under ~100 ms (baseline ~32 ms)
+- 100 MiB MaxRSS (full test invocation): target under ~600 MiB (baseline ~302 MiB)
+- sparse >1 GiB refusal (Extreme): target near-instant metadata-only refusal (baseline 0 ms elapsed, low MaxRSS ~29 MiB for test process), no content read
+
+All numbers remain advisory. Do not turn these into `#[test]` pass/fail gates in this or the immediate next pass.
+
+### Observed hotspots from baseline (for next decision, not implementation here)
+
+- Generation time (dense streaming write) is test-fixture cost, not editor cost.
+- App::new dominates observed time for 10/100 MiB because it performs the full `read_to_string` + `PieceTable::from_text` + size probe + initial history token. This is expected while large-file storage remains full-materialization.
+- MaxRSS for 100 MiB is substantially larger than file size (~3x here) because the current path fully materializes content (PieceTable + internal structures) plus test harness overhead. This is a direct consequence of "no lazy yet".
+- Render numbers are currently cheap in these synthetic tests (full clear of small viewport over a buffer that has already been built); this is not proof of scalable redraw behavior under editing/resizing for large files.
+- The correct next optimization area is likely open/materialization (and/or viewport-aware queries), but no implementation work on lazy/mmap/rope or buffer changes occurs in the current round. Decision should be made from the hotspot inventory + more data, not vibes.
+
+See TODO.md for the current next-intended pointer into this inventory.
+
 ### Current Phase 2B large-file handling (as of post 2-aj)
 - Large (>10 MiB <=100 MiB) / Huge (>100 MiB <=1 GiB) on open: full read still occurs; warning message set initially (transient); size_bytes/size_tier (from fs::metadata) recorded in FileState.
 - After content edit clears transient message, bottom row shows persistent status containing tier + "large-file mode" marker (plus path/dirty + size label). The size shown is last-known on-disk metadata, not live buffer byte length. No buffer scan or to_string is done for status.

@@ -183,6 +183,8 @@ fn render_uses_status_line_when_message_none_and_message_overrides() {
     let s = String::from_utf8_lossy(&out);
     let has_status_marker = s.contains("plain") || s.contains("saved") || s.contains("small") || s.contains("B ");
     assert!(has_status_marker, "expected status line when no message, got bottom: last lines ~{}", s.chars().rev().take(120).collect::<String>().chars().rev().collect::<String>());
+    // size must be labeled as disk metadata, not implied live buffer size
+    assert!(s.contains("disk "), "status size must be labeled as disk/on-disk metadata when present: {}", s);
 
     // Force message: must appear (overrides)
     app.message = Some("OVERRIDE-XYZ-42".to_string());

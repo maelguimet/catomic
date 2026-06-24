@@ -20,7 +20,9 @@ use crate::file::size::{file_size_tier_label, format_file_size, FileSizeTier};
 /// passed through as-is).
 ///
 /// Format sketch (stable enough for tests): "plain [untitled] saved"
-/// or "plain foo.txt modified 10.0 MiB large large-file mode"
+/// or "plain foo.txt modified disk 10.0 MiB large large-file mode"
+/// Size is always labeled as last-known on-disk metadata (fs::metadata or post-save
+/// fallback), never a live buffer content scan. Untitled/no-path cases have no disk size.
 pub(crate) fn format_status_line(
     is_plain: bool,
     path: Option<&Path>,
@@ -39,6 +41,7 @@ pub(crate) fn format_status_line(
 
     if let Some(b) = size_bytes {
         out.push(' ');
+        out.push_str("disk ");
         out.push_str(&format_file_size(b));
     }
     if let Some(t) = size_tier {
@@ -66,8 +69,9 @@ mod tests {
         assert!(s.contains("plain"), "status: {}", s);
         assert!(s.contains("[untitled]"), "status: {}", s);
         assert!(s.contains("saved"), "status: {}", s);
-        // no size or tier
+        // no size or tier or disk label
         assert!(!s.contains("large-file"));
+        assert!(!s.contains("disk "));
     }
 
     #[test]
@@ -75,6 +79,7 @@ mod tests {
         let s = format_status_line(true, p("notes.txt").as_deref(), true, Some(123), Some(FileSizeTier::Small));
         assert!(s.contains("modified"), "status: {}", s);
         assert!(s.contains("notes.txt"), "status: {}", s);
+        assert!(s.contains("disk "), "dirty small still shows disk size label: {}", s);
     }
 
     #[test]
@@ -82,6 +87,7 @@ mod tests {
         let s = format_status_line(true, p("small.txt").as_deref(), false, Some(4096), Some(FileSizeTier::Small));
         assert!(s.contains("4.0 KiB") || s.contains("4 KiB") || s.contains("4096"), "status: {}", s);
         assert!(s.contains("small"), "status: {}", s);
+        assert!(s.contains("disk "), "size label must indicate on-disk metadata: {}", s);
     }
 
     #[test]
@@ -89,6 +95,7 @@ mod tests {
         let s = format_status_line(true, p("big.log").as_deref(), false, Some(10*1024*1024 + 1), Some(FileSizeTier::Large));
         assert!(s.contains("large-file mode"), "large status must include marker: {}", s);
         assert!(s.contains("large"), "status: {}", s);
+        assert!(s.contains("disk "), "large size must be labeled disk metadata: {}", s);
     }
 
     #[test]
@@ -96,5 +103,6 @@ mod tests {
         let s = format_status_line(true, p("/tmp/huge.bin").as_deref(), true, Some(200*1024*1024), Some(FileSizeTier::Huge));
         assert!(s.contains("large-file mode"), "huge also gets marker: {}", s);
         assert!(s.contains("MiB"), "size label: {}", s);
+        assert!(s.contains("disk "), "huge size must be labeled disk metadata: {}", s);
     }
 }

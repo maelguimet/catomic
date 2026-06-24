@@ -45,15 +45,12 @@ pub fn render_buffer<W: Write + ?Sized>(
             write!(out, "\r\n")?;
         }
         let line = &lv.content;
-        let rendered = if content_w == 0 {
-            String::new()
-        } else {
-            line.chars()
-                .skip(start_col)
-                .take(content_w)
-                .collect::<String>()
-        };
-        write!(out, "{}", rendered)?;
+        if content_w > 0 {
+            // Write visible scalar chars directly; no per-line temporary String allocation.
+            for ch in line.chars().skip(start_col).take(content_w) {
+                write!(out, "{}", ch)?;
+            }
+        }
     }
 
     // Minimal bottom message line on last row (pinned via absolute move).
@@ -158,5 +155,23 @@ mod tests {
             default_s.contains("012345"),
             "first 6 chars of first line visible with start_col=0"
         );
+    }
+
+    #[test]
+    fn render_buffer_horizontal_scalar_slicing_multibyte_preserves_char_boundaries() {
+        // Unicode scalar (char) slicing: "é" is 1 scalar, "猫" 1, "🙂" 1.
+        // start_col/take must not split multibyte sequences.
+        let b = SimpleBuffer::from_text("aé猫🙂Z\n");
+        let mut out: Vec<u8> = Vec::new();
+        // start_col=1, width=3 => take(3) scalars after skip: "é猫🙂"
+        render_buffer(&mut out, &b, 0, 1, 2, 3, None).expect("render slice multibyte");
+        let s = String::from_utf8_lossy(&out);
+        assert!(
+            s.contains("é猫🙂"),
+            "expected scalar slice of multibyte: {}",
+            s
+        );
+        assert!(!s.contains("a"), "should have skipped the first scalar");
+        assert!(!s.contains('Z'), "should have taken only 3 scalars");
     }
 }

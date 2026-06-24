@@ -122,6 +122,7 @@ All numbers remain advisory. Do not turn these into `#[test]` pass/fail gates in
 - App::new dominates observed time for 10/100 MiB because it performs the full `read_to_string` + `PieceTable::from_text` + size probe + initial history token. This is expected while large-file storage remains full-materialization.
 - MaxRSS for 100 MiB is substantially larger than file size (~3x here) because the current path fully materializes content (PieceTable + internal structures) plus test harness overhead. This is a direct consequence of "no lazy yet".
 - Render numbers are currently cheap in these synthetic tests (full clear of small viewport over a buffer that has already been built); this is not proof of scalable redraw behavior under editing/resizing for large files.
+- Render still performs a full clear every frame; as of later hygiene passes it avoids allocating a temporary String for every visible sliced line (writes scalar chars directly), but this is not a scalable redraw strategy.
 - The correct next optimization area is likely open/materialization (and/or viewport-aware queries), but no implementation work on lazy/mmap/rope or buffer changes occurs in the current round. Decision should be made from the hotspot inventory + more data, not vibes.
 
 See TODO.md for the current next-intended pointer into this inventory.

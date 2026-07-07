@@ -46,7 +46,11 @@ impl PieceTable {
     }
 
     pub fn from_text(text: &str) -> Self {
-        let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+        let normalized = if text.as_bytes().contains(&b'\r') {
+            text.replace("\r\n", "\n").replace('\r', "\n")
+        } else {
+            text.to_string()
+        };
         let (original, pieces) = if normalized.is_empty() {
             (
                 String::new(),

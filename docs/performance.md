@@ -93,35 +93,90 @@ PERF sample: label=create sparse 1g+ bytes=1073741825 elapsed_ms=0
 PERF sample: label=App::new extreme sparse bytes=1073741825 elapsed_ms=0
 ```
 
-Open-path phase samples (metadata / read_to_string / PieceTable::from_text) are emitted by the same ignored 10/100 tests (labels added in the 2-am round). They were not executed/recorded with numbers on this hardware in the 2-am pass; see "available but not yet recorded" note below and TODO next-steps.
+### Open Path Phase Breakdown (2026-07-07)
+Finer-grained manual samples for the open/materialization path were recorded on
+2026-07-07 before and after the LF-only `PieceTable::from_text` normalization
+fast path. These numbers are observational only; they are not budgets or gates.
 
-### Open path phase breakdown (added 2-am; available but not yet recorded on this pass)
-Finer-grained manual samples for the open/materialization path were added to the existing ignored tests. Numbers below are not captured for this hardware/round.
+Environment for this follow-up sample:
+- Date: 2026-07-07
+- rustc 1.92.0 (ded5c06cf 2025-12-08)
+- cargo 1.92.0 (344c4567c 2025-10-21)
+- Linux pop-os 7.0.11-76070011-generic #202606011647~1780583630~22.04~70ad774 SMP PREEMPT_DYNAMIC Thu J x86_64 x86_64 x86_64 GNU/Linux
+- nproc: 24
+- Mem: 62 Gi total, ~48 Gi available (free -h at capture)
+- FS: / on 912G nvme, 70% used
 
-Commands (emit all phases + prior labels):
+Commands:
 ```
 cargo test manual_open_10mib_generated_file_smoke -- --ignored --nocapture
 cargo test manual_open_100mib_generated_file_smoke -- --ignored --nocapture
+cargo test manual_sparse_extreme_refusal_smoke -- --ignored --nocapture
+/usr/bin/time -v cargo test manual_open_100mib_generated_file_smoke -- --ignored --nocapture
 ```
 
-Clarification:
+Before LF-only fast path:
+```
+PERF sample: label=generate 10mib bytes=10485761 elapsed_ms=300
+PERF sample: label=metadata 10mib bytes=10485761 elapsed_ms=0
+PERF sample: label=read_to_string 10mib bytes=10485761 elapsed_ms=6
+PERF sample: label=PieceTable::from_text 10mib bytes=10485761 elapsed_ms=115
+PERF sample: label=App::new 10mib bytes=10485761 elapsed_ms=125
+PERF sample: label=render 10mib bytes=10485761 elapsed_ms=1
+
+PERF sample: label=generate 100mib bytes=104857601 elapsed_ms=3083
+PERF sample: label=metadata 100mib bytes=104857601 elapsed_ms=0
+PERF sample: label=read_to_string 100mib bytes=104857601 elapsed_ms=42
+PERF sample: label=PieceTable::from_text 100mib bytes=104857601 elapsed_ms=1204
+PERF sample: label=App::new 100mib bytes=104857601 elapsed_ms=1247
+PERF sample: label=render 100mib bytes=104857601 elapsed_ms=35
+
+PERF sample: label=create sparse 1g+ bytes=1073741825 elapsed_ms=0
+PERF sample: label=App::new extreme sparse bytes=1073741825 elapsed_ms=0
+```
+
+After LF-only fast path:
+```
+PERF sample: label=generate 10mib bytes=10485761 elapsed_ms=292
+PERF sample: label=metadata 10mib bytes=10485761 elapsed_ms=0
+PERF sample: label=read_to_string 10mib bytes=10485761 elapsed_ms=5
+PERF sample: label=PieceTable::from_text 10mib bytes=10485761 elapsed_ms=60
+PERF sample: label=App::new 10mib bytes=10485761 elapsed_ms=65
+PERF sample: label=render 10mib bytes=10485761 elapsed_ms=3
+
+PERF sample: label=generate 100mib bytes=104857601 elapsed_ms=2953
+PERF sample: label=metadata 100mib bytes=104857601 elapsed_ms=0
+PERF sample: label=read_to_string 100mib bytes=104857601 elapsed_ms=44
+PERF sample: label=PieceTable::from_text 100mib bytes=104857601 elapsed_ms=610
+PERF sample: label=App::new 100mib bytes=104857601 elapsed_ms=679
+PERF sample: label=render 100mib bytes=104857601 elapsed_ms=35
+```
+
+Timed 100 MiB after-run (`/usr/bin/time -v`) produced similar timings
+(`PieceTable::from_text` 628 ms, `App::new` 693 ms, render 37 ms) and
+Maximum resident set size: 208116 kB.
+
+Clarifications:
 - Generation time is test-fixture cost (dense streaming write), not editor cost.
 - `read_to_string` and `PieceTable::from_text` are the useful split for the observed open/materialization hotspot under full materialization.
+- The LF-only fast path avoids two unconditional `replace` passes when opened content contains no `\r`; CRLF/CR inputs still normalize to `\n`.
 - `App::new` remains the end-to-end open measurement (includes size probe + history token setup).
+- `PieceTable::from_text` remains the dominant measured subphase for 10/100 MiB LF-only opens, but roughly halved on this hardware after the fast path.
 - These (and all current numbers) are observational only; not budgets, not gates, not pass/fail criteria.
 
 ### Memory (Max RSS from /usr/bin/time -v)
 - 10 MiB run: 34456 kB
 - 100 MiB run: 309672 kB
 - sparse extreme test process: 29884 kB
+- 2026-07-07 100 MiB after LF-only fast path timed run: 208116 kB
 
-Note: these are wall-time / RSS for the full test harness invocation on this machine (not pure editor hot path). Generate time includes FS streaming writes. App::new includes read + PieceTable build + size capture. Render is cheap full-clear for these runs.
+Note: these are wall-time / RSS for the full test harness invocation on this machine (not pure editor hot path). Generate time includes FS streaming writes. App::new includes read + PieceTable build + size capture. Render is cheap full-clear for these runs. The first three bullets are from the 2026-06-24 baseline; the last bullet is the 2026-07-07 after-run.
 
 Caveat: measurements are observational only for this hardware and build. No budgets or "pass" criteria are declared yet. Do not treat numbers as universal. Future passes may add budgets after more data and hotspot identification.
 
 ### Candidate Phase 2B budgets — not enforced yet
 
-These are starting-point advisory targets derived from the 2026-06-24 recorded baselines above. They are **not** wired into tests as assertions. They are local-machine dependent and must be revisited with more samples on representative hardware before any enforcement.
+These are starting-point advisory targets derived from the 2026-06-24 recorded baselines above, with a 2026-07-07 follow-up split showing the current LF-only fast path behavior. They are **not** wired into tests as assertions. They are local-machine dependent and must be revisited with more samples on representative hardware before any enforcement.
 
 Suggested initial candidates (open/App::new includes full read + PieceTable construction for the still-full-materialization path):
 
@@ -138,18 +193,18 @@ All numbers remain advisory. Do not turn these into `#[test]` pass/fail gates in
 ### Observed hotspots from baseline (for next decision, not implementation here)
 
 - Generation time (dense streaming write) is test-fixture cost, not editor cost.
-- App::new dominates observed time for 10/100 MiB because it performs the full `read_to_string` + `PieceTable::from_text` + size probe + initial history token. This is expected while large-file storage remains full-materialization.
-- MaxRSS for 100 MiB is substantially larger than file size (~3x here) because the current path fully materializes content (PieceTable + internal structures) plus test harness overhead. This is a direct consequence of "no lazy yet".
+- App::new dominates observed time for 10/100 MiB because it performs the full `read_to_string` + `PieceTable::from_text` + size probe + initial history token. The 2026-07-07 split shows `PieceTable::from_text` dominates the measured subphases for LF-only content even after the normalization fast path.
+- MaxRSS for 100 MiB remains substantially larger than file size because the current path fully materializes content (PieceTable + internal structures) plus test harness overhead. The 2026-06-24 run was ~3x file size; the 2026-07-07 after-run was ~2x, still a direct consequence of "no lazy yet".
 - Render numbers are currently cheap in these synthetic tests (full clear of small viewport over a buffer that has already been built); this is not proof of scalable redraw behavior under editing/resizing for large files.
 - Render still performs a full clear every frame; as of later hygiene passes it avoids allocating a temporary String for every visible sliced line (writes scalar chars directly), but this is not a scalable redraw strategy.
-- The correct next optimization area is likely open/materialization (and/or viewport-aware queries), but no implementation work on lazy/mmap/rope or buffer changes occurs in the current round. Decision should be made from the hotspot inventory + more data, not vibes.
-- As of the 2-am round, the ignored manual open tests emit stable phase samples for the open path: "metadata", "read_to_string", "PieceTable::from_text", "App::new" (end-to-end), and "render". These are still observational only. Generation time is fixture cost. `read_to_string` + `PieceTable::from_text` provide the useful split of the materialization hotspot. `App::new` remains the full open measurement. No budgets or gates.
+- The next optimization area remains open/materialization (for example index construction, copy count, or a real lazy storage design). The LF-only fast path was only a narrow copy-avoidance cleanup; it is not a lazy/mmap/rope solution.
+- The ignored manual open tests emit stable phase samples for the open path: "metadata", "read_to_string", "PieceTable::from_text", "App::new" (end-to-end), and "render". These are still observational only. Generation time is fixture cost. `read_to_string` + `PieceTable::from_text` provide the useful split of the materialization hotspot. `App::new` remains the full open measurement. No budgets or gates.
 
 See TODO.md for the current next-intended pointer into this inventory.
 
-### Current Phase 2B large-file handling (as of post 2-am)
+### Current Phase 2B large-file handling (as of post 2-an)
 - Large (>10 MiB <=100 MiB) / Huge (>100 MiB <=1 GiB) on open: full read still occurs; warning message set initially (transient); size_bytes/size_tier recorded in FileState (derived from a single initial metadata snapshot captured in open planning; still not a lazy or partial materialization path).
-- Initial open metadata/snapshot is now single-capture/derived (see 2-am), but content is still fully read and materialized into PieceTable for Large/Huge. Extreme refuses pre-read.
+- Initial open metadata/snapshot is single-capture/derived (see 2-am). LF-only `PieceTable::from_text` avoids extra CR-normalization copies (2-an), but content is still fully read and materialized into PieceTable for Large/Huge. Extreme refuses pre-read.
 - After content edit clears transient message, bottom row shows persistent status containing tier + "large-file mode" marker (plus path/dirty + "disk <size>" label). The size shown is last-known on-disk metadata (fs::metadata or narrow post-save fallback), not live buffer byte length. No buffer scan or to_string() for status.
 - Extreme (>1 GiB): refused before any content read_to_string (no App constructed, no watcher).
 - Status only when no higher-priority message present; messages always fully override.

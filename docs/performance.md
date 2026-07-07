@@ -309,10 +309,18 @@ An ignored sparse exact-1-GiB Huge smoke now validates the limited read-only
 open + simple navigation/render path without writing a dense fixture:
 ```
 PERF sample: label=create sparse 1gib bytes=1073741824 elapsed_ms=0
-PERF sample: label=App::new 1gib sparse huge bytes=1073741824 elapsed_ms=1422
+PERF sample: label=App::new 1gib sparse huge bytes=1073741824 elapsed_ms=1269
 PERF sample: label=navigate 1gib sparse huge bytes=1073741824 elapsed_ms=0
 PERF sample: label=render 1gib sparse huge bytes=1073741824 elapsed_ms=0
 PERF sample: label=render 1gib sparse huge far-window bytes=1073741824 elapsed_ms=0
+```
+
+After adding sparse per-line char-column checkpoints for LargeFileBuffer, an
+ignored dense non-ASCII Huge smoke measures scalar-safe far-horizontal render:
+```
+PERF sample: label=generate 100mib-nonascii bytes=104857602 elapsed_ms=17
+PERF sample: label=App::new 100mib-nonascii bytes=104857602 elapsed_ms=1051
+PERF sample: label=render 100mib-nonascii far-window bytes=104857602 elapsed_ms=0
 ```
 
 Clarifications:
@@ -324,7 +332,7 @@ Clarifications:
 - App open now has an explicit content plan from the single initial metadata snapshot: untitled/missing paths open empty, Small/Large present paths full-read into editable PieceTable, and Huge present paths open read-only through LargeFileBuffer.
 - Confirmed Ctrl+R Modified reload reapplies the same size policy: Small/Large read into editable PieceTable, Huge reopens read-only LargeFileBuffer, and Extreme refuses before full content read.
 - `file::io::read_to_string` is now the single App open/reload full-read helper for editable paths; it reads bytes then moves them into `String` after UTF-8 validation. It remains full materialization.
-- LargeFileBuffer validates UTF-8 and scans line starts/line char counts once, then serves visible render windows with positioned reads. It records per-line ASCII metadata so ASCII horizontal windows can seek directly by byte offset; non-ASCII windows remain scalar-safe and may scan from the line start. It avoids full content residency, but it is not editable lazy storage and still pays an O(file size) open scan.
+- LargeFileBuffer validates UTF-8 and scans line starts/line char counts once, then serves visible render windows with positioned reads. It records per-line ASCII metadata so ASCII horizontal windows can seek directly by byte offset; it also records sparse scalar-column checkpoints so non-ASCII far-horizontal windows can seek near the requested column and scan forward from there. It avoids full content residency, but it is not editable lazy storage and still pays an O(file size) open scan.
 - Line-heavy manual smokes use a streamed ASCII fixture with frequent newlines to keep the default suite cheap while measuring LineIndex-heavy open behavior manually.
 - `App::new` remains the end-to-end open measurement for the selected policy (PieceTable for Small/Large, LargeFileBuffer for Huge).
 - After the owned-open change and before newline-search, `PieceTable::from_owned_text` was still the dominant measured subphase. Compared with the pre-optimization baseline, that step improved `App::new` from ~1247 ms to ~620 ms for 100 MiB on this hardware.
@@ -343,7 +351,8 @@ Clarifications:
 - 2026-07-07 after owned file-read helper timed runs: 10 MiB 29860 kB; 100 MiB 208308 kB
 - 2026-07-07 100 MiB line-heavy timed run: 116284 kB
 - 2026-07-07 100 MiB read-only Huge timed runs: dense 106060 kB; line-heavy 116632 kB
-- 2026-07-07 sparse exact-1-GiB read-only Huge warm timed run after far-window sample: 29924 kB
+- 2026-07-07 sparse exact-1-GiB read-only Huge timed run after checkpointing: 30056 kB
+- 2026-07-07 100 MiB non-ASCII Huge timed run after checkpointing: 30040 kB
 
 Note: these are wall-time / RSS for the full test harness invocation on this machine (not pure editor hot path). Generate time includes FS streaming writes. App::new includes the selected open policy (editable read + PieceTable for Small/Large; scan + file-backed LargeFileBuffer for Huge) plus size capture. Render is cheap full-clear for these runs. The first three bullets are from the 2026-06-24 baseline; later bullets are 2026-07-07 after-runs.
 
@@ -359,10 +368,11 @@ Suggested initial candidates:
 - 10 MiB render (full-clear synthetic): target under ~20 ms (baseline ~3 ms)
 - 10 MiB MaxRSS (full test invocation): target under ~100 MiB (baseline ~34 MiB)
 - 100 MiB Huge read-only open/App::new: target under ~500 ms on comparable hardware (current samples ~122-158 ms)
+- 100 MiB non-ASCII Huge read-only open/App::new: target under ~1500 ms on comparable hardware (current sample ~1051 ms)
 - 100 MiB render (full-clear synthetic): target under ~100 ms (baseline ~32 ms)
 - 100 MiB Huge MaxRSS (full test invocation): target under ~250 MiB (current samples ~106-117 MiB)
-- sparse exact-1-GiB Huge read-only open/App::new: target under ~2500 ms on comparable hardware (current sparse samples ~1231-1422 ms)
-- sparse exact-1-GiB Huge MaxRSS (warm full test invocation): target under ~100 MiB (current sparse sample ~30 MiB)
+- sparse exact-1-GiB Huge read-only open/App::new: target under ~2500 ms on comparable hardware (current sparse samples ~1231-1269 ms)
+- sparse exact-1-GiB Huge MaxRSS (full test invocation): target under ~100 MiB (current sparse sample ~30 MiB)
 - sparse >1 GiB refusal (Extreme): target near-instant metadata-only refusal (baseline 0 ms elapsed, low MaxRSS ~29 MiB for test process), no content read
 
 All numbers remain advisory. Do not turn these into `#[test]` pass/fail gates in this or the immediate next pass.
@@ -371,7 +381,7 @@ All numbers remain advisory. Do not turn these into `#[test]` pass/fail gates in
 
 - Generation time (dense streaming write) is test-fixture cost, not editor cost; helper implementation changes can shift it independently of editor behavior.
 - For editable Small/Large present files, App::new still performs full `read_to_string` + `PieceTable::from_owned_text` + size probe + initial history token. After the newline-search change, `read_to_string` is the largest measured editor-owned subphase for the synthetic no-newline full-materialization comparison.
-- For Huge present files, App::new now performs a LargeFileBuffer UTF-8/newline scan and opens a read-only file descriptor for ranged visible reads. Dense 100 MiB is scan-bound; line-heavy 100 MiB additionally stores many line starts/line char counts.
+- For Huge present files, App::new now performs a LargeFileBuffer UTF-8/newline scan and opens a read-only file descriptor for ranged visible reads. Dense 100 MiB is scan-bound; line-heavy 100 MiB additionally stores many line starts/line char counts; dense non-ASCII 100 MiB also pays scalar counting and checkpoint construction during that scan.
 - MaxRSS for Huge is now driven mostly by line-index density plus test harness overhead rather than full content residency. The dense 100 MiB sample dropped to ~106 MiB RSS, and sparse exact-1-GiB was ~30 MiB warm.
 - Render numbers are currently cheap in these synthetic tests (full clear of small viewport over a buffer that has already been built); this is not proof of scalable redraw behavior under editing/resizing for large files.
 - Render still performs a full clear every frame; as of later hygiene passes it avoids allocating a temporary String for every visible sliced line (writes scalar chars directly), but this is not a scalable redraw strategy.
@@ -380,9 +390,9 @@ All numbers remain advisory. Do not turn these into `#[test]` pass/fail gates in
 
 See TODO.md for the current next-intended pointer into this inventory.
 
-### Current Phase 2B large-file handling (as of post 2-ay)
+### Current Phase 2B large-file handling (as of post 2-ba)
 - Large (>10 MiB <=100 MiB) on open: full read into editable PieceTable; warning message set initially (transient); size_bytes/size_tier recorded in FileState from the single initial metadata snapshot.
-- Huge (>100 MiB <=1 GiB) on open: read-only LargeFileBuffer validates UTF-8, scans line starts/line char counts/ASCII flags once, then serves visible render windows with bounded positioned reads. ASCII line windows use direct byte offsets; non-ASCII line windows preserve scalar column semantics. Edits and save are disabled with explicit messages.
+- Huge (>100 MiB <=1 GiB) on open: read-only LargeFileBuffer validates UTF-8, scans line starts/line char counts/ASCII flags plus sparse line checkpoints once, then serves visible render windows with bounded positioned reads. ASCII line windows use direct byte offsets; non-ASCII line windows preserve scalar column semantics by seeking to the nearest prior checkpoint and scanning forward. Edits and save are disabled with explicit messages.
 - Initial open metadata/snapshot/content-plan is single-capture/derived (see 2-am/2-aq/2-ay). LF-only normalization avoids extra CR-normalization copies for PieceTable opens (2-an), App open moves the owned read buffer into PieceTable for editable opens (2-ao), and LineIndex build uses std string newline search for PieceTable opens (2-ap).
 - After content edit clears transient message for editable Large files, bottom row shows persistent status containing tier + "large-file mode" marker (plus path/dirty + "disk <size>" label). Huge read-only edit/save attempts set explicit read-only messages. The size shown is last-known on-disk metadata (fs::metadata or narrow post-save fallback), not live buffer byte length. No buffer scan or to_string() for status.
 - Extreme (>1 GiB): refused before any content read_to_string (no App constructed, no watcher).

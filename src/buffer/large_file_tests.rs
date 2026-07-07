@@ -86,6 +86,63 @@ fn records_ascii_lines_and_windows_late_ascii_columns() {
 }
 
 #[test]
+fn records_checkpoints_for_late_non_ascii_windows() {
+    let path = temp_path("non_ascii_checkpoint.txt");
+    cleanup(&path);
+    let line = "é".repeat((LINE_CHECKPOINT_INTERVAL_CHARS * 2) + 5);
+    std::fs::write(&path, format!("{}\nend", line)).unwrap();
+
+    let buffer = LargeFileBuffer::open(&path).unwrap();
+
+    assert_eq!(buffer.line_is_ascii[0], false);
+    assert_eq!(
+        buffer.line_checkpoints(0)[0],
+        LineCheckpoint {
+            col: LINE_CHECKPOINT_INTERVAL_CHARS,
+            byte_offset: LINE_CHECKPOINT_INTERVAL_CHARS * 2,
+        }
+    );
+    assert_eq!(
+        buffer.line_checkpoint_at_or_before(0, (LINE_CHECKPOINT_INTERVAL_CHARS * 2) + 3),
+        Some(LineCheckpoint {
+            col: LINE_CHECKPOINT_INTERVAL_CHARS * 2,
+            byte_offset: LINE_CHECKPOINT_INTERVAL_CHARS * 4,
+        })
+    );
+    assert_eq!(
+        buffer.visible_lines_window(0, 1, (LINE_CHECKPOINT_INTERVAL_CHARS * 2) + 1, 3)[0].content,
+        "ééé"
+    );
+
+    cleanup(&path);
+}
+
+#[test]
+fn records_ascii_prefix_checkpoints_for_later_non_ascii_lines() {
+    let path = temp_path("ascii_prefix_checkpoint.txt");
+    cleanup(&path);
+    let prefix = "a".repeat(SCAN_CHUNK_BYTES + LINE_CHECKPOINT_INTERVAL_CHARS + 7);
+    std::fs::write(&path, format!("{}éfin", prefix)).unwrap();
+
+    let buffer = LargeFileBuffer::open(&path).unwrap();
+
+    assert_eq!(buffer.line_is_ascii[0], false);
+    assert_eq!(
+        buffer.line_checkpoint_at_or_before(0, SCAN_CHUNK_BYTES + 3),
+        Some(LineCheckpoint {
+            col: SCAN_CHUNK_BYTES,
+            byte_offset: SCAN_CHUNK_BYTES,
+        })
+    );
+    assert_eq!(
+        buffer.visible_lines_window(0, 1, prefix.len(), 4)[0].content,
+        "éfin"
+    );
+
+    cleanup(&path);
+}
+
+#[test]
 fn movement_clamps_to_line_char_counts() {
     let path = temp_path("movement.txt");
     cleanup(&path);

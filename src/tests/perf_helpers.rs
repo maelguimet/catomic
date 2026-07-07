@@ -4,8 +4,8 @@
 //!   measure_elapsed (later: PerfSample + measure_sample for stable baseline reporting).
 //! Must not: add dependencies; write outside /tmp; enforce timing thresholds (default or manual);
 //!   materialize huge content for sparse; alter open/size policy or read semantics.
-//! Invariants: dense/line-heavy generators stream buffered repeating ASCII chunks
-//!   for exact size determinism;
+//! Invariants: dense/line-heavy generators stream buffered repeating chunks for exact size
+//!   determinism; non-ASCII generated sizes must preserve UTF-8 boundaries;
 //!   sparse uses only set_len (no write) and returns Err for FS that refuse large sparse;
 //!   cleanup is best-effort (ignore errors); helpers are test-only.
 //! Phase: 2-ai (harness split; no behavior change from split).
@@ -40,6 +40,18 @@ pub(crate) fn cleanup_perf(p: &Path) {
 /// Uses repeating ASCII pattern for determinism/reproducibility.
 pub(crate) fn generate_dense_ascii_file(path: &Path, size: u64) -> io::Result<()> {
     write_repeating_pattern_file(path, size, b"0123456789abcdef")
+}
+
+/// Generate a deterministic UTF-8 dense file containing non-ASCII scalars.
+/// The size must be even so the repeated "é" pattern is never truncated.
+pub(crate) fn generate_dense_non_ascii_file(path: &Path, size: u64) -> io::Result<()> {
+    if size % 2 != 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "non-ASCII generated size must be even",
+        ));
+    }
+    write_repeating_pattern_file(path, size, "é".as_bytes())
 }
 
 fn write_repeating_pattern_file(path: &Path, size: u64, pattern: &[u8]) -> io::Result<()> {

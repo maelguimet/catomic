@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use crate::buffer::{Buffer, Cursor, LineView};
 
 const SCAN_CHUNK_BYTES: usize = 64 * 1024;
+const LINE_CHECKPOINT_INTERVAL_CHARS: usize = 16 * 1024;
 
 /// Read-only file-backed buffer for limited Huge-file mode.
 pub(crate) struct LargeFileBuffer {
@@ -23,8 +24,16 @@ pub(crate) struct LargeFileBuffer {
     line_starts: Vec<usize>,
     line_char_counts: Vec<usize>,
     line_is_ascii: Vec<bool>,
+    line_checkpoints: Vec<LineCheckpoint>,
+    line_checkpoint_starts: Vec<usize>,
     total_bytes: usize,
     cursor: Cursor,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LineCheckpoint {
+    col: usize,
+    byte_offset: usize,
 }
 
 impl LargeFileBuffer {
@@ -39,6 +48,8 @@ impl LargeFileBuffer {
             line_starts: scan.line_starts,
             line_char_counts: scan.line_char_counts,
             line_is_ascii: scan.line_is_ascii,
+            line_checkpoints: scan.line_checkpoints,
+            line_checkpoint_starts: scan.line_checkpoint_starts,
             total_bytes: scan.total_bytes,
             cursor: Cursor { row: 0, col: 0 },
         })
@@ -119,10 +130,13 @@ impl LargeFileBuffer {
     }
 
     fn read_line_window(&self, row: usize, start_col: usize, width: usize) -> io::Result<String> {
-        let mut pos = self.line_start_byte(row);
+        let checkpoint = self.line_checkpoint_at_or_before(row, start_col);
+        let mut pos = checkpoint
+            .map(|checkpoint| checkpoint.byte_offset)
+            .unwrap_or_else(|| self.line_start_byte(row));
         let end = self.line_end_byte(row);
         let mut carry: Vec<u8> = Vec::new();
-        let mut seen = 0usize;
+        let mut seen = checkpoint.map(|checkpoint| checkpoint.col).unwrap_or(0);
         let mut taken = 0usize;
         let mut out = String::new();
 
@@ -177,6 +191,25 @@ impl LargeFileBuffer {
         }
 
         Ok(out)
+    }
+
+    fn line_checkpoints(&self, row: usize) -> &[LineCheckpoint] {
+        if row + 1 >= self.line_checkpoint_starts.len() {
+            return &[];
+        }
+        let start = self.line_checkpoint_starts[row];
+        let end = self.line_checkpoint_starts[row + 1];
+        &self.line_checkpoints[start..end]
+    }
+
+    fn line_checkpoint_at_or_before(&self, row: usize, col: usize) -> Option<LineCheckpoint> {
+        let checkpoints = self.line_checkpoints(row);
+        let idx = checkpoints.partition_point(|checkpoint| checkpoint.col <= col);
+        if idx == 0 {
+            None
+        } else {
+            Some(checkpoints[idx - 1])
+        }
     }
 }
 
@@ -291,6 +324,8 @@ struct LineScan {
     line_starts: Vec<usize>,
     line_char_counts: Vec<usize>,
     line_is_ascii: Vec<bool>,
+    line_checkpoints: Vec<LineCheckpoint>,
+    line_checkpoint_starts: Vec<usize>,
     total_bytes: usize,
 }
 
@@ -298,6 +333,8 @@ fn scan_utf8_lines(file: &mut File) -> io::Result<LineScan> {
     let mut line_starts = vec![0usize];
     let mut line_char_counts = Vec::new();
     let mut line_is_ascii = Vec::new();
+    let mut line_checkpoints = Vec::new();
+    let mut line_checkpoint_starts = vec![0usize];
     let mut current_line_chars = 0usize;
     let mut current_line_is_ascii = true;
     let mut carry: Vec<u8> = Vec::new();
@@ -337,6 +374,8 @@ fn scan_utf8_lines(file: &mut File) -> io::Result<LineScan> {
             &mut line_starts,
             &mut line_char_counts,
             &mut line_is_ascii,
+            &mut line_checkpoints,
+            &mut line_checkpoint_starts,
             &mut current_line_chars,
             &mut current_line_is_ascii,
         );
@@ -355,10 +394,13 @@ fn scan_utf8_lines(file: &mut File) -> io::Result<LineScan> {
 
     line_char_counts.push(current_line_chars);
     line_is_ascii.push(current_line_is_ascii);
+    line_checkpoint_starts.push(line_checkpoints.len());
     Ok(LineScan {
         line_starts,
         line_char_counts,
         line_is_ascii,
+        line_checkpoints,
+        line_checkpoint_starts,
         total_bytes: offset,
     })
 }
@@ -369,20 +411,35 @@ fn scan_valid_text_lines(
     line_starts: &mut Vec<usize>,
     line_char_counts: &mut Vec<usize>,
     line_is_ascii: &mut Vec<bool>,
+    line_checkpoints: &mut Vec<LineCheckpoint>,
+    line_checkpoint_starts: &mut Vec<usize>,
     current_line_chars: &mut usize,
     current_line_is_ascii: &mut bool,
 ) {
     if text.is_ascii() {
         let mut segment_start = 0usize;
         for (newline_idx, _) in text.match_indices('\n') {
+            push_ascii_line_checkpoints(
+                line_checkpoints,
+                *current_line_chars,
+                text_start_offset + segment_start,
+                newline_idx - segment_start,
+            );
             *current_line_chars += newline_idx - segment_start;
             line_char_counts.push(*current_line_chars);
             line_is_ascii.push(*current_line_is_ascii);
+            line_checkpoint_starts.push(line_checkpoints.len());
             *current_line_chars = 0;
             *current_line_is_ascii = true;
             line_starts.push(text_start_offset + newline_idx + 1);
             segment_start = newline_idx + 1;
         }
+        push_ascii_line_checkpoints(
+            line_checkpoints,
+            *current_line_chars,
+            text_start_offset + segment_start,
+            text.len() - segment_start,
+        );
         *current_line_chars += text.len() - segment_start;
         return;
     }
@@ -391,6 +448,7 @@ fn scan_valid_text_lines(
         if ch == '\n' {
             line_char_counts.push(*current_line_chars);
             line_is_ascii.push(*current_line_is_ascii);
+            line_checkpoint_starts.push(line_checkpoints.len());
             *current_line_chars = 0;
             *current_line_is_ascii = true;
             line_starts.push(text_start_offset + byte_idx + 1);
@@ -398,8 +456,37 @@ fn scan_valid_text_lines(
             if !ch.is_ascii() {
                 *current_line_is_ascii = false;
             }
+            let next_col = *current_line_chars + 1;
+            if next_col % LINE_CHECKPOINT_INTERVAL_CHARS == 0 {
+                line_checkpoints.push(LineCheckpoint {
+                    col: next_col,
+                    byte_offset: text_start_offset + byte_idx + ch.len_utf8(),
+                });
+            }
             *current_line_chars += 1;
         }
+    }
+}
+
+fn push_ascii_line_checkpoints(
+    line_checkpoints: &mut Vec<LineCheckpoint>,
+    current_col: usize,
+    segment_start_offset: usize,
+    segment_len: usize,
+) {
+    if segment_len == 0 {
+        return;
+    }
+    let segment_end_col = current_col + segment_len;
+    let mut next_col =
+        ((current_col / LINE_CHECKPOINT_INTERVAL_CHARS) + 1) * LINE_CHECKPOINT_INTERVAL_CHARS;
+
+    while next_col <= segment_end_col {
+        line_checkpoints.push(LineCheckpoint {
+            col: next_col,
+            byte_offset: segment_start_offset + (next_col - current_col),
+        });
+        next_col += LINE_CHECKPOINT_INTERVAL_CHARS;
     }
 }
 

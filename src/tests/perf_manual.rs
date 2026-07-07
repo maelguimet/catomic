@@ -1,11 +1,12 @@
 //! Purpose: this file must contain only the #[ignore] manual big-file smokes used
 //!   for measurement / guardrail verification. Not run by default cargo test.
 //! Owns: manual_open_10mib_generated_file_smoke, manual_open_100mib_...,
+//!   manual_open_100mib_non_ascii_far_window_smoke,
 //!   manual_open_1gib_sparse_huge_read_only_smoke, manual_sparse_extreme...
 //! Must not: run on default `cargo test`; enforce timing thresholds; read 1 GiB dense;
 //!   add committed fixtures or new deps.
-//! Invariants: 10 MiB uses SMALL+1 for editable Large; 100 MiB uses LARGE+1
-//!   for read-only Huge limited mode;
+//! Invariants: 10 MiB uses SMALL+1 for editable Large; 100 MiB ASCII uses LARGE+1
+//!   and 100 MiB non-ASCII uses LARGE+2 for read-only Huge limited mode;
 //!   sparse Extreme >HUGE uses set_len only and expects clean skip or refusal before read;
 //!   same test names preserved for TODO command compatibility.
 //! Phase: 2-ai (split scaffold; enhancements for baseline reporting come after split).
@@ -13,8 +14,8 @@
 #![cfg(test)]
 
 use super::helpers::{
-    cleanup_perf, generate_dense_ascii_file, measure_sample, print_perf_sample, temp_perf_path,
-    try_generate_sparse_file,
+    cleanup_perf, generate_dense_ascii_file, generate_dense_non_ascii_file, measure_sample,
+    print_perf_sample, temp_perf_path, try_generate_sparse_file,
 };
 
 #[test]
@@ -176,6 +177,70 @@ fn manual_open_100mib_generated_file_smoke() {
 
     cleanup_perf(&p);
     eprintln!("manual 100mib smoke complete");
+}
+
+#[test]
+#[ignore = "manual non-ASCII Huge far-window perf smoke; generates and opens ~100 MiB"]
+fn manual_open_100mib_non_ascii_far_window_smoke() {
+    // Use LARGE+2 so the Huge tier is reached and the repeated 2-byte UTF-8
+    // pattern stays on a scalar boundary.
+    let size = crate::file::size::LARGE_FILE_LIMIT_BYTES + 2;
+    let p = temp_perf_path("manual_100mib_non_ascii.bin");
+    cleanup_perf(&p);
+
+    eprintln!("generating ~100 MiB dense non-ASCII UTF-8...");
+    let gen_res = measure_sample("generate 100mib-nonascii", Some(size), || {
+        generate_dense_non_ascii_file(&p, size)
+    });
+    match gen_res {
+        (Ok(()), sample) => {
+            print_perf_sample(&sample);
+        }
+        (Err(e), sample) => {
+            print_perf_sample(&sample);
+            eprintln!(
+                "generate 100mib non-ASCII failed (disk space?): {}; skipping",
+                e
+            );
+            cleanup_perf(&p);
+            return;
+        }
+    }
+
+    eprintln!("App::new on 100 MiB non-ASCII Huge (read-only limited mode)...");
+    let app_res = measure_sample("App::new 100mib-nonascii", Some(size), || {
+        crate::app::App::new(Some(&p.to_string_lossy()))
+    });
+    let (mut app, app_sample) = match app_res {
+        (Ok(app), sample) => (app, sample),
+        (Err(e), sample) => {
+            print_perf_sample(&sample);
+            eprintln!("App::new 100mib non-ASCII failed: {}; skipping", e);
+            cleanup_perf(&p);
+            return;
+        }
+    };
+    print_perf_sample(&app_sample);
+
+    assert_eq!(
+        app.file.size_tier,
+        Some(crate::file::size::FileSizeTier::Huge)
+    );
+    assert!(app.buffer.is_read_only());
+    assert_eq!(app.buffer.line_count(), 1);
+    let line_chars = app.buffer.line_char_count(0).expect("line char count");
+    assert_eq!(line_chars, (size as usize) / 2);
+
+    app.screen.scroll_left = line_chars.saturating_sub(80);
+    let mut out: Vec<u8> = Vec::new();
+    let (_, far_render_sample) =
+        measure_sample("render 100mib-nonascii far-window", Some(size), || {
+            let _ = app.render(&mut out);
+        });
+    print_perf_sample(&far_render_sample);
+
+    cleanup_perf(&p);
+    eprintln!("manual 100mib non-ASCII far-window smoke complete");
 }
 
 #[test]

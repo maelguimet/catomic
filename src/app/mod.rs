@@ -76,26 +76,24 @@ impl App {
         let mode = Mode::Plain; // Start in Plain by default. User can switch later.
         let caps = Capabilities::from_mode(mode);
 
-        // Size/guardrail + initial snapshot extracted (see open.rs).
+        // Size/guardrail + initial snapshot/open plan extracted (see open.rs).
         // Single capture_file_snapshot in prepare supplies both size decision
-        // and disk_snapshot (no duplicate metadata probe in the happy path).
+        // and disk_snapshot/content plan (no duplicate metadata probe in the happy path).
         // Behavior preserved exactly for all App::new cases (None/missing/Small/
         // Large/Huge/Extreme/hard-meta/invalid-utf8-after-small-probe).
         let meta = open::prepare_open_file_meta(initial_path)?;
 
-        let buffer: Box<dyn Buffer> = if let Some(path) = initial_path {
-            // Distinguish missing file (start empty, but remember path so save creates it)
-            // from real errors (permission, utf8, is-dir, etc). Silent empty was data-loss bait.
-            let content = match std::fs::read_to_string(path) {
-                Ok(c) => c,
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-                Err(e) => return Err(e),
-            };
-            // Move the read buffer into PieceTable on open; this avoids cloning
-            // Large/Huge files while preserving CRLF normalization inside PT.
-            Box::new(buffer::PieceTable::from_owned_text(content))
-        } else {
-            Box::new(buffer::PieceTable::new())
+        let buffer: Box<dyn Buffer> = match meta.content_plan {
+            open::OpenContentPlan::UntitledEmpty | open::OpenContentPlan::MissingEmpty => {
+                Box::new(buffer::PieceTable::new())
+            }
+            open::OpenContentPlan::FullRead => {
+                let path = initial_path.expect("FullRead open plan requires initial path");
+                // Move the read buffer into PieceTable on open; this avoids cloning
+                // Large/Huge files while preserving CRLF normalization inside PT.
+                let content = file::io::read_to_string(path)?;
+                Box::new(buffer::PieceTable::from_owned_text(content))
+            }
         };
 
         // Capture initial history position as the clean save point (open or new).

@@ -131,9 +131,9 @@ pub(crate) fn handle_reload_key(app: &mut super::App, out: &mut dyn Write) -> io
         if let Some(ref p) = current_path {
             match obs.status {
                 ExternalFileStatus::Modified => {
-                    match std::fs::read_to_string(p) {
+                    match crate::file::io::read_to_string(p) {
                         Ok(content) => {
-                            app.buffer = Box::new(buffer::PieceTable::from_text(&content));
+                            app.buffer = Box::new(buffer::PieceTable::from_owned_text(content));
                             let new_pos = app.buffer.edit_history_position();
                             app.file.saved_history_position = new_pos;
                             app.file.dirty = false;

@@ -207,6 +207,8 @@ Clarifications:
 - `read_to_string` and `PieceTable::from_owned_text` are the useful split for the observed App open/materialization hotspot under full materialization. Borrowed `PieceTable::from_text` still exists for callers that do not own the input.
 - The LF-only fast path avoids two unconditional `replace` passes when opened content contains no `\r`; CRLF/CR inputs still normalize to `\n`.
 - App open now moves the owned `read_to_string` buffer into PieceTable for LF-only content, avoiding a large clone in that path.
+- App open now has an explicit content plan from the single initial metadata snapshot: untitled/missing paths open empty, present paths still full-read. This is a policy seam only; it is not lazy loading.
+- Confirmed Ctrl+R Modified reload also moves the owned read buffer into PieceTable, avoiding the old reload-side clone.
 - `App::new` remains the end-to-end open measurement (includes size probe + history token setup).
 - After the owned-open change and before newline-search, `PieceTable::from_owned_text` was still the dominant measured subphase. Compared with the pre-optimization baseline, that step improved `App::new` from ~1247 ms to ~620 ms for 100 MiB on this hardware.
 - After switching LineIndex construction from a hand-rolled byte loop to std string newline search, `App::new` improved again from ~620 ms to ~60 ms for 100 MiB on this hardware.
@@ -244,7 +246,7 @@ All numbers remain advisory. Do not turn these into `#[test]` pass/fail gates in
 ### Observed hotspots from baseline (for next decision, not implementation here)
 
 - Generation time (dense streaming write) is test-fixture cost, not editor cost.
-- App::new still performs full `read_to_string` + `PieceTable::from_owned_text` + size probe + initial history token. After the newline-search change, `read_to_string` is the largest measured editor-owned subphase for the synthetic no-newline 100 MiB file; this does not remove full materialization.
+- For present files, App::new still performs full `read_to_string` + `PieceTable::from_owned_text` + size probe + initial history token. After the newline-search change, `read_to_string` is the largest measured editor-owned subphase for the synthetic no-newline 100 MiB file; this does not remove full materialization.
 - MaxRSS for 100 MiB remains substantially larger than file size because the current path fully materializes content (PieceTable + internal structures) plus test harness overhead. The 2026-06-24 run was ~3x file size; the 2026-07-07 after-run was ~2x, still a direct consequence of "no lazy yet".
 - Render numbers are currently cheap in these synthetic tests (full clear of small viewport over a buffer that has already been built); this is not proof of scalable redraw behavior under editing/resizing for large files.
 - Render still performs a full clear every frame; as of later hygiene passes it avoids allocating a temporary String for every visible sliced line (writes scalar chars directly), but this is not a scalable redraw strategy.
@@ -253,9 +255,9 @@ All numbers remain advisory. Do not turn these into `#[test]` pass/fail gates in
 
 See TODO.md for the current next-intended pointer into this inventory.
 
-### Current Phase 2B large-file handling (as of post 2-ap)
+### Current Phase 2B large-file handling (as of post 2-aq)
 - Large (>10 MiB <=100 MiB) / Huge (>100 MiB <=1 GiB) on open: full read still occurs; warning message set initially (transient); size_bytes/size_tier recorded in FileState (derived from a single initial metadata snapshot captured in open planning; still not a lazy or partial materialization path).
-- Initial open metadata/snapshot is single-capture/derived (see 2-am). LF-only normalization avoids extra CR-normalization copies (2-an), App open moves the owned read buffer into PieceTable (2-ao), and LineIndex build uses std string newline search (2-ap), but content is still fully read and materialized into PieceTable for Large/Huge. Extreme refuses pre-read.
+- Initial open metadata/snapshot/content-plan is single-capture/derived (see 2-am/2-aq). LF-only normalization avoids extra CR-normalization copies (2-an), App open moves the owned read buffer into PieceTable (2-ao), and LineIndex build uses std string newline search (2-ap), but content is still fully read and materialized into PieceTable for Large/Huge. Extreme refuses pre-read.
 - After content edit clears transient message, bottom row shows persistent status containing tier + "large-file mode" marker (plus path/dirty + "disk <size>" label). The size shown is last-known on-disk metadata (fs::metadata or narrow post-save fallback), not live buffer byte length. No buffer scan or to_string() for status.
 - Extreme (>1 GiB): refused before any content read_to_string (no App constructed, no watcher).
 - Status only when no higher-priority message present; messages always fully override.

@@ -13,7 +13,7 @@ use std::path::PathBuf;
 
 use crossterm::event::{self, Event, KeyEvent};
 
-use crate::buffer::{self, Buffer};
+use crate::buffer::Buffer;
 use crate::file;
 
 use crate::mode::{Capabilities, Mode};
@@ -83,18 +83,7 @@ impl App {
         // Large/Huge/Extreme/hard-meta/invalid-utf8-after-small-probe).
         let meta = open::prepare_open_file_meta(initial_path)?;
 
-        let buffer: Box<dyn Buffer> = match meta.content_plan {
-            open::OpenContentPlan::UntitledEmpty | open::OpenContentPlan::MissingEmpty => {
-                Box::new(buffer::PieceTable::new())
-            }
-            open::OpenContentPlan::FullRead => {
-                let path = initial_path.expect("FullRead open plan requires initial path");
-                // Move the read buffer into PieceTable on open; this avoids cloning
-                // Large/Huge files while preserving CRLF normalization inside PT.
-                let content = file::io::read_to_string(path)?;
-                Box::new(buffer::PieceTable::from_owned_text(content))
-            }
-        };
+        let buffer = open::build_open_buffer(&meta, initial_path)?;
 
         // Capture initial history position as the clean save point (open or new).
         let initial_pos = buffer.edit_history_position();

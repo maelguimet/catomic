@@ -1,13 +1,14 @@
 //! Open-size guardrail extraction + initial snapshot/open plan for App::new (Phase 2B).
 //!
 //! Purpose: encapsulate pre-read size guardrails (Extreme refuse, Large/Huge warn)
-//!   and the single initial metadata capture (disk_snapshot + content plan) so
-//!   App::new performs only one fs::metadata probe for present files.
+//!   the single initial metadata capture (disk_snapshot + content plan), and
+//!   the current content-plan-to-buffer construction seam.
 //! Owns: prepare_open_file_meta (OpenSizeDecision + capture_file_snapshot once;
-//!   derives size/tier/content_plan from the snapshot for Present/Absent).
-//! Must not: perform the content read_to_string, construct watcher, mutate App,
-//!   change snapshot/dirty/save/reload semantics beyond carrying the initial
-//!   snapshot/plan, know terminal/render, or Project/LLM.
+//!   derives size/tier/content_plan from the snapshot for Present/Absent) and
+//!   build_open_buffer (current full-read PieceTable construction).
+//! Must not: construct watcher, mutate App, change snapshot/dirty/save/reload
+//!   semantics beyond carrying the initial snapshot/plan and constructing the
+//!   initial buffer, know terminal/render, or Project/LLM.
 //! Invariants: identical observable outcomes for all documented App::new cases
 //!   (None, missing, Small, Large/Huge, Extreme refuse before read, hard meta error,
 //!   invalid UTF-8 errors from read after successful small metadata); single capture
@@ -16,6 +17,7 @@
 
 use std::io::{self, ErrorKind};
 
+use crate::buffer::{self, Buffer};
 use crate::file::io::FileSnapshot;
 use crate::file::size::{
     classify_file_size, open_size_decision, open_size_refusal_message, open_size_warning_message,
@@ -105,6 +107,36 @@ pub(crate) fn prepare_open_file_meta(initial_path: Option<&str>) -> io::Result<O
     Ok(meta)
 }
 
+/// Construct the initial buffer selected by OpenContentPlan.
+/// This is the current storage policy seam:
+/// - no path / missing path => empty PieceTable
+/// - present path => full UTF-8 read + owned PieceTable construction
+///
+/// Future lazy/partial storage work should branch here (or below the PieceTable
+/// constructor) without adding file I/O to the buffer module or App::new.
+pub(crate) fn build_open_buffer(
+    meta: &OpenFileMeta,
+    initial_path: Option<&str>,
+) -> io::Result<Box<dyn Buffer>> {
+    match meta.content_plan {
+        OpenContentPlan::UntitledEmpty | OpenContentPlan::MissingEmpty => {
+            Ok(Box::new(buffer::PieceTable::new()))
+        }
+        OpenContentPlan::FullRead => {
+            let path = initial_path.ok_or_else(|| {
+                io::Error::new(
+                    ErrorKind::InvalidInput,
+                    "FullRead open plan requires initial path",
+                )
+            })?;
+            // Move the read buffer into PieceTable on open; this avoids cloning
+            // Large/Huge files while preserving CRLF normalization inside PT.
+            let content = crate::file::io::read_to_string(path)?;
+            Ok(Box::new(buffer::PieceTable::from_owned_text(content)))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,5 +196,58 @@ mod tests {
         assert!(meta.initial_message.is_none());
 
         cleanup(&path);
+    }
+
+    #[test]
+    fn build_open_buffer_empty_plans_start_empty() {
+        let no_path = OpenFileMeta {
+            content_plan: OpenContentPlan::UntitledEmpty,
+            ..OpenFileMeta::default()
+        };
+        let missing = OpenFileMeta {
+            content_plan: OpenContentPlan::MissingEmpty,
+            ..OpenFileMeta::default()
+        };
+
+        let untitled = build_open_buffer(&no_path, None).unwrap();
+        let missing_buf = build_open_buffer(&missing, Some("missing.txt")).unwrap();
+
+        assert_eq!(untitled.to_string(), "");
+        assert_eq!(missing_buf.to_string(), "");
+        assert_eq!(untitled.line_count(), 1);
+        assert_eq!(missing_buf.line_count(), 1);
+    }
+
+    #[test]
+    fn build_open_buffer_full_read_moves_present_content_into_piece_table() {
+        let path = temp_path("build_present.txt");
+        cleanup(&path);
+        fs::write(&path, "hello\nworld").unwrap();
+        let meta = OpenFileMeta {
+            content_plan: OpenContentPlan::FullRead,
+            ..OpenFileMeta::default()
+        };
+
+        let buffer = build_open_buffer(&meta, Some(&path.to_string_lossy())).unwrap();
+
+        assert_eq!(buffer.to_string(), "hello\nworld");
+        assert_eq!(buffer.line_count(), 2);
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn build_open_buffer_full_read_requires_path() {
+        let meta = OpenFileMeta {
+            content_plan: OpenContentPlan::FullRead,
+            ..OpenFileMeta::default()
+        };
+
+        let err = match build_open_buffer(&meta, None) {
+            Ok(_) => panic!("FullRead must require path"),
+            Err(err) => err,
+        };
+
+        assert_eq!(err.kind(), ErrorKind::InvalidInput);
     }
 }

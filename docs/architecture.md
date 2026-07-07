@@ -22,7 +22,8 @@ Input must not poke buffer internals directly.
 - `project/`: Project mode only (git, discovery, diagnostics). Must not be constructed in Plain mode.
 - `llm/`: explicit only (broker, patch, openai_compat). No background calls, no silent writes. Patches only with preview.
 - `config/`: keymaps and settings.
-- `tests/`: pty, golden, perf helpers (inside src for now).
+- `src/tests/`: unit/golden/perf helpers that need crate internals.
+- root `tests/`: real binary integration smokes (for example PTY).
 
 ## Folder Law (reference)
 

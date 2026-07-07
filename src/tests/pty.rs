@@ -1,15 +1,13 @@
-//! PTY smoke tests.
+//! Terminal panic/restoration unit tests.
 //!
-//! Use a PTY crate (e.g. portable-pty or crossterm's own testing facilities)
-//! to drive the real binary and assert on terminal output and saved files.
+//! Real binary PTY smoke coverage lives in tests/pty_smoke.rs, where the test
+//! harness can use Cargo's CARGO_BIN_EXE_catomic path.
 //!
 //! See "Measurement / Test Discipline" in TODO.md.
-//! Every phase must have PTY tests.
 //!
 //! Phase 0: we provide a restoration smoke test using an in-memory writer
 //! and std::panic::catch_unwind to verify TerminalGuard + teardown run on
-//! panic paths without double-panic or broken invariants. Real PTY driving
-//! of the binary comes when dev-deps (portable-pty etc.) are added.
+//! panic paths without double-panic or broken invariants.
 
 #[cfg(test)]
 mod tests {

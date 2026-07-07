@@ -1,15 +1,18 @@
 //! Core types for PieceTable (Phases 1B-1C).
 //!
-//! Source, Piece, LineIndex (data), PieceTable struct definition.
+//! Source, Piece, OriginalBacking, LineIndex (data), PieceTable struct definition.
 //!
 //! Purpose: own the storage model and construction.
-//! Owns: original/add buffers, pieces list, line index, cursor state + byte offset cache, undo_stack + recording flag.
+//! Owns: original backing/add buffer, pieces list, line index, cursor state + byte offset cache, undo_stack + recording flag.
 //! Must not: perform heavy UI or project work.
 //! Invariants:
 //! - Pieces are non-overlapping, cover the logical document, byte ranges respect char boundaries.
+//! - OriginalBacking slices must preserve the same UTF-8 byte-boundary contract as Piece ranges.
 //! - LineIndex reflects the logical newlines in the piece concatenation.
 //! - cursor_byte_offset always matches the byte position of (cursor.row, cursor.col).
 //! Phase: 1B-1C
+
+use std::ops::Range;
 
 use crate::buffer::line_index::LineIndex;
 use crate::buffer::Cursor;
@@ -31,13 +34,35 @@ pub(crate) struct Piece {
     pub(crate) len: usize,
 }
 
+/// Original file/input storage behind Piece ranges.
+#[derive(Clone, Debug)]
+pub(crate) enum OriginalBacking {
+    Owned(String),
+}
+
+impl OriginalBacking {
+    pub(crate) fn empty() -> Self {
+        Self::Owned(String::new())
+    }
+
+    pub(crate) fn from_owned(text: String) -> Self {
+        Self::Owned(text)
+    }
+
+    pub(crate) fn slice(&self, range: Range<usize>) -> &str {
+        match self {
+            Self::Owned(text) => &text[range],
+        }
+    }
+}
+
 // LineIndex lives in crate::buffer::line_index (single definition, no duplicate).
 // PT stores and uses it.
 
 /// PieceTable with original + add + pieces + index + cached cursor offset.
 #[derive(Clone, Debug)]
 pub struct PieceTable {
-    pub(crate) original: String,
+    pub(crate) original: OriginalBacking,
     pub(crate) add: String,
     pub(crate) pieces: Vec<Piece>,
     pub(crate) index: LineIndex,

@@ -10,7 +10,7 @@
 
 use crate::buffer::Cursor;
 
-use super::types::{Piece, PieceTable, Source};
+use super::types::{OriginalBacking, Piece, PieceTable, Source};
 
 impl PieceTable {
     pub fn new() -> Self {
@@ -19,10 +19,11 @@ impl PieceTable {
             start: 0,
             len: 0,
         }];
-        let index = Self::build_index("", "", &pieces);
+        let original = OriginalBacking::empty();
+        let index = Self::build_index(&original, "", &pieces);
         let piece_starts = vec![0];
         Self {
-            original: String::new(),
+            original,
             add: String::new(),
             pieces,
             index,
@@ -57,7 +58,7 @@ impl PieceTable {
     fn from_normalized_text(normalized: String) -> Self {
         let (original, pieces) = if normalized.is_empty() {
             (
-                String::new(),
+                OriginalBacking::empty(),
                 vec![Piece {
                     source: Source::Original,
                     start: 0,
@@ -67,7 +68,7 @@ impl PieceTable {
         } else {
             let len = normalized.len();
             (
-                normalized,
+                OriginalBacking::from_owned(normalized),
                 vec![Piece {
                     source: Source::Original,
                     start: 0,

@@ -22,22 +22,21 @@ use crate::buffer::{Buffer, Cursor, LineView};
 
 use crate::buffer::undo::{CursorState, PieceEdit, Transaction};
 pub use types::PieceTable;
-use types::{Piece, Source};
+use types::{OriginalBacking, Piece, Source};
 
 impl PieceTable {
     /// Rebuild index from current pieces. Call after every structural edit (1B bridge).
     /// Searches pieces for \n byte positions; kept here because it needs Piece/Source.
     /// Common index builder (used by ctors and rebuild). Avoids depending on
     /// external rebuild in LineIndex (which would need Piece/Source types).
-    fn build_index(original: &str, add: &str, pieces: &[Piece]) -> LineIndex {
+    fn build_index(original: &OriginalBacking, add: &str, pieces: &[Piece]) -> LineIndex {
         let mut line_starts = vec![0usize];
         let mut acc: usize = 0;
         for p in pieces {
-            let src = match p.source {
-                Source::Original => original,
-                Source::Add => add,
+            let text = match p.source {
+                Source::Original => original.slice(p.start..p.start + p.len),
+                Source::Add => &add[p.start..p.start + p.len],
             };
-            let text = &src[p.start..p.start + p.len];
             for (i, _) in text.match_indices('\n') {
                 line_starts.push(acc + i + 1);
             }

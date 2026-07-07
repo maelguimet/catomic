@@ -758,14 +758,14 @@ Update this file as decisions are made or phases complete. Add concrete issues o
 
 - Detailed completed Phase 2-r through 2-ae notes are archived in `docs/progress/phase-2-progress.md`.
 
-Key unresolved limitations (still current post 2-ar):
-- (size classification + pre-read guardrails + Large/Huge warn + Extreme refuse now exist; manual baselines recorded + split harness exist; first visible large-file mode status marker landed; still no lazy loading, no mmap, no rope rewrite)
+Key unresolved limitations (still current post 2-at):
+- (size classification + pre-read guardrails + Large/Huge warn + Extreme refuse now exist; manual baselines recorded + split harness + line-heavy smokes exist; first visible large-file mode status marker landed; still no lazy loading, no mmap, no rope rewrite)
 - watcher signals are runtime hints only; App-owned best-effort; runtime checks watcher once per loop via helper (try_recv inside check_file_watcher_once only); Unchanged/NoPath from watcher clear stale pending_reload when armed, otherwise fully ignored (suppress self-save noise);
 - no auto-reload; Modified/Deleted (from watcher or Ctrl+R) only arm confirmation; second Ctrl+R performs actual reload using fresh observe + pending match (or clears for Deleted);
 - no content read from watcher signal path except the existing confirmed Ctrl+R reload path;
 - metadata-only external detection (len+mtime via observe_external_file / capture / compare); same-size/same-mtime overwrite limitation remains (no hash/content);
 - default test suite uses deterministic queued-signal seams only (TestStub/inject + replace_file_watcher_for_test); live OS notify smoke is ignored/manual and must not be required for CI;
-- big-file tiers/perf: open guardrails + metadata + split harness + manual baselines + 2026-07-07 open-path phase split + initial persistent "large-file mode" bottom status marker now exist; App open has an explicit content plan (untitled/missing empty vs present full-read), uses the file::io owned full-read helper, avoids the extra LF-only read-buffer clone, and LineIndex build uses std newline search; 100 MiB/1 GiB present files still full read + full materialization (no lazy storage mode); status size label is on-disk metadata only; no thresholds declared or enforced yet.
+- big-file tiers/perf: open guardrails + metadata + split harness + manual baselines + line-heavy hotspot smokes + 2026-07-07 open-path phase split + initial persistent "large-file mode" bottom status marker now exist; App open has an explicit content plan (untitled/missing empty vs present full-read), uses the file::io owned full-read helper, avoids the extra LF-only read-buffer clone, and LineIndex build uses std newline search; 100 MiB/1 GiB present files still full read + full materialization (no lazy storage mode); status size label is on-disk metadata only; no thresholds declared or enforced yet.
 - Detailed completed Phase 2-af through 2-ar notes are archived in `docs/progress/phase-2-progress.md`.
 - Phase 2-as (narrow measurement): added ignored line-heavy 10/100 MiB manual open smokes and recorded samples in `docs/performance.md`; default suite only gained a tiny exact-size generator smoke.
 - Phase 2-at (narrow harness hygiene): generated-file helpers now write buffered repeating chunks, reducing manual fixture setup time without changing editor-owned phase samples.

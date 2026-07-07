@@ -323,7 +323,7 @@ All numbers remain advisory. Do not turn these into `#[test]` pass/fail gates in
 
 See TODO.md for the current next-intended pointer into this inventory.
 
-### Current Phase 2B large-file handling (as of post 2-ar)
+### Current Phase 2B large-file handling (as of post 2-at)
 - Large (>10 MiB <=100 MiB) / Huge (>100 MiB <=1 GiB) on open: full read still occurs; warning message set initially (transient); size_bytes/size_tier recorded in FileState (derived from a single initial metadata snapshot captured in open planning; still not a lazy or partial materialization path).
 - Initial open metadata/snapshot/content-plan is single-capture/derived (see 2-am/2-aq). LF-only normalization avoids extra CR-normalization copies (2-an), App open moves the owned read buffer into PieceTable (2-ao), and LineIndex build uses std string newline search (2-ap), but content is still fully read and materialized into PieceTable for Large/Huge. Extreme refuses pre-read.
 - After content edit clears transient message, bottom row shows persistent status containing tier + "large-file mode" marker (plus path/dirty + "disk <size>" label). The size shown is last-known on-disk metadata (fs::metadata or narrow post-save fallback), not live buffer byte length. No buffer scan or to_string() for status.

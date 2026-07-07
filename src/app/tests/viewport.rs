@@ -11,7 +11,7 @@
 
 use super::super::*;
 use super::make_key;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyModifiers};
 
 #[test]
 fn app_new_has_default_screen_size_and_scroll() {

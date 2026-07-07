@@ -10,7 +10,6 @@
 use std::io::Write;
 
 use crate::app::App; // to mutate self.screen etc, or take pieces
-use crate::terminal as term;
 
 /// Smallest helper seam for resize (and testability of it) without redesigning event loop.
 /// Updates screen size, clamps for zero-size safety, reveals cursor, then renders.

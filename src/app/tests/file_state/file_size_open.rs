@@ -12,7 +12,7 @@
 //! Phase: 2-ag.
 
 use super::super::*;
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, OpenOptions};
 use std::io::Write;
 
 fn temp_path(name: &str) -> std::path::PathBuf {

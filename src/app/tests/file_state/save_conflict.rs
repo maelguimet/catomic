@@ -8,7 +8,7 @@
 
 use super::super::*;
 use super::make_key;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyModifiers};
 
 // Phase 2-n: save-conflict guard (first refusal) tests using external snapshot status.
 // No watcher, no reload, detection at save time only.

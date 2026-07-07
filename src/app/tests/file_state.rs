@@ -9,7 +9,7 @@
 
 use super::super::*;
 use super::make_key;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyModifiers};
 
 mod dirty;
 mod file_size;

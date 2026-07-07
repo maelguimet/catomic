@@ -13,7 +13,6 @@ mod file_state;
 mod viewport;
 
 use super::*;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 pub(super) use editing::make_key;
 

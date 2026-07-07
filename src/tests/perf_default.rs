@@ -155,7 +155,7 @@ fn perf_harness_open_render_smoke_on_small_generated_no_panic() {
 
     generate_dense_ascii_file(&p, size).expect("gen");
     // Open via App (exercises PieceTable::from_text path + size capture)
-    let mut app = crate::app::App::new(Some(&p.to_string_lossy())).expect("open smoke");
+    let app = crate::app::App::new(Some(&p.to_string_lossy())).expect("open smoke");
     // basic render smoke via public seam (captured writer)
     let mut out: Vec<u8> = Vec::new();
     app.render(&mut out)

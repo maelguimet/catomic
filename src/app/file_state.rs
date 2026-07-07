@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 use crate::buffer::Buffer;
 use crate::file::io::{ExternalFileStatus, FileSnapshot};
-use crate::file::size::{self as file_size, FileSizeTier};
+use crate::file::size::FileSizeTier;
 
 /// Minimal explicit file state (Phase 2-a / 2-j / 2B size metadata).
 /// path: target for save (None until first save picks "untitled.txt").

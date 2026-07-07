@@ -9,7 +9,7 @@
 
 use super::super::*;
 use super::make_key;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyModifiers};
 
 // Phase 2-l file snapshot / external status tests (detection only; no watcher, no reload, no mutation)
 
@@ -125,7 +125,7 @@ fn app_file_state_external_append_reports_modified_no_mutation() {
     let _ = std::fs::remove_file(&p);
     std::fs::write(&p, "base").unwrap();
 
-    let mut app = App::new(Some(&p)).unwrap();
+    let app = App::new(Some(&p)).unwrap();
     assert!(!app.file.dirty);
     let snap_before = app.file.disk_snapshot.clone();
     let dirty_before = app.file.dirty;

@@ -49,9 +49,19 @@ impl OriginalBacking {
         Self::Owned(text)
     }
 
-    pub(crate) fn slice(&self, range: Range<usize>) -> &str {
+    pub(crate) fn push_slice(&self, range: Range<usize>, out: &mut String) {
         match self {
-            Self::Owned(text) => &text[range],
+            Self::Owned(text) => out.push_str(&text[range]),
+        }
+    }
+
+    pub(crate) fn for_each_newline(&self, range: Range<usize>, mut f: impl FnMut(usize)) {
+        match self {
+            Self::Owned(text) => {
+                for (i, _) in text[range.clone()].match_indices('\n') {
+                    f(range.start + i);
+                }
+            }
         }
     }
 }

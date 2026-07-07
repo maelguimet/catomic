@@ -31,13 +31,11 @@ impl PieceTable {
             let local_start = if acc < start { start - acc } else { 0 };
             let local_end = if p_end > end { end - acc } else { p.len };
             if local_end > local_start {
-                let text = match p.source {
-                    Source::Original => self
-                        .original
-                        .slice(p.start + local_start..p.start + local_end),
-                    Source::Add => &self.add[p.start + local_start..p.start + local_end],
-                };
-                out.push_str(text);
+                let source_range = p.start + local_start..p.start + local_end;
+                match p.source {
+                    Source::Original => self.original.push_slice(source_range, &mut out),
+                    Source::Add => out.push_str(&self.add[source_range]),
+                }
             }
             acc = p_end;
         }

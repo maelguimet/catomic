@@ -33,12 +33,18 @@ impl PieceTable {
         let mut line_starts = vec![0usize];
         let mut acc: usize = 0;
         for p in pieces {
-            let text = match p.source {
-                Source::Original => original.slice(p.start..p.start + p.len),
-                Source::Add => &add[p.start..p.start + p.len],
-            };
-            for (i, _) in text.match_indices('\n') {
-                line_starts.push(acc + i + 1);
+            match p.source {
+                Source::Original => {
+                    original.for_each_newline(p.start..p.start + p.len, |source_i| {
+                        line_starts.push(acc + (source_i - p.start) + 1);
+                    });
+                }
+                Source::Add => {
+                    let text = &add[p.start..p.start + p.len];
+                    for (i, _) in text.match_indices('\n') {
+                        line_starts.push(acc + i + 1);
+                    }
+                }
             }
             acc += p.len;
         }

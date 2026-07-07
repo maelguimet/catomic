@@ -1,5 +1,6 @@
-//! Purpose: this file must provide atomic file IO (write + fsync rename) and
-//!   metadata-only snapshot/observation helpers for external-edit detection.
+//! Purpose: this file must provide explicit full-file UTF-8 reads, atomic file
+//!   IO (write + fsync rename), and metadata-only snapshot/observation helpers
+//!   for external-edit detection.
 //! Owns: read_to_string (for open/reload paths), atomic_write_string, write_string,
 //!   FileSnapshot, ExternalFileStatus, ExternalFileObservation, capture/compare/observe
 //!   pure helpers (std fs::metadata only).
@@ -7,17 +8,21 @@
 //!   or hashing; know App, Project, LLM, or UI; perform reload/save-conflict policy.
 //! Invariants: atomic writes use same-dir temp + create_new + sync + rename;
 //!   all observation is metadata (len+mtime) only; Absent explicitly represents missing;
-//!   errors other than NotFound surface as Unknown(kind); single-capture observe.
-//! Phase: 2-l foundation + later hygiene; behavior unchanged by test split.
+//!   read_to_string returns InvalidData for non-UTF-8; errors other than NotFound
+//!   surface as Unknown(kind) in observation helpers; single-capture observe.
+//! Phase: 2-l foundation + later hygiene + 2-ar explicit owned full-read helper.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 /// Read entire file as UTF-8 string.
-/// Phase 0: lossy or panic is acceptable per TODO.
+/// Full-materialization path for current open/reload. Uses fs::read so the
+/// bytes Vec can be moved into String without another content copy after UTF-8
+/// validation. Not for metadata-only change detection.
 pub fn read_to_string<P: AsRef<Path>>(path: P) -> io::Result<String> {
-    std::fs::read_to_string(path)
+    let bytes = fs::read(path.as_ref())?;
+    String::from_utf8(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
 /// Write string to file. (Phase 0 simple path; callers should prefer atomic for saves.)

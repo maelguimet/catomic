@@ -24,6 +24,40 @@ fn cleanup(p: &PathBuf) {
 }
 
 #[test]
+fn read_to_string_reads_valid_utf8() {
+    let out = temp_path("read_valid_utf8.txt");
+    cleanup(&out);
+    fs::write(&out, "hello\nworld").unwrap();
+
+    let read = read_to_string(&out).expect("read valid utf8");
+
+    assert_eq!(read, "hello\nworld");
+    cleanup(&out);
+}
+
+#[test]
+fn read_to_string_invalid_utf8_returns_invalid_data() {
+    let out = temp_path("read_invalid_utf8.bin");
+    cleanup(&out);
+    fs::write(&out, [0xffu8, 0xfe]).unwrap();
+
+    let err = read_to_string(&out).expect_err("invalid utf8 must fail");
+
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    cleanup(&out);
+}
+
+#[test]
+fn read_to_string_missing_returns_not_found() {
+    let out = temp_path("read_missing.txt");
+    cleanup(&out);
+
+    let err = read_to_string(&out).expect_err("missing file must fail");
+
+    assert_eq!(err.kind(), io::ErrorKind::NotFound);
+}
+
+#[test]
 fn atomic_write_writes_expected_bytes() {
     let out = temp_path("write.txt");
     cleanup(&out);

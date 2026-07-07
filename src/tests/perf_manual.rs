@@ -43,7 +43,7 @@ fn manual_open_10mib_generated_file_smoke() {
     {
         eprintln!("phase: read_to_string 10mib");
         let (content, rs) = measure_sample("read_to_string 10mib", Some(size), || {
-            std::fs::read_to_string(&p).expect("read_to_string 10mib")
+            crate::file::io::read_to_string(&p).expect("read_to_string 10mib")
         });
         print_perf_sample(&rs);
 
@@ -117,7 +117,7 @@ fn manual_open_100mib_generated_file_smoke() {
     {
         eprintln!("phase: read_to_string 100mib");
         let (content, rs) = measure_sample("read_to_string 100mib", Some(size), || {
-            std::fs::read_to_string(&p).expect("read_to_string 100mib")
+            crate::file::io::read_to_string(&p).expect("read_to_string 100mib")
         });
         print_perf_sample(&rs);
 

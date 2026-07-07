@@ -202,6 +202,28 @@ Timed 100 MiB newline-search after-run produced similar timings
 (`PieceTable::from_owned_text` 14 ms, `App::new` 60 ms, render 35 ms) and
 Maximum resident set size: 208356 kB.
 
+After centralizing the owned full-file read helper (`file::io::read_to_string`
+using `fs::read` + `String::from_utf8`), the same manual smoke shape remained:
+```
+PERF sample: label=generate 10mib bytes=10485761 elapsed_ms=291
+PERF sample: label=metadata 10mib bytes=10485761 elapsed_ms=0
+PERF sample: label=read_to_string 10mib bytes=10485761 elapsed_ms=4
+PERF sample: label=PieceTable::from_owned_text 10mib bytes=10485761 elapsed_ms=1
+PERF sample: label=App::new 10mib bytes=10485761 elapsed_ms=4
+PERF sample: label=render 10mib bytes=10485761 elapsed_ms=3
+
+PERF sample: label=generate 100mib bytes=104857601 elapsed_ms=2966
+PERF sample: label=metadata 100mib bytes=104857601 elapsed_ms=0
+PERF sample: label=read_to_string 100mib bytes=104857601 elapsed_ms=44
+PERF sample: label=PieceTable::from_owned_text 100mib bytes=104857601 elapsed_ms=17
+PERF sample: label=App::new 100mib bytes=104857601 elapsed_ms=61
+PERF sample: label=render 100mib bytes=104857601 elapsed_ms=36
+```
+
+Timed runs reported MaxRSS 29860 kB for 10 MiB and 208308 kB for 100 MiB.
+This confirms the helper centralization did not remove the full-materialization
+memory shape or change the main 100 MiB hotspot materially.
+
 Clarifications:
 - Generation time is test-fixture cost (dense streaming write), not editor cost.
 - `read_to_string` and `PieceTable::from_owned_text` are the useful split for the observed App open/materialization hotspot under full materialization. Borrowed `PieceTable::from_text` still exists for callers that do not own the input.
@@ -209,6 +231,7 @@ Clarifications:
 - App open now moves the owned `read_to_string` buffer into PieceTable for LF-only content, avoiding a large clone in that path.
 - App open now has an explicit content plan from the single initial metadata snapshot: untitled/missing paths open empty, present paths still full-read. This is a policy seam only; it is not lazy loading.
 - Confirmed Ctrl+R Modified reload also moves the owned read buffer into PieceTable, avoiding the old reload-side clone.
+- `file::io::read_to_string` is now the single App open/reload full-read helper; it reads bytes then moves them into `String` after UTF-8 validation. It remains full materialization.
 - `App::new` remains the end-to-end open measurement (includes size probe + history token setup).
 - After the owned-open change and before newline-search, `PieceTable::from_owned_text` was still the dominant measured subphase. Compared with the pre-optimization baseline, that step improved `App::new` from ~1247 ms to ~620 ms for 100 MiB on this hardware.
 - After switching LineIndex construction from a hand-rolled byte loop to std string newline search, `App::new` improved again from ~620 ms to ~60 ms for 100 MiB on this hardware.
@@ -222,14 +245,15 @@ Clarifications:
 - 2026-07-07 100 MiB after LF-only fast path timed run: 208116 kB
 - 2026-07-07 100 MiB after owned App open path timed run: 208040 kB
 - 2026-07-07 100 MiB after newline-search timed run: 208356 kB
+- 2026-07-07 after owned file-read helper timed runs: 10 MiB 29860 kB; 100 MiB 208308 kB
 
-Note: these are wall-time / RSS for the full test harness invocation on this machine (not pure editor hot path). Generate time includes FS streaming writes. App::new includes read + PieceTable build + size capture. Render is cheap full-clear for these runs. The first three bullets are from the 2026-06-24 baseline; the last three bullets are 2026-07-07 after-runs.
+Note: these are wall-time / RSS for the full test harness invocation on this machine (not pure editor hot path). Generate time includes FS streaming writes. App::new includes read + PieceTable build + size capture. Render is cheap full-clear for these runs. The first three bullets are from the 2026-06-24 baseline; later bullets are 2026-07-07 after-runs.
 
 Caveat: measurements are observational only for this hardware and build. No budgets or "pass" criteria are declared yet. Do not treat numbers as universal. Future passes may add budgets after more data and hotspot identification.
 
 ### Candidate Phase 2B budgets — not enforced yet
 
-These are starting-point advisory targets derived from the 2026-06-24 recorded baselines above, with 2026-07-07 follow-up splits showing the current LF-only, owned App open, and newline-search behavior. They are **not** wired into tests as assertions. They are local-machine dependent and must be revisited with more samples on representative hardware before any enforcement.
+These are starting-point advisory targets derived from the 2026-06-24 recorded baselines above, with 2026-07-07 follow-up splits showing the current LF-only, owned App open, newline-search, and owned file-read-helper behavior. They are **not** wired into tests as assertions. They are local-machine dependent and must be revisited with more samples on representative hardware before any enforcement.
 
 Suggested initial candidates (open/App::new includes full read + PieceTable construction for the still-full-materialization path):
 
@@ -255,7 +279,7 @@ All numbers remain advisory. Do not turn these into `#[test]` pass/fail gates in
 
 See TODO.md for the current next-intended pointer into this inventory.
 
-### Current Phase 2B large-file handling (as of post 2-aq)
+### Current Phase 2B large-file handling (as of post 2-ar)
 - Large (>10 MiB <=100 MiB) / Huge (>100 MiB <=1 GiB) on open: full read still occurs; warning message set initially (transient); size_bytes/size_tier recorded in FileState (derived from a single initial metadata snapshot captured in open planning; still not a lazy or partial materialization path).
 - Initial open metadata/snapshot/content-plan is single-capture/derived (see 2-am/2-aq). LF-only normalization avoids extra CR-normalization copies (2-an), App open moves the owned read buffer into PieceTable (2-ao), and LineIndex build uses std string newline search (2-ap), but content is still fully read and materialized into PieceTable for Large/Huge. Extreme refuses pre-read.
 - After content edit clears transient message, bottom row shows persistent status containing tier + "large-file mode" marker (plus path/dirty + "disk <size>" label). The size shown is last-known on-disk metadata (fs::metadata or narrow post-save fallback), not live buffer byte length. No buffer scan or to_string() for status.

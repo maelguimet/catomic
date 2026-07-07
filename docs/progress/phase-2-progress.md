@@ -1,6 +1,6 @@
-# Phase 2 Progress Notes (b–at) — Archived
+# Phase 2 Progress Notes (b-av) — Archived
 
-**Purpose**: Archive of detailed completed Phase 2 sub-phase progress notes (2-b through 2-at).
+**Purpose**: Archive of detailed completed Phase 2 sub-phase progress notes (2-b through 2-av).
 **Archived during**: Phase 2-q narrow cleanup (2026-06-22).
 **Reason**: Keep TODO.md under the AGENTS.md "Over 800 lines: split before adding more" threshold.
 **Moved from**: The "**Current status** (2026-06):" section at the end of TODO.md.
@@ -76,3 +76,4 @@ Completed Phase 2 progress is archived here. See TODO.md for:
 - Phase 2-ak through 2-ar: Phase 2B open/materialization hygiene continued. Advisory budgets and hotspot inventory were documented; status size was clarified as disk metadata; key handling and render paths were cleaned up; open metadata capture was reduced to one snapshot; LF-only normalization, owned open/reload construction, std newline search in LineIndex, explicit OpenContentPlan, and centralized `file::io::read_to_string` reduced full-materialization overhead without changing the core limitation. Manual samples showed read_to_string as the main no-newline 100 MiB subphase after these narrow optimizations; full materialization remained.
 - Phase 2-as: added ignored line-heavy 10/100 MiB manual open smokes plus a tiny default exact-size generator smoke. Docs recorded samples showing LineIndex/PieceTable cost reappears for newline-rich 100 MiB content. No default large tests, thresholds, new deps, or storage-policy changes.
 - Phase 2-at: generated-file helpers switched from tiny repeated writes to buffered repeating-pattern writes, making manual fixture setup much cheaper while preserving exact sizes and stable labels. Docs record that generation timing is harness setup cost and must not be treated as editor performance.
+- Phase 2-au through 2-av: behavior-preserving storage-policy seams landed. App open content-plan buffer construction moved into app/open.rs, and PieceTable original-source storage is now wrapped in OriginalBacking::Owned so future lazy/mmap storage has a boundary below Piece ranges. No file I/O moved into buffer, no thresholds were added, and Large/Huge present files still full-read/full-materialize.

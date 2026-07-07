@@ -24,6 +24,17 @@ pub(crate) struct LineIndex {
 }
 
 impl LineIndex {
+    pub(crate) fn from_text(text: &str) -> Self {
+        let mut line_starts = vec![0usize];
+        for (i, _) in text.match_indices('\n') {
+            line_starts.push(i + 1);
+        }
+        Self {
+            line_starts,
+            total_bytes: text.len(),
+        }
+    }
+
     pub(crate) fn line_count(&self) -> usize {
         self.line_starts.len().max(1)
     }
@@ -72,4 +83,36 @@ impl LineIndex {
 
     // NOTE: rebuild_from_pieces lives with PieceTable (it needs internal Piece + Source).
     // PT calls it to produce a LineIndex and assigns it.
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LineIndex;
+
+    #[test]
+    fn from_text_empty_has_single_start() {
+        let index = LineIndex::from_text("");
+
+        assert_eq!(index.line_starts, vec![0]);
+        assert_eq!(index.total_bytes, 0);
+        assert_eq!(index.line_count(), 1);
+    }
+
+    #[test]
+    fn from_text_records_lf_line_starts() {
+        let index = LineIndex::from_text("one\ntwo\n");
+
+        assert_eq!(index.line_starts, vec![0, 4, 8]);
+        assert_eq!(index.total_bytes, 8);
+        assert_eq!(index.line_count(), 3);
+    }
+
+    #[test]
+    fn from_text_uses_byte_offsets_for_multibyte_content() {
+        let index = LineIndex::from_text("é\n猫\nx");
+
+        assert_eq!(index.line_starts, vec![0, 3, 7]);
+        assert_eq!(index.total_bytes, 8);
+        assert_eq!(index.line_start_byte(2), 7);
+    }
 }

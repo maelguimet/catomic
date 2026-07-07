@@ -8,6 +8,7 @@
 //!   without cloning; cursor starts at (0,0); initial piece/index/piece_starts are consistent.
 //! Phase: 2-ao (open materialization copy-count cleanup).
 
+use crate::buffer::line_index::LineIndex;
 use crate::buffer::Cursor;
 
 use super::types::{OriginalBacking, Piece, PieceTable, Source};
@@ -20,7 +21,7 @@ impl PieceTable {
             len: 0,
         }];
         let original = OriginalBacking::empty();
-        let index = Self::build_index(&original, "", &pieces);
+        let index = LineIndex::from_text("");
         let piece_starts = vec![0];
         Self {
             original,
@@ -56,6 +57,7 @@ impl PieceTable {
     }
 
     fn from_normalized_text(normalized: String) -> Self {
+        let index = LineIndex::from_text(&normalized);
         let (original, pieces) = if normalized.is_empty() {
             (
                 OriginalBacking::empty(),
@@ -76,7 +78,6 @@ impl PieceTable {
                 }],
             )
         };
-        let index = Self::build_index(&original, "", &pieces);
         let piece_starts = vec![0];
         Self {
             original,

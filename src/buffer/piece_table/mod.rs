@@ -26,7 +26,7 @@ use types::{Piece, Source};
 
 impl PieceTable {
     /// Rebuild index from current pieces. Call after every structural edit (1B bridge).
-    /// Walks bytes in pieces to locate \n ; kept here because it needs Piece/Source.
+    /// Searches pieces for \n byte positions; kept here because it needs Piece/Source.
     /// Common index builder (used by ctors and rebuild). Avoids depending on
     /// external rebuild in LineIndex (which would need Piece/Source types).
     fn build_index(original: &str, add: &str, pieces: &[Piece]) -> LineIndex {
@@ -37,11 +37,9 @@ impl PieceTable {
                 Source::Original => original,
                 Source::Add => add,
             };
-            let pbytes = &src.as_bytes()[p.start..p.start + p.len];
-            for (i, &b) in pbytes.iter().enumerate() {
-                if b == b'\n' {
-                    line_starts.push(acc + i + 1);
-                }
+            let text = &src[p.start..p.start + p.len];
+            for (i, _) in text.match_indices('\n') {
+                line_starts.push(acc + i + 1);
             }
             acc += p.len;
         }

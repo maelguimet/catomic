@@ -1,6 +1,6 @@
-# Phase 2 Progress Notes (b–p) — Archived
+# Phase 2 Progress Notes (b–at) — Archived
 
-**Purpose**: Archive of detailed completed Phase 2 sub-phase progress notes (2-b through 2-p).
+**Purpose**: Archive of detailed completed Phase 2 sub-phase progress notes (2-b through 2-at).
 **Archived during**: Phase 2-q narrow cleanup (2026-06-22).
 **Reason**: Keep TODO.md under the AGENTS.md "Over 800 lines: split before adding more" threshold.
 **Moved from**: The "**Current status** (2026-06):" section at the end of TODO.md.
@@ -65,3 +65,14 @@ Completed Phase 2 progress is archived here. See TODO.md for:
   - Added 6 targeted save_conflict tests for drift, Absent-appear, cross-status, and regression same-snapshot force.
   - Prior 2-n "same-variant drift treated as same" limitation addressed (no watcher/reload still; metadata-only unchanged).
   - Dead do_atomic_save forwarder removed while touching app/mod.rs. All prior tests green.
+
+---
+
+**Additional archived content (moved from TODO.md after 2-at):**
+
+- Phase 2-r through 2-v: manual Ctrl+R status/reload path and metadata observation were hardened. Ctrl+R first reports/arms Modified or Deleted, second confirms reload/clear if the captured snapshot still matches; read failures do not lie; newline/content edits clear pending reload; observe_external_file uses one captured result without fs::metadata fallback on hard errors. No watcher/background/polling/hash/full-read/new deps were added in this slice.
+- Phase 2-w through 2-ae: file watching became a Plain-safe, capability-gated, App-owned best-effort watcher. The watcher is constructed only when `file_watch` is true and a watchable parent exists, signals are hints only, and runtime checks at most once per loop through the app/watch helper. Modified/Deleted only arm the existing manual Ctrl+R confirmation path; Unchanged/NoPath suppress self-save noise or clear stale pending reload; no auto-reload and no content read from watcher signals. Deterministic queued seams and acceptance tests cover arming plus manual follow-up; live OS notify smoke stays ignored/manual.
+- Phase 2-af through 2-aj: Phase 2B big-file foundation landed. File size metadata/tiering, pre-read guardrails, Large/Huge warnings, Extreme refusal, split perf harness, ignored 10/100 MiB + sparse manual smokes, recorded manual baselines, open-size guardrail extraction, and the initial persistent large-file status marker were added. Large/Huge still fully read and materialize; no thresholds or lazy storage were claimed.
+- Phase 2-ak through 2-ar: Phase 2B open/materialization hygiene continued. Advisory budgets and hotspot inventory were documented; status size was clarified as disk metadata; key handling and render paths were cleaned up; open metadata capture was reduced to one snapshot; LF-only normalization, owned open/reload construction, std newline search in LineIndex, explicit OpenContentPlan, and centralized `file::io::read_to_string` reduced full-materialization overhead without changing the core limitation. Manual samples showed read_to_string as the main no-newline 100 MiB subphase after these narrow optimizations; full materialization remained.
+- Phase 2-as: added ignored line-heavy 10/100 MiB manual open smokes plus a tiny default exact-size generator smoke. Docs recorded samples showing LineIndex/PieceTable cost reappears for newline-rich 100 MiB content. No default large tests, thresholds, new deps, or storage-policy changes.
+- Phase 2-at: generated-file helpers switched from tiny repeated writes to buffered repeating-pattern writes, making manual fixture setup much cheaper while preserving exact sizes and stable labels. Docs record that generation timing is harness setup cost and must not be treated as editor performance.

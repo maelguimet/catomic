@@ -9,6 +9,8 @@
 #![cfg(test)]
 
 use super::*;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
 fn temp_path(name: &str) -> PathBuf {
     let mut p = std::env::temp_dir();
@@ -138,6 +140,52 @@ fn records_ascii_prefix_checkpoints_for_later_non_ascii_lines() {
         buffer.visible_lines_window(0, 1, prefix.len(), 4)[0].content,
         "éfin"
     );
+
+    cleanup(&path);
+}
+
+#[test]
+fn path_replacement_after_open_keeps_original_descriptor() {
+    let path = temp_path("replace_target.txt");
+    let replacement = temp_path("replace_new.txt");
+    cleanup(&path);
+    cleanup(&replacement);
+    std::fs::write(&path, "old stable content").unwrap();
+
+    let buffer = LargeFileBuffer::open(&path).unwrap();
+    std::fs::write(&replacement, "new path content").unwrap();
+    std::fs::rename(&replacement, &path).unwrap();
+
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "new path content");
+    assert_eq!(buffer.line(0).as_deref(), Some("old stable content"));
+    assert_eq!(buffer.to_string(), "old stable content");
+    assert_eq!(buffer.visible_lines_window(0, 1, 4, 6)[0].content, "stable");
+
+    cleanup(&path);
+    cleanup(&replacement);
+}
+
+#[test]
+fn in_place_metadata_change_blocks_descriptor_reads() {
+    let path = temp_path("in_place_change.txt");
+    cleanup(&path);
+    std::fs::write(&path, "original stable content").unwrap();
+
+    let buffer = LargeFileBuffer::open(&path).unwrap();
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(&path)
+        .unwrap();
+    file.write_all(b"changed").unwrap();
+    file.flush().unwrap();
+    drop(file);
+
+    let err = buffer.read_range_to_string(0, 4).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert_eq!(buffer.line(0).as_deref(), Some(""));
+    assert_eq!(buffer.visible_lines_window(0, 1, 0, 8)[0].content, "");
+    assert_eq!(buffer.to_string(), "");
 
     cleanup(&path);
 }

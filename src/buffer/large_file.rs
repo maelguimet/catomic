@@ -3,14 +3,16 @@
 //! Must not: edit file content, perform writes, own App policy, construct watchers,
 //!   depend on Project/LLM, or materialize the whole file for rendering/navigation.
 //! Invariants: line_starts[0] == 0; per-line metadata lengths match line_starts;
-//!   file content was UTF-8 valid at construction; cursor row/col stays clamped.
+//!   file content was UTF-8 valid at construction; ranged reads use the same
+//!   descriptor scanned at open and fail closed if descriptor metadata changes;
+//!   cursor row/col stays clamped.
 //! Phase: 2B limited Huge-file storage foundation.
 
 use std::borrow::Cow;
 use std::fs::File;
 use std::io::{self, Read};
 use std::os::unix::fs::FileExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::buffer::{Buffer, Cursor, LineView};
 
@@ -19,8 +21,8 @@ const LINE_CHECKPOINT_INTERVAL_CHARS: usize = 16 * 1024;
 
 /// Read-only file-backed buffer for limited Huge-file mode.
 pub(crate) struct LargeFileBuffer {
-    path: PathBuf,
     file: File,
+    fd_snapshot: FileMetadataSnapshot,
     line_starts: Vec<usize>,
     line_char_counts: Vec<usize>,
     line_is_ascii: Vec<bool>,
@@ -36,15 +38,36 @@ struct LineCheckpoint {
     byte_offset: usize,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct FileMetadataSnapshot {
+    len: u64,
+    mtime: Option<std::time::SystemTime>,
+}
+
+impl FileMetadataSnapshot {
+    fn capture(file: &File) -> io::Result<Self> {
+        let meta = file.metadata()?;
+        Ok(Self {
+            len: meta.len(),
+            mtime: meta.modified().ok(),
+        })
+    }
+}
+
 impl LargeFileBuffer {
     pub(crate) fn open(path: impl AsRef<Path>) -> io::Result<Self> {
-        let path = path.as_ref().to_path_buf();
-        let mut scan_file = File::open(&path)?;
-        let scan = scan_utf8_lines(&mut scan_file)?;
-        let file = File::open(&path)?;
+        let mut file = File::open(path.as_ref())?;
+        let fd_snapshot = FileMetadataSnapshot::capture(&file)?;
+        let scan = scan_utf8_lines(&mut file)?;
+        if FileMetadataSnapshot::capture(&file)? != fd_snapshot {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "large file changed while scanning",
+            ));
+        }
         Ok(Self {
-            path,
             file,
+            fd_snapshot,
             line_starts: scan.line_starts,
             line_char_counts: scan.line_char_counts,
             line_is_ascii: scan.line_is_ascii,
@@ -68,7 +91,18 @@ impl LargeFileBuffer {
         }
     }
 
-    fn read_range_bytes(&self, start: usize, end: usize) -> io::Result<Vec<u8>> {
+    fn ensure_fd_unchanged(&self) -> io::Result<()> {
+        if FileMetadataSnapshot::capture(&self.file)? == self.fd_snapshot {
+            Ok(())
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "large file changed while open",
+            ))
+        }
+    }
+
+    fn read_range_bytes_unchecked(&self, start: usize, end: usize) -> io::Result<Vec<u8>> {
         if start >= end {
             return Ok(Vec::new());
         }
@@ -87,6 +121,11 @@ impl LargeFileBuffer {
             filled += n;
         }
         Ok(out)
+    }
+
+    fn read_range_bytes(&self, start: usize, end: usize) -> io::Result<Vec<u8>> {
+        self.ensure_fd_unchanged()?;
+        self.read_range_bytes_unchecked(start, end)
     }
 
     fn read_range_to_string(&self, start: usize, end: usize) -> io::Result<String> {
@@ -130,6 +169,7 @@ impl LargeFileBuffer {
     }
 
     fn read_line_window(&self, row: usize, start_col: usize, width: usize) -> io::Result<String> {
+        self.ensure_fd_unchanged()?;
         let checkpoint = self.line_checkpoint_at_or_before(row, start_col);
         let mut pos = checkpoint
             .map(|checkpoint| checkpoint.byte_offset)
@@ -142,7 +182,7 @@ impl LargeFileBuffer {
 
         while pos < end && taken < width {
             let chunk_end = (pos + SCAN_CHUNK_BYTES).min(end);
-            let mut bytes = self.read_range_bytes(pos, chunk_end)?;
+            let mut bytes = self.read_range_bytes_unchecked(pos, chunk_end)?;
             pos = chunk_end;
 
             if !carry.is_empty() {
@@ -262,7 +302,8 @@ impl Buffer for LargeFileBuffer {
     }
 
     fn to_string(&self) -> String {
-        crate::file::io::read_to_string(&self.path).unwrap_or_default()
+        self.read_range_to_string(0, self.total_bytes)
+            .unwrap_or_default()
     }
 
     fn lines(&self) -> Vec<String> {

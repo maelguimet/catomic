@@ -34,6 +34,10 @@ The important current seams are:
   checkpoints, so ASCII visible windows can map scalar columns directly to byte
   ranges while non-ASCII windows seek near the requested scalar column and scan
   forward from there.
+- LargeFileBuffer scans and reads through the same file descriptor, records fd
+  len/mtime at open, and fails closed on later fd metadata drift before ranged
+  reads. This avoids retargeting reads after path replacement, but it is still a
+  metadata-only guard.
 
 These seams made the first limited storage path possible. They still do not
 solve editable Huge-file semantics.
@@ -44,7 +48,8 @@ Adopt Option C as the Phase 2B intermediate:
 
 - Huge files open in explicit read-only limited mode.
 - The first backend is file-backed ranged reads using Linux std positioned
-  reads (`FileExt::read_at`), with a one-time UTF-8/newline scan.
+  reads (`FileExt::read_at`), with a one-time UTF-8/newline scan on the same
+  descriptor used for later reads.
 - Small/Large editable files stay on PieceTable.
 - Confirmed Modified reload reapplies this same size policy instead of forcing
   Huge files through editable PieceTable materialization.
@@ -83,6 +88,8 @@ Costs and risks:
   the file is snapshotted, copied, or guarded.
 - Building the line index still needs a full scan unless indexes become lazy.
 - Local edits over file-backed ranges make save/reload semantics more complex.
+- Same-inode external writes are guarded only by fd metadata; same-size/same-mtime
+  changes remain possible until a stronger snapshot story exists.
 
 ### Option C: read-only or edit-limited large-file buffer
 
@@ -141,13 +148,15 @@ The current accepted intermediate defines:
 - Ignored manual tests cover 100 MiB dense, 100 MiB line-heavy, exact-1-GiB
   sparse Huge open/navigation/render, and >1-GiB Extreme refusal.
 - No new dependency or unsafe code is introduced.
+- Path replacement after open does not retarget Huge reads to the new path.
+- Same-inode metadata drift fails closed before ranged reads.
 
 Remaining open decisions before editable Huge files:
 
 - Whether future Huge editing uses mmap, file-backed piece ranges, a rope/tree,
   or a separate edit-limited mode.
 - Whether CRLF normalization is preserved for lazy originals.
-- How to provide an immutable snapshot or other safe behavior when the file is
-  modified externally while open.
+- How to provide an immutable snapshot or other safe behavior when same-inode
+  content is modified externally while open.
 - Whether save uses streaming piece traversal or full `to_string`.
 - What dependency or unsafe-code justification is required.

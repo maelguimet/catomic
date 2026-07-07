@@ -70,11 +70,7 @@ pub(crate) fn clamp_viewport_to_buffer(app: &mut App) {
     // reveal behavior and keeps cursor visible while still clamping high scrolls
     // on shorter lines to avoid empty space.
     let c = app.buffer.cursor();
-    let line_len = app
-        .buffer
-        .line(c.row)
-        .map(|s| s.chars().count())
-        .unwrap_or(0);
+    let line_len = app.buffer.line_char_count(c.row).unwrap_or(0);
     let vw = app.screen.visible_width();
     if vw == 0 {
         app.screen.scroll_left = 0;

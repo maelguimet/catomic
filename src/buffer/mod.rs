@@ -13,6 +13,7 @@
 
 use std::borrow::Cow;
 
+pub(crate) mod large_file;
 pub mod line_index;
 pub mod piece_table;
 pub mod simple;
@@ -21,6 +22,7 @@ pub mod undo;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use large_file::LargeFileBuffer;
 pub use piece_table::PieceTable;
 /// Public re-exports for the rest of the crate.
 pub use simple::SimpleBuffer;
@@ -49,7 +51,32 @@ pub trait Buffer {
     fn line_count(&self) -> usize;
     fn line(&self, row: usize) -> Option<Cow<'_, str>>;
     fn visible_lines(&self, start: usize, height: usize) -> Vec<LineView>;
+    fn visible_lines_window(
+        &self,
+        start: usize,
+        height: usize,
+        start_col: usize,
+        width: usize,
+    ) -> Vec<LineView> {
+        self.visible_lines(start, height)
+            .into_iter()
+            .map(|lv| {
+                let content = if width == 0 {
+                    String::new()
+                } else {
+                    lv.content.chars().skip(start_col).take(width).collect()
+                };
+                LineView { content }
+            })
+            .collect()
+    }
+    fn line_char_count(&self, row: usize) -> Option<usize> {
+        self.line(row).map(|line| line.chars().count())
+    }
     fn cursor(&self) -> Cursor;
+    fn is_read_only(&self) -> bool {
+        false
+    }
 
     /// Return the entire content as a single string (for save, etc.).
     /// Phase 0/1A: fine. Streaming later if needed for giant files.

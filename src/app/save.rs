@@ -55,6 +55,12 @@ pub(crate) fn save_conflict_message(status: &ExternalFileStatus) -> String {
 /// Phase 2-p: decision uses ExternalFileObservation (status + live snapshot) so that
 /// a pending confirmation is bound to the specific disk state seen on first refusal.
 pub(crate) fn handle_save(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    if app.buffer.is_read_only() {
+        app.pending_save_conflict = None;
+        app.message = Some("Large file is read-only in limited mode; save disabled.".to_string());
+        return app.render(out);
+    }
+
     let current_path = app.file.path.clone();
     let baseline = app.file.disk_snapshot.as_ref();
     let obs = crate::file::io::observe_external_file(

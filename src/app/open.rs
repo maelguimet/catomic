@@ -5,15 +5,15 @@
 //!   the current content-plan-to-buffer construction seam.
 //! Owns: prepare_open_file_meta (OpenSizeDecision + capture_file_snapshot once;
 //!   derives size/tier/content_plan from the snapshot for Present/Absent) and
-//!   build_open_buffer (current full-read PieceTable construction).
+//!   build_open_buffer (editable PieceTable vs read-only Huge-file buffer).
 //! Must not: construct watcher, mutate App, change snapshot/dirty/save/reload
 //!   semantics beyond carrying the initial snapshot/plan and constructing the
 //!   initial buffer, know terminal/render, or Project/LLM.
 //! Invariants: identical observable outcomes for all documented App::new cases
 //!   (None, missing, Small, Large/Huge, Extreme refuse before read, hard meta error,
-//!   invalid UTF-8 errors from read after successful small metadata); single capture
+//!   invalid UTF-8 errors from read after successful metadata); single capture
 //!   for size + snapshot + content plan on the present/missing-file paths.
-//! Phase: 2-aj extraction + 2-am single-capture hygiene + 2-aq explicit open plan.
+//! Phase: 2B open policy seam + limited read-only Huge-file storage.
 
 use std::io::{self, ErrorKind};
 
@@ -32,6 +32,8 @@ pub(crate) enum OpenContentPlan {
     MissingEmpty,
     /// The requested path was present and must be read fully into the current buffer.
     FullRead,
+    /// The requested path was Huge and opens read-only through bounded file reads.
+    LimitedReadOnly,
 }
 
 impl Default for OpenContentPlan {
@@ -47,7 +49,8 @@ impl Default for OpenContentPlan {
 /// Absent for missing path; Present for existing) so App::new does not
 /// probe metadata twice.
 /// content_plan is the explicit current storage policy: empty for no-path/missing,
-/// full read for Present. It is the narrow seam for future lazy storage work.
+/// full read for editable Present files; limited read-only for Huge files.
+/// It is the narrow seam for future lazy storage work.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct OpenFileMeta {
     pub size_bytes: Option<u64>,
@@ -74,7 +77,6 @@ pub(crate) fn prepare_open_file_meta(initial_path: Option<&str>) -> io::Result<O
         match crate::file::io::capture_file_snapshot(p) {
             Ok(snap) => {
                 if let FileSnapshot::Present { len, .. } = &snap {
-                    meta.content_plan = OpenContentPlan::FullRead;
                     let sz = *len;
                     match open_size_decision(sz) {
                         OpenSizeDecision::Refuse => {
@@ -86,10 +88,16 @@ pub(crate) fn prepare_open_file_meta(initial_path: Option<&str>) -> io::Result<O
                             let tier = classify_file_size(sz);
                             meta.size_tier = Some(tier);
                             meta.initial_message = open_size_warning_message(sz, tier);
+                            meta.content_plan = if tier == FileSizeTier::Huge {
+                                OpenContentPlan::LimitedReadOnly
+                            } else {
+                                OpenContentPlan::FullRead
+                            };
                         }
                         OpenSizeDecision::OpenNormally => {
                             meta.size_bytes = Some(sz);
                             meta.size_tier = Some(classify_file_size(sz));
+                            meta.content_plan = OpenContentPlan::FullRead;
                         }
                     }
                 } else {
@@ -110,7 +118,8 @@ pub(crate) fn prepare_open_file_meta(initial_path: Option<&str>) -> io::Result<O
 /// Construct the initial buffer selected by OpenContentPlan.
 /// This is the current storage policy seam:
 /// - no path / missing path => empty PieceTable
-/// - present path => full UTF-8 read + owned PieceTable construction
+/// - Small/Large present path => full UTF-8 read + owned PieceTable construction
+/// - Huge present path => read-only LargeFileBuffer with bounded visible reads
 ///
 /// Future lazy/partial storage work should branch here (or below the PieceTable
 /// constructor) without adding file I/O to the buffer module or App::new.
@@ -133,6 +142,15 @@ pub(crate) fn build_open_buffer(
             // Large/Huge files while preserving CRLF normalization inside PT.
             let content = crate::file::io::read_to_string(path)?;
             Ok(Box::new(buffer::PieceTable::from_owned_text(content)))
+        }
+        OpenContentPlan::LimitedReadOnly => {
+            let path = initial_path.ok_or_else(|| {
+                io::Error::new(
+                    ErrorKind::InvalidInput,
+                    "LimitedReadOnly open plan requires initial path",
+                )
+            })?;
+            Ok(Box::new(buffer::LargeFileBuffer::open(path)?))
         }
     }
 }
@@ -199,6 +217,30 @@ mod tests {
     }
 
     #[test]
+    fn huge_path_plans_limited_read_only_from_snapshot() {
+        let meta = OpenFileMeta {
+            size_bytes: Some(crate::file::size::LARGE_FILE_LIMIT_BYTES + 1),
+            size_tier: Some(FileSizeTier::Huge),
+            initial_message: open_size_warning_message(
+                crate::file::size::LARGE_FILE_LIMIT_BYTES + 1,
+                FileSizeTier::Huge,
+            ),
+            disk_snapshot: Some(FileSnapshot::Present {
+                len: crate::file::size::LARGE_FILE_LIMIT_BYTES + 1,
+                mtime: None,
+            }),
+            content_plan: OpenContentPlan::LimitedReadOnly,
+        };
+
+        assert_eq!(meta.content_plan, OpenContentPlan::LimitedReadOnly);
+        assert!(meta
+            .initial_message
+            .as_deref()
+            .unwrap_or("")
+            .contains("read-only"));
+    }
+
+    #[test]
     fn build_open_buffer_empty_plans_start_empty() {
         let no_path = OpenFileMeta {
             content_plan: OpenContentPlan::UntitledEmpty,
@@ -249,5 +291,24 @@ mod tests {
         };
 
         assert_eq!(err.kind(), ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn build_open_buffer_limited_read_only_uses_file_backed_buffer() {
+        let path = temp_path("build_limited_read_only.txt");
+        cleanup(&path);
+        fs::write(&path, "first\nsecond").unwrap();
+        let meta = OpenFileMeta {
+            content_plan: OpenContentPlan::LimitedReadOnly,
+            ..OpenFileMeta::default()
+        };
+
+        let buffer = build_open_buffer(&meta, Some(&path.to_string_lossy())).unwrap();
+
+        assert!(buffer.is_read_only());
+        assert_eq!(buffer.line_count(), 2);
+        assert_eq!(buffer.line(1).as_deref(), Some("second"));
+
+        cleanup(&path);
     }
 }

@@ -1,9 +1,11 @@
 //! Purpose: this file must contain only the #[ignore] manual big-file smokes used
 //!   for measurement / guardrail verification. Not run by default cargo test.
-//! Owns: manual_open_10mib_generated_file_smoke, manual_open_100mib_..., manual_sparse_extreme...
+//! Owns: manual_open_10mib_generated_file_smoke, manual_open_100mib_...,
+//!   manual_open_1gib_sparse_huge_read_only_smoke, manual_sparse_extreme...
 //! Must not: run on default `cargo test`; enforce timing thresholds; read 1 GiB dense;
 //!   add committed fixtures or new deps.
-//! Invariants: 10 MiB uses SMALL+1 for Large; 100 MiB uses LARGE+1 (Huge by current thresholds; warning path expected);
+//! Invariants: 10 MiB uses SMALL+1 for editable Large; 100 MiB uses LARGE+1
+//!   for read-only Huge limited mode;
 //!   sparse Extreme >HUGE uses set_len only and expects clean skip or refusal before read;
 //!   same test names preserved for TODO command compatibility.
 //! Phase: 2-ai (split scaffold; enhancements for baseline reporting come after split).
@@ -29,7 +31,7 @@ fn manual_open_10mib_generated_file_smoke() {
     });
     print_perf_sample(&gen_sample);
 
-    // Phase breakdown for open/materialization hotspot (manual only, ignored).
+    // Phase breakdown for editable Large open/materialization hotspot (manual only, ignored).
     // metadata: fs metadata probe (size decision path).
     // read_to_string + PieceTable::from_owned_text are the split of App open materialization cost.
     // App::new remains the end-to-end measurement (re-reads internally).
@@ -107,7 +109,8 @@ fn manual_open_100mib_generated_file_smoke() {
     let _ = gen_ok;
     print_perf_sample(&gen_sample);
 
-    // Phase breakdown (same labels/shape as 10mib). Scoped to drop content promptly.
+    // Legacy full-materialization comparison samples. App::new for this Huge
+    // case now uses read-only LargeFileBuffer instead of this PieceTable path.
     eprintln!("phase: metadata 100mib");
     let ((), meta_sample) = measure_sample("metadata 100mib", Some(size), || {
         let _ = std::fs::metadata(&p).expect("metadata 100mib");
@@ -159,6 +162,11 @@ fn manual_open_100mib_generated_file_smoke() {
         "100 MiB case should warn Large file, got: {:?}",
         app.message
     );
+    assert!(
+        msg.contains("read-only") && app.buffer.is_read_only(),
+        "100 MiB Huge case should open read-only, got message {:?}",
+        app.message
+    );
 
     let mut out: Vec<u8> = Vec::new();
     let (_, render_sample) = measure_sample("render 100mib", Some(size), || {
@@ -168,6 +176,71 @@ fn manual_open_100mib_generated_file_smoke() {
 
     cleanup_perf(&p);
     eprintln!("manual 100mib smoke complete");
+}
+
+#[test]
+#[ignore = "manual sparse 1 GiB Huge open smoke; validates read-only limited mode"]
+fn manual_open_1gib_sparse_huge_read_only_smoke() {
+    let size = crate::file::size::HUGE_FILE_LIMIT_BYTES;
+    let p = temp_perf_path("manual_1gib_sparse_huge.bin");
+    cleanup_perf(&p);
+
+    eprintln!("creating sparse 1 GiB Huge file (set_len, no dense write)...");
+    let (set_res, set_sample) = measure_sample("create sparse 1gib", Some(size), || {
+        try_generate_sparse_file(&p, size)
+    });
+    match set_res {
+        Ok(()) => {
+            print_perf_sample(&set_sample);
+        }
+        Err(e) => {
+            print_perf_sample(&set_sample);
+            eprintln!("sparse 1GiB not supported on this FS ({}); skipping", e);
+            cleanup_perf(&p);
+            return;
+        }
+    }
+
+    eprintln!("App::new on sparse 1 GiB Huge (read-only limited mode)...");
+    let app_res = measure_sample("App::new 1gib sparse huge", Some(size), || {
+        crate::app::App::new(Some(&p.to_string_lossy()))
+    });
+    let (mut app, app_sample) = match app_res {
+        (Ok(app), sample) => (app, sample),
+        (Err(e), sample) => {
+            print_perf_sample(&sample);
+            eprintln!("App::new 1gib sparse huge failed: {}; skipping", e);
+            cleanup_perf(&p);
+            return;
+        }
+    };
+    print_perf_sample(&app_sample);
+
+    assert_eq!(
+        app.file.size_tier,
+        Some(crate::file::size::FileSizeTier::Huge)
+    );
+    assert!(app.buffer.is_read_only());
+    assert_eq!(app.buffer.line_count(), 1);
+    assert_eq!(app.buffer.line_char_count(0), Some(size as usize));
+    assert!(app.message.as_deref().unwrap_or("").contains("read-only"));
+
+    let (_, nav_sample) = measure_sample("navigate 1gib sparse huge", Some(size), || {
+        for _ in 0..80 {
+            app.buffer.move_right();
+        }
+    });
+    print_perf_sample(&nav_sample);
+    assert_eq!(app.buffer.cursor().col, 80);
+
+    let mut out: Vec<u8> = Vec::new();
+    let (_, render_sample) = measure_sample("render 1gib sparse huge", Some(size), || {
+        let _ = app.render(&mut out);
+    });
+    print_perf_sample(&render_sample);
+
+    cleanup_perf(&p);
+    eprintln!("manual sparse 1 GiB Huge smoke complete");
 }
 
 #[test]

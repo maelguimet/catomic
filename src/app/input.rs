@@ -26,10 +26,14 @@ use super::{reload, save};
 /// and boundary backspace/delete still clearing pending state).
 fn finish_content_edit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     refresh_dirty(&mut app.file, &*app.buffer);
-    app.pending_quit_confirm = false;
-    app.pending_save_conflict = None;
-    app.pending_reload = None;
-    app.message = None;
+    if app.buffer.is_read_only() {
+        app.message = Some("Large file is read-only in limited mode.".to_string());
+    } else {
+        app.pending_quit_confirm = false;
+        app.pending_save_conflict = None;
+        app.pending_reload = None;
+        app.message = None;
+    }
     app.reveal_cursor();
     app.render(out)
 }

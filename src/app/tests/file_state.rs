@@ -14,6 +14,7 @@ use crossterm::event::{KeyCode, KeyModifiers};
 mod dirty;
 mod file_size;
 mod file_size_open;
+mod large_read_only;
 mod save_conflict;
 mod snapshot;
 mod watcher_acceptance;

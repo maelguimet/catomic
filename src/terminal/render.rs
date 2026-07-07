@@ -39,17 +39,13 @@ pub fn render_buffer<W: Write + ?Sized>(
     // Horizontal: use width directly as content width (no sidebar/status reservation).
     let content_h = height.saturating_sub(1);
     let content_w = width;
-    let visible = buffer.visible_lines(start, content_h);
+    let visible = buffer.visible_lines_window(start, content_h, start_col, content_w);
     for (i, lv) in visible.iter().enumerate() {
         if i > 0 {
             write!(out, "\r\n")?;
         }
-        let line = &lv.content;
         if content_w > 0 {
-            // Write visible scalar chars directly; no per-line temporary String allocation.
-            for ch in line.chars().skip(start_col).take(content_w) {
-                write!(out, "{}", ch)?;
-            }
+            write!(out, "{}", lv.content)?;
         }
     }
 

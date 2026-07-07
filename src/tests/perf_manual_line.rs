@@ -5,6 +5,7 @@
 //! Must not: run on default `cargo test`; enforce timing thresholds; add deps;
 //!   write committed fixtures; change open/storage policy.
 //! Invariants: generated files are exact-size ASCII with frequent newlines;
+//!   10 MiB opens editable Large; 100 MiB opens read-only Huge limited mode;
 //!   phase sample labels are stable and manual-only; tests may skip cleanly on
 //!   generation/open environment limits.
 //! Phase: 2B hotspot inventory after 2-ar.
@@ -18,6 +19,8 @@ use super::helpers::{
 };
 
 fn measure_line_heavy_open(path: &Path, label_size: &'static str, size: u64) {
+    // These samples remain as legacy full-materialization comparisons. App::new
+    // for 100mib-line now takes the read-only Huge-file path instead.
     eprintln!("phase: metadata {}", label_size);
     let ((), meta_sample) = measure_sample(
         match label_size {
@@ -116,6 +119,17 @@ fn open_line_heavy_smoke(size: u64, suffix: &str, label_size: &'static str) {
         "manual line-heavy size must be Large/Huge, got {:?}",
         app.file.size_tier
     );
+    if label_size == "100mib-line" {
+        assert!(
+            app.buffer.is_read_only(),
+            "100 MiB line-heavy Huge case should open read-only"
+        );
+        assert!(
+            app.message.as_deref().unwrap_or("").contains("read-only"),
+            "100 MiB line-heavy Huge case should warn read-only, got {:?}",
+            app.message
+        );
+    }
 
     let mut out: Vec<u8> = Vec::new();
     let (_, render_sample) = measure_sample(

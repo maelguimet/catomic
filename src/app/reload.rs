@@ -12,12 +12,13 @@
 //! Phase: 2-s / 2-t cleanup.
 
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::buffer;
 use crate::file::io::{
     observe_external_file, ExternalFileObservation, ExternalFileStatus, FileSnapshot,
 };
+use crate::file::size::{self, FileSizeTier, OpenSizeDecision};
 
 /// Token recorded on first Ctrl+R when reload would change buffer state.
 /// Binds to the specific observed disk state so that drift between presses
@@ -66,6 +67,60 @@ pub(crate) fn reload_success_message() -> String {
 /// Success message after clearing buffer due to deleted file.
 pub(crate) fn reload_cleared_message() -> String {
     "Buffer cleared (file deleted on disk).".to_string()
+}
+
+struct ReloadedModifiedBuffer {
+    buffer: Box<dyn buffer::Buffer>,
+    size_bytes: u64,
+    size_tier: FileSizeTier,
+}
+
+fn observed_present_len(obs: &ExternalFileObservation) -> io::Result<u64> {
+    match obs.live_snapshot {
+        Some(FileSnapshot::Present { len, .. }) => Ok(len),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "reload modified path missing present size snapshot",
+        )),
+    }
+}
+
+fn build_modified_reload_buffer(
+    path: &Path,
+    size_bytes: u64,
+) -> io::Result<ReloadedModifiedBuffer> {
+    let size_tier = size::classify_file_size(size_bytes);
+    match size::open_size_decision(size_bytes) {
+        OpenSizeDecision::Refuse => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                size::open_size_refusal_message(size_bytes),
+            ));
+        }
+        OpenSizeDecision::OpenNormally | OpenSizeDecision::OpenWithWarning => {}
+    }
+
+    let buffer: Box<dyn buffer::Buffer> = if size_tier == FileSizeTier::Huge {
+        Box::new(buffer::LargeFileBuffer::open(path)?)
+    } else {
+        let content = crate::file::io::read_to_string(path)?;
+        Box::new(buffer::PieceTable::from_owned_text(content))
+    };
+
+    Ok(ReloadedModifiedBuffer {
+        buffer,
+        size_bytes,
+        size_tier,
+    })
+}
+
+fn reload_modified_success_message(size_bytes: u64, size_tier: FileSizeTier) -> String {
+    if size_tier == FileSizeTier::Huge {
+        if let Some(warning) = size::open_size_warning_message(size_bytes, size_tier) {
+            return format!("Reloaded from disk. {}", warning);
+        }
+    }
+    reload_success_message()
 }
 
 /// Apply a single ExternalFileObservation to set user message and arm/clear
@@ -131,26 +186,36 @@ pub(crate) fn handle_reload_key(app: &mut super::App, out: &mut dyn Write) -> io
         if let Some(ref p) = current_path {
             match obs.status {
                 ExternalFileStatus::Modified => {
-                    match crate::file::io::read_to_string(p) {
-                        Ok(content) => {
-                            app.buffer = Box::new(buffer::PieceTable::from_owned_text(content));
+                    match observed_present_len(&obs)
+                        .and_then(|size_bytes| build_modified_reload_buffer(p, size_bytes))
+                    {
+                        Ok(reloaded) => {
+                            let reload_message = reload_modified_success_message(
+                                reloaded.size_bytes,
+                                reloaded.size_tier,
+                            );
+                            app.buffer = reloaded.buffer;
                             let new_pos = app.buffer.edit_history_position();
                             app.file.saved_history_position = new_pos;
                             app.file.dirty = false;
-                            if let Ok(s) = crate::file::io::capture_file_snapshot(p) {
-                                if matches!(s, FileSnapshot::Present { .. }) {
+                            match crate::file::io::capture_file_snapshot(p) {
+                                Ok(s @ FileSnapshot::Present { len, .. }) => {
+                                    app.file.size_bytes = Some(len);
+                                    app.file.size_tier =
+                                        Some(crate::file::size::classify_file_size(len));
                                     app.file.disk_snapshot = Some(s);
                                 }
+                                Ok(s) => {
+                                    app.file.disk_snapshot = Some(s);
+                                    app.file.size_bytes = None;
+                                    app.file.size_tier = None;
+                                }
+                                Err(_) => {
+                                    app.file.size_bytes = Some(reloaded.size_bytes);
+                                    app.file.size_tier = Some(reloaded.size_tier);
+                                }
                             }
-                            // Update size metadata to reloaded on-disk file (metadata only).
-                            if let Ok(sz) = crate::file::size::file_size_bytes(p) {
-                                app.file.size_bytes = Some(sz);
-                                app.file.size_tier =
-                                    Some(crate::file::size::classify_file_size(sz));
-                            } else {
-                                // Should not happen for successful read of Present; keep prior.
-                            }
-                            app.message = Some(reload_success_message());
+                            app.message = Some(reload_message);
                             app.pending_reload = None;
                             app.pending_save_conflict = None;
                             app.pending_quit_confirm = false;
@@ -187,4 +252,53 @@ pub(crate) fn handle_reload_key(app: &mut super::App, out: &mut dyn Write) -> io
         app.render(out)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_path(name: &str) -> PathBuf {
+        let mut p = std::env::temp_dir();
+        p.push(format!(
+            "catomic_reload_policy_{}_{}",
+            std::process::id(),
+            name
+        ));
+        p
+    }
+
+    fn cleanup(path: &Path) {
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn modified_reload_buffer_uses_read_only_buffer_for_huge_size() {
+        let path = temp_path("huge_policy.txt");
+        cleanup(&path);
+        std::fs::write(&path, "first\nsecond").unwrap();
+
+        let reloaded =
+            build_modified_reload_buffer(&path, size::LARGE_FILE_LIMIT_BYTES + 1).unwrap();
+
+        assert_eq!(reloaded.size_tier, FileSizeTier::Huge);
+        assert!(reloaded.buffer.is_read_only());
+        assert_eq!(reloaded.buffer.line(1).as_deref(), Some("second"));
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn modified_reload_buffer_refuses_extreme_before_opening_path() {
+        let path = temp_path("missing_extreme.txt");
+        cleanup(&path);
+
+        let err = match build_modified_reload_buffer(&path, size::HUGE_FILE_LIMIT_BYTES + 1) {
+            Ok(_) => panic!("extreme reload must refuse"),
+            Err(err) => err,
+        };
+
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert!(err.to_string().contains("File too large"));
+    }
 }

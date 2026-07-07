@@ -56,7 +56,8 @@ pub fn file_size_tier_label(tier: FileSizeTier) -> &'static str {
 
 /// Explicit decision for App open policy based on on-disk size (metadata only).
 /// Small files open normally (no message change).
-/// Large/Huge: open proceeds but a warning message is set after construction.
+/// Large: open proceeds with the normal editable buffer and a warning.
+/// Huge: open proceeds in limited read-only mode and a warning.
 /// Extreme: refuse before any content read_to_string.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OpenSizeDecision {
@@ -81,9 +82,16 @@ pub fn open_size_decision(bytes: u64) -> OpenSizeDecision {
 /// Uses formatted size for the label. Stable boring text.
 pub fn open_size_warning_message(bytes: u64, tier: FileSizeTier) -> Option<String> {
     match tier {
-        FileSizeTier::Large | FileSizeTier::Huge => {
+        FileSizeTier::Large => {
             let label = format_file_size(bytes);
             Some(format!("Large file ({}). Editing may be slower.", label))
+        }
+        FileSizeTier::Huge => {
+            let label = format_file_size(bytes);
+            Some(format!(
+                "Large file ({}). Opened read-only in limited mode.",
+                label
+            ))
         }
         _ => None,
     }

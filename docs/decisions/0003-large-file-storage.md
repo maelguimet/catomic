@@ -2,7 +2,7 @@
 
 Date: 2026-07-07
 
-Status: proposed, blocked on explicit storage choice
+Status: accepted intermediate; editable Huge storage still open
 
 ## Context
 
@@ -13,11 +13,13 @@ Current behavior is intentionally conservative:
 
 - Small/Large/Huge/Extreme tiers are decided from metadata before content read.
 - Extreme files (`> 1 GiB`) are refused before reading content.
-- Large/Huge files warn and show a persistent large-file mode status marker.
-- Present non-Extreme files still do a full UTF-8 read and full PieceTable
-  materialization.
-- Recent Phase 2B work reduced clones and isolated policy seams, but did not
-  introduce lazy storage.
+- Large files (`> 10 MiB <= 100 MiB`) warn and open editable through the normal
+  full-read PieceTable path.
+- Huge files (`> 100 MiB <= 1 GiB`) warn and open read-only through
+  LargeFileBuffer, which validates UTF-8, scans line starts once, and renders
+  visible windows through positioned file reads.
+- Huge edit and save attempts are disabled at the App layer with explicit
+  messages.
 
 The important current seams are:
 
@@ -25,13 +27,27 @@ The important current seams are:
 - `PieceTable` stores original content behind `OriginalBacking`.
 - `OriginalBacking` no longer exposes borrowed slices to query/index callers.
 - `LineIndex::from_text` gives initial single-piece construction a direct path.
+- `Buffer::visible_lines_window`, `Buffer::line_char_count`, and
+  `Buffer::is_read_only` let render/viewport/App policy avoid full line reads
+  and report limited storage mode.
 
-These seams make a storage change possible, but they do not decide the storage
-semantics.
+These seams made the first limited storage path possible. They still do not
+solve editable Huge-file semantics.
 
-## Decision Needed
+## Decision
 
-Choose one large-file storage direction before implementing true 1 GiB support.
+Adopt Option C as the Phase 2B intermediate:
+
+- Huge files open in explicit read-only limited mode.
+- The first backend is file-backed ranged reads using Linux std positioned
+  reads (`FileExt::read_at`), with a one-time UTF-8/newline scan.
+- Small/Large editable files stay on PieceTable.
+- Confirmed Modified reload reapplies this same size policy instead of forcing
+  Huge files through editable PieceTable materialization.
+- Extreme files remain refused pre-read.
+
+This is enough to support "1 GiB opens and basic navigation works with limits"
+without pretending local edit/save semantics are solved.
 
 ### Option A: mmap-backed original storage
 
@@ -70,15 +86,22 @@ Open Huge/1 GiB files in an explicit limited mode with navigation first and
 local edits disabled or heavily constrained until a stronger storage backend
 exists.
 
+Decision: selected as the current intermediate, with disabled Huge edits/saves.
+
 Pros:
 - Can deliver bounded memory and navigation sooner.
 - Avoids pretending full edit semantics are solved.
 - Clear user-facing large-file limitation.
 
 Costs and risks:
-- Changes current editing expectations for Huge files.
-- Requires explicit UI/status messaging and tests for disabled operations.
-- Still needs a storage backend for visible ranged reads.
+- Changes current editing expectations for Huge files. Mitigated by initial
+  warning plus edit/save messages.
+- Still needs a long-term storage backend if Huge files become editable.
+- External in-place mutation while the file is open can invalidate the scanned
+  line index; watcher/snapshot checks are hints and confirmation gates, not an
+  immutable file snapshot.
+- LargeFileBuffer currently preserves raw `\r` bytes instead of PieceTable CRLF
+  normalization.
 
 ### Option D: continue full materialization with stricter refusal
 
@@ -94,25 +117,33 @@ Costs and risks:
 
 ## Current Recommendation
 
-Do not implement a file-backed `OriginalBacking` until the semantics are chosen.
+Do not implement editable file-backed `OriginalBacking` until Huge edit
+semantics and external-change snapshot policy are chosen.
 
 For Catomic's Linux-first direction, Option A is probably the cleanest long-term
-storage fit if a small mmap dependency is acceptable. Option C may be the
-pragmatic intermediate if editing semantics for huge files can be explicitly
-limited. Option B looks simple, but its infallible `Buffer` mismatch and
-external-change semantics are easy to get wrong.
+storage fit if a small mmap dependency is acceptable. Option B still looks
+simple, but its infallible `Buffer` mismatch and external-change semantics are
+easy to get wrong once edits enter the picture. The current Option C path should
+stay deliberately read-only until that decision is made.
 
 ## Acceptance Implications
 
-Whichever option is chosen must define:
+The current accepted intermediate defines:
 
-- Whether Huge files are editable, read-only, or edit-limited.
+- Huge files are read-only.
+- Save is disabled for Huge read-only buffers.
+- Default tests cover tiny LargeFileBuffer behavior and App-level read-only
+  edit/save guards.
+- Ignored manual tests cover 100 MiB dense, 100 MiB line-heavy, exact-1-GiB
+  sparse Huge open/navigation/render, and >1-GiB Extreme refusal.
+- No new dependency or unsafe code is introduced.
+
+Remaining open decisions before editable Huge files:
+
+- Whether future Huge editing uses mmap, file-backed piece ranges, a rope/tree,
+  or a separate edit-limited mode.
 - Whether CRLF normalization is preserved for lazy originals.
-- How external modification is handled while a large file is open.
+- How to provide an immutable snapshot or other safe behavior when the file is
+  modified externally while open.
 - Whether save uses streaming piece traversal or full `to_string`.
-- What default and ignored perf tests prove the behavior.
 - What dependency or unsafe-code justification is required.
-
-Until that choice is made, Phase 2B can continue only with measurement,
-small behavior-preserving seams, or documentation. True "1 GiB open + navigate"
-work is blocked on the storage decision.

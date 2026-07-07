@@ -61,11 +61,6 @@ pub(crate) fn clear_file_watcher(app: &mut super::App) {
     app.file_watcher = None;
 }
 
-#[cfg(test)]
-pub(crate) fn has_file_watcher(app: &super::App) -> bool {
-    app.file_watcher.is_some()
-}
-
 /// Install a pre-constructed FileWatcher (typically a test seam one) into the App.
 /// Replaces any prior watcher. Used only by deterministic queued-signal tests.
 #[cfg(test)]

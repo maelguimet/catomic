@@ -226,35 +226,12 @@ impl App {
         viewport::reveal_cursor(self)
     }
 
-    /// Buffer-aware clamp so scroll offsets cannot exceed useful buffer content.
-    /// Vertical: if vh==0 => 0; if line_count <= vh => 0; else scroll_top <= line_count - vh.
-    /// Horizontal (scalar chars): clamp scroll_left using current cursor line char count.
-    /// Uses line_len + 1 - vw (saturating) to match reveal_col end-of-line math and
-    /// keep cursor revealed; clamps excess from prior long lines after move/delete/shrink.
-    /// Private App helper keeps Screen buffer-agnostic.
-    /// Called from resize and reveal paths.
-    fn clamp_viewport_to_buffer(&mut self) {
-        viewport::clamp_viewport_to_buffer(self)
-    }
-
     /// Returns whether (and how) the on-disk file differs from our last captured snapshot.
     /// Used by future watch/reload to decide action; for 2-l this is detection only.
     /// Must not mutate buffer, file state (dirty/snapshot), message, pending, viewport, or history.
     /// NoPath for untitled; delegates to file_state helper (std metadata compare only).
     fn external_file_status(&self) -> crate::file::io::ExternalFileStatus {
         external_file_status(&self.file)
-    }
-
-    /// Manual external-file status check + reload arm (Phase 2-s).
-    /// Single observation: status and live_snapshot come from one observe_external_file call.
-    /// Delegates arm/message logic to reload module to keep mod.rs thin.
-    /// Does not render (caller does).
-    pub(crate) fn check_external_file_status(&mut self) {
-        use crate::file::io::observe_external_file;
-        let current_path = self.file.path.clone();
-        let baseline = self.file.disk_snapshot.as_ref();
-        let obs = observe_external_file(current_path.as_ref().map(|p| p.as_path()), baseline);
-        reload::apply_check_observation(self, &obs);
     }
 
     pub(crate) fn render(&self, stdout: &mut dyn Write) -> io::Result<()> {

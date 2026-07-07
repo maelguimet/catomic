@@ -15,18 +15,21 @@ use crate::buffer::{Buffer, PieceTable, SimpleBuffer};
 fn assert_parity(text: &str) {
     let sb = SimpleBuffer::from_text(text);
     let pt = PieceTable::from_text(text);
+    assert_observable_parity(text, &sb, &pt);
+}
 
+fn assert_observable_parity(label: &str, sb: &SimpleBuffer, pt: &PieceTable) {
     assert_eq!(
         pt.to_string(),
         sb.to_string(),
         "to_string parity failed for input: {:?}",
-        text
+        label
     );
     assert_eq!(
         pt.line_count(),
         sb.line_count(),
         "line_count parity failed for input: {:?}",
-        text
+        label
     );
     assert_eq!(
         pt.cursor(),
@@ -94,6 +97,26 @@ fn parity_crlf_normalization_matches() {
     assert_parity("a\r\nb\r\nc");
     assert_parity("a\rb\rc\r");
     assert_parity("mixed\r\nunix\nwindows\r\n");
+}
+
+#[test]
+fn owned_text_constructor_matches_borrowed_constructor() {
+    for text in [
+        "",
+        "hello\nworld\n",
+        "a\r\nb\r\nc",
+        "a\rb\rc\r",
+        "mixed\r\nunix\nwindows\r\n",
+    ] {
+        let sb = SimpleBuffer::from_text(text);
+        let pt = PieceTable::from_owned_text(text.to_string());
+        assert_observable_parity(text, &sb, &pt);
+
+        let borrowed = PieceTable::from_text(text);
+        assert_eq!(pt.to_string(), borrowed.to_string());
+        assert_eq!(pt.lines(), borrowed.lines());
+        assert_eq!(pt.cursor(), borrowed.cursor());
+    }
 }
 
 #[test]

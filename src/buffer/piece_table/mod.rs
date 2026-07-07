@@ -10,6 +10,7 @@
 //! - Queries (line/visible) use slice + index, no full materialization.
 //! Phase: 1B-1C.
 
+mod construct;
 mod edit;
 mod query;
 pub(crate) mod types;
@@ -24,69 +25,6 @@ pub use types::PieceTable;
 use types::{Piece, Source};
 
 impl PieceTable {
-    pub fn new() -> Self {
-        let pieces = vec![Piece {
-            source: Source::Original,
-            start: 0,
-            len: 0,
-        }];
-        let index = Self::build_index("", "", &pieces);
-        let piece_starts = vec![0];
-        Self {
-            original: String::new(),
-            add: String::new(),
-            pieces,
-            index,
-            cursor: Cursor { row: 0, col: 0 },
-            cursor_byte_offset: 0,
-            piece_starts,
-            undo_stack: crate::buffer::undo::UndoStack::new(),
-            recording: true,
-        }
-    }
-
-    pub fn from_text(text: &str) -> Self {
-        let normalized = if text.as_bytes().contains(&b'\r') {
-            text.replace("\r\n", "\n").replace('\r', "\n")
-        } else {
-            text.to_string()
-        };
-        let (original, pieces) = if normalized.is_empty() {
-            (
-                String::new(),
-                vec![Piece {
-                    source: Source::Original,
-                    start: 0,
-                    len: 0,
-                }],
-            )
-        } else {
-            let len = normalized.len();
-            (
-                normalized,
-                vec![Piece {
-                    source: Source::Original,
-                    start: 0,
-                    len,
-                }],
-            )
-        };
-        let index = Self::build_index(&original, "", &pieces);
-        // Initial piece (even if len 0) always starts at 0.
-        let piece_starts = vec![0];
-        Self {
-            original,
-            add: String::new(),
-            pieces,
-            index,
-            cursor: Cursor { row: 0, col: 0 },
-            cursor_byte_offset: 0,
-            piece_starts,
-            undo_stack: crate::buffer::undo::UndoStack::new(),
-            recording: true,
-        }
-    }
-
     /// Rebuild index from current pieces. Call after every structural edit (1B bridge).
     /// Walks bytes in pieces to locate \n ; kept here because it needs Piece/Source.
     /// Common index builder (used by ctors and rebuild). Avoids depending on

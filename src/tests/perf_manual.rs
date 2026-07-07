@@ -31,7 +31,7 @@ fn manual_open_10mib_generated_file_smoke() {
 
     // Phase breakdown for open/materialization hotspot (manual only, ignored).
     // metadata: fs metadata probe (size decision path).
-    // read_to_string + PieceTable::from_text are the split of materialization cost.
+    // read_to_string + PieceTable::from_owned_text are the split of App open materialization cost.
     // App::new remains the end-to-end measurement (re-reads internally).
     // Content string is dropped promptly after the PT phase; no duplicate giant retained.
     eprintln!("phase: metadata 10mib");
@@ -47,12 +47,11 @@ fn manual_open_10mib_generated_file_smoke() {
         });
         print_perf_sample(&rs);
 
-        eprintln!("phase: PieceTable::from_text 10mib");
-        let (_, pts) = measure_sample("PieceTable::from_text 10mib", Some(size), || {
-            crate::buffer::PieceTable::from_text(&content)
+        eprintln!("phase: PieceTable::from_owned_text 10mib");
+        let (_, pts) = measure_sample("PieceTable::from_owned_text 10mib", Some(size), || {
+            crate::buffer::PieceTable::from_owned_text(content)
         });
         print_perf_sample(&pts);
-        // content drops here; do not carry giant string into App::new measurement
     }
 
     eprintln!("opening via App::new ...");
@@ -122,9 +121,9 @@ fn manual_open_100mib_generated_file_smoke() {
         });
         print_perf_sample(&rs);
 
-        eprintln!("phase: PieceTable::from_text 100mib");
-        let (_, pts) = measure_sample("PieceTable::from_text 100mib", Some(size), || {
-            crate::buffer::PieceTable::from_text(&content)
+        eprintln!("phase: PieceTable::from_owned_text 100mib");
+        let (_, pts) = measure_sample("PieceTable::from_owned_text 100mib", Some(size), || {
+            crate::buffer::PieceTable::from_owned_text(content)
         });
         print_perf_sample(&pts);
     }

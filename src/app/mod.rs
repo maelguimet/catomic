@@ -91,7 +91,9 @@ impl App {
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
                 Err(e) => return Err(e),
             };
-            Box::new(buffer::PieceTable::from_text(&content))
+            // Move the read buffer into PieceTable on open; this avoids cloning
+            // Large/Huge files while preserving CRLF normalization inside PT.
+            Box::new(buffer::PieceTable::from_owned_text(content))
         } else {
             Box::new(buffer::PieceTable::new())
         };

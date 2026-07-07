@@ -1,7 +1,7 @@
 //! Purpose: this file must provide explicit full-file UTF-8 reads, atomic file
 //!   IO (write + fsync rename), and metadata-only snapshot/observation helpers
 //!   for external-edit detection.
-//! Owns: read_to_string (for open/reload paths), atomic_write_string, write_string,
+//! Owns: read_to_string (for open/reload paths), atomic_write_string,
 //!   FileSnapshot, ExternalFileStatus, ExternalFileObservation, capture/compare/observe
 //!   pure helpers (std fs::metadata only).
 //! Must not: construct watchers or use notify; read file content for change detection
@@ -23,11 +23,6 @@ use std::path::{Path, PathBuf};
 pub fn read_to_string<P: AsRef<Path>>(path: P) -> io::Result<String> {
     let bytes = fs::read(path.as_ref())?;
     String::from_utf8(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
-}
-
-/// Write string to file. (Phase 0 simple path; callers should prefer atomic for saves.)
-pub fn write_string<P: AsRef<Path>>(path: P, contents: &str) -> io::Result<()> {
-    std::fs::write(path, contents)
 }
 
 /// Atomically write `contents` to `path`.

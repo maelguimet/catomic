@@ -759,7 +759,7 @@ Update this file as decisions are made or phases complete. Add concrete issues o
 - Detailed completed Phase 2-r through 2-ae notes are archived in `docs/progress/phase-2-progress.md`.
 
 Key unresolved limitations (still current post 2-ax):
-- (size classification + pre-read guardrails + Large/Huge warn + Extreme refuse now exist; manual baselines recorded + split harness + line-heavy smokes exist; first visible large-file mode status marker landed; open/buffer storage seams exist; still no lazy loading, no mmap, no rope rewrite)
+- (size classification + pre-read guardrails + Large/Huge warn + Extreme refuse now exist; manual baselines recorded + split harness + line-heavy smokes exist; first visible large-file mode status marker landed; open/buffer storage seams exist; `docs/decisions/0003-large-file-storage.md` records the blocked storage choice; still no lazy loading, no mmap, no rope rewrite)
 - watcher signals are runtime hints only; App-owned best-effort; runtime checks watcher once per loop via helper (try_recv inside check_file_watcher_once only); Unchanged/NoPath from watcher clear stale pending_reload when armed, otherwise fully ignored (suppress self-save noise);
 - no auto-reload; Modified/Deleted (from watcher or Ctrl+R) only arm confirmation; second Ctrl+R performs actual reload using fresh observe + pending match (or clears for Deleted);
 - no content read from watcher signal path except the existing confirmed Ctrl+R reload path;
@@ -771,7 +771,7 @@ Key unresolved limitations (still current post 2-ax):
 - Phase 2-au/ax (storage-policy seams): App open buffer construction now lives in app/open.rs, initial LineIndex construction has a direct text path, and PieceTable original text is behind OriginalBacking::Owned without exposing borrowed slices; behavior unchanged, still full-read/full-materialized.
 
 Next intended Phase 2B steps (post 2-ax):
-- Use the advisory budgets + updated hotspot inventory (see docs/performance.md) to choose the next narrow implementation target.
+- Resolve `docs/decisions/0003-large-file-storage.md` before true 1 GiB open+navigate work; until then, only measurement, behavior-preserving seams, or docs are safe.
 - The 2026-07-07 phase split is recorded; after LF-only, owned-input, newline-search, open-buffer-builder, direct LineIndex constructor, and original-backing seam work, `read_to_string` is the largest measured editor-owned subphase for the synthetic no-newline 100 MiB file. Line-heavy manual smokes show `PieceTable::from_owned_text`/LineIndex cost reappearing for newline-rich content. Full materialization remains the larger design limitation.
 - Keep manual large-file tests ignored; do not add or enable default 10/100 MiB or 1 GiB tests.
 - Do not enforce thresholds yet; budgets remain advisory and must not become pass/fail gates in this or the immediate next pass.

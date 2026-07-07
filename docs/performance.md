@@ -309,9 +309,10 @@ An ignored sparse exact-1-GiB Huge smoke now validates the limited read-only
 open + simple navigation/render path without writing a dense fixture:
 ```
 PERF sample: label=create sparse 1gib bytes=1073741824 elapsed_ms=0
-PERF sample: label=App::new 1gib sparse huge bytes=1073741824 elapsed_ms=1231
+PERF sample: label=App::new 1gib sparse huge bytes=1073741824 elapsed_ms=1422
 PERF sample: label=navigate 1gib sparse huge bytes=1073741824 elapsed_ms=0
 PERF sample: label=render 1gib sparse huge bytes=1073741824 elapsed_ms=0
+PERF sample: label=render 1gib sparse huge far-window bytes=1073741824 elapsed_ms=0
 ```
 
 Clarifications:
@@ -342,7 +343,7 @@ Clarifications:
 - 2026-07-07 after owned file-read helper timed runs: 10 MiB 29860 kB; 100 MiB 208308 kB
 - 2026-07-07 100 MiB line-heavy timed run: 116284 kB
 - 2026-07-07 100 MiB read-only Huge timed runs: dense 106060 kB; line-heavy 116632 kB
-- 2026-07-07 sparse exact-1-GiB read-only Huge warm timed run: 30024 kB
+- 2026-07-07 sparse exact-1-GiB read-only Huge warm timed run after far-window sample: 29924 kB
 
 Note: these are wall-time / RSS for the full test harness invocation on this machine (not pure editor hot path). Generate time includes FS streaming writes. App::new includes the selected open policy (editable read + PieceTable for Small/Large; scan + file-backed LargeFileBuffer for Huge) plus size capture. Render is cheap full-clear for these runs. The first three bullets are from the 2026-06-24 baseline; later bullets are 2026-07-07 after-runs.
 
@@ -360,7 +361,7 @@ Suggested initial candidates:
 - 100 MiB Huge read-only open/App::new: target under ~500 ms on comparable hardware (current samples ~122-158 ms)
 - 100 MiB render (full-clear synthetic): target under ~100 ms (baseline ~32 ms)
 - 100 MiB Huge MaxRSS (full test invocation): target under ~250 MiB (current samples ~106-117 MiB)
-- sparse exact-1-GiB Huge read-only open/App::new: target under ~2500 ms on comparable hardware (current sparse sample ~1231 ms)
+- sparse exact-1-GiB Huge read-only open/App::new: target under ~2500 ms on comparable hardware (current sparse samples ~1231-1422 ms)
 - sparse exact-1-GiB Huge MaxRSS (warm full test invocation): target under ~100 MiB (current sparse sample ~30 MiB)
 - sparse >1 GiB refusal (Extreme): target near-instant metadata-only refusal (baseline 0 ms elapsed, low MaxRSS ~29 MiB for test process), no content read
 

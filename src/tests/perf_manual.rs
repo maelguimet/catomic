@@ -239,6 +239,14 @@ fn manual_open_1gib_sparse_huge_read_only_smoke() {
     });
     print_perf_sample(&render_sample);
 
+    app.screen.scroll_left = (size as usize).saturating_sub(80);
+    out.clear();
+    let (_, far_render_sample) =
+        measure_sample("render 1gib sparse huge far-window", Some(size), || {
+            let _ = app.render(&mut out);
+        });
+    print_perf_sample(&far_render_sample);
+
     cleanup_perf(&p);
     eprintln!("manual sparse 1 GiB Huge smoke complete");
 }

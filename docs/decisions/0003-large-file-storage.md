@@ -30,6 +30,9 @@ The important current seams are:
 - `Buffer::visible_lines_window`, `Buffer::line_char_count`, and
   `Buffer::is_read_only` let render/viewport/App policy avoid full line reads
   and report limited storage mode.
+- LargeFileBuffer records per-line ASCII flags so ASCII visible windows can map
+  scalar columns directly to byte ranges while non-ASCII windows stay
+  scalar-safe.
 
 These seams made the first limited storage path possible. They still do not
 solve editable Huge-file semantics.

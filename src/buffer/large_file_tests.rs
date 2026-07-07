@@ -66,6 +66,26 @@ fn opens_utf8_split_across_scan_chunk_boundary() {
 }
 
 #[test]
+fn records_ascii_lines_and_windows_late_ascii_columns() {
+    let path = temp_path("ascii_window.txt");
+    cleanup(&path);
+    let line = "0123456789".repeat(8_000);
+    std::fs::write(&path, format!("{}\né猫\nplain", line)).unwrap();
+
+    let buffer = LargeFileBuffer::open(&path).unwrap();
+
+    assert_eq!(buffer.line_is_ascii, vec![true, false, true]);
+    assert_eq!(buffer.line_char_count(0), Some(80_000));
+    assert_eq!(
+        buffer.visible_lines_window(0, 1, 79_990, 10)[0].content,
+        "0123456789"
+    );
+    assert_eq!(buffer.visible_lines_window(1, 1, 1, 1)[0].content, "猫");
+
+    cleanup(&path);
+}
+
+#[test]
 fn movement_clamps_to_line_char_counts() {
     let path = temp_path("movement.txt");
     cleanup(&path);

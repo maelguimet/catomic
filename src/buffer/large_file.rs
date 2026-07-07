@@ -2,7 +2,7 @@
 //! Owns: chunked UTF-8/newline scan, ranged visible-line reads, read-only movement.
 //! Must not: edit file content, perform writes, own App policy, construct watchers,
 //!   depend on Project/LLM, or materialize the whole file for rendering/navigation.
-//! Invariants: line_starts[0] == 0; line_char_counts.len() == line_starts.len();
+//! Invariants: line_starts[0] == 0; per-line metadata lengths match line_starts;
 //!   file content was UTF-8 valid at construction; cursor row/col stays clamped.
 //! Phase: 2B limited Huge-file storage foundation.
 
@@ -22,6 +22,7 @@ pub(crate) struct LargeFileBuffer {
     file: File,
     line_starts: Vec<usize>,
     line_char_counts: Vec<usize>,
+    line_is_ascii: Vec<bool>,
     total_bytes: usize,
     cursor: Cursor,
 }
@@ -37,6 +38,7 @@ impl LargeFileBuffer {
             file,
             line_starts: scan.line_starts,
             line_char_counts: scan.line_char_counts,
+            line_is_ascii: scan.line_is_ascii,
             total_bytes: scan.total_bytes,
             cursor: Cursor { row: 0, col: 0 },
         })
@@ -96,8 +98,24 @@ impl LargeFileBuffer {
         if start_col >= line_chars {
             return String::new();
         }
+        if self.line_is_ascii[row] {
+            return self
+                .read_ascii_line_window(row, start_col, width)
+                .unwrap_or_default();
+        }
         self.read_line_window(row, start_col, width)
             .unwrap_or_default()
+    }
+
+    fn read_ascii_line_window(
+        &self,
+        row: usize,
+        start_col: usize,
+        width: usize,
+    ) -> io::Result<String> {
+        let start = self.line_start_byte(row) + start_col;
+        let end = start.saturating_add(width).min(self.line_end_byte(row));
+        self.read_range_to_string(start, end)
     }
 
     fn read_line_window(&self, row: usize, start_col: usize, width: usize) -> io::Result<String> {
@@ -272,13 +290,16 @@ impl Buffer for LargeFileBuffer {
 struct LineScan {
     line_starts: Vec<usize>,
     line_char_counts: Vec<usize>,
+    line_is_ascii: Vec<bool>,
     total_bytes: usize,
 }
 
 fn scan_utf8_lines(file: &mut File) -> io::Result<LineScan> {
     let mut line_starts = vec![0usize];
     let mut line_char_counts = Vec::new();
+    let mut line_is_ascii = Vec::new();
     let mut current_line_chars = 0usize;
+    let mut current_line_is_ascii = true;
     let mut carry: Vec<u8> = Vec::new();
     let mut offset = 0usize;
     let mut chunk = vec![0u8; SCAN_CHUNK_BYTES];
@@ -315,7 +336,9 @@ fn scan_utf8_lines(file: &mut File) -> io::Result<LineScan> {
             text_start_offset,
             &mut line_starts,
             &mut line_char_counts,
+            &mut line_is_ascii,
             &mut current_line_chars,
+            &mut current_line_is_ascii,
         );
         if valid_end < text_bytes.len() {
             carry.extend_from_slice(&text_bytes[valid_end..]);
@@ -331,9 +354,11 @@ fn scan_utf8_lines(file: &mut File) -> io::Result<LineScan> {
     }
 
     line_char_counts.push(current_line_chars);
+    line_is_ascii.push(current_line_is_ascii);
     Ok(LineScan {
         line_starts,
         line_char_counts,
+        line_is_ascii,
         total_bytes: offset,
     })
 }
@@ -343,14 +368,18 @@ fn scan_valid_text_lines(
     text_start_offset: usize,
     line_starts: &mut Vec<usize>,
     line_char_counts: &mut Vec<usize>,
+    line_is_ascii: &mut Vec<bool>,
     current_line_chars: &mut usize,
+    current_line_is_ascii: &mut bool,
 ) {
     if text.is_ascii() {
         let mut segment_start = 0usize;
         for (newline_idx, _) in text.match_indices('\n') {
             *current_line_chars += newline_idx - segment_start;
             line_char_counts.push(*current_line_chars);
+            line_is_ascii.push(*current_line_is_ascii);
             *current_line_chars = 0;
+            *current_line_is_ascii = true;
             line_starts.push(text_start_offset + newline_idx + 1);
             segment_start = newline_idx + 1;
         }
@@ -361,9 +390,14 @@ fn scan_valid_text_lines(
     for (byte_idx, ch) in text.char_indices() {
         if ch == '\n' {
             line_char_counts.push(*current_line_chars);
+            line_is_ascii.push(*current_line_is_ascii);
             *current_line_chars = 0;
+            *current_line_is_ascii = true;
             line_starts.push(text_start_offset + byte_idx + 1);
         } else {
+            if !ch.is_ascii() {
+                *current_line_is_ascii = false;
+            }
             *current_line_chars += 1;
         }
     }

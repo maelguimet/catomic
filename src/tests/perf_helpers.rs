@@ -4,7 +4,8 @@
 //!   measure_elapsed (later: PerfSample + measure_sample for stable baseline reporting).
 //! Must not: add dependencies; write outside /tmp; enforce timing thresholds (default or manual);
 //!   materialize huge content for sparse; alter open/size policy or read semantics.
-//! Invariants: dense generator streams fixed ASCII chunks for exact size determinism;
+//! Invariants: dense/line-heavy generators stream buffered repeating ASCII chunks
+//!   for exact size determinism;
 //!   sparse uses only set_len (no write) and returns Err for FS that refuse large sparse;
 //!   cleanup is best-effort (ignore errors); helpers are test-only.
 //! Phase: 2-ai (harness split; no behavior change from split).
@@ -35,20 +36,32 @@ pub(crate) fn cleanup_perf(p: &Path) {
 }
 
 /// Generate a deterministic ASCII dense file of exactly `size` bytes by
-/// streaming fixed chunks (no full content string materialized in memory).
+/// streaming buffered fixed chunks (no full content string materialized in memory).
 /// Uses repeating ASCII pattern for determinism/reproducibility.
 pub(crate) fn generate_dense_ascii_file(path: &Path, size: u64) -> io::Result<()> {
+    write_repeating_pattern_file(path, size, b"0123456789abcdef")
+}
+
+fn write_repeating_pattern_file(path: &Path, size: u64, pattern: &[u8]) -> io::Result<()> {
+    debug_assert!(!pattern.is_empty());
     let mut f = OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(true)
         .open(path)?;
-    let chunk: &[u8] = b"0123456789abcdef"; // 16 bytes, printable ASCII
-    let mut written: u64 = 0;
-    while written < size {
-        let n = std::cmp::min(chunk.len() as u64, size - written) as usize;
+
+    let mut chunk = Vec::with_capacity(64 * 1024);
+    while chunk.len() < chunk.capacity() {
+        let remaining = chunk.capacity() - chunk.len();
+        let n = remaining.min(pattern.len());
+        chunk.extend_from_slice(&pattern[..n]);
+    }
+
+    let mut remaining = size;
+    while remaining > 0 {
+        let n = std::cmp::min(chunk.len() as u64, remaining) as usize;
         f.write_all(&chunk[..n])?;
-        written += n as u64;
+        remaining -= n as u64;
     }
     f.flush()?;
     Ok(())
@@ -58,21 +71,11 @@ pub(crate) fn generate_dense_ascii_file(path: &Path, size: u64) -> io::Result<()
 /// The chunk has frequent newlines to exercise LineIndex construction while
 /// still streaming fixed bytes without materializing the full file.
 pub(crate) fn generate_line_heavy_ascii_file(path: &Path, size: u64) -> io::Result<()> {
-    let mut f = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(path)?;
-    let chunk: &[u8] =
-        b"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n";
-    let mut written: u64 = 0;
-    while written < size {
-        let n = std::cmp::min(chunk.len() as u64, size - written) as usize;
-        f.write_all(&chunk[..n])?;
-        written += n as u64;
-    }
-    f.flush()?;
-    Ok(())
+    write_repeating_pattern_file(
+        path,
+        size,
+        b"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n",
+    )
 }
 
 /// Create a sparse file of `size` bytes via set_len (no data written).

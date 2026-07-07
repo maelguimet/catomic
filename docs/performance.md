@@ -250,8 +250,23 @@ These samples are a hotspot-inventory addition only. They show the LineIndex
 phase reappearing for newline-rich content, while full read/materialization
 remains the storage limitation.
 
+After switching generated-file helpers from tiny repeated writes to buffered
+repeating-pattern writes, fixture generation became much cheaper without
+changing the editor phase shape:
+```
+PERF sample: label=generate 100mib bytes=104857601 elapsed_ms=24
+PERF sample: label=metadata 100mib bytes=104857601 elapsed_ms=0
+PERF sample: label=read_to_string 100mib bytes=104857601 elapsed_ms=44
+PERF sample: label=PieceTable::from_owned_text 100mib bytes=104857601 elapsed_ms=17
+PERF sample: label=App::new 100mib bytes=104857601 elapsed_ms=60
+PERF sample: label=render 100mib bytes=104857601 elapsed_ms=37
+```
+Treat the `generate` delta as harness setup only; the editor-owned subphases
+remain comparable to the previous full-read-helper samples.
+
 Clarifications:
 - Generation time is test-fixture cost (dense streaming write), not editor cost.
+- The generated-file helpers may change to make fixture setup cheaper (for example, buffered repeating-pattern writes); do not compare generation timing across helper revisions as an editor regression/improvement.
 - `read_to_string` and `PieceTable::from_owned_text` are the useful split for the observed App open/materialization hotspot under full materialization. Borrowed `PieceTable::from_text` still exists for callers that do not own the input.
 - The LF-only fast path avoids two unconditional `replace` passes when opened content contains no `\r`; CRLF/CR inputs still normalize to `\n`.
 - App open now moves the owned `read_to_string` buffer into PieceTable for LF-only content, avoiding a large clone in that path.
@@ -297,7 +312,7 @@ All numbers remain advisory. Do not turn these into `#[test]` pass/fail gates in
 
 ### Observed hotspots from baseline (for next decision, not implementation here)
 
-- Generation time (dense streaming write) is test-fixture cost, not editor cost.
+- Generation time (dense streaming write) is test-fixture cost, not editor cost; helper implementation changes can shift it independently of editor behavior.
 - For present files, App::new still performs full `read_to_string` + `PieceTable::from_owned_text` + size probe + initial history token. After the newline-search change, `read_to_string` is the largest measured editor-owned subphase for the synthetic no-newline 100 MiB file; this does not remove full materialization.
 - For line-heavy present files, `PieceTable::from_owned_text` is visible again because LineIndex must store many line starts. The first 100 MiB line-heavy sample showed `read_to_string` and `PieceTable::from_owned_text` both around 45 ms on this hardware.
 - MaxRSS for 100 MiB remains substantially larger than file size because the current path fully materializes content (PieceTable + internal structures) plus test harness overhead. The 2026-06-24 run was ~3x file size; the 2026-07-07 after-run was ~2x, still a direct consequence of "no lazy yet".

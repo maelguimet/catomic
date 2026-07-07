@@ -19,3 +19,7 @@ mod default;
 #[cfg(test)]
 #[path = "perf_manual.rs"]
 mod manual;
+
+#[cfg(test)]
+#[path = "perf_manual_line.rs"]
+mod manual_line;

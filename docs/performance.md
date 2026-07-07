@@ -115,8 +115,11 @@ Commands:
 ```
 cargo test manual_open_10mib_generated_file_smoke -- --ignored --nocapture
 cargo test manual_open_100mib_generated_file_smoke -- --ignored --nocapture
+cargo test manual_open_10mib_line_heavy_file_smoke -- --ignored --nocapture
+cargo test manual_open_100mib_line_heavy_file_smoke -- --ignored --nocapture
 cargo test manual_sparse_extreme_refusal_smoke -- --ignored --nocapture
 /usr/bin/time -v cargo test manual_open_100mib_generated_file_smoke -- --ignored --nocapture
+/usr/bin/time -v cargo test manual_open_100mib_line_heavy_file_smoke -- --ignored --nocapture
 ```
 
 Before LF-only fast path:
@@ -224,6 +227,29 @@ Timed runs reported MaxRSS 29860 kB for 10 MiB and 208308 kB for 100 MiB.
 This confirms the helper centralization did not remove the full-materialization
 memory shape or change the main 100 MiB hotspot materially.
 
+After adding line-heavy manual smokes (frequent `\n`, same 10/100 MiB tiers)
+to expose LineIndex-heavy open behavior:
+```
+PERF sample: label=generate 10mib-line bytes=10485761 elapsed_ms=60
+PERF sample: label=metadata 10mib-line bytes=10485761 elapsed_ms=0
+PERF sample: label=read_to_string 10mib-line bytes=10485761 elapsed_ms=4
+PERF sample: label=PieceTable::from_owned_text 10mib-line bytes=10485761 elapsed_ms=4
+PERF sample: label=App::new 10mib-line bytes=10485761 elapsed_ms=7
+PERF sample: label=render 10mib-line bytes=10485761 elapsed_ms=0
+
+PERF sample: label=generate 100mib-line bytes=104857601 elapsed_ms=594
+PERF sample: label=metadata 100mib-line bytes=104857601 elapsed_ms=0
+PERF sample: label=read_to_string 100mib-line bytes=104857601 elapsed_ms=45
+PERF sample: label=PieceTable::from_owned_text 100mib-line bytes=104857601 elapsed_ms=45
+PERF sample: label=App::new 100mib-line bytes=104857601 elapsed_ms=94
+PERF sample: label=render 100mib-line bytes=104857601 elapsed_ms=0
+```
+
+Timed 100 MiB line-heavy run reported Maximum resident set size: 116284 kB.
+These samples are a hotspot-inventory addition only. They show the LineIndex
+phase reappearing for newline-rich content, while full read/materialization
+remains the storage limitation.
+
 Clarifications:
 - Generation time is test-fixture cost (dense streaming write), not editor cost.
 - `read_to_string` and `PieceTable::from_owned_text` are the useful split for the observed App open/materialization hotspot under full materialization. Borrowed `PieceTable::from_text` still exists for callers that do not own the input.
@@ -232,6 +258,7 @@ Clarifications:
 - App open now has an explicit content plan from the single initial metadata snapshot: untitled/missing paths open empty, present paths still full-read. This is a policy seam only; it is not lazy loading.
 - Confirmed Ctrl+R Modified reload also moves the owned read buffer into PieceTable, avoiding the old reload-side clone.
 - `file::io::read_to_string` is now the single App open/reload full-read helper; it reads bytes then moves them into `String` after UTF-8 validation. It remains full materialization.
+- Line-heavy manual smokes use a streamed ASCII fixture with frequent newlines to keep the default suite cheap while measuring LineIndex-heavy open behavior manually.
 - `App::new` remains the end-to-end open measurement (includes size probe + history token setup).
 - After the owned-open change and before newline-search, `PieceTable::from_owned_text` was still the dominant measured subphase. Compared with the pre-optimization baseline, that step improved `App::new` from ~1247 ms to ~620 ms for 100 MiB on this hardware.
 - After switching LineIndex construction from a hand-rolled byte loop to std string newline search, `App::new` improved again from ~620 ms to ~60 ms for 100 MiB on this hardware.
@@ -246,6 +273,7 @@ Clarifications:
 - 2026-07-07 100 MiB after owned App open path timed run: 208040 kB
 - 2026-07-07 100 MiB after newline-search timed run: 208356 kB
 - 2026-07-07 after owned file-read helper timed runs: 10 MiB 29860 kB; 100 MiB 208308 kB
+- 2026-07-07 100 MiB line-heavy timed run: 116284 kB
 
 Note: these are wall-time / RSS for the full test harness invocation on this machine (not pure editor hot path). Generate time includes FS streaming writes. App::new includes read + PieceTable build + size capture. Render is cheap full-clear for these runs. The first three bullets are from the 2026-06-24 baseline; later bullets are 2026-07-07 after-runs.
 
@@ -271,11 +299,12 @@ All numbers remain advisory. Do not turn these into `#[test]` pass/fail gates in
 
 - Generation time (dense streaming write) is test-fixture cost, not editor cost.
 - For present files, App::new still performs full `read_to_string` + `PieceTable::from_owned_text` + size probe + initial history token. After the newline-search change, `read_to_string` is the largest measured editor-owned subphase for the synthetic no-newline 100 MiB file; this does not remove full materialization.
+- For line-heavy present files, `PieceTable::from_owned_text` is visible again because LineIndex must store many line starts. The first 100 MiB line-heavy sample showed `read_to_string` and `PieceTable::from_owned_text` both around 45 ms on this hardware.
 - MaxRSS for 100 MiB remains substantially larger than file size because the current path fully materializes content (PieceTable + internal structures) plus test harness overhead. The 2026-06-24 run was ~3x file size; the 2026-07-07 after-run was ~2x, still a direct consequence of "no lazy yet".
 - Render numbers are currently cheap in these synthetic tests (full clear of small viewport over a buffer that has already been built); this is not proof of scalable redraw behavior under editing/resizing for large files.
 - Render still performs a full clear every frame; as of later hygiene passes it avoids allocating a temporary String for every visible sliced line (writes scalar chars directly), but this is not a scalable redraw strategy.
 - The next optimization area remains open/materialization and storage policy (for example a real lazy storage design). The LF-only, owned-input, and newline-search fast paths were narrow full-materialization optimizations; they are not lazy/mmap/rope solutions.
-- The ignored manual open tests emit stable phase samples for the open path: "metadata", "read_to_string", "PieceTable::from_owned_text", "App::new" (end-to-end), and "render". These are still observational only. Generation time is fixture cost. `read_to_string` + `PieceTable::from_owned_text` provide the useful split of the materialization hotspot. `App::new` remains the full open measurement. No budgets or gates.
+- The ignored manual open tests emit stable phase samples for the open path: "metadata", "read_to_string", "PieceTable::from_owned_text", "App::new" (end-to-end), and "render". Dense no-newline and line-heavy variants are both manual-only. These are still observational only. Generation time is fixture cost. `read_to_string` + `PieceTable::from_owned_text` provide the useful split of the materialization hotspot. `App::new` remains the full open measurement. No budgets or gates.
 
 See TODO.md for the current next-intended pointer into this inventory.
 

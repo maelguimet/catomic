@@ -1,6 +1,6 @@
 //! Purpose: this file must provide the no-deps shared helpers for the split perf
 //!   harness (temp paths, cleanup, dense/sparse generators, elapsed measurement).
-//! Owns: temp_perf_path, cleanup_perf, generate_dense_ascii_file, try_generate_sparse_file,
+//! Owns: temp_perf_path, cleanup_perf, generated-file helpers, try_generate_sparse_file,
 //!   measure_elapsed (later: PerfSample + measure_sample for stable baseline reporting).
 //! Must not: add dependencies; write outside /tmp; enforce timing thresholds (default or manual);
 //!   materialize huge content for sparse; alter open/size policy or read semantics.
@@ -44,6 +44,27 @@ pub(crate) fn generate_dense_ascii_file(path: &Path, size: u64) -> io::Result<()
         .truncate(true)
         .open(path)?;
     let chunk: &[u8] = b"0123456789abcdef"; // 16 bytes, printable ASCII
+    let mut written: u64 = 0;
+    while written < size {
+        let n = std::cmp::min(chunk.len() as u64, size - written) as usize;
+        f.write_all(&chunk[..n])?;
+        written += n as u64;
+    }
+    f.flush()?;
+    Ok(())
+}
+
+/// Generate a deterministic line-heavy ASCII file of exactly `size` bytes.
+/// The chunk has frequent newlines to exercise LineIndex construction while
+/// still streaming fixed bytes without materializing the full file.
+pub(crate) fn generate_line_heavy_ascii_file(path: &Path, size: u64) -> io::Result<()> {
+    let mut f = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(path)?;
+    let chunk: &[u8] =
+        b"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n";
     let mut written: u64 = 0;
     while written < size {
         let n = std::cmp::min(chunk.len() as u64, size - written) as usize;

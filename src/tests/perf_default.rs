@@ -15,7 +15,9 @@ use std::fs;
 use crate::buffer::{Buffer, PieceTable, SimpleBuffer};
 use crate::terminal::render::render_buffer;
 
-use super::helpers::{cleanup_perf, generate_dense_ascii_file, temp_perf_path};
+use super::helpers::{
+    cleanup_perf, generate_dense_ascii_file, generate_line_heavy_ascii_file, temp_perf_path,
+};
 
 #[test]
 fn phase0_small_file_key_to_render_smoke() {
@@ -123,6 +125,23 @@ fn perf_harness_generate_dense_small_has_exact_size() {
         meta.len(),
         size,
         "generated dense must report exact requested size"
+    );
+
+    cleanup_perf(&p);
+}
+
+#[test]
+fn perf_harness_generate_line_heavy_small_has_exact_size() {
+    let size: u64 = 64 * 1024;
+    let p = temp_perf_path("line_heavy_64k.bin");
+    cleanup_perf(&p);
+
+    generate_line_heavy_ascii_file(&p, size).expect("generate small line-heavy");
+    let meta = fs::metadata(&p).expect("meta");
+    assert_eq!(
+        meta.len(),
+        size,
+        "generated line-heavy file must report exact requested size"
     );
 
     cleanup_perf(&p);

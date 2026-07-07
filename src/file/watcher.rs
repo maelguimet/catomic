@@ -70,6 +70,8 @@ pub struct FileWatcher {
 /// Internal backend so real construction keeps the notify thread while
 /// tests can own a channel-only or directly injectable watcher.
 enum InnerWatcher {
+    /// Held so notify keeps watching until FileWatcher is dropped.
+    #[allow(dead_code)]
     Real(RecommendedWatcher),
     #[cfg(test)]
     TestStub,

@@ -111,14 +111,4 @@ impl UndoStack {
     pub(crate) fn current_history_position(&self) -> u64 {
         self.current_id
     }
-
-    #[cfg(test)]
-    pub(crate) fn undo_len(&self) -> usize {
-        self.undo.len()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn redo_len(&self) -> usize {
-        self.redo.len()
-    }
 }

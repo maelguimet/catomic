@@ -24,13 +24,6 @@ pub(crate) struct LineIndex {
 }
 
 impl LineIndex {
-    pub(crate) fn new() -> Self {
-        Self {
-            line_starts: vec![0],
-            total_bytes: 0,
-        }
-    }
-
     pub(crate) fn line_count(&self) -> usize {
         self.line_starts.len().max(1)
     }

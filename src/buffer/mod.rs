@@ -90,12 +90,3 @@ pub trait Buffer {
     // fn delete_range(...);
     // fn selection, etc.
 }
-
-/// Helper to clamp a value.
-pub(crate) fn clamp(v: usize, max: usize) -> usize {
-    if max == 0 {
-        0
-    } else {
-        v.min(max - 1)
-    }
-}

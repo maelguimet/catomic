@@ -758,7 +758,7 @@ Update this file as decisions are made or phases complete. Add concrete issues o
 
 - Detailed completed Phase 2-r through 2-ae notes are archived in `docs/progress/phase-2-progress.md`.
 
-Key unresolved limitations (still current post 2-bb):
+Key unresolved limitations (still current post 2-bc):
 - (size classification + pre-read guardrails + Large/Huge warn + Extreme refuse now exist; manual baselines recorded + split harness + line-heavy smokes exist; first visible large-file mode status marker landed; open/buffer storage seams exist; Huge files now use a read-only file-backed limited mode; still no editable lazy loading, no mmap, no rope rewrite)
 - watcher signals are runtime hints only; App-owned best-effort; runtime checks watcher once per loop via helper (try_recv inside check_file_watcher_once only); Unchanged/NoPath from watcher clear stale pending_reload when armed, otherwise fully ignored (suppress self-save noise);
 - no auto-reload; Modified/Deleted (from watcher or Ctrl+R) only arm confirmation; second Ctrl+R performs actual reload using fresh observe + pending match (or clears for Deleted);
@@ -773,8 +773,9 @@ Key unresolved limitations (still current post 2-bb):
 - Phase 2-az (Huge ASCII window optimization): LargeFileBuffer records whether each scanned line is ASCII. Visible windows on ASCII Huge lines now seek directly by byte offset; non-ASCII lines keep scalar-safe window scanning. The ignored sparse 1 GiB smoke now includes a far-horizontal-window render sample. No behavior change or timing gate.
 - Phase 2-ba (Huge non-ASCII window checkpointing): LargeFileBuffer now records sparse char-column to byte-offset checkpoints per line during the open scan. Non-ASCII Huge visible windows seek to the nearest prior checkpoint and scan forward from there, preserving scalar column semantics without rereading from the line start for far horizontal windows. Added focused tests plus an ignored 100 MiB dense non-ASCII far-window manual smoke. No editable Huge semantics, mmap, or timing gate.
 - Phase 2-bb (Huge descriptor snapshot hardening): LargeFileBuffer now keeps the same file descriptor used for the initial UTF-8/newline scan instead of reopening the path for ranged reads, records fd len/mtime, and fails closed if fd metadata changes before ranged reads. This removes the scan/read reopen race, keeps already-open Huge buffers on the original descriptor after atomic path replacement, and prevents changed same-inode bytes from being rendered as if they matched the scan metadata. Same-size/same-mtime spoofing and infallible Buffer error surfacing remain open limitations.
+- Phase 2-bc (panic hook cleanup guard): App::run now uses a terminal-owned PanicRestoreGuard so the panic hook restores terminal state during unwind but restores the previously installed hook on normal exit. PTY/panic unit coverage verifies the restore hook runs, chains to the previous hook, and does not leak the hook after drop. No new dependency or real PTY harness yet.
 
-Next intended Phase 2B steps (post 2-bb):
+Next intended Phase 2B steps (post 2-bc):
 - Decide the next Huge-file policy step: immutable external-change snapshot behavior, editable Huge semantics, or another measured scan/render optimization. Keep any next move narrow and backed by ignored manual measurements.
 - The 2026-07-07 phase split is recorded; for editable Small/Large PieceTable opens, `read_to_string` remains the useful full-materialization split, and line-heavy manual smokes show `PieceTable::from_owned_text`/LineIndex cost reappearing for newline-rich content. Huge now bypasses editable PieceTable materialization, but still performs a full UTF-8/newline scan at open and still lacks local edit semantics.
 - Keep manual large-file tests ignored; do not add or enable default 10/100 MiB or 1 GiB tests.

@@ -10,6 +10,9 @@ pub mod render;
 pub mod screen;
 
 use std::io::{self, Write};
+use std::sync::{Arc, Mutex};
+
+type PanicHook = Box<dyn Fn(&std::panic::PanicHookInfo<'_>) + Sync + Send + 'static>;
 
 /// Setup raw mode + alternate screen.
 /// Must be paired with teardown on all exit paths (including panic).
@@ -47,5 +50,47 @@ impl Drop for TerminalGuard {
         // Fresh stdout is sufficient for disable + leave alt screen.
         let mut out = io::stdout();
         let _ = teardown(&mut out);
+    }
+}
+
+/// Installs a panic hook that restores terminal state before chaining to the
+/// previously installed hook. Restores the previous hook when dropped.
+pub(crate) struct PanicRestoreGuard {
+    previous: Arc<Mutex<Option<PanicHook>>>,
+}
+
+impl PanicRestoreGuard {
+    pub(crate) fn install() -> Self {
+        Self::install_with_restore(|| {
+            let _ = teardown(&mut io::stdout());
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn install_with_restore_for_test(
+        restore: impl Fn() + Sync + Send + 'static,
+    ) -> Self {
+        Self::install_with_restore(restore)
+    }
+
+    fn install_with_restore(restore: impl Fn() + Sync + Send + 'static) -> Self {
+        let previous = Arc::new(Mutex::new(Some(std::panic::take_hook())));
+        let hook_previous = previous.clone();
+        std::panic::set_hook(Box::new(move |info| {
+            restore();
+            if let Some(prev) = hook_previous.lock().expect("panic hook mutex").as_ref() {
+                prev(info);
+            }
+        }));
+        Self { previous }
+    }
+}
+
+impl Drop for PanicRestoreGuard {
+    fn drop(&mut self) {
+        let _installed = std::panic::take_hook();
+        if let Some(previous) = self.previous.lock().expect("panic hook mutex").take() {
+            std::panic::set_hook(previous);
+        }
     }
 }

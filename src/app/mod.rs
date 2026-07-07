@@ -143,13 +143,8 @@ impl App {
         }
 
         // Install panic hook to do best-effort restore even before unwind reaches guard.
-        // We chain to the previous hook.
-        let prev_hook = std::panic::take_hook();
-        std::panic::set_hook(Box::new(move |info| {
-            // Try immediate restore.
-            let _ = term::teardown(&mut io::stdout());
-            prev_hook(info);
-        }));
+        // The guard restores the previously installed hook on normal exit.
+        let _panic_guard = term::PanicRestoreGuard::install();
 
         // Phase 0 render is extremely dumb.
         self.render(&mut stdout)?;

@@ -264,6 +264,27 @@ PERF sample: label=render 100mib bytes=104857601 elapsed_ms=37
 Treat the `generate` delta as harness setup only; the editor-owned subphases
 remain comparable to the previous full-read-helper samples.
 
+After direct initial `LineIndex::from_text` construction and the no-borrow
+`OriginalBacking` seam, 100 MiB spot checks stayed in the same observational
+shape rather than proving a speedup:
+```
+PERF sample: label=generate 100mib bytes=104857601 elapsed_ms=23
+PERF sample: label=metadata 100mib bytes=104857601 elapsed_ms=0
+PERF sample: label=read_to_string 100mib bytes=104857601 elapsed_ms=60
+PERF sample: label=PieceTable::from_owned_text 100mib bytes=104857601 elapsed_ms=25
+PERF sample: label=App::new 100mib bytes=104857601 elapsed_ms=71
+PERF sample: label=render 100mib bytes=104857601 elapsed_ms=41
+
+PERF sample: label=generate 100mib-line bytes=104857601 elapsed_ms=27
+PERF sample: label=metadata 100mib-line bytes=104857601 elapsed_ms=0
+PERF sample: label=read_to_string 100mib-line bytes=104857601 elapsed_ms=56
+PERF sample: label=PieceTable::from_owned_text 100mib-line bytes=104857601 elapsed_ms=51
+PERF sample: label=App::new 100mib-line bytes=104857601 elapsed_ms=105
+PERF sample: label=render 100mib-line bytes=104857601 elapsed_ms=0
+```
+These samples document that the seam work preserved the same full-read/full-materialization
+shape; treat the timing deltas as local variance.
+
 Clarifications:
 - Generation time is test-fixture cost (dense streaming write), not editor cost.
 - The generated-file helpers may change to make fixture setup cheaper (for example, buffered repeating-pattern writes); do not compare generation timing across helper revisions as an editor regression/improvement.
@@ -277,6 +298,7 @@ Clarifications:
 - `App::new` remains the end-to-end open measurement (includes size probe + history token setup).
 - After the owned-open change and before newline-search, `PieceTable::from_owned_text` was still the dominant measured subphase. Compared with the pre-optimization baseline, that step improved `App::new` from ~1247 ms to ~620 ms for 100 MiB on this hardware.
 - After switching LineIndex construction from a hand-rolled byte loop to std string newline search, `App::new` improved again from ~620 ms to ~60 ms for 100 MiB on this hardware.
+- Direct initial `LineIndex::from_text` construction and the no-borrow `OriginalBacking` interface are storage-policy seams, not claimed speedups.
 - The manual test process RSS stayed around ~208 MiB after the owned-path and newline-search changes; this is a full test-harness measurement, not proof that transient real open memory is unchanged.
 - These (and all current numbers) are observational only; not budgets, not gates, not pass/fail criteria.
 

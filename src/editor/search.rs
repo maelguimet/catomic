@@ -6,6 +6,7 @@
 //!   can cross read boundaries; result positions use configured logical-line pages.
 //! Phase: 2-bo whole-file paged Ctrl+F.
 
+use std::collections::VecDeque;
 use std::io;
 use std::os::unix::fs::FileExt;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -208,7 +209,7 @@ struct Scanner {
     query: Vec<u8>,
     prefix: Vec<usize>,
     matched: usize,
-    query_chars: usize,
+    recent_positions: VecDeque<DescriptorPosition>,
     page_lines: usize,
     page_start: u64,
     page_number: usize,
@@ -222,7 +223,7 @@ impl Scanner {
             query: query.as_bytes().to_vec(),
             prefix: prefix_table(query.as_bytes()),
             matched: 0,
-            query_chars: query.chars().count(),
+            recent_positions: VecDeque::with_capacity(query.len()),
             page_lines,
             page_start: 0,
             page_number: 1,
@@ -236,7 +237,6 @@ impl Scanner {
     }
 
     fn begin_page(&mut self, page_start: u64, page_number: usize) {
-        self.matched = 0;
         self.page_start = page_start;
         self.page_number = page_number;
         self.row = 0;
@@ -255,9 +255,11 @@ impl Scanner {
     ) -> Option<DescriptorPosition> {
         for (byte_index, ch) in text.char_indices() {
             let mut encoded = [0; 4];
-            let mut found = false;
+            let position = self.current_position();
             for byte in ch.encode_utf8(&mut encoded).as_bytes() {
-                found |= self.feed(*byte);
+                if let Some(found) = self.feed(*byte, position) {
+                    return Some(found);
+                }
             }
             if ch == '\n' {
                 self.row += 1;
@@ -270,19 +272,24 @@ impl Scanner {
             } else {
                 self.col += 1;
             }
-            if found {
-                return Some(DescriptorPosition {
-                    page_start: self.page_start,
-                    page_number: self.page_number,
-                    row: self.row,
-                    col: self.col.saturating_sub(self.query_chars),
-                });
-            }
         }
         None
     }
 
-    fn feed(&mut self, byte: u8) -> bool {
+    fn current_position(&self) -> DescriptorPosition {
+        DescriptorPosition {
+            page_start: self.page_start,
+            page_number: self.page_number,
+            row: self.row,
+            col: self.col,
+        }
+    }
+
+    fn feed(&mut self, byte: u8, position: DescriptorPosition) -> Option<DescriptorPosition> {
+        self.recent_positions.push_back(position);
+        if self.recent_positions.len() > self.query.len() {
+            self.recent_positions.pop_front();
+        }
         while self.matched > 0 && self.query[self.matched] != byte {
             self.matched = self.prefix[self.matched - 1];
         }
@@ -290,10 +297,14 @@ impl Scanner {
             self.matched += 1;
         }
         if self.matched == self.query.len() {
+            let position = *self
+                .recent_positions
+                .front()
+                .expect("a complete match has a start position");
             self.matched = self.prefix[self.matched - 1];
-            true
+            Some(position)
         } else {
-            false
+            None
         }
     }
 }
@@ -394,6 +405,41 @@ mod tests {
                 assert_eq!(position.col, 4);
             }
             _ => panic!("edited page match was not found"),
+        }
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn descriptor_search_matches_across_an_edited_page_boundary() {
+        let text = b"one\ntwo";
+        let path = std::env::temp_dir().join(format!(
+            "catomic_search_joined_pages_{}.txt",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        std::fs::write(&path, text).unwrap();
+        let source = DescriptorSource {
+            file: std::fs::File::open(&path).unwrap(),
+            total_bytes: text.len() as u64,
+            page_lines: 1,
+            overlays: vec![crate::buffer::DescriptorOverlay {
+                start_byte: 0,
+                end_byte: 4,
+                page_number: 1,
+                content: b"one".to_vec(),
+            }],
+        };
+
+        let result = scan_descriptor(source, "onetwo", &AtomicBool::new(false)).unwrap();
+        match result {
+            SearchResult::Found(position) => {
+                assert_eq!(position.page_start, 0);
+                assert_eq!(position.page_number, 1);
+                assert_eq!(position.row, 0);
+                assert_eq!(position.col, 0);
+            }
+            _ => panic!("match across edited page boundary was not found"),
         }
 
         let _ = std::fs::remove_file(path);

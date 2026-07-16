@@ -255,6 +255,39 @@ mod tests {
     }
 
     #[test]
+    fn whole_file_search_crosses_a_deleted_page_boundary() {
+        let path = std::env::temp_dir().join(format!(
+            "catomic_whole_search_boundary_{}.txt",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        std::fs::write(&path, "one\ntwo").unwrap();
+        let mut paged = crate::buffer::PagedFileBuffer::open(&path, 1).unwrap();
+        paged.set_cursor(crate::buffer::Cursor { row: 0, col: 3 });
+        paged.delete_forward();
+
+        let mut app = super::super::App::new(None).unwrap();
+        app.buffer = Box::new(paged);
+        let mut out = Vec::new();
+        enter_query(&mut app, "onetwo", &mut out);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while app.search.running.is_some() && std::time::Instant::now() < deadline {
+            poll_search(&mut app, &mut out).unwrap();
+            std::thread::yield_now();
+        }
+
+        assert!(app.search.running.is_none(), "search did not complete");
+        assert_eq!(app.buffer.page_info().unwrap().page_number, 1);
+        assert_eq!(
+            app.buffer.cursor(),
+            crate::buffer::Cursor { row: 0, col: 0 }
+        );
+        assert!(app.message.as_deref().unwrap_or("").contains("Found"));
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
     fn escape_cancels_an_explicit_whole_file_search() {
         let path =
             std::env::temp_dir().join(format!("catomic_cancel_search_{}.txt", std::process::id()));

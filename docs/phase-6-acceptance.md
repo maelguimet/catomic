@@ -16,7 +16,7 @@ is in decision 0008 and measurements are retained in `performance.md`.
 | Output validation | Unified-diff parsing checks hunk counts, source context, overlap, bounds, and single-file shape. Current-buffer responses must name the exact confirmed path; repo responses must name the exact active repo-relative path. Another-file and rename-shaped patches fail before preview. Selection fallback accepts only one strict JSON string field capped at 64 KiB. Arbitrary prose cannot become an edit. |
 | Preview, confirmation, undo | Model output first opens a read-only preview. Enter is the only apply action and creates one buffer transaction; Escape makes no edit. Exact golden coverage applies and undoes a patch. |
 | Read-only explanation | Instructions beginning with an explicit `explain` verb select a plain-text answer view with no apply action or edit semantics. |
-| Git safety snapshot | Repo commands capture root, HEAD, current branch, detected base branch, porcelain status, diff stat/name-only, and fingerprints that distinguish already-dirty tracked/staged states. Git runs read-only with optional locks disabled and bounded output. |
+| Git safety snapshot | Repo commands capture root, HEAD, current branch, detected base branch, porcelain status, diff stat/name-only, and fingerprints that distinguish already-dirty tracked/staged states. Git runs read-only with optional locks and pagers disabled, bounded output, fsmonitor off, and external diff/textconv helpers refused. |
 | Context broker | Explicit preparation discovers at most 4,096 files/65,536 entries/depth 64. The 128 KiB consumable budget covers initial and retrieved context; ranged reads cap at 64 KiB, files at 1 MiB, grep at 4 MiB/64 matches, and broker dialogue at eight requests. Paths must be mapped, normalized, canonical in-repo regular files; symlinks and escapes fail closed. Dot paths are omitted. Direct reads/diffs refuse obvious secret-like content, while grep skips sensitive files with an explicit count. Each fingerprint and model-facing read share one bounded, pre/post-checked file snapshot. The separately supplied active file is always byte-fingerprinted, including when untracked. |
 | Drift refusal | Current-buffer and repo requests pin active-buffer text/path identity while Git/relevant-file state is checked before confirmed send, after the response, and again before apply. Unit integration covers repo-preparation path drift, pre-send path/disk drift without connecting, post-response path/disk drift, and tracked or untracked changes after preview. |
 | Real terminal flow | The 80x24 PTY opens `:meow`, observes the local model/endpoint and explicit Enter/Escape prompt, cancels before send, quits cleanly, and verifies the source file is unchanged. |
@@ -32,8 +32,10 @@ cancellable and polled without blocking typing.
 
 ## Verification commands
 
-- `cargo test --all-targets`: 483 passed, 12 intentional manual tests ignored;
+- `cargo test --all-targets`: 484 passed, 12 intentional manual tests ignored;
   7 PTY smokes passed.
+- `cargo test project::git::tests`: 4 passed, including a self-validating
+  malicious helper configuration that capture never executes.
 - `cargo test config::llm::tests`: 4 passed, including canonical endpoint
   identity and ambiguous URL refusal.
 - `cargo test llm::openai_compat::tests`: 5 passed, including redirect and

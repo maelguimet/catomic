@@ -280,6 +280,8 @@ a saved active file inside a Git repository:
 - HEAD, branch, status, tracked diff, and every retrieved file are rechecked
   after the response and again before preview apply. Drift discards/refuses the
   proposal.
+- Git context disables pagers, fsmonitor, external diff, and textconv helpers;
+  repository configuration cannot launch helper programs during capture.
 
 `:feralmeow` is not implemented. Wide multi-file proposals are deliberately
 outside the Phase 6 single-file safety contract.

@@ -8,6 +8,9 @@ use std::fs;
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 use super::*;
 
 static NEXT_TEMP: AtomicUsize = AtomicUsize::new(0);
@@ -93,6 +96,73 @@ fn capture_fails_outside_a_repository() {
 
     let _ = fs::remove_dir_all(path);
     assert!(matches!(result, Err(GitError::CommandFailed { .. })));
+}
+
+#[cfg(unix)]
+#[test]
+fn capture_never_runs_repo_configured_helpers() {
+    let repo = TempRepo::new();
+    let helper = repo.0.join("configured-helper.sh");
+    let marker = repo.0.join("helper-ran");
+    fs::write(repo.0.join(".gitattributes"), "*.txt diff=catomic\n").unwrap();
+    git(&repo.0, &["add", ".gitattributes"]);
+    git(
+        &repo.0,
+        &[
+            "-c",
+            "user.name=Catomic Test",
+            "-c",
+            "user.email=catomic@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "attributes",
+        ],
+    );
+    write_helper(&helper, &marker);
+    git(
+        &repo.0,
+        &["config", "core.fsmonitor", helper.to_str().unwrap()],
+    );
+    git(
+        &repo.0,
+        &["config", "diff.external", helper.to_str().unwrap()],
+    );
+    git(
+        &repo.0,
+        &["config", "diff.catomic.textconv", helper.to_str().unwrap()],
+    );
+    fs::write(repo.0.join("tracked.txt"), "two\n").unwrap();
+
+    let context = GitContext::capture(&repo.0).unwrap();
+
+    assert!(context.snapshot.dirty);
+    assert!(!marker.exists());
+    git(
+        &repo.0,
+        &[
+            "-c",
+            "core.fsmonitor=false",
+            "diff",
+            "--ext-diff",
+            "HEAD",
+            "--",
+            "tracked.txt",
+        ],
+    );
+    assert!(marker.exists(), "malicious helper fixture never ran");
+}
+
+#[cfg(unix)]
+fn write_helper(path: &Path, marker: &Path) {
+    fs::write(
+        path,
+        format!("#!/bin/sh\nprintf ran > '{}'\n", marker.display()),
+    )
+    .unwrap();
+    let mut permissions = fs::metadata(path).unwrap().permissions();
+    permissions.set_mode(0o700);
+    fs::set_permissions(path, permissions).unwrap();
 }
 
 fn git(root: &Path, args: &[&str]) {

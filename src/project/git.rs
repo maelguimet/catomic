@@ -74,8 +74,28 @@ impl GitContext {
             &["status", "--porcelain=v1", "--untracked-files=all"],
         )?;
         let snapshot = snapshot(&root, head, branch.clone(), &status)?;
-        let diff_stat = run_text(&root, &["diff", "--stat", "HEAD", "--"])?;
-        let names = run_text(&root, &["diff", "--name-only", "HEAD", "--"])?;
+        let diff_stat = run_text(
+            &root,
+            &[
+                "diff",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--stat",
+                "HEAD",
+                "--",
+            ],
+        )?;
+        let names = run_text(
+            &root,
+            &[
+                "diff",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--name-only",
+                "HEAD",
+                "--",
+            ],
+        )?;
         Ok(Self {
             root,
             snapshot,
@@ -106,7 +126,14 @@ impl GitContext {
     pub fn diff_for_path(&self, relative_path: &Path) -> Result<String, GitError> {
         run_text(
             &self.root,
-            &["diff", "HEAD", "--", &relative_path.to_string_lossy()],
+            &[
+                "diff",
+                "--no-ext-diff",
+                "--no-textconv",
+                "HEAD",
+                "--",
+                &relative_path.to_string_lossy(),
+            ],
         )
     }
 }
@@ -121,7 +148,17 @@ fn snapshot(
         head,
         branch,
         dirty: !status.is_empty(),
-        tracked_diff_fingerprint: hash_git_output(root, &["diff", "--binary", "HEAD", "--"])?,
+        tracked_diff_fingerprint: hash_git_output(
+            root,
+            &[
+                "diff",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--binary",
+                "HEAD",
+                "--",
+            ],
+        )?,
         status_fingerprint: hash_bytes(status.as_bytes()),
     })
 }
@@ -213,6 +250,9 @@ fn git_command(root: &Path, args: &[&str]) -> Command {
     let mut command = Command::new("git");
     command
         .env("GIT_OPTIONAL_LOCKS", "0")
+        .arg("--no-pager")
+        .args(["-c", "core.fsmonitor=false"])
+        .args(["-c", "core.untrackedCache=false"])
         .arg("-C")
         .arg(root)
         .args(args);

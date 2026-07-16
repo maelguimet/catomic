@@ -6,6 +6,7 @@
 //! - index consistent after edit (rebuild bridge first; incremental later).
 //! - cursor_byte_offset always matches (row, col) position.
 //! - Buffer adaptation and mutation orchestration live in focused submodules.
+//!
 //! Phase: 2-bj PieceTable size hygiene.
 
 mod buffer_impl;

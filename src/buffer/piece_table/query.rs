@@ -36,7 +36,7 @@ impl PieceTable {
             }
 
             // overlap
-            let local_start = if acc < start { start - acc } else { 0 };
+            let local_start = start.saturating_sub(acc);
             let local_end = if p_end > end { end - acc } else { p.len };
             if local_end > local_start {
                 let source_range = p.start + local_start..p.start + local_end;

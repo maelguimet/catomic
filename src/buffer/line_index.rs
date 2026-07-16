@@ -11,6 +11,7 @@
 //! - line_starts are strictly increasing, last may equal total_bytes (for trailing nl or end)
 //! - total_bytes is the logical byte length
 //! - Rebuild or incremental update keeps this consistent with pieces after every edit.
+//!
 //! Phase: 1B
 
 /// Line index over global logical byte offsets (one per line start).

@@ -8,6 +8,7 @@
 //! - New edit after undo clears redo stack.
 //! - No-op edits produce no Transaction.
 //! - Redo of insert re-uses stored piece descriptors (no re-append to add buffer).
+//!
 //! Phase: 1C
 
 use crate::buffer::piece_table::types::Piece;

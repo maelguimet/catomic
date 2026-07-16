@@ -10,6 +10,7 @@
 //! - OriginalBacking slices must preserve the same UTF-8 byte-boundary contract as Piece ranges.
 //! - LineIndex reflects the logical newlines in the piece concatenation.
 //! - cursor_byte_offset always matches the byte position of (cursor.row, cursor.col).
+//!
 //! Phase: 2-bi file-backed PieceTable foundation.
 
 use std::ops::Range;

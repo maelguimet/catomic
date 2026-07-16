@@ -44,6 +44,9 @@ pub struct App {
     pub caps: Capabilities,
     /// Plain-safe paging policy loaded once at startup.
     pub(crate) big_files: BigFileConfig,
+    /// Default-on policy for automatically reloading clean external changes.
+    /// Dirty buffers always retain their explicit confirmation path.
+    pub(crate) auto_reload: bool,
     /// The active buffer (trait object for now; concrete type behind it).
     pub buffer: Box<dyn Buffer>,
     /// File path and dirty tracking.
@@ -52,7 +55,8 @@ pub struct App {
     /// Some only when caps.file_watch && file.path.is_some() && parent watchable.
     /// Construction failure never prevents opening or editing the file.
     /// Watcher signals are consumed only by the runtime loop via watch::check_file_watcher_once
-    /// (once per iteration, as hints only). Signals never auto-reload content.
+    /// (once per iteration, as hints only). Fresh observations auto-reload clean
+    /// buffers when configured; dirty buffers retain confirmation.
     /// Lifecycle is refreshed only after successful path-state changes (new + save-none->path).
     pub file_watcher: Option<file::watcher::FileWatcher>,
     /// Whether we should exit the loop.
@@ -94,6 +98,14 @@ impl App {
         initial_path: Option<&str>,
         big_files: BigFileConfig,
     ) -> io::Result<Self> {
+        Self::new_with_config(initial_path, big_files, true)
+    }
+
+    pub(crate) fn new_with_config(
+        initial_path: Option<&str>,
+        big_files: BigFileConfig,
+        auto_reload: bool,
+    ) -> io::Result<Self> {
         let mode = Mode::Plain; // Start in Plain by default. User can switch later.
         let caps = Capabilities::from_mode(mode);
 
@@ -124,6 +136,7 @@ impl App {
             mode,
             caps,
             big_files,
+            auto_reload,
             buffer,
             file: FileState {
                 path: initial_path.map(|s| PathBuf::from(s)),
@@ -178,7 +191,8 @@ impl App {
             // Check watcher once per iteration (hint only). Uses the non-blocking seam
             // so we do not block the 100ms poll cycle. If a Changed/Deleted signal is
             // present, check_file_watcher_once does one try_recv + fresh observe_external_file
-            // + apply_check_observation (arms pending like first Ctrl+R). Render only if handled.
+            // + policy application (auto-reload clean buffers or arm confirmation).
+            // Render only if handled.
             // Do not call try_recv directly; only through the helper.
             // Must not be called from handle_key/save/reload/render.
             // If both signal + key arrive in one iteration: simple loop may render twice; acceptable.
@@ -294,7 +308,8 @@ impl App {
 /// Public entry called from main.rs.
 pub fn run(initial_files: &[String]) -> io::Result<()> {
     let big_files = crate::config::big_files::load()?;
-    let mut app = App::new_with_paths_and_big_file_config(initial_files, big_files)?;
+    let auto_reload = crate::config::auto_reload::load()?;
+    let mut app = App::new_with_paths_and_config(initial_files, big_files, auto_reload)?;
     app.run()
 }
 

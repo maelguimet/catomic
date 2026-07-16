@@ -68,10 +68,18 @@ impl App {
         initial_paths: &[String],
         big_files: BigFileConfig,
     ) -> io::Result<Self> {
+        Self::new_with_paths_and_config(initial_paths, big_files, true)
+    }
+
+    pub(crate) fn new_with_paths_and_config(
+        initial_paths: &[String],
+        big_files: BigFileConfig,
+        auto_reload: bool,
+    ) -> io::Result<Self> {
         let first_path = initial_paths.first().map(String::as_str);
-        let mut app = Self::new_with_big_file_config(first_path, big_files)?;
+        let mut app = Self::new_with_config(first_path, big_files, auto_reload)?;
         for path in initial_paths.iter().skip(1) {
-            let extra = Self::new_with_big_file_config(Some(path), big_files)?;
+            let extra = Self::new_with_config(Some(path), big_files, auto_reload)?;
             app.inactive_buffers.push_back(BufferSlot::from_app(extra));
         }
         Ok(app)

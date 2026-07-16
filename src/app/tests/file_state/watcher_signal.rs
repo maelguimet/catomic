@@ -1,14 +1,11 @@
 //! Focused deterministic tests for watcher signal application and check seam.
 //!
-//! Purpose: exercise apply_file_watch_signal + check_file_watcher_once directly
-//!   (no render). These cover hint behavior and the suppression of Unchanged/NoPath
-//!   from the watcher path (ignored to avoid self-save noise).
+//! Purpose: exercise automatic clean reload, dirty fallback, and watcher suppression.
 //! Owns: direct apply + simple check seam tests.
-//! Must not: rely on live OS notify delivery; test reload content paths; change
-//!   manual Ctrl+R (reload::apply_check_observation) semantics.
-//! Invariants: signals are hints only; watcher Unchanged/NoPath observations are
-//!   ignored (no message, no arm); direct apply + no-signal check tests stable.
-//! Phase: 2-ac.
+//! Must not: rely on live OS notify delivery or change manual Ctrl+R semantics.
+//! Invariants: clean Modified/Deleted reload immediately when enabled; dirty buffers
+//!   arm; Unchanged/NoPath observations are ignored when no pending exists.
+//! Phase: 2-ac through 2-bx automatic clean reload.
 
 use super::super::super::*;
 use super::super::make_key;
@@ -53,7 +50,7 @@ fn apply_file_watch_signal_changed_on_unchanged_disk_ignores_to_avoid_noise() {
 }
 
 #[test]
-fn apply_file_watch_signal_changed_external_modified_arms_like_first_ctrl_r() {
+fn apply_file_watch_signal_changed_clean_buffer_auto_reloads() {
     let mut tmp = std::env::temp_dir();
     tmp.push(format!("catomic_2aa_sig_mod_{}.txt", std::process::id()));
     let p = tmp.to_string_lossy().to_string();
@@ -68,14 +65,9 @@ fn apply_file_watch_signal_changed_external_modified_arms_like_first_ctrl_r() {
     let sig = crate::file::watcher::FileWatchSignal::Changed;
     crate::app::watch::apply_file_watch_signal(&mut app, sig);
 
-    // Same arming as first Ctrl+R on Modified (clean case)
-    assert!(app
-        .message
-        .as_deref()
-        .unwrap_or("")
-        .contains("changed on disk"));
-    assert!(app.pending_reload.is_some());
-    assert_eq!(app.buffer.to_string(), "ORIG"); // no reload
+    assert_eq!(app.message.as_deref(), Some("Reloaded from disk."));
+    assert!(app.pending_reload.is_none());
+    assert_eq!(app.buffer.to_string(), "ORIGEXT");
     assert!(!app.file.dirty);
 
     let _ = std::fs::remove_file(&p);
@@ -117,7 +109,7 @@ fn apply_file_watch_signal_changed_dirty_external_arms_with_discard_warning() {
 }
 
 #[test]
-fn apply_file_watch_signal_deleted_arms_like_first_ctrl_r() {
+fn apply_file_watch_signal_deleted_clean_buffer_auto_clears() {
     let mut tmp = std::env::temp_dir();
     tmp.push(format!("catomic_2aa_sig_del_{}.txt", std::process::id()));
     let p = tmp.to_string_lossy().to_string();
@@ -134,14 +126,12 @@ fn apply_file_watch_signal_deleted_arms_like_first_ctrl_r() {
     let sig = crate::file::watcher::FileWatchSignal::Deleted;
     crate::app::watch::apply_file_watch_signal(&mut app, sig);
 
-    let msg = app.message.as_deref().unwrap_or("");
-    assert!(
-        msg.contains("deleted on disk"),
-        "Deleted signal must arm like Ctrl+R: got {:?}",
-        app.message
+    assert_eq!(
+        app.message.as_deref(),
+        Some("Buffer cleared (file deleted on disk).")
     );
-    assert!(app.pending_reload.is_some());
-    assert_eq!(app.buffer.to_string(), "TODEL");
+    assert!(app.pending_reload.is_none());
+    assert_eq!(app.buffer.to_string(), "");
     assert!(!app.file.dirty);
 
     // re-create for cleanup

@@ -2,18 +2,19 @@
 //!
 //! Purpose: manage construction/refresh/clear of the optional FileWatcher on App
 //! and provide explicit seams for signal handling.
-//! Owns: refresh/clear, apply_file_watch_signal (hint -> observe + arm only for visible cases),
+//! Owns: refresh/clear, apply_file_watch_signal (hint -> observe + auto-reload clean buffers
+//!   or arm dirty/disabled cases),
 //!   check_file_watcher_once (single try_recv + apply), check_file_watcher_once_and_render.
-//! Must not: be called from handle_key / save / reload / render paths; perform reloads;
-//!   mutate dirty/snapshot/history; trust signal kind without fresh metadata observe;
+//! Must not: be called from handle_key / save / render paths; discard dirty buffers;
+//!   trust signal kind without fresh metadata observation;
 //!   expand Project/LLM/UI; call try_recv outside check_file_watcher_once.
 //! Invariants: signals are hints only; watcher Unchanged/NoPath observations are ignored
 //!   (no message/pending change, no render) when no pending_reload is armed (to avoid
 //!   self-save noise); when a pending_reload exists they clear it, set a status message,
 //!   and return visible (so runtime renders once); Modified/Deleted/Unknown/Error remain
-//!   user-visible; manual Ctrl+R (apply_check_observation) semantics unchanged; no auto
-//!   reload or content mutation; construction failure non-fatal.
-//! Phase: 2-ad (stale pending cleanup on watcher resolution).
+//!   user-visible; clean Modified/Deleted observations auto-reload when configured;
+//!   construction failure is non-fatal.
+//! Phase: 2-ad stale pending cleanup through 2-bx automatic clean reload.
 //!
 //! The only sites that set app.file.path are:
 //! - App::new (initial_path or None)
@@ -133,7 +134,14 @@ pub(crate) fn apply_file_watch_signal(
                 ExternalFileStatus::Modified
                 | ExternalFileStatus::Deleted
                 | ExternalFileStatus::Unknown(_) => {
-                    super::reload::apply_check_observation(app, &obs);
+                    if app.auto_reload
+                        && !app.file.dirty
+                        && !matches!(obs.status, ExternalFileStatus::Unknown(_))
+                    {
+                        super::reload::perform_observed_reload(app, &obs);
+                    } else {
+                        super::reload::apply_check_observation(app, &obs);
+                    }
                     true
                 }
             }

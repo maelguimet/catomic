@@ -63,6 +63,9 @@ their byte size. The page size is configurable in
 ```toml
 [big_files]
 page_lines = 20000
+
+[files]
+auto_reload = true
 ```
 
 Lower values trade more page transitions for less line metadata in memory.
@@ -70,6 +73,11 @@ Use `Ctrl+PageDown` and `Ctrl+PageUp` to move between file pages. The status
 line shows the active page number and byte range.
 `Ctrl+F` searches the whole file rather than only the loaded page; press Enter
 to run the search or Escape to cancel it.
+
+Clean buffers reload automatically when another process changes or deletes the
+file. Set `[files] auto_reload = false` to require manual confirmation instead.
+Dirty buffers are never discarded automatically; Ctrl+R remains the explicit
+check/reload fallback.
 
 ## Multiple Buffers
 

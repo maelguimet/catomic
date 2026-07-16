@@ -96,7 +96,7 @@ struct Capabilities {
 **Construction rules** (the bouncer):
 - At startup (and on any explicit mode switch), compute one `Capabilities` from the current `Mode`.
 - A subsystem (linter runner, project scanner, LSP client, repo LLM broker, network LLM client, etc.) is **only instantiated** when its corresponding flag is `true`.
-- File watching (when `file_watch`) is Plain-allowed. App owns a best-effort gated FileWatcher (notify) when a watchable path exists; runtime loop checks once per iteration via a non-blocking helper (signals are hints only; fresh observe_external_file + apply_check_observation is truth). No auto-reload; Modified/Deleted only arm manual confirmation (Ctrl+R). Unchanged/NoPath suppress self-save noise (or clear stale pending). Deterministic seams in tests; live smoke is ignored/manual.
+- File watching (when `file_watch`) is Plain-allowed. App owns a best-effort gated FileWatcher (notify) when a watchable path exists; runtime loop checks once per iteration via a non-blocking helper (signals are hints only; fresh observe_external_file is truth). Clean Modified/Deleted buffers auto-reload by default; `[files] auto_reload = false` disables it. Dirty buffers always arm manual confirmation (Ctrl+R). Unchanged/NoPath suppress self-save noise (or clear stale pending). Deterministic seams in tests; live smoke is ignored/manual.
 - "Constructed but dormant", "lazy but the factory lives at startup", or "we have the object but we promise not to call it" all fail the rule. If the capability is false, the type must not be present in the running application at all.
 - Plain mode **must** produce:
   - `linters: false`, `lsp: false`, `repo_scan: false`, `repo_llm: false`
@@ -762,8 +762,9 @@ Update this file as decisions are made or phases complete. Add concrete issues o
 Key unresolved limitations (still current post 2-br):
 - (size classification + pre-read guardrails + Large warning + Huge/Extreme paged policy now exist; manual baselines recorded + split harness + line-heavy smokes exist; first visible large-file mode status marker landed; open/buffer storage seams exist; Huge/Extreme files now use a read-only file-backed paged mode; PieceTable has an internal tested file-backed-original seam with bounded edited-line queries, but paged policy does not use it; no mmap or rope rewrite)
 - watcher signals are runtime hints only; App-owned best-effort; runtime checks watcher once per loop via helper (try_recv inside check_file_watcher_once only); Unchanged/NoPath from watcher clear stale pending_reload when armed, otherwise fully ignored (suppress self-save noise);
-- no auto-reload; Modified/Deleted (from watcher or Ctrl+R) only arm confirmation; second Ctrl+R performs actual reload using fresh observe + pending match (or clears for Deleted);
-- no content read from watcher signal path except the existing confirmed Ctrl+R reload path;
+- clean Modified/Deleted watcher observations auto-reload by default; `[files] auto_reload = false` restores confirmation-only behavior. Dirty buffers always retain the exact-snapshot Ctrl+R confirmation path;
+- content is read only after a fresh clean Modified observation when auto-reload is enabled,
+  or after exact Ctrl+R confirmation; raw watcher signals never supply content;
 - metadata-only external detection uses len/mtime plus Unix device/inode/ctime via observe_external_file / capture / compare; same-size/same-mtime path replacement is detected without hashing, though a change that preserves every available metadata field can still evade detection;
 - default test suite uses deterministic queued-signal seams only (TestStub/inject + replace_file_watcher_for_test); live OS notify smoke is ignored/manual and must not be required for CI;
 - big-file tiers/perf: Small/Large remain editable full-read PieceTable opens; Huge/Extreme use configured read-only logical-line pages over a stable descriptor. Active-page scans retain line/checkpoint metadata only, use the optimized std ASCII/newline path for giant lines, fallible rendering probes descriptor stability before and after each visible window, and explicit Ctrl+F streams the whole descriptor in bounded chunks. A single giant logical line can still make one page span the file; no thresholds are enforced yet.
@@ -772,7 +773,7 @@ Key unresolved limitations (still current post 2-br):
 - Detailed completed Phase 2-ay through 2-br notes are archived in `docs/progress/phase-2-progress.md`.
 
 Next intended Phase 2B steps (post 2-br):
-- Reconcile the original Phase 2 auto-reload/editable-Huge requirements with the later accepted confirmation/read-only-paging policy before declaring Phase 2 complete.
+- Complete editable Huge/Extreme paging and replace the temporary read-only policy before declaring Phase 2 complete. Automatic clean reload is now reconciled and implemented.
 - Simple multiple-buffer foundations are complete: every positional CLI path opens in argument order; Alt+PageDown/PageUp switches a state-preserving ring; the status shows the active position; and quit checks dirty inactive buffers. Unit and real PTY coverage exercise the path.
 - The 2026-07-07 phase split is recorded; editable Small/Large PieceTable opens still fully materialize content. Huge/Extreme paged opens scan only the active configured line page and remain read-only; whole-file search streams only after explicit Ctrl+F invocation.
 - Keep manual large-file tests ignored; do not add or enable default 10/100 MiB or 1 GiB tests.
@@ -783,9 +784,9 @@ External-file safety current state after 2-ae:
 - save conflict guard exists (first S refuses on Modified/Deleted/Unknown against live snapshot; second forces only on exact match).
 - watcher exists and is App-owned best-effort (gated by caps.file_watch + watchable parent path; constructed in Plain on new(path) and after first successful save from untitled).
 - runtime checks watcher once per loop (check_file_watcher_once_and_render near top of run); try_recv only inside that helper.
-- signals are hints only; source of truth is always fresh metadata observation (observe_external_file) + apply_check_observation (same path used by Ctrl+R).
-- Modified/Deleted arm pending (like first Ctrl+R); Unchanged/NoPath from watcher suppress noise or clear stale pending only.
-- no auto-reload ever; no content read except on confirmed Ctrl+R second press.
+- signals are hints only; source of truth is always a fresh metadata observation from `observe_external_file`.
+- clean Modified/Deleted auto-reload when enabled; dirty/config-disabled cases arm pending like first Ctrl+R. Unchanged/NoPath suppress noise or clear stale pending only.
+- default-on auto-reload reads content only after a fresh clean Modified observation; dirty/config-disabled cases retain confirmed Ctrl+R reload.
 - metadata-only detection now catches same-size/same-mtime path replacement on Unix through device/inode/ctime; no content hash is performed.
 - tests: deterministic seams cover arming + manual follow-up; live smoke is #[ignore] and manual.
 

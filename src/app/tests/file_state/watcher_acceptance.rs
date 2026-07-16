@@ -1,25 +1,23 @@
 //! Focused deterministic acceptance tests for watcher + manual Ctrl+R flows.
 //!
-//! Purpose: exercise watcher arming (via queued seams) followed by manual Ctrl+R
-//!   confirmation (second press reloads content or clears for Deleted).
-//! Owns: the Phase 2-ae watcher-armed-then-Ctrl+R acceptance cases.
+//! Purpose: exercise automatic clean reload plus dirty/config-disabled Ctrl+R fallback.
+//! Owns: deterministic watcher-to-reload acceptance cases.
 //! Must not: change manual Ctrl+R or save conflict behavior; add live notify
-//!   requirements; read content except via confirmed reload path; introduce flakiness.
-//! Invariants: second Ctrl+R performs only on exact pending match; edits clear arm;
-//!   no auto-reload; tests use TestStub/inject only.
-//! Phase: 2-af split (from oversized watcher_pending for line hygiene).
+//!   requirements; discard dirty content; introduce flakiness.
+//! Invariants: clean default-on buffers reload immediately; dirty buffers never do;
+//!   second Ctrl+R performs only on exact pending match; tests use TestStub/inject only.
+//! Phase: 2-af split through 2-bx automatic clean reload.
 
 use super::super::super::*;
 use super::super::make_key;
 use crossterm::event::{KeyCode, KeyModifiers};
 
-// --- Phase 2-ae: watcher + manual Ctrl+R acceptance tests (deterministic seams) ---
-// Prove watcher arm integrates with existing manual confirmation path.
-// No auto-reload; second Ctrl+R performs via the confirmed reload path.
+// --- Watcher + reload acceptance tests (deterministic seams) ---
+// Prove clean automatic reload and dirty/config-disabled confirmation behavior.
 // Uses TestStub + inject_signal only.
 
 #[test]
-fn watcher_changed_external_modified_then_manual_ctrl_r_second_reloads() {
+fn watcher_changed_clean_buffer_auto_reloads() {
     let mut tmp = std::env::temp_dir();
     tmp.push(format!(
         "catomic_2ae_w_mod_reload_{}.txt",
@@ -37,7 +35,7 @@ fn watcher_changed_external_modified_then_manual_ctrl_r_second_reloads() {
     // external modification
     std::fs::write(&p, "EXTCONTENT").unwrap();
 
-    // watcher sees Changed -> arms (via seam)
+    // watcher sees Changed -> reloads the clean buffer immediately
     let path = app.file.path.clone().unwrap();
     let (tw, _tx) = crate::file::watcher::FileWatcher::new_for_test(path);
     crate::app::watch::replace_file_watcher_for_test(&mut app, tw);
@@ -48,14 +46,6 @@ fn watcher_changed_external_modified_then_manual_ctrl_r_second_reloads() {
 
     let mut out: Vec<u8> = Vec::new();
     let _ = crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out).unwrap();
-    assert!(app.pending_reload.is_some(), "watcher must arm pending");
-    let msg = app.message.as_deref().unwrap_or("");
-    assert!(msg.contains("changed on disk") && msg.contains("Ctrl+R again"));
-
-    // second Ctrl+R: performs reload
-    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
-        .unwrap();
-
     assert_eq!(
         app.buffer.to_string(),
         "EXTCONTENT",
@@ -77,7 +67,7 @@ fn watcher_changed_external_modified_then_manual_ctrl_r_second_reloads() {
 }
 
 #[test]
-fn watcher_deleted_then_manual_ctrl_r_second_clears_buffer() {
+fn watcher_deleted_clean_buffer_auto_clears() {
     let mut tmp = std::env::temp_dir();
     tmp.push(format!(
         "catomic_2ae_w_del_clear_{}.txt",
@@ -104,11 +94,7 @@ fn watcher_deleted_then_manual_ctrl_r_second_clears_buffer() {
 
     let mut out: Vec<u8> = Vec::new();
     let _ = crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out).unwrap();
-    assert!(app.pending_reload.is_some());
-
-    // second Ctrl+R: clears
-    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
-        .unwrap();
+    assert!(app.pending_reload.is_none());
 
     assert_eq!(
         app.buffer.to_string(),
@@ -192,6 +178,7 @@ fn watcher_armed_pending_local_edit_clears_then_next_ctrl_r_rearms() {
     std::fs::write(&p, "EBASE").unwrap();
 
     let mut app = App::new(Some(&p)).unwrap();
+    app.auto_reload = false;
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
 

@@ -25,7 +25,7 @@
 //! Current truth:
 //! - App owns FileWatcher (best-effort) when file_watch + path.
 //! - Runtime polls via check_file_watcher_once_and_render (once/iter).
-//! - Signals are hints only; no auto reload; no content read here.
+//! - Signals are hints only; App policy decides automatic or confirmed reload.
 //! - Unchanged/NoPath from watcher are ignored unless they clear a stale
 //!   pending_reload (see apply_file_watch_signal).
 //! - Metadata observation (observe_external_file) is the source of truth.

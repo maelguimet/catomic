@@ -29,6 +29,7 @@ fn watcher_unchanged_clears_stale_pending_and_sets_message() {
     std::fs::write(&p, "BASE").unwrap();
 
     let mut app = App::new(Some(&p)).unwrap();
+    app.auto_reload = false;
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(!app.file.dirty);
@@ -164,6 +165,7 @@ fn queued_changed_then_unchanged_clears_stale_pending_and_renders() {
     std::fs::write(&p, "ORIG").unwrap();
 
     let mut app = App::new(Some(&p)).unwrap();
+    app.auto_reload = false;
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(!app.file.dirty);

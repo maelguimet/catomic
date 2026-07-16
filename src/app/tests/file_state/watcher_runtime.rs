@@ -7,10 +7,9 @@
 //!   Error, and one-call-one-signal cases.
 //! Must not: rely on real FS events; exercise or alter manual Ctrl+R semantics
 //!   or save-conflict; read content except through existing reload path (not here).
-//! Invariants: watcher signals are hints; unchanged/no-path from watcher path
-//!   are suppressed; Modified/Deleted arm like first Ctrl+R but only confirm;
-//!   at most one signal consumed per helper call.
-//! Phase: 2-ac.
+//! Invariants: watcher signals are hints; unchanged/no-path are suppressed;
+//!   clean Modified/Deleted auto-reload by default; at most one signal is consumed.
+//! Phase: 2-ac through 2-bx automatic clean reload.
 
 use super::super::super::*;
 use crossterm::event::{KeyCode, KeyModifiers};
@@ -29,7 +28,7 @@ fn make_modify_event(p: &std::path::Path) -> notify::Event {
 
 // queued Changed + externally modified => visible arm + render
 #[test]
-fn queued_changed_external_modified_arms_and_renders() {
+fn queued_changed_external_modified_auto_reloads_and_renders() {
     let mut tmp = std::env::temp_dir();
     tmp.push(format!("catomic_2ac_q_mod_{}.txt", std::process::id()));
     let p = tmp.to_string_lossy().to_string();
@@ -62,14 +61,9 @@ fn queued_changed_external_modified_arms_and_renders() {
 
     assert!(had, "should report handled for visible Modified");
     assert!(!out.is_empty(), "must have rendered");
-    assert!(app.pending_reload.is_some(), "must arm pending_reload");
-    let msg = app.message.as_deref().unwrap_or("");
-    assert!(
-        msg.contains("changed on disk") && msg.contains("Ctrl+R again"),
-        "message must match first Ctrl+R Modified wording: got {:?}",
-        app.message
-    );
-    assert_eq!(app.buffer.to_string(), "ORIG", "buffer must be unchanged");
+    assert!(app.pending_reload.is_none());
+    assert_eq!(app.message.as_deref(), Some("Reloaded from disk."));
+    assert_eq!(app.buffer.to_string(), "ORIGEXT");
     assert!(!app.file.dirty, "dirty must be unchanged");
 
     let _ = std::fs::remove_file(&p);
@@ -77,7 +71,7 @@ fn queued_changed_external_modified_arms_and_renders() {
 
 // queued Deleted + file deleted => visible + render
 #[test]
-fn queued_deleted_external_delete_arms_and_renders() {
+fn queued_deleted_external_delete_auto_clears_and_renders() {
     let mut tmp = std::env::temp_dir();
     tmp.push(format!("catomic_2ac_q_del_{}.txt", std::process::id()));
     let p = tmp.to_string_lossy().to_string();
@@ -104,14 +98,12 @@ fn queued_deleted_external_delete_arms_and_renders() {
 
     assert!(had);
     assert!(!out.is_empty());
-    assert!(app.pending_reload.is_some());
-    let msg = app.message.as_deref().unwrap_or("");
-    assert!(
-        msg.contains("deleted on disk") && msg.contains("Ctrl+R again"),
-        "message must match first Ctrl+R Deleted: got {:?}",
-        app.message
+    assert!(app.pending_reload.is_none());
+    assert_eq!(
+        app.message.as_deref(),
+        Some("Buffer cleared (file deleted on disk).")
     );
-    assert_eq!(app.buffer.to_string(), "TODEL");
+    assert_eq!(app.buffer.to_string(), "");
     assert!(!app.file.dirty);
 
     // recreate for cleanup
@@ -218,6 +210,7 @@ fn one_call_processes_at_most_one_signal() {
     std::fs::write(&p, "ONE").unwrap();
 
     let mut app = App::new(Some(&p)).unwrap();
+    app.auto_reload = false;
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
     // external mod makes observe report Modified for both signals

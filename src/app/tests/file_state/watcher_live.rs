@@ -17,7 +17,7 @@ use crossterm::event::{KeyCode, KeyModifiers};
 
 #[test]
 #[ignore = "live OS notify timing smoke (metadata-only; unreliable on CI; run manually with --ignored)"]
-fn live_smoke_watcher_sees_external_change_and_arms() {
+fn live_smoke_watcher_sees_external_change_and_auto_reloads() {
     // Only runs when explicitly requested (cargo test -- --ignored).
     // Default full suite must stay fully deterministic (seams only).
     let mut tmp = std::env::temp_dir();
@@ -41,12 +41,12 @@ fn live_smoke_watcher_sees_external_change_and_arms() {
 
     // Bounded non-blocking checks only; real delivery best-effort/env-dependent.
     // Never assume notify fires reliably (same-size/same-mtime races possible).
-    let mut armed = false;
+    let mut reloaded = false;
     for _ in 0..20 {
         let mut out: Vec<u8> = Vec::new();
         if crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out).unwrap() {
-            if app.pending_reload.is_some() {
-                armed = true;
+            if app.buffer.to_string() == "LIVEEXT" {
+                reloaded = true;
                 break;
             }
         }
@@ -55,8 +55,8 @@ fn live_smoke_watcher_sees_external_change_and_arms() {
     }
 
     assert!(
-        armed,
-        "live smoke: expected watcher Changed to eventually arm pending_reload"
+        reloaded,
+        "live smoke: expected watcher Changed to auto-reload the clean buffer"
     );
 
     let _ = std::fs::remove_file(&p);

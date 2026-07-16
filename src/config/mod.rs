@@ -3,7 +3,8 @@
 //! Must not: construct Project/LLM services, perform network work, or mutate files.
 //! Invariants: no config file is required; malformed recognized values are errors;
 //!   unknown keys are ignored for forward compatibility.
-//! Phase: 2-bk configurable paged-file policy.
+//! Phase: 2-bk configurable paging through 2-bx automatic reload policy.
 
+pub mod auto_reload;
 pub mod big_files;
 pub mod keymap;

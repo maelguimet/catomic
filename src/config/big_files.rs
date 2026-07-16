@@ -78,7 +78,7 @@ pub(crate) fn load() -> io::Result<BigFileConfig> {
     }
 }
 
-fn config_path(
+pub(super) fn config_path(
     xdg_config_home: Option<&std::ffi::OsStr>,
     home: Option<&std::ffi::OsStr>,
 ) -> Option<PathBuf> {

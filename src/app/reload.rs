@@ -4,12 +4,13 @@
 //! and the Ctrl+R decision + perform logic (extracted in 2-t for mod.rs hygiene).
 //! Uses only metadata (ExternalFileStatus + FileSnapshot) via observe_external_file.
 //! Owns: PendingReload struct, arm/perform helpers, handle_reload_key.
-//! Must not: watcher, background, polling, full content scans for *detection*,
-//!   config, Project, LLM, or any non-manual reload path.
+//! Must not: own watcher polling, background work, full content scans for
+//!   *detection*, config parsing, Project, or LLM work.
 //! Invariants: pending is bound to concrete (path + status + live snapshot);
 //!   second press only acts on exact match; any content mutation clears it;
-//!   movement/render do not clear it.
-//! Phase: 2-s / 2-t cleanup.
+//!   automatic reload is invoked only for clean buffers by caller policy;
+//!   movement/render do not clear pending state.
+//! Phase: 2-s / 2-t cleanup through 2-bx automatic clean reload.
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -117,6 +118,72 @@ fn reload_modified_success_message(size_bytes: u64, size_tier: FileSizeTier) -> 
     reload_success_message()
 }
 
+/// Replace a clean buffer from one already-fresh Modified/Deleted observation.
+/// Watcher policy and Ctrl+R confirmation both call this narrow mutation seam.
+/// Errors are surfaced in `message` and leave the existing buffer intact.
+pub(crate) fn perform_observed_reload(app: &mut super::App, obs: &ExternalFileObservation) {
+    let Some(path) = app.file.path.clone() else {
+        app.message = Some("No file path.".to_string());
+        return;
+    };
+    match obs.status {
+        ExternalFileStatus::Modified => {
+            match observed_present_len(obs).and_then(|size_bytes| {
+                build_modified_reload_buffer(&path, size_bytes, app.big_files.page_lines)
+            }) {
+                Ok(reloaded) => apply_modified_reload(app, &path, reloaded),
+                Err(error) => app.message = Some(format!("Reload error: {error}")),
+            }
+        }
+        ExternalFileStatus::Deleted => apply_deleted_reload(app),
+        _ => apply_check_observation(app, obs),
+    }
+}
+
+fn apply_modified_reload(app: &mut super::App, path: &Path, reloaded: ReloadedModifiedBuffer) {
+    let reload_message = reload_modified_success_message(reloaded.size_bytes, reloaded.size_tier);
+    super::search::cancel_running_search(app);
+    app.buffer = reloaded.buffer;
+    app.file.saved_history_position = app.buffer.edit_history_position();
+    app.file.dirty = false;
+    match crate::file::io::capture_file_snapshot(path) {
+        Ok(snapshot @ FileSnapshot::Present { len, .. }) => {
+            app.file.size_bytes = Some(len);
+            app.file.size_tier = Some(crate::file::size::classify_file_size(len));
+            app.file.disk_snapshot = Some(snapshot);
+        }
+        Ok(snapshot) => {
+            app.file.disk_snapshot = Some(snapshot);
+            app.file.size_bytes = None;
+            app.file.size_tier = None;
+        }
+        Err(_) => {
+            app.file.size_bytes = Some(reloaded.size_bytes);
+            app.file.size_tier = Some(reloaded.size_tier);
+        }
+    }
+    finish_reload(app, reload_message);
+}
+
+fn apply_deleted_reload(app: &mut super::App) {
+    super::search::cancel_running_search(app);
+    app.buffer = Box::new(buffer::PieceTable::new());
+    app.file.saved_history_position = app.buffer.edit_history_position();
+    app.file.dirty = false;
+    app.file.disk_snapshot = Some(FileSnapshot::Absent);
+    app.file.size_bytes = None;
+    app.file.size_tier = None;
+    finish_reload(app, reload_cleared_message());
+}
+
+fn finish_reload(app: &mut super::App, message: String) {
+    app.message = Some(message);
+    app.pending_reload = None;
+    app.pending_save_conflict = None;
+    app.pending_quit_confirm = false;
+    app.reveal_cursor();
+}
+
 /// Apply a single ExternalFileObservation to set user message and arm/clear
 /// pending_reload. This is the single-source status+arm path for manual check.
 /// NoPath/Unchanged/Unknown: set message, clear pending.
@@ -177,70 +244,7 @@ pub(crate) fn handle_reload_key(app: &mut super::App, out: &mut dyn Write) -> io
     };
 
     if should_perform {
-        if let Some(ref p) = current_path {
-            match obs.status {
-                ExternalFileStatus::Modified => {
-                    match observed_present_len(&obs).and_then(|size_bytes| {
-                        build_modified_reload_buffer(p, size_bytes, app.big_files.page_lines)
-                    }) {
-                        Ok(reloaded) => {
-                            let reload_message = reload_modified_success_message(
-                                reloaded.size_bytes,
-                                reloaded.size_tier,
-                            );
-                            super::search::cancel_running_search(app);
-                            app.buffer = reloaded.buffer;
-                            let new_pos = app.buffer.edit_history_position();
-                            app.file.saved_history_position = new_pos;
-                            app.file.dirty = false;
-                            match crate::file::io::capture_file_snapshot(p) {
-                                Ok(s @ FileSnapshot::Present { len, .. }) => {
-                                    app.file.size_bytes = Some(len);
-                                    app.file.size_tier =
-                                        Some(crate::file::size::classify_file_size(len));
-                                    app.file.disk_snapshot = Some(s);
-                                }
-                                Ok(s) => {
-                                    app.file.disk_snapshot = Some(s);
-                                    app.file.size_bytes = None;
-                                    app.file.size_tier = None;
-                                }
-                                Err(_) => {
-                                    app.file.size_bytes = Some(reloaded.size_bytes);
-                                    app.file.size_tier = Some(reloaded.size_tier);
-                                }
-                            }
-                            app.message = Some(reload_message);
-                            app.pending_reload = None;
-                            app.pending_save_conflict = None;
-                            app.pending_quit_confirm = false;
-                            app.reveal_cursor();
-                        }
-                        Err(e) => {
-                            app.message = Some(format!("Reload error: {}", e));
-                            // no state mutation, pending kept for retry
-                        }
-                    }
-                }
-                ExternalFileStatus::Deleted => {
-                    super::search::cancel_running_search(app);
-                    app.buffer = Box::new(buffer::PieceTable::new());
-                    let new_pos = app.buffer.edit_history_position();
-                    app.file.saved_history_position = new_pos;
-                    app.file.dirty = false;
-                    app.file.disk_snapshot = Some(FileSnapshot::Absent);
-                    // Deleted on disk: no present file size known.
-                    app.file.size_bytes = None;
-                    app.file.size_tier = None;
-                    app.message = Some(reload_cleared_message());
-                    app.pending_reload = None;
-                    app.pending_save_conflict = None;
-                    app.pending_quit_confirm = false;
-                    app.reveal_cursor();
-                }
-                _ => {}
-            }
-        }
+        perform_observed_reload(app, &obs);
         app.render(out)?;
     } else {
         // Reuse the single observation already computed; do not re-observe.

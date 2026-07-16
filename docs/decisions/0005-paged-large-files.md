@@ -2,13 +2,13 @@
 
 Date: 2026-07-16
 
-Status: accepted
+Status: superseded by [0006](./0006-editable-paged-files.md)
 
 ## Decision
 
 Catomic will not reject a regular UTF-8 file solely because it exceeds a fixed
-byte threshold. Files beyond the normal editable policy open in a bounded,
-read-only paged mode.
+byte threshold. This intermediate decision introduced bounded read-only pages;
+ADR 0006 replaces the read-only policy with editable pages.
 
 - A page contains a configured number of logical lines.
 - The default is 20,000 lines.

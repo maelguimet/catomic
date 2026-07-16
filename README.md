@@ -56,8 +56,9 @@ For big files:
 - Keep line indexing lazy or incremental
 - Offer "large file mode" when needed
 
-Oversized files use bounded line pages instead of being rejected solely for
-their byte size. The page size is configurable in
+Every regular UTF-8 file remains editable. Small and medium files use one
+in-memory PieceTable; oversized files use editable, file-backed line pages
+instead of being rejected or opened read-only. The page size is configurable in
 `~/.config/catomic/config.toml` (or `$XDG_CONFIG_HOME/catomic/config.toml`):
 
 ```toml
@@ -70,9 +71,13 @@ auto_reload = true
 
 Lower values trade more page transitions for less line metadata in memory.
 Use `Ctrl+PageDown` and `Ctrl+PageUp` to move between file pages. The status
-line shows the active page number and byte range.
-`Ctrl+F` searches the whole file rather than only the loaded page; press Enter
-to run the search or Escape to cancel it.
+line shows the active page number and source byte range. Edits on visited pages
+are retained, undo/redo follows edit order across pages, and `Ctrl+S` atomically
+streams the complete logical document without materializing the whole file.
+Page boundaries stay anchored to the opened file during a session and rebalance
+after reload or reopen. `Ctrl+F` searches all pages, including unsaved page
+edits and matches across edited boundaries; press Enter to run or Escape to
+cancel.
 
 Clean buffers reload automatically when another process changes or deletes the
 file. Set `[files] auto_reload = false` to require manual confirmation instead.

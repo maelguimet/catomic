@@ -344,12 +344,12 @@ Clarifications:
 - `read_to_string` and `PieceTable::from_owned_text` are the useful split for the editable Small/Large PieceTable materialization path, and remain useful legacy comparison samples for Huge. Borrowed `PieceTable::from_text` still exists for callers that do not own the input.
 - The LF-only fast path avoids two unconditional `replace` passes when opened content contains no `\r`; CRLF/CR inputs still normalize to `\n`.
 - App open now moves the owned `read_to_string` buffer into PieceTable for LF-only content, avoiding a large clone in that path.
-- App open now has an explicit content plan from the single initial metadata snapshot: untitled/missing paths open empty, Small/Large present paths full-read into editable PieceTable, and Huge present paths open read-only through LargeFileBuffer.
-- Confirmed Ctrl+R Modified reload reapplies the same size policy: Small/Large read into editable PieceTable; Huge/Extreme reopen a configured read-only LargeFileBuffer page.
+- App open now has an explicit content plan from the single initial metadata snapshot: untitled/missing paths open empty, Small/Large present paths full-read into editable PieceTable, and Huge/Extreme paths open through editable PagedFileBuffer pages.
+- Automatic or confirmed Ctrl+R Modified reload reapplies the same size policy: Small/Large read into editable PieceTable; Huge/Extreme reopen configured editable pages.
 - `file::io::read_to_string` is now the single App open/reload full-read helper for editable paths; it reads bytes then moves them into `String` after UTF-8 validation. It remains full materialization.
-- LargeFileBuffer validates UTF-8 and records line/scalar metadata for only the active configured page, then serves visible windows with positioned reads on the same descriptor. ASCII windows seek directly; non-ASCII windows use sparse scalar checkpoints. It avoids full content residency, keeps path replacement from retargeting reads, and fails closed if fd len/mtime changes before ranged reads; a single logical line can still require a correspondingly long page scan.
+- PagedFileBuffer builds each active/edited page as a file-backed PieceTable. Page scans validate UTF-8 and record line/scalar metadata; visible windows use positioned reads, ASCII direct offsets, and non-ASCII sparse checkpoints. It avoids full content residency for untouched pages, keeps path replacement from retargeting reads, and fails closed on descriptor drift; a single logical line can still require a correspondingly long page scan.
 - Line-heavy manual smokes use a streamed ASCII fixture with frequent newlines to keep the default suite cheap while measuring LineIndex-heavy open behavior manually.
-- `App::new` remains the end-to-end open measurement for the selected policy (PieceTable for Small/Large, LargeFileBuffer for Huge).
+- `App::new` remains the end-to-end open measurement for the selected policy (PieceTable for Small/Large, PagedFileBuffer for Huge/Extreme).
 - After the owned-open change and before newline-search, `PieceTable::from_owned_text` was still the dominant measured subphase. Compared with the pre-optimization baseline, that step improved `App::new` from ~1247 ms to ~620 ms for 100 MiB on this hardware.
 - After switching LineIndex construction from a hand-rolled byte loop to std string newline search, `App::new` improved again from ~620 ms to ~60 ms for 100 MiB on this hardware.
 - Direct initial `LineIndex::from_text` construction and the no-borrow `OriginalBacking` interface are storage-policy seams, not claimed speedups.
@@ -373,19 +373,20 @@ Note: these are wall-time / RSS for the full test harness invocation on this mac
 
 Caveat: measurements are observational only for this hardware and build. No budgets or "pass" criteria are declared yet. Do not treat numbers as universal. Future passes may add budgets after more data and hotspot identification.
 
-### Phase 2 acceptance recheck (2026-07-16, post 2-bw)
+### Phase 2 acceptance recheck (2026-07-16, post 2-ca)
 
 The ignored manual suites were run against the current debug build after the
-configurable paging, bounded page scan, row-redraw, multiple-buffer, and save
-safety changes. All seven selected large-file tests passed.
+configurable editable paging, bounded page scan, row-redraw, multiple-buffer,
+cross-page search, and save-safety changes. All seven selected large-file tests
+passed.
 
-- 10 MiB editable: `App::new` 8 ms; render 1 ms.
+- 10 MiB editable: `App::new` 8 ms; render 0 ms.
 - 10 MiB line-heavy editable: `App::new` 8 ms; render 0 ms.
-- 100 MiB giant ASCII line, paged read-only: `App::new` 130 ms; render 0 ms.
-- 100 MiB line-heavy, paged read-only: `App::new` 3 ms; render 0 ms.
-- 100 MiB dense non-ASCII, paged read-only: `App::new` 1567 ms; far-window render 0 ms.
-- Sparse exact 1 GiB, paged read-only: `App::new` 1411 ms; page navigation and sampled renders 0 ms.
-- Sparse >1 GiB Extreme, first configured page: `App::new` 1 ms.
+- 100 MiB giant ASCII line, editable page: `App::new` 147 ms; render 0 ms.
+- 100 MiB line-heavy, editable pages: `App::new` 3 ms; render 0 ms.
+- 100 MiB dense non-ASCII, editable page: `App::new` 1515 ms; far-window render 0 ms.
+- Sparse exact 1 GiB, editable page: `App::new` 1402 ms; page navigation and sampled renders 0 ms.
+- Sparse >1 GiB Extreme, first editable page: `App::new` 2 ms.
 
 These are single-run integer-millisecond samples, not CI gates. The non-ASCII
 case remains the slowest because active-page scanning validates UTF-8 scalar
@@ -402,11 +403,11 @@ Suggested initial candidates:
 - 10 MiB Large open/App::new: target under ~500 ms on comparable hardware (baseline ~130 ms)
 - 10 MiB render (full-clear synthetic): target under ~20 ms (baseline ~3 ms)
 - 10 MiB MaxRSS (full test invocation): target under ~100 MiB (baseline ~34 MiB)
-- 100 MiB Huge read-only open/App::new: target under ~500 ms on comparable hardware (current samples ~122-158 ms)
-- 100 MiB non-ASCII Huge read-only open/App::new: target under ~1500 ms on comparable hardware (current sample ~1051 ms)
+- 100 MiB Huge editable-page open/App::new: target under ~500 ms on comparable hardware (current samples ~3-147 ms depending on line shape)
+- 100 MiB non-ASCII Huge editable-page open/App::new: target around ~1500 ms on comparable hardware (current sample ~1515 ms)
 - 100 MiB render (full-clear synthetic): target under ~100 ms (baseline ~32 ms)
 - 100 MiB Huge MaxRSS (full test invocation): target under ~250 MiB (current samples ~106-117 MiB)
-- sparse exact-1-GiB Huge read-only open/App::new: target under ~2500 ms on comparable hardware (current sparse samples ~1231-1269 ms)
+- sparse exact-1-GiB Huge editable-page open/App::new: target under ~2500 ms on comparable hardware (current sample ~1402 ms)
 - sparse exact-1-GiB Huge MaxRSS (full test invocation): target under ~100 MiB (current sparse sample ~30 MiB)
 - sparse >1 GiB paged open (Extreme): measure first-page scan latency and bounded metadata residency; the historical refusal baseline is not a current target
 
@@ -416,21 +417,21 @@ All numbers remain advisory. Do not turn these into `#[test]` pass/fail gates in
 
 - Generation time (dense streaming write) is test-fixture cost, not editor cost; helper implementation changes can shift it independently of editor behavior.
 - For editable Small/Large present files, App::new still performs full `read_to_string` + `PieceTable::from_owned_text` + size probe + initial history token. After the newline-search change, `read_to_string` is the largest measured editor-owned subphase for the synthetic no-newline full-materialization comparison.
-- For Huge present files, App::new now performs a LargeFileBuffer UTF-8/newline scan and opens a read-only file descriptor for ranged visible reads. Dense 100 MiB is scan-bound; line-heavy 100 MiB additionally stores many line starts/line char counts; dense non-ASCII 100 MiB also pays scalar counting and checkpoint construction during that scan.
+- For Huge present files, App::new now scans the first configured PagedFileBuffer source page and builds one file-backed PieceTable. Giant-line pages remain scan-bound; dense non-ASCII pages also pay scalar counting and checkpoint construction. Line-heavy files stop after the configured line count.
 - MaxRSS for Huge is now driven mostly by line-index density plus test harness overhead rather than full content residency. The dense 100 MiB sample dropped to ~106 MiB RSS, and sparse exact-1-GiB was ~30 MiB warm.
 - Historical render numbers are cheap in these synthetic tests (a small viewport over an already-built buffer); this is not proof of scalable redraw behavior under editing/resizing for large files.
 - Phase 2-br replaced the terminal-wide clear with absolute positioning plus per-row clears. It still repaints the full viewport and does not retain prior rows for dirty-row diffing.
-- The next optimization area is editable large-file semantics and external-change snapshot policy (see `docs/decisions/0003-large-file-storage.md`). The read-only Huge path is an intermediate storage mode, not mmap/rope/editable lazy loading.
+- Editable large-file semantics and external-change policy are resolved in `docs/decisions/0006-editable-paged-files.md`. Remaining performance work is measurement-led optimization, especially giant Unicode lines and retained-row rendering.
 - The ignored manual open tests emit stable phase samples for the open path: "metadata", "read_to_string", "PieceTable::from_owned_text", "App::new" (end-to-end), and "render". Dense no-newline and line-heavy variants are both manual-only. These are still observational only. Generation time is fixture cost. `read_to_string` + `PieceTable::from_owned_text` provide the useful split of the editable materialization hotspot. `App::new` remains the full open measurement for the selected policy. No budgets or gates.
 
 See TODO.md for the current next-intended pointer into this inventory.
 
-### Current Phase 2B large-file handling (as of post 2-bw)
+### Current Phase 2B large-file handling (as of post 2-ca)
 - Large (>10 MiB <=100 MiB) on open: full read into editable PieceTable; warning message set initially (transient); size_bytes/size_tier recorded in FileState from the single initial metadata snapshot.
-- Huge/Extreme (>100 MiB) on open: read-only LargeFileBuffer scans only the configured logical-line page, then serves visible windows through positioned reads from the stable descriptor. Ctrl+PageUp/PageDown rescan adjacent page metadata; descriptor len/mtime drift fails closed.
+- Huge/Extreme (>100 MiB) on open: editable PagedFileBuffer scans the configured logical-line page into a file-backed PieceTable, then serves visible windows through positioned reads from the stable descriptor. Ctrl+PageUp/PageDown loads adjacent source pages; descriptor drift fails closed.
 - Initial open metadata/snapshot/content-plan is single-capture/derived (see 2-am/2-aq/2-ay). LF-only normalization avoids extra CR-normalization copies for PieceTable opens (2-an), App open moves the owned read buffer into PieceTable for editable opens (2-ao), and LineIndex build uses std string newline search for PieceTable opens (2-ap).
-- After content edit clears transient message for editable Large files, bottom row shows persistent status containing tier + "large-file mode" marker (plus path/dirty + "disk <size>" label). Huge read-only edit/save attempts set explicit read-only messages. The size shown is last-known on-disk metadata (fs::metadata or narrow post-save fallback), not live buffer byte length. No buffer scan or to_string() for status.
-- Extreme (>1 GiB): uses the same paged read-only policy; byte size alone is not a refusal reason.
+- After content edit clears the transient warning, the bottom row shows persistent status containing tier + "large-file mode" marker (plus path/dirty + disk-size label). Huge/Extreme edits use normal dirty/save behavior. The size shown is last-known on-disk metadata, not live logical buffer byte length; status performs no buffer scan or whole-file materialization.
+- Extreme (>1 GiB): uses the same editable paged policy; byte size alone is not a refusal reason.
 - Status only when no higher-priority message present; messages always fully override.
-- Whole-file Ctrl+F is explicit and cancellable: it streams bounded chunks from a cloned stable descriptor, preserves cross-chunk matches, and jumps to the matching page. No idle search/index worker exists.
-- No mmap, rope rewrite, or editable paged storage. Paged mode preserves raw `\r` bytes instead of PieceTable CRLF normalization and still relies on metadata rather than a full immutable same-inode snapshot.
+- Whole-file Ctrl+F is explicit and cancellable: it streams bounded descriptor chunks plus unsaved edited-page overlays, preserves cross-chunk and edited-boundary matches, and jumps to the matching page. No idle search/index worker exists.
+- Ctrl+S streams untouched descriptor ranges and retained edited pages through the atomic-save path. Page boundaries stay anchored during the session and rebalance on reload; no mmap, rope rewrite, full immutable same-inode snapshot, or whole-file String is used.

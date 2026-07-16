@@ -759,23 +759,23 @@ Update this file as decisions are made or phases complete. Add concrete issues o
 
 - Detailed completed Phase 2-r through 2-ae notes are archived in `docs/progress/phase-2-progress.md`.
 
-Key unresolved limitations (still current post 2-br):
-- (size classification + pre-read guardrails + Large warning + Huge/Extreme paged policy now exist; manual baselines recorded + split harness + line-heavy smokes exist; first visible large-file mode status marker landed; open/buffer storage seams exist; Huge/Extreme files now use a read-only file-backed paged mode; PieceTable has an internal tested file-backed-original seam with bounded edited-line queries, but paged policy does not use it; no mmap or rope rewrite)
+Current limitations after Phase 2 acceptance:
+- Small/Large files still use a full-read PieceTable. Huge/Extreme files use editable file-backed PieceTable pages; only the active page and pages with edit history are retained. Page boundaries remain anchored to source byte ranges during the session and rebalance after reload/reopen; a single giant logical line can still make one page span the file. No mmap or rope rewrite.
 - watcher signals are runtime hints only; App-owned best-effort; runtime checks watcher once per loop via helper (try_recv inside check_file_watcher_once only); Unchanged/NoPath from watcher clear stale pending_reload when armed, otherwise fully ignored (suppress self-save noise);
 - clean Modified/Deleted watcher observations auto-reload by default; `[files] auto_reload = false` restores confirmation-only behavior. Dirty buffers always retain the exact-snapshot Ctrl+R confirmation path;
 - content is read only after a fresh clean Modified observation when auto-reload is enabled,
   or after exact Ctrl+R confirmation; raw watcher signals never supply content;
 - metadata-only external detection uses len/mtime plus Unix device/inode/ctime via observe_external_file / capture / compare; same-size/same-mtime path replacement is detected without hashing, though a change that preserves every available metadata field can still evade detection;
 - default test suite uses deterministic queued-signal seams only (TestStub/inject + replace_file_watcher_for_test); live OS notify smoke is ignored/manual and must not be required for CI;
-- big-file tiers/perf: Small/Large remain editable full-read PieceTable opens; Huge/Extreme use configured read-only logical-line pages over a stable descriptor. Active-page scans retain line/checkpoint metadata only, use the optimized std ASCII/newline path for giant lines, fallible rendering probes descriptor stability before and after each visible window, and explicit Ctrl+F streams the whole descriptor in bounded chunks. A single giant logical line can still make one page span the file; no thresholds are enforced yet.
+- big-file tiers/perf: Huge/Extreme pages are editable. Cross-page undo/redo is global, Ctrl+S streams edited pages over untouched stable descriptor ranges, and explicit Ctrl+F searches the descriptor plus unsaved overlays across page seams. Descriptor drift fails reads/save closed. Performance budgets remain advisory.
 - rendering repaints and clears each viewport row without a terminal-wide clear; it does not yet retain row state for dirty-row-only redraws.
 - Detailed completed Phase 2-af through 2-ax notes are archived in `docs/progress/phase-2-progress.md`.
 - Detailed completed Phase 2-ay through 2-br notes are archived in `docs/progress/phase-2-progress.md`.
 
-Next intended Phase 2B steps (post 2-br):
-- Complete editable Huge/Extreme paging and replace the temporary read-only policy before declaring Phase 2 complete. Automatic clean reload is now reconciled and implemented.
+Phase 2 acceptance status (post 2-ca):
+- Complete: automatic clean reload, dirty-buffer protection, configurable editable Huge/Extreme pages, cross-page history, whole-document atomic save, and whole-file Ctrl+F are implemented and verified.
 - Simple multiple-buffer foundations are complete: every positional CLI path opens in argument order; Alt+PageDown/PageUp switches a state-preserving ring; the status shows the active position; and quit checks dirty inactive buffers. Unit and real PTY coverage exercise the path.
-- The 2026-07-07 phase split is recorded; editable Small/Large PieceTable opens still fully materialize content. Huge/Extreme paged opens scan only the active configured line page and remain read-only; whole-file search streams only after explicit Ctrl+F invocation.
+- The 2026-07-07 phase split is recorded; editable Small/Large PieceTable opens still fully materialize content. Huge/Extreme paged opens scan the active configured source page and retain edited pages; whole-file search starts only after explicit Ctrl+F invocation.
 - Keep manual large-file tests ignored; do not add or enable default 10/100 MiB or 1 GiB tests.
 - Do not enforce thresholds yet; budgets remain advisory and must not become pass/fail gates in this or the immediate next pass.
 
@@ -796,7 +796,7 @@ Phase 2A external-file safety acceptance checklist (concrete):
 - external modified/deleted is detected by manual Ctrl+R (arms with correct message).
 - save conflict: first press refuses (keeps dirty, sets msg, records pending); second forces only on identical observation.
 - Ctrl+R reload confirmation handles Modified (reload content + snapshot + "Reloaded") and Deleted (clear buffer + Absent + cleared msg).
-- watcher signal only arms/updates status (via helper); never reloads or mutates content/dirty/snapshot.
+- watcher signals trigger a fresh metadata observation; clean buffers auto-reload by default, while dirty or config-disabled buffers only arm Ctrl+R confirmation.
 - watcher self-save noise suppressed (Unchanged/NoPath ignored when no pending).
 - stale watcher pending clears when disk resolves (Unchanged/NoPath with prior pending surfaces msg + clears).
 - tests cover deterministic seams (apply + queued + render) + manual Ctrl+R follow-ups.

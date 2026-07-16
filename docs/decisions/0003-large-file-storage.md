@@ -2,8 +2,11 @@
 
 Date: 2026-07-07
 
-Status: superseded for read-only open policy by [0005](./0005-paged-large-files.md);
-editable Huge storage remains open
+Status: superseded by [0005](./0005-paged-large-files.md) and
+[0006](./0006-editable-paged-files.md)
+
+The context and recommendation below record the historical intermediate
+read-only design. ADR 0006 is the current editable storage decision.
 
 ## Context
 

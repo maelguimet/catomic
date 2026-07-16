@@ -3,14 +3,15 @@
 //! Purpose: provide a small, explicitly gated wrapper around notify for single-file
 //! external change/delete detection. Construction is the only gate; signals are
 //! consumed via non-blocking try_recv.
-//! Owns: the notify RecommendedWatcher (kept alive), normalized target path,
+//! Owns: the notify RecommendedWatcher (kept alive), normalized lexical and
+//!   resolved target paths,
 //!   and mpsc receiver for events (notify manages its internal polling thread).
 //! Must not: be constructed unless Capabilities::file_watch; must not imply or
 //!   construct any Project services (linters, lsp, repo_scan, llm, etc.).
-//! Invariants: if !file_watch -> Ok(None) before any notify/fs; watches only the
-//!   target's parent dir (non-recursive); events filtered to exact target by
-//!   lexical absolute path compare; try_recv drains at most one.
-//! Phase: 2-ad (stale pending polish + hygiene); prior: 2-x/2-z/2-ac App owns
+//! Invariants: if !file_watch -> Ok(None) before any notify/fs; watches the
+//!   lexical target parent plus a distinct resolved referent parent (non-recursive);
+//!   events filter to either exact target path; try_recv drains at most one.
+//! Phase: post-v0.1 symlink watch hardening; prior: 2-x/2-z/2-ac App owns
 //!   best-effort lifecycle and consumes via app/watch helper (hints only).
 //!
 //! Dependency justification (per AGENTS.md):
@@ -31,7 +32,7 @@
 //! - Metadata observation (observe_external_file) is the source of truth.
 //! - Manual Ctrl+R and save conflict paths are independent.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
 
 #[cfg(test)]
@@ -54,14 +55,15 @@ pub enum FileWatchSignal {
 
 /// Notify-backed watcher for a single target file.
 ///
-/// Kept capability-gated. Parent dir is watched non-recursively; events
-/// are filtered to the target using lexical absolute paths (no canonicalize).
+/// Kept capability-gated. The lexical parent and any distinct resolved
+/// referent parent are watched non-recursively; events are filtered to the
+/// corresponding exact target paths.
 pub struct FileWatcher {
     /// Held to keep the watcher alive (notify uses it for its internal thread).
     /// In tests a TestStub variant allows construction without a live notify thread.
     _watcher: InnerWatcher,
-    /// Normalized (absolute lexical) target path for filtering.
-    target: PathBuf,
+    /// Normalized lexical target followed by a distinct resolved referent, if any.
+    targets: Vec<PathBuf>,
     /// Receives events from the notify callback.
     rx: Receiver<notify::Result<Event>>,
     /// Test-only direct signal injection (takes precedence in try_recv).
@@ -85,15 +87,15 @@ impl FileWatcher {
     /// without touching notify or the FS. On success returns the live watcher
     /// or a notify::Error.
     ///
-    /// Watches the target's parent directory (non-recursive) so that
-    /// delete/recreate/rename-over of the target itself are observable.
+    /// Watches the lexical target's parent plus a distinct referent parent so
+    /// both link replacement and referent edits are observable.
     pub fn new(path: PathBuf, caps: &Capabilities) -> Result<Option<Self>, notify::Error> {
         if !caps.file_watch {
             return Ok(None);
         }
 
-        let target = normalize_path(&path);
-        let parent = watch_parent(&target);
+        let targets = watch_targets(&path);
+        let directories = watch_directories(&targets);
 
         let (tx, rx) = mpsc::channel();
 
@@ -105,11 +107,13 @@ impl FileWatcher {
             Config::default(),
         )?;
 
-        watcher.watch(&parent, RecursiveMode::NonRecursive)?;
+        for directory in directories {
+            watcher.watch(&directory, RecursiveMode::NonRecursive)?;
+        }
 
         Ok(Some(Self {
             _watcher: InnerWatcher::Real(watcher),
-            target,
+            targets,
             rx,
             #[cfg(test)]
             test_inject: std::sync::Mutex::new(None),
@@ -130,7 +134,7 @@ impl FileWatcher {
             }
         }
         match self.rx.try_recv() {
-            Ok(Ok(event)) => map_event_to_signal(&self.target, &event),
+            Ok(Ok(event)) => map_event_to_signal(&self.targets, &event),
             Ok(Err(err)) => Some(FileWatchSignal::Error(err.to_string())),
             Err(_) => None,
         }
@@ -147,10 +151,10 @@ impl FileWatcher {
         let (tx, rx) = mpsc::channel();
         // Match real ctor: store the normalized form so is_relevant filtering
         // during tx-injected raw events behaves identically.
-        let target = normalize_path(&target);
+        let targets = vec![normalize_path(&target)];
         let fw = Self {
             _watcher: InnerWatcher::TestStub,
-            target,
+            targets,
             rx,
             test_inject: std::sync::Mutex::new(None),
         };
@@ -167,6 +171,32 @@ impl FileWatcher {
     }
 }
 
+/// Return the lexical target plus a distinct canonical referent when the path
+/// currently resolves. Missing and inaccessible targets retain lexical watching.
+fn watch_targets(path: &Path) -> Vec<PathBuf> {
+    let lexical = normalize_path(path);
+    let mut targets = vec![lexical.clone()];
+    if let Ok(resolved) = std::fs::canonicalize(&lexical) {
+        let resolved = normalize_path(&resolved);
+        if resolved != lexical {
+            targets.push(resolved);
+        }
+    }
+    targets
+}
+
+/// Derive the unique non-recursive directories required for all target identities.
+fn watch_directories(targets: &[PathBuf]) -> Vec<PathBuf> {
+    let mut directories = Vec::with_capacity(targets.len());
+    for target in targets {
+        let directory = watch_parent(target);
+        if !directories.contains(&directory) {
+            directories.push(directory);
+        }
+    }
+    directories
+}
+
 /// Map a relevant notify event to a signal. Create/Modify -> Changed,
 /// Remove -> Deleted. Other kinds for the target are ignored for now.
 ///
@@ -174,8 +204,8 @@ impl FileWatcher {
 /// target as EventKind::Modify(ModifyKind::Name(_)). These hit the Modify
 /// arm and yield Changed. This is only a hint/wakeup; the definitive
 /// decision (reload vs conflict) always uses metadata observation later.
-fn map_event_to_signal(target: &std::path::Path, event: &notify::Event) -> Option<FileWatchSignal> {
-    if !is_relevant(target, event) {
+fn map_event_to_signal(targets: &[PathBuf], event: &notify::Event) -> Option<FileWatchSignal> {
+    if !targets.iter().any(|target| is_relevant(target, event)) {
         return None;
     }
     match event.kind {

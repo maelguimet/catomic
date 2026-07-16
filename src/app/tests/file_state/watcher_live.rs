@@ -2,14 +2,14 @@
 //!
 //! Purpose: isolated home for live-timing-dependent watcher smokes so that
 //! watcher_* deterministic files stay focused and under line limits.
-//! Owns: the single #[ignore] live_smoke_* test(s).
+//! Owns: ignored live smokes for direct and symlink-referent changes.
 //! Must not: run in default cargo test; add non-ignored tests; change
 //!   behavior or add sleeps in hot paths; assume reliable delivery.
 //! Invariants: marked ignore; uses real (non-teststub) watcher only when
 //!   construction succeeds; bounded waits only; skips cleanly if no watcher.
 //!   This smoke is metadata-only (len+mtime) and subject to same-size/same-mtime
 //!   limitation; CI must never depend on it.
-//! Phase: 2-ae (docs hygiene; behavior unchanged).
+//! Phase: 2-ae through post-v0.1 symlink watch hardening.
 
 use super::super::super::*;
 use super::super::make_key;
@@ -60,4 +60,50 @@ fn live_smoke_watcher_sees_external_change_and_auto_reloads() {
     );
 
     let _ = std::fs::remove_file(&p);
+}
+
+#[cfg(unix)]
+#[test]
+#[ignore = "live OS notify timing smoke for a symlink referent; unreliable on CI"]
+fn live_smoke_watcher_sees_symlink_referent_change() {
+    use std::os::unix::fs::symlink;
+
+    let root =
+        std::env::temp_dir().join(format!("catomic_symlink_watch_live_{}", std::process::id()));
+    let link_dir = root.join("links");
+    let target_dir = root.join("targets");
+    let link = link_dir.join("notes.txt");
+    let target = target_dir.join("real.txt");
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&link_dir).unwrap();
+    std::fs::create_dir_all(&target_dir).unwrap();
+    std::fs::write(&target, "LINKBASE").unwrap();
+    symlink("../targets/real.txt", &link).unwrap();
+
+    let mut app = App::new(Some(link.to_str().unwrap())).unwrap();
+    if app.file_watcher.is_none() {
+        let _ = std::fs::remove_dir_all(&root);
+        eprintln!("skipping symlink live smoke: no watcher in this environment");
+        return;
+    }
+
+    std::fs::write(&target, "LINK-EXTERNAL-CHANGE").unwrap();
+
+    let mut reloaded = false;
+    for _ in 0..40 {
+        let mut out = Vec::new();
+        if crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out).unwrap()
+            && app.buffer.to_string() == "LINK-EXTERNAL-CHANGE"
+        {
+            reloaded = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+
+    assert!(
+        reloaded,
+        "live smoke: referent edit must wake the symlink-backed buffer watcher"
+    );
+    std::fs::remove_dir_all(root).unwrap();
 }

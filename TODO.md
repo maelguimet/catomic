@@ -547,7 +547,7 @@ Document the col model (char index / scalar within line for this subphase; inter
   - Dismiss on Esc
 - Project file discovery (simple "find in dir" for open file); acceptance: [`docs/phase-5-acceptance.md`](docs/phase-5-acceptance.md)
 
-### Phase 6 — LLM (Powerful but Caged)
+### Phase 6 — LLM (Powerful but Caged) ([acceptance](docs/phase-6-acceptance.md), [progress](docs/progress/phase-6-progress.md))
 
 **LLM surface is split by `Capabilities`.** In Plain mode `network_llm` is false and no network client exists. Current-file commands (`:meow`, `:bigmeow`) may only create transient network use after explicit user invocation + confirmation of endpoint/context. Repo-aware / multi-file / broker LLM (`:megameow`, `:gitmeow` etc.) require `repo_llm` (Project only). All construction is gated; nothing network-related for LLM exists in a Plain process until the user forces a confirmed current-file action.
 
@@ -612,6 +612,11 @@ All still respect the Plain/Project rules: Project features are lazy/opt-in and 
 - This prevents "clanker time-travel bugs" (the model proposes edits against a world that no longer exists).
 
 All LLM paths must respect the Measurement / Test Discipline (golden tests for patch application, PTY tests for preview/confirm flow, etc.).
+
+Phase 6 acceptance is complete. The shipped contract is current-buffer edits
+and repo-brokered single-file edits only. `:feralmeow` was a suggested wide
+mode, not an exit requirement, and remains deliberately unimplemented because
+multi-file apply needs a separate safety design.
 
 ### Phase 7 — Config, Hooks & First Extensibility
 
@@ -720,7 +725,11 @@ Update this file as decisions are made or phases complete. Add concrete issues o
 
 ---
 
-**Current status** (2026-06):
+**Current status** (2026-07):
+- Phases 0 through 6 complete; acceptance records are in `docs/`.
+- Phase 6 complete: explicit `:meow`/`:bigmeow`, Project-only
+  `:gitmeow`/`:megameow`, bounded broker context, transient confirmed network,
+  drift-safe preview, and one-step undo are accepted.
 - Phase 1A complete: PieceTable behind Buffer, parity correct, app using it.
 - Phase 1B-a complete:
   - Real LineIndex (in buffer/line_index.rs) with rebuild bridge.

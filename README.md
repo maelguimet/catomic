@@ -209,13 +209,34 @@ enabled.
 
 ## LLM Support
 
-LLM support should be powerful but caged.
+LLM support is explicit, transient, and caged. Open the command prompt with
+`Ctrl+Shift+P`; Catomic shows the exact context extent, model, and endpoint
+before anything can be sent. Enter confirms the network request and Escape
+cancels it without constructing a client.
 
-Possible shortcut:
+Configure any OpenAI-compatible local or remote endpoint lazily in
+`$XDG_CONFIG_HOME/catomic/config.toml` or `~/.config/catomic/config.toml`:
 
-- `Ctrl+Shift+P` opens command palette
-- User chooses an LLM action
-- Catomic sends selected text, current file, or explicit instruction blocks
+```toml
+[llm]
+base_url = "http://127.0.0.1:8080/v1"
+model = "local-model"
+api_key_env = "OPENAI_API_KEY"
+timeout_secs = 120
+```
+
+The API key is read from the named environment variable only after Enter.
+With no configuration, the local endpoint and model shown above are used.
+
+Current-buffer commands work from Plain mode:
+
+- `:meow <instruction>` sends the active selection. With no selection, place
+  the cursor inside an instruction block; its text becomes both instruction
+  and bounded context.
+- `:bigmeow <instruction>` sends the current file. With no command argument,
+  the instruction comes from the block under the cursor.
+- An instruction beginning with `explain` opens a read-only answer instead of
+  an edit preview.
 
 Instruction block format:
 
@@ -229,12 +250,31 @@ Do not edit outside this block unless necessary.
 
 LLM safety rules:
 
-- Prefer diff/patch output over full-file replacement
-- Always preview changes before applying
-- Every LLM edit must be undoable
-- Never send hidden files or unrelated project files by default
-- Local and remote OpenAI-compatible APIs should both work
-- Remote API use should be obvious, not sneaky
+- Context is capped at 64 KiB and 2,000 lines and fails closed rather than
+  truncating silently.
+- Dotfile paths and obvious secret-like lines are called out in the Enter
+  confirmation.
+- Edits must be a validated single-file unified patch. A selected region may
+  instead use the strict `catomic_replacement` JSON envelope.
+- Every edit opens a read-only preview, requires a second Enter to apply, and
+  becomes one undoable buffer transaction. No command writes a file.
+
+Repo-aware commands require explicit Project mode (`:project` or `:code`) and
+a saved active file inside a Git repository:
+
+- `:gitmeow <instruction>` and `:megameow <instruction>` capture bounded Git
+  state and a bounded file map on a cancellable worker, then show a separate
+  send confirmation.
+- The model can make at most eight read-only broker requests: list files, read
+  a bounded file range, grep, or show a file diff. The total broker response
+  budget is 128 KiB; symlinks, unknown paths, oversized files, and path escapes
+  are refused.
+- HEAD, branch, status, tracked diff, and every retrieved file are rechecked
+  after the response and again before preview apply. Drift discards/refuses the
+  proposal.
+
+`:feralmeow` is not implemented. Wide multi-file proposals are deliberately
+outside the Phase 6 single-file safety contract.
 
 ## Plugin System
 

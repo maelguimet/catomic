@@ -45,6 +45,28 @@ Profile before optimizing redraw or buffer access.
 
 Never add full-file scans, full-buffer clones, background work, or network calls to hot paths.
 
+## Phase 6 bounded broker sample (2026-07-16)
+
+Phase 6 adds no LLM work to startup or typing. Current-file context collection
+is explicit and capped at 64 KiB/2,000 lines. Project context preparation is an
+explicit cancellable worker capped at 4,096 files, 65,536 entries, depth 64,
+and a 128 KiB returned-context budget. Network latency is not benchmarked and
+no live endpoint is used.
+
+Warm debug test-process samples on the local acceptance machine:
+
+```text
+/usr/bin/time -f ... cargo test --quiet llm::broker
+4 tests, 0.12 s wall, 58,364 KiB peak RSS
+
+/usr/bin/time -f ... cargo test --quiet llm::repo_task
+1 loopback dialogue test, 0.12 s wall, 58,476 KiB peak RSS
+```
+
+These are observational samples, not latency gates. The relevant invariant is
+that all repository scanning, Git capture, and HTTP work begins only after an
+explicit command and stays off the typing/render path.
+
 ## Phase 2B manual baseline (2026-06-24)
 
 Captured on 2026-06-24 before the 2-aj hygiene/status-foundation changes in that round (open extraction, status line addition, perf harness split), not before all Phase 2B work.

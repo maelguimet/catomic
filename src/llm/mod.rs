@@ -6,7 +6,8 @@
 //! - Network LLM (`network_llm`) must not exist in Plain mode until the user
 //!   explicitly invokes `:meow` / `:bigmeow` **and** confirms endpoint/context.
 //! - Repo context is always brokered (`broker.rs`).
-//! - Every edit must come back as previewable patch.
+//! - Every edit is a validated patch or strict marked-region replacement and
+//!   must pass through a read-only, explicitly confirmed preview.
 
 pub mod broker;
 pub mod broker_protocol;

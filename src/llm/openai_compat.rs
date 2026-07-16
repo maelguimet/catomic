@@ -59,19 +59,15 @@ impl OpenAiCompatClient {
     }
 
     pub async fn complete(&self, system: &str, user: &str) -> Result<String, LlmError> {
+        self.complete_messages(&[ChatMessage::system(system), ChatMessage::user(user)])
+            .await
+    }
+
+    pub async fn complete_messages(&self, messages: &[ChatMessage]) -> Result<String, LlmError> {
         let endpoint = format!("{}/chat/completions", self.config.base_url);
         let request = ChatRequest {
             model: &self.config.model,
-            messages: [
-                Message {
-                    role: "system",
-                    content: system,
-                },
-                Message {
-                    role: "user",
-                    content: user,
-                },
-            ],
+            messages,
         };
         let mut builder = self.client.post(endpoint).json(&request);
         if let Some(key) = self.config.api_key.as_deref() {
@@ -125,13 +121,36 @@ async fn read_bounded(mut response: reqwest::Response) -> Result<Vec<u8>, LlmErr
 #[derive(Serialize)]
 struct ChatRequest<'a> {
     model: &'a str,
-    messages: [Message<'a>; 2],
+    messages: &'a [ChatMessage],
 }
 
-#[derive(Serialize)]
-struct Message<'a> {
+#[derive(Clone, Serialize)]
+pub struct ChatMessage {
     role: &'static str,
-    content: &'a str,
+    content: String,
+}
+
+impl ChatMessage {
+    pub fn system(content: &str) -> Self {
+        Self {
+            role: "system",
+            content: content.to_string(),
+        }
+    }
+
+    pub fn user(content: &str) -> Self {
+        Self {
+            role: "user",
+            content: content.to_string(),
+        }
+    }
+
+    pub fn assistant(content: &str) -> Self {
+        Self {
+            role: "assistant",
+            content: content.to_string(),
+        }
+    }
 }
 
 #[derive(Deserialize)]

@@ -66,7 +66,7 @@ cargo test
 cargo test tests::perf -- --nocapture
 cargo test manual_open_10mib_generated_file_smoke -- --ignored --nocapture
 cargo test manual_open_100mib_generated_file_smoke -- --ignored --nocapture
-cargo test manual_sparse_extreme_refusal_smoke -- --ignored --nocapture
+cargo test manual_sparse_extreme_paged_open_smoke -- --ignored --nocapture
 /usr/bin/time -v <each manual above>
 ```
 (The 10/100 manual tests now also emit finer open-path phase samples:
@@ -88,7 +88,7 @@ PERF sample: label=App::new 100mib bytes=104857601 elapsed_ms=1224
 PERF sample: label=render 100mib bytes=104857601 elapsed_ms=32
 ```
 
-Sparse extreme >1 GiB (set_len, refusal before read):
+Historical sparse Extreme >1 GiB baseline (the refusal policy is superseded by ADR 0005):
 ```
 PERF sample: label=create sparse 1g+ bytes=1073741825 elapsed_ms=0
 PERF sample: label=App::new extreme sparse bytes=1073741825 elapsed_ms=0
@@ -117,7 +117,7 @@ cargo test manual_open_10mib_generated_file_smoke -- --ignored --nocapture
 cargo test manual_open_100mib_generated_file_smoke -- --ignored --nocapture
 cargo test manual_open_10mib_line_heavy_file_smoke -- --ignored --nocapture
 cargo test manual_open_100mib_line_heavy_file_smoke -- --ignored --nocapture
-cargo test manual_sparse_extreme_refusal_smoke -- --ignored --nocapture
+cargo test manual_sparse_extreme_paged_open_smoke -- --ignored --nocapture
 /usr/bin/time -v cargo test manual_open_100mib_generated_file_smoke -- --ignored --nocapture
 /usr/bin/time -v cargo test manual_open_100mib_line_heavy_file_smoke -- --ignored --nocapture
 ```
@@ -330,9 +330,9 @@ Clarifications:
 - The LF-only fast path avoids two unconditional `replace` passes when opened content contains no `\r`; CRLF/CR inputs still normalize to `\n`.
 - App open now moves the owned `read_to_string` buffer into PieceTable for LF-only content, avoiding a large clone in that path.
 - App open now has an explicit content plan from the single initial metadata snapshot: untitled/missing paths open empty, Small/Large present paths full-read into editable PieceTable, and Huge present paths open read-only through LargeFileBuffer.
-- Confirmed Ctrl+R Modified reload reapplies the same size policy: Small/Large read into editable PieceTable, Huge reopens read-only LargeFileBuffer, and Extreme refuses before full content read.
+- Confirmed Ctrl+R Modified reload reapplies the same size policy: Small/Large read into editable PieceTable; Huge/Extreme reopen a configured read-only LargeFileBuffer page.
 - `file::io::read_to_string` is now the single App open/reload full-read helper for editable paths; it reads bytes then moves them into `String` after UTF-8 validation. It remains full materialization.
-- LargeFileBuffer validates UTF-8 and scans line starts/line char counts once, then serves visible render windows with positioned reads on the same descriptor. It records per-line ASCII metadata so ASCII horizontal windows can seek directly by byte offset; it also records sparse scalar-column checkpoints so non-ASCII far-horizontal windows can seek near the requested column and scan forward from there. It avoids full content residency, keeps path replacement from retargeting reads, and fails closed if fd len/mtime changes before ranged reads, but it is not editable lazy storage and still pays an O(file size) open scan.
+- LargeFileBuffer validates UTF-8 and records line/scalar metadata for only the active configured page, then serves visible windows with positioned reads on the same descriptor. ASCII windows seek directly; non-ASCII windows use sparse scalar checkpoints. It avoids full content residency, keeps path replacement from retargeting reads, and fails closed if fd len/mtime changes before ranged reads; a single logical line can still require a correspondingly long page scan.
 - Line-heavy manual smokes use a streamed ASCII fixture with frequent newlines to keep the default suite cheap while measuring LineIndex-heavy open behavior manually.
 - `App::new` remains the end-to-end open measurement for the selected policy (PieceTable for Small/Large, LargeFileBuffer for Huge).
 - After the owned-open change and before newline-search, `PieceTable::from_owned_text` was still the dominant measured subphase. Compared with the pre-optimization baseline, that step improved `App::new` from ~1247 ms to ~620 ms for 100 MiB on this hardware.
@@ -373,7 +373,7 @@ Suggested initial candidates:
 - 100 MiB Huge MaxRSS (full test invocation): target under ~250 MiB (current samples ~106-117 MiB)
 - sparse exact-1-GiB Huge read-only open/App::new: target under ~2500 ms on comparable hardware (current sparse samples ~1231-1269 ms)
 - sparse exact-1-GiB Huge MaxRSS (full test invocation): target under ~100 MiB (current sparse sample ~30 MiB)
-- sparse >1 GiB refusal (Extreme): target near-instant metadata-only refusal (baseline 0 ms elapsed, low MaxRSS ~29 MiB for test process), no content read
+- sparse >1 GiB paged open (Extreme): measure first-page scan latency and bounded metadata residency; the historical refusal baseline is not a current target
 
 All numbers remain advisory. Do not turn these into `#[test]` pass/fail gates in this or the immediate next pass.
 
@@ -390,11 +390,12 @@ All numbers remain advisory. Do not turn these into `#[test]` pass/fail gates in
 
 See TODO.md for the current next-intended pointer into this inventory.
 
-### Current Phase 2B large-file handling (as of post 2-bb)
+### Current Phase 2B large-file handling (as of post 2-bo)
 - Large (>10 MiB <=100 MiB) on open: full read into editable PieceTable; warning message set initially (transient); size_bytes/size_tier recorded in FileState from the single initial metadata snapshot.
-- Huge (>100 MiB <=1 GiB) on open: read-only LargeFileBuffer validates UTF-8, scans line starts/line char counts/ASCII flags plus sparse line checkpoints once, then serves visible render windows with bounded positioned reads from the same descriptor scanned at open. ASCII line windows use direct byte offsets; non-ASCII line windows preserve scalar column semantics by seeking to the nearest prior checkpoint and scanning forward. Descriptor len/mtime is checked before ranged reads so changed same-inode bytes fail closed, and path replacement after open does not retarget reads. Edits and save are disabled with explicit messages.
+- Huge/Extreme (>100 MiB) on open: read-only LargeFileBuffer scans only the configured logical-line page, then serves visible windows through positioned reads from the stable descriptor. Ctrl+PageUp/PageDown rescan adjacent page metadata; descriptor len/mtime drift fails closed.
 - Initial open metadata/snapshot/content-plan is single-capture/derived (see 2-am/2-aq/2-ay). LF-only normalization avoids extra CR-normalization copies for PieceTable opens (2-an), App open moves the owned read buffer into PieceTable for editable opens (2-ao), and LineIndex build uses std string newline search for PieceTable opens (2-ap).
 - After content edit clears transient message for editable Large files, bottom row shows persistent status containing tier + "large-file mode" marker (plus path/dirty + "disk <size>" label). Huge read-only edit/save attempts set explicit read-only messages. The size shown is last-known on-disk metadata (fs::metadata or narrow post-save fallback), not live buffer byte length. No buffer scan or to_string() for status.
-- Extreme (>1 GiB): refused before any content read_to_string (no App constructed, no watcher).
+- Extreme (>1 GiB): uses the same paged read-only policy; byte size alone is not a refusal reason.
 - Status only when no higher-priority message present; messages always fully override.
-- No mmap, no rope rewrite, and no editable lazy storage. Huge read-only mode is a distinct limited storage path, but it still performs a full UTF-8/newline scan on open, preserves raw `\r` bytes instead of PieceTable CRLF normalization, and still relies on metadata rather than a full immutable same-inode snapshot.
+- Whole-file Ctrl+F is explicit and cancellable: it streams bounded chunks from a cloned stable descriptor, preserves cross-chunk matches, and jumps to the matching page. No idle search/index worker exists.
+- No mmap, rope rewrite, or editable paged storage. Paged mode preserves raw `\r` bytes instead of PieceTable CRLF normalization and still relies on metadata rather than a full immutable same-inode snapshot.

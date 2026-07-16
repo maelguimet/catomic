@@ -6,10 +6,9 @@
 //! Must not: run on default `cargo test`; enforce timing thresholds; read 1 GiB dense;
 //!   add committed fixtures or new deps.
 //! Invariants: 10 MiB uses SMALL+1 for editable Large; 100 MiB ASCII uses LARGE+1
-//!   and 100 MiB non-ASCII uses LARGE+2 for read-only Huge limited mode;
-//!   sparse Extreme >HUGE uses set_len only and expects clean skip or refusal before read;
-//!   same test names preserved for TODO command compatibility.
-//! Phase: 2-ai (split scaffold; enhancements for baseline reporting come after split).
+//!   and 100 MiB non-ASCII uses LARGE+2 for read-only Huge paged mode;
+//!   sparse Extreme >HUGE writes only one configured page before sparse extension.
+//! Phase: 2-bp paged-policy manual smoke refresh.
 
 #![cfg(test)]
 
@@ -17,6 +16,7 @@ use super::helpers::{
     cleanup_perf, generate_dense_ascii_file, generate_dense_non_ascii_file, measure_sample,
     print_perf_sample, temp_perf_path, try_generate_sparse_file,
 };
+use std::io::Write;
 
 #[test]
 #[ignore = "manual big-file perf smoke; generates and opens ~10 MiB"]
@@ -207,7 +207,7 @@ fn manual_open_100mib_non_ascii_far_window_smoke() {
         }
     }
 
-    eprintln!("App::new on 100 MiB non-ASCII Huge (read-only limited mode)...");
+    eprintln!("App::new on 100 MiB non-ASCII Huge (read-only paged mode)...");
     let app_res = measure_sample("App::new 100mib-nonascii", Some(size), || {
         crate::app::App::new(Some(&p.to_string_lossy()))
     });
@@ -244,7 +244,7 @@ fn manual_open_100mib_non_ascii_far_window_smoke() {
 }
 
 #[test]
-#[ignore = "manual sparse 1 GiB Huge open smoke; validates read-only limited mode"]
+#[ignore = "manual sparse 1 GiB Huge open smoke; validates read-only paged mode"]
 fn manual_open_1gib_sparse_huge_read_only_smoke() {
     let size = crate::file::size::HUGE_FILE_LIMIT_BYTES;
     let p = temp_perf_path("manual_1gib_sparse_huge.bin");
@@ -266,7 +266,7 @@ fn manual_open_1gib_sparse_huge_read_only_smoke() {
         }
     }
 
-    eprintln!("App::new on sparse 1 GiB Huge (read-only limited mode)...");
+    eprintln!("App::new on sparse 1 GiB Huge (read-only paged mode)...");
     let app_res = measure_sample("App::new 1gib sparse huge", Some(size), || {
         crate::app::App::new(Some(&p.to_string_lossy()))
     });
@@ -317,8 +317,8 @@ fn manual_open_1gib_sparse_huge_read_only_smoke() {
 }
 
 #[test]
-#[ignore = "manual extreme-file guard smoke; sparse >1 GiB, should refuse before read"]
-fn manual_sparse_extreme_refusal_smoke() {
+#[ignore = "manual sparse >1 GiB paged-open smoke; writes only first page"]
+fn manual_sparse_extreme_paged_open_smoke() {
     let size = crate::file::size::HUGE_FILE_LIMIT_BYTES + 1;
     let p = temp_perf_path("manual_extreme_sparse.bin");
     cleanup_perf(&p);
@@ -342,20 +342,27 @@ fn manual_sparse_extreme_refusal_smoke() {
         }
     }
 
-    // Must refuse before content read (we wrote zero bytes).
-    eprintln!("App::new on sparse extreme (should refuse fast)...");
-    let (res, app_sample) = measure_sample("App::new extreme sparse", Some(size), || {
+    let page_lines = crate::config::big_files::DEFAULT_PAGE_LINES;
+    let mut file = std::fs::OpenOptions::new().write(true).open(&p).unwrap();
+    file.write_all(&vec![b'\n'; page_lines]).unwrap();
+    file.sync_all().unwrap();
+    drop(file);
+
+    eprintln!("App::new on sparse extreme (first configured page only)...");
+    let (app, app_sample) = measure_sample("App::new extreme sparse paged", Some(size), || {
         crate::app::App::new(Some(&p.to_string_lossy()))
     });
     print_perf_sample(&app_sample);
-    assert!(res.is_err(), "Extreme must refuse");
-    let estr = format!("{}", res.err().unwrap());
-    assert!(
-        estr.contains("File too large to open safely"),
-        "refusal must contain canonical text, got: {}",
-        estr
+    let app = app.expect("Extreme should open in paged mode");
+    assert_eq!(
+        app.file.size_tier,
+        Some(crate::file::size::FileSizeTier::Extreme)
     );
+    assert!(app.buffer.is_read_only());
+    assert_eq!(app.buffer.line_count(), page_lines);
+    assert!(app.buffer.page_info().unwrap().has_next);
+    assert!(app.message.as_deref().unwrap_or("").contains("paged mode"));
 
     cleanup_perf(&p);
-    eprintln!("manual sparse extreme refusal smoke complete");
+    eprintln!("manual sparse extreme paged-open smoke complete");
 }

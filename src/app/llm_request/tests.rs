@@ -87,6 +87,98 @@ fn confirmed_loopback_response_enters_preview_then_applies_on_second_enter() {
 }
 
 #[test]
+fn current_file_patch_for_another_path_is_refused_before_preview() {
+    let patch = "--- a/other.txt\n+++ b/other.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n";
+    let (settings, server) = response_server(patch);
+    let mut app = super::super::App::new(None).unwrap();
+    app.buffer = Box::new(PieceTable::from_text("one\ntwo\n"));
+    app.file.path = Some("note.txt".into());
+    let original = app.buffer.to_string();
+    let mut out = Vec::new();
+    begin_with_settings(
+        &mut app,
+        &mut out,
+        CurrentLlmCommand::BigMeow,
+        "refactor",
+        settings,
+    )
+    .unwrap();
+
+    handle_key(&mut app, &mut out, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+    poll_until_done(&mut app, &mut out);
+    server.join().unwrap();
+
+    assert!(app.llm_preview.is_none());
+    assert_eq!(app.buffer.to_string(), original);
+    assert!(app
+        .message
+        .as_deref()
+        .unwrap()
+        .contains("Invalid LLM patch"));
+}
+
+#[test]
+fn path_change_before_confirmation_cancels_without_connecting() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let settings = settings(format!("http://{}/v1", listener.local_addr().unwrap()));
+    let mut app = super::super::App::new(None).unwrap();
+    app.buffer = Box::new(PieceTable::from_text("one\ntwo\n"));
+    let mut out = Vec::new();
+    begin_with_settings(
+        &mut app,
+        &mut out,
+        CurrentLlmCommand::BigMeow,
+        "refactor",
+        settings,
+    )
+    .unwrap();
+
+    app.file.path = Some("saved-later.txt".into());
+    handle_key(&mut app, &mut out, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+
+    assert!(app.pending_llm_request.is_none());
+    assert!(app.llm_task.is_none());
+    assert!(listener.accept().is_err());
+    assert!(app
+        .message
+        .as_deref()
+        .unwrap()
+        .contains("path changed before confirmation"));
+}
+
+#[test]
+fn path_change_while_model_works_discards_response() {
+    let (settings, server) = patch_server();
+    let mut app = super::super::App::new(None).unwrap();
+    app.buffer = Box::new(PieceTable::from_text("one\ntwo\n"));
+    app.file.path = Some("note.txt".into());
+    let original = app.buffer.to_string();
+    let mut out = Vec::new();
+    begin_with_settings(
+        &mut app,
+        &mut out,
+        CurrentLlmCommand::BigMeow,
+        "refactor",
+        settings,
+    )
+    .unwrap();
+
+    handle_key(&mut app, &mut out, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+    app.file.path = Some("renamed.txt".into());
+    poll_until_done(&mut app, &mut out);
+    server.join().unwrap();
+
+    assert!(app.llm_preview.is_none());
+    assert_eq!(app.buffer.to_string(), original);
+    assert!(app
+        .message
+        .as_deref()
+        .unwrap()
+        .contains("path changed while the model was working"));
+}
+
+#[test]
 fn confirmed_marked_region_response_previews_then_replaces_only_selection() {
     let (settings, server) = response_server(r#"{"catomic_replacement":"TWO"}"#);
     let mut app = super::super::App::new(None).unwrap();

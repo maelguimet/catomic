@@ -71,6 +71,25 @@ fn confirmation_refuses_source_drift_after_preview() {
 }
 
 #[test]
+fn confirmation_refuses_active_path_drift_after_preview() {
+    let mut app = super::super::App::new(None).unwrap();
+    app.buffer = Box::new(PieceTable::from_text("one\ntwo\n"));
+    let mut out = Vec::new();
+
+    show(&mut app, &mut out, patch()).unwrap();
+    app.file.path = Some("other.txt".into());
+    handle_key(&mut app, &mut out, key(KeyCode::Enter)).unwrap();
+
+    assert!(!is_viewing(&app));
+    assert_eq!(app.buffer.to_string(), "one\ntwo\n");
+    assert!(app
+        .message
+        .as_deref()
+        .unwrap()
+        .contains("Active file path changed"));
+}
+
+#[test]
 fn plain_start_has_no_preview_or_network_component() {
     let app = super::super::App::new(None).unwrap();
     assert!(app.llm_preview.is_none());
@@ -94,6 +113,7 @@ fn marked_region_replacement_previews_then_applies_as_one_undo_step() {
         &mut app,
         &mut out,
         r#"{"catomic_replacement":"TWO"}"#,
+        None,
         Some(target),
     )
     .unwrap();
@@ -119,7 +139,14 @@ fn arbitrary_prose_is_not_treated_as_a_marked_region_replacement() {
     );
     let mut out = Vec::new();
 
-    show_with_region_fallback(&mut app, &mut out, "Replace it with TWO.", Some(target)).unwrap();
+    show_with_region_fallback(
+        &mut app,
+        &mut out,
+        "Replace it with TWO.",
+        None,
+        Some(target),
+    )
+    .unwrap();
 
     assert!(!is_viewing(&app));
     assert_eq!(app.buffer.to_string(), "one");

@@ -38,6 +38,8 @@ and per-file diff. No command writes or runs a process other than read-only Git.
   Enter confirmation naming endpoint, model, and context extent.
 - Plain mode must not gain background network or repo LLM machinery.
 - All patches go through `llm/patch.rs` and the read-only preview path.
+- Current-buffer requests pin the active path through confirmation and response;
+  path drift discards the request/output and patch headers must match that path.
 - Repo patch headers must name the exact active repo-relative file; patches for
   another file and rename-shaped patches fail before preview.
 - Tests use loopback fake HTTP only; never test against a live endpoint.

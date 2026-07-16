@@ -254,8 +254,9 @@ LLM safety rules:
   truncating silently.
 - Dotfile paths and obvious secret-like lines are called out in the Enter
   confirmation.
-- Edits must be a validated single-file unified patch. A selected region may
-  instead use the strict `catomic_replacement` JSON envelope.
+- Edits must be a validated single-file unified patch whose headers name the
+  confirmed active path. A selected region may instead use the strict
+  `catomic_replacement` JSON envelope.
 - Every edit opens a read-only preview, requires a second Enter to apply, and
   becomes one undoable buffer transaction. No command writes a file.
 

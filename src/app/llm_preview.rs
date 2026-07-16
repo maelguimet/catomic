@@ -11,6 +11,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::buffer::{Buffer, Cursor, PieceTable};
 use crate::llm::broker::ContextBroker;
 
+mod confirm;
 mod proposal;
 mod repo;
 
@@ -22,6 +23,7 @@ pub(crate) struct PatchPreview {
     proposal: Proposal,
     proposed_text: String,
     source_snapshot: String,
+    source_path: Option<std::path::PathBuf>,
     repo_guard: Option<ContextBroker>,
     buffer: PieceTable,
     source_scroll_top: usize,
@@ -60,10 +62,15 @@ pub(crate) fn show_with_region_fallback(
     app: &mut super::App,
     out: &mut dyn Write,
     output: &str,
+    expected_path: Option<&str>,
     target: Option<RegionTarget>,
 ) -> io::Result<()> {
     let source_snapshot = app.buffer.to_string();
-    if let Ok((proposal, proposed_text)) = proposal::build_patch(&source_snapshot, output) {
+    let patch = match expected_path {
+        Some(path) => proposal::build_patch_for_path(&source_snapshot, output, path),
+        None => proposal::build_patch(&source_snapshot, output),
+    };
+    if let Ok((proposal, proposed_text)) = patch {
         return open(
             app,
             out,
@@ -120,6 +127,7 @@ fn open(
         proposal,
         proposed_text,
         source_snapshot,
+        source_path: app.file.path.clone(),
         repo_guard,
         buffer: PieceTable::from_text(preview_text),
         source_scroll_top: app.screen.scroll_top,
@@ -141,7 +149,7 @@ pub(crate) fn handle_key(
         return Ok(false);
     }
     match key.code {
-        KeyCode::Enter => confirm(app, out)?,
+        KeyCode::Enter => confirm::apply(app, out)?,
         KeyCode::Esc => cancel(app, out)?,
         KeyCode::Left => move_cursor(app, Move::Left),
         KeyCode::Right => move_cursor(app, Move::Right),
@@ -190,52 +198,6 @@ pub(crate) fn close(app: &mut super::App) -> bool {
     } else {
         false
     }
-}
-
-fn confirm(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
-    let preview = app.llm_preview.take().expect("preview active");
-    app.screen.scroll_top = preview.source_scroll_top;
-    app.screen.scroll_left = preview.source_scroll_left;
-    let current = app.buffer.to_string();
-    if let Some(guard) = preview.repo_guard.as_ref() {
-        match guard.is_unchanged() {
-            Ok(true) => {}
-            Ok(false) => {
-                app.message = Some(
-                    "Repository changed since the request; repo LLM patch was not applied."
-                        .to_string(),
-                );
-                app.reveal_cursor();
-                return app.render(out);
-            }
-            Err(error) => {
-                app.message = Some(format!(
-                    "Could not recheck repository; patch refused: {error}"
-                ));
-                app.reveal_cursor();
-                return app.render(out);
-            }
-        }
-    }
-    if current != preview.source_snapshot {
-        app.message =
-            Some("Source changed since preview; LLM proposal was not applied.".to_string());
-        app.reveal_cursor();
-        return app.render(out);
-    }
-    let changed = preview
-        .proposal
-        .apply(&mut *app.buffer, &current, &preview.proposed_text)?;
-    if !changed {
-        app.message = Some("LLM proposal makes no applicable change.".to_string());
-        app.reveal_cursor();
-        return app.render(out);
-    }
-    super::input::finish_content_edit_with_message(
-        app,
-        out,
-        Some("LLM proposal applied; Ctrl+Z undoes it.".to_string()),
-    )
 }
 
 fn cancel(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {

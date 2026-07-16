@@ -5,18 +5,20 @@
 //! Phase: 6 (LLM, Powerful but Caged).
 
 use std::io::{self, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::config::llm::LlmSettings;
 use crate::llm::context::{self, RequestDraft};
 use crate::llm::openai_compat::LlmConfig;
-use crate::llm::task::{LlmTask, LlmTaskResult};
+use crate::llm::task::LlmTask;
 
 mod prompt;
+mod result;
 
 use prompt::{confirmation_message, display_path, system_prompt, user_prompt, RequestPurpose};
+pub(crate) use result::poll;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CurrentLlmCommand {
@@ -29,6 +31,7 @@ pub(crate) struct PendingLlmRequest {
     settings: LlmSettings,
     source_snapshot: String,
     path: String,
+    file_path: Option<PathBuf>,
     replacement_target: Option<super::llm_preview::RegionTarget>,
     purpose: RequestPurpose,
 }
@@ -36,6 +39,8 @@ pub(crate) struct PendingLlmRequest {
 pub(crate) struct RunningLlmRequest {
     task: LlmTask,
     source_snapshot: String,
+    path: String,
+    file_path: Option<PathBuf>,
     replacement_target: Option<super::llm_preview::RegionTarget>,
     purpose: RequestPurpose,
 }
@@ -80,7 +85,8 @@ fn begin_with_settings(
             return app.render(out);
         }
     };
-    let path = display_path(app.file.path.as_deref());
+    let file_path = app.file.path.clone();
+    let path = display_path(file_path.as_deref());
     let replacement_target = replacement_target(app, &draft);
     let purpose = prompt::purpose(&draft);
     app.message = Some(confirmation_message(&draft, &settings));
@@ -89,6 +95,7 @@ fn begin_with_settings(
         settings,
         source_snapshot,
         path,
+        file_path,
         replacement_target,
         purpose,
     });
@@ -132,46 +139,6 @@ pub(crate) fn handle_paste(app: &mut super::App, out: &mut dyn Write) -> io::Res
     Ok(true)
 }
 
-pub(crate) fn poll(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
-    let result = app
-        .llm_task
-        .as_mut()
-        .and_then(|running| running.task.try_result());
-    let Some(result) = result else {
-        return Ok(());
-    };
-    let running = app.llm_task.take().expect("completed task exists");
-    match result {
-        LlmTaskResult::Finished(output) => {
-            if app.buffer.to_string() != running.source_snapshot {
-                app.message = Some(
-                    "Buffer changed while the model was working; response was not previewed."
-                        .to_string(),
-                );
-                app.render(out)
-            } else {
-                match running.purpose {
-                    RequestPurpose::Edit => super::llm_preview::show_with_region_fallback(
-                        app,
-                        out,
-                        &output,
-                        running.replacement_target,
-                    ),
-                    RequestPurpose::Explain => super::llm_answer::show(app, out, &output),
-                }
-            }
-        }
-        LlmTaskResult::Cancelled => {
-            app.message = Some("LLM request cancelled.".to_string());
-            app.render(out)
-        }
-        LlmTaskResult::Error(error) => {
-            app.message = Some(format!("LLM request failed: {error}"));
-            app.render(out)
-        }
-    }
-}
-
 pub(crate) fn cancel_all(app: &mut super::App) -> bool {
     let pending = app.pending_llm_request.take().is_some();
     let running = app.llm_task.take().is_some();
@@ -183,6 +150,12 @@ fn confirm(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     if app.buffer.to_string() != pending.source_snapshot {
         app.message =
             Some("Buffer changed before confirmation; LLM request cancelled.".to_string());
+        return app.render(out);
+    }
+    if app.file.path != pending.file_path {
+        app.message = Some(
+            "Active file path changed before confirmation; LLM request cancelled.".to_string(),
+        );
         return app.render(out);
     }
     let api_key = std::env::var(&pending.settings.api_key_env)
@@ -207,6 +180,8 @@ fn confirm(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
             app.llm_task = Some(RunningLlmRequest {
                 task,
                 source_snapshot: pending.source_snapshot,
+                path: pending.path,
+                file_path: pending.file_path,
                 replacement_target: pending.replacement_target,
                 purpose: pending.purpose,
             });

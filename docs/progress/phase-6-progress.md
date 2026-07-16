@@ -12,17 +12,17 @@ Phase 6 is complete. Its exit evidence is in
   current-thread runtime/client created only after Enter confirmation. Tests
   use loopback fake HTTP and never a live model.
 - **Safe output**: strict single-file unified patches, exact active repo-path
-  validation, rename refusal, a strict marked-region replacement envelope,
-  read-only explanation results, and fail-closed parsing.
+  and current-buffer path validation, rename refusal, a strict marked-region
+  replacement envelope, read-only explanation results, and fail-closed parsing.
 - **Preview lifecycle**: source remains unchanged through response and preview;
   Enter applies one buffer transaction, Escape cancels, and undo restores the
   exact source.
 - **Repository broker**: Project-only Git capture, bounded file discovery,
   128 KiB consumable context budget, and read-only list/range/grep/diff commands
   across at most eight model broker rounds.
-- **Time-travel guard**: HEAD, branch, status, tracked diff, active buffer, and
-  every retrieved file are checked before sending, after the response, and
-  before applying the preview.
+- **Time-travel guard**: HEAD, branch, status, tracked diff, active buffer path
+  and text, and every retrieved file are checked before sending, after the
+  response, and before applying the preview.
 - **Terminal acceptance**: the real PTY reaches a `:meow` endpoint/context
   confirmation using isolated config, cancels with Escape, makes no request,
   and leaves the file exact.

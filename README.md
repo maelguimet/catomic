@@ -44,8 +44,12 @@ Enter or Down moves forward, Up moves backward, and Escape closes search. The
 same navigation wraps across oversized paged files without loading them whole.
 
 `Ctrl+G` opens a cancellable 1-based goto-line prompt across ordinary and paged
-files. `Ctrl+Shift+P` opens the first command prompt, with `goto N`,
-`save`/`write`, and `quit`/`q`.
+files. `Ctrl+Shift+S` opens Save As; enter a filename such as `hello.txt`, a
+relative or absolute path, or a home-relative path such as `~/notes/hello.txt`.
+An existing destination requires submitting the same path again before Catomic
+overwrites it. `Ctrl+S` opens this prompt automatically for an untitled buffer.
+`Ctrl+Shift+P` opens the command prompt, with `goto N`,
+`save`/`write`, `save as PATH`, and `quit`/`q`.
 
 Hold Shift with the arrow keys to select text, or use `Ctrl+A` for the active
 buffer/page. `Ctrl+C`, `Ctrl+X`, and `Ctrl+V` copy, cut, and paste through an
@@ -277,11 +281,12 @@ save, quit, undo, completion, or view logic:
 ```toml
 [keybindings]
 "ctrl+w" = "save"
+"alt+s" = "save-as"
 "alt+f" = "search"
 "ctrl+shift+g" = "command-prompt"
 ```
 
-Supported actions are `save`, `quit`, `reload`, `search`, `goto-line`,
+Supported actions are `save`, `save-as`, `quit`, `reload`, `search`, `goto-line`,
 `command-prompt`, `undo`, `redo`, `complete`, `next-buffer`, `previous-buffer`,
 `next-page`, `previous-page`, `markdown-preview`, `line-numbers`, and
 `whitespace`. Chords use `ctrl`, `alt`, and `shift` plus a character, navigation

@@ -1,8 +1,8 @@
-//! Purpose: provide the Phase 3 goto-line and minimal command prompts.
+//! Purpose: provide goto-line, command, and Save As prompts.
 //! Owns: prompt text editing, parsing, and dispatch to existing safe App actions.
 //! Must not: access buffer internals, bypass save/quit guards, spawn services, or network.
 //! Invariants: lines are user-facing 1-based; invalid commands do not mutate editor state.
-//! Phase: 3-c goto line and basic command surface.
+//! Phase: 3-c command surface, extended for explicit Save As.
 
 use std::io::{self, Write};
 
@@ -30,6 +30,7 @@ struct ActivePrompt {
 enum PromptKind {
     GotoLine,
     Command,
+    SaveAs,
 }
 
 pub(crate) fn open_goto_prompt(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
@@ -38,6 +39,10 @@ pub(crate) fn open_goto_prompt(app: &mut super::App, out: &mut dyn Write) -> io:
 
 pub(crate) fn open_command_prompt(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     open_prompt(app, out, PromptKind::Command)
+}
+
+pub(crate) fn open_save_as_prompt(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    open_prompt(app, out, PromptKind::SaveAs)
 }
 
 pub(super) fn is_active(app: &super::App) -> bool {
@@ -101,6 +106,7 @@ fn update_message(app: &mut super::App) {
     let label = match prompt.kind {
         PromptKind::GotoLine => "Goto line",
         PromptKind::Command => "Command",
+        PromptKind::SaveAs => "Save as",
     };
     app.message = Some(format!("{label}: {}", prompt.text));
 }
@@ -114,6 +120,7 @@ fn submit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     match prompt.kind {
         PromptKind::GotoLine => execute_goto(app, out, &prompt.text),
         PromptKind::Command => execute_command(app, out, prompt.text.trim()),
+        PromptKind::SaveAs => super::save::handle_save_as(app, out, &prompt.text),
     }
 }
 
@@ -124,6 +131,15 @@ fn execute_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> 
     match (name, argument) {
         ("goto" | "line", line) if !line.is_empty() => execute_goto(app, out, line),
         ("save" | "write" | "w", "") => super::save::handle_save(app, out),
+        ("save" | "write" | "w", "as") | ("saveas" | "save-as", "") => {
+            open_save_as_prompt(app, out)
+        }
+        ("save" | "write" | "w", argument) if argument.starts_with("as ") => {
+            super::save::handle_save_as(app, out, argument[3..].trim())
+        }
+        ("saveas" | "save-as", path) if !path.is_empty() => {
+            super::save::handle_save_as(app, out, path)
+        }
         ("quit" | "q", "") => super::input::handle_quit(app, out),
         ("project" | "code", "") => super::project_mode::switch_to_project(app, out),
         ("plain" | "text", "") => super::project_mode::switch_to_plain(app, out),

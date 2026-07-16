@@ -119,6 +119,17 @@ pub(crate) fn handle_key_with(
             handle_quit(app, out)?;
         }
 
+        // Save As (Ctrl+Shift+S) opens a dedicated path prompt.
+        KeyEvent {
+            code: KeyCode::Char('s' | 'S'),
+            modifiers,
+            ..
+        } if modifiers.contains(KeyModifiers::CONTROL)
+            && modifiers.contains(KeyModifiers::SHIFT) =>
+        {
+            command_prompt::open_save_as_prompt(app, out)?;
+        }
+
         // Save (Ctrl+S) -- thin arm; real logic + guard lives in save module
         // (extracted Phase 2-o to keep this file focused). Semantics unchanged.
         KeyEvent {

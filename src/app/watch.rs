@@ -18,7 +18,7 @@
 //!
 //! The only sites that set app.file.path are:
 //! - App::new (initial_path or None)
-//! - save.rs do_atomic_save on first successful Ctrl+S from untitled (None -> "untitled.txt")
+//! - save.rs after a successful first save or Save As path change
 //!
 //! Callers of refresh after a successful path state change keep the watcher in sync.
 //! Future path transitions must also refresh/clear via this helper.

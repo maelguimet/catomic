@@ -14,10 +14,7 @@ use crossterm::event::{KeyCode, KeyModifiers};
 // No watcher, no reload, detection at save time only.
 
 #[test]
-fn app_file_state_no_path_untitled_save_works_without_conflict_check() {
-    // Untitled (no remembered path) must take NoPath path and save normally to untitled.txt
-    // without performing a conflict check or setting pending conflict.
-    // We cleanup the side-effect file to keep repo cwd pristine.
+fn app_file_state_no_path_ctrl_s_opens_save_as_without_writing() {
     let mut app = App::new(None).unwrap();
     assert!(app.file.path.is_none());
     assert_eq!(
@@ -32,17 +29,10 @@ fn app_file_state_no_path_untitled_save_works_without_conflict_check() {
 
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(
-        !app.file.dirty,
-        "untitled first save must succeed without conflict guard"
-    );
+    assert!(app.file.dirty);
     assert!(app.pending_save_conflict.is_none());
-    assert!(app.message.is_none());
-    // path now remembered (even if we defaulted the name)
-    assert!(app.file.path.is_some());
-
-    // Best-effort cleanup of the default untitled name (test cwd is repo root).
-    let _ = std::fs::remove_file("untitled.txt");
+    assert_eq!(app.message.as_deref(), Some("Save as: "));
+    assert!(app.file.path.is_none());
 }
 
 #[test]

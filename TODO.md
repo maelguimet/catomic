@@ -772,7 +772,7 @@ Update this file as decisions are made or phases complete. Add concrete issues o
 - Phase 2-a (foundation) complete:
   - atomic_write_string helper: same-dir temp, create_new, full write+flush+sync_all, rename, best-effort parent dir fsync on Unix; existing Unix mode bits are preserved and temp files are cleaned up on error.
   - FileState { path: Option<PathBuf>, dirty: bool } replaces raw Option<String>.
-  - App saves exclusively through atomic_write_string (Ctrl+S); remembers untitled.txt when needed.
+  - App saves through the atomic path; untitled Ctrl+S opens Save As for an explicit target.
   - Dirty=false after open (existing or missing-file); =true on insert/newline/delete/undo/redo keys; =false after successful save.
   - No dirty on movement/render.
   - Dirty flag is conservative (Phase 2-a historical); exact save-point token tracking landed in Phase 2-j (see below).

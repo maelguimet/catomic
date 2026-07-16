@@ -1,17 +1,13 @@
-//! Save action and conflict guard logic (Phase 2-n extracted in 2-o for size).
-//!
-//! Purpose: owns the atomic save sequencing and the Ctrl+S conflict guard
-//! decision/message construction so src/app/mod.rs stays focused and <500 lines.
-//! Owns: handle_save (status vs pending decision), do_atomic_save (write+mark+snapshot+clear),
-//!        save_conflict_message.
-//! Must not: contain the key match arm (kept thin in mod.rs), event loop, viewport,
-//!           non-save state, or change any semantics.
-//! Invariants: exact same observable behavior and messages as inlined 2-n code;
-//!             no new public API on App; submodules use narrow visibility.
-//! Phase: 2-o narrow cleanup (no behavior change).
+//! Purpose: own atomic save sequencing, Save As paths, and overwrite guards.
+//! Owns: normal/Save As decisions, tilde expansion, atomic writes, and path reassignment.
+//! Must not: decode keys, run the event loop, mutate buffer text, or write non-save files.
+//! Invariants: writes are atomic; destination conflicts require confirmation; App's path
+//!             and watcher change only after a successful write.
+//! Phase: 6 explicit file-write lifecycle.
 
+use std::ffi::OsStr;
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::file;
 use crate::file::io::{ExternalFileStatus, FileSnapshot};
@@ -55,6 +51,10 @@ pub(crate) fn save_conflict_message(status: &ExternalFileStatus) -> String {
 /// Phase 2-p: decision uses ExternalFileObservation (status + live snapshot) so that
 /// a pending confirmation is bound to the specific disk state seen on first refusal.
 pub(crate) fn handle_save(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    if app.file.path.is_none() {
+        app.pending_save_conflict = None;
+        return super::command_prompt::open_save_as_prompt(app, out);
+    }
     if app.buffer.is_read_only() {
         app.pending_save_conflict = None;
         app.message = Some("Large file is read-only in paged mode; save disabled.".to_string());
@@ -111,25 +111,130 @@ pub(crate) fn handle_save(app: &mut super::App, out: &mut dyn Write) -> io::Resu
     }
 }
 
+/// Save the active buffer under an explicitly requested path. Relative paths are
+/// resolved by the OS from Catomic's launch directory; `~` and `~/...` use HOME.
+/// A different existing destination requires the same concrete target to be
+/// submitted twice, and the remembered path changes only after a successful write.
+pub(crate) fn handle_save_as(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    input: &str,
+) -> io::Result<()> {
+    let target = match expand_save_path(input, std::env::var_os("HOME").as_deref()) {
+        Ok(path) => path,
+        Err(error) => {
+            app.message = Some(format!("Save As error: {error}"));
+            return app.render(out);
+        }
+    };
+    if app.buffer.is_read_only() {
+        app.pending_save_conflict = None;
+        app.message = Some("Large file is read-only in paged mode; save disabled.".to_string());
+        return app.render(out);
+    }
+    if app
+        .file
+        .path
+        .as_deref()
+        .is_some_and(|current| paths_refer_to_same_file(current, &target))
+    {
+        return handle_save(app, out);
+    }
+
+    let absent_baseline = FileSnapshot::Absent;
+    let obs = crate::file::io::observe_external_file(Some(&target), Some(&absent_baseline));
+    if obs.status == ExternalFileStatus::Unchanged {
+        app.pending_save_conflict = None;
+        return do_atomic_save_to(app, out, target);
+    }
+
+    let should_force = app.pending_save_conflict.as_ref().is_some_and(|pending| {
+        pending.path == target
+            && pending.status == obs.status
+            && pending.snapshot == obs.live_snapshot
+    });
+    if should_force {
+        return do_atomic_save_to(app, out, target);
+    }
+
+    app.pending_save_conflict = Some(PendingSaveConflict {
+        path: target,
+        status: obs.status.clone(),
+        snapshot: obs.live_snapshot,
+    });
+    app.message = Some(match obs.status {
+        ExternalFileStatus::Modified => {
+            "Save As target already exists. Submit the same path again to overwrite.".to_string()
+        }
+        ExternalFileStatus::Unknown(error) => format!(
+            "Save As target could not be checked ({error:?}). Submit the same path again to overwrite."
+        ),
+        ExternalFileStatus::Deleted => {
+            "Save As target changed while checking. Submit the same path again to retry.".to_string()
+        }
+        ExternalFileStatus::NoPath | ExternalFileStatus::Unchanged => unreachable!(),
+    });
+    app.render(out)
+}
+
+pub(crate) fn expand_save_path(input: &str, home: Option<&OsStr>) -> io::Result<PathBuf> {
+    let input = input.trim();
+    if input.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "path cannot be empty",
+        ));
+    }
+    if input == "~" {
+        return home.map(PathBuf::from).ok_or_else(missing_home_error);
+    }
+    if let Some(rest) = input.strip_prefix("~/") {
+        return home
+            .map(|home| PathBuf::from(home).join(rest.trim_start_matches('/')))
+            .ok_or_else(missing_home_error);
+    }
+    if input.starts_with('~') {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "only ~ and ~/ paths are supported",
+        ));
+    }
+    Ok(PathBuf::from(input))
+}
+
+fn missing_home_error() -> io::Error {
+    io::Error::new(io::ErrorKind::NotFound, "HOME is not set")
+}
+
+fn paths_refer_to_same_file(current: &Path, target: &Path) -> bool {
+    current == target
+        || std::fs::canonicalize(current)
+            .and_then(|current| std::fs::canonicalize(target).map(|target| current == target))
+            .unwrap_or(false)
+}
+
 /// Factor of the atomic write + post-success bookkeeping (used for both normal
 /// and force-save). Extracted here; identical side effects on FileState, snapshot,
 /// pendings, message, and dirty as before.
 pub(crate) fn do_atomic_save(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
-    super::recovery::finish_before_save(app);
     let target = app
         .file
         .path
         .clone()
         .unwrap_or_else(|| PathBuf::from("untitled.txt"));
+    do_atomic_save_to(app, out, target)
+}
+
+fn do_atomic_save_to(app: &mut super::App, out: &mut dyn Write, target: PathBuf) -> io::Result<()> {
+    super::recovery::finish_before_save(app);
+    let path_changed = app.file.path.as_ref() != Some(&target);
     let save_result = file::io::atomic_write_with(&target, |writer| app.buffer.write_to(writer));
     match save_result {
         Ok(written_len) => {
-            if app.file.path.is_none() {
+            if path_changed {
                 app.file.path = Some(target.clone());
-                // Successful first save created the path (None -> "untitled.txt" or named).
-                // Refresh watcher lifecycle so App owns a watcher for the new path.
-                // Only on success; errors do not assign or refresh.
-                // (See: the only other site that sets file.path is App::new.)
+                // Refresh only after the write succeeds, so failed Save As keeps
+                // both the prior path and watcher association intact.
                 super::watch::refresh_file_watcher(app);
             }
             super::file_state::mark_saved(&mut app.file, &*app.buffer);

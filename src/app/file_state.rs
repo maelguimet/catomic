@@ -17,7 +17,7 @@ use crate::file::io::FileSnapshot;
 use crate::file::size::FileSizeTier;
 
 /// Minimal explicit file state (Phase 2-a / 2-j / 2B size metadata).
-/// path: target for save (None until first save picks "untitled.txt").
+/// path: target for save (None until first save or Save As succeeds).
 /// dirty: true if current edit_history_position() != saved_history_position.
 /// saved_history_position: token from buffer at last successful open/save.
 /// disk_snapshot: captured metadata identity at last open or successful save.

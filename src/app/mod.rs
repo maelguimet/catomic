@@ -86,7 +86,7 @@ pub struct App {
     /// Watcher signals are consumed only by the runtime loop via watch::check_file_watcher_once
     /// (once per iteration, as hints only). Fresh observations auto-reload clean
     /// buffers when configured; dirty buffers retain confirmation.
-    /// Lifecycle is refreshed only after successful path-state changes (new + save-none->path).
+    /// Lifecycle is refreshed only after successful path-state changes (open/first save/Save As).
     pub file_watcher: Option<file::watcher::FileWatcher>,
     /// Whether we should exit the loop.
     pub should_quit: bool,

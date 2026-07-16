@@ -6,6 +6,7 @@
 
 use super::*;
 use crossterm::event::{KeyEventKind, KeyEventState};
+use std::path::Path;
 
 fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
     KeyEvent {
@@ -111,6 +112,136 @@ fn command_prompt_dispatches_configured_external_command() {
         .unwrap();
 
     assert!(super::super::external_command::is_running(&app));
+}
+
+#[test]
+fn ctrl_shift_s_saves_to_a_relative_filename() {
+    let filename = format!("catomic_save_as_relative_{}.txt", std::process::id());
+    let path = Path::new(&filename);
+    let _ = std::fs::remove_file(path);
+    let mut app = super::super::App::new(None).unwrap();
+    let mut out = Vec::new();
+    app.handle_key_with(&mut out, key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
+
+    app.handle_key_with(
+        &mut out,
+        key(
+            KeyCode::Char('s'),
+            KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+        ),
+    )
+    .unwrap();
+    type_text(&mut app, &mut out, &filename);
+    app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
+        .unwrap();
+
+    assert_eq!(app.file.path.as_deref(), Some(path));
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "x");
+    assert!(!app.file.dirty);
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn command_prompt_accepts_save_as_with_a_path() {
+    let path = std::env::temp_dir().join(format!(
+        "catomic_command_save_as_{}.txt",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    let mut app = super::super::App::new(None).unwrap();
+    let mut out = Vec::new();
+    app.handle_key_with(&mut out, key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
+
+    open_command_prompt(&mut app, &mut out).unwrap();
+    type_text(&mut app, &mut out, &format!("save as {}", path.display()));
+    app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
+        .unwrap();
+
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "x");
+    assert_eq!(app.file.path.as_deref(), Some(path.as_path()));
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn save_as_expands_tilde_from_the_supplied_home() {
+    let home = std::ffi::OsStr::new("/tmp/catomic-home");
+
+    assert_eq!(
+        super::super::save::expand_save_path("~/notes/hello.txt", Some(home)).unwrap(),
+        Path::new("/tmp/catomic-home/notes/hello.txt")
+    );
+    assert_eq!(
+        super::super::save::expand_save_path("hello.txt", Some(home)).unwrap(),
+        Path::new("hello.txt")
+    );
+}
+
+#[test]
+fn save_as_existing_target_requires_a_second_confirmation() {
+    let path = std::env::temp_dir().join(format!(
+        "catomic_save_as_existing_{}.txt",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, "existing").unwrap();
+    let mut app = super::super::App::new(None).unwrap();
+    let mut out = Vec::new();
+    app.handle_key_with(&mut out, key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
+
+    open_save_as_prompt(&mut app, &mut out).unwrap();
+    type_text(&mut app, &mut out, path.to_str().unwrap());
+    app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
+        .unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "existing");
+    assert!(app.file.path.is_none());
+    assert!(app
+        .message
+        .as_deref()
+        .unwrap_or_default()
+        .contains("already exists"));
+
+    open_save_as_prompt(&mut app, &mut out).unwrap();
+    type_text(&mut app, &mut out, path.to_str().unwrap());
+    app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
+        .unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "x");
+    assert_eq!(app.file.path.as_deref(), Some(path.as_path()));
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn failed_save_as_keeps_the_original_path() {
+    let original = std::env::temp_dir().join(format!(
+        "catomic_save_as_original_{}.txt",
+        std::process::id()
+    ));
+    let missing_parent =
+        std::env::temp_dir().join(format!("catomic_save_as_missing_{}", std::process::id()));
+    let target = missing_parent.join("hello.txt");
+    let _ = std::fs::remove_file(&original);
+    let _ = std::fs::remove_dir_all(&missing_parent);
+    std::fs::write(&original, "before").unwrap();
+    let mut app = super::super::App::new(original.to_str()).unwrap();
+    let mut out = Vec::new();
+    app.handle_key_with(&mut out, key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
+
+    open_save_as_prompt(&mut app, &mut out).unwrap();
+    type_text(&mut app, &mut out, target.to_str().unwrap());
+    app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
+        .unwrap();
+
+    assert_eq!(app.file.path.as_deref(), Some(original.as_path()));
+    assert!(app.file.dirty);
+    assert!(app
+        .message
+        .as_deref()
+        .unwrap_or_default()
+        .contains("Save error"));
+    let _ = std::fs::remove_file(original);
 }
 
 #[test]

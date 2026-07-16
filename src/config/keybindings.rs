@@ -25,6 +25,7 @@ struct KeyChord {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Action {
     Save,
+    SaveAs,
     Quit,
     Reload,
     Search,
@@ -63,6 +64,7 @@ impl Action {
     fn parse(name: &str) -> Option<Self> {
         Some(match name.trim().to_ascii_lowercase().as_str() {
             "save" => Self::Save,
+            "save-as" => Self::SaveAs,
             "quit" => Self::Quit,
             "reload" => Self::Reload,
             "search" => Self::Search,
@@ -85,6 +87,10 @@ impl Action {
     fn canonical_key(self) -> KeyEvent {
         let (code, modifiers) = match self {
             Self::Save => control_char('s'),
+            Self::SaveAs => (
+                KeyCode::Char('s'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            ),
             Self::Quit => control_char('q'),
             Self::Reload => control_char('r'),
             Self::Search => control_char('f'),
@@ -229,13 +235,21 @@ mod tests {
 
     #[test]
     fn configured_chords_translate_to_canonical_actions() {
-        let bindings =
-            parse("[keybindings]\n\"ctrl+w\" = \"save\"\n\"alt+shift+p\" = \"command-prompt\"\n")
-                .unwrap();
+        let bindings = parse(
+            "[keybindings]\n\"ctrl+w\" = \"save\"\n\"alt+s\" = \"save-as\"\n\"alt+shift+p\" = \"command-prompt\"\n",
+        )
+        .unwrap();
 
         assert_eq!(
             bindings.translate(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL)),
             KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL)
+        );
+        assert_eq!(
+            bindings.translate(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::ALT)),
+            KeyEvent::new(
+                KeyCode::Char('s'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT
+            )
         );
         assert_eq!(
             bindings.translate(KeyEvent::new(

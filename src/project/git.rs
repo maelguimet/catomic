@@ -102,6 +102,13 @@ impl GitContext {
     pub fn is_unchanged(&self) -> Result<bool, GitError> {
         Ok(self.recapture_snapshot()? == self.snapshot)
     }
+
+    pub fn diff_for_path(&self, relative_path: &Path) -> Result<String, GitError> {
+        run_text(
+            &self.root,
+            &["diff", "HEAD", "--", &relative_path.to_string_lossy()],
+        )
+    }
 }
 
 fn snapshot(

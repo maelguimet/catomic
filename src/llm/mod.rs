@@ -16,6 +16,7 @@ pub mod instruction;
 pub mod openai_compat;
 pub mod patch;
 pub mod replacement;
+pub mod repo_check;
 pub mod repo_prepare;
 pub mod repo_task;
 pub mod task;

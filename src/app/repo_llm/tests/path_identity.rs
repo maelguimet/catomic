@@ -66,6 +66,7 @@ fn path_change_while_repo_model_works_discards_response() {
     poll_until_pending(&mut app, &mut out);
 
     handle_key(&mut app, &mut out, key(KeyCode::Enter)).unwrap();
+    poll_until_running(&mut app, &mut out);
     app.file.path = Some(repo.0.join("other.txt"));
     poll_until_finished(&mut app, &mut out);
     server.join().unwrap();

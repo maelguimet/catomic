@@ -58,6 +58,17 @@ fn project_preparation_reaches_confirmation_without_connecting() {
     let message = app.message.as_deref().unwrap();
     assert!(message.contains("repo bytes"));
     assert!(message.contains("Enter confirms"));
+
+    fs::write(repo.0.join("other.txt"), "changed before send\n").unwrap();
+    handle_key(&mut app, &mut out, key(KeyCode::Enter)).unwrap();
+    assert!(matches!(
+        app.repo_llm_state.as_ref(),
+        Some(RepoLlmState::CheckingSend(_))
+    ));
+    assert!(listener.accept().is_err());
+    poll_until_send_checked(&mut app, &mut out);
+    assert!(app.repo_llm_state.is_none());
+    assert!(listener.accept().is_err());
 }
 
 #[test]
@@ -138,6 +149,26 @@ fn poll_until_finished(app: &mut super::super::App, out: &mut Vec<u8>) {
     while app.repo_llm_state.is_some() {
         poll(app, out).unwrap();
         assert!(Instant::now() < deadline, "repo request timed out");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+fn poll_until_running(app: &mut super::super::App, out: &mut Vec<u8>) {
+    poll_until_send_checked(app, out);
+    assert!(matches!(
+        app.repo_llm_state.as_ref(),
+        Some(RepoLlmState::Running(_))
+    ));
+}
+
+fn poll_until_send_checked(app: &mut super::super::App, out: &mut Vec<u8>) {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while matches!(
+        app.repo_llm_state.as_ref(),
+        Some(RepoLlmState::CheckingSend(_))
+    ) {
+        poll(app, out).unwrap();
+        assert!(Instant::now() < deadline, "repo drift check timed out");
         std::thread::sleep(Duration::from_millis(5));
     }
 }

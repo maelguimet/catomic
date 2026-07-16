@@ -17,6 +17,7 @@ use crate::llm::repo_task::RepoLlmTask;
 
 const SYSTEM_PROMPT: &str = "You edit only the named active file using read-only repository context. You may request more context by returning exactly {\"catomic_broker\":{\"command\":\"list_files\"}}, {\"catomic_broker\":{\"command\":\"read_file\",\"path\":\"relative/path\",\"offset\":0,\"limit\":4096}}, {\"catomic_broker\":{\"command\":\"grep\",\"query\":\"text\"}}, or {\"catomic_broker\":{\"command\":\"show_diff\",\"path\":\"relative/path\"}}. Your final response must be one valid single-file unified diff for the active file, with no prose or fences. Never claim an edit was applied.";
 
+mod checking;
 mod result;
 mod start;
 
@@ -27,6 +28,7 @@ use start::begin_with_settings;
 pub(crate) enum RepoLlmState {
     Preparing(Preparing),
     Pending(Pending),
+    CheckingSend(checking::CheckingSend),
     Running(Running),
 }
 
@@ -60,6 +62,12 @@ pub(crate) fn poll(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
         Some(RepoLlmState::Preparing(_))
     ) {
         return poll_preparing(app, out);
+    }
+    if matches!(
+        app.repo_llm_state.as_ref(),
+        Some(RepoLlmState::CheckingSend(_))
+    ) {
+        return checking::poll(app, out);
     }
     if matches!(app.repo_llm_state.as_ref(), Some(RepoLlmState::Running(_))) {
         return result::poll_running(app, out);
@@ -132,13 +140,19 @@ pub(crate) fn handle_key(
         Some(RepoLlmState::Pending(_)) if is_quit(key) => Ok(false),
         Some(RepoLlmState::Pending(_)) => {
             match key.code {
-                KeyCode::Enter => confirm(app),
+                KeyCode::Enter => checking::begin(app),
                 KeyCode::Esc => cancel_pending(app),
                 _ => {
                     app.message =
                         Some("Repo LLM send not confirmed. Enter sends; Esc cancels.".to_string())
                 }
             }
+            app.render(out)?;
+            Ok(true)
+        }
+        Some(RepoLlmState::CheckingSend(_)) if is_quit(key) => Ok(false),
+        Some(RepoLlmState::CheckingSend(_)) => {
+            checking::handle_key(app, key);
             app.render(out)?;
             Ok(true)
         }
@@ -153,40 +167,17 @@ pub(crate) fn handle_key(
 }
 
 pub(crate) fn handle_paste(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {
-    if !matches!(app.repo_llm_state.as_ref(), Some(RepoLlmState::Pending(_))) {
-        return Ok(false);
-    }
-    app.message = Some("Repo LLM send not confirmed. Enter sends; Esc cancels.".to_string());
+    let message = match app.repo_llm_state.as_ref() {
+        Some(RepoLlmState::Pending(_)) => "Repo LLM send not confirmed. Enter sends; Esc cancels.",
+        Some(RepoLlmState::CheckingSend(_)) => "Repository check running; Esc cancels.",
+        _ => return Ok(false),
+    };
+    app.message = Some(message.to_string());
     app.render(out)?;
     Ok(true)
 }
 
-fn confirm(app: &mut super::App) {
-    let Some(RepoLlmState::Pending(pending)) = app.repo_llm_state.take() else {
-        return;
-    };
-    if app.buffer.to_string() != pending.source_snapshot {
-        app.message =
-            Some("Active buffer changed before confirmation; repo LLM cancelled.".to_string());
-        return;
-    }
-    if app.file.path.as_ref() != Some(&pending.file_path) {
-        app.message =
-            Some("Active file path changed before confirmation; repo LLM cancelled.".to_string());
-        return;
-    }
-    match pending.prepared.broker.is_unchanged() {
-        Ok(true) => {}
-        Ok(false) => {
-            app.message =
-                Some("Repository changed before confirmation; repo LLM cancelled.".to_string());
-            return;
-        }
-        Err(error) => {
-            app.message = Some(format!("Could not recheck repository: {error}"));
-            return;
-        }
-    }
+pub(super) fn start_confirmed(app: &mut super::App, pending: Pending) {
     let config = llm_config(&pending.settings);
     let user = user_prompt(&pending);
     match RepoLlmTask::start(

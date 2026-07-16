@@ -26,6 +26,11 @@ fn untracked_active_file_drift_before_confirmation_cancels_without_connecting() 
 
     fs::write(path, "changed outside\n").unwrap();
     handle_key(&mut app, &mut out, key(KeyCode::Enter)).unwrap();
+    assert!(matches!(
+        app.repo_llm_state.as_ref(),
+        Some(RepoLlmState::CheckingSend(_))
+    ));
+    poll_until_send_checked(&mut app, &mut out);
 
     assert!(app.repo_llm_state.is_none());
     assert!(listener.accept().is_err());
@@ -47,6 +52,7 @@ fn untracked_active_file_drift_while_model_works_discards_response() {
     poll_until_pending(&mut app, &mut out);
 
     handle_key(&mut app, &mut out, key(KeyCode::Enter)).unwrap();
+    poll_until_running(&mut app, &mut out);
     fs::write(&path, "changed outside\n").unwrap();
     poll_until_finished(&mut app, &mut out);
     server.join().unwrap();

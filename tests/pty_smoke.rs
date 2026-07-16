@@ -9,7 +9,7 @@
 //!   large-file/perf scenarios.
 //! Invariants: tests use temporary files, time out and kill the child on hangs,
 //!   and leave Plain startup behavior unchanged.
-//! Phase: 2-bs multiple-buffer CLI/navigation PTY acceptance.
+//! Phase: 2-bw active-buffer save PTY acceptance.
 
 use std::error::Error;
 use std::fs;
@@ -234,7 +234,7 @@ fn pty_ctrl_f_prompt_finds_content_and_quits() -> TestResult {
 }
 
 #[test]
-fn pty_multiple_cli_files_switch_to_next_buffer() -> TestResult {
+fn pty_multiple_cli_files_switch_and_save_active_buffer() -> TestResult {
     let first = TempPath::new("buffers_first");
     let second = TempPath::new("buffers_second");
     fs::write(&first.path, "first buffer content")?;
@@ -249,8 +249,11 @@ fn pty_multiple_cli_files_switch_to_next_buffer() -> TestResult {
     editor.send_keys(b"\x1b[6;3~")?;
     editor.wait_for_output("second CLI file", "second buffer content")?;
     editor.wait_for_output("next buffer position", "buffer 2/2")?;
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(b"X\x13\x11")?;
     editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(&first.path)?, "first buffer content");
+    assert_eq!(fs::read_to_string(&second.path)?, "Xsecond buffer content");
 
     Ok(())
 }

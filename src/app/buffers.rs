@@ -74,6 +74,7 @@ impl BufferSlot {
 }
 
 impl App {
+    #[cfg(test)]
     pub(crate) fn new_with_paths_and_big_file_config(
         initial_paths: &[String],
         big_files: BigFileConfig,

@@ -24,6 +24,7 @@ use crate::terminal as term;
 mod file_state;
 pub use file_state::FileState;
 
+#[cfg(test)]
 use file_state::external_file_status;
 
 mod buffers;
@@ -128,10 +129,12 @@ pub struct App {
 }
 
 impl App {
+    #[cfg(test)]
     pub fn new(initial_path: Option<&str>) -> io::Result<Self> {
         Self::new_with_big_file_config(initial_path, BigFileConfig::default())
     }
 
+    #[cfg(test)]
     pub(crate) fn new_with_big_file_config(
         initial_path: Option<&str>,
         big_files: BigFileConfig,
@@ -299,6 +302,7 @@ impl App {
     /// Route key handling + associated renders through a writer.
     /// Smallest seam so tests can capture render side-effects for e.g. Ctrl+Q message.
     /// The public-in-module handle_key keeps the run loop and existing calls unchanged.
+    #[cfg(test)]
     fn handle_key_with(&mut self, out: &mut dyn Write, key: KeyEvent) -> io::Result<()> {
         input::handle_key_with(self, out, key)
     }
@@ -320,6 +324,7 @@ impl App {
     /// Used by future watch/reload to decide action; for 2-l this is detection only.
     /// Must not mutate buffer, file state (dirty/snapshot), message, pending, viewport, or history.
     /// NoPath for untitled; delegates to file_state helper (std metadata compare only).
+    #[cfg(test)]
     fn external_file_status(&self) -> crate::file::io::ExternalFileStatus {
         external_file_status(&self.file)
     }

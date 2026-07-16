@@ -11,7 +11,9 @@
 use std::path::PathBuf;
 
 use crate::buffer::Buffer;
-use crate::file::io::{ExternalFileStatus, FileSnapshot};
+#[cfg(test)]
+use crate::file::io::ExternalFileStatus;
+use crate::file::io::FileSnapshot;
 use crate::file::size::FileSizeTier;
 
 /// Minimal explicit file state (Phase 2-a / 2-j / 2B size metadata).
@@ -64,6 +66,7 @@ pub(crate) fn mark_saved(file: &mut FileState, buffer: &dyn Buffer) {
 /// Path None -> NoPath.
 /// Path present + snapshot None (edge): live probe, treat present as Unchanged (post-our-write), absent Deleted.
 /// Other errors surface as Unknown(kind).
+#[cfg(test)]
 pub(crate) fn external_file_status(file: &FileState) -> ExternalFileStatus {
     let Some(ref p) = file.path else {
         return ExternalFileStatus::NoPath;

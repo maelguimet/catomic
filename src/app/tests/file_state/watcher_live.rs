@@ -44,11 +44,11 @@ fn live_smoke_watcher_sees_external_change_and_auto_reloads() {
     let mut reloaded = false;
     for _ in 0..20 {
         let mut out: Vec<u8> = Vec::new();
-        if crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out).unwrap() {
-            if app.buffer.to_string() == "LIVEEXT" {
-                reloaded = true;
-                break;
-            }
+        if crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out).unwrap()
+            && app.buffer.to_string() == "LIVEEXT"
+        {
+            reloaded = true;
+            break;
         }
         // No long sleep; tiny spin to allow scheduler/notify thread a tick.
         std::thread::sleep(std::time::Duration::from_millis(5));

@@ -326,7 +326,7 @@ fn app_file_state_absent_snapshot_external_appears_first_refuse_then_force() {
         on_disk, "APPEARED",
         "force must have overwritten the appeared file"
     );
-    assert!(on_disk.contains('y') || on_disk == our_text || on_disk.len() >= 1);
+    assert!(on_disk.contains('y') || on_disk == our_text || !on_disk.is_empty());
 
     let _ = std::fs::remove_file(&p);
 }

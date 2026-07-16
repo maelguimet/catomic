@@ -23,6 +23,8 @@ use super::{
     FileState,
 };
 
+mod lifecycle;
+
 pub(crate) struct BufferSlot {
     buffer: Box<dyn Buffer>,
     file: FileState,
@@ -462,3 +464,7 @@ mod tests {
         fs::remove_file(second).unwrap();
     }
 }
+
+#[cfg(test)]
+#[path = "buffers/lifecycle_tests.rs"]
+mod lifecycle_tests;

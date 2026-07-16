@@ -169,11 +169,11 @@ fn save_as_expands_tilde_from_the_supplied_home() {
     let home = std::ffi::OsStr::new("/tmp/catomic-home");
 
     assert_eq!(
-        super::super::save::expand_save_path("~/notes/hello.txt", Some(home)).unwrap(),
+        super::super::save::expand_user_path("~/notes/hello.txt", Some(home)).unwrap(),
         Path::new("/tmp/catomic-home/notes/hello.txt")
     );
     assert_eq!(
-        super::super::save::expand_save_path("hello.txt", Some(home)).unwrap(),
+        super::super::save::expand_user_path("hello.txt", Some(home)).unwrap(),
         Path::new("hello.txt")
     );
 }

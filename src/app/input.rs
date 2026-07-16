@@ -176,6 +176,24 @@ pub(crate) fn handle_key_with(
         }
 
         KeyEvent {
+            code: KeyCode::Char('o'),
+            modifiers: KeyModifiers::CONTROL,
+            ..
+        } => command_prompt::open_file_prompt(app, out)?,
+
+        KeyEvent {
+            code: KeyCode::Char('n'),
+            modifiers: KeyModifiers::CONTROL,
+            ..
+        } => command_prompt::execute_new(app, out)?,
+
+        KeyEvent {
+            code: KeyCode::Char('w'),
+            modifiers: KeyModifiers::CONTROL,
+            ..
+        } => command_prompt::execute_close(app, out, false)?,
+
+        KeyEvent {
             code: KeyCode::PageDown,
             modifiers,
             ..

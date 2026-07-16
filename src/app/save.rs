@@ -120,7 +120,7 @@ pub(crate) fn handle_save_as(
     out: &mut dyn Write,
     input: &str,
 ) -> io::Result<()> {
-    let target = match expand_save_path(input, std::env::var_os("HOME").as_deref()) {
+    let target = match expand_user_path(input, std::env::var_os("HOME").as_deref()) {
         Ok(path) => path,
         Err(error) => {
             app.message = Some(format!("Save As error: {error}"));
@@ -177,7 +177,7 @@ pub(crate) fn handle_save_as(
     app.render(out)
 }
 
-pub(crate) fn expand_save_path(input: &str, home: Option<&OsStr>) -> io::Result<PathBuf> {
+pub(crate) fn expand_user_path(input: &str, home: Option<&OsStr>) -> io::Result<PathBuf> {
     let input = input.trim();
     if input.is_empty() {
         return Err(io::Error::new(

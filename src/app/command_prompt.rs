@@ -31,6 +31,7 @@ enum PromptKind {
     GotoLine,
     Command,
     SaveAs,
+    OpenFile,
 }
 
 pub(crate) fn open_goto_prompt(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
@@ -43,6 +44,10 @@ pub(crate) fn open_command_prompt(app: &mut super::App, out: &mut dyn Write) -> 
 
 pub(crate) fn open_save_as_prompt(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     open_prompt(app, out, PromptKind::SaveAs)
+}
+
+pub(crate) fn open_file_prompt(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    open_prompt(app, out, PromptKind::OpenFile)
 }
 
 pub(super) fn is_active(app: &super::App) -> bool {
@@ -107,6 +112,7 @@ fn update_message(app: &mut super::App) {
         PromptKind::GotoLine => "Goto line",
         PromptKind::Command => "Command",
         PromptKind::SaveAs => "Save as",
+        PromptKind::OpenFile => "Open file",
     };
     app.message = Some(format!("{label}: {}", prompt.text));
 }
@@ -121,6 +127,7 @@ fn submit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         PromptKind::GotoLine => execute_goto(app, out, &prompt.text),
         PromptKind::Command => execute_command(app, out, prompt.text.trim()),
         PromptKind::SaveAs => super::save::handle_save_as(app, out, &prompt.text),
+        PromptKind::OpenFile => execute_open(app, out, &prompt.text),
     }
 }
 
@@ -140,6 +147,11 @@ fn execute_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> 
         ("saveas" | "save-as", path) if !path.is_empty() => {
             super::save::handle_save_as(app, out, path)
         }
+        ("open" | "edit" | "e", "") => open_file_prompt(app, out),
+        ("open" | "edit" | "e", path) => execute_open(app, out, path),
+        ("new", "") => execute_new(app, out),
+        ("close", "") => execute_close(app, out, false),
+        ("close!", "") => execute_close(app, out, true),
         ("quit" | "q", "") => super::input::handle_quit(app, out),
         ("project" | "code", "") => super::project_mode::switch_to_project(app, out),
         ("plain" | "text", "") => super::project_mode::switch_to_plain(app, out),
@@ -170,6 +182,40 @@ fn execute_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> 
             app.render(out)
         }
     }
+}
+
+fn execute_open(app: &mut super::App, out: &mut dyn Write, input: &str) -> io::Result<()> {
+    let path = match super::save::expand_user_path(input, std::env::var_os("HOME").as_deref()) {
+        Ok(path) => path,
+        Err(error) => {
+            app.message = Some(format!("Open error: {error}"));
+            return app.render(out);
+        }
+    };
+    match app.open_file_buffer(&path) {
+        Ok(true) => app.message = Some(format!("Opened {}.", path.display())),
+        Ok(false) => app.message = Some(format!("Already open: {}.", path.display())),
+        Err(error) => app.message = Some(format!("Open error: {error}")),
+    }
+    app.render(out)
+}
+
+pub(crate) fn execute_new(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    if let Err(error) = app.new_file_buffer() {
+        app.message = Some(format!("New buffer error: {error}"));
+    }
+    app.render(out)
+}
+
+pub(crate) fn execute_close(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    force: bool,
+) -> io::Result<()> {
+    if let Err(error) = app.close_active_buffer(force) {
+        app.message = Some(format!("Close error: {error}"));
+    }
+    app.render(out)
 }
 
 fn execute_goto(app: &mut super::App, out: &mut dyn Write, input: &str) -> io::Result<()> {

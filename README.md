@@ -51,6 +51,11 @@ overwrites it. `Ctrl+S` opens this prompt automatically for an untitled buffer.
 `Ctrl+Shift+P` opens the command prompt, with `goto N`,
 `save`/`write`, `save as PATH`, and `quit`/`q`.
 
+`Ctrl+O` opens a path in a buffer, `Ctrl+N` creates an untitled buffer, and
+`Ctrl+W` closes the active clean buffer. A dirty buffer refuses to close until
+saved; use the explicit `close!` command to discard it. The command prompt also
+accepts `open PATH`, `new`, and `close`.
+
 Hold Shift with the arrow keys to select text, or use `Ctrl+A` for the active
 buffer/page. `Ctrl+C`, `Ctrl+X`, and `Ctrl+V` copy, cut, and paste through an
 always-available internal clipboard; copy also sends OSC 52 to supporting

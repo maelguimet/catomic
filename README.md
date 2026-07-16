@@ -42,6 +42,9 @@ v0.1 roadmap and verification record is in
 `Ctrl+F` opens incremental search. Matches move and highlight as you type.
 Enter or Down moves forward, Up moves backward, and Escape closes search. The
 same navigation wraps across oversized paged files without loading them whole.
+`Ctrl+Shift+F` opens a two-stage Find/Replace prompt. `replace-all` in the
+command prompt replaces every non-overlapping match in an ordinary buffer;
+paged-file replacement refuses explicitly instead of silently changing one page.
 
 `Ctrl+G` opens a cancellable 1-based goto-line prompt across ordinary and paged
 files. `Ctrl+Shift+S` opens Save As; enter a filename such as `hello.txt`, a

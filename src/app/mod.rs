@@ -42,6 +42,7 @@ mod project_files;
 mod project_mode;
 mod recovery;
 mod reload;
+mod replace;
 mod repo_llm;
 mod save;
 mod search;
@@ -109,6 +110,8 @@ pub struct App {
     pub pending_reload: Option<reload::PendingReload>,
     /// Explicit Ctrl+F prompt/worker state. No worker exists before invocation.
     pub(crate) search: search::SearchUiState,
+    /// Explicit two-stage replace prompt; empty outside direct user invocation.
+    pub(crate) replace: replace::ReplaceState,
     /// Global transient goto/command prompt. It constructs no background service.
     pub(crate) command_prompt: command_prompt::CommandPromptState,
     /// Plain-safe local completion UI, constructed only when its capability is enabled.
@@ -236,6 +239,7 @@ impl App {
             pending_save_conflict: None,
             pending_reload: None,
             search: search::SearchUiState::default(),
+            replace: replace::ReplaceState::default(),
             command_prompt: command_prompt::CommandPromptState::default(),
             completion,
             lint_view: None,

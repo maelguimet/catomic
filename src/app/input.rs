@@ -12,8 +12,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use super::file_state::refresh_dirty;
 use super::{
     buffers, command_prompt, completion, external_command, lint, llm_answer, llm_preview,
-    llm_request, navigation, paging, project_files, recovery, reload, repo_llm, save, search,
-    selection, view,
+    llm_request, navigation, paging, project_files, recovery, reload, replace, repo_llm, save,
+    search, selection, view,
 };
 
 /// Common post-content-mutation cleanup used by insert, delete, newline, undo, redo paths.
@@ -70,6 +70,9 @@ pub(crate) fn handle_key_with(
         return Ok(());
     }
     if llm_request::handle_key(app, out, key)? {
+        return Ok(());
+    }
+    if replace::handle_key(app, out, key)? {
         return Ok(());
     }
     if search::handle_active_key(app, out, key)? {
@@ -151,6 +154,16 @@ pub(crate) fn handle_key_with(
             ..
         } => {
             reload::handle_reload_key(app, out)?;
+        }
+
+        KeyEvent {
+            code: KeyCode::Char('f' | 'F'),
+            modifiers,
+            ..
+        } if modifiers.contains(KeyModifiers::CONTROL)
+            && modifiers.contains(KeyModifiers::SHIFT) =>
+        {
+            replace::open_prompt(app, out, false)?;
         }
 
         KeyEvent {
@@ -407,6 +420,9 @@ pub(crate) fn handle_paste(
     text: &str,
 ) -> io::Result<()> {
     completion::cancel(app);
+    if replace::handle_paste(app, out, text)? {
+        return Ok(());
+    }
     if recovery::handle_paste(app, out)? {
         return Ok(());
     }

@@ -152,6 +152,8 @@ fn execute_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> 
         ("new", "") => execute_new(app, out),
         ("close", "") => execute_close(app, out, false),
         ("close!", "") => execute_close(app, out, true),
+        ("replace", "") => super::replace::open_prompt(app, out, false),
+        ("replace-all" | "replaceall", "") => super::replace::open_prompt(app, out, true),
         ("quit" | "q", "") => super::input::handle_quit(app, out),
         ("project" | "code", "") => super::project_mode::switch_to_project(app, out),
         ("plain" | "text", "") => super::project_mode::switch_to_plain(app, out),

@@ -28,9 +28,9 @@ The important current seams are:
 - `OriginalBacking` no longer exposes borrowed slices to query/index callers.
 - An internal `PieceTable::from_file` foundation can retain the scanned
   descriptor behind original piece ranges, stream mixed original/add pieces,
-  and fail fallible reads closed on descriptor metadata drift. It is not wired
-  into App Huge policy while edited-line bounded queries and the product-level
-  edit semantics below remain open.
+  bound scalar cursor/window queries with scan-time checkpoints, and fail
+  fallible reads closed on descriptor metadata drift. It is not wired into App
+  Huge policy while the product-level edit semantics below remain open.
 - `LineIndex::from_text` gives initial single-piece construction a direct path.
 - `Buffer::try_visible_lines_window`, `Buffer::line_char_count`, and
   `Buffer::is_read_only` let render/viewport/App policy avoid full line reads,

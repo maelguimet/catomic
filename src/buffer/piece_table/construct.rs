@@ -18,7 +18,8 @@ use crate::buffer::large_file::scan::scan_utf8_lines;
 use crate::buffer::line_index::LineIndex;
 use crate::buffer::Cursor;
 
-use super::types::{FileMetadataSnapshot, OriginalBacking, Piece, PieceTable, Source};
+use super::file_original::{FileMetadataSnapshot, FileOriginalMetadata};
+use super::types::{OriginalBacking, Piece, PieceTable, Source};
 
 impl PieceTable {
     pub fn new() -> Self {
@@ -79,13 +80,20 @@ impl PieceTable {
             .skip(1)
             .map(|start| start - 1)
             .collect();
+        let original_metadata = FileOriginalMetadata {
+            newline_offsets,
+            line_char_counts: scan.line_char_counts,
+            line_is_ascii: scan.line_is_ascii,
+            line_checkpoints: scan.line_checkpoints,
+            line_checkpoint_starts: scan.line_checkpoint_starts,
+        };
         let pieces = vec![Piece {
             source: Source::Original,
             start: 0,
             len: scan.total_bytes,
         }];
         Ok(Self {
-            original: OriginalBacking::from_file(file, snapshot, newline_offsets),
+            original: OriginalBacking::from_file(file, snapshot, original_metadata),
             add: String::new(),
             pieces,
             index: LineIndex {

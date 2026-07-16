@@ -1,7 +1,10 @@
-//! Query methods and helpers for PieceTable (Phases 1B-1C).
-//!
-//! Includes slice_to_string (avoids full materialization), logical helpers,
-//! split_point, and within-line measurements that will use the LineIndex.
+//! Purpose: query logical PieceTable ranges without full-buffer materialization.
+//! Owns: piece overlap traversal, scalar counts/windows, cursor byte mapping,
+//!   compatibility string slices, and piece lookup/split points.
+//! Must not: mutate pieces, perform App/render policy, or know Project/LLM work.
+//! Invariants: source ranges respect UTF-8 boundaries; file-backed scalar
+//!   windows use bounded checkpoint-assisted reads; logical offsets are global.
+//! Phase: 2-bj bounded file-backed PieceTable queries.
 
 use super::types::{PieceTable, Source};
 use std::io;
@@ -47,6 +50,140 @@ impl PieceTable {
         Ok(out)
     }
 
+    pub(crate) fn try_char_count(&self, start: usize, end: usize) -> io::Result<usize> {
+        if start >= end || self.pieces.is_empty() {
+            return Ok(0);
+        }
+        let mut count = 0usize;
+        self.for_each_piece_overlap(start, end, |source, range, _logical_start| {
+            count += self.source_char_count(source, range)?;
+            Ok(true)
+        })?;
+        Ok(count)
+    }
+
+    pub(crate) fn try_byte_offset_after_chars(
+        &self,
+        start: usize,
+        end: usize,
+        mut chars: usize,
+    ) -> io::Result<usize> {
+        let mut result = end;
+        self.for_each_piece_overlap(start, end, |source, range, logical_start| {
+            let count = self.source_char_count(source, range.clone())?;
+            if chars <= count {
+                let source_offset =
+                    self.source_byte_offset_at_char(source, range.clone(), chars)?;
+                result = logical_start + (source_offset - range.start);
+                return Ok(false);
+            }
+            chars -= count;
+            Ok(true)
+        })?;
+        Ok(result)
+    }
+
+    pub(crate) fn try_window_to_string(
+        &self,
+        start: usize,
+        end: usize,
+        mut skip: usize,
+        width: usize,
+    ) -> io::Result<String> {
+        if width == 0 || start >= end {
+            return Ok(String::new());
+        }
+        let mut out = String::new();
+        let mut remaining = width;
+        self.for_each_piece_overlap(start, end, |source, range, _logical_start| {
+            let count = self.source_char_count(source, range.clone())?;
+            if skip >= count {
+                skip -= count;
+                return Ok(true);
+            }
+            let taken = self.source_push_char_window(source, range, skip, remaining, &mut out)?;
+            skip = 0;
+            remaining -= taken;
+            Ok(remaining > 0)
+        })?;
+        Ok(out)
+    }
+
+    fn for_each_piece_overlap(
+        &self,
+        start: usize,
+        end: usize,
+        mut visit: impl FnMut(Source, std::ops::Range<usize>, usize) -> io::Result<bool>,
+    ) -> io::Result<()> {
+        if start >= end || self.pieces.is_empty() {
+            return Ok(());
+        }
+        let first = self.find_piece_for_byte(start);
+        let mut piece_start = self.piece_starts.get(first).copied().unwrap_or(0);
+        for piece in &self.pieces[first..] {
+            let piece_end = piece_start + piece.len;
+            if piece_start >= end {
+                break;
+            }
+            let local_start = start.saturating_sub(piece_start).min(piece.len);
+            let local_end = end.saturating_sub(piece_start).min(piece.len);
+            if local_start < local_end {
+                let source_range = piece.start + local_start..piece.start + local_end;
+                if !visit(piece.source, source_range, piece_start + local_start)? {
+                    break;
+                }
+            }
+            piece_start = piece_end;
+        }
+        Ok(())
+    }
+
+    fn source_char_count(
+        &self,
+        source: Source,
+        range: std::ops::Range<usize>,
+    ) -> io::Result<usize> {
+        match source {
+            Source::Original => self.original.try_char_count(range),
+            Source::Add => Ok(self.add[range].chars().count()),
+        }
+    }
+
+    fn source_byte_offset_at_char(
+        &self,
+        source: Source,
+        range: std::ops::Range<usize>,
+        col: usize,
+    ) -> io::Result<usize> {
+        match source {
+            Source::Original => self.original.try_byte_offset_at_char(range, col),
+            Source::Add => Ok(range.start
+                + self.add[range.clone()]
+                    .char_indices()
+                    .nth(col)
+                    .map_or(range.len(), |(offset, _)| offset)),
+        }
+    }
+
+    fn source_push_char_window(
+        &self,
+        source: Source,
+        range: std::ops::Range<usize>,
+        skip: usize,
+        take: usize,
+        out: &mut String,
+    ) -> io::Result<usize> {
+        match source {
+            Source::Original => self.original.try_push_char_window(range, skip, take, out),
+            Source::Add => {
+                let window: String = self.add[range].chars().skip(skip).take(take).collect();
+                let taken = window.chars().count();
+                out.push_str(&window);
+                Ok(taken)
+            }
+        }
+    }
+
     /// Binary search on piece_starts for the piece containing or nearest before off.
     /// Returns index clamped to last piece.
     fn find_piece_for_byte(&self, off: usize) -> usize {
@@ -80,7 +217,7 @@ impl PieceTable {
         (i, local)
     }
 
-    /// Char length of a logical line (uses index when possible + slice).
+    /// Char length of a logical line using per-source scalar metadata.
     pub(crate) fn current_line_char_len(&self, row: usize) -> usize {
         let n = self.index.line_starts.len();
         if n == 0 {
@@ -93,10 +230,7 @@ impl PieceTable {
         } else {
             self.index.total_bytes
         };
-        if start >= end {
-            return 0;
-        }
-        self.slice_to_string(start, end).chars().count()
+        self.try_char_count(start, end).unwrap_or(0)
     }
 
     /// Byte offset from (row, char-col) using the line index + local scan.
@@ -113,19 +247,14 @@ impl PieceTable {
         } else {
             self.index.total_bytes
         };
-        let line_str = self.slice_to_string(line_start, line_end);
-        let n_chars = line_str.chars().count();
+        let n_chars = self.try_char_count(line_start, line_end).unwrap_or(0);
         col = col.min(n_chars);
+        self.try_byte_offset_after_chars(line_start, line_end, col)
+            .unwrap_or(line_start)
+    }
 
-        let mut b = 0usize;
-        let mut seen = 0usize;
-        for ch in line_str.chars() {
-            if seen == col {
-                break;
-            }
-            b += ch.len_utf8();
-            seen += 1;
-        }
-        line_start + b
+    #[cfg(test)]
+    pub(crate) fn file_original_read_bytes(&self) -> usize {
+        self.original.file_read_bytes()
     }
 }

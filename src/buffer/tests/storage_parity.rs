@@ -186,6 +186,51 @@ fn file_backed_piece_table_fails_closed_after_descriptor_drift() {
 }
 
 #[test]
+fn file_backed_piece_table_reads_far_mixed_scalar_window() {
+    let path = std::env::temp_dir().join(format!(
+        "catomic_file_piece_table_window_{}.txt",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    let text = format!("{}é猫{}\ntail", "a".repeat(200_000), "z".repeat(200_000));
+    std::fs::write(&path, &text).unwrap();
+
+    let mut pt = PieceTable::from_file(&path).expect("file-backed piece table");
+    assert_eq!(pt.line_char_count(0), Some(400_002));
+    pt.insert_char('X');
+    let window = pt
+        .try_visible_lines_window(0, 1, 199_998, 10)
+        .expect("bounded mixed-piece window");
+    assert_eq!(window[0].content, "aaaé猫zzzzz");
+    assert!(pt.file_original_read_bytes() < 256 * 1024);
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn file_backed_piece_table_queries_across_deleted_original_newline() {
+    let path = std::env::temp_dir().join(format!(
+        "catomic_file_piece_table_join_{}.txt",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, "éa\n猫b").unwrap();
+
+    let mut pt = PieceTable::from_file(&path).expect("file-backed piece table");
+    pt.move_down();
+    pt.delete_back();
+    assert_eq!(pt.line_char_count(0), Some(4));
+    assert_eq!(pt.visible_lines_window(0, 1, 1, 3)[0].content, "a猫b");
+    pt.insert_char('X');
+    assert_eq!(pt.to_string(), "éaX猫b");
+    pt.undo();
+    pt.undo();
+    assert_eq!(pt.to_string(), "éa\n猫b");
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
 fn parity_empty_lines() {
     assert_parity("\n");
     assert_parity("\n\n");

@@ -53,6 +53,8 @@ request, and final-apply drift workers are polled without blocking typing.
 - `cargo test app::llm_preview`: 7 passed, including exact one-step undo and
   stale-source/path refusal.
 - `cargo test --test pty_smoke`: 7 passed.
+- `cargo clippy --all-targets -- -D warnings`: passed after completed-phase
+  production/test-seam hygiene and removal of unused future scaffolding.
 - `cargo fmt --check` and `git diff --check`: passed for the acceptance slice.
 
 No live-model or live-endpoint command was run.

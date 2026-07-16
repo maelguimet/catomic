@@ -27,6 +27,9 @@ It should be:
 Enter or Down moves forward, Up moves backward, and Escape closes search. The
 same navigation wraps across oversized paged files without loading them whole.
 
+`Ctrl+G` opens a 1-based goto-line prompt for ordinary files. `Ctrl+Shift+P`
+opens the first command prompt, with `goto N`, `save`/`write`, and `quit`/`q`.
+
 ## Terminal Behavior
 
 - Linux terminal only (for now)

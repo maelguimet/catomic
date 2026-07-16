@@ -16,7 +16,7 @@ use std::io::{self, Write};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::file_state::refresh_dirty;
-use super::{buffers, paging, reload, save, search};
+use super::{buffers, command_prompt, paging, reload, save, search};
 
 /// Common post-content-mutation cleanup used by insert, delete, newline, undo, redo paths.
 /// Centralizes the exact sequence that must run after any buffer-mutating key:
@@ -55,6 +55,9 @@ pub(crate) fn handle_key_with(
     if search::handle_active_key(app, out, key)? {
         return Ok(());
     }
+    if command_prompt::handle_active_key(app, out, key)? {
+        return Ok(());
+    }
     match key {
         // Quit (Ctrl+Q)
         // - clean: quit immediately
@@ -68,24 +71,7 @@ pub(crate) fn handle_key_with(
             modifiers: KeyModifiers::CONTROL,
             ..
         } => {
-            let dirty_count = app.dirty_buffer_count();
-            if dirty_count == 0 {
-                app.should_quit = true;
-            } else if app.pending_quit_confirm {
-                app.should_quit = true;
-            } else {
-                app.pending_quit_confirm = true;
-                app.message = Some(if dirty_count == 1 {
-                    "Unsaved changes. Press Ctrl+Q again to quit without saving, Ctrl+S to save."
-                        .to_string()
-                } else {
-                    format!(
-                        "Unsaved changes in {dirty_count} buffers. Press Ctrl+Q again to quit without saving."
-                    )
-                });
-                app.render(out)?;
-                // do not quit
-            }
+            handle_quit(app, out)?;
         }
 
         // Save (Ctrl+S) -- thin arm; real logic + guard lives in save module
@@ -113,6 +99,24 @@ pub(crate) fn handle_key_with(
             ..
         } if modifiers.contains(KeyModifiers::CONTROL) => {
             search::open_prompt(app, out)?;
+        }
+
+        KeyEvent {
+            code: KeyCode::Char('g'),
+            modifiers,
+            ..
+        } if modifiers.contains(KeyModifiers::CONTROL) => {
+            command_prompt::open_goto_prompt(app, out)?;
+        }
+
+        KeyEvent {
+            code: KeyCode::Char('p' | 'P'),
+            modifiers,
+            ..
+        } if modifiers.contains(KeyModifiers::CONTROL)
+            && modifiers.contains(KeyModifiers::SHIFT) =>
+        {
+            command_prompt::open_command_prompt(app, out)?;
         }
 
         KeyEvent {
@@ -291,4 +295,21 @@ pub(crate) fn handle_key_with(
     }
 
     Ok(())
+}
+
+pub(super) fn handle_quit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    let dirty_count = app.dirty_buffer_count();
+    if dirty_count == 0 || app.pending_quit_confirm {
+        app.should_quit = true;
+        return Ok(());
+    }
+    app.pending_quit_confirm = true;
+    app.message = Some(if dirty_count == 1 {
+        "Unsaved changes. Press Ctrl+Q again to quit without saving, Ctrl+S to save.".to_string()
+    } else {
+        format!(
+            "Unsaved changes in {dirty_count} buffers. Press Ctrl+Q again to quit without saving."
+        )
+    });
+    app.render(out)
 }

@@ -27,6 +27,7 @@ pub use file_state::FileState;
 use file_state::external_file_status;
 
 mod buffers;
+mod command_prompt;
 mod open;
 mod paging;
 mod reload;
@@ -79,6 +80,8 @@ pub struct App {
     pub pending_reload: Option<reload::PendingReload>,
     /// Explicit Ctrl+F prompt/worker state. No worker exists before invocation.
     pub(crate) search: search::SearchUiState,
+    /// Global transient goto/command prompt. It constructs no background service.
+    pub(crate) command_prompt: command_prompt::CommandPromptState,
     /// Inactive buffers in next-buffer order. The active buffer remains in the
     /// established App fields so editing/render paths stay direct and boring.
     pub(crate) inactive_buffers: VecDeque<buffers::BufferSlot>,
@@ -153,6 +156,7 @@ impl App {
             pending_save_conflict: None,
             pending_reload: None,
             search: search::SearchUiState::default(),
+            command_prompt: command_prompt::CommandPromptState::default(),
             inactive_buffers: VecDeque::new(),
             active_buffer_index: 0,
             // Conservative default matching prior hardcoded 24; no real term required for unit tests.

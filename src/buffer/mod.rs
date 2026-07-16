@@ -18,6 +18,7 @@ use std::io::{self, Write};
 pub(crate) mod large_file;
 pub mod line_index;
 pub mod piece_table;
+#[cfg(test)]
 pub mod simple;
 pub mod undo;
 
@@ -27,6 +28,7 @@ mod tests;
 pub(crate) use large_file::LargeFileBuffer;
 pub use piece_table::PieceTable;
 /// Public re-exports for the rest of the crate.
+#[cfg(test)]
 pub use simple::SimpleBuffer;
 
 /// Core cursor position.

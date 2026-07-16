@@ -32,7 +32,10 @@
 //! - Manual Ctrl+R and save conflict paths are independent.
 
 use std::path::PathBuf;
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver};
+
+#[cfg(test)]
+use std::sync::mpsc::Sender;
 
 use crate::file::watch_path::{is_relevant, normalize_path, watch_parent};
 use crate::mode::Capabilities;

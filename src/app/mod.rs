@@ -8,6 +8,7 @@
 //! This module owns high-level state (current buffer, mode, capabilities,
 //! terminal handle, etc.) and the event loop.
 
+use std::collections::VecDeque;
 use std::io::{self, Write};
 use std::path::PathBuf;
 
@@ -25,6 +26,7 @@ pub use file_state::FileState;
 
 use file_state::external_file_status;
 
+mod buffers;
 mod open;
 mod paging;
 mod reload;
@@ -73,6 +75,11 @@ pub struct App {
     pub pending_reload: Option<reload::PendingReload>,
     /// Explicit Ctrl+F prompt/worker state. No worker exists before invocation.
     pub(crate) search: search::SearchUiState,
+    /// Inactive buffers in next-buffer order. The active buffer remains in the
+    /// established App fields so editing/render paths stay direct and boring.
+    pub(crate) inactive_buffers: VecDeque<buffers::BufferSlot>,
+    /// Zero-based position of the active buffer in the logical buffer ring.
+    pub(crate) active_buffer_index: usize,
     /// Terminal screen size and scroll state. Single source of truth for render height.
     /// Initialized conservatively; updated from crossterm after setup and on resize.
     pub screen: term::screen::Screen,
@@ -133,6 +140,8 @@ impl App {
             pending_save_conflict: None,
             pending_reload: None,
             search: search::SearchUiState::default(),
+            inactive_buffers: VecDeque::new(),
+            active_buffer_index: 0,
             // Conservative default matching prior hardcoded 24; no real term required for unit tests.
             screen: term::screen::Screen::new(80, 24),
         };

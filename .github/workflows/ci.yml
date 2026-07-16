@@ -36,5 +36,7 @@ jobs:
       - name: Build release binary
         run: cargo build --release --locked
 
-      - name: Check package contents
-        run: cargo package --locked --no-verify --list
+      - name: Verify packaged crate
+        run: |
+          cargo package --locked --list
+          cargo package --locked

@@ -17,6 +17,7 @@ pub(super) struct CommandPreview {
     name: String,
     proposed_text: String,
     pub(super) target: Option<ApplyTarget>,
+    succeeded: bool,
     source_snapshot: Option<String>,
     source_path: Option<PathBuf>,
     buffer: PieceTable,
@@ -33,7 +34,8 @@ pub(super) fn open(
     code: Option<i32>,
     truncated: bool,
 ) -> io::Result<()> {
-    if code != Some(0) || truncated {
+    let succeeded = code == Some(0) && !truncated;
+    if !succeeded {
         running.target = None;
     }
     let text = result_text(&stdout, &stderr, code, truncated);
@@ -46,6 +48,7 @@ pub(super) fn open(
         name: running.name,
         proposed_text: stdout,
         target: running.target,
+        succeeded,
         source_snapshot: running.source_snapshot,
         source_path: running.source_path,
         buffer: PieceTable::from_text(&text),
@@ -143,6 +146,7 @@ fn apply_or_close(app: &mut super::super::App, out: &mut dyn Write) -> io::Resul
     restore_scroll(app, &preview);
     let Some(target) = preview.target else {
         app.message = Some(format!("Closed command {} output.", preview.name));
+        super::super::hooks::finish_command(app, preview.succeeded);
         app.reveal_cursor();
         return app.render(out);
     };
@@ -151,6 +155,7 @@ fn apply_or_close(app: &mut super::super::App, out: &mut dyn Write) -> io::Resul
     {
         app.message =
             Some("Source changed since command start; output was not applied.".to_string());
+        super::super::hooks::finish_command(app, false);
         app.reveal_cursor();
         return app.render(out);
     }
@@ -164,9 +169,11 @@ fn apply_or_close(app: &mut super::super::App, out: &mut dyn Write) -> io::Resul
     };
     if !changed {
         app.message = Some("Command output made no change.".to_string());
+        super::super::hooks::finish_command(app, true);
         app.reveal_cursor();
         return app.render(out);
     }
+    super::super::hooks::finish_command(app, true);
     super::super::input::finish_content_edit_with_message(
         app,
         out,
@@ -197,6 +204,7 @@ fn cancel(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
     app.message = Some(format!(
         "Command {name} output cancelled; no changes applied."
     ));
+    super::super::hooks::finish_command(app, false);
     app.reveal_cursor();
     app.render(out)
 }

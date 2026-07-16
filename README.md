@@ -275,6 +275,22 @@ Enter before insertion or replacement and applies as one undoable edit. Failed
 or truncated output cannot apply. Catomic invokes `/bin/sh -c`, so configured
 commands are trusted user code and may have side effects outside the editor.
 
+The same named commands can be attached to lifecycle hooks:
+
+```toml
+[hooks]
+on_open = ["inspect"]
+on_save = ["check"]
+before_llm = ["redact-check", "policy-check"]
+```
+
+Hooks run sequentially in listed order and use the same bounded execution and
+read-only result preview as `:run`. A failed, timed-out, stale, or cancelled
+command stops the remaining chain. `on_save` starts only after a successful
+atomic save; confirmed hook edits make the buffer dirty again. `before_llm`
+finishes before Catomic prepares the ordinary endpoint/context confirmation, so
+no model client or network request exists while hooks are running.
+
 ## LLM Support
 
 LLM support is explicit, transient, and caged. Open the command prompt with

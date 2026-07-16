@@ -34,6 +34,7 @@ mod buffers;
 mod command_prompt;
 mod completion;
 mod external_command;
+mod hooks;
 mod open;
 mod paging;
 mod project_files;
@@ -124,6 +125,8 @@ pub struct App {
     pub(crate) repo_llm_state: Option<repo_llm::RepoLlmState>,
     /// External process/preview state; empty at startup and while unused.
     pub(crate) external_command: external_command::ExternalCommandState,
+    /// Lifecycle command queue; contains no process and is empty without configured events.
+    pub(crate) hooks: hooks::HookState,
     /// Per-buffer half-open selection state.
     pub(crate) selection: selection::SelectionUiState,
     /// Always-available process-local clipboard shared across open buffers.
@@ -233,6 +236,7 @@ impl App {
             llm_task: None,
             repo_llm_state: None,
             external_command: external_command::ExternalCommandState::default(),
+            hooks: hooks::HookState::default(),
             selection: selection::SelectionUiState::default(),
             clipboard: String::new(),
             view: view::ViewOptions::default(),
@@ -267,6 +271,8 @@ impl App {
         // The guard restores the previously installed hook on normal exit.
         let _panic_guard = term::PanicRestoreGuard::install();
 
+        hooks::trigger_open(self);
+
         // Phase 0 render is extremely dumb.
         self.render(&mut stdout)?;
 
@@ -290,6 +296,7 @@ impl App {
             llm_request::poll(self, &mut stdout)?;
             repo_llm::poll(self, &mut stdout)?;
             external_command::poll(self, &mut stdout)?;
+            hooks::pump(self, &mut stdout)?;
 
             // Blocking read for Phase 0. Later we may need non-blocking + resize.
             if event::poll(std::time::Duration::from_millis(100))? {

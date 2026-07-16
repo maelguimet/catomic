@@ -1,6 +1,6 @@
 //! Purpose: start and poll named external commands without blocking editor input.
 //! Owns: `:run`, bounded input snapshots, command context, cancellation, and result handoff.
-//! Must not: auto-run config, write files, apply output, block input, or construct at startup.
+//! Must not: choose lifecycle events, write files, apply output, block input, or spawn at startup.
 //! Invariants: only configured names run; input is capped; all output goes through preview.
 //! Phase: 7 external command execution.
 
@@ -154,6 +154,7 @@ pub(crate) fn handle_key(
     if app.external_command.running.is_some() && key.code == KeyCode::Esc {
         app.external_command.running = None;
         app.message = Some("External command cancelled.".to_string());
+        super::hooks::finish_command(app, false);
         app.render(out)?;
         return Ok(true);
     }
@@ -168,9 +169,21 @@ pub(crate) fn is_viewing(app: &super::App) -> bool {
     preview::is_viewing(app)
 }
 
-#[cfg(test)]
 pub(crate) fn is_running(app: &super::App) -> bool {
     app.external_command.running.is_some()
+}
+
+pub(crate) fn is_busy(app: &super::App) -> bool {
+    is_running(app) || is_viewing(app)
+}
+
+pub(crate) fn start_hook(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    name: &str,
+) -> io::Result<bool> {
+    start(app, out, name)?;
+    Ok(is_running(app))
 }
 
 pub(crate) fn display_buffer(app: &super::App) -> Option<&dyn Buffer> {
@@ -252,6 +265,7 @@ fn finish_error(
     error: &str,
 ) -> io::Result<()> {
     app.message = Some(format!("Command {name} {error}."));
+    super::hooks::finish_command(app, false);
     app.render(out)
 }
 

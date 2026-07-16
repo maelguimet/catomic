@@ -1,7 +1,7 @@
-//! Purpose: decode named external commands into a bounded, explicit execution policy.
-//! Owns: `[commands]` parsing, input/output modes, names, and timeout validation.
-//! Must not: spawn processes, inspect buffers, dispatch hooks, or mutate files.
-//! Invariants: commands are named, non-empty, time-bounded, and have valid output targets.
+//! Purpose: decode named external commands and lifecycle hook references.
+//! Owns: command policies, hook order, names, timeout validation, and reference validation.
+//! Must not: spawn processes, inspect buffers, dispatch lifecycle events, or mutate files.
+//! Invariants: commands are bounded; hooks reference unique commands defined in the same file.
 //! Phase: 7 external command configuration.
 
 use std::collections::BTreeMap;
@@ -43,11 +43,34 @@ pub(crate) struct CommandSpec {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct CommandConfig {
     commands: BTreeMap<String, CommandSpec>,
+    hooks: Hooks,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct Hooks {
+    on_open: Vec<String>,
+    on_save: Vec<String>,
+    before_llm: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HookEvent {
+    Open,
+    Save,
+    BeforeLlm,
 }
 
 impl CommandConfig {
     pub(crate) fn get(&self, name: &str) -> Option<&CommandSpec> {
         self.commands.get(name)
+    }
+
+    pub(crate) fn hooks_for(&self, event: HookEvent) -> &[String] {
+        match event {
+            HookEvent::Open => &self.hooks.on_open,
+            HookEvent::Save => &self.hooks.on_save,
+            HookEvent::BeforeLlm => &self.hooks.before_llm,
+        }
     }
 
     #[cfg(test)]
@@ -61,6 +84,8 @@ pub(crate) fn parse(text: &str) -> io::Result<CommandConfig> {
     struct ConfigFile {
         #[serde(default)]
         commands: BTreeMap<String, RawCommandSpec>,
+        #[serde(default)]
+        hooks: RawHooks,
     }
 
     let raw = super::decode::<ConfigFile>(text)?;
@@ -70,7 +95,9 @@ pub(crate) fn parse(text: &str) -> io::Result<CommandConfig> {
         let spec = finish_spec(&name, raw_spec)?;
         commands.insert(name, spec);
     }
-    Ok(CommandConfig { commands })
+    let hooks = raw.hooks.into();
+    validate_hooks(&commands, &hooks)?;
+    Ok(CommandConfig { commands, hooks })
 }
 
 pub(crate) fn load_from(path: &Path) -> io::Result<CommandConfig> {
@@ -99,6 +126,26 @@ struct RawCommandSpec {
     output: CommandOutput,
     #[serde(default = "default_timeout_secs")]
     timeout_secs: u64,
+}
+
+#[derive(Default, Deserialize)]
+struct RawHooks {
+    #[serde(default)]
+    on_open: Vec<String>,
+    #[serde(default)]
+    on_save: Vec<String>,
+    #[serde(default)]
+    before_llm: Vec<String>,
+}
+
+impl From<RawHooks> for Hooks {
+    fn from(raw: RawHooks) -> Self {
+        Self {
+            on_open: raw.on_open,
+            on_save: raw.on_save,
+            before_llm: raw.before_llm,
+        }
+    }
 }
 
 fn finish_spec(name: &str, raw: RawCommandSpec) -> io::Result<CommandSpec> {
@@ -138,6 +185,29 @@ fn validate_name(name: &str) -> io::Result<()> {
             "command name {name:?} must use ASCII letters, digits, '-' or '_'"
         )))
     }
+}
+
+fn validate_hooks(commands: &BTreeMap<String, CommandSpec>, hooks: &Hooks) -> io::Result<()> {
+    for (event, names) in [
+        ("on_open", &hooks.on_open),
+        ("on_save", &hooks.on_save),
+        ("before_llm", &hooks.before_llm),
+    ] {
+        let mut seen = std::collections::BTreeSet::new();
+        for name in names {
+            if !commands.contains_key(name) {
+                return Err(invalid(format!(
+                    "hooks.{event} references unknown command {name:?}"
+                )));
+            }
+            if !seen.insert(name) {
+                return Err(invalid(format!(
+                    "hooks.{event} contains duplicate command {name:?}"
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 const fn default_timeout_secs() -> u64 {
@@ -191,6 +261,36 @@ mod tests {
             "[commands.fast]\ncommand = \"true\"\ntimeout_secs = 0\n",
             "[commands.slow]\ncommand = \"true\"\ntimeout_secs = 301\n",
             "[commands.bad]\ncommand = \"true\"\noutput = \"replace-input\"\n",
+        ] {
+            assert_eq!(parse(text).unwrap_err().kind(), io::ErrorKind::InvalidData);
+        }
+    }
+
+    #[test]
+    fn parses_ordered_hooks_that_reference_named_commands() {
+        let config = parse(
+            "[commands.first]\ncommand = \"true\"\n[commands.second]\ncommand = \"true\"\n\
+             [hooks]\non_open = [\"first\", \"second\"]\non_save = [\"second\"]\n\
+             before_llm = [\"first\"]\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.hooks_for(HookEvent::Open),
+            &["first".to_string(), "second".to_string()]
+        );
+        assert_eq!(config.hooks_for(HookEvent::Save), &["second".to_string()]);
+        assert_eq!(
+            config.hooks_for(HookEvent::BeforeLlm),
+            &["first".to_string()]
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_and_duplicate_hook_commands() {
+        for text in [
+            "[hooks]\non_open = [\"missing\"]\n",
+            "[commands.ok]\ncommand = \"true\"\n[hooks]\non_save = [\"ok\", \"ok\"]\n",
         ] {
             assert_eq!(parse(text).unwrap_err().kind(), io::ErrorKind::InvalidData);
         }

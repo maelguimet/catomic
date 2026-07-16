@@ -133,19 +133,21 @@ fn execute_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> 
         ("dprev", "") => super::lint::move_diagnostic(app, out, false),
         ("files", "") => super::project_files::start(app, out),
         ("run", name) if !name.is_empty() => super::external_command::start(app, out, name),
-        ("meow", instruction) => super::llm_request::begin(
+        ("meow", instruction) => super::hooks::before_current_llm(
             app,
             out,
             super::llm_request::CurrentLlmCommand::Meow,
             instruction,
         ),
-        ("bigmeow", instruction) => super::llm_request::begin(
+        ("bigmeow", instruction) => super::hooks::before_current_llm(
             app,
             out,
             super::llm_request::CurrentLlmCommand::BigMeow,
             instruction,
         ),
-        ("gitmeow" | "megameow", instruction) => super::repo_llm::begin(app, out, instruction),
+        ("gitmeow" | "megameow", instruction) => {
+            super::hooks::before_repo_llm(app, out, instruction)
+        }
         _ => {
             app.message = Some(format!("Unknown command: {command}"));
             app.render(out)

@@ -17,8 +17,8 @@ use crate::config::keybindings::KeyBindings;
 use crate::file::watcher::FileWatcher;
 
 use super::{
-    command_prompt, completion, external_command, lint, llm_answer, llm_preview, llm_request,
-    project_files, reload, repo_llm, save, search, selection, view, App, FileState,
+    command_prompt, completion, external_command, hooks, lint, llm_answer, llm_preview,
+    llm_request, project_files, reload, repo_llm, save, search, selection, view, App, FileState,
 };
 
 pub(crate) struct BufferSlot {
@@ -157,6 +157,7 @@ impl App {
         llm_request::cancel_all(self);
         repo_llm::cancel_all(self);
         external_command::cancel_all(self);
+        hooks::cancel_all(self);
         if self.pending_quit_confirm {
             self.message = None;
             self.pending_quit_confirm = false;
@@ -216,6 +217,7 @@ impl App {
             .push_front(BufferSlot::from_app(opened));
         let switched = self.switch_buffer(BufferDirection::Next);
         debug_assert!(switched, "new buffer must be switchable");
+        hooks::trigger_open(self);
         Ok(true)
     }
 }

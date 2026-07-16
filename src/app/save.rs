@@ -158,6 +158,7 @@ pub(crate) fn do_atomic_save(app: &mut super::App, out: &mut dyn Write) -> io::R
             app.pending_save_conflict = None;
             app.pending_reload = None;
             app.message = None;
+            super::hooks::trigger_save(app);
         }
         Err(e) => {
             app.message = Some(format!("Save error: {}", e));

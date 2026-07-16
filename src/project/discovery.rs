@@ -37,7 +37,7 @@ pub(crate) fn discover_files(root: &Path, limits: DiscoveryLimits) -> io::Result
     })
 }
 
-fn discover_files_until(
+pub(crate) fn discover_files_until(
     root: &Path,
     limits: DiscoveryLimits,
     cancelled: impl Fn() -> bool,

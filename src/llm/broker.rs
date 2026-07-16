@@ -12,7 +12,7 @@ use std::hash::{Hash, Hasher};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
 
-use crate::project::discovery::{discover_files, DiscoveryLimits};
+use crate::project::discovery::{discover_files_until, DiscoveryLimits};
 use crate::project::git::{GitContext, GitError};
 
 pub const DEFAULT_CONTEXT_BUDGET: usize = 128 * 1024;
@@ -89,28 +89,42 @@ impl ContextBroker {
     }
 
     pub fn new_with_budget(root: &Path, budget: usize) -> Result<Self, BrokerError> {
+        Self::new_until(root, budget, || false)?.ok_or_else(|| {
+            BrokerError::Discovery("repo discovery unexpectedly cancelled".to_string())
+        })
+    }
+
+    pub fn new_until(
+        root: &Path,
+        budget: usize,
+        cancelled: impl Fn() -> bool,
+    ) -> Result<Option<Self>, BrokerError> {
         let git = GitContext::capture(root)?;
-        let discovery = discover_files(
+        let Some(discovery) = discover_files_until(
             &git.root,
             DiscoveryLimits {
                 max_files: MAX_FILES,
                 max_entries: MAX_ENTRIES,
                 max_depth: MAX_DEPTH,
             },
+            cancelled,
         )
-        .map_err(|error| BrokerError::Discovery(error.to_string()))?;
+        .map_err(|error| BrokerError::Discovery(error.to_string()))?
+        else {
+            return Ok(None);
+        };
         let files = discovery
             .files
             .into_iter()
             .filter_map(|path| path.strip_prefix(&git.root).ok().map(Path::to_path_buf))
             .collect();
-        Ok(Self {
+        Ok(Some(Self {
             git,
             files,
             discovery_truncated: discovery.truncated,
             budget_remaining: budget,
             relevant_files: HashMap::new(),
-        })
+        }))
     }
 
     pub fn remaining_budget(&self) -> usize {

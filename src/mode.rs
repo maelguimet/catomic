@@ -24,10 +24,12 @@ pub enum Mode {
 }
 
 impl Mode {
+    #[cfg(test)]
     pub fn is_plain(self) -> bool {
         self == Mode::Plain
     }
 
+    #[cfg(test)]
     pub fn is_project(self) -> bool {
         self == Mode::Project
     }
@@ -118,6 +120,7 @@ impl Capabilities {
 
     /// Returns true if this capability set is safe for Plain mode.
     /// Used in tests and assertions.
+    #[cfg(test)]
     pub fn is_plain_safe(&self) -> bool {
         !self.linters && !self.lsp && !self.repo_scan && !self.repo_llm && !self.network_llm
     }

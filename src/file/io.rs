@@ -201,6 +201,7 @@ pub fn capture_file_snapshot(path: impl AsRef<Path>) -> io::Result<FileSnapshot>
 /// Returns Unchanged / Modified / Deleted accordingly.
 /// Captures live metadata once, then uses pure compare.
 /// Metadata errors become Unknown(kind). Does not read file content.
+#[cfg(test)]
 pub fn compare_to_snapshot(
     path: impl AsRef<Path>,
     snap: &FileSnapshot,

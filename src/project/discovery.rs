@@ -28,6 +28,7 @@ pub(crate) struct Discovery {
     pub(crate) unreadable_directories: usize,
 }
 
+#[cfg(test)]
 pub(crate) fn discover_files(root: &Path, limits: DiscoveryLimits) -> io::Result<Discovery> {
     discover_files_until(root, limits, || false)?.ok_or_else(|| {
         io::Error::new(

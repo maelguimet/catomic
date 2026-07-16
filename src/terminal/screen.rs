@@ -81,6 +81,7 @@ impl Screen {
     /// Scrolls left if col is before viewport; scrolls so col is the last visible
     /// char when it is past the right edge.
     /// Uses saturating arithmetic; never panics.
+    #[cfg(test)]
     pub fn reveal_col(&mut self, col: usize) {
         self.reveal_col_with_width(col, self.visible_width());
     }

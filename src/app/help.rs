@@ -40,14 +40,14 @@ Find and view
   Ctrl+F                Find; Enter/Down next, Up previous
   Ctrl+Shift+F          Replace next
   Ctrl+G                Go to line
-  Ctrl+Shift+P          Command prompt
+  Ctrl+Shift+P / F2     Command prompt
   Ctrl+PageUp/Down      Previous/next large-file page
   F6                    Markdown preview
   F7                    Toggle line numbers
   F8                    Toggle visible whitespace
   F9                    Toggle soft line wrapping
 
-Commands (Ctrl+Shift+P)
+Commands (Ctrl+Shift+P or F2)
   help | shortcuts
   save | write | w
   save as PATH | save-as PATH

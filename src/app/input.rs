@@ -199,6 +199,14 @@ pub(crate) fn handle_key_with(
         }
 
         KeyEvent {
+            code: KeyCode::F(2),
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            command_prompt::open_command_prompt(app, out)?;
+        }
+
+        KeyEvent {
             code: KeyCode::Char('o'),
             modifiers: KeyModifiers::CONTROL,
             ..

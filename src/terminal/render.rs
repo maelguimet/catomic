@@ -1,21 +1,16 @@
-//! Dumb ANSI rendering.
-//!
-//! Phase 0–2 philosophy: direct writes + cursor control.
-//! Only later introduce widget libraries if they don't hurt latency.
-//!
-//! Responsibilities:
-//! - Render visible buffer region
-//! - Propagate file-backed visible-window read failures
-//! - Position cursor
-//! - Minimal status (filename, mode, dirty?)
-//! - Respect large-file limits (no full highlight for huge files)
+//! Purpose: render the visible buffer viewport with direct ANSI writes.
+//! Owns: row clearing, visible text, bottom status/message output, and cursor placement.
+//! Must not: mutate editor/buffer state, read full buffers, highlight, or own terminal setup.
+//! Invariants: file-backed read errors propagate before output; every viewport row is cleared;
+//!   rendering never emits a full-screen clear.
+//! Phase: 2-br row-oriented redraw hardening.
 
 use std::io::Write;
 
 use crate::buffer::{Buffer, Cursor};
 
-/// Very basic full-screen render for Phase 0.
-/// Clears, writes the visible window from the buffer using visible_lines
+/// Very basic viewport render for Phase 2.
+/// Clears each viewport row, writes the visible window using visible_lines
 /// (not the full .lines() clone), positions the terminal cursor exactly at
 /// the buffer's logical cursor. No phantom line is appended after the last
 /// rendered row.
@@ -33,20 +28,17 @@ pub fn render_buffer<W: Write + ?Sized>(
     width: usize,
     message: Option<&str>,
 ) -> std::io::Result<()> {
-    // Full clear + home for Phase 0 simplicity (no partial redraw yet).
-    write!(out, "\x1b[2J\x1b[1;1H")?;
-
     // Reserve bottom row for message/status (matches screen.visible_height intent).
     // Horizontal: use width directly as content width (no sidebar/status reservation).
     let content_h = height.saturating_sub(1);
     let content_w = width;
     let visible = buffer.try_visible_lines_window(start, content_h, start_col, content_w)?;
-    for (i, lv) in visible.iter().enumerate() {
-        if i > 0 {
-            write!(out, "\r\n")?;
-        }
+    for screen_row in 1..=content_h {
+        write!(out, "\x1b[{};1H\x1b[K", screen_row)?;
         if content_w > 0 {
-            write!(out, "{}", lv.content)?;
+            if let Some(line) = visible.get(screen_row - 1) {
+                write!(out, "{}", line.content)?;
+            }
         }
     }
 
@@ -90,8 +82,8 @@ mod tests {
             "height=0 must not emit bottom-row positioning: {}",
             s
         );
-        // Still does safe clear + final cursor positioning
-        assert!(s.contains("\x1b[2J\x1b[1;1H"), "still clears");
+        // No screen-wide clear; final cursor positioning remains safe.
+        assert!(!s.contains("\x1b[2J"), "must not clear whole screen");
         assert!(
             s.contains("\x1b[1;1H"),
             "safe cursor pos at 1;1 for empty viewport"
@@ -116,7 +108,7 @@ mod tests {
     }
 
     #[test]
-    fn render_buffer_width_zero_emits_no_line_content_but_clears_and_positions() {
+    fn render_buffer_width_zero_emits_no_content_but_clears_rows_and_positions() {
         let b = SimpleBuffer::from_text("abc\ndef\n");
         let mut out: Vec<u8> = Vec::new();
         render_buffer(&mut out, &b, 0, 0, 3, 0, None).expect("render w=0");
@@ -127,9 +119,26 @@ mod tests {
             "width=0 must emit no line content chars: {}",
             s
         );
-        // Still clears and does final cursor positioning safely
-        assert!(s.contains("\x1b[2J"), "clears on w=0");
+        // Still clears viewport rows and does final cursor positioning safely.
+        assert!(s.contains("\x1b[1;1H\x1b[K"), "clears first content row");
+        assert!(s.contains("\x1b[2;1H\x1b[K"), "clears second content row");
+        assert!(!s.contains("\x1b[2J"), "does not clear whole screen");
         assert!(s.contains("\x1b["), "positions cursor");
+    }
+
+    #[test]
+    fn render_buffer_clears_each_row_without_full_screen_clear() {
+        let b = SimpleBuffer::from_text("only");
+        let mut out = Vec::new();
+
+        render_buffer(&mut out, &b, 0, 0, 4, 10, Some("status")).unwrap();
+
+        let s = String::from_utf8(out).unwrap();
+        assert!(!s.contains("\x1b[2J"));
+        for row in 1..=3 {
+            assert!(s.contains(&format!("\x1b[{row};1H\x1b[K")));
+        }
+        assert!(s.contains("\x1b[4;1H\x1b[Kstatus"));
     }
 
     #[test]

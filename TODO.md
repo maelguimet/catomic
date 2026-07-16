@@ -758,7 +758,7 @@ Update this file as decisions are made or phases complete. Add concrete issues o
 
 - Detailed completed Phase 2-r through 2-ae notes are archived in `docs/progress/phase-2-progress.md`.
 
-Key unresolved limitations (still current post 2-bq):
+Key unresolved limitations (still current post 2-br):
 - (size classification + pre-read guardrails + Large warning + Huge/Extreme paged policy now exist; manual baselines recorded + split harness + line-heavy smokes exist; first visible large-file mode status marker landed; open/buffer storage seams exist; Huge/Extreme files now use a read-only file-backed paged mode; PieceTable has an internal tested file-backed-original seam with bounded edited-line queries, but paged policy does not use it; no mmap or rope rewrite)
 - watcher signals are runtime hints only; App-owned best-effort; runtime checks watcher once per loop via helper (try_recv inside check_file_watcher_once only); Unchanged/NoPath from watcher clear stale pending_reload when armed, otherwise fully ignored (suppress self-save noise);
 - no auto-reload; Modified/Deleted (from watcher or Ctrl+R) only arm confirmation; second Ctrl+R performs actual reload using fresh observe + pending match (or clears for Deleted);
@@ -766,11 +766,13 @@ Key unresolved limitations (still current post 2-bq):
 - metadata-only external detection (len+mtime via observe_external_file / capture / compare); same-size/same-mtime overwrite limitation remains (no hash/content);
 - default test suite uses deterministic queued-signal seams only (TestStub/inject + replace_file_watcher_for_test); live OS notify smoke is ignored/manual and must not be required for CI;
 - big-file tiers/perf: Small/Large remain editable full-read PieceTable opens; Huge/Extreme use configured read-only logical-line pages over a stable descriptor. Active-page scans retain line/checkpoint metadata only, use the optimized std ASCII/newline path for giant lines, fallible rendering probes descriptor stability before and after each visible window, and explicit Ctrl+F streams the whole descriptor in bounded chunks. A single giant logical line can still make one page span the file; no thresholds are enforced yet.
+- rendering repaints and clears each viewport row without a terminal-wide clear; it does not yet retain row state for dirty-row-only redraws.
 - Detailed completed Phase 2-af through 2-ax notes are archived in `docs/progress/phase-2-progress.md`.
-- Detailed completed Phase 2-ay through 2-bq notes are archived in `docs/progress/phase-2-progress.md`.
+- Detailed completed Phase 2-ay through 2-br notes are archived in `docs/progress/phase-2-progress.md`.
 
-Next intended Phase 2B steps (post 2-bq):
-- Audit the remaining Phase 2 exit criteria and acceptance gaps against current tests and measurements. Immutable snapshot and editable Huge semantics remain separate product decisions.
+Next intended Phase 2B steps (post 2-br):
+- Reconcile the original Phase 2 auto-reload/editable-Huge requirements with the later accepted confirmation/read-only-paging policy before declaring Phase 2 complete.
+- After that policy decision, take the remaining non-conflicting Phase 2 product gap narrowly: simple multiple-buffer foundations before any Phase 3 comfort expansion.
 - The 2026-07-07 phase split is recorded; editable Small/Large PieceTable opens still fully materialize content. Huge/Extreme paged opens scan only the active configured line page and remain read-only; whole-file search streams only after explicit Ctrl+F invocation.
 - Keep manual large-file tests ignored; do not add or enable default 10/100 MiB or 1 GiB tests.
 - Do not enforce thresholds yet; budgets remain advisory and must not become pass/fail gates in this or the immediate next pass.

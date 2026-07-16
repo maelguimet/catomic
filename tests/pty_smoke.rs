@@ -9,7 +9,7 @@
 //!   large-file/perf scenarios.
 //! Invariants: tests use temporary files, time out and kill the child on hangs,
 //!   and leave Plain startup behavior unchanged.
-//! Phase: 2-bd/2-bf/2-bo real PTY acceptance smokes.
+//! Phase: 2-br row-oriented redraw PTY acceptance.
 
 use std::error::Error;
 use std::fs;
@@ -170,10 +170,11 @@ fn pty_save_undo_save_quit_writes_expected_file() -> TestResult {
 
     let output = editor.output_string();
     assert!(
-        output.contains("\x1b[2J") && output.contains("ab"),
-        "PTY output should include render clears and typed content; got {:?}",
+        output.contains("\x1b[1;1H\x1b[K") && output.contains("ab"),
+        "PTY output should include row clears and typed content; got {:?}",
         output
     );
+    assert!(!output.contains("\x1b[2J"), "must avoid full-screen clears");
     assert_eq!(fs::read_to_string(&temp.path)?, "ab");
 
     Ok(())

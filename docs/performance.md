@@ -369,7 +369,7 @@ Clarifications:
 - 2026-07-07 sparse exact-1-GiB read-only Huge timed run after checkpointing: 30056 kB
 - 2026-07-07 100 MiB non-ASCII Huge timed run after checkpointing: 30040 kB
 
-Note: these are wall-time / RSS for the full test harness invocation on this machine (not pure editor hot path). Generate time includes FS streaming writes. App::new includes the selected open policy (editable read + PieceTable for Small/Large; scan + file-backed LargeFileBuffer for Huge) plus size capture. Render is cheap full-clear for these runs. The first three bullets are from the 2026-06-24 baseline; later bullets are 2026-07-07 after-runs.
+Note: these are wall-time / RSS for the full test harness invocation on this machine (not pure editor hot path). Generate time includes FS streaming writes. App::new includes the selected open policy (editable read + PieceTable for Small/Large; scan + file-backed LargeFileBuffer for Huge) plus size capture. The recorded render samples used the historical full-clear renderer. The first three bullets are from the 2026-06-24 baseline; later bullets are 2026-07-07 after-runs.
 
 Caveat: measurements are observational only for this hardware and build. No budgets or "pass" criteria are declared yet. Do not treat numbers as universal. Future passes may add budgets after more data and hotspot identification.
 
@@ -398,8 +398,8 @@ All numbers remain advisory. Do not turn these into `#[test]` pass/fail gates in
 - For editable Small/Large present files, App::new still performs full `read_to_string` + `PieceTable::from_owned_text` + size probe + initial history token. After the newline-search change, `read_to_string` is the largest measured editor-owned subphase for the synthetic no-newline full-materialization comparison.
 - For Huge present files, App::new now performs a LargeFileBuffer UTF-8/newline scan and opens a read-only file descriptor for ranged visible reads. Dense 100 MiB is scan-bound; line-heavy 100 MiB additionally stores many line starts/line char counts; dense non-ASCII 100 MiB also pays scalar counting and checkpoint construction during that scan.
 - MaxRSS for Huge is now driven mostly by line-index density plus test harness overhead rather than full content residency. The dense 100 MiB sample dropped to ~106 MiB RSS, and sparse exact-1-GiB was ~30 MiB warm.
-- Render numbers are currently cheap in these synthetic tests (full clear of small viewport over a buffer that has already been built); this is not proof of scalable redraw behavior under editing/resizing for large files.
-- Render still performs a full clear every frame; as of later hygiene passes it avoids allocating a temporary String for every visible sliced line (writes scalar chars directly), but this is not a scalable redraw strategy.
+- Historical render numbers are cheap in these synthetic tests (a small viewport over an already-built buffer); this is not proof of scalable redraw behavior under editing/resizing for large files.
+- Phase 2-br replaced the terminal-wide clear with absolute positioning plus per-row clears. It still repaints the full viewport and does not retain prior rows for dirty-row diffing.
 - The next optimization area is editable large-file semantics and external-change snapshot policy (see `docs/decisions/0003-large-file-storage.md`). The read-only Huge path is an intermediate storage mode, not mmap/rope/editable lazy loading.
 - The ignored manual open tests emit stable phase samples for the open path: "metadata", "read_to_string", "PieceTable::from_owned_text", "App::new" (end-to-end), and "render". Dense no-newline and line-heavy variants are both manual-only. These are still observational only. Generation time is fixture cost. `read_to_string` + `PieceTable::from_owned_text` provide the useful split of the editable materialization hotspot. `App::new` remains the full open measurement for the selected policy. No budgets or gates.
 

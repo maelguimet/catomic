@@ -27,11 +27,14 @@ pub(crate) fn show_repo_patch(
     super::open(
         app,
         out,
-        proposal,
-        proposed_text,
-        source_snapshot,
-        output,
-        "Repo LLM patch preview (read-only). Enter rechecks repo and applies; Esc cancels.",
-        Some(guard),
+        super::PreviewDraft {
+            proposal,
+            proposed_text,
+            source_snapshot,
+            preview_text: output,
+            message:
+                "Repo LLM patch preview (read-only). Enter rechecks repo and applies; Esc cancels.",
+            repo_guard: Some(guard),
+        },
     )
 }

@@ -37,10 +37,12 @@ pub struct ContextBroker {
 }
 
 impl ContextBroker {
+    #[cfg(test)]
     pub fn new_for_repo(root: &Path) -> Result<Self, BrokerError> {
         Self::new_with_budget(root, DEFAULT_CONTEXT_BUDGET)
     }
 
+    #[cfg(test)]
     pub fn new_with_budget(root: &Path, budget: usize) -> Result<Self, BrokerError> {
         Self::new_until(root, budget, || false)?.ok_or_else(|| {
             BrokerError::Discovery("repo discovery unexpectedly cancelled".to_string())

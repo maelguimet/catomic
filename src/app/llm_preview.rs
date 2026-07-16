@@ -30,6 +30,15 @@ pub(crate) struct PatchPreview {
     source_scroll_left: usize,
 }
 
+struct PreviewDraft<'a> {
+    proposal: Proposal,
+    proposed_text: String,
+    source_snapshot: String,
+    preview_text: &'a str,
+    message: &'static str,
+    repo_guard: Option<ContextBroker>,
+}
+
 #[cfg(test)]
 pub(crate) fn show(app: &mut super::App, out: &mut dyn Write, patch_text: &str) -> io::Result<()> {
     if app.buffer.is_read_only() || app.buffer.page_info().is_some() {
@@ -49,12 +58,14 @@ pub(crate) fn show(app: &mut super::App, out: &mut dyn Write, patch_text: &str) 
     open(
         app,
         out,
-        proposal,
-        proposed_text,
-        source_snapshot,
-        patch_text,
-        "LLM patch preview (read-only). Enter applies; Esc cancels.",
-        None,
+        PreviewDraft {
+            proposal,
+            proposed_text,
+            source_snapshot,
+            preview_text: patch_text,
+            message: "LLM patch preview (read-only). Enter applies; Esc cancels.",
+            repo_guard: None,
+        },
     )
 }
 
@@ -74,12 +85,14 @@ pub(crate) fn show_with_region_fallback(
         return open(
             app,
             out,
-            proposal,
-            proposed_text,
-            source_snapshot,
-            output,
-            "LLM patch preview (read-only). Enter applies; Esc cancels.",
-            None,
+            PreviewDraft {
+                proposal,
+                proposed_text,
+                source_snapshot,
+                preview_text: output,
+                message: "LLM patch preview (read-only). Enter applies; Esc cancels.",
+                repo_guard: None,
+            },
         );
     }
     let Some(target) = target else {
@@ -100,43 +113,36 @@ pub(crate) fn show_with_region_fallback(
     open(
         app,
         out,
-        region,
-        replacement,
-        source_snapshot,
-        &preview_text,
-        "LLM marked-region preview (read-only). Enter applies; Esc cancels.",
-        None,
+        PreviewDraft {
+            proposal: region,
+            proposed_text: replacement,
+            source_snapshot,
+            preview_text: &preview_text,
+            message: "LLM marked-region preview (read-only). Enter applies; Esc cancels.",
+            repo_guard: None,
+        },
     )
 }
 
-fn open(
-    app: &mut super::App,
-    out: &mut dyn Write,
-    proposal: Proposal,
-    proposed_text: String,
-    source_snapshot: String,
-    preview_text: &str,
-    message: &str,
-    repo_guard: Option<ContextBroker>,
-) -> io::Result<()> {
+fn open(app: &mut super::App, out: &mut dyn Write, draft: PreviewDraft<'_>) -> io::Result<()> {
     super::view::cancel_preview(app);
     super::lint::close_view(app);
     super::project_files::close_view(app);
     close(app);
     app.llm_preview = Some(PatchPreview {
-        proposal,
-        proposed_text,
-        source_snapshot,
+        proposal: draft.proposal,
+        proposed_text: draft.proposed_text,
+        source_snapshot: draft.source_snapshot,
         source_path: app.file.path.clone(),
-        repo_guard,
-        buffer: PieceTable::from_text(preview_text),
+        repo_guard: draft.repo_guard,
+        buffer: PieceTable::from_text(draft.preview_text),
         source_scroll_top: app.screen.scroll_top,
         source_scroll_left: app.screen.scroll_left,
     });
     app.screen.scroll_top = 0;
     app.screen.scroll_left = 0;
     app.selection.clear();
-    app.message = Some(message.to_string());
+    app.message = Some(draft.message.to_string());
     app.render(out)
 }
 
@@ -237,9 +243,11 @@ fn move_page(app: &mut super::App, forward: bool) {
 fn set_line_edge(app: &mut super::App, end: bool) {
     let buffer = &mut app.llm_preview.as_mut().expect("preview active").buffer;
     let row = buffer.cursor().row;
-    let col = end
-        .then(|| buffer.line_char_count(row).unwrap_or(0))
-        .unwrap_or(0);
+    let col = if end {
+        buffer.line_char_count(row).unwrap_or(0)
+    } else {
+        0
+    };
     buffer.set_cursor(Cursor { row, col });
 }
 

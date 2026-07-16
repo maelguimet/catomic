@@ -137,7 +137,7 @@ fn invalid_base_url() -> io::Error {
     )
 }
 
-fn quoted<'a>(value: &'a str, line: usize) -> io::Result<&'a str> {
+fn quoted(value: &str, line: usize) -> io::Result<&str> {
     let quote = value.as_bytes().first().copied();
     if !matches!(quote, Some(b'\'' | b'"')) || value.as_bytes().last().copied() != quote {
         return Err(invalid(line, "LLM string settings must be quoted"));

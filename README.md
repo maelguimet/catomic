@@ -35,7 +35,7 @@ v0.1 roadmap and verification record is in
 - Normal text editor behavior by default
 - Familiar shortcuts: `Ctrl+C` / `Ctrl+V` / `Ctrl+X` / `Ctrl+Z` / `Ctrl+Y` / `Ctrl+F` / `Ctrl+Q`
   (Note: in a raw terminal these are best-effort; see TODO.md "Terminal Realities" section for the feral raccoon details around paste and Ctrl keys.)
-- Mouse support eventually, but not as a crutch
+- Mouse support without making it a crutch
 - Selection should behave like a GUI editor where possible
 - Big-file mode should degrade gracefully instead of exploding
 
@@ -58,6 +58,10 @@ overwrites it. `Ctrl+S` opens this prompt automatically for an untitled buffer.
 `Ctrl+W` closes the active clean buffer. A dirty buffer refuses to close until
 saved; use the explicit `close!` command to discard it. The command prompt also
 accepts `open PATH`, `new`, and `close`.
+
+`Ctrl+H` or `F1` opens the built-in shortcut reference. The help view is
+read-only; use the arrow keys or Page Up/Down to navigate and Escape to return.
+The command prompt aliases `help` and `shortcuts` open the same view.
 
 Hold Shift with the arrow keys to select text, or use `Ctrl+A` for the active
 buffer/page. `Ctrl+C`, `Ctrl+X`, and `Ctrl+V` copy, cut, and paste through an
@@ -82,7 +86,20 @@ viewport-only; opening a large file does not trigger a whole-document parse.
 For Markdown files, `F6` builds a read-only rendered preview of the active
 buffer (or active large-file page); press `F6` or Escape to return to editing.
 Press `F7` to toggle line numbers and `F8` to show spaces and tabs. These view
-settings are retained independently for each open buffer.
+settings are retained independently for each open buffer. `F9` toggles bounded
+soft wrapping at the terminal width; wrapped continuations preserve document
+coordinates and mouse mapping instead of inserting newlines.
+
+Cursor movement, deletion, clipping, and terminal placement respect extended
+grapheme clusters and terminal-cell width, including combining marks, wide
+characters, emoji sequences, and tabs.
+
+Catomic accepts valid UTF-8 and preserves an optional UTF-8 BOM plus the
+detected LF, CRLF, or CR line-ending style across Save, Save As, and reload. The
+active format appears in the status line. Oversized paged files currently
+support LF and CRLF; BOM-prefixed or CR-only files must remain below the paged
+threshold. UTF-16 and other non-UTF-8 encodings are rejected rather than
+silently corrupted.
 
 ## Terminal Behavior
 
@@ -117,7 +134,7 @@ For big files:
 - Keep line indexing lazy or incremental
 - Offer "large file mode" when needed
 
-Every regular UTF-8 file remains editable. Small and medium files use one
+Every supported UTF-8 file remains editable. Small and medium files use one
 in-memory PieceTable; oversized files use editable, file-backed line pages
 instead of being rejected or opened read-only. The page size is configurable in
 `~/.config/catomic/config.toml` (or `$XDG_CONFIG_HOME/catomic/config.toml`):
@@ -303,10 +320,11 @@ save, quit, undo, completion, or view logic:
 "ctrl+shift+g" = "command-prompt"
 ```
 
-Supported actions are `save`, `save-as`, `quit`, `reload`, `search`, `goto-line`,
-`command-prompt`, `undo`, `redo`, `complete`, `next-buffer`, `previous-buffer`,
-`next-page`, `previous-page`, `markdown-preview`, `line-numbers`, and
-`whitespace`. Chords use `ctrl`, `alt`, and `shift` plus a character, navigation
+Supported actions are `help`, `save`, `save-as`, `open`, `new`, `close`,
+`replace`, `quit`, `reload`, `search`, `goto-line`, `command-prompt`, `undo`,
+`redo`, `complete`, `next-buffer`, `previous-buffer`, `next-page`,
+`previous-page`, `markdown-preview`, `line-numbers`, `whitespace`, and
+`soft-wrap`. Chords use `ctrl`, `alt`, and `shift` plus a character, navigation
 key, or `f1` through `f12`. Prompt and picker keys remain local while those
 interfaces are active.
 

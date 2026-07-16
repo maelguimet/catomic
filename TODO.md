@@ -746,6 +746,10 @@ Update this file as decisions are made or phases complete. Add concrete issues o
 - Phase 6 complete: explicit `:meow`/`:bigmeow`, Project-only
   `:gitmeow`/`:megameow`, bounded broker context, transient confirmed network,
   drift-safe preview, and one-step undo are accepted.
+- Post-v0.1 core usability: interactive Open/New/Close and Save As, standard and
+  word navigation, Find/Replace, automatic indentation, built-in shortcut help,
+  grapheme/cell-aware terminal editing, bounded soft wrap, and UTF-8 BOM plus
+  newline-style preservation are implemented and covered by regression tests.
 - Phase 1A complete: PieceTable behind Buffer, parity correct, app using it.
 - Phase 1B-a complete:
   - Real LineIndex (in buffer/line_index.rs) with rebuild bridge.

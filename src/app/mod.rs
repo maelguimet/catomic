@@ -89,17 +89,17 @@ impl App {
         // Size/guardrail + initial snapshot/open plan extracted (see open.rs).
         // Single capture_file_snapshot in prepare supplies both size decision
         // and disk_snapshot/content plan (no duplicate metadata probe in the happy path).
-        // Behavior preserved exactly for all App::new cases (None/missing/Small/
-        // Large/Huge/Extreme/hard-meta/invalid-utf8-after-small-probe).
+        // Covers all App::new cases (None/missing/Small/Large/Huge/Extreme/
+        // hard-meta/invalid-utf8-after-small-probe).
         let meta = open::prepare_open_file_meta(initial_path)?;
 
-        let buffer = open::build_open_buffer(&meta, initial_path)?;
+        let buffer = open::build_open_buffer(&meta, initial_path, big_files.page_lines)?;
 
         // Capture initial history position as the clean save point (open or new).
         let initial_pos = buffer.edit_history_position();
         // Use the single initial disk snapshot captured inside prepare_open_file_meta.
         // No second metadata probe here. prepare already returned Err for hard meta
-        // errors and for Extreme (before we reach this read). Behavior preserved:
+        // errors before we reach content reads. Snapshot behavior:
         // - None path: snapshot=None
         // - missing: snapshot=Some(Absent)
         // - present: snapshot=Some(Present) with len+mtime from the same probe used for size

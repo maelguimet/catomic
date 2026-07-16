@@ -2,7 +2,8 @@
 
 Date: 2026-07-07
 
-Status: accepted intermediate; editable Huge storage still open
+Status: superseded for read-only open policy by [0005](./0005-paged-large-files.md);
+editable Huge storage remains open
 
 ## Context
 

@@ -1,6 +1,6 @@
 //! Open-size guardrail extraction + initial snapshot/open plan for App::new (Phase 2B).
 //!
-//! Purpose: encapsulate pre-read size guardrails (Extreme refuse, Large/Huge warn)
+//! Purpose: encapsulate pre-read size policy (Large warn, Huge/Extreme page)
 //!   the single initial metadata capture (disk_snapshot + content plan), and
 //!   the current content-plan-to-buffer construction seam.
 //! Owns: prepare_open_file_meta (OpenSizeDecision + capture_file_snapshot once;
@@ -10,18 +10,18 @@
 //!   semantics beyond carrying the initial snapshot/plan and constructing the
 //!   initial buffer, know terminal/render, or Project/LLM.
 //! Invariants: identical observable outcomes for all documented App::new cases
-//!   (None, missing, Small, Large/Huge, Extreme refuse before read, hard meta error,
+//!   (None, missing, Small, Large, Huge/Extreme paged, hard meta error,
 //!   invalid UTF-8 errors from read after successful metadata); single capture
 //!   for size + snapshot + content plan on the present/missing-file paths.
-//! Phase: 2B open policy seam + limited read-only Huge-file storage.
+//! Phase: 2-bm configurable paged open policy.
 
 use std::io::{self, ErrorKind};
 
 use crate::buffer::{self, Buffer};
 use crate::file::io::FileSnapshot;
 use crate::file::size::{
-    classify_file_size, open_size_decision, open_size_refusal_message, open_size_warning_message,
-    FileSizeTier, OpenSizeDecision,
+    classify_file_size, open_size_decision, open_size_warning_message, FileSizeTier,
+    OpenSizeDecision,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -32,8 +32,8 @@ pub(crate) enum OpenContentPlan {
     MissingEmpty,
     /// The requested path was present and must be read fully into the current buffer.
     FullRead,
-    /// The requested path was Huge and opens read-only through bounded file reads.
-    LimitedReadOnly,
+    /// The requested path was oversized and opens one read-only line page at a time.
+    PagedReadOnly,
 }
 
 impl Default for OpenContentPlan {
@@ -44,12 +44,12 @@ impl Default for OpenContentPlan {
 
 /// Captured pre-read metadata decision for an optional path.
 /// size_* are None for no-path or missing (Absent).
-/// initial_message is Some only for Large/Huge that should warn on first open.
+/// initial_message is Some for Large/Huge/Extreme files that warn on first open.
 /// disk_snapshot carries the single initial capture (None for no path;
 /// Absent for missing path; Present for existing) so App::new does not
 /// probe metadata twice.
 /// content_plan is the explicit current storage policy: empty for no-path/missing,
-/// full read for editable Present files; limited read-only for Huge files.
+/// full read for editable Present files; paged read-only for Huge/Extreme files.
 /// It is the narrow seam for future lazy storage work.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct OpenFileMeta {
@@ -66,8 +66,8 @@ pub(crate) struct OpenFileMeta {
 /// - None path: default (snapshot=None, no size, no message).
 /// - Missing: sizes=None, disk_snapshot=Some(Absent); caller opens empty.
 /// - Existing Small: size+Small from snapshot, no message, snapshot=Present.
-/// - Existing Large/Huge: size+tier from snapshot, initial_message=warning.
-/// - Extreme: Err(InvalidData) before returning meta (before any content read).
+/// - Existing Large: editable full read with an initial warning.
+/// - Existing Huge/Extreme: paged read-only with an initial warning.
 /// - Hard meta error: propagates Err.
 /// Does not read content, does not build buffer/App, does not touch watcher.
 pub(crate) fn prepare_open_file_meta(initial_path: Option<&str>) -> io::Result<OpenFileMeta> {
@@ -79,20 +79,19 @@ pub(crate) fn prepare_open_file_meta(initial_path: Option<&str>) -> io::Result<O
                 if let FileSnapshot::Present { len, .. } = &snap {
                     let sz = *len;
                     match open_size_decision(sz) {
-                        OpenSizeDecision::Refuse => {
-                            let msg = open_size_refusal_message(sz);
-                            return Err(io::Error::new(ErrorKind::InvalidData, msg));
-                        }
                         OpenSizeDecision::OpenWithWarning => {
                             meta.size_bytes = Some(sz);
                             let tier = classify_file_size(sz);
                             meta.size_tier = Some(tier);
                             meta.initial_message = open_size_warning_message(sz, tier);
-                            meta.content_plan = if tier == FileSizeTier::Huge {
-                                OpenContentPlan::LimitedReadOnly
-                            } else {
-                                OpenContentPlan::FullRead
-                            };
+                            meta.content_plan = OpenContentPlan::FullRead;
+                        }
+                        OpenSizeDecision::OpenPaged => {
+                            meta.size_bytes = Some(sz);
+                            let tier = classify_file_size(sz);
+                            meta.size_tier = Some(tier);
+                            meta.initial_message = open_size_warning_message(sz, tier);
+                            meta.content_plan = OpenContentPlan::PagedReadOnly;
                         }
                         OpenSizeDecision::OpenNormally => {
                             meta.size_bytes = Some(sz);
@@ -119,13 +118,14 @@ pub(crate) fn prepare_open_file_meta(initial_path: Option<&str>) -> io::Result<O
 /// This is the current storage policy seam:
 /// - no path / missing path => empty PieceTable
 /// - Small/Large present path => full UTF-8 read + owned PieceTable construction
-/// - Huge present path => read-only LargeFileBuffer with bounded visible reads
+/// - Huge/Extreme present path => configured read-only LargeFileBuffer page
 ///
 /// Future lazy/partial storage work should branch here (or below the PieceTable
 /// constructor) without adding file I/O to the buffer module or App::new.
 pub(crate) fn build_open_buffer(
     meta: &OpenFileMeta,
     initial_path: Option<&str>,
+    page_lines: usize,
 ) -> io::Result<Box<dyn Buffer>> {
     match meta.content_plan {
         OpenContentPlan::UntitledEmpty | OpenContentPlan::MissingEmpty => {
@@ -143,14 +143,16 @@ pub(crate) fn build_open_buffer(
             let content = crate::file::io::read_to_string(path)?;
             Ok(Box::new(buffer::PieceTable::from_owned_text(content)))
         }
-        OpenContentPlan::LimitedReadOnly => {
+        OpenContentPlan::PagedReadOnly => {
             let path = initial_path.ok_or_else(|| {
                 io::Error::new(
                     ErrorKind::InvalidInput,
-                    "LimitedReadOnly open plan requires initial path",
+                    "PagedReadOnly open plan requires initial path",
                 )
             })?;
-            Ok(Box::new(buffer::LargeFileBuffer::open(path)?))
+            Ok(Box::new(buffer::LargeFileBuffer::open_paged(
+                path, page_lines,
+            )?))
         }
     }
 }
@@ -217,7 +219,7 @@ mod tests {
     }
 
     #[test]
-    fn huge_path_plans_limited_read_only_from_snapshot() {
+    fn huge_path_plans_paged_read_only_from_snapshot() {
         let meta = OpenFileMeta {
             size_bytes: Some(crate::file::size::LARGE_FILE_LIMIT_BYTES + 1),
             size_tier: Some(FileSizeTier::Huge),
@@ -229,10 +231,10 @@ mod tests {
                 len: crate::file::size::LARGE_FILE_LIMIT_BYTES + 1,
                 mtime: None,
             }),
-            content_plan: OpenContentPlan::LimitedReadOnly,
+            content_plan: OpenContentPlan::PagedReadOnly,
         };
 
-        assert_eq!(meta.content_plan, OpenContentPlan::LimitedReadOnly);
+        assert_eq!(meta.content_plan, OpenContentPlan::PagedReadOnly);
         assert!(meta
             .initial_message
             .as_deref()
@@ -251,8 +253,8 @@ mod tests {
             ..OpenFileMeta::default()
         };
 
-        let untitled = build_open_buffer(&no_path, None).unwrap();
-        let missing_buf = build_open_buffer(&missing, Some("missing.txt")).unwrap();
+        let untitled = build_open_buffer(&no_path, None, 20_000).unwrap();
+        let missing_buf = build_open_buffer(&missing, Some("missing.txt"), 20_000).unwrap();
 
         assert_eq!(untitled.to_string(), "");
         assert_eq!(missing_buf.to_string(), "");
@@ -270,7 +272,7 @@ mod tests {
             ..OpenFileMeta::default()
         };
 
-        let buffer = build_open_buffer(&meta, Some(&path.to_string_lossy())).unwrap();
+        let buffer = build_open_buffer(&meta, Some(&path.to_string_lossy()), 20_000).unwrap();
 
         assert_eq!(buffer.to_string(), "hello\nworld");
         assert_eq!(buffer.line_count(), 2);
@@ -285,7 +287,7 @@ mod tests {
             ..OpenFileMeta::default()
         };
 
-        let err = match build_open_buffer(&meta, None) {
+        let err = match build_open_buffer(&meta, None, 20_000) {
             Ok(_) => panic!("FullRead must require path"),
             Err(err) => err,
         };
@@ -294,20 +296,21 @@ mod tests {
     }
 
     #[test]
-    fn build_open_buffer_limited_read_only_uses_file_backed_buffer() {
+    fn build_open_buffer_paged_read_only_uses_configured_line_count() {
         let path = temp_path("build_limited_read_only.txt");
         cleanup(&path);
         fs::write(&path, "first\nsecond").unwrap();
         let meta = OpenFileMeta {
-            content_plan: OpenContentPlan::LimitedReadOnly,
+            content_plan: OpenContentPlan::PagedReadOnly,
             ..OpenFileMeta::default()
         };
 
-        let buffer = build_open_buffer(&meta, Some(&path.to_string_lossy())).unwrap();
+        let buffer = build_open_buffer(&meta, Some(&path.to_string_lossy()), 1).unwrap();
 
         assert!(buffer.is_read_only());
-        assert_eq!(buffer.line_count(), 2);
-        assert_eq!(buffer.line(1).as_deref(), Some("second"));
+        assert_eq!(buffer.line_count(), 1);
+        assert_eq!(buffer.line(0).as_deref(), Some("first"));
+        assert!(buffer.page_info().unwrap().has_next);
 
         cleanup(&path);
     }

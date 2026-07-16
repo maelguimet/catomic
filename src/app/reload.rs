@@ -88,23 +88,17 @@ fn observed_present_len(obs: &ExternalFileObservation) -> io::Result<u64> {
 fn build_modified_reload_buffer(
     path: &Path,
     size_bytes: u64,
+    page_lines: usize,
 ) -> io::Result<ReloadedModifiedBuffer> {
     let size_tier = size::classify_file_size(size_bytes);
-    match size::open_size_decision(size_bytes) {
-        OpenSizeDecision::Refuse => {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                size::open_size_refusal_message(size_bytes),
-            ));
+    let buffer: Box<dyn buffer::Buffer> = match size::open_size_decision(size_bytes) {
+        OpenSizeDecision::OpenPaged => {
+            Box::new(buffer::LargeFileBuffer::open_paged(path, page_lines)?)
         }
-        OpenSizeDecision::OpenNormally | OpenSizeDecision::OpenWithWarning => {}
-    }
-
-    let buffer: Box<dyn buffer::Buffer> = if size_tier == FileSizeTier::Huge {
-        Box::new(buffer::LargeFileBuffer::open(path)?)
-    } else {
-        let content = crate::file::io::read_to_string(path)?;
-        Box::new(buffer::PieceTable::from_owned_text(content))
+        OpenSizeDecision::OpenNormally | OpenSizeDecision::OpenWithWarning => {
+            let content = crate::file::io::read_to_string(path)?;
+            Box::new(buffer::PieceTable::from_owned_text(content))
+        }
     };
 
     Ok(ReloadedModifiedBuffer {
@@ -115,7 +109,7 @@ fn build_modified_reload_buffer(
 }
 
 fn reload_modified_success_message(size_bytes: u64, size_tier: FileSizeTier) -> String {
-    if size_tier == FileSizeTier::Huge {
+    if matches!(size_tier, FileSizeTier::Huge | FileSizeTier::Extreme) {
         if let Some(warning) = size::open_size_warning_message(size_bytes, size_tier) {
             return format!("Reloaded from disk. {}", warning);
         }
@@ -186,9 +180,9 @@ pub(crate) fn handle_reload_key(app: &mut super::App, out: &mut dyn Write) -> io
         if let Some(ref p) = current_path {
             match obs.status {
                 ExternalFileStatus::Modified => {
-                    match observed_present_len(&obs)
-                        .and_then(|size_bytes| build_modified_reload_buffer(p, size_bytes))
-                    {
+                    match observed_present_len(&obs).and_then(|size_bytes| {
+                        build_modified_reload_buffer(p, size_bytes, app.big_files.page_lines)
+                    }) {
                         Ok(reloaded) => {
                             let reload_message = reload_modified_success_message(
                                 reloaded.size_bytes,
@@ -279,26 +273,29 @@ mod tests {
         std::fs::write(&path, "first\nsecond").unwrap();
 
         let reloaded =
-            build_modified_reload_buffer(&path, size::LARGE_FILE_LIMIT_BYTES + 1).unwrap();
+            build_modified_reload_buffer(&path, size::LARGE_FILE_LIMIT_BYTES + 1, 1).unwrap();
 
         assert_eq!(reloaded.size_tier, FileSizeTier::Huge);
         assert!(reloaded.buffer.is_read_only());
-        assert_eq!(reloaded.buffer.line(1).as_deref(), Some("second"));
+        assert_eq!(reloaded.buffer.line(0).as_deref(), Some("first"));
+        assert!(reloaded.buffer.page_info().unwrap().has_next);
 
         cleanup(&path);
     }
 
     #[test]
-    fn modified_reload_buffer_refuses_extreme_before_opening_path() {
-        let path = temp_path("missing_extreme.txt");
+    fn modified_reload_buffer_uses_paged_buffer_for_extreme_policy() {
+        let path = temp_path("extreme_policy.txt");
         cleanup(&path);
+        std::fs::write(&path, "first\nsecond").unwrap();
 
-        let err = match build_modified_reload_buffer(&path, size::HUGE_FILE_LIMIT_BYTES + 1) {
-            Ok(_) => panic!("extreme reload must refuse"),
-            Err(err) => err,
-        };
+        let reloaded =
+            build_modified_reload_buffer(&path, size::HUGE_FILE_LIMIT_BYTES + 1, 1).unwrap();
 
-        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
-        assert!(err.to_string().contains("File too large"));
+        assert_eq!(reloaded.size_tier, FileSizeTier::Extreme);
+        assert!(reloaded.buffer.is_read_only());
+        assert!(reloaded.buffer.page_info().unwrap().has_next);
+
+        cleanup(&path);
     }
 }

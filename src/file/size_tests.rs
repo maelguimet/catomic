@@ -130,32 +130,32 @@ fn open_decision_just_over_small_is_warning() {
 }
 
 #[test]
-fn open_decision_large_and_huge_is_warning() {
+fn open_decision_large_warns_and_huge_pages() {
     assert_eq!(
         open_size_decision(LARGE_FILE_LIMIT_BYTES),
         OpenSizeDecision::OpenWithWarning
     );
     assert_eq!(
         open_size_decision(LARGE_FILE_LIMIT_BYTES + 1),
-        OpenSizeDecision::OpenWithWarning
+        OpenSizeDecision::OpenPaged
     );
     assert_eq!(
         open_size_decision(HUGE_FILE_LIMIT_BYTES),
-        OpenSizeDecision::OpenWithWarning
+        OpenSizeDecision::OpenPaged
     );
 }
 
 #[test]
-fn open_decision_extreme_is_refuse() {
+fn open_decision_extreme_is_paged() {
     assert_eq!(
         open_size_decision(HUGE_FILE_LIMIT_BYTES + 1),
-        OpenSizeDecision::Refuse
+        OpenSizeDecision::OpenPaged
     );
-    assert_eq!(open_size_decision(u64::MAX), OpenSizeDecision::Refuse);
+    assert_eq!(open_size_decision(u64::MAX), OpenSizeDecision::OpenPaged);
 }
 
 #[test]
-fn warning_message_only_for_large_and_huge() {
+fn warning_message_describes_large_and_paged_files() {
     assert!(open_size_warning_message(100, FileSizeTier::Small).is_none());
     let w = open_size_warning_message(SMALL_FILE_LIMIT_BYTES + 1, FileSizeTier::Large)
         .expect("warning for large");
@@ -165,14 +165,10 @@ fn warning_message_only_for_large_and_huge() {
         .expect("warning for huge");
     assert!(h.contains("Large file"));
     assert!(h.contains("read-only"));
-    assert!(open_size_warning_message(HUGE_FILE_LIMIT_BYTES + 1, FileSizeTier::Extreme).is_none());
-}
-
-#[test]
-fn refusal_message_for_extreme_only() {
-    let r = open_size_refusal_message(HUGE_FILE_LIMIT_BYTES + 1);
-    assert!(r.contains("File too large to open safely"));
-    // Small must not produce refusal text via this helper in policy use
+    assert!(h.contains("paged mode"));
+    let extreme = open_size_warning_message(HUGE_FILE_LIMIT_BYTES + 1, FileSizeTier::Extreme)
+        .expect("warning for extreme");
+    assert!(extreme.contains("paged mode"));
 }
 
 #[test]

@@ -2,14 +2,14 @@
 //!   pre-read open-size guardrails (Phase 2B). No content read in helpers, no lazy,
 //!   no mmap, no new deps.
 //! Owns: FileSizeTier + OpenSizeDecision, limit consts, classify, label, decision,
-//!   warning/refusal messages, format_file_size, file_size_bytes (metadata only).
+//!   warning messages, format_file_size, file_size_bytes (metadata only).
 //! Must not: read file content (except file_size_bytes probe at call sites);
 //!   allocate large fixtures; change watcher/reload/save semantics beyond size
 //!   bookkeeping; touch UI beyond initial app.message for warnings.
 //! Invariants: tiers binary 10/100/1024 MiB; decisions pure; size_bytes strictly
 //!   fs::metadata except documented post-save len fallback in save path only;
-//!   Extreme refuses before content read at call sites.
-//! Phase: 2-ag (open guardrails added on 2-af foundation).
+//!   Huge and Extreme select paged reads before content access at call sites.
+//! Phase: 2-bm paged open policy.
 
 use std::io;
 use std::path::Path;
@@ -57,28 +57,27 @@ pub fn file_size_tier_label(tier: FileSizeTier) -> &'static str {
 /// Explicit decision for App open policy based on on-disk size (metadata only).
 /// Small files open normally (no message change).
 /// Large: open proceeds with the normal editable buffer and a warning.
-/// Huge: open proceeds in limited read-only mode and a warning.
-/// Extreme: refuse before any content read_to_string.
+/// Huge/Extreme: open proceeds in paged read-only mode with a warning.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OpenSizeDecision {
     OpenNormally,
     OpenWithWarning,
-    Refuse,
+    OpenPaged,
 }
 
 /// Pure policy: map byte length to open decision.
 /// Small (<=10 MiB) => OpenNormally
-/// Large (>10 <=100) or Huge (>100 <=1G) => OpenWithWarning
-/// Extreme (>1 GiB) => Refuse
+/// Large (>10 <=100) => OpenWithWarning
+/// Huge (>100 MiB) and Extreme (>1 GiB) => OpenPaged
 pub fn open_size_decision(bytes: u64) -> OpenSizeDecision {
     match classify_file_size(bytes) {
         FileSizeTier::Small => OpenSizeDecision::OpenNormally,
-        FileSizeTier::Large | FileSizeTier::Huge => OpenSizeDecision::OpenWithWarning,
-        FileSizeTier::Extreme => OpenSizeDecision::Refuse,
+        FileSizeTier::Large => OpenSizeDecision::OpenWithWarning,
+        FileSizeTier::Huge | FileSizeTier::Extreme => OpenSizeDecision::OpenPaged,
     }
 }
 
-/// Warning message for Large/Huge (None for Small/Extreme).
+/// Warning message for Large or paged Huge/Extreme files (None for Small).
 /// Uses formatted size for the label. Stable boring text.
 pub fn open_size_warning_message(bytes: u64, tier: FileSizeTier) -> Option<String> {
     match tier {
@@ -86,22 +85,15 @@ pub fn open_size_warning_message(bytes: u64, tier: FileSizeTier) -> Option<Strin
             let label = format_file_size(bytes);
             Some(format!("Large file ({}). Editing may be slower.", label))
         }
-        FileSizeTier::Huge => {
+        FileSizeTier::Huge | FileSizeTier::Extreme => {
             let label = format_file_size(bytes);
             Some(format!(
-                "Large file ({}). Opened read-only in limited mode.",
+                "Large file ({}). Opened read-only in paged mode.",
                 label
             ))
         }
         _ => None,
     }
-}
-
-/// Refusal error message text for Extreme (includes size label).
-/// Callers construct io::Error with this text (and a stable ErrorKind such as InvalidData).
-pub fn open_size_refusal_message(bytes: u64) -> String {
-    let label = format_file_size(bytes);
-    format!("File too large to open safely ({}).", label)
 }
 
 /// Simple deterministic formatter for messages/tests.

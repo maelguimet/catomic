@@ -1,4 +1,4 @@
-//! Purpose: provide a read-only, file-backed Buffer for Huge files in limited mode.
+//! Purpose: provide a read-only, file-backed Buffer for Huge/Extreme file pages.
 //! Owns: file-backed visible-line reads, bounded descriptor streaming, and
 //!   read-only movement; delegates initial scanning to the scan submodule.
 //! Must not: edit or write back to file content, own App policy, construct watchers,
@@ -7,7 +7,7 @@
 //!   file content was UTF-8 valid at construction; ranged reads use the same
 //!   descriptor scanned at open and fail closed if descriptor metadata changes;
 //!   cursor row/col stays clamped.
-//! Phase: 2B limited Huge-file storage foundation.
+//! Phase: 2-bl configurable paged Huge-file foundation.
 
 use std::borrow::Cow;
 use std::fs::File;
@@ -26,7 +26,7 @@ use scan::scan_utf8_lines;
 pub(crate) const SCAN_CHUNK_BYTES: usize = 64 * 1024;
 pub(crate) const LINE_CHECKPOINT_INTERVAL_CHARS: usize = 16 * 1024;
 
-/// Read-only file-backed buffer for limited Huge-file mode.
+/// Read-only file-backed buffer for paged Huge/Extreme-file mode.
 pub(crate) struct LargeFileBuffer {
     file: File,
     fd_snapshot: FileMetadataSnapshot,

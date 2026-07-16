@@ -1,15 +1,14 @@
 //! Pre-read open-size guardrail tests (Phase 2-ag).
 //!
 //! Purpose: verify App::new decides from metadata before content read:
-//!   Small opens with no warning; Large/Huge set initial warning message;
-//!   Extreme refuses with stable error (before read_to_string, no watcher).
+//!   Small opens with no warning; Large warns; Huge/Extreme select paged mode.
 //! Owns: the focused open-guardrail cases (no 100 MiB/1 GiB in default tests;
 //!   no committed fixtures; uses generated temps or sparse set_len).
 //! Must not: change save/reload/watcher/manual Ctrl+R semantics; add timing;
 //!   read >~10 MiB in default runs; depend on live watcher.
-//! Invariants: decision from pre-read size; refusal uses InvalidData + refusal text;
-//!   warning only for Large/Huge; Small/missing/utf8-error unchanged.
-//! Phase: 2-ag.
+//! Invariants: decision comes from pre-read metadata; byte size alone does not refuse;
+//!   paged plans are selected before content scans; Small/missing/utf8-error unchanged.
+//! Phase: 2-bm paged open policy.
 
 use super::super::*;
 use std::fs::{self, OpenOptions};
@@ -102,8 +101,8 @@ fn large_just_over_10mib_opens_and_sets_warning_message() {
 }
 
 #[test]
-fn extreme_sparse_refuses_before_content_read() {
-    let p = temp_path("extreme_sparse_refuse.bin");
+fn extreme_sparse_metadata_selects_paged_open_without_refusal() {
+    let p = temp_path("extreme_sparse_paged.bin");
     cleanup(&p);
 
     // Create empty file then set_len to just over HUGE without writing content.
@@ -126,19 +125,22 @@ fn extreme_sparse_refuses_before_content_read() {
         }
     }
 
-    // App::new must return Err and must not have read content (we never wrote any).
-    // Error string must contain the refusal text.
-    let res = App::new(Some(&p.to_string_lossy()));
-    assert!(res.is_err(), "Extreme must refuse before successful App");
-    let err = res.err().unwrap();
-    let estr = format!("{}", err);
-    assert!(
-        estr.contains("File too large to open safely"),
-        "refusal error must contain canonical text, got: {}",
-        estr
+    // Probe only the metadata policy here: opening a sparse one-line GiB file would
+    // deliberately scan that logical line and does not belong in the default suite.
+    let meta = crate::app::open::prepare_open_file_meta(Some(&p.to_string_lossy())).unwrap();
+    assert_eq!(
+        meta.content_plan,
+        crate::app::open::OpenContentPlan::PagedReadOnly
     );
-    // Kind should be InvalidData (stable) or at least we asserted text.
-    // Do not require exact kind match beyond text for portability.
+    assert_eq!(
+        meta.size_tier,
+        Some(crate::file::size::FileSizeTier::Extreme)
+    );
+    assert!(meta
+        .initial_message
+        .as_deref()
+        .unwrap_or("")
+        .contains("paged mode"));
 
     // Ensure we did not leave content (sparse or not); best-effort.
     cleanup(&p);

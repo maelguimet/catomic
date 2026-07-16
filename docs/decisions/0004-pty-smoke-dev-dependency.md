@@ -25,7 +25,8 @@ Dependency justification:
   runtime code.
 - It has no Plain startup effect because it is under `[dev-dependencies]`.
 - It is tested by `tests/pty_smoke.rs`, which drives the real `catomic` binary
-  through save, undo, save, and clean quit.
+  through save/undo/save and external-edit confirmation/reload flows, followed
+  by clean quit.
 - Removal path: delete the root PTY integration tests and remove the
   dev-dependency, or replace both with another PTY harness.
 

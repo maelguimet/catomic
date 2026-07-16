@@ -741,7 +741,7 @@ Update this file as decisions are made or phases complete. Add concrete issues o
   - Keys: Ctrl+Z (undo), Ctrl+Y / Ctrl+Shift+Z (redo) wired (and precedence fixed).
   - Undo tests (insert/delete/newline/join/multibyte/no-op + reuse + clear-redo).
   - Added golden undo-across-save test (actual fs write + buffer undo + disk unchanged assertion).
-- PTY harness now includes a root integration smoke (`tests/pty_smoke.rs`) that drives the real binary through save, undo, save, and clean quit; deeper PTY coverage is still narrow.
+- PTY harness now includes root integration smokes (`tests/pty_smoke.rs`) that drive the real binary through save/undo/save and external-edit confirmation/reload flows, followed by clean quit; broader terminal coverage remains intentionally narrow.
 - No LLM/Project in Plain.
 - Phase 2-a (foundation) complete:
   - atomic_write_string helper: same-dir temp, create_new, full write+flush+sync_all, rename, best-effort parent dir fsync on Unix; temp cleanup on error.
@@ -758,7 +758,7 @@ Update this file as decisions are made or phases complete. Add concrete issues o
 
 - Detailed completed Phase 2-r through 2-ae notes are archived in `docs/progress/phase-2-progress.md`.
 
-Key unresolved limitations (still current post 2-be):
+Key unresolved limitations (still current post 2-bf):
 - (size classification + pre-read guardrails + Large/Huge warn + Extreme refuse now exist; manual baselines recorded + split harness + line-heavy smokes exist; first visible large-file mode status marker landed; open/buffer storage seams exist; Huge files now use a read-only file-backed limited mode; still no editable lazy loading, no mmap, no rope rewrite)
 - watcher signals are runtime hints only; App-owned best-effort; runtime checks watcher once per loop via helper (try_recv inside check_file_watcher_once only); Unchanged/NoPath from watcher clear stale pending_reload when armed, otherwise fully ignored (suppress self-save noise);
 - no auto-reload; Modified/Deleted (from watcher or Ctrl+R) only arm confirmation; second Ctrl+R performs actual reload using fresh observe + pending match (or clears for Deleted);
@@ -776,10 +776,10 @@ Key unresolved limitations (still current post 2-be):
 - Phase 2-bc (panic hook cleanup guard): App::run now uses a terminal-owned PanicRestoreGuard so the panic hook restores terminal state during unwind but restores the previously installed hook on normal exit. PTY/panic unit coverage verifies the restore hook runs, chains to the previous hook, and does not leak the hook after drop. No new dependency or real PTY harness yet.
 - Phase 2-bd (real PTY smoke): added a default root integration test using `portable-pty` as a dev-dependency only. The smoke drives the compiled binary through a pseudo-terminal (`ab`, Ctrl+S, `c`, Ctrl+Z, Ctrl+S, Ctrl+Q), checks clean exit/render output, and verifies the saved file content is `ab`. This replaces the old stub-only PTY claim for the core save/undo path, but remains narrow and does not cover watcher/external edit flows through a PTY.
 - Phase 2-be (Huge render error surfacing): Buffer now has a fallible visible-window query used by terminal rendering. In-memory buffers inherit the existing infallible behavior; LargeFileBuffer overrides it so descriptor drift and ranged-read failures propagate instead of rendering blank content. Focused buffer and renderer tests cover the changed-file path. Other legacy whole-line/full-content Buffer queries remain infallible and Huge editing remains disabled.
+- Phase 2-bf (external-edit PTY acceptance): the root PTY harness now edits an open file from outside the editor, synchronizes with either watcher-armed or manual Ctrl+R confirmation state, requires the confirmed reload message and external content to render, and then cleanly quits. The focused test passed repeated runs; live notify remains a timing hint rather than the source of truth.
 
-Next intended Phase 2B steps (post 2-be):
+Next intended Phase 2B steps (post 2-bf):
 - Decide the next Huge-file policy step: immutable external-change snapshot behavior, editable Huge semantics, or another measured scan/render optimization. Keep any next move narrow and backed by ignored manual measurements.
-- Consider a second narrow PTY smoke only if it covers an existing acceptance gap without making tests flaky; watcher live notify remains ignored/manual.
 - The 2026-07-07 phase split is recorded; for editable Small/Large PieceTable opens, `read_to_string` remains the useful full-materialization split, and line-heavy manual smokes show `PieceTable::from_owned_text`/LineIndex cost reappearing for newline-rich content. Huge now bypasses editable PieceTable materialization, but still performs a full UTF-8/newline scan at open and still lacks local edit semantics.
 - Keep manual large-file tests ignored; do not add or enable default 10/100 MiB or 1 GiB tests.
 - Do not enforce thresholds yet; budgets remain advisory and must not become pass/fail gates in this or the immediate next pass.

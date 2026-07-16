@@ -1,14 +1,15 @@
 //! Real PTY integration smoke tests for the catomic binary.
 //!
 //! Purpose: drive the compiled binary through a pseudo-terminal so key handling,
-//!   raw-mode setup, render, save, undo, and clean quit are exercised together.
+//!   raw-mode setup, render, save, undo, external reload, and clean quit are
+//!   exercised together.
 //! Owns: narrow default PTY smoke coverage for already-existing Phase 0/1/2
 //!   behavior.
 //! Must not: grow into a broad UI harness, depend on Project/LLM/config, or run
 //!   large-file/perf scenarios.
 //! Invariants: tests use temporary files, time out and kill the child on hangs,
 //!   and leave Plain startup behavior unchanged.
-//! Phase: 2-bd real PTY acceptance smoke.
+//! Phase: 2-bd/2-bf real PTY acceptance smokes.
 
 use std::error::Error;
 use std::fs;
@@ -107,6 +108,12 @@ impl PtyEditor {
         Ok(())
     }
 
+    fn wait_for_output(&self, label: &str, expected: &str) -> TestResult {
+        wait_until(label, Duration::from_secs(2), || {
+            self.output_string().contains(expected)
+        })
+    }
+
     fn wait_for_exit(&mut self) -> TestResult {
         let start = Instant::now();
         loop {
@@ -169,5 +176,37 @@ fn pty_save_undo_save_quit_writes_expected_file() -> TestResult {
     );
     assert_eq!(fs::read_to_string(&temp.path)?, "ab");
 
+    Ok(())
+}
+
+#[test]
+fn pty_external_edit_confirm_reload_quit_shows_disk_content() -> TestResult {
+    let temp = TempPath::new("external_reload");
+    fs::write(&temp.path, "original")?;
+    let mut editor = PtyEditor::spawn(&temp.path)?;
+
+    editor.wait_for_initial_render()?;
+    editor.wait_for_output("initial file content", "original")?;
+    fs::write(&temp.path, "external disk content")?;
+
+    // If notify already armed the reload, this press performs it. Otherwise it
+    // is the manual first confirmation press. Either route must converge on the
+    // same explicit Ctrl+R confirmation behavior.
+    editor.send_keys(b"\x12")?;
+    wait_until("reload arm or completion", Duration::from_secs(2), || {
+        let output = editor.output_string();
+        output.contains("Reloaded from disk.")
+            || output.contains("Press Ctrl+R again to reload from disk")
+    })?;
+    if !editor.output_string().contains("Reloaded from disk.") {
+        editor.send_keys(b"\x12")?;
+    }
+
+    editor.wait_for_output("confirmed external reload", "Reloaded from disk.")?;
+    editor.wait_for_output("reloaded external content", "external disk content")?;
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(&temp.path)?, "external disk content");
     Ok(())
 }

@@ -67,12 +67,10 @@ pub(crate) fn handle_key(
             active_text(prompt).pop();
             update_message(app);
         }
-        KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-            if !ch.is_control() {
-                let prompt = app.replace.prompt.as_mut().expect("replace prompt exists");
-                active_text(prompt).push(ch);
-                update_message(app);
-            }
+        KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) && !ch.is_control() => {
+            let prompt = app.replace.prompt.as_mut().expect("replace prompt exists");
+            active_text(prompt).push(ch);
+            update_message(app);
         }
         _ => {}
     }

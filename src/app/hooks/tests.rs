@@ -78,7 +78,10 @@ fn successful_save_queues_on_save_hook() {
 
 #[test]
 fn failed_atomic_save_does_not_queue_on_save_hook() {
-    let target = std::env::temp_dir();
+    let target =
+        std::env::temp_dir().join(format!("catomic_hook_failed_save_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&target);
+    std::fs::create_dir(&target).unwrap();
     let mut app = super::super::App::new(None).unwrap();
     app.file.path = Some(target.clone());
     app.file.disk_snapshot = crate::file::io::capture_file_snapshot(&target).ok();
@@ -92,6 +95,7 @@ fn failed_atomic_save_does_not_queue_on_save_hook() {
 
     assert!(!is_pending(&app));
     assert!(app.message.as_deref().unwrap().contains("Save error"));
+    std::fs::remove_dir(&target).unwrap();
 }
 
 #[test]

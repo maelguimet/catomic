@@ -6,8 +6,10 @@
 //!   pure helpers (std fs::metadata only).
 //! Must not: construct watchers or use notify; read file content for change detection
 //!   or hashing; know App, Project, LLM, or UI; perform reload/save-conflict policy.
-//! Invariants: atomic writes use same-dir temp + create_new + sync + rename and
-//!   preserve an existing target's Unix permissions;
+//! Invariants: atomic writes use same-dir temp + create_new + sync + rename;
+//!   ordinary saves follow a valid final symlink and refuse a dangling one;
+//!   private sidecars replace, rather than follow, a final symlink;
+//!   existing target Unix permissions are preserved;
 //!   observations use len/mtime plus Unix identity/change time when available;
 //!   Absent explicitly represents missing;
 //!   read_to_string returns InvalidData for non-UTF-8; errors other than NotFound
@@ -43,6 +45,8 @@ pub fn atomic_write_string(path: impl AsRef<Path>, contents: &str) -> io::Result
 
 /// Atomically stream content into `path` and return the number of bytes written.
 /// Durability, rename, and cleanup semantics match `atomic_write_string`.
+/// A valid final symlink is preserved while its referent is atomically replaced;
+/// a dangling final symlink is refused rather than silently replaced.
 pub fn atomic_write_with(
     path: impl AsRef<Path>,
     write_contents: impl FnOnce(&mut dyn Write) -> io::Result<()>,
@@ -65,7 +69,7 @@ fn atomic_write_with_policy(
     write_contents: impl FnOnce(&mut dyn Write) -> io::Result<()>,
     private: bool,
 ) -> io::Result<u64> {
-    let target = path.as_ref().to_path_buf();
+    let target = atomic_write_target(path.as_ref(), private)?;
     let parent: PathBuf = target
         .parent()
         .map(|p| p.to_path_buf())
@@ -133,6 +137,21 @@ fn atomic_write_with_policy(
         let _ = fs::remove_file(&temp_path);
     }
     res
+}
+
+/// Resolve only ordinary save targets. Private sidecars deliberately replace a
+/// final symlink so an attacker cannot redirect recovery data into its referent.
+fn atomic_write_target(path: &Path, private: bool) -> io::Result<PathBuf> {
+    if private {
+        return Ok(path.to_path_buf());
+    }
+
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => fs::canonicalize(path),
+        Ok(_) => Ok(path.to_path_buf()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(path.to_path_buf()),
+        Err(error) => Err(error),
+    }
 }
 
 struct CountingWriter<'a> {

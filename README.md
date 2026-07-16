@@ -1,5 +1,7 @@
 # Catomic
 
+[![CI](https://github.com/maelguimet/catomic/actions/workflows/ci.yml/badge.svg)](https://github.com/maelguimet/catomic/actions/workflows/ci.yml)
+
 Catomic should feel like Nano if Nano stopped being afraid of useful shortcuts.
 
 It is not trying to be Vim.  
@@ -100,6 +102,9 @@ active format appears in the status line. Oversized paged files currently
 support LF and CRLF; BOM-prefixed or CR-only files must remain below the paged
 threshold. UTF-16 and other non-UTF-8 encodings are rejected rather than
 silently corrupted.
+
+Atomic saves through a valid final symlink replace its referent and leave the
+symlink intact. A dangling final symlink is refused rather than replaced.
 
 ## Terminal Behavior
 
@@ -484,3 +489,8 @@ Mandatory cat nonsense:
 ---
 
 See [TODO.md](./TODO.md) for build phases, stack decisions, and research on existing editors.
+
+## License
+
+Catomic is available under either the [MIT License](LICENSE-MIT) or the
+[Apache License 2.0](LICENSE-APACHE), at your option.

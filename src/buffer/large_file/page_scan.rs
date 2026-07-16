@@ -53,7 +53,7 @@ pub(crate) fn scan_utf8_page(
     Ok(state.into_scan(None))
 }
 
-pub(super) fn find_previous_page_start(
+pub(crate) fn find_previous_page_start(
     file: &File,
     current_start: usize,
     page_lines: usize,

@@ -103,6 +103,7 @@ impl LargeFileBuffer {
             file: self.file.try_clone()?,
             total_bytes: self.total_bytes as u64,
             page_lines: self.page_lines,
+            overlays: Vec::new(),
         }))
     }
 

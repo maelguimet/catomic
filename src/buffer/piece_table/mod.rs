@@ -22,6 +22,10 @@ pub use types::PieceTable;
 use types::{OriginalBacking, Piece, Source};
 
 impl PieceTable {
+    pub(crate) fn has_edit_history(&self) -> bool {
+        self.undo_stack.has_history()
+    }
+
     /// Rebuild index from current pieces. Call after every structural edit (1B bridge).
     /// Searches pieces for \n byte positions; kept here because it needs Piece/Source.
     /// Common index builder (used by ctors and rebuild). Avoids depending on

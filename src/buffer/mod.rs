@@ -17,15 +17,19 @@ use std::io::{self, Write};
 
 pub(crate) mod large_file;
 pub mod line_index;
+mod paged_file;
 pub mod piece_table;
 #[cfg(test)]
 pub mod simple;
 pub mod undo;
 
 #[cfg(test)]
+mod paged_file_tests;
+#[cfg(test)]
 mod tests;
 
 pub(crate) use large_file::LargeFileBuffer;
+pub(crate) use paged_file::PagedFileBuffer;
 pub use piece_table::PieceTable;
 /// Public re-exports for the rest of the crate.
 #[cfg(test)]
@@ -60,6 +64,14 @@ pub(crate) struct DescriptorSource {
     pub(crate) file: File,
     pub(crate) total_bytes: u64,
     pub(crate) page_lines: usize,
+    pub(crate) overlays: Vec<DescriptorOverlay>,
+}
+
+pub(crate) struct DescriptorOverlay {
+    pub(crate) start_byte: u64,
+    pub(crate) end_byte: u64,
+    pub(crate) page_number: usize,
+    pub(crate) content: Vec<u8>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

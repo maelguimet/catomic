@@ -91,11 +91,39 @@ fn scan_descriptor(
     let mut chunk = vec![0u8; SEARCH_CHUNK_BYTES];
     let mut carry = Vec::new();
     let mut offset = 0u64;
+    let mut overlay_index = 0usize;
     while offset < source.total_bytes {
         if cancel.load(Ordering::Acquire) {
             return Ok(SearchResult::NotFound);
         }
-        let read = source.file.read_at(&mut chunk, offset)?;
+        if let Some(overlay) = source.overlays.get(overlay_index) {
+            validate_overlay(overlay, offset, source.total_bytes)?;
+            if overlay.start_byte == offset {
+                if !carry.is_empty() {
+                    return Err(changed_file_error());
+                }
+                let text = std::str::from_utf8(&overlay.content)
+                    .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+                scanner.begin_page(overlay.start_byte, overlay.page_number);
+                if let Some(position) = scanner.scan_fixed_page_text(text) {
+                    ensure_unchanged(&source, initial_modified)?;
+                    return Ok(SearchResult::Found(position));
+                }
+                offset = overlay.end_byte;
+                scanner.begin_page(offset, overlay.page_number + 1);
+                overlay_index += 1;
+                continue;
+            }
+        }
+        let read_limit = source
+            .overlays
+            .get(overlay_index)
+            .map_or(chunk.len(), |overlay| {
+                usize::try_from(overlay.start_byte - offset)
+                    .unwrap_or(chunk.len())
+                    .min(chunk.len())
+            });
+        let read = source.file.read_at(&mut chunk[..read_limit], offset)?;
         if read == 0 {
             return Err(changed_file_error());
         }
@@ -129,6 +157,24 @@ fn scan_descriptor(
     }
     ensure_unchanged(&source, initial_modified)?;
     Ok(SearchResult::NotFound)
+}
+
+fn validate_overlay(
+    overlay: &crate::buffer::DescriptorOverlay,
+    offset: u64,
+    total_bytes: u64,
+) -> io::Result<()> {
+    if overlay.start_byte < offset
+        || overlay.start_byte >= overlay.end_byte
+        || overlay.end_byte > total_bytes
+    {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid edited page range during search",
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 fn ensure_unchanged(
@@ -186,6 +232,27 @@ impl Scanner {
     }
 
     fn scan_text(&mut self, text: &str, text_start: u64) -> Option<DescriptorPosition> {
+        self.scan_text_with_page_boundaries(text, text_start, true)
+    }
+
+    fn begin_page(&mut self, page_start: u64, page_number: usize) {
+        self.matched = 0;
+        self.page_start = page_start;
+        self.page_number = page_number;
+        self.row = 0;
+        self.col = 0;
+    }
+
+    fn scan_fixed_page_text(&mut self, text: &str) -> Option<DescriptorPosition> {
+        self.scan_text_with_page_boundaries(text, self.page_start, false)
+    }
+
+    fn scan_text_with_page_boundaries(
+        &mut self,
+        text: &str,
+        text_start: u64,
+        advance_pages: bool,
+    ) -> Option<DescriptorPosition> {
         for (byte_index, ch) in text.char_indices() {
             let mut encoded = [0; 4];
             let mut found = false;
@@ -195,7 +262,7 @@ impl Scanner {
             if ch == '\n' {
                 self.row += 1;
                 self.col = 0;
-                if self.row == self.page_lines {
+                if advance_pages && self.row == self.page_lines {
                     self.page_start = text_start + byte_index as u64 + 1;
                     self.page_number += 1;
                     self.row = 0;
@@ -263,6 +330,7 @@ mod tests {
             file: std::fs::File::open(&path).unwrap(),
             total_bytes: text.len() as u64,
             page_lines,
+            overlays: Vec::new(),
         };
         let result = scan_descriptor(source, query, &AtomicBool::new(false)).unwrap();
         let _ = std::fs::remove_file(path);
@@ -296,5 +364,38 @@ mod tests {
         assert_eq!(position.row, 0);
         assert_eq!(position.col, 2);
         assert_eq!(position.page_start, "α\nβ\n".len() as u64);
+    }
+
+    #[test]
+    fn descriptor_search_uses_edited_page_overlay_instead_of_original_bytes() {
+        let text = b"zero\nold\nnext";
+        let path =
+            std::env::temp_dir().join(format!("catomic_search_overlay_{}.txt", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        std::fs::write(&path, text).unwrap();
+        let source = DescriptorSource {
+            file: std::fs::File::open(&path).unwrap(),
+            total_bytes: text.len() as u64,
+            page_lines: 2,
+            overlays: vec![crate::buffer::DescriptorOverlay {
+                start_byte: 0,
+                end_byte: 9,
+                page_number: 1,
+                content: b"zero\nnew needle\n".to_vec(),
+            }],
+        };
+
+        let result = scan_descriptor(source, "needle", &AtomicBool::new(false)).unwrap();
+        match result {
+            SearchResult::Found(position) => {
+                assert_eq!(position.page_start, 0);
+                assert_eq!(position.page_number, 1);
+                assert_eq!(position.row, 1);
+                assert_eq!(position.col, 4);
+            }
+            _ => panic!("edited page match was not found"),
+        }
+
+        let _ = std::fs::remove_file(path);
     }
 }

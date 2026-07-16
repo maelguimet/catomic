@@ -111,4 +111,8 @@ impl UndoStack {
     pub(crate) fn current_history_position(&self) -> u64 {
         self.current_id
     }
+
+    pub(crate) fn has_history(&self) -> bool {
+        !self.undo.is_empty() || !self.redo.is_empty()
+    }
 }

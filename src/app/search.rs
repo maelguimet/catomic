@@ -154,6 +154,7 @@ pub(super) fn cancel_running_search(app: &mut super::App) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::buffer::Buffer;
     use crossterm::event::{KeyEventKind, KeyEventState};
 
     fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
@@ -215,6 +216,40 @@ mod tests {
             crate::buffer::Cursor { row: 0, col: 4 }
         );
         assert_eq!(app.buffer.line(0).as_deref(), Some("two needle here"));
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn whole_file_search_finds_an_unsaved_edit_on_a_retained_page() {
+        let path = std::env::temp_dir().join(format!(
+            "catomic_whole_search_edit_{}.txt",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        std::fs::write(&path, "zero\none\ntwo").unwrap();
+        let mut paged = crate::buffer::PagedFileBuffer::open(&path, 1).unwrap();
+        paged.next_page().unwrap();
+        paged.insert_char('X');
+        paged.previous_page().unwrap();
+
+        let mut app = super::super::App::new(None).unwrap();
+        app.buffer = Box::new(paged);
+        let mut out = Vec::new();
+        enter_query(&mut app, "Xone", &mut out);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while app.search.running.is_some() && std::time::Instant::now() < deadline {
+            poll_search(&mut app, &mut out).unwrap();
+            std::thread::yield_now();
+        }
+
+        assert!(app.search.running.is_none(), "search did not complete");
+        assert_eq!(app.buffer.page_info().unwrap().page_number, 2);
+        assert_eq!(
+            app.buffer.cursor(),
+            crate::buffer::Cursor { row: 0, col: 0 }
+        );
+        assert_eq!(app.buffer.line(0).as_deref(), Some("Xone"));
 
         let _ = std::fs::remove_file(path);
     }

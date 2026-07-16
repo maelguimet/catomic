@@ -17,12 +17,12 @@ use std::path::Path;
 
 use crate::buffer::{Buffer, Cursor, LineView};
 
-mod scan;
+pub(crate) mod scan;
 
 use scan::scan_utf8_lines;
 
-const SCAN_CHUNK_BYTES: usize = 64 * 1024;
-const LINE_CHECKPOINT_INTERVAL_CHARS: usize = 16 * 1024;
+pub(crate) const SCAN_CHUNK_BYTES: usize = 64 * 1024;
+pub(crate) const LINE_CHECKPOINT_INTERVAL_CHARS: usize = 16 * 1024;
 
 /// Read-only file-backed buffer for limited Huge-file mode.
 pub(crate) struct LargeFileBuffer {
@@ -38,9 +38,9 @@ pub(crate) struct LargeFileBuffer {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct LineCheckpoint {
-    col: usize,
-    byte_offset: usize,
+pub(crate) struct LineCheckpoint {
+    pub(crate) col: usize,
+    pub(crate) byte_offset: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

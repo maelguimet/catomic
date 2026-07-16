@@ -133,6 +133,59 @@ fn piece_table_streaming_write_matches_logical_text() {
 }
 
 #[test]
+fn file_backed_piece_table_edits_undoes_and_streams() {
+    let path = std::env::temp_dir().join(format!(
+        "catomic_file_piece_table_{}.txt",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, "alpha\nbeta\n").unwrap();
+
+    let mut pt = PieceTable::from_file(&path).expect("file-backed piece table");
+    assert_eq!(pt.line(0).as_deref(), Some("alpha"));
+    pt.insert_char('X');
+    pt.move_down();
+    pt.move_left();
+    pt.insert_char('Y');
+    assert_eq!(pt.to_string(), "Xalpha\nYbeta\n");
+    pt.undo();
+    assert_eq!(pt.to_string(), "Xalpha\nbeta\n");
+    pt.redo();
+
+    let mut written = Vec::new();
+    pt.write_to(&mut written)
+        .expect("stream file-backed pieces");
+    assert_eq!(written, b"Xalpha\nYbeta\n");
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn file_backed_piece_table_fails_closed_after_descriptor_drift() {
+    use std::io::Write;
+
+    let path = std::env::temp_dir().join(format!(
+        "catomic_file_piece_table_drift_{}.txt",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, "alpha\nbeta\n").unwrap();
+
+    let pt = PieceTable::from_file(&path).expect("file-backed piece table");
+    let mut changed = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
+    changed.write_all(b"changed\n").unwrap();
+    changed.sync_all().unwrap();
+
+    assert!(pt.try_visible_lines_window(0, 2, 0, 80).is_err());
+    assert!(pt.write_to(&mut Vec::new()).is_err());
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
 fn parity_empty_lines() {
     assert_parity("\n");
     assert_parity("\n\n");

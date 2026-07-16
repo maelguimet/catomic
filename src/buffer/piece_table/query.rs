@@ -4,13 +4,18 @@
 //! split_point, and within-line measurements that will use the LineIndex.
 
 use super::types::{PieceTable, Source};
+use std::io;
 
 impl PieceTable {
     /// Return the logical text for the byte range [start, end).
     /// Uses piece_starts for bounded lookup of start piece (no full head scan).
     pub(crate) fn slice_to_string(&self, start: usize, end: usize) -> String {
+        self.try_slice_to_string(start, end).unwrap_or_default()
+    }
+
+    pub(crate) fn try_slice_to_string(&self, start: usize, end: usize) -> io::Result<String> {
         if start >= end || self.pieces.is_empty() {
-            return String::new();
+            return Ok(String::new());
         }
         let mut out = String::new();
         let i = self.find_piece_for_byte(start);
@@ -33,13 +38,13 @@ impl PieceTable {
             if local_end > local_start {
                 let source_range = p.start + local_start..p.start + local_end;
                 match p.source {
-                    Source::Original => self.original.push_slice(source_range, &mut out),
+                    Source::Original => self.original.try_push_slice(source_range, &mut out)?,
                     Source::Add => out.push_str(&self.add[source_range]),
                 }
             }
             acc = p_end;
         }
-        out
+        Ok(out)
     }
 
     /// Binary search on piece_starts for the piece containing or nearest before off.

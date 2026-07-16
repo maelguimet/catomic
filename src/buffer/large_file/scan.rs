@@ -13,16 +13,16 @@ use std::io::{self, Read};
 
 use super::{LineCheckpoint, LINE_CHECKPOINT_INTERVAL_CHARS, SCAN_CHUNK_BYTES};
 
-pub(super) struct LineScan {
-    pub(super) line_starts: Vec<usize>,
-    pub(super) line_char_counts: Vec<usize>,
-    pub(super) line_is_ascii: Vec<bool>,
-    pub(super) line_checkpoints: Vec<LineCheckpoint>,
-    pub(super) line_checkpoint_starts: Vec<usize>,
-    pub(super) total_bytes: usize,
+pub(crate) struct LineScan {
+    pub(crate) line_starts: Vec<usize>,
+    pub(crate) line_char_counts: Vec<usize>,
+    pub(crate) line_is_ascii: Vec<bool>,
+    pub(crate) line_checkpoints: Vec<LineCheckpoint>,
+    pub(crate) line_checkpoint_starts: Vec<usize>,
+    pub(crate) total_bytes: usize,
 }
 
-pub(super) fn scan_utf8_lines(file: &mut File) -> io::Result<LineScan> {
+pub(crate) fn scan_utf8_lines(file: &mut File) -> io::Result<LineScan> {
     let mut line_starts = vec![0usize];
     let mut line_char_counts = Vec::new();
     let mut line_is_ascii = Vec::new();

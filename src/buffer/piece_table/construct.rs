@@ -1,17 +1,24 @@
 //! PieceTable constructors and input normalization.
 //!
-//! Purpose: keep construction paths for new, borrowed text, and owned open buffers
+//! Purpose: keep construction paths for new, borrowed text, owned open buffers,
+//!   and scanned file-backed originals
 //!   out of the main piece_table module.
-//! Owns: PieceTable::new, PieceTable::from_text, PieceTable::from_owned_text.
-//! Must not: perform edits, undo/redo, queries, UI, file I/O, Project, or LLM work.
+//! Owns: PieceTable::new, PieceTable::from_text, PieceTable::from_owned_text,
+//!   and PieceTable::from_file.
+//! Must not: perform edits, undo/redo, queries, UI, Project, or LLM work.
 //! Invariants: CRLF/CR normalize to LF; LF-only owned input moves into original
 //!   without cloning; cursor starts at (0,0); initial piece/index/piece_starts are consistent.
-//! Phase: 2-ao (open materialization copy-count cleanup).
+//! Phase: 2-bi file-backed PieceTable foundation.
 
+use std::fs::File;
+use std::io;
+use std::path::Path;
+
+use crate::buffer::large_file::scan::scan_utf8_lines;
 use crate::buffer::line_index::LineIndex;
 use crate::buffer::Cursor;
 
-use super::types::{OriginalBacking, Piece, PieceTable, Source};
+use super::types::{FileMetadataSnapshot, OriginalBacking, Piece, PieceTable, Source};
 
 impl PieceTable {
     pub fn new() -> Self {
@@ -54,6 +61,43 @@ impl PieceTable {
             text
         };
         Self::from_normalized_text(normalized)
+    }
+
+    pub(crate) fn from_file(path: impl AsRef<Path>) -> io::Result<Self> {
+        let mut file = File::open(path)?;
+        let snapshot = FileMetadataSnapshot::capture(&file)?;
+        let scan = scan_utf8_lines(&mut file)?;
+        if FileMetadataSnapshot::capture(&file)? != snapshot {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "file-backed original changed while scanning",
+            ));
+        }
+        let newline_offsets = scan
+            .line_starts
+            .iter()
+            .skip(1)
+            .map(|start| start - 1)
+            .collect();
+        let pieces = vec![Piece {
+            source: Source::Original,
+            start: 0,
+            len: scan.total_bytes,
+        }];
+        Ok(Self {
+            original: OriginalBacking::from_file(file, snapshot, newline_offsets),
+            add: String::new(),
+            pieces,
+            index: LineIndex {
+                line_starts: scan.line_starts,
+                total_bytes: scan.total_bytes,
+            },
+            cursor: Cursor { row: 0, col: 0 },
+            cursor_byte_offset: 0,
+            piece_starts: vec![0],
+            undo_stack: crate::buffer::undo::UndoStack::new(),
+            recording: true,
+        })
     }
 
     fn from_normalized_text(normalized: String) -> Self {

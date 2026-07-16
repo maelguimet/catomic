@@ -206,6 +206,26 @@ impl Buffer for PieceTable {
             .collect()
     }
 
+    fn try_visible_lines_window(
+        &self,
+        start: usize,
+        height: usize,
+        start_col: usize,
+        width: usize,
+    ) -> io::Result<Vec<LineView>> {
+        let end = (start + height).min(self.index.line_count());
+        (start..end)
+            .map(|row| {
+                let line_start = self.index.line_start_byte(row);
+                let line_end = self.index.line_end_byte(row);
+                self.try_slice_to_string(line_start, line_end)
+                    .map(|line| LineView {
+                        content: line.chars().skip(start_col).take(width).collect(),
+                    })
+            })
+            .collect()
+    }
+
     fn cursor(&self) -> Cursor {
         self.cursor
     }

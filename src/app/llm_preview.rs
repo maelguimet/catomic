@@ -1,5 +1,5 @@
-//! Purpose: this file must preview and explicitly confirm validated LLM patches.
-//! Owns: transient patch view state, confirmation keys, stale-source checks, and apply.
+//! Purpose: this file must preview and explicitly confirm validated LLM edit proposals.
+//! Owns: patch/marked-region preview state, stale-source checks, and confirmed apply.
 //! Must not: construct clients, call endpoints, read repos, write files, or auto-apply.
 //! Invariants: Enter is the only apply action; apply is one undoable buffer transaction.
 //! Phase: 6 (LLM, Powerful but Caged).
@@ -9,23 +9,30 @@ use std::io::{self, Write};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::{Buffer, Cursor, PieceTable};
-use crate::llm::patch::Patch;
+
+mod proposal;
+
+use proposal::Proposal;
+pub(crate) use proposal::RegionTarget;
 
 pub(crate) struct PatchPreview {
-    patch: Patch,
+    proposal: Proposal,
     proposed_text: String,
+    source_snapshot: String,
     buffer: PieceTable,
     source_scroll_top: usize,
     source_scroll_left: usize,
 }
 
+#[cfg(test)]
 pub(crate) fn show(app: &mut super::App, out: &mut dyn Write, patch_text: &str) -> io::Result<()> {
     if app.buffer.is_read_only() || app.buffer.page_info().is_some() {
         app.message =
             Some("LLM patch preview requires a fully editable current buffer.".to_string());
         return app.render(out);
     }
-    let (patch, proposed_text) = match build_proposal(&app.buffer.to_string(), patch_text) {
+    let source_snapshot = app.buffer.to_string();
+    let (proposal, proposed_text) = match proposal::build_patch(&source_snapshot, patch_text) {
         Ok(proposal) => proposal,
         Err(message) => {
             app.message = Some(message);
@@ -33,21 +40,86 @@ pub(crate) fn show(app: &mut super::App, out: &mut dyn Write, patch_text: &str) 
         }
     };
 
+    open(
+        app,
+        out,
+        proposal,
+        proposed_text,
+        source_snapshot,
+        patch_text,
+        "LLM patch preview (read-only). Enter applies; Esc cancels.",
+    )
+}
+
+pub(crate) fn show_with_region_fallback(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    output: &str,
+    target: Option<RegionTarget>,
+) -> io::Result<()> {
+    let source_snapshot = app.buffer.to_string();
+    if let Ok((proposal, proposed_text)) = proposal::build_patch(&source_snapshot, output) {
+        return open(
+            app,
+            out,
+            proposal,
+            proposed_text,
+            source_snapshot,
+            output,
+            "LLM patch preview (read-only). Enter applies; Esc cancels.",
+        );
+    }
+    let Some(target) = target else {
+        app.message = Some("Invalid LLM patch; no marked selection fallback was available.".into());
+        return app.render(out);
+    };
+    if app.buffer.text_range(target.start(), target.end())? != target.original() {
+        app.message = Some("Selected text changed; LLM replacement was not previewed.".into());
+        return app.render(out);
+    }
+    let (region, replacement, preview_text) = match proposal::build_region(output, target) {
+        Ok(proposal) => proposal,
+        Err(error) => {
+            app.message = Some(error);
+            return app.render(out);
+        }
+    };
+    open(
+        app,
+        out,
+        region,
+        replacement,
+        source_snapshot,
+        &preview_text,
+        "LLM marked-region preview (read-only). Enter applies; Esc cancels.",
+    )
+}
+
+fn open(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    proposal: Proposal,
+    proposed_text: String,
+    source_snapshot: String,
+    preview_text: &str,
+    message: &str,
+) -> io::Result<()> {
     super::view::cancel_preview(app);
     super::lint::close_view(app);
     super::project_files::close_view(app);
     close(app);
     app.llm_preview = Some(PatchPreview {
-        patch,
+        proposal,
         proposed_text,
-        buffer: PieceTable::from_text(patch_text),
+        source_snapshot,
+        buffer: PieceTable::from_text(preview_text),
         source_scroll_top: app.screen.scroll_top,
         source_scroll_left: app.screen.scroll_left,
     });
     app.screen.scroll_top = 0;
     app.screen.scroll_left = 0;
     app.selection.clear();
-    app.message = Some("LLM patch preview (read-only). Enter applies; Esc cancels.".to_string());
+    app.message = Some(message.to_string());
     app.render(out)
 }
 
@@ -116,48 +188,30 @@ fn confirm(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     app.screen.scroll_top = preview.source_scroll_top;
     app.screen.scroll_left = preview.source_scroll_left;
     let current = app.buffer.to_string();
-    if preview.patch.apply_preview(&current).ok().as_ref() != Some(&preview.proposed_text) {
-        app.message = Some("Source changed since preview; LLM patch was not applied.".to_string());
+    if current != preview.source_snapshot {
+        app.message =
+            Some("Source changed since preview; LLM proposal was not applied.".to_string());
         app.reveal_cursor();
         return app.render(out);
     }
-    if current == preview.proposed_text {
-        app.message = Some("LLM patch makes no changes.".to_string());
+    let changed = preview
+        .proposal
+        .apply(&mut *app.buffer, &current, &preview.proposed_text)?;
+    if !changed {
+        app.message = Some("LLM proposal makes no applicable change.".to_string());
         app.reveal_cursor();
-        return app.render(out);
-    }
-    if !replace_whole_buffer(&mut *app.buffer, &preview.proposed_text)? {
-        app.message = Some("Current buffer refused the LLM patch.".to_string());
         return app.render(out);
     }
     super::input::finish_content_edit_with_message(
         app,
         out,
-        Some("LLM patch applied; Ctrl+Z undoes it.".to_string()),
+        Some("LLM proposal applied; Ctrl+Z undoes it.".to_string()),
     )
-}
-
-fn build_proposal(current: &str, patch_text: &str) -> Result<(Patch, String), String> {
-    let patch =
-        Patch::parse(patch_text).map_err(|error| format!("Invalid LLM patch: {error:?}"))?;
-    let proposed_text = patch
-        .apply_preview(current)
-        .map_err(|error| format!("LLM patch does not match current text: {error:?}"))?;
-    Ok((patch, proposed_text))
-}
-
-fn replace_whole_buffer(buffer: &mut dyn Buffer, text: &str) -> io::Result<bool> {
-    let end_row = buffer.line_count().saturating_sub(1);
-    let end = Cursor {
-        row: end_row,
-        col: buffer.line_char_count(end_row).unwrap_or(0),
-    };
-    buffer.replace_range(Cursor::default(), end, text)
 }
 
 fn cancel(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     close(app);
-    app.message = Some("LLM patch cancelled; no changes applied.".to_string());
+    app.message = Some("LLM proposal cancelled; no changes applied.".to_string());
     app.reveal_cursor();
     app.render(out)
 }

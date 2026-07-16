@@ -29,11 +29,13 @@ pub(crate) struct PendingLlmRequest {
     settings: LlmSettings,
     source_snapshot: String,
     path: String,
+    replacement_target: Option<super::llm_preview::RegionTarget>,
 }
 
 pub(crate) struct RunningLlmRequest {
     task: LlmTask,
     source_snapshot: String,
+    replacement_target: Option<super::llm_preview::RegionTarget>,
 }
 
 pub(crate) fn begin(
@@ -77,12 +79,14 @@ fn begin_with_settings(
         }
     };
     let path = display_path(app.file.path.as_deref());
+    let replacement_target = replacement_target(app, &draft);
     app.message = Some(confirmation_message(&draft, &settings));
     app.pending_llm_request = Some(PendingLlmRequest {
         draft,
         settings,
         source_snapshot,
         path,
+        replacement_target,
     });
     app.render(out)
 }
@@ -142,7 +146,12 @@ pub(crate) fn poll(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
                 );
                 app.render(out)
             } else {
-                super::llm_preview::show(app, out, &output)
+                super::llm_preview::show_with_region_fallback(
+                    app,
+                    out,
+                    &output,
+                    running.replacement_target,
+                )
             }
         }
         LlmTaskResult::Cancelled => {
@@ -191,6 +200,7 @@ fn confirm(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
             app.llm_task = Some(RunningLlmRequest {
                 task,
                 source_snapshot: pending.source_snapshot,
+                replacement_target: pending.replacement_target,
             });
         }
         Err(error) => app.message = Some(format!("Could not start LLM request: {error}")),
@@ -252,6 +262,22 @@ fn instruction_for_file(
     }
     context::for_instruction_block(source, app.buffer.cursor().row, path)
         .map(|draft| draft.instruction)
+}
+
+fn replacement_target(
+    app: &super::App,
+    draft: &RequestDraft,
+) -> Option<super::llm_preview::RegionTarget> {
+    if draft.context.scope != context::ContextScope::Selection {
+        return None;
+    }
+    let selection = app.selection.active()?;
+    let (start, end) = selection.ordered();
+    Some(super::llm_preview::RegionTarget::new(
+        start,
+        end,
+        draft.context.text.clone(),
+    ))
 }
 
 fn is_quit(key: KeyEvent) -> bool {

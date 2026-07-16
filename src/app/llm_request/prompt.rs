@@ -9,7 +9,7 @@ use std::path::Path;
 use crate::config::llm::LlmSettings;
 use crate::llm::context::{ContextScope, RequestDraft, Sensitivity};
 
-pub(super) const SYSTEM_PROMPT: &str = "You edit one current Catomic buffer. Return only one valid single-file unified diff against the supplied path and context. Do not use markdown fences or prose. Preserve text outside the requested scope. Never claim that a change was applied.";
+pub(super) const SYSTEM_PROMPT: &str = "You edit one current Catomic buffer. Prefer one valid single-file unified diff against the supplied path and context. If and only if the context is a marked selection and a diff is unsuitable, return exactly one JSON object with one string field named catomic_replacement. Do not use markdown fences or prose. Preserve text outside the requested scope. Never claim that a change was applied.";
 
 pub(super) fn confirmation_message(draft: &RequestDraft, settings: &LlmSettings) -> String {
     let scope = match draft.context.scope {

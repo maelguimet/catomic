@@ -87,6 +87,37 @@ fn confirmed_loopback_response_enters_preview_then_applies_on_second_enter() {
 }
 
 #[test]
+fn confirmed_marked_region_response_previews_then_replaces_only_selection() {
+    let (settings, server) = response_server(r#"{"catomic_replacement":"TWO"}"#);
+    let mut app = super::super::App::new(None).unwrap();
+    app.buffer = Box::new(PieceTable::from_text("one\ntwo\nthree\n"));
+    app.buffer.set_cursor(Cursor { row: 1, col: 0 });
+    let mut out = Vec::new();
+    for _ in 0..3 {
+        app.handle_key_with(&mut out, key(KeyCode::Right, KeyModifiers::SHIFT))
+            .unwrap();
+    }
+    begin_with_settings(
+        &mut app,
+        &mut out,
+        CurrentLlmCommand::Meow,
+        "uppercase",
+        settings,
+    )
+    .unwrap();
+
+    handle_key(&mut app, &mut out, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+    poll_until_done(&mut app, &mut out);
+    server.join().unwrap();
+    assert!(app.llm_preview.is_some());
+    assert_eq!(app.buffer.to_string(), "one\ntwo\nthree\n");
+
+    app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
+        .unwrap();
+    assert_eq!(app.buffer.to_string(), "one\nTWO\nthree\n");
+}
+
+#[test]
 fn meow_without_selection_uses_instruction_block_at_cursor() {
     let mut app = super::super::App::new(None).unwrap();
     app.buffer = Box::new(PieceTable::from_text(
@@ -150,8 +181,14 @@ fn poll_until_done(app: &mut super::super::App, out: &mut Vec<u8>) {
 }
 
 fn patch_server() -> (LlmSettings, std::thread::JoinHandle<()>) {
+    let patch = "--- a/note.txt\n+++ b/note.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n";
+    response_server(patch)
+}
+
+fn response_server(content: &str) -> (LlmSettings, std::thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
+    let content = content.to_string();
     let server = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
         let mut request = Vec::new();
@@ -163,8 +200,7 @@ fn patch_server() -> (LlmSettings, std::thread::JoinHandle<()>) {
                 break;
             }
         }
-        let patch = "--- a/note.txt\n+++ b/note.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n";
-        let body = serde_json::json!({"choices":[{"message":{"content":patch}}]}).to_string();
+        let body = serde_json::json!({"choices":[{"message":{"content":content}}]}).to_string();
         write!(
             stream,
             "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",

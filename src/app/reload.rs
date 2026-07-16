@@ -9,6 +9,7 @@
 //! Invariants: pending is bound to concrete (path + status + live snapshot);
 //!   second press only acts on exact match; any content mutation clears it;
 //!   automatic reload is invoked only for clean buffers by caller policy;
+//!   successful reloads refresh watcher path identities;
 //!   movement/render do not clear pending state.
 //! Phase: 2-s / 2-t cleanup through 2-bx automatic clean reload.
 
@@ -208,6 +209,7 @@ fn apply_deleted_reload(app: &mut super::App) {
 }
 
 fn finish_reload(app: &mut super::App, message: String) {
+    super::watch::refresh_file_watcher(app);
     app.message = Some(message);
     app.pending_reload = None;
     app.pending_save_conflict = None;

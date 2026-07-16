@@ -169,6 +169,11 @@ impl FileWatcher {
             *g = Some(s);
         }
     }
+
+    /// Expose immutable watcher identities for deterministic lifecycle tests.
+    pub(crate) fn watched_targets_for_test(&self) -> &[PathBuf] {
+        &self.targets
+    }
 }
 
 /// Return the lexical target plus a distinct canonical referent when the path

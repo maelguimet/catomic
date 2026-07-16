@@ -2,14 +2,14 @@
 //! Owns: descriptor-stable page scans, page metadata replacement, and cursor reset.
 //! Must not: render, decode terminal input, edit content, save, or choose App policy.
 //! Invariants: page changes are atomic after a successful stable-descriptor scan;
-//!   previous page starts describe the visited path in order.
+//!   reverse navigation derives boundaries from the same stable descriptor.
 //! Phase: 2-bl configurable paged Huge-file foundation.
 
 use std::fs::File;
 use std::io;
 use std::path::Path;
 
-use super::page_scan::{scan_utf8_page, PageScan};
+use super::page_scan::{find_previous_page_start, scan_utf8_page, PageScan};
 use super::{Cursor, FileMetadataSnapshot, LargeFileBuffer};
 
 impl LargeFileBuffer {
@@ -59,7 +59,6 @@ impl LargeFileBuffer {
             page_start_byte: 0,
             page_end_byte: 0,
             next_page_start: None,
-            previous_page_starts: Vec::new(),
             cursor: Cursor { row: 0, col: 0 },
         };
         buffer.apply_page_scan(page);
@@ -83,5 +82,12 @@ impl LargeFileBuffer {
         let page = scan_utf8_page(&self.file, start_byte, self.page_lines)?;
         self.ensure_fd_unchanged()?;
         Ok(page)
+    }
+
+    pub(super) fn previous_page_start(&self) -> io::Result<usize> {
+        self.ensure_fd_unchanged()?;
+        let start = find_previous_page_start(&self.file, self.page_start_byte, self.page_lines)?;
+        self.ensure_fd_unchanged()?;
+        Ok(start)
     }
 }

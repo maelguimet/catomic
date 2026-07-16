@@ -291,6 +291,26 @@ fn paged_open_exposes_trailing_empty_line_as_final_page() {
 }
 
 #[test]
+fn previous_page_is_computed_after_a_direct_later_page_state() {
+    let path = temp_path("reverse_pages.txt");
+    cleanup(&path);
+    std::fs::write(&path, "zero\none\ntwo\nthree\nfour").unwrap();
+
+    let mut buffer = LargeFileBuffer::open_paged(&path, 1).unwrap();
+    for _ in 0..4 {
+        assert!(buffer.next_page().unwrap());
+    }
+    assert_eq!(buffer.lines(), vec!["four"]);
+    for expected in ["three", "two", "one", "zero"] {
+        assert!(buffer.previous_page().unwrap());
+        assert_eq!(buffer.line(0).as_deref(), Some(expected));
+    }
+    assert!(!buffer.previous_page().unwrap());
+
+    cleanup(&path);
+}
+
+#[test]
 fn descriptor_drift_blocks_loading_the_next_page() {
     let path = temp_path("page_drift.txt");
     cleanup(&path);

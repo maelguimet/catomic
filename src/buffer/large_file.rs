@@ -41,7 +41,6 @@ pub(crate) struct LargeFileBuffer {
     page_start_byte: usize,
     page_end_byte: usize,
     next_page_start: Option<usize>,
-    previous_page_starts: Vec<usize>,
     cursor: Cursor,
 }
 
@@ -92,7 +91,6 @@ impl LargeFileBuffer {
             page_start_byte: 0,
             page_end_byte: scan.total_bytes,
             next_page_start: None,
-            previous_page_starts: Vec::new(),
             cursor: Cursor { row: 0, col: 0 },
         })
     }
@@ -351,7 +349,7 @@ impl Buffer for LargeFileBuffer {
             start_byte: self.page_start_byte as u64,
             end_byte: self.page_end_byte as u64,
             total_bytes: self.total_bytes as u64,
-            has_previous: !self.previous_page_starts.is_empty(),
+            has_previous: self.page_start_byte > 0,
             has_next: self.next_page_start.is_some(),
         })
     }
@@ -361,18 +359,17 @@ impl Buffer for LargeFileBuffer {
             return Ok(false);
         };
         let page = self.scan_page(start_byte)?;
-        self.previous_page_starts.push(self.page_start_byte);
         self.page_number += 1;
         self.apply_page_scan(page);
         Ok(true)
     }
 
     fn previous_page(&mut self) -> io::Result<bool> {
-        let Some(start_byte) = self.previous_page_starts.last().copied() else {
+        if self.page_start_byte == 0 {
             return Ok(false);
-        };
+        }
+        let start_byte = self.previous_page_start()?;
         let page = self.scan_page(start_byte)?;
-        self.previous_page_starts.pop();
         self.page_number = self.page_number.saturating_sub(1).max(1);
         self.apply_page_scan(page);
         Ok(true)

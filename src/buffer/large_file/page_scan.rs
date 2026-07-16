@@ -49,6 +49,47 @@ pub(super) fn scan_utf8_page(
     Ok(state.into_scan(None))
 }
 
+pub(super) fn find_previous_page_start(
+    file: &File,
+    current_start: usize,
+    page_lines: usize,
+) -> io::Result<usize> {
+    let target_newline = page_lines.saturating_add(1);
+    let mut seen = 0usize;
+    let mut end = current_start;
+    let mut chunk = vec![0u8; SCAN_CHUNK_BYTES];
+    while end > 0 {
+        let start = end.saturating_sub(chunk.len());
+        let len = end - start;
+        read_exact_at(file, &mut chunk[..len], start)?;
+        for index in (0..len).rev() {
+            if chunk[index] == b'\n' {
+                seen += 1;
+                if seen == target_newline {
+                    return Ok(start + index + 1);
+                }
+            }
+        }
+        end = start;
+    }
+    Ok(0)
+}
+
+fn read_exact_at(file: &File, mut out: &mut [u8], mut offset: usize) -> io::Result<()> {
+    while !out.is_empty() {
+        let read = file.read_at(out, offset as u64)?;
+        if read == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "short read while locating previous file page",
+            ));
+        }
+        offset += read;
+        out = &mut out[read..];
+    }
+    Ok(())
+}
+
 struct PageScanState {
     start_byte: usize,
     offset: usize,

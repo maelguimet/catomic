@@ -11,7 +11,8 @@ Phase 6 is complete. Its exit evidence is in
 - **Transient backend**: lazy OpenAI-compatible configuration and a per-request
   current-thread runtime/client created only after Enter confirmation. Tests
   use loopback fake HTTP and never a live model; redirects and ambient proxies
-  cannot reroute context away from the confirmed endpoint.
+  cannot reroute context away from the canonical confirmed endpoint, and
+  ambiguous URL forms fail before confirmation.
 - **Safe output**: strict single-file unified patches, exact active repo-path
   and current-buffer path validation, rename refusal, a strict marked-region
   replacement envelope, read-only explanation results, and fail-closed parsing.

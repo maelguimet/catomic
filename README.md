@@ -226,7 +226,9 @@ timeout_secs = 120
 ```
 
 The API key is read from the named environment variable only after Enter.
-With no configuration, the local endpoint and model shown above are used.
+Endpoint URLs are canonicalized before confirmation and cannot contain
+credentials, whitespace, a query, or a fragment. With no configuration, the
+local endpoint and model shown above are used.
 
 Current-buffer commands work from Plain mode:
 

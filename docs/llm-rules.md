@@ -36,6 +36,8 @@ and per-file diff. No command writes or runs a process other than read-only Git.
 
 - Network LLM clients must only be constructed after explicit invocation and
   Enter confirmation naming endpoint, model, and context extent.
+- Endpoint configuration is parsed and canonicalized before confirmation;
+  credentials, whitespace, queries, fragments, and non-HTTP(S) schemes fail.
 - The transient HTTP client must not follow redirects away from the confirmed
   endpoint; every 3xx response is an error.
 - Ambient proxy environment variables must not reroute context. Proxy support

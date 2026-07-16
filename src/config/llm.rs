@@ -98,20 +98,7 @@ fn apply_setting(
 }
 
 fn validate(settings: &mut LlmSettings) -> io::Result<()> {
-    let authority = settings
-        .base_url
-        .strip_prefix("http://")
-        .or_else(|| settings.base_url.strip_prefix("https://"));
-    if authority
-        .is_none_or(|value| value.is_empty() || value.starts_with('/') || value.contains(' '))
-        || settings.base_url.contains('@')
-    {
-        return Err(invalid(
-            0,
-            "llm.base_url must be an HTTP(S) URL without credentials",
-        ));
-    }
-    settings.base_url = settings.base_url.trim_end_matches('/').to_string();
+    settings.base_url = canonical_base_url(&settings.base_url)?;
     settings.model = settings.model.trim().to_string();
     if settings.model.is_empty() {
         return Err(invalid(0, "llm.model must not be empty"));
@@ -126,6 +113,28 @@ fn validate(settings: &mut LlmSettings) -> io::Result<()> {
         return Err(invalid(0, "llm.timeout_secs must be between 1 and 600"));
     }
     Ok(())
+}
+
+fn canonical_base_url(raw: &str) -> io::Result<String> {
+    let url = reqwest::Url::parse(raw).map_err(|_| invalid_base_url())?;
+    if raw.chars().any(char::is_whitespace)
+        || !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(invalid_base_url());
+    }
+    Ok(url.as_str().trim_end_matches('/').to_string())
+}
+
+fn invalid_base_url() -> io::Error {
+    invalid(
+        0,
+        "llm.base_url must be a plain HTTP(S) base URL without credentials, query, or fragment",
+    )
 }
 
 fn quoted<'a>(value: &'a str, line: usize) -> io::Result<&'a str> {
@@ -168,7 +177,7 @@ mod tests {
     #[test]
     fn parses_llm_settings_and_ignores_other_sections() {
         let settings = parse(
-            "[other]\nmodel = \"ignored\"\n[llm]\nbase_url = \"https://models.example/v1/\"\n\
+            "[other]\nmodel = \"ignored\"\n[llm]\nbase_url = \"HTTPS://Models.Example:443/v1/\"\n\
              model = \"cat-coder\"\napi_key_env = \"CATOMIC_TOKEN\"\ntimeout_secs = 30\n",
         )
         .unwrap();
@@ -188,6 +197,20 @@ mod tests {
             "[llm]\ntimeout_secs = 601\n",
         ] {
             assert_eq!(parse(text).unwrap_err().kind(), io::ErrorKind::InvalidData);
+        }
+    }
+
+    #[test]
+    fn rejects_ambiguous_or_non_http_endpoint_urls() {
+        for base_url in [
+            "ftp://models.example/v1",
+            "https://models.example/v1?tenant=cat",
+            "https://models.example/v1#section",
+            "https://models.example\t.evil/v1",
+            "https://key@example.test/v1",
+        ] {
+            let text = format!("[llm]\nbase_url = \"{base_url}\"\n");
+            assert_eq!(parse(&text).unwrap_err().kind(), io::ErrorKind::InvalidData);
         }
     }
 }

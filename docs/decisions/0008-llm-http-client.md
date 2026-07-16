@@ -32,6 +32,9 @@ Dropping or cancelling the worker drops the request future and client.
 ## Bounds
 
 - Request context is already capped at 64 KiB and 2,000 lines.
+- Reqwest's URL parser canonicalizes the base URL before confirmation. Only a
+  plain HTTP(S) base without credentials, whitespace, query, or fragment is
+  accepted.
 - Response capture is capped before JSON parsing.
 - Timeouts are configured and bounded.
 - Redirect following is disabled; a 3xx response cannot forward confirmed

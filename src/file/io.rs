@@ -7,10 +7,11 @@
 //! Must not: construct watchers or use notify; read file content for change detection
 //!   or hashing; know App, Project, LLM, or UI; perform reload/save-conflict policy.
 //! Invariants: atomic writes use same-dir temp + create_new + sync + rename;
-//!   all observation is metadata (len+mtime) only; Absent explicitly represents missing;
+//!   observations use len/mtime plus Unix identity/change time when available;
+//!   Absent explicitly represents missing;
 //!   read_to_string returns InvalidData for non-UTF-8; errors other than NotFound
 //!   surface as Unknown(kind) in observation helpers; single-capture observe.
-//! Phase: 2-l foundation through 2-bh streaming atomic save foundation.
+//! Phase: 2-l foundation through 2-bu Unix metadata identity hardening.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
@@ -120,16 +121,26 @@ impl Write for CountingWriter<'_> {
     }
 }
 
-/// Captured on-disk metadata snapshot using only std metadata (len + modified).
+/// Captured on-disk metadata snapshot using only std metadata.
 /// Explicitly represents a missing file as Absent (never as error for "no file").
-/// mtime is best-effort (None on platforms/FS where unavailable).
+/// mtime is best-effort. Linux/Unix identity and ctime close the common
+/// same-length/same-mtime replacement hole without reading file content.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FileSnapshot {
     Present {
         len: u64,
         mtime: Option<std::time::SystemTime>,
+        change_id: Option<FileChangeId>,
     },
     Absent,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FileChangeId {
+    device: u64,
+    inode: u64,
+    ctime_seconds: i64,
+    ctime_nanoseconds: i64,
 }
 
 /// Result of comparing live disk state to a previously captured snapshot.
@@ -165,6 +176,7 @@ pub fn capture_file_snapshot(path: impl AsRef<Path>) -> io::Result<FileSnapshot>
             Ok(FileSnapshot::Present {
                 len: meta.len(),
                 mtime,
+                change_id: file_change_id(&meta),
             })
         }
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(FileSnapshot::Absent),
@@ -198,10 +210,18 @@ fn compare_live_snapshot_to_baseline(
         (FileSnapshot::Absent, FileSnapshot::Present { .. }) => ExternalFileStatus::Modified,
         (FileSnapshot::Present { .. }, FileSnapshot::Absent) => ExternalFileStatus::Deleted,
         (
-            FileSnapshot::Present { len: l1, mtime: t1 },
-            FileSnapshot::Present { len: l2, mtime: t2 },
+            FileSnapshot::Present {
+                len: l1,
+                mtime: t1,
+                change_id: c1,
+            },
+            FileSnapshot::Present {
+                len: l2,
+                mtime: t2,
+                change_id: c2,
+            },
         ) => {
-            if l1 == l2 && t1 == t2 {
+            if l1 == l2 && t1 == t2 && c1 == c2 {
                 ExternalFileStatus::Unchanged
             } else {
                 ExternalFileStatus::Modified
@@ -245,6 +265,23 @@ pub fn observe_external_file(
         status,
         live_snapshot,
     }
+}
+
+#[cfg(unix)]
+fn file_change_id(meta: &fs::Metadata) -> Option<FileChangeId> {
+    use std::os::unix::fs::MetadataExt;
+
+    Some(FileChangeId {
+        device: meta.dev(),
+        inode: meta.ino(),
+        ctime_seconds: meta.ctime(),
+        ctime_nanoseconds: meta.ctime_nsec(),
+    })
+}
+
+#[cfg(not(unix))]
+fn file_change_id(_meta: &fs::Metadata) -> Option<FileChangeId> {
+    None
 }
 
 #[cfg(test)]

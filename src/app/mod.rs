@@ -113,7 +113,7 @@ impl App {
         // errors before we reach content reads. Snapshot behavior:
         // - None path: snapshot=None
         // - missing: snapshot=Some(Absent)
-        // - present: snapshot=Some(Present) with len+mtime from the same probe used for size
+        // - present: snapshot=Some(Present) from the same metadata probe used for size
         let disk_snapshot = meta.disk_snapshot;
         // Size derived in prepare from the same snapshot (None for missing/none-path).
         // See also save.rs for the narrow post-write len fallback contract.

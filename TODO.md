@@ -763,7 +763,7 @@ Key unresolved limitations (still current post 2-br):
 - watcher signals are runtime hints only; App-owned best-effort; runtime checks watcher once per loop via helper (try_recv inside check_file_watcher_once only); Unchanged/NoPath from watcher clear stale pending_reload when armed, otherwise fully ignored (suppress self-save noise);
 - no auto-reload; Modified/Deleted (from watcher or Ctrl+R) only arm confirmation; second Ctrl+R performs actual reload using fresh observe + pending match (or clears for Deleted);
 - no content read from watcher signal path except the existing confirmed Ctrl+R reload path;
-- metadata-only external detection (len+mtime via observe_external_file / capture / compare); same-size/same-mtime overwrite limitation remains (no hash/content);
+- metadata-only external detection uses len/mtime plus Unix device/inode/ctime via observe_external_file / capture / compare; same-size/same-mtime path replacement is detected without hashing, though a change that preserves every available metadata field can still evade detection;
 - default test suite uses deterministic queued-signal seams only (TestStub/inject + replace_file_watcher_for_test); live OS notify smoke is ignored/manual and must not be required for CI;
 - big-file tiers/perf: Small/Large remain editable full-read PieceTable opens; Huge/Extreme use configured read-only logical-line pages over a stable descriptor. Active-page scans retain line/checkpoint metadata only, use the optimized std ASCII/newline path for giant lines, fallible rendering probes descriptor stability before and after each visible window, and explicit Ctrl+F streams the whole descriptor in bounded chunks. A single giant logical line can still make one page span the file; no thresholds are enforced yet.
 - rendering repaints and clears each viewport row without a terminal-wide clear; it does not yet retain row state for dirty-row-only redraws.
@@ -785,7 +785,7 @@ External-file safety current state after 2-ae:
 - signals are hints only; source of truth is always fresh metadata observation (observe_external_file) + apply_check_observation (same path used by Ctrl+R).
 - Modified/Deleted arm pending (like first Ctrl+R); Unchanged/NoPath from watcher suppress noise or clear stale pending only.
 - no auto-reload ever; no content read except on confirmed Ctrl+R second press.
-- same-size/same-mtime limitation remains (metadata-only).
+- metadata-only detection now catches same-size/same-mtime path replacement on Unix through device/inode/ctime; no content hash is performed.
 - tests: deterministic seams cover arming + manual follow-up; live smoke is #[ignore] and manual.
 
 Phase 2A external-file safety acceptance checklist (concrete):

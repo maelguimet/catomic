@@ -230,6 +230,7 @@ mod tests {
             disk_snapshot: Some(FileSnapshot::Present {
                 len: crate::file::size::LARGE_FILE_LIMIT_BYTES + 1,
                 mtime: None,
+                change_id: None,
             }),
             content_plan: OpenContentPlan::PagedReadOnly,
         };

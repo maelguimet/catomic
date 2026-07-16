@@ -100,6 +100,7 @@ fn app_file_state_save_failure_leaves_snapshot_unchanged() {
     app.file.disk_snapshot = Some(crate::file::io::FileSnapshot::Present {
         len: 42,
         mtime: None,
+        change_id: None,
     });
     app.file.dirty = true;
 

@@ -169,10 +169,16 @@ fn capture_snapshot_existing_captures_len_and_mtime_state() {
     fs::write(&p, "hello\nworld\n").unwrap();
     let snap = capture_file_snapshot(&p).expect("capture existing");
     match snap {
-        FileSnapshot::Present { len, mtime } => {
+        FileSnapshot::Present {
+            len,
+            mtime,
+            change_id,
+        } => {
             assert_eq!(len, 12, "len must match written bytes");
             // mtime may be None on some FS; just ensure we did not panic and type is present
             let _ = mtime;
+            #[cfg(unix)]
+            assert!(change_id.is_some(), "Unix snapshots must include identity");
         }
         FileSnapshot::Absent => panic!("existing file must not report Absent"),
     }
@@ -234,6 +240,7 @@ fn compare_to_snapshot_non_notfound_meta_error_is_unknown() {
     let snap = FileSnapshot::Present {
         len: 1,
         mtime: None,
+        change_id: None,
     };
     let status = compare_to_snapshot(&bad, &snap)
         .expect("compare_to_snapshot must not propagate hard error for meta fail");
@@ -290,6 +297,38 @@ fn observe_external_modified_live_snapshot_identity() {
     cleanup(&p);
 }
 
+#[cfg(unix)]
+#[test]
+fn same_length_same_mtime_path_replacement_is_modified() {
+    let path = temp_path("same_metadata_target.txt");
+    let replacement = temp_path("same_metadata_replacement.txt");
+    cleanup(&path);
+    cleanup(&replacement);
+    fs::write(&path, "ORIGINAL").unwrap();
+    let baseline = capture_file_snapshot(&path).unwrap();
+    let baseline_mtime = fs::metadata(&path).unwrap().modified().unwrap();
+
+    fs::write(&replacement, "REPLACED").unwrap();
+    fs::File::open(&replacement)
+        .unwrap()
+        .set_times(std::fs::FileTimes::new().set_modified(baseline_mtime))
+        .unwrap();
+    fs::rename(&replacement, &path).unwrap();
+
+    let live_meta = fs::metadata(&path).unwrap();
+    assert_eq!(live_meta.len(), 8);
+    assert_eq!(live_meta.modified().unwrap(), baseline_mtime);
+    let observation = observe_external_file(Some(&path), Some(&baseline));
+    assert_eq!(
+        observation.status,
+        ExternalFileStatus::Modified,
+        "replacing a path with a different inode must not evade conflict detection"
+    );
+
+    cleanup(&path);
+    cleanup(&replacement);
+}
+
 #[test]
 fn observe_external_deleted_yields_deleted_and_absent() {
     let p = temp_path("obs_del.txt");
@@ -318,6 +357,7 @@ fn observe_external_unknown_on_non_notfound_meta_error() {
     let base = FileSnapshot::Present {
         len: 1,
         mtime: None,
+        change_id: None,
     };
 
     let bad = reg.join("child");

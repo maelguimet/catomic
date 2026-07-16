@@ -18,7 +18,7 @@ use crate::file::size::FileSizeTier;
 /// path: target for save (None until first save picks "untitled.txt").
 /// dirty: true if current edit_history_position() != saved_history_position.
 /// saved_history_position: token from buffer at last successful open/save.
-/// disk_snapshot: captured on-disk (len+mtime or Absent) at last open or successful save.
+/// disk_snapshot: captured metadata identity at last open or successful save.
 /// size_bytes / size_tier: metadata-first (fs::metadata len) captured on open for
 ///   existing path, after successful save, and on confirmed reload of Modified content.
 /// The only allowed content-derived fallback is inside the post-successful-save path

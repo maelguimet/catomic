@@ -1,10 +1,10 @@
 //! Save-conflict guard tests from Phase 2-n (moved in 2-o split).
 //!
-//! Purpose: all first-refusal, force, edge (Absent, change-between, edit-clears) tests.
-//! Owns: the 2-n conflict tests; names exactly as original.
+//! Purpose: cover first-refusal, force, and external-change save safety.
+//! Owns: conflict tests including Absent, drift, edit-clear, and metadata spoofing.
 //! Must not: other test groups.
-//! Invariants: no behavior change; tests use super for App/make_key.
-//! Phase: 2-o cleanup.
+//! Invariants: a first conflicting save never overwrites observed external content.
+//! Phase: 2-o cleanup through 2-bu Linux metadata identity hardening.
 
 use super::super::*;
 use super::make_key;
@@ -105,6 +105,44 @@ fn app_file_state_first_ctrl_s_refuses_on_external_modified_keeps_dirty_and_disk
     );
 
     let _ = std::fs::remove_file(&p);
+}
+
+#[cfg(unix)]
+#[test]
+fn app_save_refuses_same_length_same_mtime_path_replacement() {
+    let mut target = std::env::temp_dir();
+    target.push(format!(
+        "catomic_same_metadata_save_target_{}.txt",
+        std::process::id()
+    ));
+    let replacement = target.with_extension("replacement");
+    let _ = std::fs::remove_file(&target);
+    let _ = std::fs::remove_file(&replacement);
+    std::fs::write(&target, "ORIGINAL").unwrap();
+    let baseline_mtime = std::fs::metadata(&target).unwrap().modified().unwrap();
+    let mut app = App::new(Some(&target.to_string_lossy())).unwrap();
+
+    std::fs::write(&replacement, "REPLACED").unwrap();
+    std::fs::File::open(&replacement)
+        .unwrap()
+        .set_times(std::fs::FileTimes::new().set_modified(baseline_mtime))
+        .unwrap();
+    std::fs::rename(&replacement, &target).unwrap();
+    app.handle_key(make_key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
+
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+
+    assert!(
+        app.file.dirty,
+        "conflicting save must keep local edits dirty"
+    );
+    assert!(app.pending_save_conflict.is_some());
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "REPLACED");
+
+    let _ = std::fs::remove_file(&target);
+    let _ = std::fs::remove_file(&replacement);
 }
 
 #[test]

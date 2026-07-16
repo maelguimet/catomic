@@ -238,9 +238,11 @@ fn move_rows(app: &mut super::App, forward: bool) {
 fn set_line_edge(app: &mut super::App, end: bool) {
     let buffer = active_buffer(app);
     let row = buffer.cursor().row;
-    let col = end
-        .then(|| buffer.line_char_count(row).unwrap_or(0))
-        .unwrap_or(0);
+    let col = if end {
+        buffer.line_char_count(row).unwrap_or(0)
+    } else {
+        0
+    };
     buffer.set_cursor(Cursor { row, col });
 }
 

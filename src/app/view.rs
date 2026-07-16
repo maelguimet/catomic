@@ -91,10 +91,11 @@ pub(crate) fn display_syntax(app: &super::App) -> SyntaxKind {
 }
 
 pub(crate) fn gutter_width(app: &super::App) -> usize {
-    app.view
-        .line_numbers
-        .then(|| crate::terminal::render::line_number_gutter(display_buffer(app).line_count()))
-        .unwrap_or(0)
+    if app.view.line_numbers {
+        crate::terminal::render::line_number_gutter(display_buffer(app).line_count())
+    } else {
+        0
+    }
 }
 
 pub(crate) fn content_width(app: &super::App) -> usize {

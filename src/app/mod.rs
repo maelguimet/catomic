@@ -181,7 +181,7 @@ impl App {
             auto_reload,
             buffer,
             file: FileState {
-                path: initial_path.map(|s| PathBuf::from(s)),
+                path: initial_path.map(PathBuf::from),
                 dirty: false,
                 saved_history_position: initial_pos,
                 disk_snapshot,

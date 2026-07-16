@@ -24,9 +24,10 @@ use crate::file::size::{
     OpenSizeDecision,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum OpenContentPlan {
     /// No path was requested. Start with an untitled empty buffer.
+    #[default]
     UntitledEmpty,
     /// The requested path was absent during the initial metadata capture.
     MissingEmpty,
@@ -34,12 +35,6 @@ pub(crate) enum OpenContentPlan {
     FullRead,
     /// The requested path was oversized and opens one editable line page at a time.
     PagedEditable,
-}
-
-impl Default for OpenContentPlan {
-    fn default() -> Self {
-        Self::UntitledEmpty
-    }
 }
 
 /// Captured pre-read metadata decision for an optional path.
@@ -63,12 +58,14 @@ pub(crate) struct OpenFileMeta {
 /// Probe on-disk metadata once (via capture_file_snapshot) and apply open-size
 /// guardrails. Single capture populates both size decision and the disk_snapshot
 /// carried back to App::new (avoids duplicate metadata probe for present files).
+///
 /// - None path: default (snapshot=None, no size, no message).
 /// - Missing: sizes=None, disk_snapshot=Some(Absent); caller opens empty.
 /// - Existing Small: size+Small from snapshot, no message, snapshot=Present.
 /// - Existing Large: editable full read with an initial warning.
 /// - Existing Huge/Extreme: editable paged storage with an initial warning.
 /// - Hard meta error: propagates Err.
+///
 /// Does not read content, does not build buffer/App, does not touch watcher.
 pub(crate) fn prepare_open_file_meta(initial_path: Option<&str>) -> io::Result<OpenFileMeta> {
     let mut meta = OpenFileMeta::default();

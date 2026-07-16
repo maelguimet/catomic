@@ -59,9 +59,7 @@ pub(crate) fn clamp_viewport_to_buffer(app: &mut App) {
         )
     };
     let vh = app.screen.visible_height();
-    if vh == 0 {
-        app.screen.scroll_top = 0;
-    } else if lc <= vh {
+    if vh == 0 || lc <= vh {
         app.screen.scroll_top = 0;
     } else {
         let max_top = lc - vh;

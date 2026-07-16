@@ -10,26 +10,25 @@ See also: [TODO.md](./TODO.md), [README.md](./README.md), and `docs/` (architect
 
 Build the cursor before the cathedral.
 
-Current phase: Phase 2-a complete; Phase 2-b foundation / Phase 2 acceptance work.
+Current phase: Phase 5 complete; Phase 6 implementation work.
 
-Phases 1A, 1B-b, 1C, and 2-a are complete:
-- PieceTable + LineIndex + cursor mapping + query accel behind Buffer
-- piece-level undo/redo (transactions, no snapshots)
-- minimal key bindings for undo/redo
-- atomic save + FileState + conservative dirty flag
+Phases 0 through 5 are complete and have acceptance records in `docs/`:
+- blessed terminal loop, Buffer abstraction, PieceTable, LineIndex, and undo/redo
+- robust file handling, atomic save, external-change safety, and bounded large-file editing
+- search, selection, multiple buffers, Markdown preview, and viewport-only syntax
+- gated Plain/Project lifecycle, local completion, on-demand linting, diagnostics,
+  bounded project discovery, and cached project-path completion
 
 Allowed now:
-* line index
-* cursor/offset mapping acceleration
-* query optimization
-* tests/benchmarks for PieceTable
-* undo/redo (Phase 1C done)
-* Phase 2 acceptance hardening and Phase 2-b foundation work
+* Phase 6 work defined in `TODO.md` and `docs/llm-rules.md`
+* deterministic parser, patch, broker, preview, confirmation, and undo tests
+* acceptance hardening and regression fixes for completed phases
 
-Phase 2 feature work is allowed only after Phase 1 acceptance tests are green.
+Phase 6 feature work is allowed because Phase 5 acceptance tests are green.
 
 Forbidden now:
-* LLM/project/config work
+* testing LLM features against a live model or endpoint
+* silent network calls or silent writes
 * UI feature expansion (beyond phase needs)
 
 ## Workflow

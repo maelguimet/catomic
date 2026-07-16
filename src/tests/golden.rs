@@ -1,17 +1,16 @@
-//! Golden tests: input file + sequence of operations → exact file output.
-//!
-//! Non-negotiable for buffer correctness.
-//! Especially important around undo, save, external edit conflict, patch apply.
-//!
-//! Phase 0: drive SimpleBuffer through open/edit/save sequence and assert
-//! the bytes that would be written to disk match exactly.
+//! Purpose: verify edit sequences produce exact saved bytes.
+//! Owns: cross-layer golden fixtures for buffer edits, search replacement, and atomic save.
+//! Must not: launch a terminal, benchmark hot paths, depend on Project/LLM, or network.
+//! Invariants: every fixture compares complete output bytes with an explicit expectation.
+//! Phase: 3 acceptance golden coverage over the established Phase 0/1 cases.
 
 #[cfg(test)]
 mod tests {
     use std::fs;
     use std::path::PathBuf;
 
-    use crate::buffer::{Buffer, PieceTable, SimpleBuffer};
+    use crate::buffer::{Buffer, Cursor, PieceTable, SimpleBuffer};
+    use crate::editor::search::{find_match, SearchDirection};
 
     fn temp_path(name: &str) -> PathBuf {
         let mut p = std::env::temp_dir();
@@ -244,6 +243,35 @@ mod tests {
             }
         }
 
+        cleanup(&out_path);
+    }
+
+    #[test]
+    fn golden_search_selection_replace_and_save() {
+        let out_path = temp_path("search_replace.txt");
+        cleanup(&out_path);
+        let mut buffer = PieceTable::from_text("alpha target omega\ntarget stays");
+
+        let found = find_match(
+            &buffer,
+            "target",
+            Cursor::default(),
+            SearchDirection::Forward,
+            true,
+        )
+        .expect("first target");
+        let end = Cursor {
+            row: found.start.row,
+            col: found.end_col,
+        };
+        assert!(buffer.replace_range(found.start, end, "cat").unwrap());
+
+        crate::file::io::atomic_write_string(&out_path, &buffer.to_string())
+            .expect("atomic golden save");
+        assert_eq!(
+            fs::read_to_string(&out_path).unwrap(),
+            "alpha cat omega\ntarget stays"
+        );
         cleanup(&out_path);
     }
 }

@@ -394,6 +394,20 @@ boundaries and builds sparse column checkpoints. Historical current-policy RSS
 samples remain about 30 MiB for dense non-ASCII 100 MiB and sparse 1 GiB, and
 about 106–117 MiB for newline-rich/dense ASCII 100 MiB full test invocations.
 
+### Phase 3 medium-file search acceptance (2026-07-16, post 3-e)
+
+The ignored release fixture `manual_search_10mib_line_heavy_buffer_reports_sample`
+places the only query at EOF of a 10 MiB line-heavy PieceTable. This forces a
+complete forward scan while retaining an exact-position correctness assertion.
+
+- Search sample: 8 ms.
+- Full release test-process peak RSS via `/usr/bin/time`: 32,984 KiB.
+- Reference acceptance budget: under 100 ms and under 64 MiB on this machine.
+
+The budget is recorded acceptance evidence, not a default-test timing assertion.
+Future measurements should use the same fixture name and stable `PERF sample`
+label before comparing results.
+
 ### Candidate Phase 2B budgets — not enforced yet
 
 These are starting-point advisory targets derived from the 2026-06-24 recorded baselines above, with 2026-07-07 follow-up splits showing the current LF-only, owned App open, newline-search, and owned file-read-helper behavior. They are **not** wired into tests as assertions. They are local-machine dependent and must be revisited with more samples on representative hardware before any enforcement.

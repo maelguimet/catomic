@@ -1,7 +1,9 @@
 # Phase 3 Progress
 
-Phase 3 is in progress. Phase 2 acceptance remains the prerequisite and is
-recorded in [`../phase-2-acceptance.md`](../phase-2-acceptance.md).
+Phase 3 is complete. Its acceptance record is
+[`../phase-3-acceptance.md`](../phase-3-acceptance.md); prerequisite Phase 2
+acceptance remains recorded in
+[`../phase-2-acceptance.md`](../phase-2-acceptance.md).
 
 ## Completed
 
@@ -30,7 +32,8 @@ recorded in [`../phase-2-acceptance.md`](../phase-2-acceptance.md).
   clicks are ignored, and bounded double clicks expand Unicode word or
   punctuation runs.
 
-## Remaining Phase 3 Work
+## Acceptance
 
-- Phase 3 acceptance definition, medium-file search measurement, and manual UX
-  checklist evidence.
+The exact search/replacement golden, live-highlight PTY smoke, 10 MiB EOF-search
+measurement, and live terminal UX checklist pass. See the acceptance record for
+commands, budgets, and observed results.

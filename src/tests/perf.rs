@@ -23,3 +23,7 @@ mod manual;
 #[cfg(test)]
 #[path = "perf_manual_line.rs"]
 mod manual_line;
+
+#[cfg(test)]
+#[path = "perf_search.rs"]
+mod search;

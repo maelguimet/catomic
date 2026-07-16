@@ -3,13 +3,13 @@
 //! Purpose: drive the compiled binary through a pseudo-terminal so key handling,
 //!   raw-mode setup, render, save, undo, search, external reload, and clean quit are
 //!   exercised together.
-//! Owns: narrow default PTY smoke coverage for already-existing Phase 0/1/2
+//! Owns: narrow default PTY smoke coverage for already-existing Phase 0/1/2/3
 //!   behavior.
 //! Must not: grow into a broad UI harness, depend on Project/LLM/config, or run
 //!   large-file/perf scenarios.
 //! Invariants: tests use temporary files, time out and kill the child on hangs,
 //!   and leave Plain startup behavior unchanged.
-//! Phase: 2-bw active-buffer save PTY acceptance.
+//! Phase: 3 acceptance, including live Ctrl+F highlighting.
 
 use std::error::Error;
 use std::fs;
@@ -221,12 +221,17 @@ fn pty_external_edit_confirm_reload_quit_shows_disk_content() -> TestResult {
 #[test]
 fn pty_ctrl_f_prompt_finds_content_and_quits() -> TestResult {
     let temp = TempPath::new("ctrl_f");
-    fs::write(&temp.path, "zero\none target here\nlast")?;
+    fs::write(&temp.path, "zero\none target here\nlast target")?;
     let mut editor = PtyEditor::spawn(&temp.path)?;
 
     editor.wait_for_initial_render()?;
-    editor.send_keys(b"\x06target\r")?;
+    editor.send_keys(b"\x06target")?;
     editor.wait_for_output("Ctrl+F result", "Found 'target'.")?;
+    assert!(
+        editor.output_string().contains("\x1b[7mtarget\x1b[27m"),
+        "incremental Ctrl+F should reverse-highlight the live match"
+    );
+    editor.send_keys(b"\r")?;
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
 

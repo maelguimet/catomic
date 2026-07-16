@@ -104,7 +104,9 @@ threshold. UTF-16 and other non-UTF-8 encodings are rejected rather than
 silently corrupted.
 
 Atomic saves through a valid final symlink replace its referent and leave the
-symlink intact. A dangling final symlink is refused rather than replaced.
+symlink intact. A dangling final symlink is refused rather than replaced. File
+watching tracks both the link and its resolved referent so either kind of
+external change wakes reload detection.
 
 ## Terminal Behavior
 

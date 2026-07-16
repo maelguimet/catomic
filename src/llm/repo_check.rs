@@ -69,13 +69,14 @@ fn check(broker: ContextBroker, cancel: &AtomicBool) -> RepoCheckResult {
     if cancel.load(Ordering::Acquire) {
         return RepoCheckResult::Cancelled;
     }
-    let unchanged = broker.is_unchanged();
+    let unchanged = broker.is_unchanged_until(|| cancel.load(Ordering::Acquire));
     if cancel.load(Ordering::Acquire) {
         return RepoCheckResult::Cancelled;
     }
     match unchanged {
-        Ok(true) => RepoCheckResult::Unchanged(broker),
-        Ok(false) => RepoCheckResult::Changed,
+        Ok(Some(true)) => RepoCheckResult::Unchanged(broker),
+        Ok(Some(false)) => RepoCheckResult::Changed,
+        Ok(None) => RepoCheckResult::Cancelled,
         Err(error) => RepoCheckResult::Error(error.to_string()),
     }
 }

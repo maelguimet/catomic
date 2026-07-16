@@ -31,7 +31,9 @@ If files change during thinking or before preview apply, refuse blind apply.
 
 Read-only Git capture must disable pagers, fsmonitor, external diff, and
 textconv helpers so repository configuration cannot launch child helpers. It
-must strip inherited `GIT_*` variables before applying its safe settings.
+must strip inherited `GIT_*` variables before applying its safe settings. Git
+stdin is closed; every child has a ten-second timeout and is killed and reaped
+when its owning preparation, request, or drift-check worker is cancelled.
 
 Broker commands are limited to list files, bounded ranged reads, bounded grep,
 and per-file diff. No command writes or runs a process other than read-only Git.

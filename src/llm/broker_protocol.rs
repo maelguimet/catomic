@@ -39,16 +39,25 @@ pub fn parse(text: &str) -> Option<BrokerCommand> {
         .map(|envelope| envelope.catomic_broker)
 }
 
-pub fn execute(broker: &mut ContextBroker, command: &BrokerCommand) -> Result<String, BrokerError> {
+pub fn execute_until(
+    broker: &mut ContextBroker,
+    command: &BrokerCommand,
+    cancelled: impl Fn() -> bool,
+) -> Result<Option<String>, BrokerError> {
+    if cancelled() {
+        return Ok(None);
+    }
     match command {
-        BrokerCommand::ListFiles => broker.list_files(),
+        BrokerCommand::ListFiles => broker.list_files().map(Some),
         BrokerCommand::ReadFile {
             path,
             offset,
             limit,
-        } => broker.read_file_range(Path::new(path), *offset, *limit),
-        BrokerCommand::Grep { query } => broker.grep(query),
-        BrokerCommand::ShowDiff { path } => broker.show_diff(Path::new(path)),
+        } => broker
+            .read_file_range(Path::new(path), *offset, *limit)
+            .map(Some),
+        BrokerCommand::Grep { query } => broker.grep(query).map(Some),
+        BrokerCommand::ShowDiff { path } => broker.show_diff_until(Path::new(path), cancelled),
     }
 }
 

@@ -24,7 +24,9 @@ Phase 6 is complete. Its exit evidence is in
   across at most eight model broker rounds. Dot paths stay outside its file map;
   direct secret-like reads/diffs fail closed and grep reports skipped sensitive
   files. Git capture disables configured pagers, fsmonitor, external diff, and
-  textconv helpers and strips ambient repository-identity overrides.
+  textconv helpers and strips ambient repository-identity overrides. Git stdin
+  is closed, output is reader-capped, every child times out after ten seconds,
+  and cancellation kills and reaps an active child.
 - **Time-travel guard**: HEAD, branch, status, tracked diff, active buffer path
   and text, active-file disk bytes (including untracked files), and every
   retrieved file are checked during repo preparation, before sending, after

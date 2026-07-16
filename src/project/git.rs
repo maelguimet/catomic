@@ -7,9 +7,9 @@
 use std::collections::hash_map::DefaultHasher;
 use std::fmt;
 use std::hash::Hasher;
-use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus, Stdio};
+
+mod process;
 
 const MAX_TEXT_OUTPUT: usize = 256 * 1024;
 const MAX_TRACKED_DIFF_BYTES: usize = 8 * 1024 * 1024;
@@ -41,6 +41,8 @@ pub enum GitError {
     OutputTooLarge { command: String, limit: usize },
     InvalidUtf8 { command: String },
     InvalidRepoRoot,
+    Cancelled { command: String },
+    TimedOut { command: String, milliseconds: u128 },
 }
 
 impl fmt::Display for GitError {
@@ -56,86 +58,159 @@ impl fmt::Display for GitError {
             }
             Self::InvalidUtf8 { command } => write!(formatter, "git {command} returned non-UTF-8"),
             Self::InvalidRepoRoot => write!(formatter, "git returned an invalid repository root"),
+            Self::Cancelled { command } => write!(formatter, "git {command} was cancelled"),
+            Self::TimedOut {
+                command,
+                milliseconds,
+            } => write!(
+                formatter,
+                "git {command} exceeded the {milliseconds}-millisecond timeout"
+            ),
         }
     }
 }
 
 impl GitContext {
+    #[cfg(test)]
     pub fn capture(cwd: &Path) -> Result<Self, GitError> {
-        let root_text = run_text(cwd, &["rev-parse", "--show-toplevel"])?;
-        let root = PathBuf::from(root_text.trim());
-        if !root.is_absolute() || !root.is_dir() {
-            return Err(GitError::InvalidRepoRoot);
+        capture(cwd, &|| false)
+    }
+
+    pub fn capture_until(
+        cwd: &Path,
+        cancelled: impl Fn() -> bool,
+    ) -> Result<Option<Self>, GitError> {
+        if cancelled() {
+            return Ok(None);
         }
-        let head = run_text(&root, &["rev-parse", "HEAD"])?.trim().to_string();
-        let branch = run_optional_text(&root, &["symbolic-ref", "--quiet", "--short", "HEAD"])?;
-        let status = run_text(
-            &root,
-            &["status", "--porcelain=v1", "--untracked-files=all"],
-        )?;
-        let snapshot = snapshot(&root, head, branch.clone(), &status)?;
-        let diff_stat = run_text(
-            &root,
-            &[
-                "diff",
-                "--no-ext-diff",
-                "--no-textconv",
-                "--stat",
-                "HEAD",
-                "--",
-            ],
-        )?;
-        let names = run_text(
-            &root,
-            &[
-                "diff",
-                "--no-ext-diff",
-                "--no-textconv",
-                "--name-only",
-                "HEAD",
-                "--",
-            ],
-        )?;
-        Ok(Self {
-            root,
-            snapshot,
-            base_branch: detect_base_branch(cwd)?,
-            status,
-            diff_stat,
-            diff_name_only: names.lines().map(str::to_string).collect(),
-        })
+        optional_cancel(capture(cwd, &cancelled))
     }
 
+    #[cfg(test)]
     pub fn recapture_snapshot(&self) -> Result<GitSnapshot, GitError> {
-        let head = run_text(&self.root, &["rev-parse", "HEAD"])?
-            .trim()
-            .to_string();
-        let branch =
-            run_optional_text(&self.root, &["symbolic-ref", "--quiet", "--short", "HEAD"])?;
-        let status = run_text(
-            &self.root,
-            &["status", "--porcelain=v1", "--untracked-files=all"],
-        )?;
-        snapshot(&self.root, head, branch, &status)
+        recapture_snapshot(self, &|| false)
     }
 
+    #[cfg(test)]
     pub fn is_unchanged(&self) -> Result<bool, GitError> {
         Ok(self.recapture_snapshot()? == self.snapshot)
     }
 
-    pub fn diff_for_path(&self, relative_path: &Path) -> Result<String, GitError> {
-        run_text(
-            &self.root,
-            &[
-                "diff",
-                "--no-ext-diff",
-                "--no-textconv",
-                "HEAD",
-                "--",
-                &relative_path.to_string_lossy(),
-            ],
+    pub fn is_unchanged_until(
+        &self,
+        cancelled: impl Fn() -> bool,
+    ) -> Result<Option<bool>, GitError> {
+        if cancelled() {
+            return Ok(None);
+        }
+        optional_cancel(
+            recapture_snapshot(self, &cancelled).map(|snapshot| snapshot == self.snapshot),
         )
     }
+
+    pub fn diff_for_path_until(
+        &self,
+        relative_path: &Path,
+        cancelled: impl Fn() -> bool,
+    ) -> Result<Option<String>, GitError> {
+        if cancelled() {
+            return Ok(None);
+        }
+        optional_cancel(diff_for_path(self, relative_path, &cancelled))
+    }
+}
+
+fn diff_for_path(
+    context: &GitContext,
+    relative_path: &Path,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<String, GitError> {
+    process::run_text(
+        &context.root,
+        &[
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "HEAD",
+            "--",
+            &relative_path.to_string_lossy(),
+        ],
+        cancelled,
+    )
+}
+
+fn capture(cwd: &Path, cancelled: &dyn Fn() -> bool) -> Result<GitContext, GitError> {
+    let root_text = process::run_text(cwd, &["rev-parse", "--show-toplevel"], cancelled)?;
+    let root = PathBuf::from(root_text.trim());
+    if !root.is_absolute() || !root.is_dir() {
+        return Err(GitError::InvalidRepoRoot);
+    }
+    let head = process::run_text(&root, &["rev-parse", "HEAD"], cancelled)?
+        .trim()
+        .to_string();
+    let branch = process::run_optional_text(
+        &root,
+        &["symbolic-ref", "--quiet", "--short", "HEAD"],
+        cancelled,
+    )?;
+    let status = process::run_text(
+        &root,
+        &["status", "--porcelain=v1", "--untracked-files=all"],
+        cancelled,
+    )?;
+    let snapshot = snapshot(&root, head, branch.clone(), &status, cancelled)?;
+    let diff_stat = process::run_text(
+        &root,
+        &[
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--stat",
+            "HEAD",
+            "--",
+        ],
+        cancelled,
+    )?;
+    let names = process::run_text(
+        &root,
+        &[
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--name-only",
+            "HEAD",
+            "--",
+        ],
+        cancelled,
+    )?;
+    Ok(GitContext {
+        root,
+        snapshot,
+        base_branch: detect_base_branch(cwd, cancelled)?,
+        status,
+        diff_stat,
+        diff_name_only: names.lines().map(str::to_string).collect(),
+    })
+}
+
+fn recapture_snapshot(
+    context: &GitContext,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<GitSnapshot, GitError> {
+    let head = process::run_text(&context.root, &["rev-parse", "HEAD"], cancelled)?
+        .trim()
+        .to_string();
+    let branch = process::run_optional_text(
+        &context.root,
+        &["symbolic-ref", "--quiet", "--short", "HEAD"],
+        cancelled,
+    )?;
+    let status = process::run_text(
+        &context.root,
+        &["status", "--porcelain=v1", "--untracked-files=all"],
+        cancelled,
+    )?;
+    snapshot(&context.root, head, branch, &status, cancelled)
 }
 
 fn snapshot(
@@ -143,6 +218,7 @@ fn snapshot(
     head: String,
     branch: Option<String>,
     status: &str,
+    cancelled: &dyn Fn() -> bool,
 ) -> Result<GitSnapshot, GitError> {
     Ok(GitSnapshot {
         head,
@@ -158,116 +234,52 @@ fn snapshot(
                 "HEAD",
                 "--",
             ],
+            cancelled,
         )?,
         status_fingerprint: hash_bytes(status.as_bytes()),
     })
 }
 
-fn detect_base_branch(root: &Path) -> Result<Option<String>, GitError> {
+fn detect_base_branch(
+    root: &Path,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<Option<String>, GitError> {
     for (reference, label) in [
         ("refs/remotes/origin/main", "origin/main"),
         ("refs/remotes/origin/master", "origin/master"),
         ("refs/heads/main", "main"),
         ("refs/heads/master", "master"),
     ] {
-        if run_status(root, &["show-ref", "--verify", "--quiet", reference])?.success() {
+        if process::run_status(
+            root,
+            &["show-ref", "--verify", "--quiet", reference],
+            cancelled,
+        )?
+        .success()
+        {
             return Ok(Some(label.to_string()));
         }
     }
     Ok(None)
 }
 
-fn run_optional_text(root: &Path, args: &[&str]) -> Result<Option<String>, GitError> {
-    let (status, bytes) = run_bounded(root, args, MAX_TEXT_OUTPUT)?;
+fn hash_git_output(
+    root: &Path,
+    args: &[&str],
+    cancelled: &dyn Fn() -> bool,
+) -> Result<u64, GitError> {
+    let (status, bytes) = process::run_bounded(root, args, MAX_TRACKED_DIFF_BYTES, cancelled)?;
     if !status.success() {
-        return Ok(None);
-    }
-    let text = String::from_utf8(bytes).map_err(|_| GitError::InvalidUtf8 {
-        command: args.join(" "),
-    })?;
-    Ok(Some(text.trim().to_string()).filter(|text| !text.is_empty()))
-}
-
-fn run_text(root: &Path, args: &[&str]) -> Result<String, GitError> {
-    let (status, bytes) = run_bounded(root, args, MAX_TEXT_OUTPUT)?;
-    if !status.success() {
-        return Err(failed(args, status));
-    }
-    String::from_utf8(bytes).map_err(|_| GitError::InvalidUtf8 {
-        command: args.join(" "),
-    })
-}
-
-fn hash_git_output(root: &Path, args: &[&str]) -> Result<u64, GitError> {
-    let (status, bytes) = run_bounded(root, args, MAX_TRACKED_DIFF_BYTES)?;
-    if !status.success() {
-        return Err(failed(args, status));
+        return Err(process::failed(args, status));
     }
     Ok(hash_bytes(&bytes))
 }
 
-fn run_bounded(
-    root: &Path,
-    args: &[&str],
-    limit: usize,
-) -> Result<(ExitStatus, Vec<u8>), GitError> {
-    let mut child = git_command(root, args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|error| GitError::Spawn(error.to_string()))?;
-    let mut bytes = Vec::new();
-    child
-        .stdout
-        .take()
-        .expect("piped stdout")
-        .take(limit as u64 + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|error| GitError::Read(error.to_string()))?;
-    if bytes.len() > limit {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(GitError::OutputTooLarge {
-            command: args.join(" "),
-            limit,
-        });
-    }
-    let status = child
-        .wait()
-        .map_err(|error| GitError::Read(error.to_string()))?;
-    Ok((status, bytes))
-}
-
-fn run_status(root: &Path, args: &[&str]) -> Result<ExitStatus, GitError> {
-    git_command(root, args)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map_err(|error| GitError::Spawn(error.to_string()))
-}
-
-fn git_command(root: &Path, args: &[&str]) -> Command {
-    let mut command = Command::new("git");
-    for (key, _) in std::env::vars_os() {
-        if key.to_string_lossy().starts_with("GIT_") {
-            command.env_remove(key);
-        }
-    }
-    command
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .arg("--no-pager")
-        .args(["-c", "core.fsmonitor=false"])
-        .args(["-c", "core.untrackedCache=false"])
-        .arg("-C")
-        .arg(root)
-        .args(args);
-    command
-}
-
-fn failed(args: &[&str], status: ExitStatus) -> GitError {
-    GitError::CommandFailed {
-        command: args.join(" "),
-        code: status.code(),
+fn optional_cancel<T>(result: Result<T, GitError>) -> Result<Option<T>, GitError> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(GitError::Cancelled { .. }) => Ok(None),
+        Err(error) => Err(error),
     }
 }
 

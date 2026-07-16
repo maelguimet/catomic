@@ -52,7 +52,9 @@ impl ContextBroker {
         budget: usize,
         cancelled: impl Fn() -> bool,
     ) -> Result<Option<Self>, BrokerError> {
-        let git = GitContext::capture(root)?;
+        let Some(git) = GitContext::capture_until(root, &cancelled)? else {
+            return Ok(None);
+        };
         let canonical_root = git.root.canonicalize().map_err(io_error)?;
         let Some(discovery) = discover_files_until(
             &git.root,
@@ -61,7 +63,7 @@ impl ContextBroker {
                 max_entries: MAX_ENTRIES,
                 max_depth: MAX_DEPTH,
             },
-            cancelled,
+            &cancelled,
         )
         .map_err(|error| BrokerError::Discovery(error.to_string()))?
         else {
@@ -178,24 +180,52 @@ impl ContextBroker {
         self.charge_grep(matches, sensitive_omitted)
     }
 
+    #[cfg(test)]
     pub fn show_diff(&mut self, path: &Path) -> Result<String, BrokerError> {
-        let relative = self.valid_file(path)?;
-        let diff = self.git.diff_for_path(&relative)?;
-        sensitive::reject_content(&relative, diff.as_bytes())?;
-        self.charge(diff)
+        self.show_diff_until(path, || false)?
+            .ok_or_else(|| BrokerError::Discovery("broker diff unexpectedly cancelled".to_string()))
     }
 
+    pub fn show_diff_until(
+        &mut self,
+        path: &Path,
+        cancelled: impl Fn() -> bool,
+    ) -> Result<Option<String>, BrokerError> {
+        let relative = self.valid_file(path)?;
+        let Some(diff) = self.git.diff_for_path_until(&relative, cancelled)? else {
+            return Ok(None);
+        };
+        sensitive::reject_content(&relative, diff.as_bytes())?;
+        self.charge(diff).map(Some)
+    }
+
+    #[cfg(test)]
     pub fn is_unchanged(&self) -> Result<bool, BrokerError> {
-        if !self.git.is_unchanged()? {
-            return Ok(false);
+        self.is_unchanged_until(|| false)?.ok_or_else(|| {
+            BrokerError::Discovery("repo drift check unexpectedly cancelled".to_string())
+        })
+    }
+
+    pub fn is_unchanged_until(
+        &self,
+        cancelled: impl Fn() -> bool,
+    ) -> Result<Option<bool>, BrokerError> {
+        let Some(git_unchanged) = self.git.is_unchanged_until(&cancelled)? else {
+            return Ok(None);
+        };
+        if !git_unchanged {
+            return Ok(Some(false));
         }
         for (relative, expected) in &self.relevant_files {
+            if cancelled() {
+                return Ok(None);
+            }
             let (_, fingerprint) = self.snapshot_relevant_file(relative)?;
             if fingerprint != *expected {
-                return Ok(false);
+                return Ok(Some(false));
             }
         }
-        Ok(true)
+        Ok(Some(true))
     }
 
     fn file_list_text(&self) -> String {

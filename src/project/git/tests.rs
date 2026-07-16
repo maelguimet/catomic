@@ -7,6 +7,7 @@
 use std::fs;
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -187,6 +188,67 @@ fn capture_never_runs_repo_configured_helpers() {
         ],
     );
     assert!(marker.exists(), "malicious helper fixture never ran");
+}
+
+#[cfg(unix)]
+#[test]
+fn bounded_runner_kills_cancelled_and_timed_out_git_children() {
+    if std::env::var_os("CATOMIC_GIT_RUNNER_TEST_CHILD").is_some() {
+        run_bounded_runner_test_child();
+        return;
+    }
+    let suffix = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
+    let root = std::env::temp_dir().join(format!(
+        "catomic-git-runner-{}-{suffix}",
+        std::process::id()
+    ));
+    let bin = root.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let fake_git = bin.join("git");
+    fs::write(&fake_git, "#!/bin/sh\nexec /bin/sleep 30\n").unwrap();
+    let mut permissions = fs::metadata(&fake_git).unwrap().permissions();
+    permissions.set_mode(0o700);
+    fs::set_permissions(&fake_git, permissions).unwrap();
+    let output = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "project::git::tests::bounded_runner_kills_cancelled_and_timed_out_git_children",
+            "--nocapture",
+        ])
+        .env("CATOMIC_GIT_RUNNER_TEST_CHILD", "1")
+        .env("CATOMIC_GIT_RUNNER_TEST_ROOT", &root)
+        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+        .output()
+        .unwrap();
+    let _ = fs::remove_dir_all(root);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[cfg(unix)]
+fn run_bounded_runner_test_child() {
+    let root = PathBuf::from(std::env::var_os("CATOMIC_GIT_RUNNER_TEST_ROOT").unwrap());
+    let started = Instant::now();
+    let cancelled = super::process::run_bounded_with_timeout(
+        &root,
+        &["status"],
+        32,
+        &|| true,
+        Duration::from_secs(2),
+    );
+    assert!(matches!(cancelled, Err(GitError::Cancelled { .. })));
+    let timed_out = super::process::run_bounded_with_timeout(
+        &root,
+        &["status"],
+        32,
+        &|| false,
+        Duration::from_millis(30),
+    );
+    assert!(matches!(timed_out, Err(GitError::TimedOut { .. })));
+    assert!(started.elapsed() < Duration::from_secs(1));
 }
 
 #[cfg(unix)]

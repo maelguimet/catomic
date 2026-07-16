@@ -125,8 +125,11 @@ async fn run_dialogue(
         if round == MAX_BROKER_ROUNDS {
             return RepoLlmTaskResult::Error("model exceeded eight broker requests".to_string());
         }
-        let result = match broker_protocol::execute(&mut broker, &command) {
-            Ok(result) => result,
+        let result = match broker_protocol::execute_until(&mut broker, &command, || {
+            cancel.load(Ordering::Acquire)
+        }) {
+            Ok(Some(result)) => result,
+            Ok(None) => return RepoLlmTaskResult::Cancelled,
             Err(error) => {
                 return RepoLlmTaskResult::Error(format!("broker request failed: {error}"))
             }
@@ -144,13 +147,14 @@ fn finish_output(output: String, broker: ContextBroker, cancel: &AtomicBool) -> 
     if cancel.load(Ordering::Acquire) {
         return RepoLlmTaskResult::Cancelled;
     }
-    let unchanged = broker.is_unchanged();
+    let unchanged = broker.is_unchanged_until(|| cancel.load(Ordering::Acquire));
     if cancel.load(Ordering::Acquire) {
         return RepoLlmTaskResult::Cancelled;
     }
     match unchanged {
-        Ok(true) => RepoLlmTaskResult::Finished { output, broker },
-        Ok(false) => RepoLlmTaskResult::RepositoryChanged,
+        Ok(Some(true)) => RepoLlmTaskResult::Finished { output, broker },
+        Ok(Some(false)) => RepoLlmTaskResult::RepositoryChanged,
+        Ok(None) => RepoLlmTaskResult::Cancelled,
         Err(error) => RepoLlmTaskResult::RepositoryCheckFailed(error.to_string()),
     }
 }

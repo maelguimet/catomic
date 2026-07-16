@@ -1,0 +1,147 @@
+//! Purpose: parse on-demand extension-to-command mappings from `[linters]`.
+//! Owns: linter command validation, extension normalization, and lazy config-file loading.
+//! Must not: run commands, construct Project services, load during Plain startup, or write config.
+//! Invariants: every accepted command contains `{file}`; missing config yields an empty mapping.
+//! Phase: 5-c on-demand linter configuration.
+
+use std::collections::BTreeMap;
+use std::io;
+use std::path::Path;
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct LinterConfig {
+    commands: BTreeMap<String, String>,
+}
+
+impl LinterConfig {
+    pub(crate) fn command_for_extension(&self, extension: &str) -> Option<&str> {
+        self.commands
+            .get(&normalize_extension(extension))
+            .map(String::as_str)
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.commands.is_empty()
+    }
+}
+
+pub(crate) fn parse(text: &str) -> io::Result<LinterConfig> {
+    let mut config = LinterConfig::default();
+    let mut section = "";
+    for (index, raw_line) in text.lines().enumerate() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some(name) = line
+            .strip_prefix('[')
+            .and_then(|line| line.strip_suffix(']'))
+        {
+            section = name.trim();
+            continue;
+        }
+        if section != "linters" {
+            continue;
+        }
+        let Some((extension, value)) = line.split_once('=') else {
+            return Err(invalid(
+                index,
+                "linter mapping must use extension = \"command\"",
+            ));
+        };
+        let extension = normalize_extension(extension);
+        if extension.is_empty() || extension.chars().any(char::is_whitespace) {
+            return Err(invalid(index, "linter extension must not be empty"));
+        }
+        let command = parse_quoted(value.trim())
+            .ok_or_else(|| invalid(index, "linter command must be quoted"))?;
+        if !command.contains("{file}") {
+            return Err(invalid(index, "linter command must contain {file}"));
+        }
+        config.commands.insert(extension, command.to_string());
+    }
+    Ok(config)
+}
+
+pub(crate) fn load_from(path: &Path) -> io::Result<LinterConfig> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => parse(&text),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(LinterConfig::default()),
+        Err(error) => Err(error),
+    }
+}
+
+pub(crate) fn load() -> io::Result<LinterConfig> {
+    let xdg = std::env::var_os("XDG_CONFIG_HOME");
+    let home = std::env::var_os("HOME");
+    match super::big_files::config_path(xdg.as_deref(), home.as_deref()) {
+        Some(path) => load_from(&path),
+        None => Ok(LinterConfig::default()),
+    }
+}
+
+fn normalize_extension(extension: &str) -> String {
+    extension
+        .trim()
+        .trim_start_matches('.')
+        .to_ascii_lowercase()
+}
+
+fn parse_quoted(value: &str) -> Option<&str> {
+    let quote = value.as_bytes().first().copied()?;
+    if !matches!(quote, b'\'' | b'"') || value.as_bytes().last().copied() != Some(quote) {
+        return None;
+    }
+    value.get(1..value.len().saturating_sub(1))
+}
+
+fn invalid(line: usize, message: &str) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        format!("config line {}: {message}", line + 1),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_quoted_extension_mappings_and_normalizes_dots() {
+        let config = parse(
+            "[linters]\n.rs = \"cargo check --message-format short {file}\"\npy = 'ruff check {file}'\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.command_for_extension("rs"),
+            Some("cargo check --message-format short {file}")
+        );
+        assert_eq!(
+            config.command_for_extension(".py"),
+            Some("ruff check {file}")
+        );
+    }
+
+    #[test]
+    fn ignores_other_sections_and_rejects_missing_placeholder() {
+        assert!(parse("[other]\nrs = \"tool {file}\"\n").unwrap().is_empty());
+
+        let error = parse("[linters]\nrs = \"cargo check\"\n").unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert!(error.to_string().contains("{file}"));
+    }
+
+    #[test]
+    fn rejects_empty_extensions_and_unquoted_commands() {
+        for text in [
+            "[linters]\n. = \"tool {file}\"\n",
+            "[linters]\nrs = tool {file}\n",
+        ] {
+            assert_eq!(
+                parse(text).unwrap_err().kind(),
+                std::io::ErrorKind::InvalidData
+            );
+        }
+    }
+}

@@ -8,3 +8,4 @@
 pub mod auto_reload;
 pub mod big_files;
 pub mod keymap;
+pub(crate) mod linters;

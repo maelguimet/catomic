@@ -76,21 +76,21 @@ pub(crate) fn prepare_open_file_meta(initial_path: Option<&str>) -> io::Result<O
                 if let FileSnapshot::Present { len, .. } = &snap {
                     let sz = *len;
                     match open_size_decision(sz) {
-                        OpenSizeDecision::OpenWithWarning => {
+                        OpenSizeDecision::Warn => {
                             meta.size_bytes = Some(sz);
                             let tier = classify_file_size(sz);
                             meta.size_tier = Some(tier);
                             meta.initial_message = open_size_warning_message(sz, tier);
                             meta.content_plan = OpenContentPlan::FullRead;
                         }
-                        OpenSizeDecision::OpenPaged => {
+                        OpenSizeDecision::Paged => {
                             meta.size_bytes = Some(sz);
                             let tier = classify_file_size(sz);
                             meta.size_tier = Some(tier);
                             meta.initial_message = open_size_warning_message(sz, tier);
                             meta.content_plan = OpenContentPlan::PagedEditable;
                         }
-                        OpenSizeDecision::OpenNormally => {
+                        OpenSizeDecision::Normal => {
                             meta.size_bytes = Some(sz);
                             meta.size_tier = Some(classify_file_size(sz));
                             meta.content_plan = OpenContentPlan::FullRead;

@@ -113,17 +113,17 @@ fn file_size_bytes_missing_returns_notfound() {
 fn open_decision_small_exact_and_below_is_open_normally() {
     assert_eq!(
         open_size_decision(SMALL_FILE_LIMIT_BYTES),
-        OpenSizeDecision::OpenNormally
+        OpenSizeDecision::Normal
     );
-    assert_eq!(open_size_decision(0), OpenSizeDecision::OpenNormally);
-    assert_eq!(open_size_decision(1024), OpenSizeDecision::OpenNormally);
+    assert_eq!(open_size_decision(0), OpenSizeDecision::Normal);
+    assert_eq!(open_size_decision(1024), OpenSizeDecision::Normal);
 }
 
 #[test]
 fn open_decision_just_over_small_is_warning() {
     assert_eq!(
         open_size_decision(SMALL_FILE_LIMIT_BYTES + 1),
-        OpenSizeDecision::OpenWithWarning
+        OpenSizeDecision::Warn
     );
 }
 
@@ -131,15 +131,15 @@ fn open_decision_just_over_small_is_warning() {
 fn open_decision_large_warns_and_huge_pages() {
     assert_eq!(
         open_size_decision(LARGE_FILE_LIMIT_BYTES),
-        OpenSizeDecision::OpenWithWarning
+        OpenSizeDecision::Warn
     );
     assert_eq!(
         open_size_decision(LARGE_FILE_LIMIT_BYTES + 1),
-        OpenSizeDecision::OpenPaged
+        OpenSizeDecision::Paged
     );
     assert_eq!(
         open_size_decision(HUGE_FILE_LIMIT_BYTES),
-        OpenSizeDecision::OpenPaged
+        OpenSizeDecision::Paged
     );
 }
 
@@ -147,9 +147,9 @@ fn open_decision_large_warns_and_huge_pages() {
 fn open_decision_extreme_is_paged() {
     assert_eq!(
         open_size_decision(HUGE_FILE_LIMIT_BYTES + 1),
-        OpenSizeDecision::OpenPaged
+        OpenSizeDecision::Paged
     );
-    assert_eq!(open_size_decision(u64::MAX), OpenSizeDecision::OpenPaged);
+    assert_eq!(open_size_decision(u64::MAX), OpenSizeDecision::Paged);
 }
 
 #[test]

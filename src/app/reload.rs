@@ -93,8 +93,8 @@ fn build_modified_reload_buffer(
 ) -> io::Result<ReloadedModifiedBuffer> {
     let size_tier = size::classify_file_size(size_bytes);
     let buffer: Box<dyn buffer::Buffer> = match size::open_size_decision(size_bytes) {
-        OpenSizeDecision::OpenPaged => Box::new(buffer::PagedFileBuffer::open(path, page_lines)?),
-        OpenSizeDecision::OpenNormally | OpenSizeDecision::OpenWithWarning => {
+        OpenSizeDecision::Paged => Box::new(buffer::PagedFileBuffer::open(path, page_lines)?),
+        OpenSizeDecision::Normal | OpenSizeDecision::Warn => {
             let content = crate::file::io::read_to_string(path)?;
             Box::new(buffer::PieceTable::from_owned_text(content))
         }

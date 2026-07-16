@@ -60,20 +60,20 @@ pub fn file_size_tier_label(tier: FileSizeTier) -> &'static str {
 /// Huge/Extreme: open proceeds in editable paged mode with a warning.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OpenSizeDecision {
-    OpenNormally,
-    OpenWithWarning,
-    OpenPaged,
+    Normal,
+    Warn,
+    Paged,
 }
 
 /// Pure policy: map byte length to open decision.
-/// Small (<=10 MiB) => OpenNormally
-/// Large (>10 <=100) => OpenWithWarning
-/// Huge (>100 MiB) and Extreme (>1 GiB) => OpenPaged
+/// Small (<=10 MiB) => Normal
+/// Large (>10 <=100) => Warn
+/// Huge (>100 MiB) and Extreme (>1 GiB) => Paged
 pub fn open_size_decision(bytes: u64) -> OpenSizeDecision {
     match classify_file_size(bytes) {
-        FileSizeTier::Small => OpenSizeDecision::OpenNormally,
-        FileSizeTier::Large => OpenSizeDecision::OpenWithWarning,
-        FileSizeTier::Huge | FileSizeTier::Extreme => OpenSizeDecision::OpenPaged,
+        FileSizeTier::Small => OpenSizeDecision::Normal,
+        FileSizeTier::Large => OpenSizeDecision::Warn,
+        FileSizeTier::Huge | FileSizeTier::Extreme => OpenSizeDecision::Paged,
     }
 }
 

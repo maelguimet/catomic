@@ -68,6 +68,8 @@ page_lines = 20000
 Lower values trade more page transitions for less line metadata in memory.
 Use `Ctrl+PageDown` and `Ctrl+PageUp` to move between file pages. The status
 line shows the active page number and byte range.
+`Ctrl+F` searches the whole file rather than only the loaded page; press Enter
+to run the search or Escape to cancel it.
 
 ## File Watching
 

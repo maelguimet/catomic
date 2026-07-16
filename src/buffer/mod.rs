@@ -12,6 +12,7 @@
 //! in hot paths (trait objects hate `impl Iterator`).
 
 use std::borrow::Cow;
+use std::fs::File;
 use std::io::{self, Write};
 
 pub(crate) mod large_file;
@@ -51,6 +52,20 @@ pub struct PageInfo {
     pub total_bytes: u64,
     pub has_previous: bool,
     pub has_next: bool,
+}
+
+pub(crate) struct DescriptorSource {
+    pub(crate) file: File,
+    pub(crate) total_bytes: u64,
+    pub(crate) page_lines: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct DescriptorPosition {
+    pub(crate) page_start: u64,
+    pub(crate) page_number: usize,
+    pub(crate) row: usize,
+    pub(crate) col: usize,
 }
 
 /// The stable Buffer interface.
@@ -110,6 +125,13 @@ pub trait Buffer {
     fn previous_page(&mut self) -> io::Result<bool> {
         Ok(false)
     }
+    fn descriptor_source(&self) -> io::Result<Option<DescriptorSource>> {
+        Ok(None)
+    }
+    fn set_descriptor_position(&mut self, _position: DescriptorPosition) -> io::Result<bool> {
+        Ok(false)
+    }
+    fn set_cursor(&mut self, cursor: Cursor);
 
     /// Return the entire content as a single string for compatibility/tests.
     /// Save paths use `write_to` so large storage need not materialize here.

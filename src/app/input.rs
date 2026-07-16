@@ -16,7 +16,7 @@ use std::io::{self, Write};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::file_state::refresh_dirty;
-use super::{paging, reload, save};
+use super::{paging, reload, save, search};
 
 /// Common post-content-mutation cleanup used by insert, delete, newline, undo, redo paths.
 /// Centralizes the exact sequence that must run after any buffer-mutating key:
@@ -52,6 +52,9 @@ pub(crate) fn handle_key_with(
     out: &mut dyn Write,
     key: KeyEvent,
 ) -> io::Result<()> {
+    if search::handle_active_key(app, out, key)? {
+        return Ok(());
+    }
     match key {
         // Quit (Ctrl+Q)
         // - clean: quit immediately
@@ -97,6 +100,14 @@ pub(crate) fn handle_key_with(
             ..
         } => {
             reload::handle_reload_key(app, out)?;
+        }
+
+        KeyEvent {
+            code: KeyCode::Char('f'),
+            modifiers,
+            ..
+        } if modifiers.contains(KeyModifiers::CONTROL) => {
+            search::open_prompt(app, out)?;
         }
 
         KeyEvent {

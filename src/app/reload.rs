@@ -188,6 +188,7 @@ pub(crate) fn handle_reload_key(app: &mut super::App, out: &mut dyn Write) -> io
                                 reloaded.size_bytes,
                                 reloaded.size_tier,
                             );
+                            super::search::cancel_running_search(app);
                             app.buffer = reloaded.buffer;
                             let new_pos = app.buffer.edit_history_position();
                             app.file.saved_history_position = new_pos;
@@ -222,6 +223,7 @@ pub(crate) fn handle_reload_key(app: &mut super::App, out: &mut dyn Write) -> io
                     }
                 }
                 ExternalFileStatus::Deleted => {
+                    super::search::cancel_running_search(app);
                     app.buffer = Box::new(buffer::PieceTable::new());
                     let new_pos = app.buffer.edit_history_position();
                     app.file.saved_history_position = new_pos;

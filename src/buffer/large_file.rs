@@ -15,7 +15,7 @@ use std::io::{self, Write};
 use std::os::unix::fs::FileExt;
 use std::path::Path;
 
-use crate::buffer::{Buffer, Cursor, LineView, PageInfo};
+use crate::buffer::{Buffer, Cursor, DescriptorPosition, DescriptorSource, LineView, PageInfo};
 
 mod page_scan;
 mod paging;
@@ -336,6 +336,14 @@ impl Buffer for LargeFileBuffer {
         self.cursor
     }
 
+    fn set_cursor(&mut self, cursor: Cursor) {
+        let row = cursor.row.min(self.line_count().saturating_sub(1));
+        let col = cursor
+            .col
+            .min(self.line_char_counts.get(row).copied().unwrap_or(0));
+        self.cursor = Cursor { row, col };
+    }
+
     fn is_read_only(&self) -> bool {
         true
     }
@@ -373,6 +381,14 @@ impl Buffer for LargeFileBuffer {
         self.page_number = self.page_number.saturating_sub(1).max(1);
         self.apply_page_scan(page);
         Ok(true)
+    }
+
+    fn descriptor_source(&self) -> io::Result<Option<DescriptorSource>> {
+        self.clone_descriptor_source()
+    }
+
+    fn set_descriptor_position(&mut self, position: DescriptorPosition) -> io::Result<bool> {
+        self.apply_descriptor_position(position)
     }
 
     fn to_string(&self) -> String {

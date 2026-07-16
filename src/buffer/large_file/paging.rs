@@ -11,6 +11,7 @@ use std::path::Path;
 
 use super::page_scan::{find_previous_page_start, scan_utf8_page, PageScan};
 use super::{Cursor, FileMetadataSnapshot, LargeFileBuffer};
+use crate::buffer::{Buffer, DescriptorPosition, DescriptorSource};
 
 impl LargeFileBuffer {
     pub(crate) fn open_paged(path: impl AsRef<Path>, page_lines: usize) -> io::Result<Self> {
@@ -89,5 +90,37 @@ impl LargeFileBuffer {
         let start = find_previous_page_start(&self.file, self.page_start_byte, self.page_lines)?;
         self.ensure_fd_unchanged()?;
         Ok(start)
+    }
+
+    pub(super) fn clone_descriptor_source(&self) -> io::Result<Option<DescriptorSource>> {
+        if self.page_lines == usize::MAX {
+            return Ok(None);
+        }
+        self.ensure_fd_unchanged()?;
+        Ok(Some(DescriptorSource {
+            file: self.file.try_clone()?,
+            total_bytes: self.total_bytes as u64,
+            page_lines: self.page_lines,
+        }))
+    }
+
+    pub(super) fn apply_descriptor_position(
+        &mut self,
+        position: DescriptorPosition,
+    ) -> io::Result<bool> {
+        let start = usize::try_from(position.page_start).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "search page offset is too large",
+            )
+        })?;
+        let page = self.scan_page(start)?;
+        self.page_number = position.page_number;
+        self.apply_page_scan(page);
+        self.set_cursor(Cursor {
+            row: position.row,
+            col: position.col,
+        });
+        Ok(true)
     }
 }

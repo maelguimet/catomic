@@ -86,6 +86,13 @@ impl Buffer for PieceTable {
         self.cursor
     }
 
+    fn set_cursor(&mut self, cursor: Cursor) {
+        let row = cursor.row.min(self.line_count().saturating_sub(1));
+        let col = cursor.col.min(self.current_line_char_len(row));
+        self.cursor = Cursor { row, col };
+        self.sync_cursor_byte_offset();
+    }
+
     fn to_string(&self) -> String {
         self.slice_to_string(0, self.index.total_bytes)
     }

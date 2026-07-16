@@ -29,6 +29,7 @@ mod open;
 mod paging;
 mod reload;
 mod save;
+mod search;
 mod status;
 mod viewport;
 mod watch;
@@ -70,6 +71,8 @@ pub struct App {
     /// Cleared by content edits (insert/delete/undo/redo), successful save, path changes.
     /// Movement/resize/render do not clear. NoPath/Unchanged/Unknown do not arm.
     pub pending_reload: Option<reload::PendingReload>,
+    /// Explicit Ctrl+F prompt/worker state. No worker exists before invocation.
+    pub(crate) search: search::SearchUiState,
     /// Terminal screen size and scroll state. Single source of truth for render height.
     /// Initialized conservatively; updated from crossterm after setup and on resize.
     pub screen: term::screen::Screen,
@@ -129,6 +132,7 @@ impl App {
             pending_quit_confirm: false,
             pending_save_conflict: None,
             pending_reload: None,
+            search: search::SearchUiState::default(),
             // Conservative default matching prior hardcoded 24; no real term required for unit tests.
             screen: term::screen::Screen::new(80, 24),
         };
@@ -172,6 +176,8 @@ impl App {
             if watch::check_file_watcher_once_and_render(self, &mut stdout)? {
                 // message/pending updated; render already emitted by helper
             }
+
+            search::poll_search(self, &mut stdout)?;
 
             // Blocking read for Phase 0. Later we may need non-blocking + resize.
             if event::poll(std::time::Duration::from_millis(100))? {

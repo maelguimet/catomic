@@ -1,7 +1,7 @@
 //! Real PTY integration smoke tests for the catomic binary.
 //!
 //! Purpose: drive the compiled binary through a pseudo-terminal so key handling,
-//!   raw-mode setup, render, save, undo, external reload, and clean quit are
+//!   raw-mode setup, render, save, undo, search, external reload, and clean quit are
 //!   exercised together.
 //! Owns: narrow default PTY smoke coverage for already-existing Phase 0/1/2
 //!   behavior.
@@ -9,7 +9,7 @@
 //!   large-file/perf scenarios.
 //! Invariants: tests use temporary files, time out and kill the child on hangs,
 //!   and leave Plain startup behavior unchanged.
-//! Phase: 2-bd/2-bf real PTY acceptance smokes.
+//! Phase: 2-bd/2-bf/2-bo real PTY acceptance smokes.
 
 use std::error::Error;
 use std::fs;
@@ -208,5 +208,20 @@ fn pty_external_edit_confirm_reload_quit_shows_disk_content() -> TestResult {
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(&temp.path)?, "external disk content");
+    Ok(())
+}
+
+#[test]
+fn pty_ctrl_f_prompt_finds_content_and_quits() -> TestResult {
+    let temp = TempPath::new("ctrl_f");
+    fs::write(&temp.path, "zero\none target here\nlast")?;
+    let mut editor = PtyEditor::spawn(&temp.path)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"\x06target\r")?;
+    editor.wait_for_output("Ctrl+F result", "Found 'target'.")?;
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+
     Ok(())
 }

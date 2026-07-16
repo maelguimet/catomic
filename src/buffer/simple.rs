@@ -85,6 +85,14 @@ impl Buffer for SimpleBuffer {
         self.cursor
     }
 
+    fn set_cursor(&mut self, cursor: Cursor) {
+        let row = cursor.row.min(self.line_count().saturating_sub(1));
+        let col = cursor
+            .col
+            .min(self.lines.get(row).map_or(0, |line| line.chars().count()));
+        self.cursor = Cursor { row, col };
+    }
+
     fn to_string(&self) -> String {
         self.lines.join("\n")
     }

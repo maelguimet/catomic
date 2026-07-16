@@ -5,6 +5,7 @@
 //!
 //! Responsibilities:
 //! - Render visible buffer region
+//! - Propagate file-backed visible-window read failures
 //! - Position cursor
 //! - Minimal status (filename, mode, dirty?)
 //! - Respect large-file limits (no full highlight for huge files)
@@ -39,7 +40,7 @@ pub fn render_buffer<W: Write + ?Sized>(
     // Horizontal: use width directly as content width (no sidebar/status reservation).
     let content_h = height.saturating_sub(1);
     let content_w = width;
-    let visible = buffer.visible_lines_window(start, content_h, start_col, content_w);
+    let visible = buffer.try_visible_lines_window(start, content_h, start_col, content_w)?;
     for (i, lv) in visible.iter().enumerate() {
         if i > 0 {
             write!(out, "\r\n")?;
@@ -74,7 +75,7 @@ pub fn render_buffer<W: Write + ?Sized>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::buffer::SimpleBuffer;
+    use crate::buffer::{LargeFileBuffer, SimpleBuffer};
 
     #[test]
     fn render_buffer_height_zero_no_bottom_pos_and_no_panic() {
@@ -169,5 +170,32 @@ mod tests {
         );
         assert!(!s.contains("a"), "should have skipped the first scalar");
         assert!(!s.contains('Z'), "should have taken only 3 scalars");
+    }
+
+    #[test]
+    fn render_buffer_propagates_file_backed_window_read_error() {
+        let path = std::env::temp_dir().join(format!(
+            "catomic_render_changed_large_file_{}.txt",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        std::fs::write(&path, "original stable content").unwrap();
+        let buffer = LargeFileBuffer::open(&path).unwrap();
+
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(&path)
+            .unwrap();
+        file.write_all(b"changed").unwrap();
+        file.flush().unwrap();
+        drop(file);
+
+        let mut out = Vec::new();
+        let err = render_buffer(&mut out, &buffer, 0, 0, 2, 8, None)
+            .expect_err("render must surface changed backing file");
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+
+        let _ = std::fs::remove_file(path);
     }
 }

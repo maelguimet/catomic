@@ -12,6 +12,7 @@
 //! in hot paths (trait objects hate `impl Iterator`).
 
 use std::borrow::Cow;
+use std::io;
 
 pub(crate) mod large_file;
 pub mod line_index;
@@ -69,6 +70,19 @@ pub trait Buffer {
                 LineView { content }
             })
             .collect()
+    }
+    /// Fallible visible-window query for storage backends that perform I/O.
+    /// In-memory buffers use the infallible query above through this default.
+    /// File-backed buffers override this so render failures are explicit instead
+    /// of being mistaken for empty content.
+    fn try_visible_lines_window(
+        &self,
+        start: usize,
+        height: usize,
+        start_col: usize,
+        width: usize,
+    ) -> io::Result<Vec<LineView>> {
+        Ok(self.visible_lines_window(start, height, start_col, width))
     }
     fn line_char_count(&self, row: usize) -> Option<usize> {
         self.line(row).map(|line| line.chars().count())

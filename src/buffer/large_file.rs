@@ -140,21 +140,23 @@ impl LargeFileBuffer {
         self.read_range_to_string(self.line_start_byte(row), self.line_end_byte(row))
     }
 
-    fn line_window_to_string(&self, row: usize, start_col: usize, width: usize) -> String {
+    fn line_window_to_string(
+        &self,
+        row: usize,
+        start_col: usize,
+        width: usize,
+    ) -> io::Result<String> {
         if row >= self.line_starts.len() || width == 0 {
-            return String::new();
+            return Ok(String::new());
         }
         let line_chars = self.line_char_counts[row];
         if start_col >= line_chars {
-            return String::new();
+            return Ok(String::new());
         }
         if self.line_is_ascii[row] {
-            return self
-                .read_ascii_line_window(row, start_col, width)
-                .unwrap_or_default();
+            return self.read_ascii_line_window(row, start_col, width);
         }
         self.read_line_window(row, start_col, width)
-            .unwrap_or_default()
     }
 
     fn read_ascii_line_window(
@@ -284,7 +286,25 @@ impl Buffer for LargeFileBuffer {
         let end = (start + height).min(self.line_count());
         (start..end)
             .map(|row| LineView {
-                content: self.line_window_to_string(row, start_col, width),
+                content: self
+                    .line_window_to_string(row, start_col, width)
+                    .unwrap_or_default(),
+            })
+            .collect()
+    }
+
+    fn try_visible_lines_window(
+        &self,
+        start: usize,
+        height: usize,
+        start_col: usize,
+        width: usize,
+    ) -> io::Result<Vec<LineView>> {
+        let end = (start + height).min(self.line_count());
+        (start..end)
+            .map(|row| {
+                self.line_window_to_string(row, start_col, width)
+                    .map(|content| LineView { content })
             })
             .collect()
     }

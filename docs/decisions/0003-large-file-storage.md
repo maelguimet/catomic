@@ -27,9 +27,9 @@ The important current seams are:
 - `PieceTable` stores original content behind `OriginalBacking`.
 - `OriginalBacking` no longer exposes borrowed slices to query/index callers.
 - `LineIndex::from_text` gives initial single-piece construction a direct path.
-- `Buffer::visible_lines_window`, `Buffer::line_char_count`, and
-  `Buffer::is_read_only` let render/viewport/App policy avoid full line reads
-  and report limited storage mode.
+- `Buffer::try_visible_lines_window`, `Buffer::line_char_count`, and
+  `Buffer::is_read_only` let render/viewport/App policy avoid full line reads,
+  surface file-backed window read failures, and report limited storage mode.
 - LargeFileBuffer records per-line ASCII flags plus sparse char-column
   checkpoints, so ASCII visible windows can map scalar columns directly to byte
   ranges while non-ASCII windows seek near the requested scalar column and scan
@@ -83,7 +83,9 @@ Pros:
 - Can keep line queries bounded to visible ranges once indexed.
 
 Costs and risks:
-- `Buffer` queries are currently infallible, but file reads can fail.
+- Most `Buffer` queries remain infallible. The visible render-window path has a
+  fallible companion, but future file-backed query/edit APIs still need an
+  explicit error model.
 - External writes to the same file may silently affect rendered content unless
   the file is snapshotted, copied, or guarded.
 - Building the line index still needs a full scan unless indexes become lazy.
@@ -133,7 +135,7 @@ semantics and external-change snapshot policy are chosen.
 
 For Catomic's Linux-first direction, Option A is probably the cleanest long-term
 storage fit if a small mmap dependency is acceptable. Option B still looks
-simple, but its infallible `Buffer` mismatch and external-change semantics are
+simple, but its broader `Buffer` error model and external-change semantics are
 easy to get wrong once edits enter the picture. The current Option C path should
 stay deliberately read-only until that decision is made.
 
@@ -150,6 +152,8 @@ The current accepted intermediate defines:
 - No new dependency or unsafe code is introduced.
 - Path replacement after open does not retarget Huge reads to the new path.
 - Same-inode metadata drift fails closed before ranged reads.
+- Visible-window read failures propagate through terminal rendering instead of
+  being displayed as empty content.
 
 Remaining open decisions before editable Huge files:
 

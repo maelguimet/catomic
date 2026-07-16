@@ -183,6 +183,10 @@ fn in_place_metadata_change_blocks_descriptor_reads() {
 
     let err = buffer.read_range_to_string(0, 4).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    let window_err = buffer
+        .try_visible_lines_window(0, 1, 0, 8)
+        .expect_err("visible reads must surface a changed descriptor");
+    assert_eq!(window_err.kind(), io::ErrorKind::InvalidData);
     assert_eq!(buffer.line(0).as_deref(), Some(""));
     assert_eq!(buffer.visible_lines_window(0, 1, 0, 8)[0].content, "");
     assert_eq!(buffer.to_string(), "");

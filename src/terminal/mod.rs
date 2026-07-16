@@ -4,7 +4,6 @@
 //! Invariants: every enabled terminal mode has a best-effort inverse on all exit paths.
 //! Phase: 3-e mouse capture over the established terminal lifecycle.
 
-pub mod input;
 pub mod render;
 pub mod screen;
 

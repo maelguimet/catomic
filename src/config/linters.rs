@@ -20,6 +20,7 @@ impl LinterConfig {
             .map(String::as_str)
     }
 
+    #[cfg(test)]
     pub(crate) fn is_empty(&self) -> bool {
         self.commands.is_empty()
     }

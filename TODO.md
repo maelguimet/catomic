@@ -491,6 +491,7 @@ Document the col model (char index / scalar within line for this subphase; inter
 - Benchmarks: verify 10MB smooth, 100MB usable, 1GB limited (time + memory ceilings documented).
 - External edit tests using temp files + PTY smoke.
 - File watch golden tests (clean reload, dirty conflict paths).
+- Current implementation/evidence matrix: [`docs/phase-2-acceptance.md`](docs/phase-2-acceptance.md).
 
 ### Phase 3 — Comfort & Search Basics
 

@@ -373,6 +373,26 @@ Note: these are wall-time / RSS for the full test harness invocation on this mac
 
 Caveat: measurements are observational only for this hardware and build. No budgets or "pass" criteria are declared yet. Do not treat numbers as universal. Future passes may add budgets after more data and hotspot identification.
 
+### Phase 2 acceptance recheck (2026-07-16, post 2-bw)
+
+The ignored manual suites were run against the current debug build after the
+configurable paging, bounded page scan, row-redraw, multiple-buffer, and save
+safety changes. All seven selected large-file tests passed.
+
+- 10 MiB editable: `App::new` 8 ms; render 1 ms.
+- 10 MiB line-heavy editable: `App::new` 8 ms; render 0 ms.
+- 100 MiB giant ASCII line, paged read-only: `App::new` 130 ms; render 0 ms.
+- 100 MiB line-heavy, paged read-only: `App::new` 3 ms; render 0 ms.
+- 100 MiB dense non-ASCII, paged read-only: `App::new` 1567 ms; far-window render 0 ms.
+- Sparse exact 1 GiB, paged read-only: `App::new` 1411 ms; page navigation and sampled renders 0 ms.
+- Sparse >1 GiB Extreme, first configured page: `App::new` 1 ms.
+
+These are single-run integer-millisecond samples, not CI gates. The non-ASCII
+case remains the slowest because active-page scanning validates UTF-8 scalar
+boundaries and builds sparse column checkpoints. Historical current-policy RSS
+samples remain about 30 MiB for dense non-ASCII 100 MiB and sparse 1 GiB, and
+about 106–117 MiB for newline-rich/dense ASCII 100 MiB full test invocations.
+
 ### Candidate Phase 2B budgets — not enforced yet
 
 These are starting-point advisory targets derived from the 2026-06-24 recorded baselines above, with 2026-07-07 follow-up splits showing the current LF-only, owned App open, newline-search, and owned file-read-helper behavior. They are **not** wired into tests as assertions. They are local-machine dependent and must be revisited with more samples on representative hardware before any enforcement.
@@ -405,7 +425,7 @@ All numbers remain advisory. Do not turn these into `#[test]` pass/fail gates in
 
 See TODO.md for the current next-intended pointer into this inventory.
 
-### Current Phase 2B large-file handling (as of post 2-bo)
+### Current Phase 2B large-file handling (as of post 2-bw)
 - Large (>10 MiB <=100 MiB) on open: full read into editable PieceTable; warning message set initially (transient); size_bytes/size_tier recorded in FileState from the single initial metadata snapshot.
 - Huge/Extreme (>100 MiB) on open: read-only LargeFileBuffer scans only the configured logical-line page, then serves visible windows through positioned reads from the stable descriptor. Ctrl+PageUp/PageDown rescan adjacent page metadata; descriptor len/mtime drift fails closed.
 - Initial open metadata/snapshot/content-plan is single-capture/derived (see 2-am/2-aq/2-ay). LF-only normalization avoids extra CR-normalization copies for PieceTable opens (2-an), App open moves the owned read buffer into PieceTable for editable opens (2-ao), and LineIndex build uses std string newline search for PieceTable opens (2-ap).

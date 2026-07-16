@@ -35,6 +35,7 @@ mod buffers;
 mod command_prompt;
 mod completion;
 mod external_command;
+mod help;
 mod hooks;
 mod indentation;
 mod open;
@@ -126,6 +127,8 @@ pub struct App {
     pub(crate) llm_preview: Option<llm_preview::PatchPreview>,
     /// Explicit read-only model explanation; contains output text and no client.
     pub(crate) llm_answer: Option<llm_answer::AnswerView>,
+    /// Built-in read-only shortcut reference, absent until explicitly opened.
+    pub(crate) help_view: Option<help::HelpView>,
     /// Local confirmation state only; contains bounded context/settings but no HTTP client.
     pub(crate) pending_llm_request: Option<llm_request::PendingLlmRequest>,
     /// Present only after explicit Enter confirmation; dropping it cancels the transient client.
@@ -247,6 +250,7 @@ impl App {
             project_files_view: None,
             llm_preview: None,
             llm_answer: None,
+            help_view: None,
             pending_llm_request: None,
             llm_task: None,
             repo_llm_state: None,
@@ -391,6 +395,7 @@ impl App {
         // Status is built locally only for the no-message path and passed as &str.
         let highlight = (!external_command::is_viewing(self)
             && !recovery::is_viewing(self)
+            && !help::is_viewing(self)
             && !view::is_preview(self)
             && !lint::is_viewing(self)
             && !project_files::is_viewing(self)

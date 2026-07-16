@@ -11,7 +11,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::file_state::refresh_dirty;
 use super::{
-    buffers, command_prompt, completion, external_command, indentation, lint, llm_answer,
+    buffers, command_prompt, completion, external_command, help, indentation, lint, llm_answer,
     llm_preview, llm_request, navigation, paging, project_files, recovery, reload, replace,
     repo_llm, save, search, selection, view,
 };
@@ -60,6 +60,9 @@ pub(crate) fn handle_key_with(
     out: &mut dyn Write,
     key: KeyEvent,
 ) -> io::Result<()> {
+    if help::handle_key(app, out, key)? {
+        return Ok(());
+    }
     if recovery::handle_key(app, out, key)? {
         return Ok(());
     }
@@ -101,6 +104,9 @@ pub(crate) fn handle_key_with(
         return Ok(());
     }
     let key = translated;
+    if help::handle_key(app, out, key)? {
+        return Ok(());
+    }
     if view::handle_key(app, out, key)? {
         return Ok(());
     }
@@ -420,6 +426,9 @@ pub(crate) fn handle_paste(
     text: &str,
 ) -> io::Result<()> {
     completion::cancel(app);
+    if help::handle_paste(app, out)? {
+        return Ok(());
+    }
     if replace::handle_paste(app, out, text)? {
         return Ok(());
     }

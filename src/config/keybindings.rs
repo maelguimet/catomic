@@ -24,6 +24,7 @@ struct KeyChord {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Action {
+    Help,
     Save,
     SaveAs,
     Open,
@@ -67,6 +68,7 @@ impl KeyChord {
 impl Action {
     fn parse(name: &str) -> Option<Self> {
         Some(match name.trim().to_ascii_lowercase().as_str() {
+            "help" => Self::Help,
             "save" => Self::Save,
             "save-as" => Self::SaveAs,
             "open" => Self::Open,
@@ -94,6 +96,7 @@ impl Action {
 
     fn canonical_key(self) -> KeyEvent {
         let (code, modifiers) = match self {
+            Self::Help => control_char('h'),
             Self::Save => control_char('s'),
             Self::SaveAs => (
                 KeyCode::Char('s'),

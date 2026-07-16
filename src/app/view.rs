@@ -57,6 +57,9 @@ pub(crate) fn is_preview(app: &super::App) -> bool {
 }
 
 pub(crate) fn display_buffer(app: &super::App) -> &dyn Buffer {
+    if let Some(buffer) = super::help::display_buffer(app) {
+        return buffer;
+    }
     if let Some(buffer) = super::recovery::display_buffer(app) {
         return buffer;
     }
@@ -83,7 +86,8 @@ pub(crate) fn display_buffer(app: &super::App) -> &dyn Buffer {
 }
 
 pub(crate) fn display_syntax(app: &super::App) -> SyntaxKind {
-    if super::recovery::is_viewing(app)
+    if super::help::is_viewing(app)
+        || super::recovery::is_viewing(app)
         || super::external_command::is_viewing(app)
         || super::llm_preview::is_viewing(app)
         || super::llm_answer::is_viewing(app)

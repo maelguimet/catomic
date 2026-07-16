@@ -41,6 +41,10 @@ pub(crate) fn open_prompt(app: &mut super::App, out: &mut dyn Write, all: bool) 
     app.render(out)
 }
 
+pub(crate) fn cancel(app: &mut super::App) {
+    app.replace.prompt = None;
+}
+
 pub(crate) fn handle_key(
     app: &mut super::App,
     out: &mut dyn Write,

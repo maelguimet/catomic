@@ -98,7 +98,7 @@ pub(crate) fn scan_utf8_lines(file: &mut File) -> io::Result<LineScan> {
     })
 }
 
-fn scan_valid_text_lines(
+pub(super) fn scan_valid_text_lines(
     text: &str,
     text_start_offset: usize,
     line_starts: &mut Vec<usize>,

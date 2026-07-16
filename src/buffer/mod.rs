@@ -43,6 +43,16 @@ pub struct LineView {
     pub content: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PageInfo {
+    pub page_number: usize,
+    pub start_byte: u64,
+    pub end_byte: u64,
+    pub total_bytes: u64,
+    pub has_previous: bool,
+    pub has_next: bool,
+}
+
 /// The stable Buffer interface.
 ///
 /// All editor operations go through this.
@@ -90,6 +100,15 @@ pub trait Buffer {
     fn cursor(&self) -> Cursor;
     fn is_read_only(&self) -> bool {
         false
+    }
+    fn page_info(&self) -> Option<PageInfo> {
+        None
+    }
+    fn next_page(&mut self) -> io::Result<bool> {
+        Ok(false)
+    }
+    fn previous_page(&mut self) -> io::Result<bool> {
+        Ok(false)
     }
 
     /// Return the entire content as a single string for compatibility/tests.

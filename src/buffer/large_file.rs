@@ -15,8 +15,10 @@ use std::io::{self, Write};
 use std::os::unix::fs::FileExt;
 use std::path::Path;
 
-use crate::buffer::{Buffer, Cursor, LineView};
+use crate::buffer::{Buffer, Cursor, LineView, PageInfo};
 
+mod page_scan;
+mod paging;
 pub(crate) mod scan;
 
 use scan::scan_utf8_lines;
@@ -34,6 +36,12 @@ pub(crate) struct LargeFileBuffer {
     line_checkpoints: Vec<LineCheckpoint>,
     line_checkpoint_starts: Vec<usize>,
     total_bytes: usize,
+    page_lines: usize,
+    page_number: usize,
+    page_start_byte: usize,
+    page_end_byte: usize,
+    next_page_start: Option<usize>,
+    previous_page_starts: Vec<usize>,
     cursor: Cursor,
 }
 
@@ -44,13 +52,13 @@ pub(crate) struct LineCheckpoint {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct FileMetadataSnapshot {
+pub(super) struct FileMetadataSnapshot {
     len: u64,
     mtime: Option<std::time::SystemTime>,
 }
 
 impl FileMetadataSnapshot {
-    fn capture(file: &File) -> io::Result<Self> {
+    pub(super) fn capture(file: &File) -> io::Result<Self> {
         let meta = file.metadata()?;
         Ok(Self {
             len: meta.len(),
@@ -79,6 +87,12 @@ impl LargeFileBuffer {
             line_checkpoints: scan.line_checkpoints,
             line_checkpoint_starts: scan.line_checkpoint_starts,
             total_bytes: scan.total_bytes,
+            page_lines: usize::MAX,
+            page_number: 1,
+            page_start_byte: 0,
+            page_end_byte: scan.total_bytes,
+            next_page_start: None,
+            previous_page_starts: Vec::new(),
             cursor: Cursor { row: 0, col: 0 },
         })
     }
@@ -91,8 +105,10 @@ impl LargeFileBuffer {
         let row = row.min(self.line_starts.len().saturating_sub(1));
         if row + 1 < self.line_starts.len() {
             self.line_starts[row + 1].saturating_sub(1)
+        } else if self.next_page_start.is_some() {
+            self.page_end_byte.saturating_sub(1)
         } else {
-            self.total_bytes
+            self.page_end_byte
         }
     }
 
@@ -326,8 +342,44 @@ impl Buffer for LargeFileBuffer {
         true
     }
 
+    fn page_info(&self) -> Option<PageInfo> {
+        if self.page_lines == usize::MAX {
+            return None;
+        }
+        Some(PageInfo {
+            page_number: self.page_number,
+            start_byte: self.page_start_byte as u64,
+            end_byte: self.page_end_byte as u64,
+            total_bytes: self.total_bytes as u64,
+            has_previous: !self.previous_page_starts.is_empty(),
+            has_next: self.next_page_start.is_some(),
+        })
+    }
+
+    fn next_page(&mut self) -> io::Result<bool> {
+        let Some(start_byte) = self.next_page_start else {
+            return Ok(false);
+        };
+        let page = self.scan_page(start_byte)?;
+        self.previous_page_starts.push(self.page_start_byte);
+        self.page_number += 1;
+        self.apply_page_scan(page);
+        Ok(true)
+    }
+
+    fn previous_page(&mut self) -> io::Result<bool> {
+        let Some(start_byte) = self.previous_page_starts.last().copied() else {
+            return Ok(false);
+        };
+        let page = self.scan_page(start_byte)?;
+        self.previous_page_starts.pop();
+        self.page_number = self.page_number.saturating_sub(1).max(1);
+        self.apply_page_scan(page);
+        Ok(true)
+    }
+
     fn to_string(&self) -> String {
-        self.read_range_to_string(0, self.total_bytes)
+        self.read_range_to_string(self.page_start_byte, self.page_end_byte)
             .unwrap_or_default()
     }
 

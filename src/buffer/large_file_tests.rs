@@ -250,3 +250,62 @@ fn invalid_utf8_is_rejected_at_open() {
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     cleanup(&path);
 }
+
+#[test]
+fn paged_open_retains_only_configured_lines_and_navigates_both_directions() {
+    let path = temp_path("pages.txt");
+    cleanup(&path);
+    std::fs::write(&path, "zero\none\ntwo\nthree\nfour").unwrap();
+
+    let mut buffer = LargeFileBuffer::open_paged(&path, 2).unwrap();
+    assert_eq!(buffer.lines(), vec!["zero", "one"]);
+    assert_eq!(buffer.page_info().unwrap().page_number, 1);
+    assert!(buffer.next_page().unwrap());
+    assert_eq!(buffer.lines(), vec!["two", "three"]);
+    assert_eq!(buffer.page_info().unwrap().page_number, 2);
+    assert!(buffer.next_page().unwrap());
+    assert_eq!(buffer.lines(), vec!["four"]);
+    assert!(!buffer.next_page().unwrap());
+    assert!(buffer.previous_page().unwrap());
+    assert_eq!(buffer.lines(), vec!["two", "three"]);
+    assert!(buffer.previous_page().unwrap());
+    assert_eq!(buffer.lines(), vec!["zero", "one"]);
+    assert!(!buffer.previous_page().unwrap());
+
+    cleanup(&path);
+}
+
+#[test]
+fn paged_open_exposes_trailing_empty_line_as_final_page() {
+    let path = temp_path("trailing_page.txt");
+    cleanup(&path);
+    std::fs::write(&path, "zero\none\n").unwrap();
+
+    let mut buffer = LargeFileBuffer::open_paged(&path, 2).unwrap();
+    assert_eq!(buffer.lines(), vec!["zero", "one"]);
+    assert!(buffer.next_page().unwrap());
+    assert_eq!(buffer.lines(), vec![""]);
+    assert!(!buffer.next_page().unwrap());
+
+    cleanup(&path);
+}
+
+#[test]
+fn descriptor_drift_blocks_loading_the_next_page() {
+    let path = temp_path("page_drift.txt");
+    cleanup(&path);
+    std::fs::write(&path, "zero\none\ntwo").unwrap();
+
+    let mut buffer = LargeFileBuffer::open_paged(&path, 2).unwrap();
+    let mut changed = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
+    changed.write_all(b"\nchanged").unwrap();
+    changed.sync_all().unwrap();
+
+    assert!(buffer.next_page().is_err());
+    assert_eq!(buffer.lines(), vec!["", ""]);
+
+    cleanup(&path);
+}

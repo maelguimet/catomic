@@ -252,8 +252,8 @@ LLM safety rules:
 
 - Context is capped at 64 KiB and 2,000 lines and fails closed rather than
   truncating silently.
-- Dotfile paths and obvious secret-like lines are called out in the Enter
-  confirmation.
+- Active-context dotfile paths and obvious secret-like lines are called out in
+  the Enter confirmation.
 - Edits must be a validated single-file unified patch whose headers name the
   confirmed active path. A selected region may instead use the strict
   `catomic_replacement` JSON envelope.
@@ -270,6 +270,9 @@ a saved active file inside a Git repository:
   a bounded file range, grep, or show a file diff. The total broker response
   budget is 128 KiB; symlinks, unknown paths, oversized files, and path escapes
   are refused.
+- Dot paths are omitted from the broker file map. Direct reads and diffs refuse
+  obvious secret-like content; grep skips sensitive files and reports how many
+  were omitted.
 - HEAD, branch, status, tracked diff, and every retrieved file are rechecked
   after the response and again before preview apply. Drift discards/refuses the
   proposal.

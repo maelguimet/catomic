@@ -48,6 +48,10 @@ and per-file diff. No command writes or runs a process other than read-only Git.
   broker reads or grep cannot refresh a drifted baseline.
 - Broker reads hash and expose one bounded opened-file snapshot, with canonical
   in-repo path and pre/post file-revision checks; they never hash then reopen.
+- The repo broker omits dot paths, refuses direct reads or diffs containing
+  obvious secret-like content, and makes grep skip and count sensitive files.
+  An explicitly confirmed active dotfile remains governed by active-context
+  sensitivity confirmation rather than broker retrieval.
 - Repo patch headers must name the exact active repo-relative file; patches for
   another file and rename-shaped patches fail before preview.
 - Tests use loopback fake HTTP only; never test against a live endpoint.

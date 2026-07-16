@@ -93,6 +93,61 @@ fn rejects_escape_unknown_files_and_budget_overrun() {
 }
 
 #[test]
+fn omits_dot_paths_from_the_broker_map() {
+    let repo = TempRepo::new();
+    fs::write(repo.0.join(".env"), "TOKEN=do-not-send\n").unwrap();
+    fs::create_dir(repo.0.join(".config")).unwrap();
+    fs::write(repo.0.join(".config/settings"), "private\n").unwrap();
+    let mut broker = ContextBroker::new_for_repo(&repo.0).unwrap();
+
+    let initial = broker.initial_context().unwrap();
+    let files = broker.list_files().unwrap();
+
+    assert!(initial.contains("2 sensitive dot paths omitted"));
+    assert!(!files.contains(".env"));
+    assert!(!files.contains(".config"));
+    assert!(matches!(
+        broker.read_file_range(Path::new(".env"), 0, 64),
+        Err(BrokerError::UnknownFile(path)) if path == Path::new(".env")
+    ));
+}
+
+#[test]
+fn refuses_secret_like_direct_reads_and_diffs() {
+    let repo = TempRepo::new();
+    fs::write(repo.0.join("README.md"), "password=do-not-send\n").unwrap();
+    let mut broker = ContextBroker::new_for_repo(&repo.0).unwrap();
+
+    assert!(matches!(
+        broker.read_file_range(Path::new("README.md"), 0, 64),
+        Err(BrokerError::SensitiveContent(path)) if path == Path::new("README.md")
+    ));
+    assert!(matches!(
+        broker.show_diff(Path::new("README.md")),
+        Err(BrokerError::SensitiveContent(path)) if path == Path::new("README.md")
+    ));
+}
+
+#[test]
+fn grep_omits_sensitive_files_and_reports_the_omission() {
+    let repo = TempRepo::new();
+    fs::write(
+        repo.0.join("src/lib.rs"),
+        "pub fn needle() {\n    meow();\n}\n",
+    )
+    .unwrap();
+    fs::write(repo.0.join("notes.txt"), "needle\npassword=do-not-send\n").unwrap();
+    let mut broker = ContextBroker::new_for_repo(&repo.0).unwrap();
+
+    let matches = broker.grep("needle").unwrap();
+
+    assert!(matches.contains("src/lib.rs:1"));
+    assert!(!matches.contains("notes.txt"));
+    assert!(!matches.contains("do-not-send"));
+    assert!(matches.contains("broker omitted 1 files with secret-like content"));
+}
+
+#[test]
 fn refuses_git_or_retrieved_file_drift() {
     let repo = TempRepo::new();
     let mut broker = ContextBroker::new_for_repo(&repo.0).unwrap();

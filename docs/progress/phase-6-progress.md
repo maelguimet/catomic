@@ -19,7 +19,9 @@ Phase 6 is complete. Its exit evidence is in
   exact source.
 - **Repository broker**: Project-only Git capture, bounded file discovery,
   128 KiB consumable context budget, and read-only list/range/grep/diff commands
-  across at most eight model broker rounds.
+  across at most eight model broker rounds. Dot paths stay outside its file map;
+  direct secret-like reads/diffs fail closed and grep reports skipped sensitive
+  files.
 - **Time-travel guard**: HEAD, branch, status, tracked diff, active buffer path
   and text, active-file disk bytes (including untracked files), and every
   retrieved file are checked during repo preparation, before sending, after

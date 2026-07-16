@@ -158,14 +158,14 @@ fn sensitivities(text: &str, first_line: usize, path: Option<&Path>) -> Vec<Sens
     found
 }
 
-fn is_dotfile(path: &Path) -> bool {
+pub(crate) fn is_dotfile(path: &Path) -> bool {
     path.components().any(|component| {
         let name = component.as_os_str().to_string_lossy();
         name.starts_with('.') && name != "." && name != ".."
     })
 }
 
-fn secret_like(line: &str) -> bool {
+pub(crate) fn secret_like(line: &str) -> bool {
     let lower = line.trim().to_ascii_lowercase();
     [
         "api_key",

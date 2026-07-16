@@ -5,13 +5,17 @@
 //! Phase: 6 (LLM Context Broker).
 
 use std::collections::HashMap;
-use std::fmt;
 use std::path::{Component, Path, PathBuf};
 
 use crate::project::discovery::{discover_files_until, DiscoveryLimits};
-use crate::project::git::{GitContext, GitError};
+use crate::project::git::GitContext;
 
+mod error;
 mod relevant;
+mod sensitive;
+
+use error::io_error;
+pub use error::BrokerError;
 
 pub const DEFAULT_CONTEXT_BUDGET: usize = 128 * 1024;
 const MAX_FILES: usize = 4_096;
@@ -27,63 +31,9 @@ pub struct ContextBroker {
     canonical_root: PathBuf,
     files: Vec<PathBuf>,
     discovery_truncated: bool,
+    sensitive_paths_omitted: usize,
     budget_remaining: usize,
     relevant_files: HashMap<PathBuf, u64>,
-}
-
-#[derive(Debug)]
-pub enum BrokerError {
-    Git(GitError),
-    Discovery(String),
-    InvalidPath,
-    UnknownFile(PathBuf),
-    FileTooLarge { path: PathBuf, bytes: u64 },
-    FileChanged(PathBuf),
-    BudgetExceeded { requested: usize, remaining: usize },
-    Io(String),
-    InvalidUtf8(PathBuf),
-    EmptyQuery,
-}
-
-impl fmt::Display for BrokerError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Git(error) => write!(formatter, "{error}"),
-            Self::Discovery(error) => write!(formatter, "repo discovery failed: {error}"),
-            Self::InvalidPath => write!(formatter, "broker paths must be relative and normalized"),
-            Self::UnknownFile(path) => write!(
-                formatter,
-                "file is outside the broker map: {}",
-                path.display()
-            ),
-            Self::FileTooLarge { path, bytes } => write!(
-                formatter,
-                "broker file is too large ({bytes} bytes): {}",
-                path.display()
-            ),
-            Self::FileChanged(path) => {
-                write!(formatter, "relevant file changed: {}", path.display())
-            }
-            Self::BudgetExceeded {
-                requested,
-                remaining,
-            } => write!(
-                formatter,
-                "context request needs {requested} bytes; {remaining} remain"
-            ),
-            Self::Io(error) => write!(formatter, "broker I/O failed: {error}"),
-            Self::InvalidUtf8(path) => {
-                write!(formatter, "broker file is not UTF-8: {}", path.display())
-            }
-            Self::EmptyQuery => write!(formatter, "grep query cannot be empty"),
-        }
-    }
-}
-
-impl From<GitError> for BrokerError {
-    fn from(error: GitError) -> Self {
-        Self::Git(error)
-    }
 }
 
 impl ContextBroker {
@@ -117,16 +67,19 @@ impl ContextBroker {
         else {
             return Ok(None);
         };
+        let mut sensitive_paths_omitted = 0_usize;
         let files = discovery
             .files
             .into_iter()
             .filter_map(|path| path.strip_prefix(&git.root).ok().map(Path::to_path_buf))
+            .filter(|path| sensitive::allow_path(path, &mut sensitive_paths_omitted))
             .collect();
         Ok(Some(Self {
             git,
             canonical_root,
             files,
             discovery_truncated: discovery.truncated,
+            sensitive_paths_omitted,
             budget_remaining: budget,
             relevant_files: HashMap::new(),
         }))
@@ -145,14 +98,15 @@ impl ContextBroker {
             "clean"
         };
         let files = self.file_list_text();
+        let file_map_note =
+            sensitive::file_map_note(self.discovery_truncated, self.sensitive_paths_omitted);
         let context = format!(
-            "Repository: {}\nHEAD: {}\nBranch: {branch}\nBase branch: {base}\nState: {dirty}\n\nGit status:\n{}\nGit diff --stat:\n{}\nGit diff --name-only:\n{}\nFile map{}:\n{files}",
+            "Repository: {}\nHEAD: {}\nBranch: {branch}\nBase branch: {base}\nState: {dirty}\n\nGit status:\n{}\nGit diff --stat:\n{}\nGit diff --name-only:\n{}\nFile map{file_map_note}:\n{files}",
             self.git.root.display(),
             self.git.snapshot.head,
             self.git.status,
             self.git.diff_stat,
             self.git.diff_name_only.join("\n"),
-            if self.discovery_truncated { " (truncated)" } else { "" },
         );
         self.charge(context)
     }
@@ -169,6 +123,7 @@ impl ContextBroker {
     ) -> Result<String, BrokerError> {
         let relative = self.valid_file(path)?;
         let (bytes, fingerprint) = self.snapshot_relevant_file(&relative)?;
+        sensitive::reject_content(&relative, &bytes)?;
         self.record_relevant_file(&relative, fingerprint)?;
         let start = usize::try_from(offset)
             .unwrap_or(usize::MAX)
@@ -187,6 +142,7 @@ impl ContextBroker {
         }
         let mut scanned = 0_usize;
         let mut matches = String::new();
+        let mut sensitive_omitted = 0_usize;
         for relative in self.files.clone() {
             let (bytes, fingerprint) = match self.snapshot_relevant_file(&relative) {
                 Ok(snapshot) => snapshot,
@@ -198,6 +154,10 @@ impl ContextBroker {
                 break;
             }
             scanned += size;
+            if sensitive::has_secret_like(&bytes) {
+                sensitive_omitted += 1;
+                continue;
+            }
             self.record_relevant_file(&relative, fingerprint)?;
             let text =
                 String::from_utf8(bytes).map_err(|_| BrokerError::InvalidUtf8(relative.clone()))?;
@@ -210,17 +170,18 @@ impl ContextBroker {
                         content
                     ));
                     if matches.lines().count() == MAX_GREP_MATCHES {
-                        return self.charge(matches);
+                        return self.charge_grep(matches, sensitive_omitted);
                     }
                 }
             }
         }
-        self.charge(matches)
+        self.charge_grep(matches, sensitive_omitted)
     }
 
     pub fn show_diff(&mut self, path: &Path) -> Result<String, BrokerError> {
         let relative = self.valid_file(path)?;
         let diff = self.git.diff_for_path(&relative)?;
+        sensitive::reject_content(&relative, diff.as_bytes())?;
         self.charge(diff)
     }
 
@@ -243,6 +204,15 @@ impl ContextBroker {
             .map(|path| path.to_string_lossy())
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    fn charge_grep(
+        &mut self,
+        mut matches: String,
+        sensitive_omitted: usize,
+    ) -> Result<String, BrokerError> {
+        sensitive::append_grep_notice(&mut matches, sensitive_omitted);
+        self.charge(matches)
     }
 
     fn valid_file(&self, path: &Path) -> Result<PathBuf, BrokerError> {
@@ -275,10 +245,6 @@ fn ensure_normalized_relative(path: &Path) -> Result<(), BrokerError> {
         return Err(BrokerError::InvalidPath);
     }
     Ok(())
-}
-
-fn io_error(error: std::io::Error) -> BrokerError {
-    BrokerError::Io(error.to_string())
 }
 
 #[cfg(test)]

@@ -17,7 +17,7 @@ is in decision 0008 and measurements are retained in `performance.md`.
 | Preview, confirmation, undo | Model output first opens a read-only preview. Enter is the only apply action and creates one buffer transaction; Escape makes no edit. Exact golden coverage applies and undoes a patch. |
 | Read-only explanation | Instructions beginning with an explicit `explain` verb select a plain-text answer view with no apply action or edit semantics. |
 | Git safety snapshot | Repo commands capture root, HEAD, current branch, detected base branch, porcelain status, diff stat/name-only, and fingerprints that distinguish already-dirty tracked/staged states. Git runs read-only with optional locks disabled and bounded output. |
-| Context broker | Explicit preparation discovers at most 4,096 files/65,536 entries/depth 64. The 128 KiB consumable budget covers initial and retrieved context; ranged reads cap at 64 KiB, files at 1 MiB, grep at 4 MiB/64 matches, and broker dialogue at eight requests. Paths must be mapped, normalized, canonical in-repo regular files; symlinks and escapes fail closed. Each fingerprint and model-facing read share one bounded, pre/post-checked file snapshot. The separately supplied active file is always byte-fingerprinted, including when untracked. |
+| Context broker | Explicit preparation discovers at most 4,096 files/65,536 entries/depth 64. The 128 KiB consumable budget covers initial and retrieved context; ranged reads cap at 64 KiB, files at 1 MiB, grep at 4 MiB/64 matches, and broker dialogue at eight requests. Paths must be mapped, normalized, canonical in-repo regular files; symlinks and escapes fail closed. Dot paths are omitted. Direct reads/diffs refuse obvious secret-like content, while grep skips sensitive files with an explicit count. Each fingerprint and model-facing read share one bounded, pre/post-checked file snapshot. The separately supplied active file is always byte-fingerprinted, including when untracked. |
 | Drift refusal | Current-buffer and repo requests pin active-buffer text/path identity while Git/relevant-file state is checked before confirmed send, after the response, and again before apply. Unit integration covers repo-preparation path drift, pre-send path/disk drift without connecting, post-response path/disk drift, and tracked or untracked changes after preview. |
 | Real terminal flow | The 80x24 PTY opens `:meow`, observes the local model/endpoint and explicit Enter/Escape prompt, cancels before send, quits cleanly, and verifies the source file is unchanged. |
 | No live services | All HTTP tests bind deterministic loopback fake servers. No test contacts a live model, public endpoint, or user configuration. |
@@ -32,16 +32,16 @@ cancellable and polled without blocking typing.
 
 ## Verification commands
 
-- `cargo test --all-targets`: 477 passed, 12 intentional manual tests ignored;
+- `cargo test --all-targets`: 480 passed, 12 intentional manual tests ignored;
   7 PTY smokes passed.
 - `cargo test app::llm_request`: 11 passed, including exact-path success,
   wrong-target refusal, no-connect pre-send drift, and post-response drift.
 - `cargo test app::repo_llm`: 10 passed, including no-connect confirmation,
   preparation/confirmation/response path drift, wrong-target refusal, and repo
   drift refusal across an untracked active file's full lifecycle.
-- `cargo test llm::broker::tests`: 6 passed, including active untracked-file
-  content drift that leaves Git porcelain unchanged and immutable baselines
-  across later retrieval, plus intermediate-symlink substitution refusal.
+- `cargo test llm::broker::tests`: 9 passed, including sensitive dot-path and
+  secret-content refusal, active untracked-file drift hidden from Git porcelain,
+  immutable baselines across later retrieval, and intermediate-symlink refusal.
 - `cargo test app::llm_preview`: 7 passed, including exact one-step undo and
   stale-source/path refusal.
 - `cargo test --test pty_smoke`: 7 passed.

@@ -41,7 +41,7 @@ pub(super) fn begin(app: &mut super::super::App) {
             Some("Active file path changed before confirmation; repo LLM cancelled.".to_string());
         return;
     }
-    start(app, pending);
+    start(app, *pending);
 }
 
 fn start(app: &mut super::super::App, pending: Pending) {
@@ -79,7 +79,7 @@ pub(super) fn poll(app: &mut super::super::App, out: &mut dyn Write) -> io::Resu
         unreachable!()
     };
     match result {
-        RepoCheckResult::Unchanged(broker) => finish(app, broker, state),
+        RepoCheckResult::Unchanged(broker) => finish(app, *broker, state),
         RepoCheckResult::Changed => {
             app.message =
                 Some("Repository changed before confirmation; repo LLM cancelled.".to_string())

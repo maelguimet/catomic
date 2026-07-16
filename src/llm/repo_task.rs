@@ -19,7 +19,7 @@ const MAX_BROKER_ROUNDS: usize = 8;
 pub enum RepoLlmTaskResult {
     Finished {
         output: String,
-        broker: ContextBroker,
+        broker: Box<ContextBroker>,
     },
     RepositoryChanged,
     RepositoryCheckFailed(String),
@@ -152,7 +152,10 @@ fn finish_output(output: String, broker: ContextBroker, cancel: &AtomicBool) -> 
         return RepoLlmTaskResult::Cancelled;
     }
     match unchanged {
-        Ok(Some(true)) => RepoLlmTaskResult::Finished { output, broker },
+        Ok(Some(true)) => RepoLlmTaskResult::Finished {
+            output,
+            broker: Box::new(broker),
+        },
         Ok(Some(false)) => RepoLlmTaskResult::RepositoryChanged,
         Ok(None) => RepoLlmTaskResult::Cancelled,
         Err(error) => RepoLlmTaskResult::RepositoryCheckFailed(error.to_string()),

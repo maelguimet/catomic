@@ -19,7 +19,7 @@ pub struct PreparedRepoContext {
 }
 
 pub enum RepoPrepareResult {
-    Finished(PreparedRepoContext),
+    Finished(Box<PreparedRepoContext>),
     Cancelled,
     Error(String),
 }
@@ -96,11 +96,11 @@ fn prepare(root: &Path, active_path: &Path, cancel: &AtomicBool) -> RepoPrepareR
         return RepoPrepareResult::Error("active repo path is not valid UTF-8".to_string());
     };
     match broker.initial_context() {
-        Ok(initial_context) => RepoPrepareResult::Finished(PreparedRepoContext {
+        Ok(initial_context) => RepoPrepareResult::Finished(Box::new(PreparedRepoContext {
             broker,
             initial_context,
             active_relative_path,
-        }),
+        })),
         Err(error) => RepoPrepareResult::Error(error.to_string()),
     }
 }

@@ -28,7 +28,7 @@ use start::begin_with_settings;
 
 pub(crate) enum RepoLlmState {
     Preparing(Preparing),
-    Pending(Pending),
+    Pending(Box<Pending>),
     CheckingSend(checking::CheckingSend),
     Running(Running),
     CheckingApply(apply_check::CheckingApply),
@@ -95,7 +95,7 @@ fn poll_preparing(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         unreachable!()
     };
     match result {
-        RepoPrepareResult::Finished(prepared) => finish_preparing(app, prepared, state),
+        RepoPrepareResult::Finished(prepared) => finish_preparing(app, *prepared, state),
         RepoPrepareResult::Cancelled => {
             app.message = Some("Repo context preparation cancelled.".to_string())
         }
@@ -129,14 +129,14 @@ fn finish_preparing(app: &mut super::App, prepared: PreparedRepoContext, state: 
         "Send {} repo bytes + {} active-file bytes to {} at {}?{sensitive} Enter confirms; Esc cancels.",
         prepared.initial_context.len(), state.draft.context.byte_count, state.settings.model, state.settings.base_url
     ));
-    app.repo_llm_state = Some(RepoLlmState::Pending(Pending {
+    app.repo_llm_state = Some(RepoLlmState::Pending(Box::new(Pending {
         prepared,
         draft: state.draft,
         settings: state.settings,
         source_snapshot: state.source_snapshot,
         file_path: state.path,
         relative_path,
-    }));
+    })));
 }
 
 pub(crate) fn handle_key(

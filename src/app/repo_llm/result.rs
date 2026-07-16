@@ -28,7 +28,7 @@ pub(super) fn poll_running(app: &mut super::super::App, out: &mut dyn Write) -> 
             app,
             out,
             output,
-            broker,
+            *broker,
             &state.source_snapshot,
             &state.file_path,
             &state.relative_path,

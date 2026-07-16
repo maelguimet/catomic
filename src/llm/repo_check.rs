@@ -12,7 +12,7 @@ use std::sync::Arc;
 use super::broker::ContextBroker;
 
 pub enum RepoCheckResult {
-    Unchanged(ContextBroker),
+    Unchanged(Box<ContextBroker>),
     Changed,
     Cancelled,
     Error(String),
@@ -74,7 +74,7 @@ fn check(broker: ContextBroker, cancel: &AtomicBool) -> RepoCheckResult {
         return RepoCheckResult::Cancelled;
     }
     match unchanged {
-        Ok(Some(true)) => RepoCheckResult::Unchanged(broker),
+        Ok(Some(true)) => RepoCheckResult::Unchanged(Box::new(broker)),
         Ok(Some(false)) => RepoCheckResult::Changed,
         Ok(None) => RepoCheckResult::Cancelled,
         Err(error) => RepoCheckResult::Error(error.to_string()),

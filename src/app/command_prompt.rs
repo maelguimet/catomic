@@ -42,6 +42,7 @@ pub(crate) fn open_command_prompt(app: &mut super::App, out: &mut dyn Write) -> 
 
 fn open_prompt(app: &mut super::App, out: &mut dyn Write, kind: PromptKind) -> io::Result<()> {
     cancel_running(&mut app.command_prompt);
+    app.selection.clear();
     app.command_prompt.active = Some(ActivePrompt {
         kind,
         text: String::new(),

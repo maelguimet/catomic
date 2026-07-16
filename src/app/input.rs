@@ -1,22 +1,16 @@
-//! Key input routing for the App goblin loop (Phase 2-ak hygiene extraction).
-//!
-//! Purpose: own the concrete key dispatch (handle_key / handle_key_with) so
-//!   src/app/mod.rs stays focused on App state, run loop, and render.
-//! Owns: the big match on KeyEvent; thin delegation from App methods.
-//! Must not: introduce command enums/dispatchers; change any key semantics
-//!   (Ctrl+Q dirty confirm, Ctrl+S save arm, Ctrl+R reload arm, edit clears
-//!   pendings+message, movement does not clear, undo/redo dirty unchanged);
-//!   know terminal raw details or Project/LLM.
-//! Invariants: identical observable behavior for all documented key paths;
-//!   no new public surface on App; extraction only.
-//! Phase: 2-ak (file hygiene to address >500 line smell without architecture change).
+//! Purpose: route normalized key and paste events into explicit App/editor actions.
+//! Owns: key precedence, ordinary edit dispatch, and common post-edit cleanup.
+//! Must not: decode raw terminal bytes, access buffer internals, render content, or network.
+//! Invariants: guarded save/quit/reload shortcuts win over text input; one user edit
+//!   invokes one Buffer mutation and clears stale selections/confirmations.
+//! Phase: 3-d keyboard selection and bracketed-paste integration.
 
 use std::io::{self, Write};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::file_state::refresh_dirty;
-use super::{buffers, command_prompt, paging, reload, save, search};
+use super::{buffers, command_prompt, paging, reload, save, search, selection};
 
 /// Common post-content-mutation cleanup used by insert, delete, newline, undo, redo paths.
 /// Centralizes the exact sequence that must run after any buffer-mutating key:
@@ -24,7 +18,8 @@ use super::{buffers, command_prompt, paging, reload, save, search};
 /// messages, reveal cursor, and render. Movement paths deliberately do not call this.
 /// Behavior must remain identical to the prior inlined blocks (including no-op undo/redo
 /// and boundary backspace/delete still clearing pending state).
-fn finish_content_edit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+pub(super) fn finish_content_edit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    app.selection.clear();
     refresh_dirty(&mut app.file, &*app.buffer);
     if app.buffer.is_read_only() {
         app.message = Some("Large file is read-only in paged mode.".to_string());
@@ -56,6 +51,9 @@ pub(crate) fn handle_key_with(
         return Ok(());
     }
     if command_prompt::handle_active_key(app, out, key)? {
+        return Ok(());
+    }
+    if selection::handle_shortcut(app, out, key)? {
         return Ok(());
     }
     match key {
@@ -162,7 +160,11 @@ pub(crate) fn handle_key_with(
             code: KeyCode::Enter,
             ..
         } => {
-            app.buffer.insert_newline();
+            if app.selection.active().is_some() {
+                selection::replace_active(app, "\n")?;
+            } else {
+                app.buffer.insert_newline();
+            }
             finish_content_edit(app, out)?;
         }
 
@@ -223,7 +225,11 @@ pub(crate) fn handle_key_with(
             if modifiers.contains(KeyModifiers::CONTROL) {
                 // Other Ctrl+letter combos ignored in Phase 0; still reveal/render (existing behavior)
             } else if c == '\n' || c == '\r' {
-                app.buffer.insert_newline();
+                if app.selection.active().is_some() {
+                    selection::replace_active(app, "\n")?;
+                } else {
+                    app.buffer.insert_newline();
+                }
                 finish_content_edit(app, out)?;
                 return Ok(());
             } else if !c.is_control() {
@@ -232,7 +238,11 @@ pub(crate) fn handle_key_with(
                 } else {
                     c
                 };
-                app.buffer.insert_char(ch);
+                if app.selection.active().is_some() {
+                    selection::replace_active(app, &ch.to_string())?;
+                } else {
+                    app.buffer.insert_char(ch);
+                }
                 finish_content_edit(app, out)?;
                 return Ok(());
             }
@@ -244,7 +254,9 @@ pub(crate) fn handle_key_with(
             code: KeyCode::Backspace,
             ..
         } => {
-            app.buffer.delete_back();
+            if !selection::replace_active(app, "")? {
+                app.buffer.delete_back();
+            }
             finish_content_edit(app, out)?;
         }
 
@@ -252,7 +264,9 @@ pub(crate) fn handle_key_with(
             code: KeyCode::Delete,
             ..
         } => {
-            app.buffer.delete_forward();
+            if !selection::replace_active(app, "")? {
+                app.buffer.delete_forward();
+            }
             finish_content_edit(app, out)?;
         }
 
@@ -260,6 +274,7 @@ pub(crate) fn handle_key_with(
             code: KeyCode::Left,
             ..
         } => {
+            app.selection.clear();
             app.buffer.move_left();
             app.reveal_cursor();
             app.render(out)?;
@@ -269,6 +284,7 @@ pub(crate) fn handle_key_with(
             code: KeyCode::Right,
             ..
         } => {
+            app.selection.clear();
             app.buffer.move_right();
             app.reveal_cursor();
             app.render(out)?;
@@ -277,6 +293,7 @@ pub(crate) fn handle_key_with(
         KeyEvent {
             code: KeyCode::Up, ..
         } => {
+            app.selection.clear();
             app.buffer.move_up();
             app.reveal_cursor();
             app.render(out)?;
@@ -286,6 +303,7 @@ pub(crate) fn handle_key_with(
             code: KeyCode::Down,
             ..
         } => {
+            app.selection.clear();
             app.buffer.move_down();
             app.reveal_cursor();
             app.render(out)?;
@@ -295,6 +313,14 @@ pub(crate) fn handle_key_with(
     }
 
     Ok(())
+}
+
+pub(crate) fn handle_paste(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    text: &str,
+) -> io::Result<()> {
+    selection::handle_external_paste(app, out, text)
 }
 
 pub(super) fn handle_quit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {

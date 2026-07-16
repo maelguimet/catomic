@@ -28,6 +28,7 @@ struct RunningSearch {
 
 pub(crate) fn open_prompt(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     cancel_running(&mut app.search);
+    app.selection.clear();
     app.search.prompt = Some(String::new());
     app.search.origin = Some(app.buffer.cursor());
     app.search.active_match = None;

@@ -42,6 +42,7 @@ pub(super) fn handle_page_key(
 }
 
 fn finish_page_change(app: &mut super::App) {
+    app.selection.clear();
     app.screen.scroll_top = 0;
     app.screen.scroll_left = 0;
     if !app.pending_quit_confirm

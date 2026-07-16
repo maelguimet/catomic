@@ -31,6 +31,12 @@ same navigation wraps across oversized paged files without loading them whole.
 files. `Ctrl+Shift+P` opens the first command prompt, with `goto N`,
 `save`/`write`, and `quit`/`q`.
 
+Hold Shift with the arrow keys to select text, or use `Ctrl+A` for the active
+buffer/page. `Ctrl+C`, `Ctrl+X`, and `Ctrl+V` copy, cut, and paste through an
+always-available internal clipboard; copy also sends OSC 52 to supporting
+terminals. Bracketed terminal paste is inserted as one undoable edit. Terminal
+emulators may intercept `Ctrl+Shift+C`/`Ctrl+Shift+V` before Catomic sees them.
+
 ## Terminal Behavior
 
 - Linux terminal only (for now)

@@ -3,7 +3,7 @@
 //! Must not: mutate editor/buffer state, read full buffers, or own terminal setup.
 //! Invariants: file-backed read errors propagate before output; every viewport row is cleared;
 //!   rendering never emits a full-screen clear.
-//! Phase: 3-a search highlighting over Phase 2 row-oriented redraw hardening.
+//! Phase: 3-d multiline selection and search highlighting.
 
 use std::io::Write;
 
@@ -11,9 +11,8 @@ use crate::buffer::{Buffer, Cursor};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct TextHighlight {
-    pub(crate) row: usize,
-    pub(crate) start_col: usize,
-    pub(crate) end_col: usize,
+    pub(crate) start: Cursor,
+    pub(crate) end: Cursor,
 }
 
 /// Basic viewport render with one optional active search highlight.
@@ -83,13 +82,27 @@ fn write_content_line<W: Write + ?Sized>(
     start_col: usize,
     highlight: Option<TextHighlight>,
 ) -> std::io::Result<()> {
-    let Some(highlight) = highlight.filter(|highlight| highlight.row == row) else {
+    let Some(highlight) = highlight.filter(|highlight| {
+        row >= highlight.start.row
+            && row <= highlight.end.row
+            && !(row == highlight.end.row && highlight.end.col == 0)
+    }) else {
         return write!(out, "{content}");
     };
     let content_len = content.chars().count();
     let visible_end = start_col.saturating_add(content_len);
-    let overlap_start = highlight.start_col.max(start_col);
-    let overlap_end = highlight.end_col.min(visible_end);
+    let range_start = if row == highlight.start.row {
+        highlight.start.col
+    } else {
+        0
+    };
+    let range_end = if row == highlight.end.row {
+        highlight.end.col
+    } else {
+        usize::MAX
+    };
+    let overlap_start = range_start.max(start_col);
+    let overlap_end = range_end.min(visible_end);
     if overlap_start >= overlap_end {
         return write!(out, "{content}");
     }
@@ -126,15 +139,40 @@ mod tests {
             20,
             None,
             Some(TextHighlight {
-                row: 0,
-                start_col: 5,
-                end_col: 11,
+                start: Cursor { row: 0, col: 5 },
+                end: Cursor { row: 0, col: 11 },
             }),
         )
         .unwrap();
 
         let rendered = String::from_utf8(out).unwrap();
         assert!(rendered.contains("zero \x1b[7mtarget\x1b[27m here"));
+    }
+
+    #[test]
+    fn render_buffer_highlights_a_multiline_selection() {
+        let b = SimpleBuffer::from_text("zero here\nmiddle\nlast row");
+        let mut out = Vec::new();
+
+        render_buffer(
+            &mut out,
+            &b,
+            0,
+            0,
+            4,
+            20,
+            None,
+            Some(TextHighlight {
+                start: Cursor { row: 0, col: 5 },
+                end: Cursor { row: 2, col: 4 },
+            }),
+        )
+        .unwrap();
+
+        let rendered = String::from_utf8(out).unwrap();
+        assert!(rendered.contains("zero \x1b[7mhere\x1b[27m"));
+        assert!(rendered.contains("\x1b[7mmiddle\x1b[27m"));
+        assert!(rendered.contains("\x1b[7mlast\x1b[27m row"));
     }
 
     #[test]

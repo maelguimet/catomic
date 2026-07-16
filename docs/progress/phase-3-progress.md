@@ -21,9 +21,14 @@ recorded in [`../phase-2-acceptance.md`](../phase-2-acceptance.md).
   across ordinary and descriptor-backed paged buffers, including edited-page
   overlays. Ctrl+Shift+P accepts `goto N`, `save`/`write`, and `quit`/`q`,
   reusing the existing conflict-safe save and dirty-buffer quit paths.
+- **3-d keyboard selection and clipboard**: Shift+arrows and Ctrl+A create
+  multiline scalar-coordinate selections. Ctrl+C/X/V use an internal clipboard,
+  copy exports OSC 52 when bounded, and bracketed paste plus selection replacement
+  are each recorded as one piece-level undo transaction.
 
 ## Remaining Phase 3 Work
 
-- Selection expansion, mouse click/drag, and selection cut/copy/paste.
+- Word selection expansion and mouse click/drag; keyboard selection and
+  selection cut/copy/paste are complete.
 - Phase 3 acceptance definition, medium-file search measurement, and manual UX
   checklist evidence.

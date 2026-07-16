@@ -17,20 +17,27 @@ type PanicHook = Box<dyn Fn(&std::panic::PanicHookInfo<'_>) + Sync + Send + 'sta
 /// Setup raw mode + alternate screen.
 /// Must be paired with teardown on all exit paths (including panic).
 pub fn setup<W: Write>(w: &mut W) -> io::Result<()> {
-    use crossterm::{execute, terminal};
-    execute!(w, terminal::EnterAlternateScreen)?;
+    use crossterm::{event, execute, terminal};
+    execute!(
+        w,
+        terminal::EnterAlternateScreen,
+        event::EnableBracketedPaste
+    )?;
     terminal::enable_raw_mode()?;
-    // TODO: bracketed paste enable (see "Terminal Realities" in TODO.md)
     Ok(())
 }
 
 /// Restore terminal state.
 /// Safe to call multiple times / when not in raw mode.
 pub fn teardown<W: Write>(w: &mut W) -> io::Result<()> {
-    use crossterm::{execute, terminal};
+    use crossterm::{event, execute, terminal};
     // Ignore errors: we are best-effort during panic paths.
     let _ = terminal::disable_raw_mode();
-    let _ = execute!(w, terminal::LeaveAlternateScreen);
+    let _ = execute!(
+        w,
+        event::DisableBracketedPaste,
+        terminal::LeaveAlternateScreen
+    );
     Ok(())
 }
 

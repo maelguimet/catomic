@@ -1,0 +1,218 @@
+//! Purpose: connect selection, clipboard, and selection-aware edits to App.
+//! Owns: Shift extension, select-all, process-local clipboard, and OSC 52 export.
+//! Must not: implement buffer storage, terminal event polling, mouse decoding, or network.
+//! Invariants: selections are half-open scalar ranges; replacement is one Buffer edit.
+//! Phase: 3-d keyboard selection and clipboard interaction.
+
+use std::io::{self, Write};
+
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+use crate::buffer::Cursor;
+use crate::editor::selection::Selection;
+
+const OSC52_MAX_BYTES: usize = 100 * 1024;
+
+#[derive(Default)]
+pub(crate) struct SelectionUiState {
+    range: Option<Selection>,
+}
+
+impl SelectionUiState {
+    pub(crate) fn active(&self) -> Option<Selection> {
+        self.range.filter(|selection| !selection.is_empty())
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.range = None;
+    }
+}
+
+pub(crate) fn handle_shortcut(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    key: KeyEvent,
+) -> io::Result<bool> {
+    if is_shift_arrow(key) {
+        extend_with_arrow(app, out, key.code)?;
+        return Ok(true);
+    }
+    let KeyCode::Char(ch) = key.code else {
+        return Ok(false);
+    };
+    if !key.modifiers.contains(KeyModifiers::CONTROL) {
+        return Ok(false);
+    }
+    match ch.to_ascii_lowercase() {
+        'a' => select_all(app, out),
+        'c' => copy(app, out),
+        'x' => cut(app, out),
+        'v' => paste_internal(app, out),
+        _ => return Ok(false),
+    }?;
+    Ok(true)
+}
+
+pub(crate) fn replace_active(app: &mut super::App, text: &str) -> io::Result<bool> {
+    let Some(selection) = app.selection.active() else {
+        return Ok(false);
+    };
+    let (start, end) = selection.ordered();
+    app.buffer.replace_range(start, end, text)
+}
+
+pub(crate) fn handle_external_paste(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    text: &str,
+) -> io::Result<()> {
+    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+    replace_or_insert(app, out, &normalized)
+}
+
+fn is_shift_arrow(key: KeyEvent) -> bool {
+    key.modifiers.contains(KeyModifiers::SHIFT)
+        && !key
+            .modifiers
+            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+        && matches!(
+            key.code,
+            KeyCode::Left | KeyCode::Right | KeyCode::Up | KeyCode::Down
+        )
+}
+
+fn extend_with_arrow(app: &mut super::App, out: &mut dyn Write, code: KeyCode) -> io::Result<()> {
+    let before = app.buffer.cursor();
+    let anchor = app
+        .selection
+        .range
+        .map_or(before, |selection| selection.anchor);
+    match code {
+        KeyCode::Left => app.buffer.move_left(),
+        KeyCode::Right => app.buffer.move_right(),
+        KeyCode::Up => app.buffer.move_up(),
+        KeyCode::Down => app.buffer.move_down(),
+        _ => unreachable!("caller accepts only arrows"),
+    }
+    app.selection.range = Some(Selection::new(anchor, app.buffer.cursor()));
+    app.reveal_cursor();
+    app.render(out)
+}
+
+fn select_all(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    let last_row = app.buffer.line_count().saturating_sub(1);
+    let end = Cursor {
+        row: last_row,
+        col: app.buffer.line_char_count(last_row).unwrap_or(0),
+    };
+    app.buffer.set_cursor(end);
+    app.selection.range = Some(Selection::new(Cursor::default(), end));
+    app.reveal_cursor();
+    app.message = Some(if app.buffer.page_info().is_some() {
+        "Selected active file page.".to_string()
+    } else {
+        "Selected all.".to_string()
+    });
+    app.render(out)
+}
+
+fn copy(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    let Some(exported) = capture_selection(app, out)? else {
+        app.message = Some("No selection to copy.".to_string());
+        return app.render(out);
+    };
+    app.message = Some(if exported {
+        "Copied selection.".to_string()
+    } else {
+        "Copied internally; selection is too large for terminal clipboard.".to_string()
+    });
+    app.render(out)
+}
+
+fn cut(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    if capture_selection(app, out)?.is_none() {
+        app.message = Some("No selection to cut.".to_string());
+        return app.render(out);
+    }
+    let Some(selection) = app.selection.active() else {
+        return app.render(out);
+    };
+    let (start, end) = selection.ordered();
+    if app.buffer.replace_range(start, end, "")? {
+        super::input::finish_content_edit(app, out)
+    } else {
+        app.message = Some("Current file page is read-only; selection was copied.".to_string());
+        app.render(out)
+    }
+}
+
+fn paste_internal(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    if app.clipboard.is_empty() {
+        app.message = Some("Clipboard is empty.".to_string());
+        return app.render(out);
+    }
+    let text = app.clipboard.clone();
+    replace_or_insert(app, out, &text)
+}
+
+fn replace_or_insert(app: &mut super::App, out: &mut dyn Write, text: &str) -> io::Result<()> {
+    if text.is_empty() {
+        return app.render(out);
+    }
+    let (start, end) = app
+        .selection
+        .active()
+        .map(Selection::ordered)
+        .unwrap_or_else(|| {
+            let cursor = app.buffer.cursor();
+            (cursor, cursor)
+        });
+    if app.buffer.replace_range(start, end, text)? {
+        super::input::finish_content_edit(app, out)
+    } else {
+        app.message = Some("Current file page is read-only.".to_string());
+        app.render(out)
+    }
+}
+
+fn capture_selection(app: &mut super::App, out: &mut dyn Write) -> io::Result<Option<bool>> {
+    let Some(selection) = app.selection.active() else {
+        return Ok(None);
+    };
+    let (start, end) = selection.ordered();
+    let text = app.buffer.text_range(start, end)?;
+    let exported = if text.len() <= OSC52_MAX_BYTES {
+        write!(out, "\x1b]52;c;{}\x07", base64(text.as_bytes()))?;
+        true
+    } else {
+        false
+    };
+    app.clipboard = text;
+    Ok(Some(exported))
+}
+
+fn base64(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let bits = (u32::from(chunk[0]) << 16)
+            | (u32::from(*chunk.get(1).unwrap_or(&0)) << 8)
+            | u32::from(*chunk.get(2).unwrap_or(&0));
+        out.push(TABLE[((bits >> 18) & 63) as usize] as char);
+        out.push(TABLE[((bits >> 12) & 63) as usize] as char);
+        out.push(if chunk.len() > 1 {
+            TABLE[((bits >> 6) & 63) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            TABLE[(bits & 63) as usize] as char
+        } else {
+            '='
+        });
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests;

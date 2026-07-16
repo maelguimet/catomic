@@ -33,6 +33,7 @@ mod paging;
 mod reload;
 mod save;
 mod search;
+mod selection;
 mod status;
 mod viewport;
 mod watch;
@@ -82,6 +83,10 @@ pub struct App {
     pub(crate) search: search::SearchUiState,
     /// Global transient goto/command prompt. It constructs no background service.
     pub(crate) command_prompt: command_prompt::CommandPromptState,
+    /// Per-buffer half-open selection state.
+    pub(crate) selection: selection::SelectionUiState,
+    /// Always-available process-local clipboard shared across open buffers.
+    pub(crate) clipboard: String,
     /// Inactive buffers in next-buffer order. The active buffer remains in the
     /// established App fields so editing/render paths stay direct and boring.
     pub(crate) inactive_buffers: VecDeque<buffers::BufferSlot>,
@@ -157,6 +162,8 @@ impl App {
             pending_reload: None,
             search: search::SearchUiState::default(),
             command_prompt: command_prompt::CommandPromptState::default(),
+            selection: selection::SelectionUiState::default(),
+            clipboard: String::new(),
             inactive_buffers: VecDeque::new(),
             active_buffer_index: 0,
             // Conservative default matching prior hardcoded 24; no real term required for unit tests.
@@ -212,6 +219,9 @@ impl App {
                 match event::read()? {
                     Event::Key(key) => {
                         self.handle_key(key)?;
+                    }
+                    Event::Paste(text) => {
+                        input::handle_paste(self, &mut stdout, &text)?;
                     }
                     Event::Resize(w, h) => {
                         // Update screen size, reveal cursor (vert/horiz if implemented this pass),
@@ -273,12 +283,22 @@ impl App {
         // Avoid cloning self.message: pass Some(m.as_str()) directly.
         // Status is built locally only for the no-message path and passed as &str.
         let highlight = self
-            .search
-            .active_match()
-            .map(|found| term::render::TextHighlight {
-                row: found.start.row,
-                start_col: found.start.col,
-                end_col: found.end_col,
+            .selection
+            .active()
+            .map(|selection| {
+                let (start, end) = selection.ordered();
+                term::render::TextHighlight { start, end }
+            })
+            .or_else(|| {
+                self.search
+                    .active_match()
+                    .map(|found| term::render::TextHighlight {
+                        start: found.start,
+                        end: crate::buffer::Cursor {
+                            row: found.start.row,
+                            col: found.end_col,
+                        },
+                    })
             });
         if let Some(ref m) = self.message {
             term::render::render_buffer(

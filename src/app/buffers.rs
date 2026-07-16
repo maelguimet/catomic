@@ -12,7 +12,7 @@ use crate::buffer::Buffer;
 use crate::config::big_files::BigFileConfig;
 use crate::file::watcher::FileWatcher;
 
-use super::{command_prompt, reload, save, search, App, FileState};
+use super::{command_prompt, reload, save, search, selection, App, FileState};
 
 pub(crate) struct BufferSlot {
     buffer: Box<dyn Buffer>,
@@ -22,6 +22,7 @@ pub(crate) struct BufferSlot {
     pending_save_conflict: Option<save::PendingSaveConflict>,
     pending_reload: Option<reload::PendingReload>,
     search: search::SearchUiState,
+    selection: selection::SelectionUiState,
     scroll_top: usize,
     scroll_left: usize,
 }
@@ -42,6 +43,7 @@ impl BufferSlot {
             pending_save_conflict: app.pending_save_conflict,
             pending_reload: app.pending_reload,
             search: app.search,
+            selection: app.selection,
             scroll_top: app.screen.scroll_top,
             scroll_left: app.screen.scroll_left,
         }
@@ -58,6 +60,7 @@ impl BufferSlot {
         );
         mem::swap(&mut self.pending_reload, &mut app.pending_reload);
         mem::swap(&mut self.search, &mut app.search);
+        mem::swap(&mut self.selection, &mut app.selection);
         mem::swap(&mut self.scroll_top, &mut app.screen.scroll_top);
         mem::swap(&mut self.scroll_left, &mut app.screen.scroll_left);
     }

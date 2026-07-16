@@ -59,6 +59,39 @@ fn paged_buffer_edits_multiple_pages_and_saves_the_whole_file() {
 }
 
 #[test]
+fn paged_buffer_keeps_editing_untouched_pages_after_atomic_save() {
+    let path = temp_path("successive_save.txt");
+    let _ = fs::remove_file(&path);
+    fs::write(&path, "first\nsecond\nthird").unwrap();
+    let mut app = app_with_paged_buffer(&path);
+    let mut out = Vec::new();
+
+    app.handle_key_with(&mut out, make_key(KeyCode::Char('X'), KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key_with(
+        &mut out,
+        make_key(KeyCode::Char('s'), KeyModifiers::CONTROL),
+    )
+    .unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), "Xfirst\nsecond\nthird");
+
+    app.handle_key_with(&mut out, make_key(KeyCode::PageDown, KeyModifiers::CONTROL))
+        .unwrap();
+    app.handle_key_with(&mut out, make_key(KeyCode::Char('Y'), KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key_with(
+        &mut out,
+        make_key(KeyCode::Char('s'), KeyModifiers::CONTROL),
+    )
+    .unwrap();
+
+    assert_eq!(fs::read_to_string(&path).unwrap(), "Xfirst\nYsecond\nthird");
+    assert!(!app.file.dirty);
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn paged_buffer_undo_and_redo_track_the_saved_position_exactly() {
     let path = temp_path("dirty.txt");
     let _ = fs::remove_file(&path);

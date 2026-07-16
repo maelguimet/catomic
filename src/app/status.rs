@@ -6,7 +6,8 @@
 //! Owns: format_status_line (pure, takes the minimal fields it needs).
 //! Must not: mutate state; perform IO; know render details beyond the string;
 //!   construct watchers or Large-file policy changes; touch buffer content.
-//! Invariants: plain/project labels stable; [untitled] for no path; size uses
+//! Invariants: plain/project labels stable; [untitled] for no path; utf-8 is
+//!   always accurate because open rejects invalid UTF-8; size uses
 //!   existing format_file_size; oversized tiers get a marker; active page byte
 //!   ranges come only from Buffer metadata; never called for content decisions.
 //! Phase: 2-bn paged-file navigation/status.
@@ -20,8 +21,8 @@ use crate::file::size::{file_size_tier_label, format_file_size, FileSizeTier};
 /// Called by App only when message is None (messages take precedence and are
 /// passed through as-is).
 ///
-/// Format sketch (stable enough for tests): "plain [untitled] saved"
-/// or "plain foo.txt modified disk 10.0 MiB large large-file mode"
+/// Format sketch (stable enough for tests): "plain [untitled] saved utf-8"
+/// or "plain foo.txt modified utf-8 disk 10.0 MiB large large-file mode"
 /// Size is always labeled as last-known on-disk metadata (fs::metadata or post-save
 /// fallback), never a live buffer content scan. Untitled/no-path cases have no disk size.
 pub(crate) fn format_status_line(
@@ -43,7 +44,7 @@ pub(crate) fn format_status_line(
     };
     let dirty_label = if dirty { "modified" } else { "saved" };
 
-    let mut out = format!("{} {} {}", mode, name, dirty_label);
+    let mut out = format!("{} {} {} utf-8", mode, name, dirty_label);
 
     if let Some(b) = size_bytes {
         out.push(' ');
@@ -87,6 +88,7 @@ mod tests {
         assert!(s.contains("plain"), "status: {}", s);
         assert!(s.contains("[untitled]"), "status: {}", s);
         assert!(s.contains("saved"), "status: {}", s);
+        assert!(s.contains("utf-8"), "status must show encoding: {s}");
         // no size or tier or disk label
         assert!(!s.contains("large-file"));
         assert!(!s.contains("disk "));

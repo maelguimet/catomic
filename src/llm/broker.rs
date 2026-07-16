@@ -6,14 +6,12 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::io::{Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
 
 use crate::project::discovery::{discover_files_until, DiscoveryLimits};
 use crate::project::git::{GitContext, GitError};
 
 mod relevant;
-use relevant::fingerprint;
 
 pub const DEFAULT_CONTEXT_BUDGET: usize = 128 * 1024;
 const MAX_FILES: usize = 4_096;
@@ -26,6 +24,7 @@ const MAX_GREP_MATCHES: usize = 64;
 
 pub struct ContextBroker {
     pub git: GitContext,
+    canonical_root: PathBuf,
     files: Vec<PathBuf>,
     discovery_truncated: bool,
     budget_remaining: usize,
@@ -104,6 +103,7 @@ impl ContextBroker {
         cancelled: impl Fn() -> bool,
     ) -> Result<Option<Self>, BrokerError> {
         let git = GitContext::capture(root)?;
+        let canonical_root = git.root.canonicalize().map_err(io_error)?;
         let Some(discovery) = discover_files_until(
             &git.root,
             DiscoveryLimits {
@@ -124,6 +124,7 @@ impl ContextBroker {
             .collect();
         Ok(Some(Self {
             git,
+            canonical_root,
             files,
             discovery_truncated: discovery.truncated,
             budget_remaining: budget,
@@ -167,14 +168,15 @@ impl ContextBroker {
         limit: usize,
     ) -> Result<String, BrokerError> {
         let relative = self.valid_file(path)?;
-        let (mut file, bytes) = self.open_relevant_file(&relative)?;
-        self.record_relevant_file(&relative, bytes)?;
-        file.seek(SeekFrom::Start(offset))
-            .map_err(|error| BrokerError::Io(error.to_string()))?;
-        let mut output = Vec::new();
-        file.take(limit.min(MAX_READ_BYTES) as u64)
-            .read_to_end(&mut output)
-            .map_err(|error| BrokerError::Io(error.to_string()))?;
+        let (bytes, fingerprint) = self.snapshot_relevant_file(&relative)?;
+        self.record_relevant_file(&relative, fingerprint)?;
+        let start = usize::try_from(offset)
+            .unwrap_or(usize::MAX)
+            .min(bytes.len());
+        let end = start
+            .saturating_add(limit.min(MAX_READ_BYTES))
+            .min(bytes.len());
+        let output = bytes[start..end].to_vec();
         let text = String::from_utf8(output).map_err(|_| BrokerError::InvalidUtf8(relative))?;
         self.charge(text)
     }
@@ -186,20 +188,19 @@ impl ContextBroker {
         let mut scanned = 0_usize;
         let mut matches = String::new();
         for relative in self.files.clone() {
-            let (mut file, fingerprint) = match self.open_relevant_file(&relative) {
-                Ok(opened) => opened,
+            let (bytes, fingerprint) = match self.snapshot_relevant_file(&relative) {
+                Ok(snapshot) => snapshot,
                 Err(BrokerError::FileTooLarge { .. } | BrokerError::InvalidUtf8(_)) => continue,
                 Err(error) => return Err(error),
             };
-            let size = file.metadata().map_err(io_error)?.len() as usize;
+            let size = bytes.len();
             if scanned.saturating_add(size) > MAX_GREP_SCAN_BYTES {
                 break;
             }
             scanned += size;
             self.record_relevant_file(&relative, fingerprint)?;
-            let mut text = String::new();
-            file.read_to_string(&mut text)
-                .map_err(|_| BrokerError::InvalidUtf8(relative.clone()))?;
+            let text =
+                String::from_utf8(bytes).map_err(|_| BrokerError::InvalidUtf8(relative.clone()))?;
             for (line, content) in text.lines().enumerate() {
                 if content.contains(query) {
                     matches.push_str(&format!(
@@ -228,7 +229,8 @@ impl ContextBroker {
             return Ok(false);
         }
         for (relative, expected) in &self.relevant_files {
-            if fingerprint(&self.git.root.join(relative))? != *expected {
+            let (_, fingerprint) = self.snapshot_relevant_file(relative)?;
+            if fingerprint != *expected {
                 return Ok(false);
             }
         }

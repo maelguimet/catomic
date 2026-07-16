@@ -133,6 +133,24 @@ fn later_retrieval_cannot_refresh_a_drifted_relevant_file_baseline() {
     assert!(!broker.is_unchanged().unwrap());
 }
 
+#[cfg(unix)]
+#[test]
+fn refuses_intermediate_directory_replaced_by_symlink_after_discovery() {
+    let repo = TempRepo::new();
+    let outside = repo.0.with_extension("outside");
+    fs::create_dir(&outside).unwrap();
+    fs::write(outside.join("lib.rs"), "outside secret\n").unwrap();
+    let mut broker = ContextBroker::new_for_repo(&repo.0).unwrap();
+    fs::remove_dir_all(repo.0.join("src")).unwrap();
+    std::os::unix::fs::symlink(&outside, repo.0.join("src")).unwrap();
+
+    let result = broker.read_file_range(Path::new("src/lib.rs"), 0, 64);
+
+    fs::remove_file(repo.0.join("src")).unwrap();
+    fs::remove_dir_all(outside).unwrap();
+    assert!(matches!(result, Err(BrokerError::InvalidPath)));
+}
+
 fn git(root: &Path, args: &[&str]) {
     let status = Command::new("git")
         .arg("-C")

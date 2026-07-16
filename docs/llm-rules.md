@@ -46,6 +46,8 @@ and per-file diff. No command writes or runs a process other than read-only Git.
   untracked, so byte drift hidden from Git status is refused at every send/apply gate.
 - The first relevant-file fingerprint is immutable for the request; later
   broker reads or grep cannot refresh a drifted baseline.
+- Broker reads hash and expose one bounded opened-file snapshot, with canonical
+  in-repo path and pre/post file-revision checks; they never hash then reopen.
 - Repo patch headers must name the exact active repo-relative file; patches for
   another file and rename-shaped patches fail before preview.
 - Tests use loopback fake HTTP only; never test against a live endpoint.

@@ -24,7 +24,8 @@ Phase 6 is complete. Its exit evidence is in
   and text, active-file disk bytes (including untracked files), and every
   retrieved file are checked during repo preparation, before sending, after
   the response, and before applying the preview. First fingerprints are
-  immutable, so later broker retrieval cannot accept intervening drift.
+  immutable, so later broker retrieval cannot accept intervening drift. File
+  bytes and fingerprints come from one canonical, pre/post-checked snapshot.
 - **Terminal acceptance**: the real PTY reaches a `:meow` endpoint/context
   confirmation using isolated config, cancels with Escape, makes no request,
   and leaves the file exact.

@@ -315,6 +315,34 @@ fn paged_open_exposes_trailing_empty_line_as_final_page() {
 }
 
 #[test]
+fn paged_ascii_scan_preserves_multi_chunk_metadata_and_boundary() {
+    let path = temp_path("paged_ascii_chunks.txt");
+    cleanup(&path);
+    let first = "a".repeat((SCAN_CHUNK_BYTES * 2) + 7);
+    std::fs::write(&path, format!("{first}\nnext")).unwrap();
+
+    let mut buffer = LargeFileBuffer::open_paged(&path, 1).unwrap();
+
+    assert_eq!(buffer.line_char_count(0), Some(first.len()));
+    assert_eq!(buffer.page_info().unwrap().end_byte, first.len() as u64 + 1);
+    assert_eq!(
+        buffer
+            .line_checkpoint_at_or_before(0, first.len())
+            .unwrap()
+            .col,
+        LINE_CHECKPOINT_INTERVAL_CHARS * 8
+    );
+    assert_eq!(
+        buffer.visible_lines_window(0, 1, first.len() - 4, 4)[0].content,
+        "aaaa"
+    );
+    assert!(buffer.next_page().unwrap());
+    assert_eq!(buffer.line(0).as_deref(), Some("next"));
+
+    cleanup(&path);
+}
+
+#[test]
 fn previous_page_is_computed_after_a_direct_later_page_state() {
     let path = temp_path("reverse_pages.txt");
     cleanup(&path);

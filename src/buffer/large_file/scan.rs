@@ -6,7 +6,7 @@
 //! Invariants: the first line starts at byte zero; metadata vectors describe
 //!   every scanned line; checkpoints land on UTF-8 boundaries; total_bytes is
 //!   the exact number of bytes read.
-//! Phase: 2-bg LargeFileBuffer size-hygiene split.
+//! Phase: 2-bq shared optimized ASCII line scanning.
 
 use std::fs::File;
 use std::io::{self, Read};
@@ -110,30 +110,17 @@ pub(super) fn scan_valid_text_lines(
     current_line_is_ascii: &mut bool,
 ) {
     if text.is_ascii() {
-        let mut segment_start = 0usize;
-        for (newline_idx, _) in text.match_indices('\n') {
-            push_ascii_line_checkpoints(
-                line_checkpoints,
-                *current_line_chars,
-                text_start_offset + segment_start,
-                newline_idx - segment_start,
-            );
-            *current_line_chars += newline_idx - segment_start;
-            line_char_counts.push(*current_line_chars);
-            line_is_ascii.push(*current_line_is_ascii);
-            line_checkpoint_starts.push(line_checkpoints.len());
-            *current_line_chars = 0;
-            *current_line_is_ascii = true;
-            line_starts.push(text_start_offset + newline_idx + 1);
-            segment_start = newline_idx + 1;
-        }
-        push_ascii_line_checkpoints(
+        scan_ascii_bytes_lines(
+            text.as_bytes(),
+            text_start_offset,
+            line_starts,
+            line_char_counts,
+            line_is_ascii,
             line_checkpoints,
-            *current_line_chars,
-            text_start_offset + segment_start,
-            text.len() - segment_start,
+            line_checkpoint_starts,
+            current_line_chars,
+            current_line_is_ascii,
         );
-        *current_line_chars += text.len() - segment_start;
         return;
     }
 
@@ -159,6 +146,44 @@ pub(super) fn scan_valid_text_lines(
             *current_line_chars += 1;
         }
     }
+}
+
+pub(super) fn scan_ascii_bytes_lines(
+    bytes: &[u8],
+    text_start_offset: usize,
+    line_starts: &mut Vec<usize>,
+    line_char_counts: &mut Vec<usize>,
+    line_is_ascii: &mut Vec<bool>,
+    line_checkpoints: &mut Vec<LineCheckpoint>,
+    line_checkpoint_starts: &mut Vec<usize>,
+    current_line_chars: &mut usize,
+    current_line_is_ascii: &mut bool,
+) {
+    let text = std::str::from_utf8(bytes).expect("ASCII bytes must be valid UTF-8");
+    let mut segment_start = 0usize;
+    for (newline_idx, _) in text.match_indices('\n') {
+        push_ascii_line_checkpoints(
+            line_checkpoints,
+            *current_line_chars,
+            text_start_offset + segment_start,
+            newline_idx - segment_start,
+        );
+        *current_line_chars += newline_idx - segment_start;
+        line_char_counts.push(*current_line_chars);
+        line_is_ascii.push(*current_line_is_ascii);
+        line_checkpoint_starts.push(line_checkpoints.len());
+        *current_line_chars = 0;
+        *current_line_is_ascii = true;
+        line_starts.push(text_start_offset + newline_idx + 1);
+        segment_start = newline_idx + 1;
+    }
+    push_ascii_line_checkpoints(
+        line_checkpoints,
+        *current_line_chars,
+        text_start_offset + segment_start,
+        bytes.len() - segment_start,
+    );
+    *current_line_chars += bytes.len() - segment_start;
 }
 
 fn push_ascii_line_checkpoints(

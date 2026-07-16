@@ -3,13 +3,13 @@
 //! Must not: reopen paths, retain descriptors, render, edit, or choose App policy.
 //! Invariants: a complete non-final page ends after its configured newline count;
 //!   page metadata uses absolute descriptor offsets and retains no file content.
-//! Phase: 2-bl configurable paged Huge-file foundation.
+//! Phase: 2-bq optimized ASCII paged-file scanning.
 
 use std::fs::File;
 use std::io;
 use std::os::unix::fs::FileExt;
 
-use super::scan::{scan_valid_text_lines, LineScan};
+use super::scan::{scan_ascii_bytes_lines, scan_valid_text_lines, LineScan};
 use super::{LineCheckpoint, SCAN_CHUNK_BYTES};
 
 pub(super) struct PageScan {
@@ -37,9 +37,13 @@ pub(super) fn scan_utf8_page(
         if n == 0 {
             break;
         }
-        let (used, page_complete) = bytes_through_newline(&chunk[..n], state.lines_remaining);
-        state.scan_chunk(&chunk[..used])?;
-        if page_complete {
+        let page_chunk = page_chunk(&chunk[..n], state.lines_remaining);
+        state.scan_chunk(
+            &chunk[..page_chunk.used],
+            page_chunk.newline_count,
+            page_chunk.is_ascii,
+        )?;
+        if page_chunk.page_complete {
             state.finish_complete_page()?;
             let next_page_start = state.offset;
             return Ok(state.into_scan(Some(next_page_start)));
@@ -121,11 +125,15 @@ impl PageScanState {
         }
     }
 
-    fn scan_chunk(&mut self, bytes: &[u8]) -> io::Result<()> {
-        let newline_count = bytes.iter().filter(|byte| **byte == b'\n').count();
+    fn scan_chunk(&mut self, bytes: &[u8], newline_count: usize, is_ascii: bool) -> io::Result<()> {
         self.lines_remaining = self.lines_remaining.saturating_sub(newline_count);
         let carry_len = self.carry.len();
         let text_start_offset = self.offset - carry_len;
+        if self.carry.is_empty() && is_ascii {
+            self.scan_ascii_bytes(bytes, text_start_offset);
+            self.offset += bytes.len();
+            return Ok(());
+        }
         let mut combined;
         let text_bytes = if self.carry.is_empty() {
             bytes
@@ -153,6 +161,20 @@ impl PageScanState {
         self.carry.extend_from_slice(&text_bytes[valid_end..]);
         self.offset += bytes.len();
         Ok(())
+    }
+
+    fn scan_ascii_bytes(&mut self, bytes: &[u8], text_start_offset: usize) {
+        scan_ascii_bytes_lines(
+            bytes,
+            text_start_offset,
+            &mut self.line_starts,
+            &mut self.line_char_counts,
+            &mut self.line_is_ascii,
+            &mut self.line_checkpoints,
+            &mut self.line_checkpoint_starts,
+            &mut self.current_line_chars,
+            &mut self.current_line_is_ascii,
+        );
     }
 
     fn finish_complete_page(&mut self) -> io::Result<()> {
@@ -191,17 +213,63 @@ impl PageScanState {
     }
 }
 
-fn bytes_through_newline(bytes: &[u8], remaining: usize) -> (usize, bool) {
+struct PageChunk {
+    used: usize,
+    newline_count: usize,
+    page_complete: bool,
+    is_ascii: bool,
+}
+
+fn page_chunk(bytes: &[u8], remaining: usize) -> PageChunk {
+    if bytes.is_ascii() {
+        return ascii_page_chunk(bytes, remaining);
+    }
+    non_ascii_page_chunk(bytes, remaining)
+}
+
+fn ascii_page_chunk(bytes: &[u8], remaining: usize) -> PageChunk {
+    let text = std::str::from_utf8(bytes).expect("ASCII bytes must be valid UTF-8");
+    let mut seen = 0usize;
+    for (index, _) in text.match_indices('\n') {
+        seen += 1;
+        if seen == remaining {
+            return PageChunk {
+                used: index + 1,
+                newline_count: seen,
+                page_complete: true,
+                is_ascii: true,
+            };
+        }
+    }
+    PageChunk {
+        used: bytes.len(),
+        newline_count: seen,
+        page_complete: false,
+        is_ascii: true,
+    }
+}
+
+fn non_ascii_page_chunk(bytes: &[u8], remaining: usize) -> PageChunk {
     let mut seen = 0usize;
     for (index, byte) in bytes.iter().enumerate() {
         if *byte == b'\n' {
             seen += 1;
             if seen == remaining {
-                return (index + 1, true);
+                return PageChunk {
+                    used: index + 1,
+                    newline_count: seen,
+                    page_complete: true,
+                    is_ascii: false,
+                };
             }
         }
     }
-    (bytes.len(), false)
+    PageChunk {
+        used: bytes.len(),
+        newline_count: seen,
+        page_complete: false,
+        is_ascii: false,
+    }
 }
 
 fn valid_utf8_end(bytes: &[u8]) -> io::Result<usize> {

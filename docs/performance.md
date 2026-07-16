@@ -313,6 +313,13 @@ smoke remained render-below-resolution on 2026-07-16 (`elapsed_ms=0`); its
 `App::new` sample was 1200 ms because one configured logical-line page still
 spans that entire fixture. These remain observations, not timing gates.
 
+Phase 2-bq then removed the paged scanner's hand-written ASCII newline loop and
+duplicate newline recount, reusing the std-optimized ASCII metadata path. On
+the same 2026-07-16 ignored one-line 100 MiB smoke, `App::new` dropped from
+1200 ms to 135 ms while render remained `elapsed_ms=0`. The page still spans
+the whole logical line; this is a scan-path optimization, not a byte cap or a
+new timing gate.
+
 An ignored sparse exact-1-GiB Huge smoke now validates the limited read-only
 open + simple navigation/render path without writing a dense fixture:
 ```

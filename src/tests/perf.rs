@@ -35,3 +35,7 @@ mod render;
 #[cfg(test)]
 #[path = "perf_tooling.rs"]
 mod tooling;
+
+#[cfg(test)]
+#[path = "perf_extensibility.rs"]
+mod extensibility;

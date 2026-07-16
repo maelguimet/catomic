@@ -37,6 +37,7 @@ Perf harness is split (for size hygiene):
 - src/tests/perf_helpers.rs (no-deps generators, measure/print sample)
 - src/tests/perf_default.rs (cheap non-ignored smokes + functional asserts only)
 - src/tests/perf_manual.rs (#[ignore] 10/100 MiB + sparse extreme for baselines)
+- src/tests/perf_extensibility.rs (#[ignore] oversized typed-config acceptance)
 
 Use `cargo test tests::perf -- --nocapture` (defaults) and the manual ignored commands
 (see Phase 2B baseline section below).
@@ -66,6 +67,23 @@ Warm debug test-process samples on the local acceptance machine:
 These are observational samples, not latency gates. The relevant invariant is
 that all repository scanning, Git capture, and HTTP work begins only after an
 explicit command and stays off the typing/render path.
+
+## Phase 7 typed-config acceptance (2026-07-16)
+
+The ignored release fixture constructs a 16,363-byte TOML document containing
+256 named commands and three lifecycle hooks, then parses and validates it 100
+times. Fixture construction is outside the timed sample and no command runs.
+
+```text
+PERF sample: label=parse 256-command config 100x bytes=16363 elapsed_ms=23
+Maximum resident set size: 61180 KiB
+```
+
+Reference acceptance budgets on this machine are under 50 ms for the complete
+100-parse loop and under 96 MiB peak RSS for the warm release test process.
+These are recorded observations, not default-suite timing assertions. A normal
+startup parses a much smaller document once and external processes remain off
+the startup and typing paths.
 
 ## Phase 2B manual baseline (2026-06-24)
 

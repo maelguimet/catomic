@@ -1,14 +1,14 @@
 //! Real PTY integration smoke tests for the catomic binary.
 //!
 //! Purpose: drive the compiled binary through a pseudo-terminal so key handling,
-//!   raw-mode setup, render, save, undo, search, Project tooling, explicit LLM
-//!   confirmation, and clean quit are exercised together.
-//! Owns: narrow default PTY smoke coverage for accepted Phase 0 through 6 behavior.
+//!   raw-mode setup, render, save, undo, search, Project tooling, guarded external
+//!   commands/hooks, explicit LLM confirmation, and clean quit are exercised together.
+//! Owns: narrow default PTY smoke coverage for accepted Phase 0 through 7 behavior.
 //! Must not: grow into a broad UI harness, contact an LLM/network, use ambient config,
 //!   or run large-file/perf scenarios.
 //! Invariants: tests use temporary files, time out and kill the child on hangs,
 //!   and leave Plain startup behavior unchanged.
-//! Phase: 6 acceptance, including no-network LLM confirmation.
+//! Phase: 7 acceptance, including external preview and no-network hook confirmation.
 
 use std::error::Error;
 use std::fs;
@@ -398,6 +398,74 @@ fn pty_meow_stops_at_confirmation_and_escape_makes_no_network_edit() -> TestResu
     editor.send_keys(b"\x1b")?;
     editor.wait_for_output(
         "LLM cancellation before send",
+        "cancelled before sending; no network call made",
+    )?;
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(active)?, source);
+    Ok(())
+}
+
+#[test]
+fn pty_external_command_previews_before_one_confirmed_edit() -> TestResult {
+    let project = TempProject::new("external_command");
+    project.write(
+        "catomic/config.toml",
+        "[commands.upper]\ncommand = \"tr a-z A-Z\"\ninput = \"buffer\"\n\
+         output = \"replace-input\"\n",
+    );
+    let active = project.write("note.txt", "cat");
+    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
+
+    editor.wait_for_initial_render()?;
+    editor.wait_for_output("external command source", "cat")?;
+    editor.send_keys(b"\x1b[80;6urun upper\r")?;
+    editor.wait_for_output(
+        "external command preview",
+        "Command upper output (read-only). Enter applies; Esc cancels.",
+    )?;
+    assert_eq!(fs::read_to_string(&active)?, "cat");
+
+    editor.send_keys(b"\r")?;
+    editor.wait_for_output("external command apply", "applied; Ctrl+Z undoes it")?;
+    editor.send_keys(b"\x13\x11")?;
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(active)?, "CAT");
+    Ok(())
+}
+
+#[test]
+fn pty_before_llm_hook_finishes_before_network_confirmation() -> TestResult {
+    let project = TempProject::new("before_llm_hook");
+    project.write(
+        "catomic/config.toml",
+        "[commands.guard]\ncommand = \"printf checked\"\n\
+         [hooks]\nbefore_llm = [\"guard\"]\n",
+    );
+    let source = ">>> catomic\nExplain this block without editing it.\n<<<\n";
+    let active = project.write("note.txt", source);
+    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"\x1b[80;6umeow\r")?;
+    editor.wait_for_output(
+        "before-LLM hook preview",
+        "Command guard output (read-only). Enter or Esc closes.",
+    )?;
+    assert!(
+        !editor
+            .output_string()
+            .contains("Enter confirms; Esc cancels"),
+        "LLM confirmation must wait for the hook chain"
+    );
+
+    editor.send_keys(b"\r")?;
+    editor.wait_for_output("post-hook LLM confirmation", "Enter confirms; Esc cancels")?;
+    editor.send_keys(b"\x1b")?;
+    editor.wait_for_output(
+        "post-hook cancellation before send",
         "cancelled before sending; no network call made",
     )?;
     editor.send_keys(b"\x11")?;

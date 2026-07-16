@@ -629,6 +629,12 @@ multi-file apply needs a separate safety design.
   - Start with "external commands + hooks"
   - Scripting / editor commands / overlays much later
 
+Phase 7 acceptance is complete. Typed TOML, per-language settings, keybinding
+overrides, guarded external commands, and ordered lifecycle hooks are verified
+in `docs/phase-7-acceptance.md`. External commands plus hooks are the first
+extensibility surface; scripting, a plugin ABI, editor-command APIs, and overlays
+remain explicitly deferred rather than Phase 7 exit requirements.
+
 ### Phase 8 — Cat Features & Polish (ongoing delight)
 
 - Cat-themed status messages (toggleable, default on but tasteful)
@@ -726,7 +732,10 @@ Update this file as decisions are made or phases complete. Add concrete issues o
 ---
 
 **Current status** (2026-07):
-- Phases 0 through 6 complete; acceptance records are in `docs/`.
+- Phases 0 through 7 complete; acceptance records are in `docs/`.
+- Phase 7 complete: typed TOML, per-language settings, keybinding overrides,
+  guarded external commands, ordered lifecycle hooks, preview, and one-step undo
+  are accepted.
 - Phase 6 complete: explicit `:meow`/`:bigmeow`, Project-only
   `:gitmeow`/`:megameow`, bounded broker context, transient confirmed network,
   drift-safe preview, and one-step undo are accepted.

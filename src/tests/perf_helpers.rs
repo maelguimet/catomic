@@ -10,8 +10,6 @@
 //!   cleanup is best-effort (ignore errors); helpers are test-only.
 //! Phase: 2-ai (harness split; no behavior change from split).
 
-#![cfg(test)]
-
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -45,7 +43,7 @@ pub(crate) fn generate_dense_ascii_file(path: &Path, size: u64) -> io::Result<()
 /// Generate a deterministic UTF-8 dense file containing non-ASCII scalars.
 /// The size must be even so the repeated "é" pattern is never truncated.
 pub(crate) fn generate_dense_non_ascii_file(path: &Path, size: u64) -> io::Result<()> {
-    if size % 2 != 0 {
+    if !size.is_multiple_of(2) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "non-ASCII generated size must be even",

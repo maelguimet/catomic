@@ -8,8 +8,6 @@
 //!   (size match, tier, non-empty output or no panic, App fields populated).
 //! Phase: 2-ai (split; timing gates removed in follow-on; no behavior change on split commit).
 
-#![cfg(test)]
-
 use std::fs;
 
 use crate::buffer::{Buffer, PieceTable, SimpleBuffer};

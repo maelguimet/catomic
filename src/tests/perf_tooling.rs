@@ -4,8 +4,6 @@
 //! Invariants: fixture creation is outside timings; discovery and candidates remain capped.
 //! Phase: 5 acceptance performance measurement.
 
-#![cfg(test)]
-
 use std::fs;
 
 use crate::editor::completion::complete_paths;

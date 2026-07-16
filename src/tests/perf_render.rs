@@ -4,8 +4,6 @@
 //! Invariants: preview is built once; repeated renders request only the final 23 source rows.
 //! Phase: 4 acceptance performance measurement.
 
-#![cfg(test)]
-
 use crate::buffer::{Buffer, PieceTable};
 use crate::editor::syntax::SyntaxKind;
 use crate::terminal::render::{render_buffer, RenderOptions};

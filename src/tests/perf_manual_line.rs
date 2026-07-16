@@ -10,8 +10,6 @@
 //!   generation/open environment limits.
 //! Phase: 2B hotspot inventory after 2-ar.
 
-#![cfg(test)]
-
 use std::path::Path;
 
 use super::helpers::{

@@ -10,8 +10,6 @@
 //!   sparse Extreme >HUGE writes only one configured page before sparse extension.
 //! Phase: 2-bp paged-policy manual smoke refresh.
 
-#![cfg(test)]
-
 use super::helpers::{
     cleanup_perf, generate_dense_ascii_file, generate_dense_non_ascii_file, measure_sample,
     print_perf_sample, temp_perf_path, try_generate_sparse_file,

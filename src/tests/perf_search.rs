@@ -4,8 +4,6 @@
 //! Invariants: the only query is at EOF, so a forward match scans the complete buffer.
 //! Phase: 3 acceptance performance measurement.
 
-#![cfg(test)]
-
 use crate::buffer::{Buffer, Cursor, PieceTable};
 use crate::editor::search::{find_match, SearchDirection};
 

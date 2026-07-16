@@ -423,20 +423,22 @@ impl App {
                 render_options,
             )
         } else {
-            let status = status::format_status_line(
+            let status = status::decorate_status_line(
+                status::format_status_line(
+                    matches!(self.mode, Mode::Plain),
+                    self.file.path.as_deref(),
+                    self.file.dirty,
+                    self.file.size_bytes,
+                    self.file.size_tier,
+                    self.buffer.page_info(),
+                    (self.buffer_count() > 1).then(|| {
+                        (
+                            self.active_buffer_index.saturating_add(1),
+                            self.buffer_count(),
+                        )
+                    }),
+                ),
                 self.cat_config.status_messages,
-                matches!(self.mode, Mode::Plain),
-                self.file.path.as_deref(),
-                self.file.dirty,
-                self.file.size_bytes,
-                self.file.size_tier,
-                self.buffer.page_info(),
-                (self.buffer_count() > 1).then(|| {
-                    (
-                        self.active_buffer_index.saturating_add(1),
-                        self.buffer_count(),
-                    )
-                }),
             );
             term::render::render_buffer(
                 stdout,

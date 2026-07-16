@@ -1,5 +1,5 @@
 //! Purpose: configure bounded line pages for oversized file viewing.
-//! Owns: page-line default, minimal TOML-subset parsing, and config path loading.
+//! Owns: page-line default, typed TOML decoding, and config path loading.
 //! Must not: open editor buffers, scan user files, write config, or know App UI.
 //! Invariants: page_lines is nonzero; missing config uses defaults; only the
 //!   `[big_files] page_lines = N` setting affects this configuration.
@@ -8,9 +8,12 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
+use serde::Deserialize;
+
 pub(crate) const DEFAULT_PAGE_LINES: usize = 20_000;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(default)]
 pub(crate) struct BigFileConfig {
     pub(crate) page_lines: usize,
 }
@@ -24,41 +27,20 @@ impl Default for BigFileConfig {
 }
 
 pub(crate) fn parse(text: &str) -> io::Result<BigFileConfig> {
-    let mut config = BigFileConfig::default();
-    let mut section = "";
-    for raw_line in text.lines() {
-        let line = raw_line.split('#').next().unwrap_or("").trim();
-        if line.is_empty() {
-            continue;
-        }
-        if let Some(name) = line
-            .strip_prefix('[')
-            .and_then(|line| line.strip_suffix(']'))
-        {
-            section = name.trim();
-            continue;
-        }
-        if section != "big_files" {
-            continue;
-        }
-        let Some((key, value)) = line.split_once('=') else {
-            continue;
-        };
-        if key.trim() == "page_lines" {
-            config.page_lines = parse_page_lines(value.trim())?;
-        }
+    #[derive(Default, Deserialize)]
+    struct ConfigFile {
+        #[serde(default)]
+        big_files: BigFileConfig,
     }
-    Ok(config)
-}
 
-fn parse_page_lines(value: &str) -> io::Result<usize> {
-    match value.parse::<usize>() {
-        Ok(lines) if lines > 0 => Ok(lines),
-        _ => Err(io::Error::new(
+    let config = super::decode::<ConfigFile>(text)?.big_files;
+    if config.page_lines == 0 {
+        return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "big_files.page_lines must be a positive integer",
-        )),
+        ));
     }
+    Ok(config)
 }
 
 pub(crate) fn load_from(path: &Path) -> io::Result<BigFileConfig> {
@@ -111,6 +93,13 @@ mod tests {
         .unwrap();
 
         assert_eq!(config.page_lines, 200);
+    }
+
+    #[test]
+    fn accepts_standard_toml_comments_and_numeric_separators() {
+        let config = parse("[big_files]\npage_lines = 20_000 # one page\n").unwrap();
+
+        assert_eq!(config.page_lines, 20_000);
     }
 
     #[test]

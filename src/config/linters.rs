@@ -8,6 +8,8 @@ use std::collections::BTreeMap;
 use std::io;
 use std::path::Path;
 
+use serde::Deserialize;
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct LinterConfig {
     commands: BTreeMap<String, String>,
@@ -27,39 +29,22 @@ impl LinterConfig {
 }
 
 pub(crate) fn parse(text: &str) -> io::Result<LinterConfig> {
+    #[derive(Default, Deserialize)]
+    struct ConfigFile {
+        #[serde(default)]
+        linters: BTreeMap<String, String>,
+    }
+
     let mut config = LinterConfig::default();
-    let mut section = "";
-    for (index, raw_line) in text.lines().enumerate() {
-        let line = raw_line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        if let Some(name) = line
-            .strip_prefix('[')
-            .and_then(|line| line.strip_suffix(']'))
-        {
-            section = name.trim();
-            continue;
-        }
-        if section != "linters" {
-            continue;
-        }
-        let Some((extension, value)) = line.split_once('=') else {
-            return Err(invalid(
-                index,
-                "linter mapping must use extension = \"command\"",
-            ));
-        };
-        let extension = normalize_extension(extension);
+    for (raw_extension, command) in super::decode::<ConfigFile>(text)?.linters {
+        let extension = normalize_extension(&raw_extension);
         if extension.is_empty() || extension.chars().any(char::is_whitespace) {
-            return Err(invalid(index, "linter extension must not be empty"));
+            return Err(invalid("linter extension must not be empty"));
         }
-        let command = parse_quoted(value.trim())
-            .ok_or_else(|| invalid(index, "linter command must be quoted"))?;
         if !command.contains("{file}") {
-            return Err(invalid(index, "linter command must contain {file}"));
+            return Err(invalid("linter command must contain {file}"));
         }
-        config.commands.insert(extension, command.to_string());
+        config.commands.insert(extension, command);
     }
     Ok(config)
 }
@@ -88,19 +73,8 @@ fn normalize_extension(extension: &str) -> String {
         .to_ascii_lowercase()
 }
 
-fn parse_quoted(value: &str) -> Option<&str> {
-    let quote = value.as_bytes().first().copied()?;
-    if !matches!(quote, b'\'' | b'"') || value.as_bytes().last().copied() != Some(quote) {
-        return None;
-    }
-    value.get(1..value.len().saturating_sub(1))
-}
-
-fn invalid(line: usize, message: &str) -> io::Error {
-    io::Error::new(
-        io::ErrorKind::InvalidData,
-        format!("config line {}: {message}", line + 1),
-    )
+fn invalid(message: &str) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, message)
 }
 
 #[cfg(test)]
@@ -110,7 +84,7 @@ mod tests {
     #[test]
     fn parses_quoted_extension_mappings_and_normalizes_dots() {
         let config = parse(
-            "[linters]\n.rs = \"cargo check --message-format short {file}\"\npy = 'ruff check {file}'\n",
+            "[linters]\n\".rs\" = \"cargo check --message-format short {file}\"\npy = 'ruff check {file}'\n",
         )
         .unwrap();
 
@@ -134,10 +108,10 @@ mod tests {
     }
 
     #[test]
-    fn rejects_empty_extensions_and_unquoted_commands() {
+    fn rejects_empty_extensions_and_non_string_commands() {
         for text in [
-            "[linters]\n. = \"tool {file}\"\n",
-            "[linters]\nrs = tool {file}\n",
+            "[linters]\n\".\" = \"tool {file}\"\n",
+            "[linters]\nrs = 42\n",
         ] {
             assert_eq!(
                 parse(text).unwrap_err().kind(),

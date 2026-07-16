@@ -8,6 +8,8 @@ use std::io;
 use std::path::Path;
 use std::time::Duration;
 
+use serde::Deserialize;
+
 const DEFAULT_BASE_URL: &str = "http://127.0.0.1:8080/v1";
 const DEFAULT_MODEL: &str = "local-model";
 const DEFAULT_KEY_ENV: &str = "OPENAI_API_KEY";
@@ -33,28 +35,26 @@ impl Default for LlmSettings {
 }
 
 pub(crate) fn parse(text: &str) -> io::Result<LlmSettings> {
-    let mut settings = LlmSettings::default();
-    let mut section = "";
-    for (index, raw_line) in text.lines().enumerate() {
-        let line = raw_line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        if let Some(name) = line
-            .strip_prefix('[')
-            .and_then(|line| line.strip_suffix(']'))
-        {
-            section = name.trim();
-            continue;
-        }
-        if section != "llm" {
-            continue;
-        }
-        let Some((key, value)) = line.split_once('=') else {
-            return Err(invalid(index, "LLM setting must use key = value"));
-        };
-        apply_setting(&mut settings, index, key.trim(), value.trim())?;
+    #[derive(Default, Deserialize)]
+    struct ConfigFile {
+        #[serde(default)]
+        llm: RawLlmSettings,
     }
+
+    #[derive(Default, Deserialize)]
+    struct RawLlmSettings {
+        base_url: Option<String>,
+        model: Option<String>,
+        api_key_env: Option<String>,
+        timeout_secs: Option<u64>,
+    }
+
+    let raw = super::decode::<ConfigFile>(text)?.llm;
+    let mut settings = LlmSettings::default();
+    settings.base_url = raw.base_url.unwrap_or(settings.base_url);
+    settings.model = raw.model.unwrap_or(settings.model);
+    settings.api_key_env = raw.api_key_env.unwrap_or(settings.api_key_env);
+    settings.timeout = Duration::from_secs(raw.timeout_secs.unwrap_or(DEFAULT_TIMEOUT_SECS));
     validate(&mut settings)?;
     Ok(settings)
 }
@@ -76,41 +76,17 @@ pub(crate) fn load() -> io::Result<LlmSettings> {
     }
 }
 
-fn apply_setting(
-    settings: &mut LlmSettings,
-    line: usize,
-    key: &str,
-    value: &str,
-) -> io::Result<()> {
-    match key {
-        "base_url" => settings.base_url = quoted(value, line)?.to_string(),
-        "model" => settings.model = quoted(value, line)?.to_string(),
-        "api_key_env" => settings.api_key_env = quoted(value, line)?.to_string(),
-        "timeout_secs" => {
-            let seconds = value
-                .parse::<u64>()
-                .map_err(|_| invalid(line, "llm.timeout_secs must be an integer"))?;
-            settings.timeout = Duration::from_secs(seconds);
-        }
-        _ => {}
-    }
-    Ok(())
-}
-
 fn validate(settings: &mut LlmSettings) -> io::Result<()> {
     settings.base_url = canonical_base_url(&settings.base_url)?;
     settings.model = settings.model.trim().to_string();
     if settings.model.is_empty() {
-        return Err(invalid(0, "llm.model must not be empty"));
+        return Err(invalid("llm.model must not be empty"));
     }
     if !valid_env_name(&settings.api_key_env) {
-        return Err(invalid(
-            0,
-            "llm.api_key_env must name an environment variable",
-        ));
+        return Err(invalid("llm.api_key_env must name an environment variable"));
     }
     if !(1..=600).contains(&settings.timeout.as_secs()) {
-        return Err(invalid(0, "llm.timeout_secs must be between 1 and 600"));
+        return Err(invalid("llm.timeout_secs must be between 1 and 600"));
     }
     Ok(())
 }
@@ -131,20 +107,7 @@ fn canonical_base_url(raw: &str) -> io::Result<String> {
 }
 
 fn invalid_base_url() -> io::Error {
-    invalid(
-        0,
-        "llm.base_url must be a plain HTTP(S) base URL without credentials, query, or fragment",
-    )
-}
-
-fn quoted(value: &str, line: usize) -> io::Result<&str> {
-    let quote = value.as_bytes().first().copied();
-    if !matches!(quote, Some(b'\'' | b'"')) || value.as_bytes().last().copied() != quote {
-        return Err(invalid(line, "LLM string settings must be quoted"));
-    }
-    value
-        .get(1..value.len().saturating_sub(1))
-        .ok_or_else(|| invalid(line, "invalid quoted LLM setting"))
+    invalid("llm.base_url must be a plain HTTP(S) base URL without credentials, query, or fragment")
 }
 
 fn valid_env_name(name: &str) -> bool {
@@ -155,11 +118,8 @@ fn valid_env_name(name: &str) -> bool {
         && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
 
-fn invalid(line: usize, message: &str) -> io::Error {
-    io::Error::new(
-        io::ErrorKind::InvalidData,
-        format!("config line {}: {message}", line + 1),
-    )
+fn invalid(message: &str) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, message)
 }
 
 #[cfg(test)]

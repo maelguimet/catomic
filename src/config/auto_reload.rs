@@ -1,5 +1,5 @@
 //! Purpose: configure automatic reload of clean buffers after external edits.
-//! Owns: the default-on flag, minimal TOML-subset parsing, and config loading.
+//! Owns: the default-on flag, typed TOML decoding, and config loading.
 //! Must not: construct watchers, open editor buffers, write config, or know UI.
 //! Invariants: missing config enables auto reload; only
 //!   `[files] auto_reload = true|false` affects this setting.
@@ -8,45 +8,32 @@
 use std::io;
 use std::path::Path;
 
+use serde::Deserialize;
+
 pub(crate) const DEFAULT_AUTO_RELOAD: bool = true;
 
 pub(crate) fn parse(text: &str) -> io::Result<bool> {
-    let mut auto_reload = DEFAULT_AUTO_RELOAD;
-    let mut section = "";
-    for raw_line in text.lines() {
-        let line = raw_line.split('#').next().unwrap_or("").trim();
-        if line.is_empty() {
-            continue;
-        }
-        if let Some(name) = line
-            .strip_prefix('[')
-            .and_then(|line| line.strip_suffix(']'))
-        {
-            section = name.trim();
-            continue;
-        }
-        if section != "files" {
-            continue;
-        }
-        let Some((key, value)) = line.split_once('=') else {
-            continue;
-        };
-        if key.trim() == "auto_reload" {
-            auto_reload = parse_bool(value.trim())?;
-        }
+    #[derive(Default, Deserialize)]
+    struct ConfigFile {
+        #[serde(default)]
+        files: FileSettings,
     }
-    Ok(auto_reload)
-}
 
-fn parse_bool(value: &str) -> io::Result<bool> {
-    match value {
-        "true" => Ok(true),
-        "false" => Ok(false),
-        _ => Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "files.auto_reload must be true or false",
-        )),
+    #[derive(Deserialize)]
+    #[serde(default)]
+    struct FileSettings {
+        auto_reload: bool,
     }
+
+    impl Default for FileSettings {
+        fn default() -> Self {
+            Self {
+                auto_reload: DEFAULT_AUTO_RELOAD,
+            }
+        }
+    }
+
+    Ok(super::decode::<ConfigFile>(text)?.files.auto_reload)
 }
 
 pub(crate) fn load_from(path: &Path) -> io::Result<bool> {

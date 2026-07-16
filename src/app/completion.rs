@@ -1,20 +1,16 @@
-//! Purpose: connect bounded local word completion to explicit editor input.
+//! Purpose: connect bounded local and cached Project completion to explicit editor input.
 //! Owns: transient candidate selection, key handling, messages, and atomic acceptance.
-//! Must not: scan an entire buffer, spawn work/processes, access Project state, or emit terminal codes.
+//! Must not: scan projects/buffers, start discovery, spawn work/processes, or emit terminal codes.
 //! Invariants: no content changes before Enter; accepted text is one undoable replacement.
-//! Phase: 5-a local current-buffer completion.
+//! Phase: 5-a local completion through 5-e Project path completion.
 
 use std::io::{self, Write};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::Cursor;
-use crate::editor::completion::{complete_words, is_word_char, prefix_before_cursor};
-
-const CONTEXT_ROWS: usize = 257;
-const CONTEXT_COLS: usize = 1_024;
-const PREFIX_COLS: usize = 512;
-const MAX_CANDIDATES: usize = 16;
+mod candidates;
+use candidates::{CandidateRead, PREFIX_COLS};
 
 #[derive(Default)]
 pub(crate) struct CompletionUiState {
@@ -56,7 +52,11 @@ fn open(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         app.message = Some("Local completion is unavailable.".to_string());
         return app.render(out);
     }
-    if super::view::is_preview(app) || app.buffer.is_read_only() {
+    if super::view::is_preview(app)
+        || super::lint::is_viewing(app)
+        || super::project_files::is_viewing(app)
+        || app.buffer.is_read_only()
+    {
         app.message = Some("Local completion requires an editable source buffer.".to_string());
         return app.render(out);
     }
@@ -66,92 +66,40 @@ fn open(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     }
 
     let cursor = app.buffer.cursor();
-    let Some(prefix) = read_prefix(app, cursor)? else {
+    let Some(prefix) = candidates::read_prefix(app, cursor)? else {
         app.message = Some(format!(
-            "Word prefix exceeds the {PREFIX_COLS}-column completion limit."
+            "Completion prefix exceeds the {PREFIX_COLS}-column limit."
         ));
         return app.render(out);
     };
-    if prefix.is_empty() {
+    if prefix.text.is_empty() {
         app.message = Some("Type a word prefix before requesting completion.".to_string());
         return app.render(out);
     }
-    let candidates = read_candidates(app, cursor, &prefix)?;
-    if candidates.is_empty() {
-        app.message = Some(format!("No local completion for '{prefix}'."));
+    let completion_candidates = match candidates::read_candidates(app, cursor, &prefix)? {
+        CandidateRead::Ready(candidates) => candidates,
+        CandidateRead::ProjectFilesUnavailable => {
+            app.message = Some("Run :files before requesting Project path completion.".to_string());
+            return app.render(out);
+        }
+    };
+    if completion_candidates.is_empty() {
+        app.message = Some(format!("No completion for '{}'.", prefix.text));
         return app.render(out);
     }
     let start = Cursor {
         row: cursor.row,
-        col: cursor.col.saturating_sub(prefix.chars().count()),
+        col: cursor.col.saturating_sub(prefix.text.chars().count()),
     };
     app.completion.as_mut().expect("capability checked").active = Some(ActiveCompletion {
-        prefix,
+        prefix: prefix.text,
         start,
         end: cursor,
-        candidates,
+        candidates: completion_candidates,
         selected: 0,
     });
     update_message(app);
     app.render(out)
-}
-
-fn read_prefix(app: &super::App, cursor: Cursor) -> io::Result<Option<String>> {
-    let start_col = cursor.col.saturating_sub(PREFIX_COLS);
-    let read_start = start_col.saturating_sub(1);
-    let relative_cursor = cursor.col.saturating_sub(read_start);
-    let line = app
-        .buffer
-        .try_visible_lines_window(cursor.row, 1, read_start, relative_cursor)?
-        .into_iter()
-        .next()
-        .map(|line| line.content)
-        .unwrap_or_default();
-    let prefix = prefix_before_cursor(&line, relative_cursor);
-    if read_start < start_col && prefix.chars().count() == relative_cursor {
-        return Ok(None);
-    }
-    Ok(Some(prefix))
-}
-
-fn read_candidates(app: &super::App, cursor: Cursor, prefix: &str) -> io::Result<Vec<String>> {
-    let row_start = cursor.row.saturating_sub(CONTEXT_ROWS / 2);
-    let col_start = cursor.col.saturating_sub(CONTEXT_COLS / 2);
-    let lines = app.buffer.try_visible_lines_window(
-        row_start,
-        CONTEXT_ROWS,
-        col_start,
-        CONTEXT_COLS + 1,
-    )?;
-    let fragments: Vec<String> = lines
-        .iter()
-        .map(|line| complete_fragment(&line.content, col_start))
-        .collect();
-    Ok(complete_words(
-        fragments.iter().map(String::as_str),
-        prefix,
-        MAX_CANDIDATES,
-    ))
-}
-
-fn complete_fragment(content: &str, start_col: usize) -> String {
-    let mut chars: Vec<char> = content.chars().collect();
-    let trailing_cut = chars.len() > CONTEXT_COLS;
-    chars.truncate(CONTEXT_COLS);
-    let start = if start_col == 0 {
-        0
-    } else {
-        chars
-            .iter()
-            .position(|ch| !is_word_char(*ch))
-            .map_or(chars.len(), |index| index + 1)
-    };
-    let end = if trailing_cut {
-        chars.iter().rposition(|ch| !is_word_char(*ch)).unwrap_or(0)
-    } else {
-        chars.len()
-    };
-    chars[start.min(end)..end].iter().collect()
 }
 
 fn handle_active_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -> io::Result<bool> {

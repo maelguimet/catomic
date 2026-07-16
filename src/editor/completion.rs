@@ -1,8 +1,8 @@
-//! Purpose: derive local word-completion candidates from caller-bounded text.
-//! Owns: scalar-column prefix extraction and deterministic word candidate selection.
+//! Purpose: derive word/path completion candidates from caller-bounded text.
+//! Owns: scalar-column prefix extraction and deterministic candidate selection.
 //! Must not: access Buffer/App state, scan files, spawn work, allocate an index, or render.
 //! Invariants: callers choose the bounded input; candidates are unique and capped.
-//! Phase: 5 local current-buffer completion foundation.
+//! Phase: 5 local word and Project path completion foundations.
 
 use std::collections::BTreeSet;
 
@@ -37,8 +37,42 @@ pub(crate) fn complete_words<'a>(
     candidates.into_iter().collect()
 }
 
+pub(crate) fn path_prefix_before_cursor(line: &str, scalar_col: usize) -> String {
+    let before: String = line.chars().take(scalar_col).collect();
+    let start = before
+        .char_indices()
+        .rfind(|(_, ch)| !is_path_char(*ch))
+        .map_or(0, |(byte, ch)| byte + ch.len_utf8());
+    before[start..].to_string()
+}
+
+pub(crate) fn complete_paths<'a>(
+    paths: impl IntoIterator<Item = &'a str>,
+    prefix: &str,
+    max_candidates: usize,
+) -> Vec<String> {
+    if prefix.is_empty() || max_candidates == 0 {
+        return Vec::new();
+    }
+    let mut candidates = BTreeSet::new();
+    for path in paths
+        .into_iter()
+        .filter(|path| *path != prefix && path.starts_with(prefix))
+    {
+        candidates.insert(path.to_string());
+        if candidates.len() > max_candidates {
+            candidates.pop_last();
+        }
+    }
+    candidates.into_iter().collect()
+}
+
 pub(crate) fn is_word_char(ch: char) -> bool {
     ch == '_' || ch.is_alphanumeric()
+}
+
+pub(crate) fn is_path_char(ch: char) -> bool {
+    is_word_char(ch) || matches!(ch, '/' | '.' | '-')
 }
 
 #[cfg(test)]
@@ -72,5 +106,18 @@ mod tests {
         );
         assert!(complete_words(lines.iter().copied(), "", 8).is_empty());
         assert!(complete_words(lines.iter().copied(), "item", 0).is_empty());
+    }
+
+    #[test]
+    fn path_prefix_and_candidates_preserve_relative_components() {
+        assert_eq!(path_prefix_before_cursor("open src/ma later", 11), "src/ma");
+        assert_eq!(path_prefix_before_cursor("use ./docs/ph", 13), "./docs/ph");
+        let paths = ["src/main.rs", "src/map.rs", "src/lib.rs", "README.md"];
+
+        assert_eq!(
+            complete_paths(paths, "src/ma", 8),
+            ["src/main.rs", "src/map.rs"]
+        );
+        assert_eq!(complete_paths(paths, "src/", 1), ["src/lib.rs"]);
     }
 }

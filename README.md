@@ -71,6 +71,19 @@ line shows the active page number and byte range.
 `Ctrl+F` searches the whole file rather than only the loaded page; press Enter
 to run the search or Escape to cancel it.
 
+## Multiple Buffers
+
+Pass multiple files on the command line to open them in one editor session:
+
+```sh
+catomic notes.txt todo.txt server.log
+```
+
+Use `Alt+PageDown` and `Alt+PageUp` to move to the next and previous buffer.
+Each buffer keeps its own cursor, viewport, dirty state, file watcher, and paged
+file position. The status line shows `buffer N/M` when more than one is open.
+`Ctrl+S` saves the active buffer; `Ctrl+Q` warns if any open buffer is dirty.
+
 ## File Watching
 
 Catomic should notice when a clanker or another process edits the current file.

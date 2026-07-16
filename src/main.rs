@@ -19,11 +19,10 @@ mod tests;
 use std::env;
 
 fn main() {
-    // Very early CLI: just an optional filename for Phase 0.
-    // Real arg parsing (clap) comes later.
-    let file_arg = env::args().nth(1);
+    // Early CLI: positional filenames only. Real flag parsing can come later.
+    let file_args: Vec<String> = env::args().skip(1).collect();
 
-    if let Err(e) = app::run(file_arg.as_deref()) {
+    if let Err(e) = app::run(&file_args) {
         eprintln!("catomic: {e}");
         std::process::exit(1);
     }

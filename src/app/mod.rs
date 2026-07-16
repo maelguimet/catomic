@@ -292,9 +292,9 @@ impl App {
 }
 
 /// Public entry called from main.rs.
-pub fn run(initial_file: Option<&str>) -> io::Result<()> {
+pub fn run(initial_files: &[String]) -> io::Result<()> {
     let big_files = crate::config::big_files::load()?;
-    let mut app = App::new_with_big_file_config(initial_file, big_files)?;
+    let mut app = App::new_with_paths_and_big_file_config(initial_files, big_files)?;
     app.run()
 }
 

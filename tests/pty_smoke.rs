@@ -9,7 +9,7 @@
 //!   large-file/perf scenarios.
 //! Invariants: tests use temporary files, time out and kill the child on hangs,
 //!   and leave Plain startup behavior unchanged.
-//! Phase: 2-br row-oriented redraw PTY acceptance.
+//! Phase: 2-bs multiple-buffer CLI/navigation PTY acceptance.
 
 use std::error::Error;
 use std::fs;
@@ -55,6 +55,10 @@ struct PtyEditor {
 
 impl PtyEditor {
     fn spawn(path: &PathBuf) -> TestResult<Self> {
+        Self::spawn_paths(&[path])
+    }
+
+    fn spawn_paths(paths: &[&PathBuf]) -> TestResult<Self> {
         let pty_system = native_pty_system();
         let pair = pty_system.openpty(PtySize {
             rows: 24,
@@ -64,7 +68,9 @@ impl PtyEditor {
         })?;
 
         let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
-        cmd.arg(path);
+        for path in paths {
+            cmd.arg(path);
+        }
         let child = pair.slave.spawn_command(cmd)?;
         drop(pair.slave);
 
@@ -221,6 +227,28 @@ fn pty_ctrl_f_prompt_finds_content_and_quits() -> TestResult {
     editor.wait_for_initial_render()?;
     editor.send_keys(b"\x06target\r")?;
     editor.wait_for_output("Ctrl+F result", "Found 'target'.")?;
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+
+    Ok(())
+}
+
+#[test]
+fn pty_multiple_cli_files_switch_to_next_buffer() -> TestResult {
+    let first = TempPath::new("buffers_first");
+    let second = TempPath::new("buffers_second");
+    fs::write(&first.path, "first buffer content")?;
+    fs::write(&second.path, "second buffer content")?;
+    let mut editor = PtyEditor::spawn_paths(&[&first.path, &second.path])?;
+
+    editor.wait_for_initial_render()?;
+    editor.wait_for_output("first CLI file", "first buffer content")?;
+    editor.wait_for_output("initial buffer position", "buffer 1/2")?;
+
+    // Xterm-compatible Alt+PageDown (CSI PageDown with modifier 3).
+    editor.send_keys(b"\x1b[6;3~")?;
+    editor.wait_for_output("second CLI file", "second buffer content")?;
+    editor.wait_for_output("next buffer position", "buffer 2/2")?;
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
 

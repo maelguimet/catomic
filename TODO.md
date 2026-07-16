@@ -741,7 +741,7 @@ Update this file as decisions are made or phases complete. Add concrete issues o
   - Keys: Ctrl+Z (undo), Ctrl+Y / Ctrl+Shift+Z (redo) wired (and precedence fixed).
   - Undo tests (insert/delete/newline/join/multibyte/no-op + reuse + clear-redo).
   - Added golden undo-across-save test (actual fs write + buffer undo + disk unchanged assertion).
-- PTY harness now includes root integration smokes (`tests/pty_smoke.rs`) that drive the real binary through save/undo/save and external-edit confirmation/reload flows, followed by clean quit; broader terminal coverage remains intentionally narrow.
+- PTY harness now includes root integration smokes (`tests/pty_smoke.rs`) that drive the real binary through save/undo/save, external-edit confirmation/reload, Ctrl+F, and multiple-file buffer switching flows, followed by clean quit; broader terminal coverage remains intentionally narrow.
 - No LLM/Project in Plain.
 - Phase 2-a (foundation) complete:
   - atomic_write_string helper: same-dir temp, create_new, full write+flush+sync_all, rename, best-effort parent dir fsync on Unix; temp cleanup on error.
@@ -772,7 +772,7 @@ Key unresolved limitations (still current post 2-br):
 
 Next intended Phase 2B steps (post 2-br):
 - Reconcile the original Phase 2 auto-reload/editable-Huge requirements with the later accepted confirmation/read-only-paging policy before declaring Phase 2 complete.
-- After that policy decision, take the remaining non-conflicting Phase 2 product gap narrowly: simple multiple-buffer foundations before any Phase 3 comfort expansion.
+- Simple multiple-buffer foundations are complete: every positional CLI path opens in argument order; Alt+PageDown/PageUp switches a state-preserving ring; the status shows the active position; and quit checks dirty inactive buffers. Unit and real PTY coverage exercise the path.
 - The 2026-07-07 phase split is recorded; editable Small/Large PieceTable opens still fully materialize content. Huge/Extreme paged opens scan only the active configured line page and remain read-only; whole-file search streams only after explicit Ctrl+F invocation.
 - Keep manual large-file tests ignored; do not add or enable default 10/100 MiB or 1 GiB tests.
 - Do not enforce thresholds yet; budgets remain advisory and must not become pass/fail gates in this or the immediate next pass.

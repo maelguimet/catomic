@@ -43,6 +43,10 @@ impl SearchUiState {
     }
 }
 
+pub(super) fn is_active(app: &super::App) -> bool {
+    app.search.prompt.is_some() || app.search.running.is_some()
+}
+
 pub(crate) fn handle_active_key(
     app: &mut super::App,
     out: &mut dyn Write,

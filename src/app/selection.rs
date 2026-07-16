@@ -2,7 +2,7 @@
 //! Owns: Shift extension, select-all, process-local clipboard, and OSC 52 export.
 //! Must not: implement buffer storage, terminal event polling, mouse decoding, or network.
 //! Invariants: selections are half-open scalar ranges; replacement is one Buffer edit.
-//! Phase: 3-d keyboard selection and clipboard interaction.
+//! Phase: 3-d/3-e keyboard and mouse selection interaction.
 
 use std::io::{self, Write};
 
@@ -13,9 +13,14 @@ use crate::editor::selection::Selection;
 
 const OSC52_MAX_BYTES: usize = 100 * 1024;
 
+mod mouse;
+pub(crate) use mouse::handle_mouse;
+
 #[derive(Default)]
 pub(crate) struct SelectionUiState {
     range: Option<Selection>,
+    drag_anchor: Option<Cursor>,
+    last_click: Option<(Cursor, std::time::Instant)>,
 }
 
 impl SelectionUiState {
@@ -25,6 +30,8 @@ impl SelectionUiState {
 
     pub(crate) fn clear(&mut self) {
         self.range = None;
+        self.drag_anchor = None;
+        self.last_click = None;
     }
 }
 

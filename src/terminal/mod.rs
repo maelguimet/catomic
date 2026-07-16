@@ -1,9 +1,8 @@
-//! Terminal handling: raw mode, alternate screen, input, render, screen model.
-//!
-//! Philosophy (from TODO):
-//! - Use crossterm directly.
-//! - Keep rendering dumb and predictable at first.
-//! - Only introduce ratatui or similar much later for optional widgets.
+//! Purpose: own raw mode, alternate screen, bracketed paste, and mouse capture lifetime.
+//! Owns: terminal setup/teardown guards and panic-safe restoration.
+//! Must not: interpret editor commands, mutate App/Buffer state, render content, or network.
+//! Invariants: every enabled terminal mode has a best-effort inverse on all exit paths.
+//! Phase: 3-e mouse capture over the established terminal lifecycle.
 
 pub mod input;
 pub mod render;
@@ -21,7 +20,8 @@ pub fn setup<W: Write>(w: &mut W) -> io::Result<()> {
     execute!(
         w,
         terminal::EnterAlternateScreen,
-        event::EnableBracketedPaste
+        event::EnableBracketedPaste,
+        event::EnableMouseCapture
     )?;
     terminal::enable_raw_mode()?;
     Ok(())
@@ -35,6 +35,7 @@ pub fn teardown<W: Write>(w: &mut W) -> io::Result<()> {
     let _ = terminal::disable_raw_mode();
     let _ = execute!(
         w,
+        event::DisableMouseCapture,
         event::DisableBracketedPaste,
         terminal::LeaveAlternateScreen
     );

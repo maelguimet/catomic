@@ -40,6 +40,10 @@ pub(crate) fn open_command_prompt(app: &mut super::App, out: &mut dyn Write) -> 
     open_prompt(app, out, PromptKind::Command)
 }
 
+pub(super) fn is_active(app: &super::App) -> bool {
+    app.command_prompt.active.is_some() || app.command_prompt.running.is_some()
+}
+
 fn open_prompt(app: &mut super::App, out: &mut dyn Write, kind: PromptKind) -> io::Result<()> {
     cancel_running(&mut app.command_prompt);
     app.selection.clear();

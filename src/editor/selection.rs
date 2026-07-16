@@ -30,6 +30,33 @@ impl Selection {
     }
 }
 
+pub(crate) fn word_bounds(text: &str, col: usize) -> (usize, usize) {
+    let chars: Vec<char> = text.chars().collect();
+    if col >= chars.len() {
+        return (chars.len(), chars.len());
+    }
+    let class = char_class(chars[col]);
+    let mut start = col;
+    let mut end = col + 1;
+    while start > 0 && char_class(chars[start - 1]) == class {
+        start -= 1;
+    }
+    while end < chars.len() && char_class(chars[end]) == class {
+        end += 1;
+    }
+    (start, end)
+}
+
+fn char_class(ch: char) -> u8 {
+    if ch.is_alphanumeric() || ch == '_' {
+        0
+    } else if ch.is_whitespace() {
+        1
+    } else {
+        2
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -40,5 +67,12 @@ mod tests {
         let end = Cursor { row: 3, col: 4 };
         assert_eq!(Selection::new(start, end).ordered(), (start, end));
         assert_eq!(Selection::new(end, start).ordered(), (start, end));
+    }
+
+    #[test]
+    fn word_bounds_expand_unicode_words_and_punctuation_runs() {
+        assert_eq!(word_bounds("go α猫_2!! now", 4), (3, 7));
+        assert_eq!(word_bounds("go α猫_2!! now", 7), (7, 9));
+        assert_eq!(word_bounds("go α猫_2!! now", 99), (13, 13));
     }
 }

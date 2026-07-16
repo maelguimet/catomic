@@ -36,6 +36,8 @@ buffer/page. `Ctrl+C`, `Ctrl+X`, and `Ctrl+V` copy, cut, and paste through an
 always-available internal clipboard; copy also sends OSC 52 to supporting
 terminals. Bracketed terminal paste is inserted as one undoable edit. Terminal
 emulators may intercept `Ctrl+Shift+C`/`Ctrl+Shift+V` before Catomic sees them.
+Mouse clicks move the cursor, left-button drags select text, and a double click
+selects the word or punctuation run under the pointer.
 
 ## Terminal Behavior
 

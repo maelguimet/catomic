@@ -25,10 +25,12 @@ recorded in [`../phase-2-acceptance.md`](../phase-2-acceptance.md).
   multiline scalar-coordinate selections. Ctrl+C/X/V use an internal clipboard,
   copy exports OSC 52 when bounded, and bracketed paste plus selection replacement
   are each recorded as one piece-level undo transaction.
+- **3-e mouse selection**: terminal mouse capture maps clicks through both
+  viewport offsets, left-button drags create multiline selections, status-row
+  clicks are ignored, and bounded double clicks expand Unicode word or
+  punctuation runs.
 
 ## Remaining Phase 3 Work
 
-- Word selection expansion and mouse click/drag; keyboard selection and
-  selection cut/copy/paste are complete.
 - Phase 3 acceptance definition, medium-file search measurement, and manual UX
   checklist evidence.

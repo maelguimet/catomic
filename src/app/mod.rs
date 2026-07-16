@@ -223,6 +223,9 @@ impl App {
                     Event::Paste(text) => {
                         input::handle_paste(self, &mut stdout, &text)?;
                     }
+                    Event::Mouse(mouse) => {
+                        selection::handle_mouse(self, &mut stdout, mouse)?;
+                    }
                     Event::Resize(w, h) => {
                         // Update screen size, reveal cursor (vert/horiz if implemented this pass),
                         // render immediately. No debounce/smart viewport.

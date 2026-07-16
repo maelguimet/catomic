@@ -125,6 +125,7 @@ fn execute_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> 
         (Some("quit" | "q"), None, None) => super::input::handle_quit(app, out),
         (Some("project" | "code"), None, None) => super::project_mode::switch_to_project(app, out),
         (Some("plain" | "text"), None, None) => super::project_mode::switch_to_plain(app, out),
+        (Some("lint"), None, None) => super::lint::start(app, out),
         _ => {
             app.message = Some(format!("Unknown command: {command}"));
             app.render(out)

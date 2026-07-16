@@ -305,6 +305,14 @@ PERF sample: label=App::new 100mib-line bytes=104857601 elapsed_ms=158
 PERF sample: label=render 100mib-line bytes=104857601 elapsed_ms=0
 ```
 
+Phase 2-bp removed per-row descriptor metadata probes inside one fallible
+visible-window render. A deterministic test verifies a four-row window now
+performs a constant pair of probes (before and after reads) rather than four.
+The existing ignored one-line 100 MiB
+smoke remained render-below-resolution on 2026-07-16 (`elapsed_ms=0`); its
+`App::new` sample was 1200 ms because one configured logical-line page still
+spans that entire fixture. These remain observations, not timing gates.
+
 An ignored sparse exact-1-GiB Huge smoke now validates the limited read-only
 open + simple navigation/render path without writing a dense fixture:
 ```

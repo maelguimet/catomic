@@ -9,14 +9,14 @@
 //!   cursor row/col stays clamped.
 //! Phase: 2-bl configurable paged Huge-file foundation.
 
-use std::borrow::Cow;
 use std::fs::File;
-use std::io::{self, Write};
+use std::io;
 use std::os::unix::fs::FileExt;
 use std::path::Path;
 
-use crate::buffer::{Buffer, Cursor, DescriptorPosition, DescriptorSource, LineView, PageInfo};
+use crate::buffer::Cursor;
 
+mod buffer_impl;
 mod page_scan;
 mod paging;
 pub(crate) mod scan;
@@ -30,6 +30,8 @@ pub(crate) const LINE_CHECKPOINT_INTERVAL_CHARS: usize = 16 * 1024;
 pub(crate) struct LargeFileBuffer {
     file: File,
     fd_snapshot: FileMetadataSnapshot,
+    #[cfg(test)]
+    metadata_check_count: std::cell::Cell<usize>,
     line_starts: Vec<usize>,
     line_char_counts: Vec<usize>,
     line_is_ascii: Vec<bool>,
@@ -80,6 +82,8 @@ impl LargeFileBuffer {
         Ok(Self {
             file,
             fd_snapshot,
+            #[cfg(test)]
+            metadata_check_count: std::cell::Cell::new(0),
             line_starts: scan.line_starts,
             line_char_counts: scan.line_char_counts,
             line_is_ascii: scan.line_is_ascii,
@@ -111,6 +115,9 @@ impl LargeFileBuffer {
     }
 
     fn ensure_fd_unchanged(&self) -> io::Result<()> {
+        #[cfg(test)]
+        self.metadata_check_count
+            .set(self.metadata_check_count.get() + 1);
         if FileMetadataSnapshot::capture(&self.file)? == self.fd_snapshot {
             Ok(())
         } else {
@@ -119,6 +126,11 @@ impl LargeFileBuffer {
                 "large file changed while open",
             ))
         }
+    }
+
+    #[cfg(test)]
+    fn metadata_check_count(&self) -> usize {
+        self.metadata_check_count.get()
     }
 
     fn read_range_bytes_unchecked(&self, start: usize, end: usize) -> io::Result<Vec<u8>> {
@@ -149,6 +161,15 @@ impl LargeFileBuffer {
 
     fn read_range_to_string(&self, start: usize, end: usize) -> io::Result<String> {
         let bytes = self.read_range_bytes(start, end)?;
+        Self::bytes_to_string(bytes)
+    }
+
+    fn read_range_to_string_unchecked(&self, start: usize, end: usize) -> io::Result<String> {
+        let bytes = self.read_range_bytes_unchecked(start, end)?;
+        Self::bytes_to_string(bytes)
+    }
+
+    fn bytes_to_string(bytes: Vec<u8>) -> io::Result<String> {
         String::from_utf8(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     }
 
@@ -165,6 +186,16 @@ impl LargeFileBuffer {
         start_col: usize,
         width: usize,
     ) -> io::Result<String> {
+        self.ensure_fd_unchanged()?;
+        self.line_window_to_string_unchecked(row, start_col, width)
+    }
+
+    fn line_window_to_string_unchecked(
+        &self,
+        row: usize,
+        start_col: usize,
+        width: usize,
+    ) -> io::Result<String> {
         if row >= self.line_starts.len() || width == 0 {
             return Ok(String::new());
         }
@@ -173,12 +204,12 @@ impl LargeFileBuffer {
             return Ok(String::new());
         }
         if self.line_is_ascii[row] {
-            return self.read_ascii_line_window(row, start_col, width);
+            return self.read_ascii_line_window_unchecked(row, start_col, width);
         }
-        self.read_line_window(row, start_col, width)
+        self.read_line_window_unchecked(row, start_col, width)
     }
 
-    fn read_ascii_line_window(
+    fn read_ascii_line_window_unchecked(
         &self,
         row: usize,
         start_col: usize,
@@ -186,11 +217,15 @@ impl LargeFileBuffer {
     ) -> io::Result<String> {
         let start = self.line_start_byte(row) + start_col;
         let end = start.saturating_add(width).min(self.line_end_byte(row));
-        self.read_range_to_string(start, end)
+        self.read_range_to_string_unchecked(start, end)
     }
 
-    fn read_line_window(&self, row: usize, start_col: usize, width: usize) -> io::Result<String> {
-        self.ensure_fd_unchanged()?;
+    fn read_line_window_unchecked(
+        &self,
+        row: usize,
+        start_col: usize,
+        width: usize,
+    ) -> io::Result<String> {
         let checkpoint = self.line_checkpoint_at_or_before(row, start_col);
         let mut pos = checkpoint
             .map(|checkpoint| checkpoint.byte_offset)
@@ -271,209 +306,6 @@ impl LargeFileBuffer {
         } else {
             Some(checkpoints[idx - 1])
         }
-    }
-}
-
-impl Buffer for LargeFileBuffer {
-    fn line_count(&self) -> usize {
-        self.line_starts.len().max(1)
-    }
-
-    fn line(&self, row: usize) -> Option<Cow<'_, str>> {
-        if row >= self.line_starts.len() {
-            return None;
-        }
-        Some(Cow::Owned(self.line_to_string(row).unwrap_or_default()))
-    }
-
-    fn visible_lines(&self, start: usize, height: usize) -> Vec<LineView> {
-        let end = (start + height).min(self.line_count());
-        (start..end)
-            .map(|row| LineView {
-                content: self.line_to_string(row).unwrap_or_default(),
-            })
-            .collect()
-    }
-
-    fn visible_lines_window(
-        &self,
-        start: usize,
-        height: usize,
-        start_col: usize,
-        width: usize,
-    ) -> Vec<LineView> {
-        let end = (start + height).min(self.line_count());
-        (start..end)
-            .map(|row| LineView {
-                content: self
-                    .line_window_to_string(row, start_col, width)
-                    .unwrap_or_default(),
-            })
-            .collect()
-    }
-
-    fn try_visible_lines_window(
-        &self,
-        start: usize,
-        height: usize,
-        start_col: usize,
-        width: usize,
-    ) -> io::Result<Vec<LineView>> {
-        let end = (start + height).min(self.line_count());
-        (start..end)
-            .map(|row| {
-                self.line_window_to_string(row, start_col, width)
-                    .map(|content| LineView { content })
-            })
-            .collect()
-    }
-
-    fn line_char_count(&self, row: usize) -> Option<usize> {
-        self.line_char_counts.get(row).copied()
-    }
-
-    fn cursor(&self) -> Cursor {
-        self.cursor
-    }
-
-    fn set_cursor(&mut self, cursor: Cursor) {
-        let row = cursor.row.min(self.line_count().saturating_sub(1));
-        let col = cursor
-            .col
-            .min(self.line_char_counts.get(row).copied().unwrap_or(0));
-        self.cursor = Cursor { row, col };
-    }
-
-    fn is_read_only(&self) -> bool {
-        true
-    }
-
-    fn page_info(&self) -> Option<PageInfo> {
-        if self.page_lines == usize::MAX {
-            return None;
-        }
-        Some(PageInfo {
-            page_number: self.page_number,
-            start_byte: self.page_start_byte as u64,
-            end_byte: self.page_end_byte as u64,
-            total_bytes: self.total_bytes as u64,
-            has_previous: self.page_start_byte > 0,
-            has_next: self.next_page_start.is_some(),
-        })
-    }
-
-    fn next_page(&mut self) -> io::Result<bool> {
-        let Some(start_byte) = self.next_page_start else {
-            return Ok(false);
-        };
-        let page = self.scan_page(start_byte)?;
-        self.page_number += 1;
-        self.apply_page_scan(page);
-        Ok(true)
-    }
-
-    fn previous_page(&mut self) -> io::Result<bool> {
-        if self.page_start_byte == 0 {
-            return Ok(false);
-        }
-        let start_byte = self.previous_page_start()?;
-        let page = self.scan_page(start_byte)?;
-        self.page_number = self.page_number.saturating_sub(1).max(1);
-        self.apply_page_scan(page);
-        Ok(true)
-    }
-
-    fn descriptor_source(&self) -> io::Result<Option<DescriptorSource>> {
-        self.clone_descriptor_source()
-    }
-
-    fn set_descriptor_position(&mut self, position: DescriptorPosition) -> io::Result<bool> {
-        self.apply_descriptor_position(position)
-    }
-
-    fn to_string(&self) -> String {
-        self.read_range_to_string(self.page_start_byte, self.page_end_byte)
-            .unwrap_or_default()
-    }
-
-    fn write_to(&self, out: &mut dyn Write) -> io::Result<()> {
-        self.ensure_fd_unchanged()?;
-        let mut offset = 0usize;
-        let mut chunk = vec![0u8; SCAN_CHUNK_BYTES];
-        while offset < self.total_bytes {
-            let end = offset.saturating_add(chunk.len()).min(self.total_bytes);
-            let len = end - offset;
-            let mut filled = 0usize;
-            while filled < len {
-                let read = self
-                    .file
-                    .read_at(&mut chunk[filled..len], (offset + filled) as u64)?;
-                if read == 0 {
-                    return Err(io::Error::new(
-                        io::ErrorKind::UnexpectedEof,
-                        "short read while streaming large file buffer",
-                    ));
-                }
-                filled += read;
-            }
-            out.write_all(&chunk[..len])?;
-            offset = end;
-        }
-        self.ensure_fd_unchanged()
-    }
-
-    fn lines(&self) -> Vec<String> {
-        (0..self.line_count())
-            .map(|row| self.line_to_string(row).unwrap_or_default())
-            .collect()
-    }
-
-    fn insert_char(&mut self, _ch: char) {}
-
-    fn insert_newline(&mut self) {}
-
-    fn delete_back(&mut self) {}
-
-    fn delete_forward(&mut self) {}
-
-    fn move_left(&mut self) {
-        if self.cursor.col > 0 {
-            self.cursor.col -= 1;
-        } else if self.cursor.row > 0 {
-            self.cursor.row -= 1;
-            self.cursor.col = self.line_char_counts[self.cursor.row];
-        }
-    }
-
-    fn move_right(&mut self) {
-        if self.cursor.col < self.line_char_counts[self.cursor.row] {
-            self.cursor.col += 1;
-        } else if self.cursor.row + 1 < self.line_count() {
-            self.cursor.row += 1;
-            self.cursor.col = 0;
-        }
-    }
-
-    fn move_up(&mut self) {
-        if self.cursor.row > 0 {
-            self.cursor.row -= 1;
-            self.cursor.col = self.cursor.col.min(self.line_char_counts[self.cursor.row]);
-        }
-    }
-
-    fn move_down(&mut self) {
-        if self.cursor.row + 1 < self.line_count() {
-            self.cursor.row += 1;
-            self.cursor.col = self.cursor.col.min(self.line_char_counts[self.cursor.row]);
-        }
-    }
-
-    fn undo(&mut self) {}
-
-    fn redo(&mut self) {}
-
-    fn edit_history_position(&self) -> u64 {
-        0
     }
 }
 

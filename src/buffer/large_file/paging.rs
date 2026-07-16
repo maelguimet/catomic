@@ -49,6 +49,8 @@ impl LargeFileBuffer {
         let mut buffer = Self {
             file,
             fd_snapshot,
+            #[cfg(test)]
+            metadata_check_count: std::cell::Cell::new(0),
             line_starts: Vec::new(),
             line_char_counts: Vec::new(),
             line_is_ascii: Vec::new(),

@@ -9,6 +9,7 @@
 #![cfg(test)]
 
 use super::*;
+use crate::buffer::Buffer;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -209,6 +210,29 @@ fn in_place_metadata_change_blocks_descriptor_reads() {
     assert_eq!(buffer.line(0).as_deref(), Some(""));
     assert_eq!(buffer.visible_lines_window(0, 1, 0, 8)[0].content, "");
     assert_eq!(buffer.to_string(), "");
+
+    cleanup(&path);
+}
+
+#[test]
+fn fallible_visible_window_checks_descriptor_before_and_after() {
+    let path = temp_path("single_window_check.txt");
+    cleanup(&path);
+    std::fs::write(&path, "first\nsecond\nthird\nfourth").unwrap();
+
+    let buffer = LargeFileBuffer::open_paged(&path, 4).unwrap();
+    let lines = buffer
+        .try_visible_lines_window(0, 4, 0, 80)
+        .expect("stable descriptor window");
+
+    assert_eq!(
+        lines
+            .iter()
+            .map(|line| line.content.as_str())
+            .collect::<Vec<_>>(),
+        vec!["first", "second", "third", "fourth"]
+    );
+    assert_eq!(buffer.metadata_check_count(), 2);
 
     cleanup(&path);
 }

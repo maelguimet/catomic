@@ -1,10 +1,11 @@
 //! Purpose: this file must finish confirmed repo LLM tasks without weakening drift checks.
-//! Owns: completed-task polling, source/repo rechecks, and guarded preview handoff.
+//! Owns: completed-task polling, source/path/repo rechecks, and guarded preview handoff.
 //! Must not: construct clients, apply edits, write files, or accept stale responses.
-//! Invariants: only an unchanged source and repository can reach the patch preview.
+//! Invariants: only an unchanged source identity and repository can reach patch preview.
 //! Phase: 6 (LLM Context Broker).
 
 use std::io::{self, Write};
+use std::path::Path;
 
 use crate::llm::broker::ContextBroker;
 use crate::llm::repo_task::RepoLlmTaskResult;
@@ -29,6 +30,7 @@ pub(super) fn poll_running(app: &mut super::super::App, out: &mut dyn Write) -> 
             output,
             broker,
             &state.source_snapshot,
+            &state.file_path,
             &state.relative_path,
         ),
         RepoLlmTaskResult::Cancelled => render_message(app, out, "Repo LLM request cancelled."),
@@ -44,6 +46,7 @@ fn finish_output(
     output: String,
     broker: ContextBroker,
     source_snapshot: &str,
+    file_path: &Path,
     expected_path: &str,
 ) -> io::Result<()> {
     if app.buffer.to_string() != source_snapshot {
@@ -51,6 +54,13 @@ fn finish_output(
             app,
             out,
             "Active buffer changed while repo model worked; response discarded.",
+        );
+    }
+    if app.file.path.as_deref() != Some(file_path) {
+        return render_message(
+            app,
+            out,
+            "Active file path changed while repo model worked; response discarded.",
         );
     }
     match broker.is_unchanged() {

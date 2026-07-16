@@ -4,6 +4,8 @@
 //! Invariants: Plain constructs no state; network starts only on Enter; repo drift blocks apply.
 //! Phase: 6 (LLM Context Broker).
 
+mod path_identity;
+
 use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpListener;

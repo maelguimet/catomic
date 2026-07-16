@@ -1,7 +1,7 @@
 //! Purpose: this file must cage Project-only repo-aware LLM commands end to end.
 //! Owns: async context preparation, explicit send confirmation, task polling, and cancellation.
 //! Must not: construct in Plain, block typing, apply output, write files, or bypass repo checks.
-//! Invariants: no client before Enter; source/repo drift refuses preview and confirmed apply.
+//! Invariants: no client before Enter; source/path/repo drift refuses preview and apply.
 //! Phase: 6 (LLM Context Broker).
 
 use std::io::{self, Write};
@@ -43,12 +43,14 @@ pub(crate) struct Pending {
     draft: RequestDraft,
     settings: LlmSettings,
     source_snapshot: String,
+    file_path: PathBuf,
     relative_path: String,
 }
 
 pub(crate) struct Running {
     task: RepoLlmTask,
     source_snapshot: String,
+    file_path: PathBuf,
     relative_path: String,
 }
 
@@ -95,6 +97,12 @@ fn finish_preparing(app: &mut super::App, prepared: PreparedRepoContext, state: 
         );
         return;
     }
+    if app.file.path.as_ref() != Some(&state.path) {
+        app.message = Some(
+            "Active file path changed while repo context was built; request cancelled.".to_string(),
+        );
+        return;
+    }
     let relative_path = match repo_relative_path(&prepared.broker.git.root, &state.path) {
         Ok(path) => path,
         Err(message) => {
@@ -116,6 +124,7 @@ fn finish_preparing(app: &mut super::App, prepared: PreparedRepoContext, state: 
         draft: state.draft,
         settings: state.settings,
         source_snapshot: state.source_snapshot,
+        file_path: state.path,
         relative_path,
     }));
 }
@@ -167,6 +176,11 @@ fn confirm(app: &mut super::App) {
             Some("Active buffer changed before confirmation; repo LLM cancelled.".to_string());
         return;
     }
+    if app.file.path.as_ref() != Some(&pending.file_path) {
+        app.message =
+            Some("Active file path changed before confirmation; repo LLM cancelled.".to_string());
+        return;
+    }
     match pending.prepared.broker.is_unchanged() {
         Ok(true) => {}
         Ok(false) => {
@@ -195,6 +209,7 @@ fn confirm(app: &mut super::App) {
             app.repo_llm_state = Some(RepoLlmState::Running(Running {
                 task,
                 source_snapshot: pending.source_snapshot,
+                file_path: pending.file_path,
                 relative_path: pending.relative_path,
             }));
         }

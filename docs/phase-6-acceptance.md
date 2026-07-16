@@ -18,7 +18,7 @@ is in decision 0008 and measurements are retained in `performance.md`.
 | Read-only explanation | Instructions beginning with an explicit `explain` verb select a plain-text answer view with no apply action or edit semantics. |
 | Git safety snapshot | Repo commands capture root, HEAD, current branch, detected base branch, porcelain status, diff stat/name-only, and fingerprints that distinguish already-dirty tracked/staged states. Git runs read-only with optional locks disabled and bounded output. |
 | Context broker | Explicit preparation discovers at most 4,096 files/65,536 entries/depth 64. The 128 KiB consumable budget covers initial and retrieved context; ranged reads cap at 64 KiB, files at 1 MiB, grep at 4 MiB/64 matches, and broker dialogue at eight requests. Paths must be mapped, normalized, in-repo regular files; symlinks and escapes fail closed. |
-| Drift refusal | Active-buffer text/path identity and Git/relevant-file state are checked before confirmed send, after the response, and again before apply. Unit integration covers pre-send path drift without connecting, post-response path drift, and a tracked-file change after preview. |
+| Drift refusal | Current-buffer and repo requests pin active-buffer text/path identity while Git/relevant-file state is checked before confirmed send, after the response, and again before apply. Unit integration covers repo-preparation path drift, pre-send path drift without connecting, post-response path drift, and a tracked-file change after preview. |
 | Real terminal flow | The 80x24 PTY opens `:meow`, observes the local model/endpoint and explicit Enter/Escape prompt, cancels before send, quits cleanly, and verifies the source file is unchanged. |
 | No live services | All HTTP tests bind deterministic loopback fake servers. No test contacts a live model, public endpoint, or user configuration. |
 
@@ -32,12 +32,13 @@ cancellable and polled without blocking typing.
 
 ## Verification commands
 
-- `cargo test --all-targets`: 468 passed, 12 intentional manual tests ignored;
+- `cargo test --all-targets`: 471 passed, 12 intentional manual tests ignored;
   7 PTY smokes passed.
 - `cargo test app::llm_request`: 11 passed, including exact-path success,
   wrong-target refusal, no-connect pre-send drift, and post-response drift.
-- `cargo test app::repo_llm`: 4 passed, including no-connect confirmation,
-  wrong-target refusal, and repo drift refusal.
+- `cargo test app::repo_llm`: 7 passed, including no-connect confirmation,
+  preparation/confirmation/response path drift, wrong-target refusal, and repo
+  drift refusal.
 - `cargo test app::llm_preview`: 7 passed, including exact one-step undo and
   stale-source/path refusal.
 - `cargo test --test pty_smoke`: 7 passed.

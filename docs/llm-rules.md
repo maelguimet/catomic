@@ -40,6 +40,8 @@ and per-file diff. No command writes or runs a process other than read-only Git.
 - All patches go through `llm/patch.rs` and the read-only preview path.
 - Current-buffer requests pin the active path through confirmation and response;
   path drift discards the request/output and patch headers must match that path.
+- Repo requests pin the active path through context preparation, confirmation,
+  response, and final preview apply; path drift cancels or discards fail closed.
 - Repo patch headers must name the exact active repo-relative file; patches for
   another file and rename-shaped patches fail before preview.
 - Tests use loopback fake HTTP only; never test against a live endpoint.

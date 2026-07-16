@@ -23,7 +23,7 @@ in `progress/phase-2-progress.md`; measurement history is in `performance.md`.
 
 ## Verification commands
 
-- `cargo test`: 313 passed, 9 intentional manual tests ignored.
+- `cargo test`: 314 passed, 9 intentional manual tests ignored.
 - `cargo test --test pty_smoke`: 4 passed.
 - `cargo test tests::perf::manual:: -- --ignored --nocapture`: 5 passed.
 - `cargo test tests::perf::manual_line:: -- --ignored --nocapture`: 2 passed.

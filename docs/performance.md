@@ -426,6 +426,25 @@ default-suite timing assertions.
 Future measurements should use the same fixture name and stable `PERF sample`
 label before comparing results.
 
+### Phase 5 Project tooling acceptance (2026-07-16, post 5-e)
+
+The ignored release fixture creates 4,096 files before timing, performs one
+explicit bounded Project discovery, then requests cached path candidates 100
+times. A warm release invocation measured:
+
+```text
+PERF sample: label=discover bounded 4096-file project bytes=4096 elapsed_ms=2
+PERF sample: label=complete cached paths 100x over 4096 files bytes=4096 elapsed_ms=0
+Maximum resident set size: 33480 KiB
+```
+
+The zero-millisecond completion sample means the complete 100-run loop was
+below the timer's one-millisecond resolution. Reference budgets on this machine
+are under 50 ms for discovery, under 10 ms for 100 cached completions, and under
+64 MiB peak RSS for the complete warm release test process. Fixture creation is
+outside the timed samples. These are recorded acceptance budgets, not default
+test timing assertions.
+
 ### Candidate Phase 2B budgets — not enforced yet
 
 These are starting-point advisory targets derived from the 2026-06-24 recorded baselines above, with 2026-07-07 follow-up splits showing the current LF-only, owned App open, newline-search, and owned file-read-helper behavior. They are **not** wired into tests as assertions. They are local-machine dependent and must be revisited with more samples on representative hardware before any enforcement.

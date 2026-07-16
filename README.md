@@ -154,16 +154,28 @@ Possible modes:
 
 ## Linter Support
 
-Linter support should be command-based.
+Linter support is command-based and Project-only. Enter Project mode with
+`:project` (or `:code`), then use `:lint` on a saved file. Configuration is
+loaded lazily from `$XDG_CONFIG_HOME/catomic/config.toml` or
+`~/.config/catomic/config.toml`:
 
 Example config idea:
 
 ```ini
 [linters]
-python = "ruff check {file}"
-javascript = "eslint {file}"
-markdown = "markdownlint {file}"
+py = "ruff check {file}"
+js = "eslint {file}"
+md = "markdownlint {file}"
 ```
+
+Each key is a file extension and every command must contain `{file}`. Commands
+run asynchronously with bounded output and can be cancelled with Escape.
+`:diagnostics` (or `:dlist`) opens the result list; `:dnext` and `:dprev` jump
+between diagnostics, opening already-discovered files when needed.
+
+Project file discovery is also explicit: `:files` performs one bounded,
+cancellable scan rooted at the active file's directory and opens a read-only
+picker. Nothing scans while Catomic is in Plain mode.
 
 Rules:
 
@@ -175,12 +187,16 @@ Rules:
 
 ## Autocomplete
 
-Autocomplete should start simple:
+Press `Ctrl+Space` or Tab to request completion, Tab/Shift+Tab to cycle, Enter
+to accept, and Escape to dismiss. Plain mode derives candidates only from a
+bounded window of the current buffer. Project mode can additionally complete
+path-like prefixes from the most recent explicit `:files` result; it never
+starts a scan merely because completion was requested.
+
+Current completion sources:
 
 - Words from current buffer
-- File paths
-- Language keywords
-- Snippets
+- Cached Project file paths
 
 Later:
 
@@ -188,7 +204,8 @@ Later:
 - Local model completion
 - Remote API completion
 
-Tab accepts. Escape dismisses. No aggressive ghost-text demon unless explicitly enabled.
+Acceptance is one undoable replacement. No aggressive ghost-text demon is
+enabled.
 
 ## LLM Support
 

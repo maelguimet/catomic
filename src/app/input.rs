@@ -10,7 +10,7 @@ use std::io::{self, Write};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::file_state::refresh_dirty;
-use super::{buffers, command_prompt, paging, reload, save, search, selection, view};
+use super::{buffers, command_prompt, completion, paging, reload, save, search, selection, view};
 
 /// Common post-content-mutation cleanup used by insert, delete, newline, undo, redo paths.
 /// Centralizes the exact sequence that must run after any buffer-mutating key:
@@ -19,6 +19,7 @@ use super::{buffers, command_prompt, paging, reload, save, search, selection, vi
 /// Behavior must remain identical to the prior inlined blocks (including no-op undo/redo
 /// and boundary backspace/delete still clearing pending state).
 pub(super) fn finish_content_edit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    completion::cancel(app);
     app.selection.clear();
     refresh_dirty(&mut app.file, &*app.buffer);
     if app.buffer.is_read_only() {
@@ -51,6 +52,9 @@ pub(crate) fn handle_key_with(
         return Ok(());
     }
     if command_prompt::handle_active_key(app, out, key)? {
+        return Ok(());
+    }
+    if completion::handle_key(app, out, key)? {
         return Ok(());
     }
     if view::handle_key(app, out, key)? {
@@ -323,6 +327,7 @@ pub(crate) fn handle_paste(
     out: &mut dyn Write,
     text: &str,
 ) -> io::Result<()> {
+    completion::cancel(app);
     if view::handle_paste(app, out)? {
         return Ok(());
     }

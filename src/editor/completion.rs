@@ -37,7 +37,7 @@ pub(crate) fn complete_words<'a>(
     candidates.into_iter().collect()
 }
 
-fn is_word_char(ch: char) -> bool {
+pub(crate) fn is_word_char(ch: char) -> bool {
     ch == '_' || ch.is_alphanumeric()
 }
 

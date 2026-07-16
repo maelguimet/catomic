@@ -28,6 +28,7 @@ use file_state::external_file_status;
 
 mod buffers;
 mod command_prompt;
+mod completion;
 mod open;
 mod paging;
 mod reload;
@@ -84,6 +85,8 @@ pub struct App {
     pub(crate) search: search::SearchUiState,
     /// Global transient goto/command prompt. It constructs no background service.
     pub(crate) command_prompt: command_prompt::CommandPromptState,
+    /// Plain-safe local completion UI, constructed only when its capability is enabled.
+    pub(crate) completion: Option<completion::CompletionUiState>,
     /// Per-buffer half-open selection state.
     pub(crate) selection: selection::SelectionUiState,
     /// Always-available process-local clipboard shared across open buffers.
@@ -119,6 +122,9 @@ impl App {
     ) -> io::Result<Self> {
         let mode = Mode::Plain; // Start in Plain by default. User can switch later.
         let caps = Capabilities::from_mode(mode);
+        let completion = caps
+            .local_completion
+            .then(completion::CompletionUiState::default);
 
         // Size/guardrail + initial snapshot/open plan extracted (see open.rs).
         // Single capture_file_snapshot in prepare supplies both size decision
@@ -165,6 +171,7 @@ impl App {
             pending_reload: None,
             search: search::SearchUiState::default(),
             command_prompt: command_prompt::CommandPromptState::default(),
+            completion,
             selection: selection::SelectionUiState::default(),
             clipboard: String::new(),
             view: view::ViewOptions::default(),

@@ -142,6 +142,7 @@ fn apply_modified_reload(app: &mut super::App, path: &Path, reloaded: ReloadedMo
     let reload_message = reload_modified_success_message(reloaded.size_bytes, reloaded.size_tier);
     super::search::cancel_running_search(app);
     super::command_prompt::cancel_running_goto(app);
+    super::completion::cancel(app);
     super::view::cancel_preview(app);
     app.selection.clear();
     app.buffer = reloaded.buffer;
@@ -169,6 +170,7 @@ fn apply_modified_reload(app: &mut super::App, path: &Path, reloaded: ReloadedMo
 fn apply_deleted_reload(app: &mut super::App) {
     super::search::cancel_running_search(app);
     super::command_prompt::cancel_running_goto(app);
+    super::completion::cancel(app);
     super::view::cancel_preview(app);
     app.selection.clear();
     app.buffer = Box::new(buffer::PieceTable::new());

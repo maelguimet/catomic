@@ -12,7 +12,7 @@ use crate::buffer::Buffer;
 use crate::config::big_files::BigFileConfig;
 use crate::file::watcher::FileWatcher;
 
-use super::{command_prompt, reload, save, search, selection, App, FileState};
+use super::{command_prompt, reload, save, search, selection, view, App, FileState};
 
 pub(crate) struct BufferSlot {
     buffer: Box<dyn Buffer>,
@@ -23,6 +23,7 @@ pub(crate) struct BufferSlot {
     pending_reload: Option<reload::PendingReload>,
     search: search::SearchUiState,
     selection: selection::SelectionUiState,
+    view: view::ViewOptions,
     scroll_top: usize,
     scroll_left: usize,
 }
@@ -44,6 +45,7 @@ impl BufferSlot {
             pending_reload: app.pending_reload,
             search: app.search,
             selection: app.selection,
+            view: app.view,
             scroll_top: app.screen.scroll_top,
             scroll_left: app.screen.scroll_left,
         }
@@ -61,6 +63,7 @@ impl BufferSlot {
         mem::swap(&mut self.pending_reload, &mut app.pending_reload);
         mem::swap(&mut self.search, &mut app.search);
         mem::swap(&mut self.selection, &mut app.selection);
+        mem::swap(&mut self.view, &mut app.view);
         mem::swap(&mut self.scroll_top, &mut app.screen.scroll_top);
         mem::swap(&mut self.scroll_left, &mut app.screen.scroll_left);
     }
@@ -201,6 +204,8 @@ mod tests {
         app.buffer.insert_char('!');
         app.screen.scroll_top = 7;
         app.screen.scroll_left = 3;
+        app.view.line_numbers = true;
+        app.view.whitespace = true;
         app.file.dirty = true;
 
         app.switch_buffer(BufferDirection::Next);
@@ -208,6 +213,7 @@ mod tests {
         assert!(!app.file.dirty);
         assert_eq!(app.screen.scroll_top, 0);
         assert_eq!(app.screen.scroll_left, 0);
+        assert_eq!(app.view, view::ViewOptions::default());
 
         app.screen.scroll_top = 11;
         app.switch_buffer(BufferDirection::Previous);
@@ -219,6 +225,8 @@ mod tests {
         assert!(app.file.dirty);
         assert_eq!(app.screen.scroll_top, 7);
         assert_eq!(app.screen.scroll_left, 3);
+        assert!(app.view.line_numbers);
+        assert!(app.view.whitespace);
 
         app.switch_buffer(BufferDirection::Next);
         assert_eq!(app.screen.scroll_top, 11);

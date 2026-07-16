@@ -32,7 +32,7 @@ pub(super) fn write_content_line<W: Write + ?Sized>(
             .find(|span| start >= span.start && start < span.end)
             .map(|span| span.style);
         let reverse = selected.is_some_and(|(from, to)| start >= from && start < to);
-        write_segment(out, &chars[start..end], style, reverse)?;
+        write_segment(out, &chars[start..end], style, reverse, options.whitespace)?;
     }
     Ok(())
 }
@@ -88,8 +88,16 @@ fn write_segment<W: Write + ?Sized>(
     chars: &[char],
     style: Option<SpanStyle>,
     reverse: bool,
+    whitespace: bool,
 ) -> io::Result<()> {
-    let text: String = chars.iter().collect();
+    let text: String = chars
+        .iter()
+        .map(|ch| match (whitespace, ch) {
+            (true, ' ') => '·',
+            (true, '\t') => '→',
+            _ => *ch,
+        })
+        .collect();
     let code = style.map(style_code);
     match (code, reverse) {
         (None, false) => write!(out, "{text}"),

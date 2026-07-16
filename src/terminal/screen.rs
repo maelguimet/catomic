@@ -82,15 +82,18 @@ impl Screen {
     /// char when it is past the right edge.
     /// Uses saturating arithmetic; never panics.
     pub fn reveal_col(&mut self, col: usize) {
-        let vw = self.visible_width();
-        if vw == 0 {
+        self.reveal_col_with_width(col, self.visible_width());
+    }
+
+    pub(crate) fn reveal_col_with_width(&mut self, col: usize, width: usize) {
+        if width == 0 {
             self.scroll_left = 0;
             return;
         }
         if col < self.scroll_left {
             self.scroll_left = col;
-        } else if col >= self.scroll_left.saturating_add(vw) {
-            self.scroll_left = col.saturating_add(1).saturating_sub(vw);
+        } else if col >= self.scroll_left.saturating_add(width) {
+            self.scroll_left = col.saturating_add(1).saturating_sub(width);
         }
         // else: col already inside [scroll_left, scroll_left + vw), unchanged
     }

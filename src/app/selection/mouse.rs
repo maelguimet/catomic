@@ -119,10 +119,12 @@ fn map_mouse_cursor(
         .scroll_top
         .saturating_add(visible_row)
         .min(app.buffer.line_count().saturating_sub(1));
+    let content_column =
+        (event.column as usize).saturating_sub(super::super::view::gutter_width(app));
     let col = app
         .screen
         .scroll_left
-        .saturating_add(event.column as usize)
+        .saturating_add(content_column)
         .min(app.buffer.line_char_count(row).unwrap_or(0));
     Some(Cursor { row, col })
 }

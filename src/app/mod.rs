@@ -35,6 +35,7 @@ mod save;
 mod search;
 mod selection;
 mod status;
+mod view;
 mod viewport;
 mod watch;
 
@@ -87,6 +88,8 @@ pub struct App {
     pub(crate) selection: selection::SelectionUiState,
     /// Always-available process-local clipboard shared across open buffers.
     pub(crate) clipboard: String,
+    /// Per-buffer display toggles; they never mutate document content.
+    pub(crate) view: view::ViewOptions,
     /// Inactive buffers in next-buffer order. The active buffer remains in the
     /// established App fields so editing/render paths stay direct and boring.
     pub(crate) inactive_buffers: VecDeque<buffers::BufferSlot>,
@@ -164,6 +167,7 @@ impl App {
             command_prompt: command_prompt::CommandPromptState::default(),
             selection: selection::SelectionUiState::default(),
             clipboard: String::new(),
+            view: view::ViewOptions::default(),
             inactive_buffers: VecDeque::new(),
             active_buffer_index: 0,
             // Conservative default matching prior hardcoded 24; no real term required for unit tests.
@@ -306,6 +310,8 @@ impl App {
         let render_options = term::render::RenderOptions {
             highlight,
             syntax: crate::editor::syntax::syntax_for_path(self.file.path.as_deref()),
+            line_numbers: self.view.line_numbers,
+            whitespace: self.view.whitespace,
         };
         if let Some(ref m) = self.message {
             term::render::render_buffer(

@@ -16,9 +16,12 @@ Phase 4 is in progress. Phase 3 acceptance is recorded in
 - The renderer still obtains content through the bounded visible-window Buffer
   query. No full-file parse, syntax cache, background worker, dependency, or
   Project service was added.
+- **4-b optional view indicators**: `F7` toggles a fixed line-number gutter and
+  `F8` toggles one-cell space/tab indicators. Both settings are retained per
+  buffer. Cursor reveal, horizontal scrolling, and mouse mapping all account
+  for the gutter without changing document coordinates.
 
 ## Remaining Phase 4 Work
 
 - Markdown preview toggle.
-- Toggleable line numbers and whitespace indicators.
 - Phase 4 unit/golden/PTY/performance/manual acceptance evidence.

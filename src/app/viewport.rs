@@ -34,7 +34,8 @@ pub(crate) fn reveal_cursor(app: &mut App) {
     clamp_viewport_to_buffer(app);
     let c = app.buffer.cursor();
     app.screen.reveal_row(c.row);
-    app.screen.reveal_col(c.col);
+    app.screen
+        .reveal_col_with_width(c.col, super::view::content_width(app));
     // Re-clamp after reveal: reveal_col may target a col on a now-shorter line,
     // leaving scroll_left > (line_len - vw). Clamp pulls it back.
     clamp_viewport_to_buffer(app);
@@ -71,7 +72,7 @@ pub(crate) fn clamp_viewport_to_buffer(app: &mut App) {
     // on shorter lines to avoid empty space.
     let c = app.buffer.cursor();
     let line_len = app.buffer.line_char_count(c.row).unwrap_or(0);
-    let vw = app.screen.visible_width();
+    let vw = super::view::content_width(app);
     if vw == 0 {
         app.screen.scroll_left = 0;
     } else {

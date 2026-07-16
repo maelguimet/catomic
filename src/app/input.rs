@@ -10,7 +10,7 @@ use std::io::{self, Write};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::file_state::refresh_dirty;
-use super::{buffers, command_prompt, paging, reload, save, search, selection};
+use super::{buffers, command_prompt, paging, reload, save, search, selection, view};
 
 /// Common post-content-mutation cleanup used by insert, delete, newline, undo, redo paths.
 /// Centralizes the exact sequence that must run after any buffer-mutating key:
@@ -51,6 +51,9 @@ pub(crate) fn handle_key_with(
         return Ok(());
     }
     if command_prompt::handle_active_key(app, out, key)? {
+        return Ok(());
+    }
+    if view::handle_key(app, out, key)? {
         return Ok(());
     }
     if selection::handle_shortcut(app, out, key)? {

@@ -40,6 +40,7 @@ fn selection_combines_with_keyword_color() {
                 start: Cursor { row: 0, col: 0 },
                 end: Cursor { row: 0, col: 3 },
             }),
+            ..RenderOptions::default()
         },
     );
     assert_eq!(output, "\x1b[35;7mlet\x1b[0m cat = \x1b[33m1\x1b[0m");

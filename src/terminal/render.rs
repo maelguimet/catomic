@@ -22,6 +22,12 @@ pub(crate) struct TextHighlight {
 pub(crate) struct RenderOptions {
     pub(crate) highlight: Option<TextHighlight>,
     pub(crate) syntax: SyntaxKind,
+    pub(crate) line_numbers: bool,
+    pub(crate) whitespace: bool,
+}
+
+pub(crate) fn line_number_gutter(line_count: usize) -> usize {
+    line_count.max(1).to_string().len().saturating_add(1)
 }
 
 /// Basic viewport render with one optional active search highlight.
@@ -47,10 +53,18 @@ pub fn render_buffer<W: Write + ?Sized>(
     // Reserve bottom row for message/status (matches screen.visible_height intent).
     // Horizontal: use width directly as content width (no sidebar/status reservation).
     let content_h = height.saturating_sub(1);
-    let content_w = width;
+    let gutter = options
+        .line_numbers
+        .then(|| line_number_gutter(buffer.line_count()))
+        .unwrap_or(0)
+        .min(width);
+    let content_w = width.saturating_sub(gutter);
     let visible = buffer.try_visible_lines_window(start, content_h, start_col, content_w)?;
     for screen_row in 1..=content_h {
         write!(out, "\x1b[{};1H\x1b[K", screen_row)?;
+        if gutter > 0 {
+            write_line_number(out, start + screen_row - 1, gutter)?;
+        }
         if content_w > 0 {
             if let Some(line) = visible.get(screen_row - 1) {
                 style::write_content_line(
@@ -78,10 +92,27 @@ pub fn render_buffer<W: Write + ?Sized>(
     // If width is 0 still emit safe cursor position.
     let Cursor { row, col } = buffer.cursor();
     let screen_row = if row >= start { row - start + 1 } else { 1 };
-    let screen_col = col.saturating_sub(start_col).saturating_add(1);
+    let screen_col = gutter
+        .saturating_add(col.saturating_sub(start_col))
+        .saturating_add(1)
+        .min(width.max(1));
     write!(out, "\x1b[{};{}H", screen_row, screen_col)?;
     out.flush()?;
     Ok(())
+}
+
+fn write_line_number<W: Write + ?Sized>(
+    out: &mut W,
+    row: usize,
+    gutter: usize,
+) -> std::io::Result<()> {
+    let label = format!(
+        "{:>width$} ",
+        row.saturating_add(1),
+        width = gutter.saturating_sub(1)
+    );
+    let clipped: String = label.chars().take(gutter).collect();
+    write!(out, "\x1b[2;90m{clipped}\x1b[0m")
 }
 
 #[cfg(test)]

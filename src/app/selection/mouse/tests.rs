@@ -41,6 +41,22 @@ fn click_maps_through_both_viewport_offsets() {
 }
 
 #[test]
+fn click_subtracts_the_line_number_gutter() {
+    let mut app = app_with("abcdef");
+    app.view.line_numbers = true;
+    let mut out = Vec::new();
+
+    handle_mouse(
+        &mut app,
+        &mut out,
+        event(MouseEventKind::Down(MouseButton::Left), 5, 0),
+    )
+    .unwrap();
+
+    assert_eq!(app.buffer.cursor(), Cursor { row: 0, col: 3 });
+}
+
+#[test]
 fn left_drag_creates_a_multiline_half_open_selection() {
     let mut app = app_with("zero\nmiddle\nlast");
     let mut out = Vec::new();

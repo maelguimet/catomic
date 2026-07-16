@@ -1,11 +1,9 @@
-//! Configuration (TOML), keymaps, per-language settings.
-//!
-//! Per TODO:
-//! - Simple TOML with good defaults. No config file required.
-//! - Per-language settings (linters, tab size, ...)
-//! - Keybinding configuration (simple overrides)
-//!
-//! Mode and Capabilities may be influenced by config, but the hard
-//! Plain vs Project construction gates are still enforced.
+//! Purpose: load small, std-only user configuration with safe defaults.
+//! Owns: config path discovery and focused configuration submodules.
+//! Must not: construct Project/LLM services, perform network work, or mutate files.
+//! Invariants: no config file is required; malformed recognized values are errors;
+//!   unknown keys are ignored for forward compatibility.
+//! Phase: 2-bk configurable paged-file policy.
 
+pub mod big_files;
 pub mod keymap;

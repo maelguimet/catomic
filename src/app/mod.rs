@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use crossterm::event::{self, Event, KeyEvent};
 
 use crate::buffer::Buffer;
+use crate::config::big_files::BigFileConfig;
 use crate::file;
 
 use crate::mode::{Capabilities, Mode};
@@ -37,6 +38,8 @@ mod input;
 pub struct App {
     pub mode: Mode,
     pub caps: Capabilities,
+    /// Plain-safe paging policy loaded once at startup.
+    pub(crate) big_files: BigFileConfig,
     /// The active buffer (trait object for now; concrete type behind it).
     pub buffer: Box<dyn Buffer>,
     /// File path and dirty tracking.
@@ -73,6 +76,13 @@ pub struct App {
 
 impl App {
     pub fn new(initial_path: Option<&str>) -> io::Result<Self> {
+        Self::new_with_big_file_config(initial_path, BigFileConfig::default())
+    }
+
+    pub(crate) fn new_with_big_file_config(
+        initial_path: Option<&str>,
+        big_files: BigFileConfig,
+    ) -> io::Result<Self> {
         let mode = Mode::Plain; // Start in Plain by default. User can switch later.
         let caps = Capabilities::from_mode(mode);
 
@@ -102,6 +112,7 @@ impl App {
         let mut app = App {
             mode,
             caps,
+            big_files,
             buffer,
             file: FileState {
                 path: initial_path.map(|s| PathBuf::from(s)),
@@ -259,7 +270,8 @@ impl App {
 
 /// Public entry called from main.rs.
 pub fn run(initial_file: Option<&str>) -> io::Result<()> {
-    let mut app = App::new(initial_file)?;
+    let big_files = crate::config::big_files::load()?;
+    let mut app = App::new_with_big_file_config(initial_file, big_files)?;
     app.run()
 }
 

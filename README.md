@@ -56,6 +56,17 @@ For big files:
 - Keep line indexing lazy or incremental
 - Offer "large file mode" when needed
 
+Oversized files use bounded line pages instead of being rejected solely for
+their byte size. The page size is configurable in
+`~/.config/catomic/config.toml` (or `$XDG_CONFIG_HOME/catomic/config.toml`):
+
+```toml
+[big_files]
+page_lines = 20000
+```
+
+Lower values trade more page transitions for less line metadata in memory.
+
 ## File Watching
 
 Catomic should notice when a clanker or another process edits the current file.

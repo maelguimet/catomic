@@ -60,6 +60,9 @@ pub(crate) fn display_buffer(app: &super::App) -> &dyn Buffer {
     if let Some(buffer) = super::llm_preview::display_buffer(app) {
         return buffer;
     }
+    if let Some(buffer) = super::llm_answer::display_buffer(app) {
+        return buffer;
+    }
     if let Some(buffer) = super::project_files::display_buffer(app) {
         return buffer;
     }
@@ -75,6 +78,7 @@ pub(crate) fn display_buffer(app: &super::App) -> &dyn Buffer {
 
 pub(crate) fn display_syntax(app: &super::App) -> SyntaxKind {
     if super::llm_preview::is_viewing(app)
+        || super::llm_answer::is_viewing(app)
         || super::lint::is_viewing(app)
         || super::project_files::is_viewing(app)
     {

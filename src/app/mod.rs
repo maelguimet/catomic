@@ -44,6 +44,7 @@ mod watch;
 
 mod input;
 mod lint;
+mod llm_answer;
 mod llm_preview;
 mod llm_request;
 
@@ -101,6 +102,8 @@ pub struct App {
     /// Explicit LLM patch preview, absent until a proposal has been parsed and validated.
     /// This is local display state only; it contains no network client or repo broker.
     pub(crate) llm_preview: Option<llm_preview::PatchPreview>,
+    /// Explicit read-only model explanation; contains output text and no client.
+    pub(crate) llm_answer: Option<llm_answer::AnswerView>,
     /// Local confirmation state only; contains bounded context/settings but no HTTP client.
     pub(crate) pending_llm_request: Option<llm_request::PendingLlmRequest>,
     /// Present only after explicit Enter confirmation; dropping it cancels the transient client.
@@ -194,6 +197,7 @@ impl App {
             lint_view: None,
             project_files_view: None,
             llm_preview: None,
+            llm_answer: None,
             pending_llm_request: None,
             llm_task: None,
             selection: selection::SelectionUiState::default(),

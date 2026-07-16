@@ -16,7 +16,7 @@ use crate::llm::task::{LlmTask, LlmTaskResult};
 
 mod prompt;
 
-use prompt::{confirmation_message, display_path, user_prompt, SYSTEM_PROMPT};
+use prompt::{confirmation_message, display_path, system_prompt, user_prompt, RequestPurpose};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CurrentLlmCommand {
@@ -30,12 +30,14 @@ pub(crate) struct PendingLlmRequest {
     source_snapshot: String,
     path: String,
     replacement_target: Option<super::llm_preview::RegionTarget>,
+    purpose: RequestPurpose,
 }
 
 pub(crate) struct RunningLlmRequest {
     task: LlmTask,
     source_snapshot: String,
     replacement_target: Option<super::llm_preview::RegionTarget>,
+    purpose: RequestPurpose,
 }
 
 pub(crate) fn begin(
@@ -80,6 +82,7 @@ fn begin_with_settings(
     };
     let path = display_path(app.file.path.as_deref());
     let replacement_target = replacement_target(app, &draft);
+    let purpose = prompt::purpose(&draft);
     app.message = Some(confirmation_message(&draft, &settings));
     app.pending_llm_request = Some(PendingLlmRequest {
         draft,
@@ -87,6 +90,7 @@ fn begin_with_settings(
         source_snapshot,
         path,
         replacement_target,
+        purpose,
     });
     app.render(out)
 }
@@ -146,12 +150,15 @@ pub(crate) fn poll(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
                 );
                 app.render(out)
             } else {
-                super::llm_preview::show_with_region_fallback(
-                    app,
-                    out,
-                    &output,
-                    running.replacement_target,
-                )
+                match running.purpose {
+                    RequestPurpose::Edit => super::llm_preview::show_with_region_fallback(
+                        app,
+                        out,
+                        &output,
+                        running.replacement_target,
+                    ),
+                    RequestPurpose::Explain => super::llm_answer::show(app, out, &output),
+                }
             }
         }
         LlmTaskResult::Cancelled => {
@@ -188,7 +195,7 @@ fn confirm(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         timeout: pending.settings.timeout,
     };
     let user = user_prompt(&pending.draft, &pending.path);
-    match LlmTask::start(config, SYSTEM_PROMPT.to_string(), user) {
+    match LlmTask::start(config, system_prompt(pending.purpose).to_string(), user) {
         Ok(task) => {
             app.message = Some(format!(
                 "Sending {} lines/{} bytes to {} at {}... Esc cancels.",
@@ -201,6 +208,7 @@ fn confirm(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
                 task,
                 source_snapshot: pending.source_snapshot,
                 replacement_target: pending.replacement_target,
+                purpose: pending.purpose,
             });
         }
         Err(error) => app.message = Some(format!("Could not start LLM request: {error}")),

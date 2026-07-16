@@ -11,8 +11,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::file_state::refresh_dirty;
 use super::{
-    buffers, command_prompt, completion, lint, llm_preview, llm_request, paging, project_files,
-    reload, save, search, selection, view,
+    buffers, command_prompt, completion, lint, llm_answer, llm_preview, llm_request, paging,
+    project_files, reload, save, search, selection, view,
 };
 
 /// Common post-content-mutation cleanup used by insert, delete, newline, undo, redo paths.
@@ -69,6 +69,9 @@ pub(crate) fn handle_key_with(
         return Ok(());
     }
     if llm_preview::handle_key(app, out, key)? {
+        return Ok(());
+    }
+    if llm_answer::handle_key(app, out, key)? {
         return Ok(());
     }
     if completion::handle_key(app, out, key)? {
@@ -355,6 +358,9 @@ pub(crate) fn handle_paste(
         return Ok(());
     }
     if llm_preview::handle_paste(app, out)? {
+        return Ok(());
+    }
+    if llm_answer::handle_paste(app, out)? {
         return Ok(());
     }
     if project_files::handle_paste(app, out)? {

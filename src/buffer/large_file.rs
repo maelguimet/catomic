@@ -9,24 +9,33 @@
 //!   cursor row/col stays clamped.
 //! Phase: 2-bl configurable paged Huge-file foundation.
 
+#[cfg(test)]
 use std::fs::File;
+#[cfg(test)]
 use std::io;
+#[cfg(test)]
 use std::os::unix::fs::FileExt;
+#[cfg(test)]
 use std::path::Path;
 
+#[cfg(test)]
 use crate::buffer::Cursor;
 
+#[cfg(test)]
 mod buffer_impl;
 pub(crate) mod page_scan;
+#[cfg(test)]
 mod paging;
 pub(crate) mod scan;
 
+#[cfg(test)]
 use scan::scan_utf8_lines;
 
 pub(crate) const SCAN_CHUNK_BYTES: usize = 64 * 1024;
 pub(crate) const LINE_CHECKPOINT_INTERVAL_CHARS: usize = 16 * 1024;
 
 /// Read-only file-backed buffer for paged Huge/Extreme-file mode.
+#[cfg(test)]
 pub(crate) struct LargeFileBuffer {
     file: File,
     fd_snapshot: FileMetadataSnapshot,
@@ -53,11 +62,13 @@ pub(crate) struct LineCheckpoint {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(test)]
 pub(super) struct FileMetadataSnapshot {
     len: u64,
     mtime: Option<std::time::SystemTime>,
 }
 
+#[cfg(test)]
 impl FileMetadataSnapshot {
     pub(super) fn capture(file: &File) -> io::Result<Self> {
         let meta = file.metadata()?;
@@ -68,6 +79,7 @@ impl FileMetadataSnapshot {
     }
 }
 
+#[cfg(test)]
 impl LargeFileBuffer {
     pub(crate) fn open(path: impl AsRef<Path>) -> io::Result<Self> {
         let mut file = File::open(path.as_ref())?;

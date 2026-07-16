@@ -164,7 +164,7 @@ fn warning_message_describes_large_and_paged_files() {
     let h = open_size_warning_message(LARGE_FILE_LIMIT_BYTES + 1, FileSizeTier::Huge)
         .expect("warning for huge");
     assert!(h.contains("Large file"));
-    assert!(h.contains("read-only"));
+    assert!(h.contains("editable"));
     assert!(h.contains("paged mode"));
     let extreme = open_size_warning_message(HUGE_FILE_LIMIT_BYTES + 1, FileSizeTier::Extreme)
         .expect("warning for extreme");

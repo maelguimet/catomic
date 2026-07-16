@@ -2,11 +2,11 @@
 //!   for measurement / guardrail verification. Not run by default cargo test.
 //! Owns: manual_open_10mib_generated_file_smoke, manual_open_100mib_...,
 //!   manual_open_100mib_non_ascii_far_window_smoke,
-//!   manual_open_1gib_sparse_huge_read_only_smoke, manual_sparse_extreme...
+//!   manual_open_1gib_sparse_huge_editable_smoke, manual_sparse_extreme...
 //! Must not: run on default `cargo test`; enforce timing thresholds; read 1 GiB dense;
 //!   add committed fixtures or new deps.
 //! Invariants: 10 MiB uses SMALL+1 for editable Large; 100 MiB ASCII uses LARGE+1
-//!   and 100 MiB non-ASCII uses LARGE+2 for read-only Huge paged mode;
+//!   and 100 MiB non-ASCII uses LARGE+2 for editable Huge paged mode;
 //!   sparse Extreme >HUGE writes only one configured page before sparse extension.
 //! Phase: 2-bp paged-policy manual smoke refresh.
 
@@ -111,7 +111,7 @@ fn manual_open_100mib_generated_file_smoke() {
     print_perf_sample(&gen_sample);
 
     // Legacy full-materialization comparison samples. App::new for this Huge
-    // case now uses read-only LargeFileBuffer instead of this PieceTable path.
+    // case now uses editable PagedFileBuffer instead of this whole-file PieceTable path.
     eprintln!("phase: metadata 100mib");
     let ((), meta_sample) = measure_sample("metadata 100mib", Some(size), || {
         let _ = std::fs::metadata(&p).expect("metadata 100mib");
@@ -164,8 +164,8 @@ fn manual_open_100mib_generated_file_smoke() {
         app.message
     );
     assert!(
-        msg.contains("read-only") && app.buffer.is_read_only(),
-        "100 MiB Huge case should open read-only, got message {:?}",
+        msg.contains("editable paged") && !app.buffer.is_read_only(),
+        "100 MiB Huge case should open editable pages, got message {:?}",
         app.message
     );
 
@@ -207,7 +207,7 @@ fn manual_open_100mib_non_ascii_far_window_smoke() {
         }
     }
 
-    eprintln!("App::new on 100 MiB non-ASCII Huge (read-only paged mode)...");
+    eprintln!("App::new on 100 MiB non-ASCII Huge (editable paged mode)...");
     let app_res = measure_sample("App::new 100mib-nonascii", Some(size), || {
         crate::app::App::new(Some(&p.to_string_lossy()))
     });
@@ -226,7 +226,7 @@ fn manual_open_100mib_non_ascii_far_window_smoke() {
         app.file.size_tier,
         Some(crate::file::size::FileSizeTier::Huge)
     );
-    assert!(app.buffer.is_read_only());
+    assert!(!app.buffer.is_read_only());
     assert_eq!(app.buffer.line_count(), 1);
     let line_chars = app.buffer.line_char_count(0).expect("line char count");
     assert_eq!(line_chars, (size as usize) / 2);
@@ -244,8 +244,8 @@ fn manual_open_100mib_non_ascii_far_window_smoke() {
 }
 
 #[test]
-#[ignore = "manual sparse 1 GiB Huge open smoke; validates read-only paged mode"]
-fn manual_open_1gib_sparse_huge_read_only_smoke() {
+#[ignore = "manual sparse 1 GiB Huge open smoke; validates editable paged mode"]
+fn manual_open_1gib_sparse_huge_editable_smoke() {
     let size = crate::file::size::HUGE_FILE_LIMIT_BYTES;
     let p = temp_perf_path("manual_1gib_sparse_huge.bin");
     cleanup_perf(&p);
@@ -266,7 +266,7 @@ fn manual_open_1gib_sparse_huge_read_only_smoke() {
         }
     }
 
-    eprintln!("App::new on sparse 1 GiB Huge (read-only paged mode)...");
+    eprintln!("App::new on sparse 1 GiB Huge (editable paged mode)...");
     let app_res = measure_sample("App::new 1gib sparse huge", Some(size), || {
         crate::app::App::new(Some(&p.to_string_lossy()))
     });
@@ -285,10 +285,14 @@ fn manual_open_1gib_sparse_huge_read_only_smoke() {
         app.file.size_tier,
         Some(crate::file::size::FileSizeTier::Huge)
     );
-    assert!(app.buffer.is_read_only());
+    assert!(!app.buffer.is_read_only());
     assert_eq!(app.buffer.line_count(), 1);
     assert_eq!(app.buffer.line_char_count(0), Some(size as usize));
-    assert!(app.message.as_deref().unwrap_or("").contains("read-only"));
+    assert!(app
+        .message
+        .as_deref()
+        .unwrap_or("")
+        .contains("editable paged"));
 
     let (_, nav_sample) = measure_sample("navigate 1gib sparse huge", Some(size), || {
         for _ in 0..80 {
@@ -358,7 +362,7 @@ fn manual_sparse_extreme_paged_open_smoke() {
         app.file.size_tier,
         Some(crate::file::size::FileSizeTier::Extreme)
     );
-    assert!(app.buffer.is_read_only());
+    assert!(!app.buffer.is_read_only());
     assert_eq!(app.buffer.line_count(), page_lines);
     assert!(app.buffer.page_info().unwrap().has_next);
     assert!(app.message.as_deref().unwrap_or("").contains("paged mode"));

@@ -93,9 +93,7 @@ fn build_modified_reload_buffer(
 ) -> io::Result<ReloadedModifiedBuffer> {
     let size_tier = size::classify_file_size(size_bytes);
     let buffer: Box<dyn buffer::Buffer> = match size::open_size_decision(size_bytes) {
-        OpenSizeDecision::OpenPaged => {
-            Box::new(buffer::LargeFileBuffer::open_paged(path, page_lines)?)
-        }
+        OpenSizeDecision::OpenPaged => Box::new(buffer::PagedFileBuffer::open(path, page_lines)?),
         OpenSizeDecision::OpenNormally | OpenSizeDecision::OpenWithWarning => {
             let content = crate::file::io::read_to_string(path)?;
             Box::new(buffer::PieceTable::from_owned_text(content))
@@ -273,7 +271,7 @@ mod tests {
     }
 
     #[test]
-    fn modified_reload_buffer_uses_read_only_buffer_for_huge_size() {
+    fn modified_reload_buffer_uses_editable_pages_for_huge_size() {
         let path = temp_path("huge_policy.txt");
         cleanup(&path);
         std::fs::write(&path, "first\nsecond").unwrap();
@@ -282,7 +280,7 @@ mod tests {
             build_modified_reload_buffer(&path, size::LARGE_FILE_LIMIT_BYTES + 1, 1).unwrap();
 
         assert_eq!(reloaded.size_tier, FileSizeTier::Huge);
-        assert!(reloaded.buffer.is_read_only());
+        assert!(!reloaded.buffer.is_read_only());
         assert_eq!(reloaded.buffer.line(0).as_deref(), Some("first"));
         assert!(reloaded.buffer.page_info().unwrap().has_next);
 
@@ -299,7 +297,7 @@ mod tests {
             build_modified_reload_buffer(&path, size::HUGE_FILE_LIMIT_BYTES + 1, 1).unwrap();
 
         assert_eq!(reloaded.size_tier, FileSizeTier::Extreme);
-        assert!(reloaded.buffer.is_read_only());
+        assert!(!reloaded.buffer.is_read_only());
         assert!(reloaded.buffer.page_info().unwrap().has_next);
 
         cleanup(&path);

@@ -130,7 +130,7 @@ fn extreme_sparse_metadata_selects_paged_open_without_refusal() {
     let meta = crate::app::open::prepare_open_file_meta(Some(&p.to_string_lossy())).unwrap();
     assert_eq!(
         meta.content_plan,
-        crate::app::open::OpenContentPlan::PagedReadOnly
+        crate::app::open::OpenContentPlan::PagedEditable
     );
     assert_eq!(
         meta.size_tier,

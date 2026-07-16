@@ -28,6 +28,7 @@ mod paged_file_tests;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
 pub(crate) use large_file::LargeFileBuffer;
 pub(crate) use paged_file::PagedFileBuffer;
 pub use piece_table::PieceTable;

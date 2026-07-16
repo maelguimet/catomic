@@ -57,7 +57,7 @@ pub fn file_size_tier_label(tier: FileSizeTier) -> &'static str {
 /// Explicit decision for App open policy based on on-disk size (metadata only).
 /// Small files open normally (no message change).
 /// Large: open proceeds with the normal editable buffer and a warning.
-/// Huge/Extreme: open proceeds in paged read-only mode with a warning.
+/// Huge/Extreme: open proceeds in editable paged mode with a warning.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OpenSizeDecision {
     OpenNormally,
@@ -88,7 +88,7 @@ pub fn open_size_warning_message(bytes: u64, tier: FileSizeTier) -> Option<Strin
         FileSizeTier::Huge | FileSizeTier::Extreme => {
             let label = format_file_size(bytes);
             Some(format!(
-                "Large file ({}). Opened read-only in paged mode.",
+                "Large file ({}). Opened in editable paged mode.",
                 label
             ))
         }

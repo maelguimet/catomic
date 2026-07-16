@@ -5,7 +5,7 @@
 //!   the current content-plan-to-buffer construction seam.
 //! Owns: prepare_open_file_meta (OpenSizeDecision + capture_file_snapshot once;
 //!   derives size/tier/content_plan from the snapshot for Present/Absent) and
-//!   build_open_buffer (editable PieceTable vs read-only Huge-file buffer).
+//!   build_open_buffer (editable PieceTable vs editable paged file buffer).
 //! Must not: construct watcher, mutate App, change snapshot/dirty/save/reload
 //!   semantics beyond carrying the initial snapshot/plan and constructing the
 //!   initial buffer, know terminal/render, or Project/LLM.
@@ -32,8 +32,8 @@ pub(crate) enum OpenContentPlan {
     MissingEmpty,
     /// The requested path was present and must be read fully into the current buffer.
     FullRead,
-    /// The requested path was oversized and opens one read-only line page at a time.
-    PagedReadOnly,
+    /// The requested path was oversized and opens one editable line page at a time.
+    PagedEditable,
 }
 
 impl Default for OpenContentPlan {
@@ -49,7 +49,7 @@ impl Default for OpenContentPlan {
 /// Absent for missing path; Present for existing) so App::new does not
 /// probe metadata twice.
 /// content_plan is the explicit current storage policy: empty for no-path/missing,
-/// full read for editable Present files; paged read-only for Huge/Extreme files.
+/// full read for Small/Large files; editable pages for Huge/Extreme files.
 /// It is the narrow seam for future lazy storage work.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct OpenFileMeta {
@@ -67,7 +67,7 @@ pub(crate) struct OpenFileMeta {
 /// - Missing: sizes=None, disk_snapshot=Some(Absent); caller opens empty.
 /// - Existing Small: size+Small from snapshot, no message, snapshot=Present.
 /// - Existing Large: editable full read with an initial warning.
-/// - Existing Huge/Extreme: paged read-only with an initial warning.
+/// - Existing Huge/Extreme: editable paged storage with an initial warning.
 /// - Hard meta error: propagates Err.
 /// Does not read content, does not build buffer/App, does not touch watcher.
 pub(crate) fn prepare_open_file_meta(initial_path: Option<&str>) -> io::Result<OpenFileMeta> {
@@ -91,7 +91,7 @@ pub(crate) fn prepare_open_file_meta(initial_path: Option<&str>) -> io::Result<O
                             let tier = classify_file_size(sz);
                             meta.size_tier = Some(tier);
                             meta.initial_message = open_size_warning_message(sz, tier);
-                            meta.content_plan = OpenContentPlan::PagedReadOnly;
+                            meta.content_plan = OpenContentPlan::PagedEditable;
                         }
                         OpenSizeDecision::OpenNormally => {
                             meta.size_bytes = Some(sz);
@@ -118,7 +118,7 @@ pub(crate) fn prepare_open_file_meta(initial_path: Option<&str>) -> io::Result<O
 /// This is the current storage policy seam:
 /// - no path / missing path => empty PieceTable
 /// - Small/Large present path => full UTF-8 read + owned PieceTable construction
-/// - Huge/Extreme present path => configured read-only LargeFileBuffer page
+/// - Huge/Extreme present path => configured editable PagedFileBuffer page
 ///
 /// Future lazy/partial storage work should branch here (or below the PieceTable
 /// constructor) without adding file I/O to the buffer module or App::new.
@@ -143,16 +143,14 @@ pub(crate) fn build_open_buffer(
             let content = crate::file::io::read_to_string(path)?;
             Ok(Box::new(buffer::PieceTable::from_owned_text(content)))
         }
-        OpenContentPlan::PagedReadOnly => {
+        OpenContentPlan::PagedEditable => {
             let path = initial_path.ok_or_else(|| {
                 io::Error::new(
                     ErrorKind::InvalidInput,
-                    "PagedReadOnly open plan requires initial path",
+                    "PagedEditable open plan requires initial path",
                 )
             })?;
-            Ok(Box::new(buffer::LargeFileBuffer::open_paged(
-                path, page_lines,
-            )?))
+            Ok(Box::new(buffer::PagedFileBuffer::open(path, page_lines)?))
         }
     }
 }
@@ -219,7 +217,7 @@ mod tests {
     }
 
     #[test]
-    fn huge_path_plans_paged_read_only_from_snapshot() {
+    fn huge_path_plans_editable_pages_from_snapshot() {
         let meta = OpenFileMeta {
             size_bytes: Some(crate::file::size::LARGE_FILE_LIMIT_BYTES + 1),
             size_tier: Some(FileSizeTier::Huge),
@@ -232,15 +230,15 @@ mod tests {
                 mtime: None,
                 change_id: None,
             }),
-            content_plan: OpenContentPlan::PagedReadOnly,
+            content_plan: OpenContentPlan::PagedEditable,
         };
 
-        assert_eq!(meta.content_plan, OpenContentPlan::PagedReadOnly);
+        assert_eq!(meta.content_plan, OpenContentPlan::PagedEditable);
         assert!(meta
             .initial_message
             .as_deref()
             .unwrap_or("")
-            .contains("read-only"));
+            .contains("editable paged"));
     }
 
     #[test]
@@ -297,18 +295,18 @@ mod tests {
     }
 
     #[test]
-    fn build_open_buffer_paged_read_only_uses_configured_line_count() {
-        let path = temp_path("build_limited_read_only.txt");
+    fn build_open_buffer_editable_pages_use_configured_line_count() {
+        let path = temp_path("build_editable_pages.txt");
         cleanup(&path);
         fs::write(&path, "first\nsecond").unwrap();
         let meta = OpenFileMeta {
-            content_plan: OpenContentPlan::PagedReadOnly,
+            content_plan: OpenContentPlan::PagedEditable,
             ..OpenFileMeta::default()
         };
 
         let buffer = build_open_buffer(&meta, Some(&path.to_string_lossy()), 1).unwrap();
 
-        assert!(buffer.is_read_only());
+        assert!(!buffer.is_read_only());
         assert_eq!(buffer.line_count(), 1);
         assert_eq!(buffer.line(0).as_deref(), Some("first"));
         assert!(buffer.page_info().unwrap().has_next);

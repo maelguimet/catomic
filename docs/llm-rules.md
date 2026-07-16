@@ -38,6 +38,8 @@ and per-file diff. No command writes or runs a process other than read-only Git.
   Enter confirmation naming endpoint, model, and context extent.
 - The transient HTTP client must not follow redirects away from the confirmed
   endpoint; every 3xx response is an error.
+- Ambient proxy environment variables must not reroute context. Proxy support
+  requires future explicit configuration and confirmation.
 - Plain mode must not gain background network or repo LLM machinery.
 - All patches go through `llm/patch.rs` and the read-only preview path.
 - Current-buffer requests pin the active path through confirmation and response;

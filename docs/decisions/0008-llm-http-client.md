@@ -36,6 +36,8 @@ Dropping or cancelling the worker drops the request future and client.
 - Timeouts are configured and bounded.
 - Redirect following is disabled; a 3xx response cannot forward confirmed
   context to another URL.
+- Automatic system/environment proxies are disabled. Any future proxy support
+  must be explicit and shown in the confirmation.
 - API keys are read from the configured environment variable only after the
   user confirms the endpoint and exact context extent.
 - No telemetry is added.

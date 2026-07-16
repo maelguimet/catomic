@@ -6,6 +6,7 @@
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
+use std::process::Command;
 
 use super::*;
 
@@ -91,6 +92,28 @@ fn refuses_redirects_away_from_the_confirmed_endpoint() {
     ));
 }
 
+#[test]
+fn ignores_ambient_proxies_for_the_confirmed_endpoint() {
+    if std::env::var_os("CATOMIC_PROXY_TEST_CHILD").is_some() {
+        run_proxy_test_child();
+        return;
+    }
+    let endpoint = TcpListener::bind("127.0.0.1:0").unwrap();
+    let proxy = TcpListener::bind("127.0.0.1:0").unwrap();
+    let endpoint_url = format!("http://{}/v1", endpoint.local_addr().unwrap());
+    let proxy_url = format!("http://{}", proxy.local_addr().unwrap());
+
+    let output = proxy_test_child(&endpoint_url, &proxy_url);
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(accepted_connection(endpoint));
+    assert!(!accepted_connection(proxy));
+}
+
 fn config(base_url: String, api_key: Option<&str>) -> LlmConfig {
     LlmConfig {
         base_url,
@@ -139,6 +162,57 @@ fn redirect_server(location: &str) -> (String, std::thread::JoinHandle<()>) {
         .unwrap();
     });
     (format!("http://{address}/v1"), server)
+}
+
+fn proxy_test_child(endpoint: &str, proxy: &str) -> std::process::Output {
+    Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "llm::openai_compat::tests::ignores_ambient_proxies_for_the_confirmed_endpoint",
+            "--nocapture",
+        ])
+        .env("CATOMIC_PROXY_TEST_CHILD", "1")
+        .env("CATOMIC_PROXY_TEST_ENDPOINT", endpoint)
+        .envs([
+            ("HTTP_PROXY", proxy),
+            ("http_proxy", proxy),
+            ("HTTPS_PROXY", proxy),
+            ("https_proxy", proxy),
+            ("ALL_PROXY", proxy),
+            ("all_proxy", proxy),
+        ])
+        .env_remove("NO_PROXY")
+        .env_remove("no_proxy")
+        .output()
+        .unwrap()
+}
+
+fn run_proxy_test_child() {
+    let endpoint = std::env::var("CATOMIC_PROXY_TEST_ENDPOINT").unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let client = OpenAiCompatClient::new(LlmConfig {
+        base_url: endpoint,
+        api_key: Some("cat-secret".to_string()),
+        model: "test-model".to_string(),
+        timeout: Duration::from_millis(100),
+    })
+    .unwrap();
+
+    assert!(runtime
+        .block_on(client.complete("system", "sensitive context"))
+        .is_err());
+}
+
+fn accepted_connection(listener: TcpListener) -> bool {
+    listener.set_nonblocking(true).unwrap();
+    match listener.accept() {
+        Ok(_) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => false,
+        Err(error) => panic!("test listener accept failed: {error}"),
+    }
 }
 
 fn read_request(stream: &mut impl Read) -> String {

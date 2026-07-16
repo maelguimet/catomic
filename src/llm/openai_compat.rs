@@ -54,6 +54,7 @@ impl OpenAiCompatClient {
         let client = reqwest::Client::builder()
             .timeout(config.timeout)
             .redirect(reqwest::redirect::Policy::none())
+            .no_proxy()
             .build()
             .map_err(|error| LlmError::Client(error.to_string()))?;
         Ok(Self { client, config })

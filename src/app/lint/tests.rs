@@ -117,6 +117,38 @@ fn next_and_previous_diagnostics_jump_with_scalar_coordinates() {
 }
 
 #[test]
+fn cross_file_diagnostic_opens_a_buffer_and_jumps() {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "catomic-cross-diagnostic-{}-{nonce}",
+        std::process::id()
+    ));
+    std::fs::create_dir(&root).unwrap();
+    let active = root.join("active.rs");
+    let target = root.join("target.rs");
+    std::fs::write(&active, "active\n").unwrap();
+    std::fs::write(&target, "zero\nβeta\n").unwrap();
+    let mut app = App::new(active.to_str()).unwrap();
+    let mut out = Vec::new();
+    project_mode::switch_to_project(&mut app, &mut out).unwrap();
+    let diagnostics = parse_common_output(
+        &format!("{}:2:2: error: cross file\n", target.display()),
+        &root,
+    );
+    app.project.as_mut().unwrap().set_diagnostics(diagnostics);
+
+    super::move_diagnostic(&mut app, &mut out, true).unwrap();
+
+    assert_eq!(app.file.path.as_deref(), Some(target.as_path()));
+    assert_eq!(app.buffer.cursor(), Cursor { row: 1, col: 1 });
+    assert_eq!(app.buffer_count(), 2);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn escape_cancels_a_running_linter() {
     let config = linters::parse("[linters]\nrs = \"while :; do :; done # {file}\"\n").unwrap();
     let mut app = App::new(None).unwrap();

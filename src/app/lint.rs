@@ -138,15 +138,20 @@ pub(crate) fn move_diagnostic(
         return app.render(out);
     };
     if active_absolute_path(app).as_deref() != Some(diagnostic.file.as_path()) {
-        app.message = Some(format!(
-            "Diagnostic {}/{} is in {}:{}:{}; open that file to jump.",
-            index + 1,
-            count,
-            diagnostic.file.display(),
-            diagnostic.line,
-            diagnostic.col
-        ));
-        return app.render(out);
+        if !diagnostic.file.is_file() {
+            app.message = Some(format!(
+                "Cannot jump to missing diagnostic file {}.",
+                diagnostic.file.display()
+            ));
+            return app.render(out);
+        }
+        if let Err(error) = app.open_file_buffer(&diagnostic.file) {
+            app.message = Some(format!(
+                "Cannot open diagnostic file {}: {error}",
+                diagnostic.file.display()
+            ));
+            return app.render(out);
+        }
     }
     app.buffer.set_cursor(Cursor {
         row: diagnostic.line.saturating_sub(1),

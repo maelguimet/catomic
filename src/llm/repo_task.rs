@@ -1,7 +1,7 @@
 //! Purpose: this file must run a confirmed, budgeted repo-LLM broker dialogue off the UI thread.
 //! Owns: transient runtime/client, strict broker command rounds, cancellation, and final output.
 //! Must not: construct before confirmation, retry, mutate repos, apply patches, or use live tests.
-//! Invariants: at most eight broker calls; final output retains its broker for drift validation.
+//! Invariants: at most eight broker calls; only an unchanged repository returns final output.
 //! Phase: 6 (LLM Context Broker).
 
 use std::io;
@@ -21,6 +21,8 @@ pub enum RepoLlmTaskResult {
         output: String,
         broker: ContextBroker,
     },
+    RepositoryChanged,
+    RepositoryCheckFailed(String),
     Cancelled,
     Error(String),
 }
@@ -118,7 +120,7 @@ async fn run_dialogue(
             () = wait_for_cancel(cancel) => return RepoLlmTaskResult::Cancelled,
         };
         let Some(command) = broker_protocol::parse(&output) else {
-            return RepoLlmTaskResult::Finished { output, broker };
+            return finish_output(output, broker, cancel);
         };
         if round == MAX_BROKER_ROUNDS {
             return RepoLlmTaskResult::Error("model exceeded eight broker requests".to_string());
@@ -136,6 +138,21 @@ async fn run_dialogue(
         )));
     }
     unreachable!("bounded broker loop returns")
+}
+
+fn finish_output(output: String, broker: ContextBroker, cancel: &AtomicBool) -> RepoLlmTaskResult {
+    if cancel.load(Ordering::Acquire) {
+        return RepoLlmTaskResult::Cancelled;
+    }
+    let unchanged = broker.is_unchanged();
+    if cancel.load(Ordering::Acquire) {
+        return RepoLlmTaskResult::Cancelled;
+    }
+    match unchanged {
+        Ok(true) => RepoLlmTaskResult::Finished { output, broker },
+        Ok(false) => RepoLlmTaskResult::RepositoryChanged,
+        Err(error) => RepoLlmTaskResult::RepositoryCheckFailed(error.to_string()),
+    }
 }
 
 async fn wait_for_cancel(cancel: &AtomicBool) {

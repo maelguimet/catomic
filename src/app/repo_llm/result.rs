@@ -1,6 +1,6 @@
 //! Purpose: this file must finish confirmed repo LLM tasks without weakening drift checks.
-//! Owns: completed-task polling, source/path/repo rechecks, and guarded preview handoff.
-//! Must not: construct clients, apply edits, write files, or accept stale responses.
+//! Owns: completed-task polling, source/path rechecks, and guarded preview handoff.
+//! Must not: construct clients, read repos, apply edits, write files, or accept stale responses.
 //! Invariants: only an unchanged source identity and repository can reach patch preview.
 //! Phase: 6 (LLM Context Broker).
 
@@ -33,6 +33,16 @@ pub(super) fn poll_running(app: &mut super::super::App, out: &mut dyn Write) -> 
             &state.file_path,
             &state.relative_path,
         ),
+        RepoLlmTaskResult::RepositoryChanged => render_message(
+            app,
+            out,
+            "Repository changed while repo model worked; response discarded.",
+        ),
+        RepoLlmTaskResult::RepositoryCheckFailed(error) => render_message(
+            app,
+            out,
+            &format!("Could not recheck repository; response discarded: {error}"),
+        ),
         RepoLlmTaskResult::Cancelled => render_message(app, out, "Repo LLM request cancelled."),
         RepoLlmTaskResult::Error(error) => {
             render_message(app, out, &format!("Repo LLM request failed: {error}"))
@@ -63,21 +73,7 @@ fn finish_output(
             "Active file path changed while repo model worked; response discarded.",
         );
     }
-    match broker.is_unchanged() {
-        Ok(true) => {
-            super::super::llm_preview::show_repo_patch(app, out, &output, expected_path, broker)
-        }
-        Ok(false) => render_message(
-            app,
-            out,
-            "Repository changed while repo model worked; response discarded.",
-        ),
-        Err(error) => render_message(
-            app,
-            out,
-            &format!("Could not recheck repository; response discarded: {error}"),
-        ),
-    }
+    super::super::llm_preview::show_repo_patch(app, out, &output, expected_path, broker)
 }
 
 fn render_message(

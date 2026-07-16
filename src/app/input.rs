@@ -12,7 +12,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use super::file_state::refresh_dirty;
 use super::{
     buffers, command_prompt, completion, external_command, lint, llm_answer, llm_preview,
-    llm_request, paging, project_files, recovery, reload, repo_llm, save, search, selection, view,
+    llm_request, navigation, paging, project_files, recovery, reload, repo_llm, save, search,
+    selection, view,
 };
 
 /// Common post-content-mutation cleanup used by insert, delete, newline, undo, redo paths.
@@ -98,6 +99,9 @@ pub(crate) fn handle_key_with(
     }
     let key = translated;
     if view::handle_key(app, out, key)? {
+        return Ok(());
+    }
+    if navigation::handle_key(app, out, key)? {
         return Ok(());
     }
     if selection::handle_shortcut(app, out, key)? {

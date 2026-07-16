@@ -64,6 +64,11 @@ emulators may intercept `Ctrl+Shift+C`/`Ctrl+Shift+V` before Catomic sees them.
 Mouse clicks move the cursor, left-button drags select text, and a double click
 selects the word or punctuation run under the pointer.
 
+`Home`/`End` move to line edges, `Ctrl+Home`/`Ctrl+End` move to document edges,
+and Page Up/Down move by one visible page. `Ctrl+Left`/`Ctrl+Right` move by word;
+`Ctrl+Backspace`/`Ctrl+Delete` remove a word as one undoable edit. Add Shift to
+the movement forms to extend the selection.
+
 Visible lines are styled automatically for Markdown, Rust, Python, and JSON
 based on the file extension. Highlighting is deliberately lexical and
 viewport-only; opening a large file does not trigger a whole-document parse.

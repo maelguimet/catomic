@@ -56,6 +56,7 @@ mod lint;
 mod llm_answer;
 mod llm_preview;
 mod llm_request;
+mod navigation;
 
 /// High-level application state for the editor.
 pub struct App {

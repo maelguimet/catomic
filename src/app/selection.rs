@@ -35,6 +35,27 @@ impl SelectionUiState {
     }
 }
 
+pub(crate) fn move_to(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    cursor: Cursor,
+    extend: bool,
+) -> io::Result<()> {
+    let before = app.buffer.cursor();
+    let anchor = app
+        .selection
+        .range
+        .map_or(before, |selection| selection.anchor);
+    app.buffer.set_cursor(cursor);
+    if extend {
+        app.selection.range = Some(Selection::new(anchor, app.buffer.cursor()));
+    } else {
+        app.selection.clear();
+    }
+    app.reveal_cursor();
+    app.render(out)
+}
+
 pub(crate) fn handle_shortcut(
     app: &mut super::App,
     out: &mut dyn Write,

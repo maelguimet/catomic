@@ -7,6 +7,7 @@
 
 use std::io;
 use std::mem;
+use std::path::{Path, PathBuf};
 
 use crate::buffer::Buffer;
 use crate::config::big_files::BigFileConfig;
@@ -139,6 +140,50 @@ impl App {
         };
         true
     }
+
+    pub(crate) fn open_file_buffer(&mut self, path: &Path) -> io::Result<bool> {
+        let target = absolute_path(path)?;
+        if self
+            .file
+            .path
+            .as_deref()
+            .is_some_and(|path| paths_match(path, &target))
+        {
+            return Ok(false);
+        }
+        if let Some(position) = self.inactive_buffers.iter().position(|slot| {
+            slot.file
+                .path
+                .as_deref()
+                .is_some_and(|path| paths_match(path, &target))
+        }) {
+            for _ in 0..=position {
+                self.switch_buffer(BufferDirection::Next);
+            }
+            return Ok(true);
+        }
+        let path = target.to_str().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "file path is not valid UTF-8")
+        })?;
+        let opened = Self::new_with_config(Some(path), self.big_files, self.auto_reload)?;
+        self.inactive_buffers
+            .push_front(BufferSlot::from_app(opened));
+        let switched = self.switch_buffer(BufferDirection::Next);
+        debug_assert!(switched, "new buffer must be switchable");
+        Ok(true)
+    }
+}
+
+fn absolute_path(path: &Path) -> io::Result<PathBuf> {
+    if path.is_absolute() {
+        Ok(path.to_path_buf())
+    } else {
+        Ok(std::env::current_dir()?.join(path))
+    }
+}
+
+fn paths_match(left: &Path, absolute_right: &Path) -> bool {
+    absolute_path(left).is_ok_and(|left| left == absolute_right)
 }
 
 #[cfg(test)]
@@ -328,6 +373,29 @@ mod tests {
         app.handle_key_with(&mut out, key(KeyCode::Char('q'), KeyModifiers::CONTROL))
             .unwrap();
         assert!(app.should_quit);
+
+        fs::remove_file(first).unwrap();
+        fs::remove_file(second).unwrap();
+    }
+
+    #[test]
+    fn open_file_buffer_reuses_paths_and_preserves_dirty_buffers() {
+        let first = temp_file("open_first", "alpha");
+        let second = temp_file("open_second", "beta");
+        let mut app = App::new(first.to_str()).unwrap();
+        app.buffer.insert_char('!');
+        app.file.dirty = true;
+
+        assert!(app.open_file_buffer(&second).unwrap());
+        assert_eq!(app.buffer.to_string(), "beta");
+        assert_eq!(app.buffer_count(), 2);
+        assert!(!app.open_file_buffer(&second).unwrap());
+        assert_eq!(app.buffer_count(), 2);
+
+        assert!(app.open_file_buffer(&first).unwrap());
+        assert_eq!(app.buffer.to_string(), "!alpha");
+        assert!(app.file.dirty);
+        assert_eq!(app.buffer_count(), 2);
 
         fs::remove_file(first).unwrap();
         fs::remove_file(second).unwrap();

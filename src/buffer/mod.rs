@@ -134,6 +134,11 @@ pub trait Buffer {
     fn page_info(&self) -> Option<PageInfo> {
         None
     }
+    /// Exact logical byte length when the backend can answer without scanning or
+    /// materializing content. `None` means callers must skip bounded whole-buffer work.
+    fn logical_byte_len(&self) -> Option<usize> {
+        None
+    }
     fn next_page(&mut self) -> io::Result<bool> {
         Ok(false)
     }

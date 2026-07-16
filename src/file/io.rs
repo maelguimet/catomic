@@ -46,6 +46,24 @@ pub fn atomic_write_with(
     path: impl AsRef<Path>,
     write_contents: impl FnOnce(&mut dyn Write) -> io::Result<()>,
 ) -> io::Result<u64> {
+    atomic_write_with_policy(path, write_contents, false)
+}
+
+/// Atomically write a private sidecar with Unix mode 0600.
+/// This is intentionally separate from ordinary saves, which preserve the
+/// target's existing permissions.
+pub(crate) fn atomic_write_private_string(
+    path: impl AsRef<Path>,
+    contents: &str,
+) -> io::Result<()> {
+    atomic_write_with_policy(path, |writer| writer.write_all(contents.as_bytes()), true).map(|_| ())
+}
+
+fn atomic_write_with_policy(
+    path: impl AsRef<Path>,
+    write_contents: impl FnOnce(&mut dyn Write) -> io::Result<()>,
+    private: bool,
+) -> io::Result<u64> {
     let target = path.as_ref().to_path_buf();
     let parent: PathBuf = target
         .parent()
@@ -68,10 +86,15 @@ pub fn atomic_write_with(
     // Inner closure so we can cleanup temp exactly on failure path.
     let res: io::Result<u64> = (|| {
         #[cfg(unix)]
-        let existing_permissions = match fs::metadata(&target) {
-            Ok(metadata) => Some(metadata.permissions()),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
-            Err(error) => return Err(error),
+        let existing_permissions = if private {
+            use std::os::unix::fs::PermissionsExt;
+            Some(fs::Permissions::from_mode(0o600))
+        } else {
+            match fs::metadata(&target) {
+                Ok(metadata) => Some(metadata.permissions()),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+                Err(error) => return Err(error),
+            }
         };
 
         let mut f = OpenOptions::new()

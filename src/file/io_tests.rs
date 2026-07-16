@@ -109,6 +109,24 @@ fn atomic_write_preserves_existing_file_mode() {
     cleanup(&out);
 }
 
+#[cfg(unix)]
+#[test]
+fn atomic_private_write_forces_owner_only_mode() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let out = temp_path("private_sidecar.txt");
+    cleanup(&out);
+    fs::write(&out, "old").unwrap();
+    fs::set_permissions(&out, fs::Permissions::from_mode(0o777)).unwrap();
+
+    atomic_write_private_string(&out, "recovery").unwrap();
+
+    assert_eq!(fs::read_to_string(&out).unwrap(), "recovery");
+    let mode = fs::metadata(&out).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600, "recovery sidecars must be owner-only");
+    cleanup(&out);
+}
+
 #[test]
 fn atomic_write_leaves_no_temp_on_success() {
     let out = temp_path("notmp.txt");

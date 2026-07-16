@@ -86,6 +86,10 @@ impl Buffer for PieceTable {
         self.cursor
     }
 
+    fn logical_byte_len(&self) -> Option<usize> {
+        Some(self.index.total_bytes)
+    }
+
     fn set_cursor(&mut self, cursor: Cursor) {
         let row = cursor.row.min(self.line_count().saturating_sub(1));
         let col = cursor.col.min(self.current_line_char_len(row));

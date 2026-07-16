@@ -493,7 +493,7 @@ Document the col model (char index / scalar within line for this subphase; inter
 - File watch golden tests (clean reload, dirty conflict paths).
 - Current implementation/evidence matrix: [`docs/phase-2-acceptance.md`](docs/phase-2-acceptance.md).
 
-### Phase 3 — Comfort & Search Basics
+### Phase 3 — Comfort & Search Basics ([progress](docs/progress/phase-3-progress.md))
 
 - Incremental search (`Ctrl+F`):
   - Live highlight matches

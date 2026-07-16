@@ -23,6 +23,10 @@ It should be:
 - Selection should behave like a GUI editor where possible
 - Big-file mode should degrade gracefully instead of exploding
 
+`Ctrl+F` opens incremental search. Matches move and highlight as you type. In
+ordinary files, Enter or Down moves forward and Up moves backward; Escape closes
+search. Oversized paged files currently return the first whole-file match.
+
 ## Terminal Behavior
 
 - Linux terminal only (for now)

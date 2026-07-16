@@ -1,10 +1,10 @@
-//! Purpose: search a stable file descriptor without blocking the terminal loop.
-//! Owns: explicit worker lifetime, cancellation, chunked UTF-8 validation, and
-//!   cross-chunk matching with page/row/scalar-column tracking.
+//! Purpose: find scalar-positioned matches in ordinary and descriptor-backed buffers.
+//! Owns: local direction/wrap rules, explicit descriptor worker lifetime,
+//!   cancellation, chunked UTF-8 validation, and cross-chunk position tracking.
 //! Must not: render, mutate App/Buffer state, reopen paths, index projects, or network.
 //! Invariants: descriptor bytes are processed once with bounded memory; matches
 //!   can cross read boundaries; result positions use configured logical-line pages.
-//! Phase: 2-bo whole-file paged Ctrl+F.
+//! Phase: 3-a incremental search foundation over the Phase 2 descriptor scanner.
 
 use std::collections::VecDeque;
 use std::io;
@@ -14,6 +14,18 @@ use std::sync::{mpsc, Arc};
 
 use crate::buffer::{Buffer, Cursor, DescriptorPosition, DescriptorSource};
 const SEARCH_CHUNK_BYTES: usize = 64 * 1024;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SearchDirection {
+    Forward,
+    Backward,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SearchMatch {
+    pub(crate) start: Cursor,
+    pub(crate) end_col: usize,
+}
 
 pub(crate) enum SearchResult {
     Found(DescriptorPosition),
@@ -59,20 +71,56 @@ pub(crate) fn start_descriptor_search(source: DescriptorSource, query: String) -
     SearchTask { receiver, cancel }
 }
 
-pub(crate) fn find_first(buffer: &dyn Buffer, query: &str) -> Option<Cursor> {
-    if query.is_empty() {
+pub(crate) fn find_match(
+    buffer: &dyn Buffer,
+    query: &str,
+    origin: Cursor,
+    direction: SearchDirection,
+    include_origin: bool,
+) -> Option<SearchMatch> {
+    if query.is_empty() || query.contains('\n') {
         return None;
     }
+    let mut first = None;
+    let mut last = None;
+    let mut before_origin = None;
     for row in 0..buffer.line_count() {
         let line = buffer.line(row)?;
-        if let Some(byte_col) = line.find(query) {
-            return Some(Cursor {
+        for (byte_col, _) in line.match_indices(query) {
+            let start = Cursor {
                 row,
                 col: line[..byte_col].chars().count(),
-            });
+            };
+            let found = SearchMatch {
+                start,
+                end_col: start.col + query.chars().count(),
+            };
+            first.get_or_insert(found);
+            last = Some(found);
+            let ordering = compare_cursor(start, origin);
+            match direction {
+                SearchDirection::Forward
+                    if ordering.is_gt() || (include_origin && ordering.is_eq()) =>
+                {
+                    return Some(found);
+                }
+                SearchDirection::Backward
+                    if ordering.is_lt() || (include_origin && ordering.is_eq()) =>
+                {
+                    before_origin = Some(found);
+                }
+                _ => {}
+            }
         }
     }
-    None
+    match direction {
+        SearchDirection::Forward => first,
+        SearchDirection::Backward => before_origin.or(last),
+    }
+}
+
+fn compare_cursor(left: Cursor, right: Cursor) -> std::cmp::Ordering {
+    (left.row, left.col).cmp(&(right.row, right.col))
 }
 
 fn scan_descriptor(
@@ -325,123 +373,4 @@ fn prefix_table(query: &[u8]) -> Vec<usize> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::atomic::AtomicBool;
-
-    fn scan_text_file(text: &[u8], query: &str, page_lines: usize) -> SearchResult {
-        let path = std::env::temp_dir().join(format!(
-            "catomic_search_scan_{}_{}.txt",
-            std::process::id(),
-            text.len()
-        ));
-        let _ = std::fs::remove_file(&path);
-        std::fs::write(&path, text).unwrap();
-        let source = DescriptorSource {
-            file: std::fs::File::open(&path).unwrap(),
-            total_bytes: text.len() as u64,
-            page_lines,
-            overlays: Vec::new(),
-        };
-        let result = scan_descriptor(source, query, &AtomicBool::new(false)).unwrap();
-        let _ = std::fs::remove_file(path);
-        result
-    }
-
-    #[test]
-    fn descriptor_match_crosses_read_chunk_boundary() {
-        let prefix = "a".repeat(SEARCH_CHUNK_BYTES - 3);
-        let text = format!("{prefix}needle tail");
-
-        let SearchResult::Found(position) = scan_text_file(text.as_bytes(), "needle", 20_000)
-        else {
-            panic!("expected cross-boundary match");
-        };
-
-        assert_eq!(position.page_number, 1);
-        assert_eq!(position.row, 0);
-        assert_eq!(position.col, SEARCH_CHUNK_BYTES - 3);
-    }
-
-    #[test]
-    fn descriptor_match_tracks_unicode_scalar_column_and_page() {
-        let SearchResult::Found(position) =
-            scan_text_file("α\nβ\nγ needle".as_bytes(), "needle", 1)
-        else {
-            panic!("expected Unicode match");
-        };
-
-        assert_eq!(position.page_number, 3);
-        assert_eq!(position.row, 0);
-        assert_eq!(position.col, 2);
-        assert_eq!(position.page_start, "α\nβ\n".len() as u64);
-    }
-
-    #[test]
-    fn descriptor_search_uses_edited_page_overlay_instead_of_original_bytes() {
-        let text = b"zero\nold\nnext";
-        let path =
-            std::env::temp_dir().join(format!("catomic_search_overlay_{}.txt", std::process::id()));
-        let _ = std::fs::remove_file(&path);
-        std::fs::write(&path, text).unwrap();
-        let source = DescriptorSource {
-            file: std::fs::File::open(&path).unwrap(),
-            total_bytes: text.len() as u64,
-            page_lines: 2,
-            overlays: vec![crate::buffer::DescriptorOverlay {
-                start_byte: 0,
-                end_byte: 9,
-                page_number: 1,
-                content: b"zero\nnew needle\n".to_vec(),
-            }],
-        };
-
-        let result = scan_descriptor(source, "needle", &AtomicBool::new(false)).unwrap();
-        match result {
-            SearchResult::Found(position) => {
-                assert_eq!(position.page_start, 0);
-                assert_eq!(position.page_number, 1);
-                assert_eq!(position.row, 1);
-                assert_eq!(position.col, 4);
-            }
-            _ => panic!("edited page match was not found"),
-        }
-
-        let _ = std::fs::remove_file(path);
-    }
-
-    #[test]
-    fn descriptor_search_matches_across_an_edited_page_boundary() {
-        let text = b"one\ntwo";
-        let path = std::env::temp_dir().join(format!(
-            "catomic_search_joined_pages_{}.txt",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_file(&path);
-        std::fs::write(&path, text).unwrap();
-        let source = DescriptorSource {
-            file: std::fs::File::open(&path).unwrap(),
-            total_bytes: text.len() as u64,
-            page_lines: 1,
-            overlays: vec![crate::buffer::DescriptorOverlay {
-                start_byte: 0,
-                end_byte: 4,
-                page_number: 1,
-                content: b"one".to_vec(),
-            }],
-        };
-
-        let result = scan_descriptor(source, "onetwo", &AtomicBool::new(false)).unwrap();
-        match result {
-            SearchResult::Found(position) => {
-                assert_eq!(position.page_start, 0);
-                assert_eq!(position.page_number, 1);
-                assert_eq!(position.row, 0);
-                assert_eq!(position.col, 0);
-            }
-            _ => panic!("match across edited page boundary was not found"),
-        }
-
-        let _ = std::fs::remove_file(path);
-    }
-}
+mod tests;

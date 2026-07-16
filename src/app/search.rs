@@ -1,19 +1,22 @@
-//! Purpose: connect Ctrl+F prompt input and cancellable search results to App.
-//! Owns: prompt text, explicit worker lifetime, result messages, cursor/page reveal.
+//! Purpose: connect incremental Ctrl+F input and cancellable search results to App.
+//! Owns: prompt text, current match, navigation, explicit worker lifetime, and reveal.
 //! Must not: scan file bytes, reopen paths, edit content, save, or create idle workers.
-//! Invariants: search workers exist only after Enter; Escape cancels prompt/work;
-//!   descriptor matches switch page before revealing the scalar cursor position.
-//! Phase: 2-bo whole-file paged Ctrl+F.
+//! Invariants: search workers exist only while an explicit non-empty prompt is active;
+//!   Escape clears the highlight; descriptor matches switch page before reveal.
+//! Phase: 3-a incremental search foundation.
 
 use std::io::{self, Write};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::editor::search::{self, SearchResult, SearchTask};
+use crate::buffer::Cursor;
+use crate::editor::search::{self, SearchDirection, SearchMatch, SearchResult, SearchTask};
 
 #[derive(Default)]
 pub(crate) struct SearchUiState {
     prompt: Option<String>,
+    origin: Option<Cursor>,
+    active_match: Option<SearchMatch>,
     running: Option<RunningSearch>,
 }
 
@@ -25,8 +28,16 @@ struct RunningSearch {
 pub(crate) fn open_prompt(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     cancel_running(&mut app.search);
     app.search.prompt = Some(String::new());
+    app.search.origin = Some(app.buffer.cursor());
+    app.search.active_match = None;
     app.message = Some("Find: ".to_string());
     app.render(out)
+}
+
+impl SearchUiState {
+    pub(crate) fn active_match(&self) -> Option<SearchMatch> {
+        self.active_match
+    }
 }
 
 pub(crate) fn handle_active_key(
@@ -34,6 +45,9 @@ pub(crate) fn handle_active_key(
     out: &mut dyn Write,
     key: KeyEvent,
 ) -> io::Result<bool> {
+    if matches!(key.code, KeyCode::Char('q')) && key.modifiers.contains(KeyModifiers::CONTROL) {
+        return Ok(false);
+    }
     if app.search.prompt.is_some() {
         handle_prompt_key(app, out, key)?;
         return Ok(true);
@@ -50,18 +64,26 @@ pub(crate) fn handle_active_key(
 fn handle_prompt_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -> io::Result<()> {
     match key.code {
         KeyCode::Esc => {
+            cancel_running(&mut app.search);
             app.search.prompt = None;
+            app.search.origin = None;
+            app.search.active_match = None;
             app.message = Some("Search cancelled.".to_string());
         }
         KeyCode::Enter => {
-            let query = app.search.prompt.take().unwrap_or_default();
-            return start_search(app, out, query);
+            return navigate_match(app, out, SearchDirection::Forward);
+        }
+        KeyCode::Down => {
+            return navigate_match(app, out, SearchDirection::Forward);
+        }
+        KeyCode::Up => {
+            return navigate_match(app, out, SearchDirection::Backward);
         }
         KeyCode::Backspace => {
             if let Some(prompt) = app.search.prompt.as_mut() {
                 prompt.pop();
             }
-            update_prompt_message(app);
+            return refresh_incremental_match(app, out);
         }
         KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
             let ch = if key.modifiers.contains(KeyModifiers::SHIFT) && ch.is_ascii_lowercase() {
@@ -72,23 +94,23 @@ fn handle_prompt_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -
             if !ch.is_control() {
                 app.search.prompt.as_mut().unwrap().push(ch);
             }
-            update_prompt_message(app);
+            return refresh_incremental_match(app, out);
         }
         _ => {}
     }
     app.render(out)
 }
 
-fn update_prompt_message(app: &mut super::App) {
-    app.message = Some(format!(
-        "Find: {}",
-        app.search.prompt.as_deref().unwrap_or("")
-    ));
-}
-
-fn start_search(app: &mut super::App, out: &mut dyn Write, query: String) -> io::Result<()> {
+fn refresh_incremental_match(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    let query = app.search.prompt.clone().unwrap_or_default();
+    cancel_running(&mut app.search);
+    app.search.active_match = None;
     if query.is_empty() {
-        app.message = Some("Find cancelled: empty query.".to_string());
+        if let Some(origin) = app.search.origin {
+            app.buffer.set_cursor(origin);
+            app.reveal_cursor();
+        }
+        app.message = Some("Find: ".to_string());
         return app.render(out);
     }
     if let Some(source) = app.buffer.descriptor_source()? {
@@ -97,19 +119,55 @@ fn start_search(app: &mut super::App, out: &mut dyn Write, query: String) -> io:
             query: query.clone(),
             task,
         });
-        app.message = Some(format!(
-            "Searching whole file for '{query}'... Esc cancels."
-        ));
+        app.message = Some(format!("Find: {query} (searching whole file; Esc cancels)"));
         return app.render(out);
     }
-    if let Some(cursor) = search::find_first(&*app.buffer, &query) {
-        app.buffer.set_cursor(cursor);
-        app.message = Some(format!("Found '{query}'."));
+    let origin = app.search.origin.unwrap_or_else(|| app.buffer.cursor());
+    apply_local_match(app, &query, origin, SearchDirection::Forward, true);
+    app.render(out)
+}
+
+fn navigate_match(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    direction: SearchDirection,
+) -> io::Result<()> {
+    let query = app.search.prompt.clone().unwrap_or_default();
+    if query.is_empty() {
+        return app.render(out);
+    }
+    if app.buffer.descriptor_source()?.is_some() {
+        return refresh_incremental_match(app, out);
+    }
+    let origin = app
+        .search
+        .active_match
+        .map(|found| found.start)
+        .or(app.search.origin)
+        .unwrap_or_else(|| app.buffer.cursor());
+    apply_local_match(app, &query, origin, direction, false);
+    app.render(out)
+}
+
+fn apply_local_match(
+    app: &mut super::App,
+    query: &str,
+    origin: Cursor,
+    direction: SearchDirection,
+    include_origin: bool,
+) {
+    if let Some(found) = search::find_match(&*app.buffer, query, origin, direction, include_origin)
+    {
+        app.buffer.set_cursor(found.start);
+        app.search.active_match = Some(found);
+        app.message = Some(format!(
+            "Found '{query}'. Enter/Down next, Up previous, Esc closes."
+        ));
         app.reveal_cursor();
     } else {
-        app.message = Some(format!("No matches for '{query}'."));
+        app.search.active_match = None;
+        app.message = Some(format!("No matches for '{query}'. Esc closes."));
     }
-    app.render(out)
 }
 
 pub(crate) fn poll_search(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
@@ -125,6 +183,13 @@ pub(crate) fn poll_search(app: &mut super::App, out: &mut dyn Write) -> io::Resu
     match result {
         SearchResult::Found(position) => {
             app.buffer.set_descriptor_position(position)?;
+            app.search.active_match = Some(SearchMatch {
+                start: Cursor {
+                    row: position.row,
+                    col: position.col,
+                },
+                end_col: position.col + running.query.chars().count(),
+            });
             app.message = Some(format!(
                 "Found '{}' on file page {}.",
                 running.query, position.page_number
@@ -132,9 +197,11 @@ pub(crate) fn poll_search(app: &mut super::App, out: &mut dyn Write) -> io::Resu
             app.reveal_cursor();
         }
         SearchResult::NotFound => {
+            app.search.active_match = None;
             app.message = Some(format!("No matches for '{}'.", running.query));
         }
         SearchResult::Error(error) => {
+            app.search.active_match = None;
             app.message = Some(format!("Search error: {error}"));
         }
     }
@@ -149,6 +216,9 @@ fn cancel_running(state: &mut SearchUiState) {
 
 pub(super) fn cancel_running_search(app: &mut super::App) {
     cancel_running(&mut app.search);
+    app.search.prompt = None;
+    app.search.origin = None;
+    app.search.active_match = None;
 }
 
 #[cfg(test)]
@@ -190,6 +260,74 @@ mod tests {
             crate::buffer::Cursor { row: 1, col: 4 }
         );
         assert!(app.message.as_deref().unwrap_or("").contains("Found"));
+    }
+
+    #[test]
+    fn typing_in_search_moves_and_highlights_incrementally() {
+        let mut app = super::super::App::new(None).unwrap();
+        app.buffer = Box::new(crate::buffer::PieceTable::from_text(
+            "zero\none target here\nlast target",
+        ));
+        let mut out = Vec::new();
+
+        app.handle_key_with(&mut out, key(KeyCode::Char('f'), KeyModifiers::CONTROL))
+            .unwrap();
+        for ch in "target".chars() {
+            app.handle_key_with(&mut out, key(KeyCode::Char(ch), KeyModifiers::NONE))
+                .unwrap();
+        }
+
+        assert_eq!(
+            app.buffer.cursor(),
+            crate::buffer::Cursor { row: 1, col: 4 }
+        );
+        assert!(app.search.prompt.is_some(), "search stays active");
+        assert!(String::from_utf8(out)
+            .unwrap()
+            .contains("\x1b[7mtarget\x1b[27m"));
+    }
+
+    #[test]
+    fn enter_and_up_move_between_search_matches_and_escape_exits() {
+        let mut app = super::super::App::new(None).unwrap();
+        app.buffer = Box::new(crate::buffer::PieceTable::from_text(
+            "target zero\ntarget one\ntarget two",
+        ));
+        let mut out = Vec::new();
+
+        app.handle_key_with(&mut out, key(KeyCode::Char('f'), KeyModifiers::CONTROL))
+            .unwrap();
+        for ch in "target".chars() {
+            app.handle_key_with(&mut out, key(KeyCode::Char(ch), KeyModifiers::NONE))
+                .unwrap();
+        }
+        assert_eq!(
+            app.buffer.cursor(),
+            crate::buffer::Cursor { row: 0, col: 0 }
+        );
+
+        app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
+            .unwrap();
+        assert_eq!(
+            app.buffer.cursor(),
+            crate::buffer::Cursor { row: 1, col: 0 }
+        );
+
+        app.handle_key_with(&mut out, key(KeyCode::Up, KeyModifiers::NONE))
+            .unwrap();
+        assert_eq!(
+            app.buffer.cursor(),
+            crate::buffer::Cursor { row: 0, col: 0 }
+        );
+
+        app.handle_key_with(&mut out, key(KeyCode::Esc, KeyModifiers::NONE))
+            .unwrap();
+        assert!(app.search.prompt.is_none());
+        assert!(app.search.active_match.is_none());
+        assert_eq!(
+            app.buffer.cursor(),
+            crate::buffer::Cursor { row: 0, col: 0 }
+        );
     }
 
     #[test]

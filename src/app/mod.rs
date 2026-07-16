@@ -267,6 +267,14 @@ impl App {
         // Screen is single source for dims.
         // Avoid cloning self.message: pass Some(m.as_str()) directly.
         // Status is built locally only for the no-message path and passed as &str.
+        let highlight = self
+            .search
+            .active_match()
+            .map(|found| term::render::TextHighlight {
+                row: found.start.row,
+                start_col: found.start.col,
+                end_col: found.end_col,
+            });
         if let Some(ref m) = self.message {
             term::render::render_buffer(
                 stdout,
@@ -276,6 +284,7 @@ impl App {
                 self.screen.height as usize,
                 self.screen.width as usize,
                 Some(m.as_str()),
+                highlight,
             )
         } else {
             let status = status::format_status_line(
@@ -300,6 +309,7 @@ impl App {
                 self.screen.height as usize,
                 self.screen.width as usize,
                 Some(status.as_str()),
+                highlight,
             )
         }
     }

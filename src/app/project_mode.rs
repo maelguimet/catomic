@@ -11,6 +11,7 @@ use crate::mode::{Capabilities, Mode};
 use crate::project::ProjectSession;
 
 pub(crate) fn switch_to_project(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    super::llm_preview::close(app);
     super::lint::close_view(app);
     super::project_files::close_view(app);
     let cwd = match std::env::current_dir() {
@@ -30,6 +31,7 @@ pub(crate) fn switch_to_project(app: &mut super::App, out: &mut dyn Write) -> io
 }
 
 pub(crate) fn switch_to_plain(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    super::llm_preview::close(app);
     super::lint::close_view(app);
     super::project_files::close_view(app);
     app.project = None;

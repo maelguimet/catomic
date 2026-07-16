@@ -11,8 +11,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::file_state::refresh_dirty;
 use super::{
-    buffers, command_prompt, completion, lint, paging, project_files, reload, save, search,
-    selection, view,
+    buffers, command_prompt, completion, lint, llm_preview, paging, project_files, reload, save,
+    search, selection, view,
 };
 
 /// Common post-content-mutation cleanup used by insert, delete, newline, undo, redo paths.
@@ -22,6 +22,14 @@ use super::{
 /// Behavior must remain identical to the prior inlined blocks (including no-op undo/redo
 /// and boundary backspace/delete still clearing pending state).
 pub(super) fn finish_content_edit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    finish_content_edit_with_message(app, out, None)
+}
+
+pub(super) fn finish_content_edit_with_message(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    message: Option<String>,
+) -> io::Result<()> {
     completion::cancel(app);
     app.selection.clear();
     refresh_dirty(&mut app.file, &*app.buffer);
@@ -31,7 +39,7 @@ pub(super) fn finish_content_edit(app: &mut super::App, out: &mut dyn Write) -> 
         app.pending_quit_confirm = false;
         app.pending_save_conflict = None;
         app.pending_reload = None;
-        app.message = None;
+        app.message = message;
     }
     app.reveal_cursor();
     app.render(out)
@@ -55,6 +63,9 @@ pub(crate) fn handle_key_with(
         return Ok(());
     }
     if command_prompt::handle_active_key(app, out, key)? {
+        return Ok(());
+    }
+    if llm_preview::handle_key(app, out, key)? {
         return Ok(());
     }
     if completion::handle_key(app, out, key)? {
@@ -337,6 +348,9 @@ pub(crate) fn handle_paste(
     text: &str,
 ) -> io::Result<()> {
     completion::cancel(app);
+    if llm_preview::handle_paste(app, out)? {
+        return Ok(());
+    }
     if project_files::handle_paste(app, out)? {
         return Ok(());
     }

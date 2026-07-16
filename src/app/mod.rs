@@ -44,6 +44,7 @@ mod watch;
 
 mod input;
 mod lint;
+mod llm_preview;
 
 /// High-level application state for the editor.
 pub struct App {
@@ -96,6 +97,9 @@ pub struct App {
     pub(crate) lint_view: Option<lint::DiagnosticsView>,
     /// Project-only read-only discovered-file picker, absent until explicitly shown.
     pub(crate) project_files_view: Option<project_files::ProjectFilesView>,
+    /// Explicit LLM patch preview, absent until a proposal has been parsed and validated.
+    /// This is local display state only; it contains no network client or repo broker.
+    pub(crate) llm_preview: Option<llm_preview::PatchPreview>,
     /// Per-buffer half-open selection state.
     pub(crate) selection: selection::SelectionUiState,
     /// Always-available process-local clipboard shared across open buffers.
@@ -184,6 +188,7 @@ impl App {
             completion,
             lint_view: None,
             project_files_view: None,
+            llm_preview: None,
             selection: selection::SelectionUiState::default(),
             clipboard: String::new(),
             view: view::ViewOptions::default(),
@@ -312,7 +317,8 @@ impl App {
         // Status is built locally only for the no-message path and passed as &str.
         let highlight = (!view::is_preview(self)
             && !lint::is_viewing(self)
-            && !project_files::is_viewing(self))
+            && !project_files::is_viewing(self)
+            && !llm_preview::is_viewing(self))
         .then(|| {
             self.selection
                 .active()

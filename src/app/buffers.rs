@@ -15,7 +15,7 @@ use crate::file::watcher::FileWatcher;
 
 use super::{
     command_prompt, completion, lint, llm_answer, llm_preview, llm_request, project_files, reload,
-    save, search, selection, view, App, FileState,
+    repo_llm, save, search, selection, view, App, FileState,
 };
 
 pub(crate) struct BufferSlot {
@@ -127,6 +127,7 @@ impl App {
             self.message = None;
         }
         llm_request::cancel_all(self);
+        repo_llm::cancel_all(self);
         if self.pending_quit_confirm {
             self.message = None;
             self.pending_quit_confirm = false;

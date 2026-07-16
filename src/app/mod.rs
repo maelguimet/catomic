@@ -34,6 +34,7 @@ mod paging;
 mod project_files;
 mod project_mode;
 mod reload;
+mod repo_llm;
 mod save;
 mod search;
 mod selection;
@@ -108,6 +109,8 @@ pub struct App {
     pub(crate) pending_llm_request: Option<llm_request::PendingLlmRequest>,
     /// Present only after explicit Enter confirmation; dropping it cancels the transient client.
     pub(crate) llm_task: Option<llm_request::RunningLlmRequest>,
+    /// Project-only repo-context preparation, confirmation, or confirmed network task.
+    pub(crate) repo_llm_state: Option<repo_llm::RepoLlmState>,
     /// Per-buffer half-open selection state.
     pub(crate) selection: selection::SelectionUiState,
     /// Always-available process-local clipboard shared across open buffers.
@@ -200,6 +203,7 @@ impl App {
             llm_answer: None,
             pending_llm_request: None,
             llm_task: None,
+            repo_llm_state: None,
             selection: selection::SelectionUiState::default(),
             clipboard: String::new(),
             view: view::ViewOptions::default(),
@@ -255,6 +259,7 @@ impl App {
             lint::poll(self, &mut stdout)?;
             project_files::poll(self, &mut stdout)?;
             llm_request::poll(self, &mut stdout)?;
+            repo_llm::poll(self, &mut stdout)?;
 
             // Blocking read for Phase 0. Later we may need non-blocking + resize.
             if event::poll(std::time::Duration::from_millis(100))? {

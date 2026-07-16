@@ -144,6 +144,7 @@ fn execute_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> 
             super::llm_request::CurrentLlmCommand::BigMeow,
             instruction,
         ),
+        ("gitmeow" | "megameow", instruction) => super::repo_llm::begin(app, out, instruction),
         _ => {
             app.message = Some(format!("Unknown command: {command}"));
             app.render(out)

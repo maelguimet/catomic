@@ -9,16 +9,20 @@ use std::io::{self, Write};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::{Buffer, Cursor, PieceTable};
+use crate::llm::broker::ContextBroker;
 
 mod proposal;
+mod repo;
 
 use proposal::Proposal;
 pub(crate) use proposal::RegionTarget;
+pub(crate) use repo::show_repo_patch;
 
 pub(crate) struct PatchPreview {
     proposal: Proposal,
     proposed_text: String,
     source_snapshot: String,
+    repo_guard: Option<ContextBroker>,
     buffer: PieceTable,
     source_scroll_top: usize,
     source_scroll_left: usize,
@@ -48,6 +52,7 @@ pub(crate) fn show(app: &mut super::App, out: &mut dyn Write, patch_text: &str) 
         source_snapshot,
         patch_text,
         "LLM patch preview (read-only). Enter applies; Esc cancels.",
+        None,
     )
 }
 
@@ -67,6 +72,7 @@ pub(crate) fn show_with_region_fallback(
             source_snapshot,
             output,
             "LLM patch preview (read-only). Enter applies; Esc cancels.",
+            None,
         );
     }
     let Some(target) = target else {
@@ -92,6 +98,7 @@ pub(crate) fn show_with_region_fallback(
         source_snapshot,
         &preview_text,
         "LLM marked-region preview (read-only). Enter applies; Esc cancels.",
+        None,
     )
 }
 
@@ -103,6 +110,7 @@ fn open(
     source_snapshot: String,
     preview_text: &str,
     message: &str,
+    repo_guard: Option<ContextBroker>,
 ) -> io::Result<()> {
     super::view::cancel_preview(app);
     super::lint::close_view(app);
@@ -112,6 +120,7 @@ fn open(
         proposal,
         proposed_text,
         source_snapshot,
+        repo_guard,
         buffer: PieceTable::from_text(preview_text),
         source_scroll_top: app.screen.scroll_top,
         source_scroll_left: app.screen.scroll_left,
@@ -188,6 +197,26 @@ fn confirm(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     app.screen.scroll_top = preview.source_scroll_top;
     app.screen.scroll_left = preview.source_scroll_left;
     let current = app.buffer.to_string();
+    if let Some(guard) = preview.repo_guard.as_ref() {
+        match guard.is_unchanged() {
+            Ok(true) => {}
+            Ok(false) => {
+                app.message = Some(
+                    "Repository changed since the request; repo LLM patch was not applied."
+                        .to_string(),
+                );
+                app.reveal_cursor();
+                return app.render(out);
+            }
+            Err(error) => {
+                app.message = Some(format!(
+                    "Could not recheck repository; patch refused: {error}"
+                ));
+                app.reveal_cursor();
+                return app.render(out);
+            }
+        }
+    }
     if current != preview.source_snapshot {
         app.message =
             Some("Source changed since preview; LLM proposal was not applied.".to_string());

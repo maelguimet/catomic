@@ -111,3 +111,25 @@ fn refuses_overlapping_hunks() {
         Err(PatchError::OverlappingHunks)
     );
 }
+
+#[test]
+fn validates_the_named_target_and_rejects_other_files_or_renames() {
+    let matching =
+        Patch::parse("--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -1 +1 @@\n-old\n+new\n").unwrap();
+    assert_eq!(matching.validate_target("src/lib.rs"), Ok(()));
+    assert_eq!(matching.validate_target("./src/lib.rs"), Ok(()));
+    assert_eq!(
+        matching.validate_target("src/other.rs"),
+        Err(PatchError::UnexpectedPath)
+    );
+
+    let rename =
+        Patch::parse("--- a/src/lib.rs\n+++ b/src/new.rs\n@@ -1 +1 @@\n-old\n+new\n").unwrap();
+    assert_eq!(
+        rename.validate_target("src/lib.rs"),
+        Err(PatchError::UnexpectedPath)
+    );
+
+    let deletion = Patch::parse("--- a/src/lib.rs\n+++ /dev/null\n@@ -1 +0,0 @@\n-old\n").unwrap();
+    assert_eq!(deletion.validate_target("src/lib.rs"), Ok(()));
+}

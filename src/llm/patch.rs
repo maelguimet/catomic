@@ -41,6 +41,7 @@ pub enum PatchError {
     InvalidHunkLine { line: usize },
     CountMismatch { line: usize },
     MisplacedNoNewlineMarker { line: usize },
+    UnexpectedPath,
     OverlappingHunks,
     SourceOutOfBounds,
     SourceMismatch { line: usize },
@@ -154,6 +155,19 @@ impl Patch {
             preview.push('\n');
         }
         Ok(preview)
+    }
+
+    pub fn validate_target(&self, expected_path: &str) -> Result<(), PatchError> {
+        let expected = expected_path.strip_prefix("./").unwrap_or(expected_path);
+        let targets_expected = |path: &str| path == "/dev/null" || path == expected;
+        if targets_expected(&self.old_path)
+            && targets_expected(&self.new_path)
+            && (self.old_path == expected || self.new_path == expected)
+        {
+            Ok(())
+        } else {
+            Err(PatchError::UnexpectedPath)
+        }
     }
 }
 

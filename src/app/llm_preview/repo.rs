@@ -12,16 +12,18 @@ pub(crate) fn show_repo_patch(
     app: &mut super::super::App,
     out: &mut dyn Write,
     output: &str,
+    expected_path: &str,
     guard: ContextBroker,
 ) -> io::Result<()> {
     let source_snapshot = app.buffer.to_string();
-    let (proposal, proposed_text) = match super::proposal::build_patch(&source_snapshot, output) {
-        Ok(proposal) => proposal,
-        Err(message) => {
-            app.message = Some(message);
-            return app.render(out);
-        }
-    };
+    let (proposal, proposed_text) =
+        match super::proposal::build_patch_for_path(&source_snapshot, output, expected_path) {
+            Ok(proposal) => proposal,
+            Err(message) => {
+                app.message = Some(message);
+                return app.render(out);
+            }
+        };
     super::open(
         app,
         out,

@@ -82,6 +82,30 @@ fn confirmed_patch_previews_but_repo_drift_blocks_apply() {
         .contains("Repository changed"));
 }
 
+#[test]
+fn patch_for_a_different_repo_file_is_refused_before_preview() {
+    let repo = TempRepo::new();
+    let patch = "--- a/other.txt\n+++ b/other.txt\n@@ -1 +1 @@\n-stable\n+changed\n";
+    let (settings, server) = response_server(patch);
+    let mut app = project_app(&repo);
+    let original = app.buffer.to_string();
+    let mut out = Vec::new();
+    begin_with_settings(&mut app, &mut out, "uppercase second line", settings).unwrap();
+    poll_until_pending(&mut app, &mut out);
+
+    handle_key(&mut app, &mut out, key(KeyCode::Enter)).unwrap();
+    poll_until_finished(&mut app, &mut out);
+    server.join().unwrap();
+
+    assert!(app.llm_preview.is_none());
+    assert_eq!(app.buffer.to_string(), original);
+    assert!(app
+        .message
+        .as_deref()
+        .unwrap()
+        .contains("other than active path note.txt"));
+}
+
 fn project_app(repo: &TempRepo) -> super::super::App {
     let path = repo.0.join("note.txt");
     let mut app = super::super::App::new(path.to_str()).unwrap();
@@ -112,8 +136,13 @@ fn poll_until_finished(app: &mut super::super::App, out: &mut Vec<u8>) {
 }
 
 fn patch_server() -> (LlmSettings, std::thread::JoinHandle<()>) {
+    response_server("--- a/note.txt\n+++ b/note.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n")
+}
+
+fn response_server(patch: &str) -> (LlmSettings, std::thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
+    let patch = patch.to_string();
     let server = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
         let mut request = Vec::new();
@@ -125,7 +154,6 @@ fn patch_server() -> (LlmSettings, std::thread::JoinHandle<()>) {
                 break;
             }
         }
-        let patch = "--- a/note.txt\n+++ b/note.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n";
         let body = serde_json::json!({"choices":[{"message":{"content":patch}}]}).to_string();
         write!(
             stream,

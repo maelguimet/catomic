@@ -49,6 +49,7 @@ pub(crate) struct Pending {
 pub(crate) struct Running {
     task: RepoLlmTask,
     source_snapshot: String,
+    relative_path: String,
 }
 
 pub(crate) fn poll(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
@@ -194,6 +195,7 @@ fn confirm(app: &mut super::App) {
             app.repo_llm_state = Some(RepoLlmState::Running(Running {
                 task,
                 source_snapshot: pending.source_snapshot,
+                relative_path: pending.relative_path,
             }));
         }
         Err(error) => app.message = Some(format!("Could not start repo LLM request: {error}")),

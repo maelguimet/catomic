@@ -11,8 +11,9 @@ Phase 6 is complete. Its exit evidence is in
 - **Transient backend**: lazy OpenAI-compatible configuration and a per-request
   current-thread runtime/client created only after Enter confirmation. Tests
   use loopback fake HTTP and never a live model.
-- **Safe output**: strict single-file unified patches, a strict marked-region
-  replacement envelope, read-only explanation results, and fail-closed parsing.
+- **Safe output**: strict single-file unified patches, exact active repo-path
+  validation, rename refusal, a strict marked-region replacement envelope,
+  read-only explanation results, and fail-closed parsing.
 - **Preview lifecycle**: source remains unchanged through response and preview;
   Enter applies one buffer transaction, Escape cancels, and undo restores the
   exact source.

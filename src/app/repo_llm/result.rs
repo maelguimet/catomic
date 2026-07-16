@@ -23,9 +23,14 @@ pub(super) fn poll_running(app: &mut super::super::App, out: &mut dyn Write) -> 
         unreachable!()
     };
     match result {
-        RepoLlmTaskResult::Finished { output, broker } => {
-            finish_output(app, out, output, broker, &state.source_snapshot)
-        }
+        RepoLlmTaskResult::Finished { output, broker } => finish_output(
+            app,
+            out,
+            output,
+            broker,
+            &state.source_snapshot,
+            &state.relative_path,
+        ),
         RepoLlmTaskResult::Cancelled => render_message(app, out, "Repo LLM request cancelled."),
         RepoLlmTaskResult::Error(error) => {
             render_message(app, out, &format!("Repo LLM request failed: {error}"))
@@ -39,6 +44,7 @@ fn finish_output(
     output: String,
     broker: ContextBroker,
     source_snapshot: &str,
+    expected_path: &str,
 ) -> io::Result<()> {
     if app.buffer.to_string() != source_snapshot {
         return render_message(
@@ -48,7 +54,9 @@ fn finish_output(
         );
     }
     match broker.is_unchanged() {
-        Ok(true) => super::super::llm_preview::show_repo_patch(app, out, &output, broker),
+        Ok(true) => {
+            super::super::llm_preview::show_repo_patch(app, out, &output, expected_path, broker)
+        }
         Ok(false) => render_message(
             app,
             out,

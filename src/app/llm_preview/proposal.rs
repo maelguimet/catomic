@@ -65,6 +65,22 @@ impl Proposal {
 
 pub(super) fn build_patch(current: &str, text: &str) -> Result<(Proposal, String), String> {
     let patch = Patch::parse(text).map_err(|error| format!("Invalid LLM patch: {error:?}"))?;
+    finish_patch(current, patch)
+}
+
+pub(super) fn build_patch_for_path(
+    current: &str,
+    text: &str,
+    expected_path: &str,
+) -> Result<(Proposal, String), String> {
+    let patch = Patch::parse(text).map_err(|error| format!("Invalid LLM patch: {error:?}"))?;
+    patch
+        .validate_target(expected_path)
+        .map_err(|_| format!("LLM patch targets a file other than active path {expected_path}"))?;
+    finish_patch(current, patch)
+}
+
+fn finish_patch(current: &str, patch: Patch) -> Result<(Proposal, String), String> {
     let proposed_text = patch
         .apply_preview(current)
         .map_err(|error| format!("LLM patch does not match current text: {error:?}"))?;

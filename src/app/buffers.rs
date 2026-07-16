@@ -81,12 +81,25 @@ impl App {
         self.inactive_buffers.len().saturating_add(1)
     }
 
+    pub(crate) fn dirty_buffer_count(&self) -> usize {
+        usize::from(self.file.dirty)
+            + self
+                .inactive_buffers
+                .iter()
+                .filter(|slot| slot.file.dirty)
+                .count()
+    }
+
     pub(crate) fn switch_buffer(&mut self, direction: BufferDirection) -> bool {
         if self.inactive_buffers.is_empty() {
             return false;
         }
 
         search::cancel_running_search(self);
+        if self.pending_quit_confirm {
+            self.message = None;
+            self.pending_quit_confirm = false;
+        }
         let mut slot = match direction {
             BufferDirection::Next => self.inactive_buffers.pop_front(),
             BufferDirection::Previous => self.inactive_buffers.pop_back(),
@@ -103,7 +116,6 @@ impl App {
             BufferDirection::Next => self.active_buffer_index.saturating_add(1) % count,
             BufferDirection::Previous => self.active_buffer_index.saturating_add(count - 1) % count,
         };
-        self.pending_quit_confirm = false;
         true
     }
 }
@@ -113,6 +125,8 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     use super::*;
 
@@ -127,6 +141,10 @@ mod tests {
         ));
         fs::write(&path, text).unwrap();
         path
+    }
+
+    fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
+        KeyEvent::new(code, modifiers)
     }
 
     #[test]
@@ -206,5 +224,85 @@ mod tests {
         assert_eq!(app.buffer_count(), 1);
         assert_eq!(app.active_buffer_index, 0);
         assert_eq!(app.screen.scroll_top, 9);
+    }
+
+    #[test]
+    fn dirty_count_includes_inactive_buffers() {
+        let first = temp_file("dirty_first", "alpha");
+        let second = temp_file("dirty_second", "beta");
+        let paths = vec![
+            first.to_string_lossy().into_owned(),
+            second.to_string_lossy().into_owned(),
+        ];
+        let mut app =
+            App::new_with_paths_and_big_file_config(&paths, BigFileConfig::default()).unwrap();
+
+        app.file.dirty = true;
+        app.switch_buffer(BufferDirection::Next);
+        assert_eq!(app.dirty_buffer_count(), 1);
+
+        app.file.dirty = true;
+        assert_eq!(app.dirty_buffer_count(), 2);
+
+        fs::remove_file(first).unwrap();
+        fs::remove_file(second).unwrap();
+    }
+
+    #[test]
+    fn alt_page_keys_switch_buffers_and_render_active_position() {
+        let first = temp_file("keys_first", "alpha");
+        let second = temp_file("keys_second", "beta");
+        let paths = vec![
+            first.to_string_lossy().into_owned(),
+            second.to_string_lossy().into_owned(),
+        ];
+        let mut app =
+            App::new_with_paths_and_big_file_config(&paths, BigFileConfig::default()).unwrap();
+        let mut out = Vec::new();
+
+        app.handle_key_with(&mut out, key(KeyCode::PageDown, KeyModifiers::ALT))
+            .unwrap();
+        assert_eq!(app.buffer.to_string(), "beta");
+        assert!(String::from_utf8_lossy(&out).contains("buffer 2/2"));
+
+        app.handle_key_with(&mut out, key(KeyCode::PageUp, KeyModifiers::ALT))
+            .unwrap();
+        assert_eq!(app.buffer.to_string(), "alpha");
+        assert_eq!(app.active_buffer_index, 0);
+
+        fs::remove_file(first).unwrap();
+        fs::remove_file(second).unwrap();
+    }
+
+    #[test]
+    fn quit_guard_includes_a_dirty_inactive_buffer() {
+        let first = temp_file("quit_first", "alpha");
+        let second = temp_file("quit_second", "beta");
+        let paths = vec![
+            first.to_string_lossy().into_owned(),
+            second.to_string_lossy().into_owned(),
+        ];
+        let mut app =
+            App::new_with_paths_and_big_file_config(&paths, BigFileConfig::default()).unwrap();
+        app.file.dirty = true;
+        app.switch_buffer(BufferDirection::Next);
+        let mut out = Vec::new();
+
+        app.handle_key_with(&mut out, key(KeyCode::Char('q'), KeyModifiers::CONTROL))
+            .unwrap();
+        assert!(!app.should_quit);
+        assert!(app.pending_quit_confirm);
+        assert!(app
+            .message
+            .as_deref()
+            .unwrap_or("")
+            .contains("Unsaved changes"));
+
+        app.handle_key_with(&mut out, key(KeyCode::Char('q'), KeyModifiers::CONTROL))
+            .unwrap();
+        assert!(app.should_quit);
+
+        fs::remove_file(first).unwrap();
+        fs::remove_file(second).unwrap();
     }
 }

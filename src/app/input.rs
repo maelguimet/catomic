@@ -16,7 +16,7 @@ use std::io::{self, Write};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::file_state::refresh_dirty;
-use super::{paging, reload, save, search};
+use super::{buffers, paging, reload, save, search};
 
 /// Common post-content-mutation cleanup used by insert, delete, newline, undo, redo paths.
 /// Centralizes the exact sequence that must run after any buffer-mutating key:
@@ -68,16 +68,21 @@ pub(crate) fn handle_key_with(
             modifiers: KeyModifiers::CONTROL,
             ..
         } => {
-            if !app.file.dirty {
+            let dirty_count = app.dirty_buffer_count();
+            if dirty_count == 0 {
                 app.should_quit = true;
             } else if app.pending_quit_confirm {
                 app.should_quit = true;
             } else {
                 app.pending_quit_confirm = true;
-                app.message = Some(
+                app.message = Some(if dirty_count == 1 {
                     "Unsaved changes. Press Ctrl+Q again to quit without saving, Ctrl+S to save."
-                        .to_string(),
-                );
+                        .to_string()
+                } else {
+                    format!(
+                        "Unsaved changes in {dirty_count} buffers. Press Ctrl+Q again to quit without saving."
+                    )
+                });
                 app.render(out)?;
                 // do not quit
             }
@@ -108,6 +113,26 @@ pub(crate) fn handle_key_with(
             ..
         } if modifiers.contains(KeyModifiers::CONTROL) => {
             search::open_prompt(app, out)?;
+        }
+
+        KeyEvent {
+            code: KeyCode::PageDown,
+            modifiers,
+            ..
+        } if modifiers.contains(KeyModifiers::ALT) => {
+            app.switch_buffer(buffers::BufferDirection::Next);
+            app.reveal_cursor();
+            app.render(out)?;
+        }
+
+        KeyEvent {
+            code: KeyCode::PageUp,
+            modifiers,
+            ..
+        } if modifiers.contains(KeyModifiers::ALT) => {
+            app.switch_buffer(buffers::BufferDirection::Previous);
+            app.reveal_cursor();
+            app.render(out)?;
         }
 
         KeyEvent {

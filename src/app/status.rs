@@ -1,7 +1,7 @@
 //! Minimal persistent bottom status line for the editor (Phase 2B).
 //!
 //! Purpose: when no transient app.message is present, compute a single-line
-//!   status string (mode, path, dirty, size, tier, page) to show
+//!   status string (mode, path, dirty, size, tier, page, buffer position) to show
 //!   on the reserved bottom row. Messages still override.
 //! Owns: format_status_line (pure, takes the minimal fields it needs).
 //! Must not: mutate state; perform IO; know render details beyond the string;
@@ -31,6 +31,7 @@ pub(crate) fn format_status_line(
     size_bytes: Option<u64>,
     size_tier: Option<FileSizeTier>,
     page: Option<PageInfo>,
+    buffer_position: Option<(usize, usize)>,
 ) -> String {
     let mode = if is_plain { "plain" } else { "project" };
     let name = match path
@@ -65,6 +66,9 @@ pub(crate) fn format_status_line(
             page.page_number, page.start_byte, page.end_byte, page.total_bytes
         ));
     }
+    if let Some((active, count)) = buffer_position {
+        out.push_str(&format!(" buffer {active}/{count}"));
+    }
     out
 }
 
@@ -79,7 +83,7 @@ mod tests {
 
     #[test]
     fn untitled_clean_status_contains_plain_untitled_saved() {
-        let s = format_status_line(true, None, false, None, None, None);
+        let s = format_status_line(true, None, false, None, None, None, None);
         assert!(s.contains("plain"), "status: {}", s);
         assert!(s.contains("[untitled]"), "status: {}", s);
         assert!(s.contains("saved"), "status: {}", s);
@@ -96,6 +100,7 @@ mod tests {
             true,
             Some(123),
             Some(FileSizeTier::Small),
+            None,
             None,
         );
         assert!(s.contains("modified"), "status: {}", s);
@@ -115,6 +120,7 @@ mod tests {
             false,
             Some(4096),
             Some(FileSizeTier::Small),
+            None,
             None,
         );
         assert!(
@@ -139,6 +145,7 @@ mod tests {
             Some(10 * 1024 * 1024 + 1),
             Some(FileSizeTier::Large),
             None,
+            None,
         );
         assert!(
             s.contains("large-file mode"),
@@ -161,6 +168,7 @@ mod tests {
             true,
             Some(200 * 1024 * 1024),
             Some(FileSizeTier::Huge),
+            None,
             None,
         );
         assert!(
@@ -194,9 +202,17 @@ mod tests {
             Some(1_000),
             Some(FileSizeTier::Huge),
             Some(page),
+            None,
         );
 
         assert!(status.contains("page 3"), "status: {status}");
         assert!(status.contains("bytes 400-600 of 1000"), "status: {status}");
+    }
+
+    #[test]
+    fn multiple_buffers_include_active_position() {
+        let status = format_status_line(true, None, false, None, None, None, Some((2, 3)));
+
+        assert!(status.contains("buffer 2/3"), "status: {status}");
     }
 }

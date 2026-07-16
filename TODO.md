@@ -758,7 +758,7 @@ Update this file as decisions are made or phases complete. Add concrete issues o
 
 - Detailed completed Phase 2-r through 2-ae notes are archived in `docs/progress/phase-2-progress.md`.
 
-Key unresolved limitations (still current post 2-bf):
+Key unresolved limitations (still current post 2-bg):
 - (size classification + pre-read guardrails + Large/Huge warn + Extreme refuse now exist; manual baselines recorded + split harness + line-heavy smokes exist; first visible large-file mode status marker landed; open/buffer storage seams exist; Huge files now use a read-only file-backed limited mode; still no editable lazy loading, no mmap, no rope rewrite)
 - watcher signals are runtime hints only; App-owned best-effort; runtime checks watcher once per loop via helper (try_recv inside check_file_watcher_once only); Unchanged/NoPath from watcher clear stale pending_reload when armed, otherwise fully ignored (suppress self-save noise);
 - no auto-reload; Modified/Deleted (from watcher or Ctrl+R) only arm confirmation; second Ctrl+R performs actual reload using fresh observe + pending match (or clears for Deleted);
@@ -777,8 +777,9 @@ Key unresolved limitations (still current post 2-bf):
 - Phase 2-bd (real PTY smoke): added a default root integration test using `portable-pty` as a dev-dependency only. The smoke drives the compiled binary through a pseudo-terminal (`ab`, Ctrl+S, `c`, Ctrl+Z, Ctrl+S, Ctrl+Q), checks clean exit/render output, and verifies the saved file content is `ab`. This replaces the old stub-only PTY claim for the core save/undo path, but remains narrow and does not cover watcher/external edit flows through a PTY.
 - Phase 2-be (Huge render error surfacing): Buffer now has a fallible visible-window query used by terminal rendering. In-memory buffers inherit the existing infallible behavior; LargeFileBuffer overrides it so descriptor drift and ranged-read failures propagate instead of rendering blank content. Focused buffer and renderer tests cover the changed-file path. Other legacy whole-line/full-content Buffer queries remain infallible and Huge editing remains disabled.
 - Phase 2-bf (external-edit PTY acceptance): the root PTY harness now edits an open file from outside the editor, synchronizes with either watcher-armed or manual Ctrl+R confirmation state, requires the confirmed reload message and external content to render, and then cleanly quits. The focused test passed repeated runs; live notify remains a timing hint rather than the source of truth.
+- Phase 2-bg (Huge scanner split): the chunked UTF-8/line metadata scan now lives in a focused private `buffer/large_file/scan.rs` submodule. LargeFileBuffer behavior is unchanged, and the primary file is back below the 500-line smell threshold before additional storage work.
 
-Next intended Phase 2B steps (post 2-bf):
+Next intended Phase 2B steps (post 2-bg):
 - Decide the next Huge-file policy step: immutable external-change snapshot behavior, editable Huge semantics, or another measured scan/render optimization. Keep any next move narrow and backed by ignored manual measurements.
 - The 2026-07-07 phase split is recorded; for editable Small/Large PieceTable opens, `read_to_string` remains the useful full-materialization split, and line-heavy manual smokes show `PieceTable::from_owned_text`/LineIndex cost reappearing for newline-rich content. Huge now bypasses editable PieceTable materialization, but still performs a full UTF-8/newline scan at open and still lacks local edit semantics.
 - Keep manual large-file tests ignored; do not add or enable default 10/100 MiB or 1 GiB tests.

@@ -30,6 +30,9 @@ The important current seams are:
 - `Buffer::try_visible_lines_window`, `Buffer::line_char_count`, and
   `Buffer::is_read_only` let render/viewport/App policy avoid full line reads,
   surface file-backed window read failures, and report limited storage mode.
+- `Buffer::write_to` plus `file::io::atomic_write_with` provide streaming
+  piece/range output with the existing temp-file, fsync, and rename guarantees;
+  App save no longer requires one full logical `String`.
 - LargeFileBuffer records per-line ASCII flags plus sparse char-column
   checkpoints, so ASCII visible windows can map scalar columns directly to byte
   ranges while non-ASCII windows seek near the requested scalar column and scan
@@ -154,6 +157,8 @@ The current accepted intermediate defines:
 - Same-inode metadata drift fails closed before ranged reads.
 - Visible-window read failures propagate through terminal rendering instead of
   being displayed as empty content.
+- Atomic save accepts streamed Buffer content and records the exact byte count;
+  Huge save remains disabled until local edit semantics are implemented.
 
 Remaining open decisions before editable Huge files:
 
@@ -162,5 +167,4 @@ Remaining open decisions before editable Huge files:
 - Whether CRLF normalization is preserved for lazy originals.
 - How to provide an immutable snapshot or other safe behavior when same-inode
   content is modified externally while open.
-- Whether save uses streaming piece traversal or full `to_string`.
 - What dependency or unsafe-code justification is required.

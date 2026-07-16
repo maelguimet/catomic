@@ -1,7 +1,7 @@
 //! Purpose: this file must provide explicit full-file UTF-8 reads, atomic file
 //!   IO (write + fsync rename), and metadata-only snapshot/observation helpers
 //!   for external-edit detection.
-//! Owns: read_to_string (for open/reload paths), atomic_write_string,
+//! Owns: read_to_string (for open/reload paths), streaming atomic writes,
 //!   FileSnapshot, ExternalFileStatus, ExternalFileObservation, capture/compare/observe
 //!   pure helpers (std fs::metadata only).
 //! Must not: construct watchers or use notify; read file content for change detection
@@ -10,7 +10,7 @@
 //!   all observation is metadata (len+mtime) only; Absent explicitly represents missing;
 //!   read_to_string returns InvalidData for non-UTF-8; errors other than NotFound
 //!   surface as Unknown(kind) in observation helpers; single-capture observe.
-//! Phase: 2-l foundation + later hygiene + 2-ar explicit owned full-read helper.
+//! Phase: 2-l foundation through 2-bh streaming atomic save foundation.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
@@ -32,7 +32,17 @@ pub fn read_to_string<P: AsRef<Path>>(path: P) -> io::Result<String> {
 /// Temp is removed on any error before successful rename.
 /// Unique temp uses target filename + pid. create_new used to avoid clobber.
 /// Linux-first: directory fsync is best-effort; no new dependencies.
+#[allow(dead_code)] // Compatibility/test convenience; App uses the streaming form.
 pub fn atomic_write_string(path: impl AsRef<Path>, contents: &str) -> io::Result<()> {
+    atomic_write_with(path, |writer| writer.write_all(contents.as_bytes())).map(|_| ())
+}
+
+/// Atomically stream content into `path` and return the number of bytes written.
+/// Durability, rename, and cleanup semantics match `atomic_write_string`.
+pub fn atomic_write_with(
+    path: impl AsRef<Path>,
+    write_contents: impl FnOnce(&mut dyn Write) -> io::Result<()>,
+) -> io::Result<u64> {
     let target = path.as_ref().to_path_buf();
     let parent: PathBuf = target
         .parent()
@@ -53,13 +63,17 @@ pub fn atomic_write_string(path: impl AsRef<Path>, contents: &str) -> io::Result
     let temp_path: PathBuf = parent.join(tmp_name);
 
     // Inner closure so we can cleanup temp exactly on failure path.
-    let res: io::Result<()> = (|| {
+    let res: io::Result<u64> = (|| {
         let mut f = OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&temp_path)?;
-        f.write_all(contents.as_bytes())?;
-        f.flush()?;
+        let written = {
+            let mut writer = CountingWriter::new(&mut f);
+            write_contents(&mut writer)?;
+            writer.flush()?;
+            writer.written
+        };
         f.sync_all()?;
         // Ensure file is closed before rename on all platforms.
         drop(f);
@@ -73,7 +87,7 @@ pub fn atomic_write_string(path: impl AsRef<Path>, contents: &str) -> io::Result
                 let _ = dirf.sync_all();
             }
         }
-        Ok(())
+        Ok(written)
     })();
 
     if res.is_err() {
@@ -81,6 +95,29 @@ pub fn atomic_write_string(path: impl AsRef<Path>, contents: &str) -> io::Result
         let _ = fs::remove_file(&temp_path);
     }
     res
+}
+
+struct CountingWriter<'a> {
+    inner: &'a mut File,
+    written: u64,
+}
+
+impl<'a> CountingWriter<'a> {
+    fn new(inner: &'a mut File) -> Self {
+        Self { inner, written: 0 }
+    }
+}
+
+impl Write for CountingWriter<'_> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let written = self.inner.write(buf)?;
+        self.written = self.written.saturating_add(written as u64);
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
 }
 
 /// Captured on-disk metadata snapshot using only std metadata (len + modified).

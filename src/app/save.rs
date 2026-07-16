@@ -123,9 +123,9 @@ pub(crate) fn do_atomic_save(app: &mut super::App, out: &mut dyn Write) -> io::R
         .path
         .clone()
         .unwrap_or_else(|| PathBuf::from("untitled.txt"));
-    let text = app.buffer.to_string();
-    match file::io::atomic_write_string(&target, &text) {
-        Ok(()) => {
+    let save_result = file::io::atomic_write_with(&target, |writer| app.buffer.write_to(writer));
+    match save_result {
+        Ok(written_len) => {
             if app.file.path.is_none() {
                 app.file.path = Some(target.clone());
                 // Successful first save created the path (None -> "untitled.txt" or named).
@@ -153,10 +153,9 @@ pub(crate) fn do_atomic_save(app: &mut super::App, out: &mut dyn Write) -> io::R
                 app.file.size_bytes = Some(sz);
                 app.file.size_tier = Some(crate::file::size::classify_file_size(sz));
             } else {
-                // Post-write stat failed: record len of bytes we just wrote (no re-read).
-                let len = text.len() as u64;
-                app.file.size_bytes = Some(len);
-                app.file.size_tier = Some(crate::file::size::classify_file_size(len));
+                // Post-write stat failed: use the exact count from the streaming writer.
+                app.file.size_bytes = Some(written_len);
+                app.file.size_tier = Some(crate::file::size::classify_file_size(written_len));
             }
             app.pending_quit_confirm = false;
             app.pending_save_conflict = None;

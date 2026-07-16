@@ -116,6 +116,50 @@ fn atomic_write_leaves_no_temp_on_success() {
     cleanup(&out);
 }
 
+#[test]
+fn atomic_write_with_streams_chunks_and_reports_written_length() {
+    let out = temp_path("write_streamed.txt");
+    cleanup(&out);
+
+    let written = atomic_write_with(&out, |writer| {
+        writer.write_all(b"hello")?;
+        writer.write_all(b"\nworld")
+    })
+    .expect("streamed atomic write");
+
+    assert_eq!(written, 11);
+    assert_eq!(fs::read(&out).unwrap(), b"hello\nworld");
+    cleanup(&out);
+}
+
+#[test]
+fn atomic_write_with_error_preserves_target_and_removes_temp() {
+    let out = temp_path("write_stream_error.txt");
+    cleanup(&out);
+    fs::write(&out, "stable").unwrap();
+
+    let err = atomic_write_with(&out, |writer| {
+        writer.write_all(b"partial")?;
+        Err(io::Error::new(io::ErrorKind::Other, "stop stream"))
+    })
+    .expect_err("stream failure must abort atomic replace");
+
+    assert_eq!(err.kind(), io::ErrorKind::Other);
+    assert_eq!(fs::read_to_string(&out).unwrap(), "stable");
+    let parent = out.parent().unwrap();
+    let base = out.file_name().unwrap().to_string_lossy();
+    for entry in fs::read_dir(parent).unwrap().flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        assert!(
+            !name.starts_with(&format!("{}.tmp.{}", base, std::process::id())),
+            "stream failure left temp file: {}",
+            name
+        );
+    }
+    cleanup(&out);
+}
+
 // Phase 2-l: FileSnapshot / ExternalFileStatus tests (std metadata only; no full read)
 
 #[test]

@@ -12,7 +12,7 @@
 //! in hot paths (trait objects hate `impl Iterator`).
 
 use std::borrow::Cow;
-use std::io;
+use std::io::{self, Write};
 
 pub(crate) mod large_file;
 pub mod line_index;
@@ -92,9 +92,16 @@ pub trait Buffer {
         false
     }
 
-    /// Return the entire content as a single string (for save, etc.).
-    /// Phase 0/1A: fine. Streaming later if needed for giant files.
+    /// Return the entire content as a single string for compatibility/tests.
+    /// Save paths use `write_to` so large storage need not materialize here.
     fn to_string(&self) -> String;
+
+    /// Stream logical content without requiring callers to materialize it.
+    /// In-memory implementations may use the compatibility default; storage
+    /// backends with piece/range access should override it.
+    fn write_to(&self, out: &mut dyn Write) -> io::Result<()> {
+        out.write_all(self.to_string().as_bytes())
+    }
 
     /// Convenience for tests / simple render.
     fn lines(&self) -> Vec<String>;

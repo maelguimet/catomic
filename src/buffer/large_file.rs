@@ -1,7 +1,7 @@
 //! Purpose: provide a read-only, file-backed Buffer for Huge files in limited mode.
-//! Owns: file-backed visible-line reads and read-only movement; delegates the
-//!   initial UTF-8/newline scan to the focused scan submodule.
-//! Must not: edit file content, perform writes, own App policy, construct watchers,
+//! Owns: file-backed visible-line reads, bounded descriptor streaming, and
+//!   read-only movement; delegates initial scanning to the scan submodule.
+//! Must not: edit or write back to file content, own App policy, construct watchers,
 //!   depend on Project/LLM, or materialize the whole file for rendering/navigation.
 //! Invariants: line_starts[0] == 0; per-line metadata lengths match line_starts;
 //!   file content was UTF-8 valid at construction; ranged reads use the same
@@ -11,7 +11,7 @@
 
 use std::borrow::Cow;
 use std::fs::File;
-use std::io;
+use std::io::{self, Write};
 use std::os::unix::fs::FileExt;
 use std::path::Path;
 
@@ -329,6 +329,32 @@ impl Buffer for LargeFileBuffer {
     fn to_string(&self) -> String {
         self.read_range_to_string(0, self.total_bytes)
             .unwrap_or_default()
+    }
+
+    fn write_to(&self, out: &mut dyn Write) -> io::Result<()> {
+        self.ensure_fd_unchanged()?;
+        let mut offset = 0usize;
+        let mut chunk = vec![0u8; SCAN_CHUNK_BYTES];
+        while offset < self.total_bytes {
+            let end = offset.saturating_add(chunk.len()).min(self.total_bytes);
+            let len = end - offset;
+            let mut filled = 0usize;
+            while filled < len {
+                let read = self
+                    .file
+                    .read_at(&mut chunk[filled..len], (offset + filled) as u64)?;
+                if read == 0 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "short read while streaming large file buffer",
+                    ));
+                }
+                filled += read;
+            }
+            out.write_all(&chunk[..len])?;
+            offset = end;
+        }
+        self.ensure_fd_unchanged()
     }
 
     fn lines(&self) -> Vec<String> {

@@ -16,6 +16,7 @@ mod query;
 pub(crate) mod types;
 
 use std::borrow::Cow;
+use std::io::{self, Write};
 
 use crate::buffer::line_index::LineIndex;
 use crate::buffer::{Buffer, Cursor, LineView};
@@ -212,6 +213,17 @@ impl Buffer for PieceTable {
     fn to_string(&self) -> String {
         // to_string / save is not a hot per-keypath; slice is fine too.
         self.slice_to_string(0, self.index.total_bytes)
+    }
+
+    fn write_to(&self, out: &mut dyn Write) -> io::Result<()> {
+        for piece in &self.pieces {
+            let range = piece.start..piece.start + piece.len;
+            match piece.source {
+                Source::Original => self.original.write_slice(range, out)?,
+                Source::Add => out.write_all(self.add[range].as_bytes())?,
+            }
+        }
+        Ok(())
     }
 
     fn lines(&self) -> Vec<String> {

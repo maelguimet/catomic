@@ -166,6 +166,20 @@ fn path_replacement_after_open_keeps_original_descriptor() {
 }
 
 #[test]
+fn streaming_write_copies_descriptor_content() {
+    let path = temp_path("stream_copy.txt");
+    cleanup(&path);
+    std::fs::write(&path, "first\né猫🙂\nlast").unwrap();
+    let buffer = LargeFileBuffer::open(&path).unwrap();
+
+    let mut written = Vec::new();
+    buffer.write_to(&mut written).expect("stream descriptor");
+
+    assert_eq!(written, std::fs::read(&path).unwrap());
+    cleanup(&path);
+}
+
+#[test]
 fn in_place_metadata_change_blocks_descriptor_reads() {
     let path = temp_path("in_place_change.txt");
     cleanup(&path);
@@ -187,6 +201,11 @@ fn in_place_metadata_change_blocks_descriptor_reads() {
         .try_visible_lines_window(0, 1, 0, 8)
         .expect_err("visible reads must surface a changed descriptor");
     assert_eq!(window_err.kind(), io::ErrorKind::InvalidData);
+    let mut streamed = Vec::new();
+    let stream_err = buffer
+        .write_to(&mut streamed)
+        .expect_err("streaming save must reject descriptor drift");
+    assert_eq!(stream_err.kind(), io::ErrorKind::InvalidData);
     assert_eq!(buffer.line(0).as_deref(), Some(""));
     assert_eq!(buffer.visible_lines_window(0, 1, 0, 8)[0].content, "");
     assert_eq!(buffer.to_string(), "");

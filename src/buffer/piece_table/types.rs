@@ -13,6 +13,7 @@
 //! Phase: 1B-1C
 
 use std::ops::Range;
+use std::{io, io::Write};
 
 use crate::buffer::line_index::LineIndex;
 use crate::buffer::Cursor;
@@ -52,6 +53,12 @@ impl OriginalBacking {
     pub(crate) fn push_slice(&self, range: Range<usize>, out: &mut String) {
         match self {
             Self::Owned(text) => out.push_str(&text[range]),
+        }
+    }
+
+    pub(crate) fn write_slice(&self, range: Range<usize>, out: &mut dyn Write) -> io::Result<()> {
+        match self {
+            Self::Owned(text) => out.write_all(text[range].as_bytes()),
         }
     }
 

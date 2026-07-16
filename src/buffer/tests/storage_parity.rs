@@ -120,6 +120,19 @@ fn owned_text_constructor_matches_borrowed_constructor() {
 }
 
 #[test]
+fn piece_table_streaming_write_matches_logical_text() {
+    let mut pt = PieceTable::from_text("alpha\nbeta");
+    pt.insert_char('X');
+    pt.move_down();
+    pt.insert_char('Y');
+
+    let mut written = Vec::new();
+    pt.write_to(&mut written).expect("stream piece table");
+
+    assert_eq!(written, pt.to_string().as_bytes());
+}
+
+#[test]
 fn parity_empty_lines() {
     assert_parity("\n");
     assert_parity("\n\n");

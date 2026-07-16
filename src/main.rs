@@ -80,10 +80,7 @@ mod cli_tests {
             parse_args(["--help".to_string()]),
             CliAction::Help
         ));
-        assert!(matches!(
-            parse_args(["-V".to_string()]),
-            CliAction::Version
-        ));
+        assert!(matches!(parse_args(["-V".to_string()]), CliAction::Version));
     }
 
     #[test]

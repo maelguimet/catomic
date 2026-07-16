@@ -15,6 +15,7 @@ use crate::buffer::Buffer;
 use crate::file::io::ExternalFileStatus;
 use crate::file::io::FileSnapshot;
 use crate::file::size::FileSizeTier;
+use crate::file::text_format::TextFormat;
 
 /// Minimal explicit file state (Phase 2-a / 2-j / 2B size metadata).
 /// path: target for save (None until first save or Save As succeeds).
@@ -46,6 +47,8 @@ pub struct FileState {
     /// positive len + Small tier.
     pub size_bytes: Option<u64>,
     pub size_tier: Option<FileSizeTier>,
+    /// Encoding marker and newline sequence restored by Save and Save As.
+    pub text_format: TextFormat,
 }
 
 /// Refresh dirty from exact buffer history position vs last saved token.

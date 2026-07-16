@@ -200,6 +200,31 @@ fn file_backed_piece_table_page_edits_a_nonzero_descriptor_range() {
 }
 
 #[test]
+fn file_backed_page_normalizes_crlf_split_across_scan_chunks() {
+    let path = std::env::temp_dir().join(format!(
+        "catomic_file_piece_table_crlf_boundary_{}.txt",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    let prefix = "a".repeat(crate::buffer::large_file::SCAN_CHUNK_BYTES - 1);
+    std::fs::write(&path, format!("{prefix}\r\ntail")).unwrap();
+
+    let page = PieceTable::from_file_page(std::fs::File::open(&path).unwrap(), 0, 2)
+        .expect("file-backed CRLF page");
+
+    assert_eq!(page.buffer.line_count(), 2);
+    assert_eq!(page.buffer.line_char_count(0), Some(prefix.len()));
+    assert_eq!(
+        page.buffer.visible_lines_window(0, 1, prefix.len() - 1, 2)[0].content,
+        "a"
+    );
+    assert_eq!(page.buffer.line(1).as_deref(), Some("tail"));
+    assert_eq!(page.buffer.to_string(), format!("{prefix}\ntail"));
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
 fn file_backed_piece_table_fails_closed_after_descriptor_drift() {
     use std::io::Write;
 

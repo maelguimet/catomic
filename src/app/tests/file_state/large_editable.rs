@@ -23,9 +23,33 @@ fn app_with_paged_buffer(path: &std::path::Path) -> App {
     app.file.disk_snapshot = crate::file::io::capture_file_snapshot(path).ok();
     app.file.size_bytes = Some(crate::file::size::LARGE_FILE_LIMIT_BYTES + 1);
     app.file.size_tier = Some(crate::file::size::FileSizeTier::Huge);
+    app.file.text_format = crate::file::text_format::detect_file_format(path).unwrap();
     app.buffer = Box::new(crate::buffer::PagedFileBuffer::open(path, 1).unwrap());
     app.file.saved_history_position = app.buffer.edit_history_position();
     app
+}
+
+#[test]
+fn paged_save_preserves_crlf_without_doubling_carriage_returns() {
+    let path = temp_path("crlf_save.txt");
+    let _ = fs::remove_file(&path);
+    fs::write(&path, b"first\r\nsecond\r\n").unwrap();
+    let mut app = app_with_paged_buffer(&path);
+    let mut out = Vec::new();
+    assert_eq!(app.buffer.line(0).unwrap(), "first");
+    app.buffer
+        .set_cursor(crate::buffer::Cursor { row: 0, col: 5 });
+
+    app.handle_key_with(&mut out, make_key(KeyCode::Char('X'), KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key_with(
+        &mut out,
+        make_key(KeyCode::Char('s'), KeyModifiers::CONTROL),
+    )
+    .unwrap();
+
+    assert_eq!(fs::read(&path).unwrap(), b"firstX\r\nsecond\r\n");
+    let _ = fs::remove_file(path);
 }
 
 #[test]

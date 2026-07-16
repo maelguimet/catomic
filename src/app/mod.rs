@@ -235,6 +235,7 @@ impl App {
                 disk_snapshot,
                 size_bytes: meta.size_bytes,
                 size_tier: meta.size_tier,
+                text_format: meta.text_format,
             },
             file_watcher: None,
             should_quit: false,
@@ -446,10 +447,13 @@ impl App {
             let status = status::decorate_status_line(
                 status::format_status_line(
                     matches!(self.mode, Mode::Plain),
-                    self.file.path.as_deref(),
-                    self.file.dirty,
-                    self.file.size_bytes,
-                    self.file.size_tier,
+                    status::StatusFile {
+                        path: self.file.path.as_deref(),
+                        dirty: self.file.dirty,
+                        size_bytes: self.file.size_bytes,
+                        size_tier: self.file.size_tier,
+                        text_format: self.file.text_format,
+                    },
                     self.buffer.page_info(),
                     (self.buffer_count() > 1).then(|| {
                         (

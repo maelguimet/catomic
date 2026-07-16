@@ -23,6 +23,7 @@ pub(crate) struct LineScan {
     pub(crate) line_is_ascii: Vec<bool>,
     pub(crate) line_checkpoints: Vec<LineCheckpoint>,
     pub(crate) line_checkpoint_starts: Vec<usize>,
+    pub(crate) crlf_offsets: Vec<usize>,
     #[cfg(test)]
     pub(crate) total_bytes: usize,
 }
@@ -35,6 +36,8 @@ pub(super) struct LineScanState {
     line_checkpoint_starts: Vec<usize>,
     current_line_chars: usize,
     current_line_is_ascii: bool,
+    previous_was_cr: bool,
+    crlf_offsets: Vec<usize>,
 }
 
 impl LineScanState {
@@ -47,6 +50,8 @@ impl LineScanState {
             line_checkpoint_starts: vec![0],
             current_line_chars: 0,
             current_line_is_ascii: true,
+            previous_was_cr: false,
+            crlf_offsets: Vec::new(),
         }
     }
 
@@ -58,6 +63,9 @@ impl LineScanState {
 
         for (byte_idx, ch) in text.char_indices() {
             if ch == '\n' {
+                if self.previous_was_cr {
+                    self.trim_crlf(text_start_offset + byte_idx);
+                }
                 self.finish_line(text_start_offset + byte_idx + 1);
                 continue;
             }
@@ -72,6 +80,7 @@ impl LineScanState {
                 });
             }
             self.current_line_chars += 1;
+            self.previous_was_cr = ch == '\r';
         }
     }
 
@@ -84,6 +93,14 @@ impl LineScanState {
                 newline_idx - segment_start,
             );
             self.current_line_chars += newline_idx - segment_start;
+            let previous_was_cr = if newline_idx > segment_start {
+                bytes[newline_idx - 1] == b'\r'
+            } else {
+                self.previous_was_cr
+            };
+            if previous_was_cr {
+                self.trim_crlf(text_start_offset + newline_idx);
+            }
             self.finish_line(text_start_offset + newline_idx + 1);
             segment_start = newline_idx + 1;
         }
@@ -92,6 +109,7 @@ impl LineScanState {
             bytes.len() - segment_start,
         );
         self.current_line_chars += bytes.len() - segment_start;
+        self.previous_was_cr = bytes.last() == Some(&b'\r');
     }
 
     pub(super) fn finish_complete_page(&mut self) {
@@ -112,6 +130,7 @@ impl LineScanState {
             line_is_ascii: self.line_is_ascii,
             line_checkpoints: self.line_checkpoints,
             line_checkpoint_starts: self.line_checkpoint_starts,
+            crlf_offsets: self.crlf_offsets,
             #[cfg(test)]
             total_bytes: _total_bytes,
         }
@@ -124,7 +143,20 @@ impl LineScanState {
             .push(self.line_checkpoints.len());
         self.current_line_chars = 0;
         self.current_line_is_ascii = true;
+        self.previous_was_cr = false;
         self.line_starts.push(next_line_start);
+    }
+
+    fn trim_crlf(&mut self, newline_offset: usize) {
+        self.current_line_chars = self.current_line_chars.saturating_sub(1);
+        while self
+            .line_checkpoints
+            .last()
+            .is_some_and(|checkpoint| checkpoint.col > self.current_line_chars)
+        {
+            self.line_checkpoints.pop();
+        }
+        self.crlf_offsets.push(newline_offset.saturating_sub(1));
     }
 
     fn push_ascii_checkpoints(&mut self, segment_start_offset: usize, segment_len: usize) {

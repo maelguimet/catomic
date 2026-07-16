@@ -17,6 +17,7 @@ mod file_size_open;
 mod large_editable;
 mod save_conflict;
 mod snapshot;
+mod text_format;
 mod watcher_acceptance;
 mod watcher_lifecycle;
 mod watcher_live;

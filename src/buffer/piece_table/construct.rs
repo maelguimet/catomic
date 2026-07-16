@@ -144,7 +144,10 @@ impl PieceTable {
         let local_line_starts = scan
             .line_starts
             .iter()
-            .map(|start| start - range_start)
+            .map(|start| {
+                let removed = scan.crlf_offsets.partition_point(|offset| offset < start);
+                start - range_start - removed
+            })
             .collect();
         let newline_offsets = scan
             .line_starts
@@ -161,22 +164,22 @@ impl PieceTable {
             line_checkpoints: scan.line_checkpoints,
             line_checkpoint_starts: scan.line_checkpoint_starts,
         };
-        let pieces = vec![Piece {
-            source: Source::Original,
-            start: range_start,
-            len: range_end - range_start,
-        }];
+        let pieces = normalized_file_pieces(range_start, range_end, &scan.crlf_offsets);
+        let piece_starts = piece_starts(&pieces);
+        let logical_len = range_end
+            .saturating_sub(range_start)
+            .saturating_sub(scan.crlf_offsets.len());
         Self {
             original: OriginalBacking::from_file(file, snapshot, original_metadata),
             add: String::new(),
             pieces,
             index: LineIndex {
                 line_starts: local_line_starts,
-                total_bytes: range_end - range_start,
+                total_bytes: logical_len,
             },
             cursor: Cursor { row: 0, col: 0 },
             cursor_byte_offset: 0,
-            piece_starts: vec![0],
+            piece_starts,
             undo_stack: crate::buffer::undo::UndoStack::new(),
             recording: true,
         }
@@ -217,4 +220,39 @@ impl PieceTable {
             recording: true,
         }
     }
+}
+
+fn normalized_file_pieces(range_start: usize, range_end: usize, crlf: &[usize]) -> Vec<Piece> {
+    let mut pieces = Vec::with_capacity(crlf.len().saturating_add(1));
+    let mut start = range_start;
+    for &carriage_return in crlf {
+        if carriage_return > start {
+            pieces.push(Piece {
+                source: Source::Original,
+                start,
+                len: carriage_return - start,
+            });
+        }
+        start = carriage_return.saturating_add(1);
+    }
+    if start < range_end || pieces.is_empty() {
+        pieces.push(Piece {
+            source: Source::Original,
+            start,
+            len: range_end.saturating_sub(start),
+        });
+    }
+    pieces
+}
+
+fn piece_starts(pieces: &[Piece]) -> Vec<usize> {
+    let mut offset = 0usize;
+    pieces
+        .iter()
+        .map(|piece| {
+            let start = offset;
+            offset = offset.saturating_add(piece.len);
+            start
+        })
+        .collect()
 }

@@ -22,6 +22,7 @@ use std::path::{Path, PathBuf};
 /// Full-materialization path for current open/reload. Uses fs::read so the
 /// bytes Vec can be moved into String without another content copy after UTF-8
 /// validation. Not for metadata-only change detection.
+#[allow(dead_code)] // Compatibility/performance harness; App uses format-aware reads.
 pub fn read_to_string<P: AsRef<Path>>(path: P) -> io::Result<String> {
     let bytes = fs::read(path.as_ref())?;
     String::from_utf8(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))

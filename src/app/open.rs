@@ -23,6 +23,7 @@ use crate::file::size::{
     classify_file_size, open_size_decision, open_size_warning_message, FileSizeTier,
     OpenSizeDecision,
 };
+use crate::file::text_format::TextFormat;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum OpenContentPlan {
@@ -53,6 +54,7 @@ pub(crate) struct OpenFileMeta {
     pub initial_message: Option<String>,
     pub disk_snapshot: Option<FileSnapshot>,
     pub content_plan: OpenContentPlan,
+    pub text_format: TextFormat,
 }
 
 /// Probe on-disk metadata once (via capture_file_snapshot) and apply open-size
@@ -74,6 +76,7 @@ pub(crate) fn prepare_open_file_meta(initial_path: Option<&str>) -> io::Result<O
         match crate::file::io::capture_file_snapshot(p) {
             Ok(snap) => {
                 if let FileSnapshot::Present { len, .. } = &snap {
+                    meta.text_format = crate::file::text_format::detect_file_format(p)?;
                     let sz = *len;
                     match open_size_decision(sz) {
                         OpenSizeDecision::Warn => {
@@ -137,8 +140,9 @@ pub(crate) fn build_open_buffer(
             })?;
             // Move the read buffer into PieceTable on open; this avoids cloning
             // Large/Huge files while preserving CRLF normalization inside PT.
-            let content = crate::file::io::read_to_string(path)?;
-            Ok(Box::new(buffer::PieceTable::from_owned_text(content)))
+            let decoded = crate::file::text_format::read_text_file(path)?;
+            debug_assert_eq!(decoded.format, meta.text_format);
+            Ok(Box::new(buffer::PieceTable::from_owned_text(decoded.text)))
         }
         OpenContentPlan::PagedEditable => {
             let path = initial_path.ok_or_else(|| {
@@ -147,6 +151,14 @@ pub(crate) fn build_open_buffer(
                     "PagedEditable open plan requires initial path",
                 )
             })?;
+            if meta.text_format.utf8_bom
+                || meta.text_format.line_ending == crate::file::text_format::LineEnding::Cr
+            {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    "UTF-8 BOM and CR-only files must be opened below the paged-file threshold",
+                ));
+            }
             Ok(Box::new(buffer::PagedFileBuffer::open(path, page_lines)?))
         }
     }
@@ -228,6 +240,7 @@ mod tests {
                 change_id: None,
             }),
             content_plan: OpenContentPlan::PagedEditable,
+            ..OpenFileMeta::default()
         };
 
         assert_eq!(meta.content_plan, OpenContentPlan::PagedEditable);

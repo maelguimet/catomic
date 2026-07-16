@@ -8,5 +8,6 @@
 pub mod io;
 pub mod recovery;
 pub mod size;
+pub mod text_format;
 pub(crate) mod watch_path;
 pub mod watcher;

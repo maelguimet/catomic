@@ -16,6 +16,15 @@ use std::path::Path;
 
 use crate::buffer::PageInfo;
 use crate::file::size::{file_size_tier_label, format_file_size, FileSizeTier};
+use crate::file::text_format::TextFormat;
+
+pub(crate) struct StatusFile<'a> {
+    pub(crate) path: Option<&'a Path>,
+    pub(crate) dirty: bool,
+    pub(crate) size_bytes: Option<u64>,
+    pub(crate) size_tier: Option<FileSizeTier>,
+    pub(crate) text_format: TextFormat,
+}
 
 /// Produce the bottom status string from current App state pieces.
 /// Called by App only when message is None (messages take precedence and are
@@ -27,31 +36,29 @@ use crate::file::size::{file_size_tier_label, format_file_size, FileSizeTier};
 /// fallback), never a live buffer content scan. Untitled/no-path cases have no disk size.
 pub(crate) fn format_status_line(
     is_plain: bool,
-    path: Option<&Path>,
-    dirty: bool,
-    size_bytes: Option<u64>,
-    size_tier: Option<FileSizeTier>,
+    file: StatusFile<'_>,
     page: Option<PageInfo>,
     buffer_position: Option<(usize, usize)>,
 ) -> String {
     let mode = if is_plain { "plain" } else { "project" };
-    let name = match path
+    let name = match file
+        .path
         .and_then(|p| p.file_name())
         .map(|s| s.to_string_lossy().into_owned())
     {
         Some(n) if !n.is_empty() => n,
         _ => "[untitled]".to_string(),
     };
-    let dirty_label = if dirty { "modified" } else { "saved" };
+    let dirty_label = if file.dirty { "modified" } else { "saved" };
 
-    let mut out = format!("{mode} {name} {dirty_label} utf-8");
+    let mut out = format!("{mode} {name} {dirty_label} {}", file.text_format.label());
 
-    if let Some(b) = size_bytes {
+    if let Some(b) = file.size_bytes {
         out.push(' ');
         out.push_str("disk ");
         out.push_str(&format_file_size(b));
     }
-    if let Some(t) = size_tier {
+    if let Some(t) = file.size_tier {
         out.push(' ');
         out.push_str(file_size_tier_label(t));
         if matches!(
@@ -90,9 +97,24 @@ mod tests {
         Some(PathBuf::from(name))
     }
 
+    fn file(
+        path: Option<&Path>,
+        dirty: bool,
+        size_bytes: Option<u64>,
+        size_tier: Option<FileSizeTier>,
+    ) -> StatusFile<'_> {
+        StatusFile {
+            path,
+            dirty,
+            size_bytes,
+            size_tier,
+            text_format: TextFormat::default(),
+        }
+    }
+
     #[test]
     fn untitled_clean_status_contains_plain_untitled_saved() {
-        let s = format_status_line(true, None, false, None, None, None, None);
+        let s = format_status_line(true, file(None, false, None, None), None, None);
         assert!(s.contains("plain"), "status: {}", s);
         assert!(s.contains("[untitled]"), "status: {}", s);
         assert!(s.contains("saved"), "status: {}", s);
@@ -106,10 +128,12 @@ mod tests {
     fn after_edit_shows_modified() {
         let s = format_status_line(
             true,
-            p("notes.txt").as_deref(),
-            true,
-            Some(123),
-            Some(FileSizeTier::Small),
+            file(
+                p("notes.txt").as_deref(),
+                true,
+                Some(123),
+                Some(FileSizeTier::Small),
+            ),
             None,
             None,
         );
@@ -126,10 +150,12 @@ mod tests {
     fn small_file_shows_size_and_tier() {
         let s = format_status_line(
             true,
-            p("small.txt").as_deref(),
-            false,
-            Some(4096),
-            Some(FileSizeTier::Small),
+            file(
+                p("small.txt").as_deref(),
+                false,
+                Some(4096),
+                Some(FileSizeTier::Small),
+            ),
             None,
             None,
         );
@@ -150,10 +176,12 @@ mod tests {
     fn large_tier_shows_large_file_mode_marker() {
         let s = format_status_line(
             true,
-            p("big.log").as_deref(),
-            false,
-            Some(10 * 1024 * 1024 + 1),
-            Some(FileSizeTier::Large),
+            file(
+                p("big.log").as_deref(),
+                false,
+                Some(10 * 1024 * 1024 + 1),
+                Some(FileSizeTier::Large),
+            ),
             None,
             None,
         );
@@ -174,10 +202,12 @@ mod tests {
     fn huge_includes_marker_and_size() {
         let s = format_status_line(
             true,
-            p("/tmp/huge.bin").as_deref(),
-            true,
-            Some(200 * 1024 * 1024),
-            Some(FileSizeTier::Huge),
+            file(
+                p("/tmp/huge.bin").as_deref(),
+                true,
+                Some(200 * 1024 * 1024),
+                Some(FileSizeTier::Huge),
+            ),
             None,
             None,
         );
@@ -207,10 +237,12 @@ mod tests {
 
         let status = format_status_line(
             true,
-            p("huge.log").as_deref(),
-            false,
-            Some(1_000),
-            Some(FileSizeTier::Huge),
+            file(
+                p("huge.log").as_deref(),
+                false,
+                Some(1_000),
+                Some(FileSizeTier::Huge),
+            ),
             Some(page),
             None,
         );
@@ -221,19 +253,19 @@ mod tests {
 
     #[test]
     fn multiple_buffers_include_active_position() {
-        let status = format_status_line(true, None, false, None, None, None, Some((2, 3)));
+        let status = format_status_line(true, file(None, false, None, None), None, Some((2, 3)));
 
         assert!(status.contains("buffer 2/3"), "status: {status}");
     }
 
     #[test]
     fn cat_status_can_be_disabled_without_changing_core_fields() {
-        let status = format_status_line(true, None, false, None, None, None, None);
+        let status = format_status_line(true, file(None, false, None, None), None, None);
 
         assert_eq!(decorate_status_line(status.clone(), false), status);
         assert_eq!(
             decorate_status_line(status, true),
-            "=^..^= plain [untitled] saved utf-8"
+            "=^..^= plain [untitled] saved utf-8 lf"
         );
     }
 }

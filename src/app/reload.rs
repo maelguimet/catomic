@@ -74,6 +74,7 @@ struct ReloadedModifiedBuffer {
     buffer: Box<dyn buffer::Buffer>,
     size_bytes: u64,
     size_tier: FileSizeTier,
+    text_format: crate::file::text_format::TextFormat,
 }
 
 fn observed_present_len(obs: &ExternalFileObservation) -> io::Result<u64> {
@@ -92,11 +93,29 @@ fn build_modified_reload_buffer(
     page_lines: usize,
 ) -> io::Result<ReloadedModifiedBuffer> {
     let size_tier = size::classify_file_size(size_bytes);
-    let buffer: Box<dyn buffer::Buffer> = match size::open_size_decision(size_bytes) {
-        OpenSizeDecision::Paged => Box::new(buffer::PagedFileBuffer::open(path, page_lines)?),
+    let (buffer, text_format): (
+        Box<dyn buffer::Buffer>,
+        crate::file::text_format::TextFormat,
+    ) = match size::open_size_decision(size_bytes) {
+        OpenSizeDecision::Paged => {
+            let format = crate::file::text_format::detect_file_format(path)?;
+            if format.utf8_bom || format.line_ending == crate::file::text_format::LineEnding::Cr {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "UTF-8 BOM and CR-only files must be opened below the paged-file threshold",
+                ));
+            }
+            (
+                Box::new(buffer::PagedFileBuffer::open(path, page_lines)?),
+                format,
+            )
+        }
         OpenSizeDecision::Normal | OpenSizeDecision::Warn => {
-            let content = crate::file::io::read_to_string(path)?;
-            Box::new(buffer::PieceTable::from_owned_text(content))
+            let decoded = crate::file::text_format::read_text_file(path)?;
+            (
+                Box::new(buffer::PieceTable::from_owned_text(decoded.text)),
+                decoded.format,
+            )
         }
     };
 
@@ -104,6 +123,7 @@ fn build_modified_reload_buffer(
         buffer,
         size_bytes,
         size_tier,
+        text_format,
     })
 }
 
@@ -150,6 +170,7 @@ fn apply_modified_reload(app: &mut super::App, path: &Path, reloaded: ReloadedMo
     app.buffer = reloaded.buffer;
     app.file.saved_history_position = app.buffer.edit_history_position();
     app.file.dirty = false;
+    app.file.text_format = reloaded.text_format;
     match crate::file::io::capture_file_snapshot(path) {
         Ok(snapshot @ FileSnapshot::Present { len, .. }) => {
             app.file.size_bytes = Some(len);

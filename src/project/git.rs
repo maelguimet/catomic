@@ -1,7 +1,7 @@
 //! Purpose: this file must capture bounded, read-only Git context and safety snapshots.
 //! Owns: repo-root detection, HEAD/branch/base/status/diff summaries, and dirty fingerprinting.
 //! Must not: run in Plain mode, mutate Git state, invoke a shell, network, or accept huge output.
-//! Invariants: snapshots detect tracked changes even between two already-dirty states.
+//! Invariants: snapshots ignore ambient Git overrides and distinguish already-dirty states.
 //! Phase: 6 (LLM Context Broker safety rail).
 
 use std::collections::hash_map::DefaultHasher;
@@ -248,6 +248,11 @@ fn run_status(root: &Path, args: &[&str]) -> Result<ExitStatus, GitError> {
 
 fn git_command(root: &Path, args: &[&str]) -> Command {
     let mut command = Command::new("git");
+    for (key, _) in std::env::vars_os() {
+        if key.to_string_lossy().starts_with("GIT_") {
+            command.env_remove(key);
+        }
+    }
     command
         .env("GIT_OPTIONAL_LOCKS", "0")
         .arg("--no-pager")

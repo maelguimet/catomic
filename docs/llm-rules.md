@@ -30,7 +30,8 @@ Snapshot HEAD + branch + dirty state before calls.
 If files change during thinking or before preview apply, refuse blind apply.
 
 Read-only Git capture must disable pagers, fsmonitor, external diff, and
-textconv helpers so repository configuration cannot launch child helpers.
+textconv helpers so repository configuration cannot launch child helpers. It
+must strip inherited `GIT_*` variables before applying its safe settings.
 
 Broker commands are limited to list files, bounded ranged reads, bounded grep,
 and per-file diff. No command writes or runs a process other than read-only Git.

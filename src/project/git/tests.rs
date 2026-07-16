@@ -98,6 +98,42 @@ fn capture_fails_outside_a_repository() {
     assert!(matches!(result, Err(GitError::CommandFailed { .. })));
 }
 
+#[test]
+fn ignores_ambient_git_repository_overrides() {
+    if std::env::var_os("CATOMIC_GIT_ENV_TEST_CHILD").is_some() {
+        run_git_environment_test_child();
+        return;
+    }
+    let repo = TempRepo::new();
+    let other = TempRepo::new();
+    let output = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "project::git::tests::ignores_ambient_git_repository_overrides",
+            "--nocapture",
+        ])
+        .env("CATOMIC_GIT_ENV_TEST_CHILD", "1")
+        .env("CATOMIC_GIT_ENV_TEST_ROOT", &repo.0)
+        .env("GIT_DIR", other.0.join(".git"))
+        .env("GIT_WORK_TREE", &other.0)
+        .env("GIT_INDEX_FILE", other.0.join(".git/index"))
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn run_git_environment_test_child() {
+    let root = PathBuf::from(std::env::var_os("CATOMIC_GIT_ENV_TEST_ROOT").unwrap());
+    let context = GitContext::capture(&root).unwrap();
+    assert_eq!(context.root, root);
+    assert!(context.status.is_empty());
+}
+
 #[cfg(unix)]
 #[test]
 fn capture_never_runs_repo_configured_helpers() {

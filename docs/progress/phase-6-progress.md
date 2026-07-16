@@ -31,6 +31,8 @@ Phase 6 is complete. Its exit evidence is in
   the response, and before applying the preview. First fingerprints are
   immutable, so later broker retrieval cannot accept intervening drift. File
   bytes and fingerprints come from one canonical, pre/post-checked snapshot.
+  Pre-send and final-apply checks are pollable workers, while the request worker
+  performs its own post-response check; none of these Git checks run on input.
 - **Terminal acceptance**: the real PTY reaches a `:meow` endpoint/context
   confirmation using isolated config, cancels with Escape, makes no request,
   and leaves the file exact.

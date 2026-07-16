@@ -82,6 +82,11 @@ fn untracked_active_file_drift_after_preview_blocks_apply() {
 
     fs::write(path, "changed outside\n").unwrap();
     app.handle_key_with(&mut out, key(KeyCode::Enter)).unwrap();
+    assert!(matches!(
+        app.repo_llm_state.as_ref(),
+        Some(RepoLlmState::CheckingApply(_))
+    ));
+    poll_until_finished(&mut app, &mut out);
 
     assert!(app.llm_preview.is_none());
     assert_eq!(app.buffer.to_string(), original);

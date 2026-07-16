@@ -56,6 +56,8 @@ and per-file diff. No command writes or runs a process other than read-only Git.
   ordinary editor polling must never run Git on the input thread.
 - The repo request worker rechecks drift after the final response before handing
   output back to the editor; response polling must never run Git.
+- Final Enter on a repo preview starts another pollable drift worker. The preview
+  stays read-only, and only an unchanged result reaches the undoable apply path.
 - Repo preparation fingerprints the active file on disk even when it is
   untracked, so byte drift hidden from Git status is refused at every send/apply gate.
 - The first relevant-file fingerprint is immutable for the request; later

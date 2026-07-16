@@ -18,7 +18,7 @@ is in decision 0008 and measurements are retained in `performance.md`.
 | Read-only explanation | Instructions beginning with an explicit `explain` verb select a plain-text answer view with no apply action or edit semantics. |
 | Git safety snapshot | Repo commands capture root, HEAD, current branch, detected base branch, porcelain status, diff stat/name-only, and fingerprints that distinguish already-dirty tracked/staged states. Git runs with inherited `GIT_*` overrides stripped, optional locks and pagers disabled, bounded output, fsmonitor off, and external diff/textconv helpers refused. |
 | Context broker | Explicit preparation discovers at most 4,096 files/65,536 entries/depth 64. The 128 KiB consumable budget covers initial and retrieved context; ranged reads cap at 64 KiB, files at 1 MiB, grep at 4 MiB/64 matches, and broker dialogue at eight requests. Paths must be mapped, normalized, canonical in-repo regular files; symlinks and escapes fail closed. Dot paths are omitted. Direct reads/diffs refuse obvious secret-like content, while grep skips sensitive files with an explicit count. Each fingerprint and model-facing read share one bounded, pre/post-checked file snapshot. The separately supplied active file is always byte-fingerprinted, including when untracked. |
-| Drift refusal | Current-buffer and repo requests pin active-buffer text/path identity while Git/relevant-file state is checked before confirmed send, after the response, and again before apply. The repo pre-send check is worker-polled, so Enter performs no Git capture on the input thread and cannot connect before a successful result. The request worker performs the post-response repository check before handing output back, so response polling also runs no Git. Unit integration covers repo-preparation path drift, pre-send path/disk drift without connecting, post-response path/disk drift, and tracked or untracked changes after preview. |
+| Drift refusal | Current-buffer and repo requests pin active-buffer text/path identity while Git/relevant-file state is checked before confirmed send, after the response, and again before apply. The repo pre-send and final-apply checks are worker-polled, so Enter performs no Git capture on the input thread; the preview remains read-only until the final check succeeds. The request worker performs the post-response repository check before handing output back, so response polling also runs no Git. Unit integration covers repo-preparation path drift, pre-send path/disk drift without connecting, post-response path/disk drift, unchanged final apply with one-step undo, and tracked or untracked changes after preview. |
 | Real terminal flow | The 80x24 PTY opens `:meow`, observes the local model/endpoint and explicit Enter/Escape prompt, cancels before send, quits cleanly, and verifies the source file is unchanged. |
 | No live services | All HTTP tests bind deterministic loopback fake servers. No test contacts a live model, public endpoint, or user configuration. |
 
@@ -27,12 +27,12 @@ is in decision 0008 and measurements are retained in `performance.md`.
 The broker-focused warm debug slice completed in 0.12 seconds at 58,364 KiB
 peak RSS. The complete loopback broker-dialogue slice completed in 0.12 seconds
 at 58,476 KiB peak RSS. These local observations are not pass/fail gates;
-network latency is intentionally excluded. Preparation, pre-send drift, and
-request workers are polled without blocking typing.
+network latency is intentionally excluded. Preparation, pre-send drift,
+request, and final-apply drift workers are polled without blocking typing.
 
 ## Verification commands
 
-- `cargo test --all-targets`: 485 passed, 12 intentional manual tests ignored;
+- `cargo test --all-targets`: 486 passed, 12 intentional manual tests ignored;
   7 PTY smokes passed.
 - `cargo test project::git::tests`: 5 passed, including isolated repository
   identity overrides and a self-validating malicious helper configuration.
@@ -43,7 +43,7 @@ request workers are polled without blocking typing.
   contacted.
 - `cargo test app::llm_request`: 11 passed, including exact-path success,
   wrong-target refusal, no-connect pre-send drift, and post-response drift.
-- `cargo test app::repo_llm`: 10 passed, including no-connect confirmation,
+- `cargo test app::repo_llm`: 11 passed, including no-connect confirmation,
   preparation/confirmation/response path drift, wrong-target refusal, and repo
   drift refusal across an untracked active file's full lifecycle.
 - `cargo test llm::broker::tests`: 9 passed, including sensitive dot-path and

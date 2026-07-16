@@ -7,6 +7,39 @@
 use std::io::{self, Write};
 
 pub(super) fn apply(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
+    if app
+        .llm_preview
+        .as_ref()
+        .is_some_and(|preview| preview.repo_guard.is_some())
+    {
+        return begin_repo_check(app, out);
+    }
+    finish_apply(app, out)
+}
+
+fn begin_repo_check(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
+    if let Some(message) = identity_error(app) {
+        super::close(app);
+        return refuse(app, out, message);
+    }
+    let broker = app
+        .llm_preview
+        .as_mut()
+        .and_then(|preview| preview.repo_guard.take())
+        .expect("repo preview has guard");
+    if let Err(error) = super::super::repo_llm::begin_apply_check(app, broker) {
+        super::close(app);
+        return refuse(
+            app,
+            out,
+            &format!("Could not start final repository check; patch refused: {error}"),
+        );
+    }
+    app.message = Some("Rechecking repository before apply... Esc cancels.".to_string());
+    app.render(out)
+}
+
+pub(super) fn finish_apply(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
     let preview = app.llm_preview.take().expect("preview active");
     app.screen.scroll_top = preview.source_scroll_top;
     app.screen.scroll_left = preview.source_scroll_left;
@@ -16,9 +49,6 @@ pub(super) fn apply(app: &mut super::super::App, out: &mut dyn Write) -> io::Res
             out,
             "Active file path changed; LLM proposal was not applied.",
         );
-    }
-    if let Err(message) = check_repo(&preview) {
-        return refuse(app, out, &message);
     }
     let current = app.buffer.to_string();
     if current != preview.source_snapshot {
@@ -41,19 +71,13 @@ pub(super) fn apply(app: &mut super::super::App, out: &mut dyn Write) -> io::Res
     )
 }
 
-fn check_repo(preview: &super::PatchPreview) -> Result<(), String> {
-    let Some(guard) = preview.repo_guard.as_ref() else {
-        return Ok(());
-    };
-    match guard.is_unchanged() {
-        Ok(true) => Ok(()),
-        Ok(false) => {
-            Err("Repository changed since the request; repo LLM patch was not applied.".to_string())
-        }
-        Err(error) => Err(format!(
-            "Could not recheck repository; patch refused: {error}"
-        )),
+fn identity_error(app: &super::super::App) -> Option<&'static str> {
+    let preview = app.llm_preview.as_ref().expect("preview active");
+    if app.file.path != preview.source_path {
+        return Some("Active file path changed; LLM proposal was not applied.");
     }
+    (app.buffer.to_string() != preview.source_snapshot)
+        .then_some("Source changed since preview; LLM proposal was not applied.")
 }
 
 fn refuse(app: &mut super::super::App, out: &mut dyn Write, message: &str) -> io::Result<()> {

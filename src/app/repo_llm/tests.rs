@@ -89,12 +89,47 @@ fn confirmed_patch_previews_but_repo_drift_blocks_apply() {
 
     fs::write(repo.0.join("other.txt"), "changed again\n").unwrap();
     app.handle_key_with(&mut out, key(KeyCode::Enter)).unwrap();
+    assert!(matches!(
+        app.repo_llm_state.as_ref(),
+        Some(RepoLlmState::CheckingApply(_))
+    ));
+    assert!(app.llm_preview.is_some());
+    poll_until_finished(&mut app, &mut out);
     assert_eq!(app.buffer.to_string(), original);
     assert!(app
         .message
         .as_deref()
         .unwrap()
         .contains("Repository changed"));
+}
+
+#[test]
+fn confirmed_repo_patch_checks_then_applies_as_one_undo_step() {
+    let repo = TempRepo::new();
+    let (settings, server) = patch_server();
+    let mut app = project_app(&repo);
+    let original = app.buffer.to_string();
+    let original_position = app.buffer.edit_history_position();
+    let mut out = Vec::new();
+    begin_with_settings(&mut app, &mut out, "uppercase second line", settings).unwrap();
+    poll_until_pending(&mut app, &mut out);
+    handle_key(&mut app, &mut out, key(KeyCode::Enter)).unwrap();
+    poll_until_finished(&mut app, &mut out);
+    server.join().unwrap();
+
+    app.handle_key_with(&mut out, key(KeyCode::Enter)).unwrap();
+    assert!(matches!(
+        app.repo_llm_state.as_ref(),
+        Some(RepoLlmState::CheckingApply(_))
+    ));
+    assert_eq!(app.buffer.to_string(), original);
+    poll_until_finished(&mut app, &mut out);
+
+    assert_eq!(app.buffer.to_string(), "one\nTWO\n");
+    assert!(app.llm_preview.is_none());
+    app.buffer.undo();
+    assert_eq!(app.buffer.to_string(), original);
+    assert_eq!(app.buffer.edit_history_position(), original_position);
 }
 
 #[test]

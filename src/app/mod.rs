@@ -101,7 +101,7 @@ pub struct App {
     /// Project-only read-only discovered-file picker, absent until explicitly shown.
     pub(crate) project_files_view: Option<project_files::ProjectFilesView>,
     /// Explicit LLM patch preview, absent until a proposal has been parsed and validated.
-    /// This is local display state only; it contains no network client or repo broker.
+    /// This contains no network client; repo previews retain their immutable drift guard.
     pub(crate) llm_preview: Option<llm_preview::PatchPreview>,
     /// Explicit read-only model explanation; contains output text and no client.
     pub(crate) llm_answer: Option<llm_answer::AnswerView>,

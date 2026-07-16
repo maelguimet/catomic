@@ -17,6 +17,7 @@ use crate::llm::repo_task::RepoLlmTask;
 
 const SYSTEM_PROMPT: &str = "You edit only the named active file using read-only repository context. You may request more context by returning exactly {\"catomic_broker\":{\"command\":\"list_files\"}}, {\"catomic_broker\":{\"command\":\"read_file\",\"path\":\"relative/path\",\"offset\":0,\"limit\":4096}}, {\"catomic_broker\":{\"command\":\"grep\",\"query\":\"text\"}}, or {\"catomic_broker\":{\"command\":\"show_diff\",\"path\":\"relative/path\"}}. Your final response must be one valid single-file unified diff for the active file, with no prose or fences. Never claim an edit was applied.";
 
+mod apply_check;
 mod checking;
 mod result;
 mod start;
@@ -30,6 +31,7 @@ pub(crate) enum RepoLlmState {
     Pending(Pending),
     CheckingSend(checking::CheckingSend),
     Running(Running),
+    CheckingApply(apply_check::CheckingApply),
 }
 
 pub(crate) struct Preparing {
@@ -71,6 +73,12 @@ pub(crate) fn poll(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
     }
     if matches!(app.repo_llm_state.as_ref(), Some(RepoLlmState::Running(_))) {
         return result::poll_running(app, out);
+    }
+    if matches!(
+        app.repo_llm_state.as_ref(),
+        Some(RepoLlmState::CheckingApply(_))
+    ) {
+        return apply_check::poll(app, out);
     }
     Ok(())
 }
@@ -156,6 +164,12 @@ pub(crate) fn handle_key(
             app.render(out)?;
             Ok(true)
         }
+        Some(RepoLlmState::CheckingApply(_)) if is_quit(key) => Ok(false),
+        Some(RepoLlmState::CheckingApply(_)) => {
+            apply_check::handle_key(app, key);
+            app.render(out)?;
+            Ok(true)
+        }
         Some(RepoLlmState::Preparing(_) | RepoLlmState::Running(_)) if key.code == KeyCode::Esc => {
             cancel_all(app);
             app.message = Some("Repo LLM request cancelled.".to_string());
@@ -170,11 +184,21 @@ pub(crate) fn handle_paste(app: &mut super::App, out: &mut dyn Write) -> io::Res
     let message = match app.repo_llm_state.as_ref() {
         Some(RepoLlmState::Pending(_)) => "Repo LLM send not confirmed. Enter sends; Esc cancels.",
         Some(RepoLlmState::CheckingSend(_)) => "Repository check running; Esc cancels.",
+        Some(RepoLlmState::CheckingApply(_)) => {
+            "Final repository check running; Esc cancels the proposal."
+        }
         _ => return Ok(false),
     };
     app.message = Some(message.to_string());
     app.render(out)?;
     Ok(true)
+}
+
+pub(crate) fn begin_apply_check(
+    app: &mut super::App,
+    broker: crate::llm::broker::ContextBroker,
+) -> io::Result<()> {
+    apply_check::begin(app, broker)
 }
 
 pub(super) fn start_confirmed(app: &mut super::App, pending: Pending) {

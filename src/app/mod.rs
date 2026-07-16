@@ -303,6 +303,10 @@ impl App {
                         },
                     })
             });
+        let render_options = term::render::RenderOptions {
+            highlight,
+            syntax: crate::editor::syntax::syntax_for_path(self.file.path.as_deref()),
+        };
         if let Some(ref m) = self.message {
             term::render::render_buffer(
                 stdout,
@@ -312,7 +316,7 @@ impl App {
                 self.screen.height as usize,
                 self.screen.width as usize,
                 Some(m.as_str()),
-                highlight,
+                render_options,
             )
         } else {
             let status = status::format_status_line(
@@ -337,7 +341,7 @@ impl App {
                 self.screen.height as usize,
                 self.screen.width as usize,
                 Some(status.as_str()),
-                highlight,
+                render_options,
             )
         }
     }

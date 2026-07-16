@@ -13,7 +13,7 @@
 use std::fs;
 
 use crate::buffer::{Buffer, PieceTable, SimpleBuffer};
-use crate::terminal::render::render_buffer;
+use crate::terminal::render::{render_buffer, RenderOptions};
 
 use super::helpers::{
     cleanup_perf, generate_dense_ascii_file, generate_line_heavy_ascii_file, temp_perf_path,
@@ -31,11 +31,11 @@ fn phase0_small_file_key_to_render_smoke() {
     b.move_right();
     b.insert_char('!');
     let mut out: Vec<u8> = Vec::new();
-    render_buffer(&mut out, &b, 0, 0, 10, 80, None, None).expect("render");
+    render_buffer(&mut out, &b, 0, 0, 10, 80, None, RenderOptions::default()).expect("render");
     b.move_down();
     b.insert_char('X');
     let mut out2: Vec<u8> = Vec::new();
-    render_buffer(&mut out2, &b, 0, 0, 10, 80, None, None).expect("render2");
+    render_buffer(&mut out2, &b, 0, 0, 10, 80, None, RenderOptions::default()).expect("render2");
     let elapsed = start.elapsed();
     // Optional visibility only with cargo test ... -- --nocapture
     eprintln!("phase0_small elapsed: {:?}", elapsed);
@@ -61,11 +61,11 @@ fn phase1b_piecetable_small_file_key_to_render_smoke() {
     b.move_right();
     b.insert_char('!');
     let mut out: Vec<u8> = Vec::new();
-    render_buffer(&mut out, &b, 0, 0, 10, 80, None, None).expect("render");
+    render_buffer(&mut out, &b, 0, 0, 10, 80, None, RenderOptions::default()).expect("render");
     b.move_down();
     b.insert_char('X');
     let mut out2: Vec<u8> = Vec::new();
-    render_buffer(&mut out2, &b, 0, 0, 10, 80, None, None).expect("render2");
+    render_buffer(&mut out2, &b, 0, 0, 10, 80, None, RenderOptions::default()).expect("render2");
     let elapsed = start.elapsed();
     eprintln!("phase1b_piecetable elapsed: {:?}", elapsed);
 
@@ -95,7 +95,7 @@ fn render_buffer_with_message_emits_on_bottom_row_and_clears() {
         3,
         80,
         Some("Unsaved changes. Press Ctrl+Q again to quit without saving, Ctrl+S to save."),
-        None,
+        RenderOptions::default(),
     )
     .expect("render with msg");
 

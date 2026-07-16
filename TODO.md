@@ -511,7 +511,7 @@ Document the col model (char index / scalar within line for this subphase; inter
 - Core comfort features work and feel good.
 - Acceptance tests defined and passing per the Measurement / Test Discipline (golden for search/replace flows, PTY for Ctrl+F etc., perf for search on medium files); current evidence: [`docs/phase-3-acceptance.md`](docs/phase-3-acceptance.md).
 
-### Phase 4 — Markdown & Light Syntax
+### Phase 4 — Markdown & Light Syntax ([progress](docs/progress/phase-4-progress.md))
 
 - Syntax highlighting (minimal at first):
   - A few built-in languages or extension-based simple rules

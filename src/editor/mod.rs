@@ -11,3 +11,4 @@ pub mod cursor;
 pub(crate) mod goto_line;
 pub mod search;
 pub mod selection;
+pub(crate) mod syntax;

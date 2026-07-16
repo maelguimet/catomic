@@ -72,6 +72,10 @@ and Page Up/Down move by one visible page. `Ctrl+Left`/`Ctrl+Right` move by word
 `Ctrl+Backspace`/`Ctrl+Delete` remove a word as one undoable edit. Add Shift to
 the movement forms to extend the selection.
 
+Enter preserves the current line's indentation and adds one configured tab
+level after common block openers. Tab indents selected lines without replacing
+them; Shift+Tab unindents the current or selected lines as one undoable edit.
+
 Visible lines are styled automatically for Markdown, Rust, Python, and JSON
 based on the file extension. Highlighting is deliberately lexical and
 viewport-only; opening a large file does not trigger a whole-document parse.

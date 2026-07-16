@@ -11,9 +11,9 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::file_state::refresh_dirty;
 use super::{
-    buffers, command_prompt, completion, external_command, lint, llm_answer, llm_preview,
-    llm_request, navigation, paging, project_files, recovery, reload, replace, repo_llm, save,
-    search, selection, view,
+    buffers, command_prompt, completion, external_command, indentation, lint, llm_answer,
+    llm_preview, llm_request, navigation, paging, project_files, recovery, reload, replace,
+    repo_llm, save, search, selection, view,
 };
 
 /// Common post-content-mutation cleanup used by insert, delete, newline, undo, redo paths.
@@ -250,7 +250,17 @@ pub(crate) fn handle_key_with(
             code: KeyCode::Tab,
             modifiers: KeyModifiers::NONE,
             ..
-        } => insert_tab(app, out)?,
+        } => indentation::handle_tab(app, out, false)?,
+
+        KeyEvent {
+            code: KeyCode::BackTab,
+            ..
+        }
+        | KeyEvent {
+            code: KeyCode::Tab,
+            modifiers: KeyModifiers::SHIFT,
+            ..
+        } => indentation::handle_tab(app, out, true)?,
 
         // Enter produces KeyCode::Enter (not Char('\n')). Handle explicitly.
         // The Char \n/\r check below catches any that might arrive via paste
@@ -259,12 +269,7 @@ pub(crate) fn handle_key_with(
             code: KeyCode::Enter,
             ..
         } => {
-            if app.selection.active().is_some() {
-                selection::replace_active(app, "\n")?;
-            } else {
-                app.buffer.insert_newline();
-            }
-            finish_content_edit(app, out)?;
+            indentation::insert_newline(app, out)?;
         }
 
         // Undo / Redo (Phase 1C). Ctrl+Z undo; Ctrl+Y and Ctrl+Shift+Z redo.
@@ -324,12 +329,7 @@ pub(crate) fn handle_key_with(
             if modifiers.contains(KeyModifiers::CONTROL) {
                 // Other Ctrl+letter combos ignored in Phase 0; still reveal/render (existing behavior)
             } else if c == '\n' || c == '\r' {
-                if app.selection.active().is_some() {
-                    selection::replace_active(app, "\n")?;
-                } else {
-                    app.buffer.insert_newline();
-                }
-                finish_content_edit(app, out)?;
+                indentation::insert_newline(app, out)?;
                 return Ok(());
             } else if !c.is_control() {
                 let ch = if modifiers.contains(KeyModifiers::SHIFT) && c.is_ascii_lowercase() {
@@ -451,19 +451,6 @@ pub(crate) fn handle_paste(
         return Ok(());
     }
     selection::handle_external_paste(app, out, text)
-}
-
-fn insert_tab(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
-    let width = app
-        .editor_config
-        .tab_size_for_path(app.file.path.as_deref());
-    let spaces = width - app.buffer.cursor().col % width;
-    let text = " ".repeat(spaces);
-    if !selection::replace_active(app, &text)? {
-        let cursor = app.buffer.cursor();
-        app.buffer.replace_range(cursor, cursor, &text)?;
-    }
-    finish_content_edit(app, out)
 }
 
 pub(super) fn handle_quit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {

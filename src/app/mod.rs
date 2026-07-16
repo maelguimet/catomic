@@ -36,6 +36,7 @@ mod command_prompt;
 mod completion;
 mod external_command;
 mod hooks;
+mod indentation;
 mod open;
 mod paging;
 mod project_files;

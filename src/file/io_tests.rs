@@ -6,8 +6,9 @@
 //! Must not: add new deps; test non-io modules;
 //!   perform live watcher or reload mutation tests (those live elsewhere).
 //! Invariants: uses super::* to reach the module under test; atomic replacement
-//!   preserves existing Unix permissions and failed writes preserve the target.
-//! Phase: 2-aj test split through 2-bv Unix save-permission preservation.
+//!   preserves existing Unix permissions, follows valid final symlinks, refuses
+//!   dangling final symlinks, and failed writes preserve the target.
+//! Phase: 2-aj test split through post-v0.1 release hardening.
 
 use super::*;
 use std::fs;
@@ -21,6 +22,9 @@ fn temp_path(name: &str) -> PathBuf {
 fn cleanup(p: &PathBuf) {
     let _ = fs::remove_file(p);
 }
+
+#[path = "io_tests/symlink.rs"]
+mod symlink;
 
 #[test]
 fn read_to_string_reads_valid_utf8() {

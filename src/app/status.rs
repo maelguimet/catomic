@@ -26,6 +26,7 @@ use crate::file::size::{file_size_tier_label, format_file_size, FileSizeTier};
 /// Size is always labeled as last-known on-disk metadata (fs::metadata or post-save
 /// fallback), never a live buffer content scan. Untitled/no-path cases have no disk size.
 pub(crate) fn format_status_line(
+    cat_status: bool,
     is_plain: bool,
     path: Option<&Path>,
     dirty: bool,
@@ -44,7 +45,8 @@ pub(crate) fn format_status_line(
     };
     let dirty_label = if dirty { "modified" } else { "saved" };
 
-    let mut out = format!("{} {} {} utf-8", mode, name, dirty_label);
+    let badge = if cat_status { "=^..^= " } else { "" };
+    let mut out = format!("{badge}{mode} {name} {dirty_label} utf-8");
 
     if let Some(b) = size_bytes {
         out.push(' ');
@@ -84,7 +86,8 @@ mod tests {
 
     #[test]
     fn untitled_clean_status_contains_plain_untitled_saved() {
-        let s = format_status_line(true, None, false, None, None, None, None);
+        let s = format_status_line(true, true, None, false, None, None, None, None);
+        assert!(s.starts_with("=^..^= "), "status: {s}");
         assert!(s.contains("plain"), "status: {}", s);
         assert!(s.contains("[untitled]"), "status: {}", s);
         assert!(s.contains("saved"), "status: {}", s);
@@ -97,6 +100,7 @@ mod tests {
     #[test]
     fn after_edit_shows_modified() {
         let s = format_status_line(
+            true,
             true,
             p("notes.txt").as_deref(),
             true,
@@ -117,6 +121,7 @@ mod tests {
     #[test]
     fn small_file_shows_size_and_tier() {
         let s = format_status_line(
+            true,
             true,
             p("small.txt").as_deref(),
             false,
@@ -142,6 +147,7 @@ mod tests {
     fn large_tier_shows_large_file_mode_marker() {
         let s = format_status_line(
             true,
+            true,
             p("big.log").as_deref(),
             false,
             Some(10 * 1024 * 1024 + 1),
@@ -165,6 +171,7 @@ mod tests {
     #[test]
     fn huge_includes_marker_and_size() {
         let s = format_status_line(
+            true,
             true,
             p("/tmp/huge.bin").as_deref(),
             true,
@@ -199,6 +206,7 @@ mod tests {
 
         let status = format_status_line(
             true,
+            true,
             p("huge.log").as_deref(),
             false,
             Some(1_000),
@@ -213,8 +221,15 @@ mod tests {
 
     #[test]
     fn multiple_buffers_include_active_position() {
-        let status = format_status_line(true, None, false, None, None, None, Some((2, 3)));
+        let status = format_status_line(true, true, None, false, None, None, None, Some((2, 3)));
 
         assert!(status.contains("buffer 2/3"), "status: {status}");
+    }
+
+    #[test]
+    fn cat_status_can_be_disabled_without_changing_core_fields() {
+        let status = format_status_line(false, true, None, false, None, None, None, None);
+
+        assert_eq!(status, "plain [untitled] saved utf-8");
     }
 }

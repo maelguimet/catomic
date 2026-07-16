@@ -16,6 +16,7 @@ use crossterm::event::{self, Event, KeyEvent};
 
 use crate::buffer::Buffer;
 use crate::config::big_files::BigFileConfig;
+use crate::config::cat::CatConfig;
 use crate::config::commands::CommandConfig;
 use crate::config::editor::EditorConfig;
 use crate::config::keybindings::KeyBindings;
@@ -72,6 +73,8 @@ pub struct App {
     pub(crate) keybindings: KeyBindings,
     /// Named command policy only; no process exists until explicit invocation or a hook.
     pub(crate) command_config: CommandConfig,
+    /// Presentation-only cat touches; never changes editing or file semantics.
+    pub(crate) cat_config: CatConfig,
     /// The active buffer (trait object for now; concrete type behind it).
     pub buffer: Box<dyn Buffer>,
     /// File path and dirty tracking.
@@ -161,6 +164,7 @@ impl App {
             EditorConfig::default(),
             KeyBindings::default(),
             CommandConfig::default(),
+            CatConfig::default(),
         )
     }
 
@@ -171,6 +175,7 @@ impl App {
         editor_config: EditorConfig,
         keybindings: KeyBindings,
         command_config: CommandConfig,
+        cat_config: CatConfig,
     ) -> io::Result<Self> {
         let mode = Mode::Plain; // Start in Plain by default. User can switch later.
         let caps = Capabilities::from_mode(mode);
@@ -210,6 +215,7 @@ impl App {
             editor_config,
             keybindings,
             command_config,
+            cat_config,
             buffer,
             file: FileState {
                 path: initial_path.map(PathBuf::from),
@@ -418,6 +424,7 @@ impl App {
             )
         } else {
             let status = status::format_status_line(
+                self.cat_config.status_messages,
                 matches!(self.mode, Mode::Plain),
                 self.file.path.as_deref(),
                 self.file.dirty,
@@ -454,6 +461,7 @@ pub fn run(initial_files: &[String]) -> io::Result<()> {
     let editor_config = crate::config::editor::load()?;
     let keybindings = crate::config::keybindings::load()?;
     let command_config = crate::config::commands::load()?;
+    let cat_config = crate::config::cat::load()?;
     let mut app = App::new_with_paths_and_config(
         initial_files,
         big_files,
@@ -461,6 +469,7 @@ pub fn run(initial_files: &[String]) -> io::Result<()> {
         editor_config,
         keybindings,
         command_config,
+        cat_config,
     )?;
     app.run()
 }

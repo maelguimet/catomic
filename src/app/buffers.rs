@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 
 use crate::buffer::Buffer;
 use crate::config::big_files::BigFileConfig;
+use crate::config::cat::CatConfig;
 use crate::config::commands::CommandConfig;
 use crate::config::editor::EditorConfig;
 use crate::config::keybindings::KeyBindings;
@@ -89,6 +90,7 @@ impl App {
             EditorConfig::default(),
             KeyBindings::default(),
             CommandConfig::default(),
+            CatConfig::default(),
         )
     }
 
@@ -99,6 +101,7 @@ impl App {
         editor_config: EditorConfig,
         keybindings: KeyBindings,
         command_config: CommandConfig,
+        cat_config: CatConfig,
     ) -> io::Result<Self> {
         let first_path = initial_paths.first().map(String::as_str);
         let mut app = Self::new_with_config(
@@ -108,6 +111,7 @@ impl App {
             editor_config.clone(),
             keybindings.clone(),
             command_config.clone(),
+            cat_config,
         )?;
         for path in initial_paths.iter().skip(1) {
             let extra = Self::new_with_config(
@@ -117,6 +121,7 @@ impl App {
                 editor_config.clone(),
                 keybindings.clone(),
                 command_config.clone(),
+                cat_config,
             )?;
             app.inactive_buffers.push_back(BufferSlot::from_app(extra));
         }
@@ -212,6 +217,7 @@ impl App {
             self.editor_config.clone(),
             self.keybindings.clone(),
             self.command_config.clone(),
+            self.cat_config,
         )?;
         self.inactive_buffers
             .push_front(BufferSlot::from_app(opened));

@@ -11,6 +11,7 @@ use serde::de::DeserializeOwned;
 
 pub mod auto_reload;
 pub mod big_files;
+pub(crate) mod cat;
 pub(crate) mod commands;
 pub(crate) mod editor;
 pub(crate) mod keybindings;

@@ -95,6 +95,9 @@ page_lines = 20000
 [files]
 auto_reload = true
 
+[cat]
+status_messages = true
+
 [languages.rs]
 tab_size = 4
 linter = "cargo check --message-format short {file}"
@@ -118,6 +121,10 @@ Clean buffers reload automatically when another process changes or deletes the
 file. Set `[files] auto_reload = false` to require manual confirmation instead.
 Dirty buffers are never discarded automatically; Ctrl+R remains the explicit
 check/reload fallback.
+
+The small ASCII cat badge in the status line is enabled by default. Set
+`[cat] status_messages = false` if you want the completely plain status format;
+the setting changes presentation only.
 
 ## Multiple Buffers
 

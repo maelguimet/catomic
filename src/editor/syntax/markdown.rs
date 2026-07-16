@@ -64,9 +64,10 @@ pub(super) fn preview_spans(line: &str) -> Vec<StyledSpan> {
         return spans;
     }
     let indent = chars.iter().take_while(|ch| ch.is_whitespace()).count();
-    let marker_end = if chars.get(indent) == Some(&'•') {
-        Some(indent + 2)
-    } else if chars.get(indent) == Some(&'│') {
+    let marker_end = if chars
+        .get(indent)
+        .is_some_and(|marker| *marker == '•' || *marker == '│')
+    {
         Some(indent + 2)
     } else {
         ordered_preview_marker(&chars, indent)

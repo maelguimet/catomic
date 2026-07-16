@@ -40,10 +40,7 @@ pub(crate) struct SearchTask {
 
 impl SearchTask {
     pub(crate) fn try_result(&self) -> Option<SearchResult> {
-        match self.receiver.try_recv() {
-            Ok(result) => Some(result),
-            Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => None,
-        }
+        self.receiver.try_recv().ok()
     }
 
     pub(crate) fn cancel(&self) {

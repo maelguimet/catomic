@@ -237,7 +237,7 @@ pub(crate) fn apply_check_observation(app: &mut super::App, obs: &ExternalFileOb
 pub(crate) fn handle_reload_key(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     let current_path = app.file.path.clone();
     let baseline = app.file.disk_snapshot.as_ref();
-    let obs = observe_external_file(current_path.as_ref().map(|p| p.as_path()), baseline);
+    let obs = observe_external_file(current_path.as_deref(), baseline);
 
     let should_perform = match (&app.pending_reload, &obs.status) {
         (Some(pend), ExternalFileStatus::Modified)

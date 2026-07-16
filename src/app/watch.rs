@@ -19,6 +19,7 @@
 //! The only sites that set app.file.path are:
 //! - App::new (initial_path or None)
 //! - save.rs do_atomic_save on first successful Ctrl+S from untitled (None -> "untitled.txt")
+//!
 //! Callers of refresh after a successful path state change keep the watcher in sync.
 //! Future path transitions must also refresh/clear via this helper.
 
@@ -106,7 +107,7 @@ pub(crate) fn apply_file_watch_signal(
         FileWatchSignal::Changed | FileWatchSignal::Deleted => {
             let current_path = app.file.path.clone();
             let baseline = app.file.disk_snapshot.as_ref();
-            let obs = observe_external_file(current_path.as_ref().map(|p| p.as_path()), baseline);
+            let obs = observe_external_file(current_path.as_deref(), baseline);
             match obs.status {
                 ExternalFileStatus::Unchanged => {
                     if app.pending_reload.is_some() {

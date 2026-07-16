@@ -63,10 +63,7 @@ pub(crate) fn handle_save(app: &mut super::App, out: &mut dyn Write) -> io::Resu
 
     let current_path = app.file.path.clone();
     let baseline = app.file.disk_snapshot.as_ref();
-    let obs = crate::file::io::observe_external_file(
-        current_path.as_ref().map(|p| p.as_path()),
-        baseline,
-    );
+    let obs = crate::file::io::observe_external_file(current_path.as_deref(), baseline);
 
     if obs.status == ExternalFileStatus::NoPath || obs.status == ExternalFileStatus::Unchanged {
         app.pending_save_conflict = None;

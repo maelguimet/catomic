@@ -123,6 +123,8 @@ fn execute_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> 
         (Some("goto" | "line"), Some(line), None) => execute_goto(app, out, line),
         (Some("save" | "write" | "w"), None, None) => super::save::handle_save(app, out),
         (Some("quit" | "q"), None, None) => super::input::handle_quit(app, out),
+        (Some("project" | "code"), None, None) => super::project_mode::switch_to_project(app, out),
+        (Some("plain" | "text"), None, None) => super::project_mode::switch_to_plain(app, out),
         _ => {
             app.message = Some(format!("Unknown command: {command}"));
             app.render(out)

@@ -31,6 +31,7 @@ mod command_prompt;
 mod completion;
 mod open;
 mod paging;
+mod project_mode;
 mod reload;
 mod save;
 mod search;
@@ -46,6 +47,8 @@ mod input;
 pub struct App {
     pub mode: Mode,
     pub caps: Capabilities,
+    /// Project lifetime marker/root. Strictly absent throughout Plain mode.
+    pub(crate) project: Option<crate::project::ProjectSession>,
     /// Plain-safe paging policy loaded once at startup.
     pub(crate) big_files: BigFileConfig,
     /// Default-on policy for automatically reloading clean external changes.
@@ -152,6 +155,7 @@ impl App {
         let mut app = App {
             mode,
             caps,
+            project: None,
             big_files,
             auto_reload,
             buffer,

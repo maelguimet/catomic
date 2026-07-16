@@ -55,6 +55,8 @@ An existing destination requires submitting the same path again before Catomic
 overwrites it. `Ctrl+S` opens this prompt automatically for an untitled buffer.
 `Ctrl+Shift+P` opens the command prompt, with `goto N`,
 `save`/`write`, `save as PATH`, and `quit`/`q`.
+Use `F2` for the same prompt in terminals that reserve or collapse the
+Ctrl+Shift chord.
 
 `Ctrl+O` opens a path in a buffer, `Ctrl+N` creates an untitled buffer, and
 `Ctrl+W` closes the active clean buffer. A dirty buffer refuses to close until

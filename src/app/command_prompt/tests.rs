@@ -100,6 +100,18 @@ fn command_prompt_dispatches_goto_and_preserves_dirty_quit_guard() {
 }
 
 #[test]
+fn f2_opens_the_command_prompt() {
+    let mut app = super::super::App::new(None).unwrap();
+    let mut out = Vec::new();
+
+    app.handle_key_with(&mut out, key(KeyCode::F(2), KeyModifiers::NONE))
+        .unwrap();
+    type_text(&mut app, &mut out, "help");
+
+    assert_eq!(app.message.as_deref(), Some("Command: help"));
+}
+
+#[test]
 fn command_prompt_dispatches_configured_external_command() {
     let mut app = super::super::App::new(None).unwrap();
     app.command_config =

@@ -1,15 +1,16 @@
-//! OpenAI-compatible HTTP client (and local servers that speak the same format).
-//!
-//! - Configurable base URL + key
-//! - Local-first friendly (ollama, llama.cpp server, etc.)
-//! - Only used when `network_llm` capability allows.
-//!
-//! Never create an HTTP client for LLM in Plain mode at startup.
+//! Purpose: this file must perform one confirmed OpenAI-compatible chat request.
+//! Owns: transient HTTP client construction, typed JSON, response bounds, and errors.
+//! Must not: load config, collect context, persist clients, retry silently, or mutate files.
+//! Invariants: clients exist only inside confirmed workers; response capture is bounded.
+//! Phase: 6 (LLM, Powerful but Caged).
 
 use std::time::Duration;
 
-/// Configuration for talking to an OpenAI-compatible endpoint.
-#[derive(Clone, Debug)]
+use serde::{Deserialize, Serialize};
+
+const MAX_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
+
+#[derive(Clone)]
 pub struct LlmConfig {
     pub base_url: String,
     pub api_key: Option<String>,
@@ -17,28 +18,136 @@ pub struct LlmConfig {
     pub timeout: Duration,
 }
 
-impl Default for LlmConfig {
-    fn default() -> Self {
-        Self {
-            base_url: "https://api.openai.com/v1".to_string(),
-            api_key: None,
-            model: "gpt-4o-mini".to_string(),
-            timeout: Duration::from_secs(120),
+#[derive(Debug)]
+pub enum LlmError {
+    Client(String),
+    Request(String),
+    Http { status: u16, body: String },
+    ResponseTooLarge,
+    InvalidResponse(String),
+    MissingContent,
+}
+
+impl std::fmt::Display for LlmError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Client(error) => write!(formatter, "could not create HTTP client: {error}"),
+            Self::Request(error) => write!(formatter, "request failed: {error}"),
+            Self::Http { status, body } => {
+                let summary: String = body.chars().take(200).collect();
+                write!(formatter, "endpoint returned HTTP {status}: {summary}")
+            }
+            Self::ResponseTooLarge => write!(formatter, "endpoint response exceeded 2 MiB"),
+            Self::InvalidResponse(error) => write!(formatter, "invalid endpoint JSON: {error}"),
+            Self::MissingContent => write!(formatter, "endpoint response contained no message"),
         }
     }
 }
 
-/// Very thin client stub.
-/// Real implementation will use reqwest (once added to Cargo.toml when needed).
 pub struct OpenAiCompatClient {
-    _config: LlmConfig,
+    client: reqwest::Client,
+    config: LlmConfig,
 }
 
 impl OpenAiCompatClient {
-    /// Only construct when network_llm capability is true and user has confirmed.
-    pub fn new(config: LlmConfig) -> Self {
-        Self { _config: config }
+    pub fn new(config: LlmConfig) -> Result<Self, LlmError> {
+        let client = reqwest::Client::builder()
+            .timeout(config.timeout)
+            .build()
+            .map_err(|error| LlmError::Client(error.to_string()))?;
+        Ok(Self { client, config })
     }
 
-    // TODO: chat_completions, with context budget, etc.
+    pub async fn complete(&self, system: &str, user: &str) -> Result<String, LlmError> {
+        let endpoint = format!("{}/chat/completions", self.config.base_url);
+        let request = ChatRequest {
+            model: &self.config.model,
+            messages: [
+                Message {
+                    role: "system",
+                    content: system,
+                },
+                Message {
+                    role: "user",
+                    content: user,
+                },
+            ],
+        };
+        let mut builder = self.client.post(endpoint).json(&request);
+        if let Some(key) = self.config.api_key.as_deref() {
+            builder = builder.bearer_auth(key);
+        }
+        let response = builder
+            .send()
+            .await
+            .map_err(|error| LlmError::Request(error.to_string()))?;
+        let status = response.status();
+        let body = read_bounded(response).await?;
+        if !status.is_success() {
+            return Err(LlmError::Http {
+                status: status.as_u16(),
+                body: String::from_utf8_lossy(&body).into_owned(),
+            });
+        }
+        let parsed: ChatResponse = serde_json::from_slice(&body)
+            .map_err(|error| LlmError::InvalidResponse(error.to_string()))?;
+        parsed
+            .choices
+            .into_iter()
+            .next()
+            .map(|choice| choice.message.content)
+            .filter(|content| !content.trim().is_empty())
+            .ok_or(LlmError::MissingContent)
+    }
 }
+
+async fn read_bounded(mut response: reqwest::Response) -> Result<Vec<u8>, LlmError> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
+    {
+        return Err(LlmError::ResponseTooLarge);
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|error| LlmError::Request(error.to_string()))?
+    {
+        if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
+            return Err(LlmError::ResponseTooLarge);
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
+#[derive(Serialize)]
+struct ChatRequest<'a> {
+    model: &'a str,
+    messages: [Message<'a>; 2],
+}
+
+#[derive(Serialize)]
+struct Message<'a> {
+    role: &'static str,
+    content: &'a str,
+}
+
+#[derive(Deserialize)]
+struct ChatResponse {
+    choices: Vec<Choice>,
+}
+
+#[derive(Deserialize)]
+struct Choice {
+    message: ResponseMessage,
+}
+
+#[derive(Deserialize)]
+struct ResponseMessage {
+    content: String,
+}
+
+#[cfg(test)]
+mod tests;

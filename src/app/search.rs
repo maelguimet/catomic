@@ -17,6 +17,7 @@ pub(crate) struct SearchUiState {
     prompt: Option<String>,
     origin: Option<Cursor>,
     active_match: Option<SearchMatch>,
+    active_descriptor_position: Option<crate::buffer::DescriptorPosition>,
     running: Option<RunningSearch>,
 }
 
@@ -30,6 +31,7 @@ pub(crate) fn open_prompt(app: &mut super::App, out: &mut dyn Write) -> io::Resu
     app.search.prompt = Some(String::new());
     app.search.origin = Some(app.buffer.cursor());
     app.search.active_match = None;
+    app.search.active_descriptor_position = None;
     app.message = Some("Find: ".to_string());
     app.render(out)
 }
@@ -68,6 +70,7 @@ fn handle_prompt_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -
             app.search.prompt = None;
             app.search.origin = None;
             app.search.active_match = None;
+            app.search.active_descriptor_position = None;
             app.message = Some("Search cancelled.".to_string());
         }
         KeyCode::Enter => {
@@ -105,6 +108,7 @@ fn refresh_incremental_match(app: &mut super::App, out: &mut dyn Write) -> io::R
     let query = app.search.prompt.clone().unwrap_or_default();
     cancel_running(&mut app.search);
     app.search.active_match = None;
+    app.search.active_descriptor_position = None;
     if query.is_empty() {
         if let Some(origin) = app.search.origin {
             app.buffer.set_cursor(origin);
@@ -136,8 +140,24 @@ fn navigate_match(
     if query.is_empty() {
         return app.render(out);
     }
-    if app.buffer.descriptor_source()?.is_some() {
-        return refresh_incremental_match(app, out);
+    if let Some(source) = app.buffer.descriptor_source()? {
+        cancel_running(&mut app.search);
+        let task = match app.search.active_descriptor_position {
+            Some(anchor) => {
+                search::start_descriptor_search_from(source, query.clone(), anchor, direction)
+            }
+            None => search::start_descriptor_search(source, query.clone()),
+        };
+        app.search.running = Some(RunningSearch {
+            query: query.clone(),
+            task,
+        });
+        let label = match direction {
+            SearchDirection::Forward => "next",
+            SearchDirection::Backward => "previous",
+        };
+        app.message = Some(format!("Searching for {label} '{query}'... Esc cancels."));
+        return app.render(out);
     }
     let origin = app
         .search
@@ -160,6 +180,7 @@ fn apply_local_match(
     {
         app.buffer.set_cursor(found.start);
         app.search.active_match = Some(found);
+        app.search.active_descriptor_position = None;
         app.message = Some(format!(
             "Found '{query}'. Enter/Down next, Up previous, Esc closes."
         ));
@@ -183,6 +204,7 @@ pub(crate) fn poll_search(app: &mut super::App, out: &mut dyn Write) -> io::Resu
     match result {
         SearchResult::Found(position) => {
             app.buffer.set_descriptor_position(position)?;
+            app.search.active_descriptor_position = Some(position);
             app.search.active_match = Some(SearchMatch {
                 start: Cursor {
                     row: position.row,
@@ -198,10 +220,12 @@ pub(crate) fn poll_search(app: &mut super::App, out: &mut dyn Write) -> io::Resu
         }
         SearchResult::NotFound => {
             app.search.active_match = None;
+            app.search.active_descriptor_position = None;
             app.message = Some(format!("No matches for '{}'.", running.query));
         }
         SearchResult::Error(error) => {
             app.search.active_match = None;
+            app.search.active_descriptor_position = None;
             app.message = Some(format!("Search error: {error}"));
         }
     }
@@ -219,6 +243,7 @@ pub(super) fn cancel_running_search(app: &mut super::App) {
     app.search.prompt = None;
     app.search.origin = None;
     app.search.active_match = None;
+    app.search.active_descriptor_position = None;
 }
 
 #[cfg(test)]
@@ -226,6 +251,8 @@ mod tests {
     use super::*;
     use crate::buffer::Buffer;
     use crossterm::event::{KeyEventKind, KeyEventState};
+
+    mod descriptor_navigation;
 
     fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
         KeyEvent {

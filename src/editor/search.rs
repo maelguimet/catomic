@@ -58,11 +58,29 @@ impl Drop for SearchTask {
 }
 
 pub(crate) fn start_descriptor_search(source: DescriptorSource, query: String) -> SearchTask {
+    start_descriptor_search_with(source, query, None, SearchDirection::Forward)
+}
+
+pub(crate) fn start_descriptor_search_from(
+    source: DescriptorSource,
+    query: String,
+    anchor: DescriptorPosition,
+    direction: SearchDirection,
+) -> SearchTask {
+    start_descriptor_search_with(source, query, Some(anchor), direction)
+}
+
+fn start_descriptor_search_with(
+    source: DescriptorSource,
+    query: String,
+    anchor: Option<DescriptorPosition>,
+    direction: SearchDirection,
+) -> SearchTask {
     let (sender, receiver) = mpsc::channel();
     let cancel = Arc::new(AtomicBool::new(false));
     let worker_cancel = Arc::clone(&cancel);
     std::thread::spawn(move || {
-        let result = scan_descriptor(source, &query, &worker_cancel)
+        let result = scan_descriptor_with(source, &query, &worker_cancel, anchor, direction)
             .unwrap_or_else(|error| SearchResult::Error(error.to_string()));
         if !worker_cancel.load(Ordering::Acquire) {
             let _ = sender.send(result);
@@ -123,10 +141,32 @@ fn compare_cursor(left: Cursor, right: Cursor) -> std::cmp::Ordering {
     (left.row, left.col).cmp(&(right.row, right.col))
 }
 
+#[cfg(test)]
 fn scan_descriptor(
     source: DescriptorSource,
     query: &str,
     cancel: &AtomicBool,
+) -> io::Result<SearchResult> {
+    scan_descriptor_with(source, query, cancel, None, SearchDirection::Forward)
+}
+
+#[cfg(test)]
+fn scan_descriptor_from(
+    source: DescriptorSource,
+    query: &str,
+    cancel: &AtomicBool,
+    anchor: DescriptorPosition,
+    direction: SearchDirection,
+) -> io::Result<SearchResult> {
+    scan_descriptor_with(source, query, cancel, Some(anchor), direction)
+}
+
+fn scan_descriptor_with(
+    source: DescriptorSource,
+    query: &str,
+    cancel: &AtomicBool,
+    anchor: Option<DescriptorPosition>,
+    direction: SearchDirection,
 ) -> io::Result<SearchResult> {
     if query.is_empty() || query.contains('\n') {
         return Ok(SearchResult::NotFound);
@@ -136,7 +176,7 @@ fn scan_descriptor(
         return Err(changed_file_error());
     }
     let initial_modified = initial_meta.modified().ok();
-    let mut scanner = Scanner::new(query, source.page_lines);
+    let mut scanner = Scanner::new(query, source.page_lines, anchor, direction);
     let mut chunk = vec![0u8; SEARCH_CHUNK_BYTES];
     let mut carry = Vec::new();
     let mut offset = 0u64;
@@ -205,7 +245,9 @@ fn scan_descriptor(
         ));
     }
     ensure_unchanged(&source, initial_modified)?;
-    Ok(SearchResult::NotFound)
+    Ok(scanner
+        .finish()
+        .map_or(SearchResult::NotFound, SearchResult::Found))
 }
 
 fn validate_overlay(
@@ -263,10 +305,20 @@ struct Scanner {
     page_number: usize,
     row: usize,
     col: usize,
+    anchor: Option<DescriptorPosition>,
+    direction: SearchDirection,
+    first_match: Option<DescriptorPosition>,
+    last_match: Option<DescriptorPosition>,
+    before_anchor: Option<DescriptorPosition>,
 }
 
 impl Scanner {
-    fn new(query: &str, page_lines: usize) -> Self {
+    fn new(
+        query: &str,
+        page_lines: usize,
+        anchor: Option<DescriptorPosition>,
+        direction: SearchDirection,
+    ) -> Self {
         Self {
             query: query.as_bytes().to_vec(),
             prefix: prefix_table(query.as_bytes()),
@@ -277,6 +329,11 @@ impl Scanner {
             page_number: 1,
             row: 0,
             col: 0,
+            anchor,
+            direction,
+            first_match: None,
+            last_match: None,
+            before_anchor: None,
         }
     }
 
@@ -306,7 +363,9 @@ impl Scanner {
             let position = self.current_position();
             for byte in ch.encode_utf8(&mut encoded).as_bytes() {
                 if let Some(found) = self.feed(*byte, position) {
-                    return Some(found);
+                    if let Some(selected) = self.consider(found) {
+                        return Some(selected);
+                    }
                 }
             }
             if ch == '\n' {
@@ -355,6 +414,38 @@ impl Scanner {
             None
         }
     }
+
+    fn consider(&mut self, found: DescriptorPosition) -> Option<DescriptorPosition> {
+        self.first_match.get_or_insert(found);
+        self.last_match = Some(found);
+        let Some(anchor) = self.anchor else {
+            return Some(found);
+        };
+        match self.direction {
+            SearchDirection::Forward if compare_descriptor_position(found, anchor).is_gt() => {
+                Some(found)
+            }
+            SearchDirection::Backward if compare_descriptor_position(found, anchor).is_lt() => {
+                self.before_anchor = Some(found);
+                None
+            }
+            _ => None,
+        }
+    }
+
+    fn finish(&self) -> Option<DescriptorPosition> {
+        match (self.anchor, self.direction) {
+            (None, _) | (Some(_), SearchDirection::Forward) => self.first_match,
+            (Some(_), SearchDirection::Backward) => self.before_anchor.or(self.last_match),
+        }
+    }
+}
+
+fn compare_descriptor_position(
+    left: DescriptorPosition,
+    right: DescriptorPosition,
+) -> std::cmp::Ordering {
+    (left.page_start, left.row, left.col).cmp(&(right.page_start, right.row, right.col))
 }
 
 fn prefix_table(query: &[u8]) -> Vec<usize> {

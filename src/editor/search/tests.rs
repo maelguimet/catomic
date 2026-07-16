@@ -109,6 +109,59 @@ fn descriptor_match_tracks_unicode_scalar_column_and_page() {
 }
 
 #[test]
+fn descriptor_navigation_moves_forward_backward_and_wraps() {
+    let text = b"target zero\ntarget one\ntarget two";
+    let first = scan_text_file(text, "target", 1);
+    let SearchResult::Found(first) = first else {
+        panic!("expected first match");
+    };
+
+    let second = scan_text_file_from(text, "target", 1, first, SearchDirection::Forward);
+    let SearchResult::Found(second) = second else {
+        panic!("expected second match");
+    };
+    assert_eq!((second.page_number, second.row, second.col), (2, 0, 0));
+
+    let previous = scan_text_file_from(text, "target", 1, second, SearchDirection::Backward);
+    let SearchResult::Found(previous) = previous else {
+        panic!("expected previous match");
+    };
+    assert_eq!(previous, first);
+
+    let wrapped = scan_text_file_from(text, "target", 1, first, SearchDirection::Backward);
+    let SearchResult::Found(wrapped) = wrapped else {
+        panic!("expected wrapped match");
+    };
+    assert_eq!((wrapped.page_number, wrapped.row, wrapped.col), (3, 0, 0));
+}
+
+fn scan_text_file_from(
+    text: &[u8],
+    query: &str,
+    page_lines: usize,
+    anchor: DescriptorPosition,
+    direction: SearchDirection,
+) -> SearchResult {
+    let path = std::env::temp_dir().join(format!(
+        "catomic_search_from_{}_{}.txt",
+        std::process::id(),
+        text.len()
+    ));
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, text).unwrap();
+    let source = DescriptorSource {
+        file: std::fs::File::open(&path).unwrap(),
+        total_bytes: text.len() as u64,
+        page_lines,
+        overlays: Vec::new(),
+    };
+    let result =
+        scan_descriptor_from(source, query, &AtomicBool::new(false), anchor, direction).unwrap();
+    let _ = std::fs::remove_file(path);
+    result
+}
+
+#[test]
 fn descriptor_search_uses_edited_page_overlay_instead_of_original_bytes() {
     let text = b"zero\nold\nnext";
     let path =

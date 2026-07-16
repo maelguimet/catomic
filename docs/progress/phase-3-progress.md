@@ -14,11 +14,12 @@ recorded in [`../phase-2-acceptance.md`](../phase-2-acceptance.md).
   the query changes, retaining unsaved-page overlays and cross-page matches.
 - Existing real PTY Ctrl+F coverage remains green, including quitting while the
   search prompt is active.
+- **3-b paged search navigation**: Enter/Down and Up now select relative to the
+  current descriptor match and wrap across logical file pages. The bounded
+  scanner still honors edited-page overlays and cross-boundary matches.
 
 ## Remaining Phase 3 Work
 
-- Forward/backward navigation from the current match across descriptor-backed
-  paged files (incremental lookup currently returns the first whole-file match).
 - Goto line and a basic command surface.
 - Selection expansion, mouse click/drag, and selection cut/copy/paste.
 - Phase 3 acceptance definition, medium-file search measurement, and manual UX

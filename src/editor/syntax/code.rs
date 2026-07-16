@@ -98,7 +98,7 @@ fn is_keyword(syntax: SyntaxKind, token: &str) -> bool {
         SyntaxKind::Rust => RUST_KEYWORDS.contains(&token),
         SyntaxKind::Python => PYTHON_KEYWORDS.contains(&token),
         SyntaxKind::Json => matches!(token, "true" | "false" | "null"),
-        SyntaxKind::Plain | SyntaxKind::Markdown => false,
+        SyntaxKind::Plain | SyntaxKind::Markdown | SyntaxKind::MarkdownPreview => false,
     }
 }
 

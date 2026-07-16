@@ -9,6 +9,7 @@
 pub mod command;
 pub mod cursor;
 pub(crate) mod goto_line;
+pub(crate) mod markdown_preview;
 pub mod search;
 pub mod selection;
 pub(crate) mod syntax;

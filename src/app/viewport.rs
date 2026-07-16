@@ -32,7 +32,7 @@ pub(crate) fn handle_resize(
 pub(crate) fn reveal_cursor(app: &mut App) {
     app.screen.clamp_scroll();
     clamp_viewport_to_buffer(app);
-    let c = app.buffer.cursor();
+    let c = super::view::display_buffer(app).cursor();
     app.screen.reveal_row(c.row);
     app.screen
         .reveal_col_with_width(c.col, super::view::content_width(app));
@@ -50,7 +50,14 @@ pub(crate) fn reveal_cursor(app: &mut App) {
 /// Called from resize and reveal paths.
 pub(crate) fn clamp_viewport_to_buffer(app: &mut App) {
     // Vertical
-    let lc = app.buffer.line_count();
+    let (lc, line_len) = {
+        let display = super::view::display_buffer(app);
+        let cursor = display.cursor();
+        (
+            display.line_count(),
+            display.line_char_count(cursor.row).unwrap_or(0),
+        )
+    };
     let vh = app.screen.visible_height();
     if vh == 0 {
         app.screen.scroll_top = 0;
@@ -70,8 +77,6 @@ pub(crate) fn clamp_viewport_to_buffer(app: &mut App) {
     // "col + 1 - vw" for end-of-line cursor (col can == line_len). This preserves
     // reveal behavior and keeps cursor visible while still clamping high scrolls
     // on shorter lines to avoid empty space.
-    let c = app.buffer.cursor();
-    let line_len = app.buffer.line_char_count(c.row).unwrap_or(0);
     let vw = super::view::content_width(app);
     if vw == 0 {
         app.screen.scroll_left = 0;

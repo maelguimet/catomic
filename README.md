@@ -42,6 +42,8 @@ selects the word or punctuation run under the pointer.
 Visible lines are styled automatically for Markdown, Rust, Python, and JSON
 based on the file extension. Highlighting is deliberately lexical and
 viewport-only; opening a large file does not trigger a whole-document parse.
+For Markdown files, `F6` builds a read-only rendered preview of the active
+buffer (or active large-file page); press `F6` or Escape to return to editing.
 Press `F7` to toggle line numbers and `F8` to show spaces and tabs. These view
 settings are retained independently for each open buffer.
 

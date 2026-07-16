@@ -19,7 +19,10 @@ pub(crate) fn handle_mouse(
     out: &mut dyn Write,
     event: MouseEvent,
 ) -> io::Result<()> {
-    if super::super::search::is_active(app) || super::super::command_prompt::is_active(app) {
+    if super::super::view::is_preview(app)
+        || super::super::search::is_active(app)
+        || super::super::command_prompt::is_active(app)
+    {
         return Ok(());
     }
     match event.kind {

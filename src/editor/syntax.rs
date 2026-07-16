@@ -14,6 +14,7 @@ pub(crate) enum SyntaxKind {
     #[default]
     Plain,
     Markdown,
+    MarkdownPreview,
     Rust,
     Python,
     Json,
@@ -56,6 +57,7 @@ pub(crate) fn spans_for_line(syntax: SyntaxKind, line: &str) -> Vec<StyledSpan> 
     match syntax {
         SyntaxKind::Plain => Vec::new(),
         SyntaxKind::Markdown => markdown::spans(line),
+        SyntaxKind::MarkdownPreview => markdown::preview_spans(line),
         SyntaxKind::Rust | SyntaxKind::Python | SyntaxKind::Json => code::spans(syntax, line),
     }
 }

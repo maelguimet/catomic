@@ -323,6 +323,9 @@ pub(crate) fn handle_paste(
     out: &mut dyn Write,
     text: &str,
 ) -> io::Result<()> {
+    if view::handle_paste(app, out)? {
+        return Ok(());
+    }
     selection::handle_external_paste(app, out, text)
 }
 

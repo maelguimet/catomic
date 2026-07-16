@@ -289,34 +289,38 @@ impl App {
         // Screen is single source for dims.
         // Avoid cloning self.message: pass Some(m.as_str()) directly.
         // Status is built locally only for the no-message path and passed as &str.
-        let highlight = self
-            .selection
-            .active()
-            .map(|selection| {
-                let (start, end) = selection.ordered();
-                term::render::TextHighlight { start, end }
-            })
-            .or_else(|| {
-                self.search
-                    .active_match()
-                    .map(|found| term::render::TextHighlight {
-                        start: found.start,
-                        end: crate::buffer::Cursor {
-                            row: found.start.row,
-                            col: found.end_col,
-                        },
+        let highlight = (!view::is_preview(self))
+            .then(|| {
+                self.selection
+                    .active()
+                    .map(|selection| {
+                        let (start, end) = selection.ordered();
+                        term::render::TextHighlight { start, end }
                     })
-            });
+                    .or_else(|| {
+                        self.search
+                            .active_match()
+                            .map(|found| term::render::TextHighlight {
+                                start: found.start,
+                                end: crate::buffer::Cursor {
+                                    row: found.start.row,
+                                    col: found.end_col,
+                                },
+                            })
+                    })
+            })
+            .flatten();
         let render_options = term::render::RenderOptions {
             highlight,
-            syntax: crate::editor::syntax::syntax_for_path(self.file.path.as_deref()),
+            syntax: view::display_syntax(self),
             line_numbers: self.view.line_numbers,
             whitespace: self.view.whitespace,
         };
+        let display_buffer = view::display_buffer(self);
         if let Some(ref m) = self.message {
             term::render::render_buffer(
                 stdout,
-                &*self.buffer,
+                display_buffer,
                 self.screen.scroll_top,
                 self.screen.scroll_left,
                 self.screen.height as usize,
@@ -341,7 +345,7 @@ impl App {
             );
             term::render::render_buffer(
                 stdout,
-                &*self.buffer,
+                display_buffer,
                 self.screen.scroll_top,
                 self.screen.scroll_left,
                 self.screen.height as usize,

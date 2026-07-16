@@ -56,6 +56,22 @@ fn markdown_styles_headings_markers_fences_and_inline_code() {
 }
 
 #[test]
+fn markdown_preview_styles_rendered_headings_markers_and_code() {
+    assert_eq!(
+        spans_for_line(SyntaxKind::MarkdownPreview, "▌ Heading"),
+        vec![span(0, 9, SpanStyle::Heading)]
+    );
+    assert_eq!(
+        spans_for_line(SyntaxKind::MarkdownPreview, "• use ‹cat›"),
+        vec![span(0, 2, SpanStyle::Marker), span(6, 11, SpanStyle::Code)]
+    );
+    assert_eq!(
+        spans_for_line(SyntaxKind::MarkdownPreview, "12. item"),
+        vec![span(0, 4, SpanStyle::Marker)]
+    );
+}
+
+#[test]
 fn code_lexers_style_keywords_strings_numbers_and_comments() {
     assert_eq!(
         spans_for_line(SyntaxKind::Rust, "let cat = \"猫\"; // note"),

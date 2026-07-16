@@ -20,8 +20,12 @@ Phase 4 is in progress. Phase 3 acceptance is recorded in
   `F8` toggles one-cell space/tab indicators. Both settings are retained per
   buffer. Cursor reveal, horizontal scrolling, and mouse mapping all account
   for the gutter without changing document coordinates.
+- **4-c explicit Markdown preview**: `F6` uses `pulldown-cmark` to build a
+  read-only terminal document for the active buffer or active large-file page.
+  Preview navigation uses the normal bounded viewport renderer, does not mutate
+  source history, and restores the source viewport on `F6` or Escape. Parsing
+  is absent from startup, typing, and ordinary render paths.
 
 ## Remaining Phase 4 Work
 
-- Markdown preview toggle.
 - Phase 4 unit/golden/PTY/performance/manual acceptance evidence.

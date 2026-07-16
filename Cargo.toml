@@ -10,6 +10,7 @@ repository = "https://github.com/maelguimet/catomic"
 [dependencies]
 crossterm = "0.28"
 notify = "8.2.0"
+pulldown-cmark = { version = "0.13.4", default-features = false }
 
 [dev-dependencies]
 # Dev-only PTY harness; see docs/decisions/0004-pty-smoke-dev-dependency.md.

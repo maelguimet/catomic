@@ -213,7 +213,8 @@ mod tests {
         assert!(!app.file.dirty);
         assert_eq!(app.screen.scroll_top, 0);
         assert_eq!(app.screen.scroll_left, 0);
-        assert_eq!(app.view, view::ViewOptions::default());
+        assert!(!app.view.line_numbers);
+        assert!(!app.view.whitespace);
 
         app.screen.scroll_top = 11;
         app.switch_buffer(BufferDirection::Previous);

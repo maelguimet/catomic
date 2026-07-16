@@ -126,6 +126,10 @@ The small ASCII cat badge in the status line is enabled by default. Set
 `[cat] status_messages = false` if you want the completely plain status format;
 the setting changes presentation only.
 
+If Catomic panics, its panic hook first restores the terminal and prints a short
+cat-themed notice that promises only the safety of the last explicit save. The
+ordinary Rust panic details follow for debugging.
+
 ## Multiple Buffers
 
 Pass multiple files on the command line to open them in one editor session:

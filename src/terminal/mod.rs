@@ -2,7 +2,7 @@
 //! Owns: terminal setup/teardown guards and panic-safe restoration.
 //! Must not: interpret editor commands, mutate App/Buffer state, render content, or network.
 //! Invariants: every enabled terminal mode has a best-effort inverse on all exit paths.
-//! Phase: 3-e mouse capture over the established terminal lifecycle.
+//! Phase: 8 panic-safe terminal restoration and user-facing crash notice.
 
 pub mod render;
 pub mod screen;
@@ -11,6 +11,9 @@ use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
 
 type PanicHook = Box<dyn Fn(&std::panic::PanicHookInfo<'_>) + Sync + Send + 'static>;
+
+pub(crate) const PANIC_NOTICE: &str =
+    "catomic: the cat knocked over the editor. Terminal restored; your last explicit save is safe.";
 
 /// Setup raw mode + alternate screen.
 /// Must be paired with teardown on all exit paths (including panic).
@@ -85,6 +88,7 @@ impl PanicRestoreGuard {
         let hook_previous = previous.clone();
         std::panic::set_hook(Box::new(move |info| {
             restore();
+            let _ = writeln!(io::stderr().lock(), "{PANIC_NOTICE}");
             if let Some(prev) = hook_previous.lock().expect("panic hook mutex").as_ref() {
                 prev(info);
             }

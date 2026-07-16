@@ -86,4 +86,13 @@ mod tests {
         assert_eq!(restore_called.load(Ordering::SeqCst), 1);
         assert_eq!(previous_called.load(Ordering::SeqCst), 2);
     }
+
+    #[test]
+    fn panic_notice_is_helpful_without_promising_unsaved_work_survived() {
+        let notice = crate::terminal::PANIC_NOTICE;
+
+        assert!(notice.contains("Terminal restored"));
+        assert!(notice.contains("last explicit save is safe"));
+        assert!(!notice.contains("unsaved"));
+    }
 }

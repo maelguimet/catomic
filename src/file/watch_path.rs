@@ -25,9 +25,11 @@ pub(crate) fn watch_parent(target: &Path) -> PathBuf {
 }
 
 /// Convert to absolute lexical path (no FS touch, existence not required).
+///
 /// - relatives based on current_dir() at call time
 /// - '.' components removed
 /// - '..' pops preceding normal component (root-safe)
+///
 /// Uses std::path::Component; no canonicalize, no metadata.
 pub(crate) fn normalize_path(p: &Path) -> PathBuf {
     let mut out = if p.is_absolute() {
@@ -41,7 +43,7 @@ pub(crate) fn normalize_path(p: &Path) -> PathBuf {
             Component::CurDir => continue,
             Component::ParentDir => {
                 // pop only if safe (don't escape root for abs paths)
-                if let Some(last) = out.components().last() {
+                if let Some(last) = out.components().next_back() {
                     if !matches!(last, Component::RootDir | Component::Prefix(_)) {
                         let _ = out.pop();
                     }

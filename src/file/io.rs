@@ -247,12 +247,14 @@ fn compare_live_snapshot_to_baseline(
 /// Returns both the status (for messaging/decision) and the live snapshot seen now.
 /// Single-capture: live disk state is captured *once* via capture_file_snapshot (including error paths);
 /// status is derived from that single result. No second fs::metadata.
+///
 /// - path None -> NoPath, live None.
 /// - capture Ok(Present), baseline None -> Unchanged.
 /// - capture Ok(Absent), baseline None -> Deleted.
 /// - capture Err(e), baseline None -> Unknown(e.kind()), live None.
 /// - capture Ok(live), baseline Some -> compare via pure helper.
 /// - capture Err(e), baseline Some -> Unknown(e.kind()), live None.
+///
 /// NotFound maps to Absent inside capture (never Unknown). No content read or hash.
 pub fn observe_external_file(
     path: Option<&Path>,

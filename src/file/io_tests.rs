@@ -9,8 +9,6 @@
 //!   preserves existing Unix permissions and failed writes preserve the target.
 //! Phase: 2-aj test split through 2-bv Unix save-permission preservation.
 
-#![cfg(test)]
-
 use super::*;
 use std::fs;
 
@@ -158,7 +156,7 @@ fn atomic_write_with_error_preserves_target_and_removes_temp() {
 
     let err = atomic_write_with(&out, |writer| {
         writer.write_all(b"partial")?;
-        Err(io::Error::new(io::ErrorKind::Other, "stop stream"))
+        Err(io::Error::other("stop stream"))
     })
     .expect_err("stream failure must abort atomic replace");
 

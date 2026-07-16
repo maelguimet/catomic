@@ -183,7 +183,7 @@ fn assert_state_parity(sb: &dyn Buffer, pt: &dyn Buffer, ctx: &str) {
 #[test]
 fn seeded_random_edit_parity_vs_simplebuffer() {
     // Fixed seed: failures are fully reproducible.
-    let mut seed: u64 = 0x1A_C0FFEE_2026_0042;
+    let mut seed: u64 = 0x1AC0_FFEE_2026_0042;
     let mut sb: Box<dyn Buffer> = Box::new(SimpleBuffer::new());
     let mut pt: Box<dyn Buffer> = Box::new(PieceTable::new());
 

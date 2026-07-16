@@ -165,7 +165,7 @@ fn seeded_random_edit_plus_undo_redo_against_dumb_model() {
         match r {
             0..=44 => {
                 // insert char or newline
-                let ch = if (next_seed(&mut seed) % 7) == 0 {
+                let ch = if next_seed(&mut seed).is_multiple_of(7) {
                     '\n'
                 } else {
                     seeded_char_for_model(&mut seed)

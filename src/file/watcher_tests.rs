@@ -11,8 +11,6 @@
 //!   (map_event_to_signal) accessible via super because this is a path child mod.
 //! Phase: 2-ad (split for watcher.rs hygiene after 2-ac).
 
-#![cfg(test)]
-
 use super::*;
 use crate::mode::{Capabilities, Mode};
 use notify::event::{CreateKind, RemoveKind};

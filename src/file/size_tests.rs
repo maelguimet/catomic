@@ -8,8 +8,6 @@
 //! Invariants: mirrors original inline tests exactly; uses super::* for access.
 //! Phase: 2-ah (split for size.rs line hygiene; no behavior change).
 
-#![cfg(test)]
-
 use super::*;
 use std::fs;
 

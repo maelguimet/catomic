@@ -6,8 +6,6 @@
 //! Invariants: sibling test module of large_file.rs; uses tiny temp files only.
 //! Phase: 2B limited Huge-file storage foundation.
 
-#![cfg(test)]
-
 use super::*;
 use crate::buffer::Buffer;
 use std::io::Write;
@@ -97,7 +95,7 @@ fn records_checkpoints_for_late_non_ascii_windows() {
 
     let buffer = LargeFileBuffer::open(&path).unwrap();
 
-    assert_eq!(buffer.line_is_ascii[0], false);
+    assert!(!buffer.line_is_ascii[0]);
     assert_eq!(
         buffer.line_checkpoints(0)[0],
         LineCheckpoint {
@@ -129,7 +127,7 @@ fn records_ascii_prefix_checkpoints_for_later_non_ascii_lines() {
 
     let buffer = LargeFileBuffer::open(&path).unwrap();
 
-    assert_eq!(buffer.line_is_ascii[0], false);
+    assert!(!buffer.line_is_ascii[0]);
     assert_eq!(
         buffer.line_checkpoint_at_or_before(0, SCAN_CHUNK_BYTES + 3),
         Some(LineCheckpoint {

@@ -23,6 +23,8 @@ mod history_position;
 #[cfg(test)]
 mod model_parity;
 #[cfg(test)]
+mod range_edit;
+#[cfg(test)]
 mod storage_parity;
 #[cfg(test)]
 mod undo_redo;

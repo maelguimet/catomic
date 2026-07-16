@@ -112,3 +112,22 @@ fn descriptor_drift_blocks_page_load_and_streaming() {
 
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn range_replacement_is_one_paged_history_transaction() {
+    let path = temp_path("range");
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, "zero\none\ntwo").unwrap();
+    let mut buffer = PagedFileBuffer::open(&path, 2).unwrap();
+    buffer.set_cursor(Cursor { row: 1, col: 1 });
+
+    assert!(buffer
+        .replace_range(Cursor { row: 0, col: 2 }, Cursor { row: 1, col: 2 }, "X",)
+        .unwrap());
+    assert_eq!(buffer.lines(), vec!["zeXe"]);
+
+    buffer.undo();
+    assert_eq!(buffer.lines(), vec!["zero", "one"]);
+    assert_eq!(buffer.cursor(), Cursor { row: 1, col: 1 });
+    let _ = std::fs::remove_file(path);
+}

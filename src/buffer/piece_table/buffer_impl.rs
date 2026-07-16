@@ -11,7 +11,7 @@ use std::io::{self, Write};
 use crate::buffer::undo::{PieceEdit, Transaction};
 use crate::buffer::{Buffer, Cursor, LineView};
 
-use super::types::{PieceTable, Source};
+use super::types::{Piece, PieceTable, Source};
 
 impl Buffer for PieceTable {
     fn line_count(&self) -> usize {
@@ -91,6 +91,32 @@ impl Buffer for PieceTable {
         let col = cursor.col.min(self.current_line_char_len(row));
         self.cursor = Cursor { row, col };
         self.sync_cursor_byte_offset();
+    }
+
+    fn text_range(&self, start: Cursor, end: Cursor) -> io::Result<String> {
+        let (start, end) = self.clamped_ordered_range(start, end);
+        self.try_slice_to_string(
+            self.byte_offset_at(start.row, start.col),
+            self.byte_offset_at(end.row, end.col),
+        )
+    }
+
+    fn replace_range(&mut self, start: Cursor, end: Cursor, text: &str) -> io::Result<bool> {
+        let (start, end) = self.clamped_ordered_range(start, end);
+        let start_byte = self.byte_offset_at(start.row, start.col);
+        let end_byte = self.byte_offset_at(end.row, end.col);
+        if start_byte == end_byte && text.is_empty() {
+            return Ok(false);
+        }
+
+        let before = self.capture_cursor_state();
+        let (removed, inserted) = self.splice_replacement(start_byte, end_byte, text);
+        self.coalesce();
+        self.rebuild_index();
+        self.cursor = cursor_after_text(start, text);
+        self.cursor_byte_offset = start_byte + text.len();
+        self.record_replacement(before, start_byte, removed, inserted);
+        Ok(true)
     }
 
     fn to_string(&self) -> String {
@@ -241,7 +267,90 @@ impl Buffer for PieceTable {
     }
 }
 
+fn cursor_after_text(start: Cursor, text: &str) -> Cursor {
+    let newline_count = text.bytes().filter(|byte| *byte == b'\n').count();
+    if newline_count == 0 {
+        Cursor {
+            row: start.row,
+            col: start.col + text.chars().count(),
+        }
+    } else {
+        Cursor {
+            row: start.row + newline_count,
+            col: text.rsplit('\n').next().unwrap_or_default().chars().count(),
+        }
+    }
+}
+
 impl PieceTable {
+    fn clamped_ordered_range(&self, start: Cursor, end: Cursor) -> (Cursor, Cursor) {
+        let clamp = |cursor: Cursor| {
+            let row = cursor.row.min(self.line_count().saturating_sub(1));
+            Cursor {
+                row,
+                col: cursor.col.min(self.current_line_char_len(row)),
+            }
+        };
+        let start = clamp(start);
+        let end = clamp(end);
+        if (start.row, start.col) <= (end.row, end.col) {
+            (start, end)
+        } else {
+            (end, start)
+        }
+    }
+
+    fn splice_replacement(
+        &mut self,
+        start: usize,
+        end: usize,
+        text: &str,
+    ) -> (Vec<Piece>, Vec<Piece>) {
+        let removed = self.delete_byte_range(start, end);
+        if text.is_empty() {
+            return (removed, Vec::new());
+        }
+        let piece = Piece {
+            source: Source::Add,
+            start: self.add.len(),
+            len: text.len(),
+        };
+        self.add.push_str(text);
+        self.insert_pieces_at(start, std::slice::from_ref(&piece));
+        (removed, vec![piece])
+    }
+
+    fn record_replacement(
+        &mut self,
+        before: crate::buffer::undo::CursorState,
+        at: usize,
+        removed: Vec<Piece>,
+        inserted: Vec<Piece>,
+    ) {
+        if !self.recording {
+            return;
+        }
+        let mut edits = Vec::with_capacity(2);
+        if !removed.is_empty() {
+            edits.push(PieceEdit::Delete {
+                at,
+                pieces: removed,
+            });
+        }
+        if !inserted.is_empty() {
+            edits.push(PieceEdit::Insert {
+                at,
+                pieces: inserted,
+            });
+        }
+        self.undo_stack.record(Transaction {
+            before,
+            after: self.capture_cursor_state(),
+            edits,
+            id: 0,
+        });
+    }
+
     fn delete_previous_char(&mut self) {
         let end = self.byte_offset_at(self.cursor.row, self.cursor.col);
         let start = self.byte_offset_at(self.cursor.row, self.cursor.col - 1);

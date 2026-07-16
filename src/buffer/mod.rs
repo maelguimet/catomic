@@ -148,6 +148,36 @@ pub trait Buffer {
     }
     fn set_cursor(&mut self, cursor: Cursor);
 
+    /// Return the text in a half-open scalar-coordinate range on the active
+    /// logical document/page. Newlines between selected rows are included.
+    fn text_range(&self, start: Cursor, end: Cursor) -> io::Result<String> {
+        let (start, end) = ordered_range(self, start, end);
+        if start == end {
+            return Ok(String::new());
+        }
+        let mut text = String::new();
+        for row in start.row..=end.row {
+            let line = self.line(row).unwrap_or_default();
+            let from = if row == start.row { start.col } else { 0 };
+            let to = if row == end.row {
+                end.col
+            } else {
+                line.chars().count()
+            };
+            text.extend(line.chars().skip(from).take(to.saturating_sub(from)));
+            if row < end.row {
+                text.push('\n');
+            }
+        }
+        Ok(text)
+    }
+
+    /// Replace a half-open scalar-coordinate range as one undoable edit.
+    /// Read-only implementations retain the default refusal.
+    fn replace_range(&mut self, _start: Cursor, _end: Cursor, _text: &str) -> io::Result<bool> {
+        Ok(false)
+    }
+
     /// Return the entire content as a single string for compatibility/tests.
     /// Save paths use `write_to` so large storage need not materialize here.
     fn to_string(&self) -> String;
@@ -193,4 +223,19 @@ pub trait Buffer {
     // fn insert_str(&mut self, s: &str);
     // fn delete_range(...);
     // fn selection, etc.
+}
+
+fn ordered_range<B: Buffer + ?Sized>(buffer: &B, start: Cursor, end: Cursor) -> (Cursor, Cursor) {
+    let clamp = |cursor: Cursor| {
+        let row = cursor.row.min(buffer.line_count().saturating_sub(1));
+        let col = cursor.col.min(buffer.line_char_count(row).unwrap_or(0));
+        Cursor { row, col }
+    };
+    let start = clamp(start);
+    let end = clamp(end);
+    if (start.row, start.col) <= (end.row, end.col) {
+        (start, end)
+    } else {
+        (end, start)
+    }
 }

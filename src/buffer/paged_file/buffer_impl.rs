@@ -147,6 +147,21 @@ impl Buffer for PagedFileBuffer {
         Ok(true)
     }
 
+    fn text_range(&self, start: Cursor, end: Cursor) -> io::Result<String> {
+        self.active().buffer.text_range(start, end)
+    }
+
+    fn replace_range(&mut self, start: Cursor, end: Cursor, text: &str) -> io::Result<bool> {
+        let page_start = self.active().start_byte;
+        let before = self.active().buffer.edit_history_position();
+        let changed = self.active_mut().buffer.replace_range(start, end, text)?;
+        let after = self.active().buffer.edit_history_position();
+        if changed && after != before {
+            self.history.record(page_start);
+        }
+        Ok(changed)
+    }
+
     fn to_string(&self) -> String {
         self.active().buffer.to_string()
     }

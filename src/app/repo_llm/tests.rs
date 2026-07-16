@@ -5,10 +5,12 @@
 //! Phase: 6 (LLM Context Broker).
 
 mod path_identity;
+mod relevant_file;
 
 use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpListener;
+use std::path::Path;
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
@@ -109,7 +111,10 @@ fn patch_for_a_different_repo_file_is_refused_before_preview() {
 }
 
 fn project_app(repo: &TempRepo) -> super::super::App {
-    let path = repo.0.join("note.txt");
+    project_app_at(&repo.0.join("note.txt"))
+}
+
+fn project_app_at(path: &Path) -> super::super::App {
     let mut app = super::super::App::new(path.to_str()).unwrap();
     let mut out = Vec::new();
     super::super::project_mode::switch_to_project(&mut app, &mut out).unwrap();

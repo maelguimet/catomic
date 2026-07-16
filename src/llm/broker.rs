@@ -4,16 +4,16 @@
 //! Invariants: every returned byte consumes budget; Git and every read file must remain unchanged.
 //! Phase: 6 (LLM Context Broker).
 
-use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::fmt;
-use std::fs;
-use std::hash::{Hash, Hasher};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
 
 use crate::project::discovery::{discover_files_until, DiscoveryLimits};
 use crate::project::git::{GitContext, GitError};
+
+mod relevant;
+use relevant::fingerprint;
 
 pub const DEFAULT_CONTEXT_BUDGET: usize = 128 * 1024;
 const MAX_FILES: usize = 4_096;
@@ -39,6 +39,7 @@ pub enum BrokerError {
     InvalidPath,
     UnknownFile(PathBuf),
     FileTooLarge { path: PathBuf, bytes: u64 },
+    FileChanged(PathBuf),
     BudgetExceeded { requested: usize, remaining: usize },
     Io(String),
     InvalidUtf8(PathBuf),
@@ -61,6 +62,9 @@ impl fmt::Display for BrokerError {
                 "broker file is too large ({bytes} bytes): {}",
                 path.display()
             ),
+            Self::FileChanged(path) => {
+                write!(formatter, "relevant file changed: {}", path.display())
+            }
             Self::BudgetExceeded {
                 requested,
                 remaining,
@@ -164,6 +168,7 @@ impl ContextBroker {
     ) -> Result<String, BrokerError> {
         let relative = self.valid_file(path)?;
         let (mut file, bytes) = self.open_relevant_file(&relative)?;
+        self.record_relevant_file(&relative, bytes)?;
         file.seek(SeekFrom::Start(offset))
             .map_err(|error| BrokerError::Io(error.to_string()))?;
         let mut output = Vec::new();
@@ -171,7 +176,6 @@ impl ContextBroker {
             .read_to_end(&mut output)
             .map_err(|error| BrokerError::Io(error.to_string()))?;
         let text = String::from_utf8(output).map_err(|_| BrokerError::InvalidUtf8(relative))?;
-        self.relevant_files.insert(path.to_path_buf(), bytes);
         self.charge(text)
     }
 
@@ -192,10 +196,10 @@ impl ContextBroker {
                 break;
             }
             scanned += size;
+            self.record_relevant_file(&relative, fingerprint)?;
             let mut text = String::new();
             file.read_to_string(&mut text)
                 .map_err(|_| BrokerError::InvalidUtf8(relative.clone()))?;
-            self.relevant_files.insert(relative.clone(), fingerprint);
             for (line, content) in text.lines().enumerate() {
                 if content.contains(query) {
                     matches.push_str(&format!(
@@ -240,34 +244,11 @@ impl ContextBroker {
     }
 
     fn valid_file(&self, path: &Path) -> Result<PathBuf, BrokerError> {
-        if path.is_absolute()
-            || !path
-                .components()
-                .all(|part| matches!(part, Component::Normal(_)))
-        {
-            return Err(BrokerError::InvalidPath);
-        }
+        ensure_normalized_relative(path)?;
         self.files
             .binary_search_by(|candidate| candidate.as_path().cmp(path))
             .map(|index| self.files[index].clone())
             .map_err(|_| BrokerError::UnknownFile(path.to_path_buf()))
-    }
-
-    fn open_relevant_file(&self, relative: &Path) -> Result<(fs::File, u64), BrokerError> {
-        let path = self.git.root.join(relative);
-        let metadata = fs::symlink_metadata(&path).map_err(io_error)?;
-        if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
-            return Err(BrokerError::InvalidPath);
-        }
-        if metadata.len() > MAX_RELEVANT_FILE_BYTES {
-            return Err(BrokerError::FileTooLarge {
-                path: relative.to_path_buf(),
-                bytes: metadata.len(),
-            });
-        }
-        let fingerprint = fingerprint(&path)?;
-        let file = fs::File::open(path).map_err(io_error)?;
-        Ok((file, fingerprint))
     }
 
     fn charge(&mut self, text: String) -> Result<String, BrokerError> {
@@ -283,17 +264,15 @@ impl ContextBroker {
     }
 }
 
-fn fingerprint(path: &Path) -> Result<u64, BrokerError> {
-    let bytes = fs::read(path).map_err(io_error)?;
-    if bytes.len() as u64 > MAX_RELEVANT_FILE_BYTES {
-        return Err(BrokerError::FileTooLarge {
-            path: path.to_path_buf(),
-            bytes: bytes.len() as u64,
-        });
+fn ensure_normalized_relative(path: &Path) -> Result<(), BrokerError> {
+    if path.is_absolute()
+        || !path
+            .components()
+            .all(|part| matches!(part, Component::Normal(_)))
+    {
+        return Err(BrokerError::InvalidPath);
     }
-    let mut hasher = DefaultHasher::new();
-    bytes.hash(&mut hasher);
-    Ok(hasher.finish())
+    Ok(())
 }
 
 fn io_error(error: std::io::Error) -> BrokerError {

@@ -5,7 +5,7 @@
 //! Phase: 6 (LLM Context Broker).
 
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -103,13 +103,7 @@ fn finish_preparing(app: &mut super::App, prepared: PreparedRepoContext, state: 
         );
         return;
     }
-    let relative_path = match repo_relative_path(&prepared.broker.git.root, &state.path) {
-        Ok(path) => path,
-        Err(message) => {
-            app.message = Some(message);
-            return;
-        }
-    };
+    let relative_path = prepared.active_relative_path.clone();
     let sensitive = if state.draft.context.sensitivity.is_empty() {
         ""
     } else {
@@ -245,23 +239,6 @@ fn user_prompt(pending: &Pending) -> String {
         pending.draft.context.text,
         pending.prepared.initial_context
     )
-}
-
-fn repo_relative_path(root: &Path, path: &Path) -> Result<String, String> {
-    let absolute = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        std::env::current_dir()
-            .map_err(|error| error.to_string())?
-            .join(path)
-    };
-    let canonical = absolute
-        .canonicalize()
-        .map_err(|error| format!("Cannot resolve active repo file: {error}"))?;
-    canonical
-        .strip_prefix(root)
-        .map(|path| path.to_string_lossy().into_owned())
-        .map_err(|_| "Active file is outside the detected Git repository.".to_string())
 }
 
 fn is_quit(key: KeyEvent) -> bool {

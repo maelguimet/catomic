@@ -105,6 +105,34 @@ fn refuses_git_or_retrieved_file_drift() {
     assert!(!broker.is_unchanged().unwrap());
 }
 
+#[test]
+fn pinned_untracked_file_detects_content_drift_hidden_from_git_status() {
+    let repo = TempRepo::new();
+    fs::write(repo.0.join("draft.txt"), "first\n").unwrap();
+    let mut broker = ContextBroker::new_for_repo(&repo.0).unwrap();
+    broker.pin_relevant_file(Path::new("draft.txt")).unwrap();
+    assert!(broker.is_unchanged().unwrap());
+
+    fs::write(repo.0.join("draft.txt"), "second\n").unwrap();
+
+    assert!(!broker.is_unchanged().unwrap());
+}
+
+#[test]
+fn later_retrieval_cannot_refresh_a_drifted_relevant_file_baseline() {
+    let repo = TempRepo::new();
+    fs::write(repo.0.join("draft.txt"), "first\n").unwrap();
+    let mut broker = ContextBroker::new_for_repo(&repo.0).unwrap();
+    broker.pin_relevant_file(Path::new("draft.txt")).unwrap();
+    fs::write(repo.0.join("draft.txt"), "second\n").unwrap();
+
+    assert!(matches!(
+        broker.read_file_range(Path::new("draft.txt"), 0, 16),
+        Err(BrokerError::FileChanged(path)) if path == Path::new("draft.txt")
+    ));
+    assert!(!broker.is_unchanged().unwrap());
+}
+
 fn git(root: &Path, args: &[&str]) {
     let status = Command::new("git")
         .arg("-C")

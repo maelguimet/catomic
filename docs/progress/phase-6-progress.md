@@ -21,8 +21,10 @@ Phase 6 is complete. Its exit evidence is in
   128 KiB consumable context budget, and read-only list/range/grep/diff commands
   across at most eight model broker rounds.
 - **Time-travel guard**: HEAD, branch, status, tracked diff, active buffer path
-  and text, and every retrieved file are checked during repo preparation,
-  before sending, after the response, and before applying the preview.
+  and text, active-file disk bytes (including untracked files), and every
+  retrieved file are checked during repo preparation, before sending, after
+  the response, and before applying the preview. First fingerprints are
+  immutable, so later broker retrieval cannot accept intervening drift.
 - **Terminal acceptance**: the real PTY reaches a `:meow` endpoint/context
   confirmation using isolated config, cancels with Escape, makes no request,
   and leaves the file exact.

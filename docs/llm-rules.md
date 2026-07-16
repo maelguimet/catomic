@@ -42,6 +42,10 @@ and per-file diff. No command writes or runs a process other than read-only Git.
   path drift discards the request/output and patch headers must match that path.
 - Repo requests pin the active path through context preparation, confirmation,
   response, and final preview apply; path drift cancels or discards fail closed.
+- Repo preparation fingerprints the active file on disk even when it is
+  untracked, so byte drift hidden from Git status is refused at every send/apply gate.
+- The first relevant-file fingerprint is immutable for the request; later
+  broker reads or grep cannot refresh a drifted baseline.
 - Repo patch headers must name the exact active repo-relative file; patches for
   another file and rename-shaped patches fail before preview.
 - Tests use loopback fake HTTP only; never test against a live endpoint.

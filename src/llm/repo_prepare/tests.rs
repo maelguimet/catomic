@@ -13,7 +13,7 @@ use super::*;
 #[test]
 fn prepares_broker_and_initial_context_without_a_client() {
     let root = temp_repo();
-    let mut task = RepoPrepareTask::start(&root).unwrap();
+    let mut task = RepoPrepareTask::start(&root, &root.join("note.txt")).unwrap();
     let deadline = Instant::now() + Duration::from_secs(2);
     let result = loop {
         if let Some(result) = task.try_result() {
@@ -28,6 +28,7 @@ fn prepares_broker_and_initial_context_without_a_client() {
     };
     assert!(prepared.initial_context.contains("File map"));
     assert!(prepared.initial_context.contains("note.txt"));
+    assert_eq!(prepared.active_relative_path, "note.txt");
     assert!(prepared.broker.is_unchanged().unwrap());
     let _ = fs::remove_dir_all(root);
 }

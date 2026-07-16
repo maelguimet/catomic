@@ -58,7 +58,7 @@ pub(super) fn begin_with_settings(
         }
     };
     let root = app.project.as_ref().expect("Project checked").root();
-    match RepoPrepareTask::start(root) {
+    match RepoPrepareTask::start(root, &path) {
         Ok(task) => {
             app.repo_llm_state = Some(RepoLlmState::Preparing(Preparing {
                 task,

@@ -97,6 +97,7 @@ impl Buffer for SimpleBuffer {
         self.lines.join("\n")
     }
 
+    #[cfg(test)]
     fn lines(&self) -> Vec<String> {
         self.lines.clone()
     }

@@ -170,6 +170,7 @@ impl Buffer for PagedFileBuffer {
         self.stream_document(out)
     }
 
+    #[cfg(test)]
     fn lines(&self) -> Vec<String> {
         (0..self.line_count())
             .filter_map(|row| self.line(row).map(Cow::into_owned))

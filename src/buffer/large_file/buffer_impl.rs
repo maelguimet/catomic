@@ -163,6 +163,7 @@ impl Buffer for LargeFileBuffer {
         self.ensure_fd_unchanged()
     }
 
+    #[cfg(test)]
     fn lines(&self) -> Vec<String> {
         (0..self.line_count())
             .map(|row| self.line_to_string(row).unwrap_or_default())

@@ -134,6 +134,7 @@ impl Buffer for PieceTable {
         Ok(())
     }
 
+    #[cfg(test)]
     fn lines(&self) -> Vec<String> {
         (0..self.index.line_count())
             .map(|row| {

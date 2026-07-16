@@ -190,6 +190,7 @@ pub trait Buffer {
     }
 
     /// Convenience for tests / simple render.
+    #[cfg(test)]
     fn lines(&self) -> Vec<String>;
 
     // --- Mutation ---

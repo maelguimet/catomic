@@ -127,6 +127,9 @@ fn map_mouse_cursor(
         return Ok(None);
     }
     let visible_row = screen_row.min(content_height - 1);
+    if super::super::view::soft_wrap_active(app) {
+        return map_wrapped_cursor(app, visible_row, event.column as usize);
+    }
     let row = app
         .screen
         .scroll_top
@@ -149,6 +152,31 @@ fn map_mouse_cursor(
         .saturating_add(relative_col)
         .min(app.buffer.line_char_count(row).unwrap_or(0));
     Ok(Some(Cursor { row, col }))
+}
+
+fn map_wrapped_cursor(
+    app: &super::super::App,
+    visible_row: usize,
+    screen_column: usize,
+) -> io::Result<Option<Cursor>> {
+    let gutter = super::super::view::gutter_width(app);
+    let width = super::super::view::content_width(app);
+    let rows = crate::terminal::render::wrapped::visible_rows(
+        &*app.buffer,
+        app.screen.scroll_top,
+        app.screen.wrap_col,
+        app.screen.visible_height(),
+        width,
+    )?;
+    let Some(row) = rows.get(visible_row) else {
+        return Ok(None);
+    };
+    let cell = screen_column.saturating_sub(gutter);
+    let relative = text_layout::scalar_at_cell(&row.content, cell);
+    Ok(Some(Cursor {
+        row: row.document_row,
+        col: row.start_col.saturating_add(relative).min(row.end_col()),
+    }))
 }
 
 #[cfg(test)]

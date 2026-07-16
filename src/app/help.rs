@@ -45,6 +45,7 @@ Find and view
   F6                    Markdown preview
   F7                    Toggle line numbers
   F8                    Toggle visible whitespace
+  F9                    Toggle soft line wrapping
 
 Commands (Ctrl+Shift+P)
   help | shortcuts

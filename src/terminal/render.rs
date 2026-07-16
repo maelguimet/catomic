@@ -11,6 +11,7 @@ use crate::buffer::{Buffer, Cursor};
 use crate::editor::syntax::SyntaxKind;
 
 mod style;
+pub(crate) mod wrapped;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct TextHighlight {
@@ -24,6 +25,7 @@ pub(crate) struct RenderOptions {
     pub(crate) syntax: SyntaxKind,
     pub(crate) line_numbers: bool,
     pub(crate) whitespace: bool,
+    pub(crate) soft_wrap: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -32,6 +34,7 @@ pub struct RenderViewport {
     start_col: usize,
     height: usize,
     width: usize,
+    wrap_col: usize,
 }
 
 impl RenderViewport {
@@ -41,7 +44,13 @@ impl RenderViewport {
             start_col,
             height,
             width,
+            wrap_col: 0,
         }
+    }
+
+    pub(crate) const fn with_wrap_col(mut self, wrap_col: usize) -> Self {
+        self.wrap_col = wrap_col;
+        self
     }
 }
 
@@ -66,11 +75,15 @@ pub fn render_buffer<W: Write + ?Sized>(
     message: Option<&str>,
     options: RenderOptions,
 ) -> std::io::Result<()> {
+    if options.soft_wrap {
+        return wrapped::render_buffer(out, buffer, viewport, message, options);
+    }
     let RenderViewport {
         start_row,
         start_col,
         height,
         width,
+        ..
     } = viewport;
     // Reserve bottom row for message/status (matches screen.visible_height intent).
     // Horizontal: use width directly as content width (no sidebar/status reservation).
@@ -153,7 +166,7 @@ pub fn render_buffer<W: Write + ?Sized>(
     Ok(())
 }
 
-fn write_line_number<W: Write + ?Sized>(
+pub(super) fn write_line_number<W: Write + ?Sized>(
     out: &mut W,
     row: usize,
     gutter: usize,

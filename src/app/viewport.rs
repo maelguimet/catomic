@@ -34,12 +34,41 @@ pub(crate) fn reveal_cursor(app: &mut App) {
     clamp_viewport_to_buffer(app);
     let c = super::view::display_buffer(app).cursor();
     app.screen.reveal_row(c.row);
+    if super::view::soft_wrap_active(app) {
+        reveal_wrapped_cursor(app);
+        return;
+    }
+    app.screen.wrap_col = 0;
     app.screen
         .reveal_col_with_width(c.col, super::view::content_width(app));
     // Re-clamp after reveal: reveal_col may target a col on a now-shorter line,
     // leaving scroll_left > (line_len - vw). Clamp pulls it back.
     clamp_viewport_to_buffer(app);
     reveal_horizontal_cells(app);
+}
+
+fn reveal_wrapped_cursor(app: &mut App) {
+    app.screen.scroll_left = 0;
+    let height = app.screen.visible_height();
+    let width = super::view::content_width(app);
+    let buffer = super::view::display_buffer(app);
+    let visible = crate::terminal::render::wrapped::cursor_is_visible(
+        buffer,
+        app.screen.scroll_top,
+        app.screen.wrap_col,
+        height,
+        width,
+    )
+    .unwrap_or(false);
+    if visible {
+        return;
+    }
+    let cursor = buffer.cursor();
+    let wrap_col =
+        crate::terminal::render::wrapped::start_col_near_cursor(buffer, cursor, height, width)
+            .unwrap_or(cursor.col);
+    app.screen.scroll_top = cursor.row;
+    app.screen.wrap_col = wrap_col;
 }
 
 fn reveal_horizontal_cells(app: &mut App) {

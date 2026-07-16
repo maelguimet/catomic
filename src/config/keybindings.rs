@@ -46,6 +46,7 @@ enum Action {
     MarkdownPreview,
     LineNumbers,
     Whitespace,
+    SoftWrap,
 }
 
 impl KeyBindings {
@@ -90,6 +91,7 @@ impl Action {
             "markdown-preview" => Self::MarkdownPreview,
             "line-numbers" => Self::LineNumbers,
             "whitespace" => Self::Whitespace,
+            "soft-wrap" => Self::SoftWrap,
             _ => return None,
         })
     }
@@ -127,6 +129,7 @@ impl Action {
             Self::MarkdownPreview => (KeyCode::F(6), KeyModifiers::NONE),
             Self::LineNumbers => (KeyCode::F(7), KeyModifiers::NONE),
             Self::Whitespace => (KeyCode::F(8), KeyModifiers::NONE),
+            Self::SoftWrap => (KeyCode::F(9), KeyModifiers::NONE),
         };
         KeyEvent::new(code, modifiers)
     }

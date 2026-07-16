@@ -14,6 +14,8 @@ pub struct Screen {
     pub height: u16,
     pub scroll_top: usize,
     pub scroll_left: usize,
+    /// Scalar column where the first visual row begins while soft wrap is active.
+    pub wrap_col: usize,
 }
 
 impl Screen {
@@ -23,6 +25,7 @@ impl Screen {
             height,
             scroll_top: 0,
             scroll_left: 0,
+            wrap_col: 0,
         }
     }
 

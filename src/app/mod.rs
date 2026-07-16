@@ -425,6 +425,7 @@ impl App {
             syntax: view::display_syntax(self),
             line_numbers: self.view.line_numbers,
             whitespace: self.view.whitespace,
+            soft_wrap: view::soft_wrap_active(self),
         };
         let display_buffer = view::display_buffer(self);
         if let Some(ref m) = self.message {
@@ -436,7 +437,8 @@ impl App {
                     self.screen.scroll_left,
                     self.screen.height as usize,
                     self.screen.width as usize,
-                ),
+                )
+                .with_wrap_col(self.screen.wrap_col),
                 Some(m.as_str()),
                 render_options,
             )
@@ -466,7 +468,8 @@ impl App {
                     self.screen.scroll_left,
                     self.screen.height as usize,
                     self.screen.width as usize,
-                ),
+                )
+                .with_wrap_col(self.screen.wrap_col),
                 Some(status.as_str()),
                 render_options,
             )

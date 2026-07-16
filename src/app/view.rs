@@ -1,5 +1,5 @@
 //! Purpose: own non-mutating per-buffer display modes and their key bindings.
-//! Owns: F6 Markdown preview, F7 line numbers, F8 whitespace, and display coordinates.
+//! Owns: F6 preview, F7/F8 indicators, F9 soft wrap, and display coordinates.
 //! Must not: mutate source text/history, read files, emit terminal setup, or network.
 //! Invariants: preview is explicit/read-only; toggles and source viewport are per buffer.
 //! Phase: 4-b/4-c optional indicators and Markdown preview.
@@ -15,6 +15,7 @@ use crate::editor::syntax::{self, SyntaxKind};
 pub(crate) struct ViewOptions {
     pub(crate) line_numbers: bool,
     pub(crate) whitespace: bool,
+    pub(crate) soft_wrap: bool,
     preview: Option<PreviewDocument>,
 }
 
@@ -34,6 +35,7 @@ pub(crate) fn handle_key(
         KeyCode::F(6) => return toggle_preview(app, out),
         KeyCode::F(7) => return toggle_indicator(app, out, true),
         KeyCode::F(8) => return toggle_indicator(app, out, false),
+        KeyCode::F(9) => return toggle_soft_wrap(app, out),
         _ => {}
     }
     if !is_preview(app) || is_quit(key) {
@@ -114,6 +116,18 @@ pub(crate) fn content_width(app: &super::App) -> usize {
     (app.screen.width as usize).saturating_sub(gutter_width(app))
 }
 
+pub(crate) fn soft_wrap_active(app: &super::App) -> bool {
+    app.view.soft_wrap
+        && !is_preview(app)
+        && !super::help::is_viewing(app)
+        && !super::recovery::is_viewing(app)
+        && !super::external_command::is_viewing(app)
+        && !super::llm_preview::is_viewing(app)
+        && !super::llm_answer::is_viewing(app)
+        && !super::lint::is_viewing(app)
+        && !super::project_files::is_viewing(app)
+}
+
 pub(crate) fn cancel_preview(app: &mut super::App) {
     if let Some(preview) = app.view.preview.take() {
         app.screen.scroll_top = preview.source_scroll_top;
@@ -159,6 +173,19 @@ fn toggle_indicator(
     };
     app.message = Some(format!("{label} {}.", if enabled { "on" } else { "off" }));
     reveal_display_cursor(app);
+    app.render(out)?;
+    Ok(true)
+}
+
+fn toggle_soft_wrap(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {
+    app.view.soft_wrap = !app.view.soft_wrap;
+    app.screen.scroll_left = 0;
+    app.screen.wrap_col = 0;
+    app.message = Some(format!(
+        "Soft wrap {}.",
+        if app.view.soft_wrap { "on" } else { "off" }
+    ));
+    app.reveal_cursor();
     app.render(out)?;
     Ok(true)
 }
@@ -244,6 +271,25 @@ mod tests {
         handle_key(&mut app, &mut out, key(KeyCode::F(8))).unwrap();
         assert!(app.view.whitespace);
         assert!(String::from_utf8(out).unwrap().contains("a·b→c"));
+    }
+
+    #[test]
+    fn f9_toggles_bounded_soft_wrapping() {
+        let mut app = super::super::App::new(None).unwrap();
+        app.buffer = Box::new(crate::buffer::PieceTable::from_text("abcdef"));
+        app.screen.width = 3;
+        app.screen.height = 4;
+        let mut out = Vec::new();
+
+        handle_key(&mut app, &mut out, key(KeyCode::F(9))).unwrap();
+        assert!(app.view.soft_wrap);
+        let rendered = String::from_utf8(out).unwrap();
+        assert!(rendered.contains("\x1b[1;1H\x1b[Kabc"));
+        assert!(rendered.contains("\x1b[2;1H\x1b[Kdef"));
+
+        let mut out = Vec::new();
+        handle_key(&mut app, &mut out, key(KeyCode::F(9))).unwrap();
+        assert!(!app.view.soft_wrap);
     }
 
     #[test]

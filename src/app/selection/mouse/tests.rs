@@ -57,6 +57,24 @@ fn click_subtracts_the_line_number_gutter() {
 }
 
 #[test]
+fn click_maps_a_wrapped_continuation_to_its_document_column() {
+    let mut app = app_with("abcdef");
+    app.view.soft_wrap = true;
+    app.screen.width = 3;
+    app.screen.height = 4;
+    let mut out = Vec::new();
+
+    handle_mouse(
+        &mut app,
+        &mut out,
+        event(MouseEventKind::Down(MouseButton::Left), 1, 1),
+    )
+    .unwrap();
+
+    assert_eq!(app.buffer.cursor(), Cursor { row: 0, col: 4 });
+}
+
+#[test]
 fn left_drag_creates_a_multiline_half_open_selection() {
     let mut app = app_with("zero\nmiddle\nlast");
     let mut out = Vec::new();

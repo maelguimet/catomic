@@ -38,6 +38,7 @@ pub(crate) struct BufferSlot {
     view: view::ViewOptions,
     scroll_top: usize,
     scroll_left: usize,
+    wrap_col: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,6 +62,7 @@ impl BufferSlot {
             view: app.view,
             scroll_top: app.screen.scroll_top,
             scroll_left: app.screen.scroll_left,
+            wrap_col: app.screen.wrap_col,
         }
     }
 
@@ -80,6 +82,7 @@ impl BufferSlot {
         mem::swap(&mut self.view, &mut app.view);
         mem::swap(&mut self.scroll_top, &mut app.screen.scroll_top);
         mem::swap(&mut self.scroll_left, &mut app.screen.scroll_left);
+        mem::swap(&mut self.wrap_col, &mut app.screen.wrap_col);
     }
 }
 
@@ -318,8 +321,10 @@ mod tests {
         app.buffer.insert_char('!');
         app.screen.scroll_top = 7;
         app.screen.scroll_left = 3;
+        app.screen.wrap_col = 2;
         app.view.line_numbers = true;
         app.view.whitespace = true;
+        app.view.soft_wrap = true;
         app.file.dirty = true;
 
         app.switch_buffer(BufferDirection::Next);
@@ -327,8 +332,10 @@ mod tests {
         assert!(!app.file.dirty);
         assert_eq!(app.screen.scroll_top, 0);
         assert_eq!(app.screen.scroll_left, 0);
+        assert_eq!(app.screen.wrap_col, 0);
         assert!(!app.view.line_numbers);
         assert!(!app.view.whitespace);
+        assert!(!app.view.soft_wrap);
 
         app.screen.scroll_top = 11;
         app.switch_buffer(BufferDirection::Previous);
@@ -340,8 +347,10 @@ mod tests {
         assert!(app.file.dirty);
         assert_eq!(app.screen.scroll_top, 7);
         assert_eq!(app.screen.scroll_left, 3);
+        assert_eq!(app.screen.wrap_col, 2);
         assert!(app.view.line_numbers);
         assert!(app.view.whitespace);
+        assert!(app.view.soft_wrap);
 
         app.switch_buffer(BufferDirection::Next);
         assert_eq!(app.screen.scroll_top, 11);

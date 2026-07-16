@@ -8,6 +8,7 @@
 pub mod diagnostics;
 pub mod discovery;
 pub mod git;
+pub(crate) mod linter;
 mod session;
 
 pub(crate) use session::ProjectSession;

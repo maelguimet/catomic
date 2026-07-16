@@ -39,6 +39,43 @@ pub(crate) fn reveal_cursor(app: &mut App) {
     // Re-clamp after reveal: reveal_col may target a col on a now-shorter line,
     // leaving scroll_left > (line_len - vw). Clamp pulls it back.
     clamp_viewport_to_buffer(app);
+    reveal_horizontal_cells(app);
+}
+
+fn reveal_horizontal_cells(app: &mut App) {
+    let width = super::view::content_width(app);
+    if width == 0 {
+        app.screen.scroll_left = 0;
+        return;
+    }
+    let cursor = super::view::display_buffer(app).cursor();
+    let context_start = app.screen.scroll_left.saturating_sub(64);
+    let relative_cursor = cursor.col.saturating_sub(context_start);
+    let fetch_width = relative_cursor.saturating_add(65);
+    let Ok(lines) = super::view::display_buffer(app).try_visible_lines_window(
+        cursor.row,
+        1,
+        context_start,
+        fetch_width,
+    ) else {
+        return;
+    };
+    let Some(line) = lines.first() else {
+        return;
+    };
+    let requested_start = app.screen.scroll_left.saturating_sub(context_start);
+    let boundary_start =
+        crate::editor::text_layout::ceil_to_grapheme_col(&line.content, requested_start);
+    let visible: String = line.content.chars().skip(boundary_start).collect();
+    let cursor_in_visible = cursor
+        .col
+        .saturating_sub(context_start.saturating_add(boundary_start));
+    let cursor_cells = crate::editor::text_layout::scalar_to_cell(&visible, cursor_in_visible);
+    let hidden_cells = cursor_cells.saturating_add(1).saturating_sub(width);
+    let advance = crate::editor::text_layout::scalar_at_cell(&visible, hidden_cells);
+    app.screen.scroll_left = context_start
+        .saturating_add(boundary_start)
+        .saturating_add(advance);
 }
 
 /// Buffer-aware clamp so scroll offsets cannot exceed useful buffer content.

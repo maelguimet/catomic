@@ -8,7 +8,10 @@ use std::io::{self, Write};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::buffer::Cursor;
+use crate::buffer::{Buffer, Cursor};
+use crate::editor::text_layout;
+
+const GRAPHEME_WINDOW: usize = 64;
 
 pub(crate) fn handle_key(
     app: &mut super::App,
@@ -48,6 +51,140 @@ pub(crate) fn handle_key(
     };
     super::selection::move_to(app, out, target, extend)?;
     Ok(true)
+}
+
+pub(crate) fn move_grapheme(app: &mut super::App, right: bool) -> io::Result<()> {
+    let target = if right {
+        next_grapheme_cursor(&*app.buffer)?
+    } else {
+        previous_grapheme_cursor(&*app.buffer)?
+    };
+    app.buffer.set_cursor(target);
+    Ok(())
+}
+
+pub(crate) fn delete_grapheme(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    forward: bool,
+) -> io::Result<()> {
+    if super::selection::replace_active(app, "")? {
+        return super::input::finish_content_edit(app, out);
+    }
+    let target = if forward {
+        next_grapheme_cursor(&*app.buffer)?
+    } else {
+        previous_grapheme_cursor(&*app.buffer)?
+    };
+    let current = app.buffer.cursor();
+    if target.row != current.row || target.col.abs_diff(current.col) == 1 {
+        if forward {
+            app.buffer.delete_forward();
+        } else {
+            app.buffer.delete_back();
+        }
+        return super::input::finish_content_edit(app, out);
+    }
+    delete_to(app, out, target)
+}
+
+pub(crate) fn snap_current_grapheme(app: &mut super::App) -> io::Result<()> {
+    let cursor = app.buffer.cursor();
+    let col = snap_buffer_col(&*app.buffer, cursor.row, cursor.col)?;
+    app.buffer.set_cursor(Cursor {
+        row: cursor.row,
+        col,
+    });
+    Ok(())
+}
+
+fn previous_grapheme_cursor(buffer: &dyn Buffer) -> io::Result<Cursor> {
+    let cursor = buffer.cursor();
+    if cursor.col == 0 {
+        if cursor.row == 0 {
+            return Ok(cursor);
+        }
+        let row = cursor.row - 1;
+        return Ok(Cursor {
+            row,
+            col: buffer.line_char_count(row).unwrap_or(0),
+        });
+    }
+    let mut width = GRAPHEME_WINDOW.min(cursor.col);
+    loop {
+        let start = cursor.col - width;
+        let text = line_window(buffer, cursor.row, start, width)?;
+        let local = text_layout::previous_grapheme_col(&text, width);
+        if local > 0 || start == 0 {
+            return Ok(Cursor {
+                row: cursor.row,
+                col: start.saturating_add(local),
+            });
+        }
+        width = width.saturating_mul(2).min(cursor.col);
+    }
+}
+
+fn next_grapheme_cursor(buffer: &dyn Buffer) -> io::Result<Cursor> {
+    let cursor = buffer.cursor();
+    let line_len = buffer.line_char_count(cursor.row).unwrap_or(0);
+    if cursor.col >= line_len {
+        let last = buffer.line_count().saturating_sub(1);
+        return Ok(if cursor.row < last {
+            Cursor {
+                row: cursor.row + 1,
+                col: 0,
+            }
+        } else {
+            cursor
+        });
+    }
+    let remaining = line_len - cursor.col;
+    let mut width = GRAPHEME_WINDOW.min(remaining);
+    loop {
+        let text = line_window(buffer, cursor.row, cursor.col, width)?;
+        let local = text_layout::next_grapheme_col(&text, 0);
+        if local < text.chars().count() || width == remaining {
+            return Ok(Cursor {
+                row: cursor.row,
+                col: cursor.col.saturating_add(local),
+            });
+        }
+        width = width.saturating_mul(2).min(remaining);
+    }
+}
+
+fn snap_buffer_col(buffer: &dyn Buffer, row: usize, col: usize) -> io::Result<usize> {
+    let line_len = buffer.line_char_count(row).unwrap_or(0);
+    let col = col.min(line_len);
+    if col == 0 || col == line_len {
+        return Ok(col);
+    }
+    let mut before = GRAPHEME_WINDOW.min(col);
+    loop {
+        let start = col - before;
+        let width = before.saturating_add(GRAPHEME_WINDOW).min(line_len - start);
+        let text = line_window(buffer, row, start, width)?;
+        let local = text_layout::snap_to_grapheme_col(&text, before);
+        if local > 0 || start == 0 {
+            return Ok(start.saturating_add(local));
+        }
+        before = before.saturating_mul(2).min(col);
+    }
+}
+
+fn line_window(
+    buffer: &dyn Buffer,
+    row: usize,
+    start_col: usize,
+    width: usize,
+) -> io::Result<String> {
+    Ok(buffer
+        .try_visible_lines_window(row, 1, start_col, width)?
+        .into_iter()
+        .next()
+        .map(|line| line.content)
+        .unwrap_or_default())
 }
 
 fn line_edge(app: &super::App, end: bool) -> Cursor {
@@ -115,6 +252,7 @@ fn word_left(app: &super::App) -> Cursor {
             col -= 1;
         }
     }
+    let col = text_layout::snap_to_grapheme_col(&chars.iter().collect::<String>(), col);
     Cursor {
         row: current.row,
         col,
@@ -154,6 +292,13 @@ fn word_right(app: &super::App) -> Cursor {
             col += 1;
         }
     }
+    let text: String = chars.iter().collect();
+    let floor = text_layout::snap_to_grapheme_col(&text, col);
+    let col = if floor < col {
+        text_layout::next_grapheme_col(&text, floor)
+    } else {
+        floor
+    };
     Cursor {
         row: current.row,
         col,
@@ -243,6 +388,25 @@ mod tests {
         .unwrap();
         assert_eq!(app.selection.active().unwrap().ordered().0.col, 5);
         assert_eq!(app.selection.active().unwrap().ordered().1.col, 8);
+    }
+
+    #[test]
+    fn ordinary_movement_and_deletion_treat_a_grapheme_as_one_unit() {
+        let mut app = app("a\u{301}猫x");
+        let mut out = Vec::new();
+
+        move_grapheme(&mut app, true).unwrap();
+        assert_eq!(app.buffer.cursor().col, 2);
+        move_grapheme(&mut app, true).unwrap();
+        assert_eq!(app.buffer.cursor().col, 3);
+        move_grapheme(&mut app, false).unwrap();
+        assert_eq!(app.buffer.cursor().col, 2);
+
+        delete_grapheme(&mut app, &mut out, false).unwrap();
+        assert_eq!(app.buffer.to_string(), "猫x");
+        assert_eq!(app.buffer.cursor(), Cursor::default());
+        app.buffer.undo();
+        assert_eq!(app.buffer.to_string(), "a\u{301}猫x");
     }
 
     #[test]

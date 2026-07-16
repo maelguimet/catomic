@@ -57,7 +57,7 @@ pub(crate) fn line_number_gutter(line_count: usize) -> usize {
 ///
 /// `viewport` defines the visible row/column origin and terminal dimensions.
 /// Bottom row (height) reserved for minimal message if provided; content uses height-1.
-/// For horizontal: scalar char slicing from start_col, at most width chars.
+/// Horizontal slicing starts at a scalar document column but clips by terminal cells.
 /// Least invasive addition: message shown on last row via absolute positioning.
 pub fn render_buffer<W: Write + ?Sized>(
     out: &mut W,
@@ -82,7 +82,18 @@ pub fn render_buffer<W: Write + ?Sized>(
     }
     .min(width);
     let content_w = width.saturating_sub(gutter);
-    let visible = buffer.try_visible_lines_window(start_row, content_h, start_col, content_w)?;
+    let cursor = buffer.cursor();
+    let cursor_window =
+        if cursor.row >= start_row && cursor.row < start_row.saturating_add(content_h) {
+            cursor.col.saturating_sub(start_col).saturating_add(1)
+        } else {
+            0
+        };
+    let fetch_width = content_w
+        .saturating_mul(4)
+        .saturating_add(32)
+        .max(cursor_window);
+    let visible = buffer.try_visible_lines_window(start_row, content_h, start_col, fetch_width)?;
     for screen_row in 1..=content_h {
         write!(out, "\x1b[{};1H\x1b[K", screen_row)?;
         if gutter > 0 {
@@ -95,6 +106,7 @@ pub fn render_buffer<W: Write + ?Sized>(
                     &line.content,
                     start_row + screen_row - 1,
                     start_col,
+                    content_w,
                     options,
                 )?;
             }
@@ -113,14 +125,27 @@ pub fn render_buffer<W: Write + ?Sized>(
     // Horizontal scroll: screen col = (buffer col - start_col) + 1 (1-based).
     // Saturating math so it never panics/underflows.
     // If width is 0 still emit safe cursor position.
-    let Cursor { row, col } = buffer.cursor();
+    let Cursor { row, col } = cursor;
     let screen_row = if row >= start_row {
         row - start_row + 1
     } else {
         1
     };
+    let cursor_cells = if row >= start_row && row < start_row.saturating_add(content_h) {
+        visible
+            .get(row - start_row)
+            .map(|line| {
+                crate::editor::text_layout::scalar_to_cell(
+                    &line.content,
+                    col.saturating_sub(start_col),
+                )
+            })
+            .unwrap_or(0)
+    } else {
+        0
+    };
     let screen_col = gutter
-        .saturating_add(col.saturating_sub(start_col))
+        .saturating_add(cursor_cells)
         .saturating_add(1)
         .min(width.max(1));
     write!(out, "\x1b[{};{}H", screen_row, screen_col)?;
@@ -334,12 +359,10 @@ mod tests {
     }
 
     #[test]
-    fn render_buffer_horizontal_scalar_slicing_multibyte_preserves_char_boundaries() {
-        // Unicode scalar (char) slicing: "é" is 1 scalar, "猫" 1, "🙂" 1.
-        // start_col/take must not split multibyte sequences.
+    fn render_buffer_horizontal_cell_clipping_preserves_grapheme_boundaries() {
+        // The three-cell viewport fits é (one cell) and 猫 (two cells).
         let b = SimpleBuffer::from_text("aé猫🙂Z\n");
         let mut out: Vec<u8> = Vec::new();
-        // start_col=1, width=3 => take(3) scalars after skip: "é猫🙂"
         render_buffer(
             &mut out,
             &b,
@@ -350,12 +373,36 @@ mod tests {
         .expect("render slice multibyte");
         let s = String::from_utf8_lossy(&out);
         assert!(
-            s.contains("é猫🙂"),
-            "expected scalar slice of multibyte: {}",
+            s.contains("é猫"),
+            "expected cell-clipped Unicode content: {}",
             s
         );
         assert!(!s.contains("a"), "should have skipped the first scalar");
-        assert!(!s.contains('Z'), "should have taken only 3 scalars");
+        assert!(
+            !s.contains('🙂'),
+            "wide emoji does not fit in remaining cells"
+        );
+        assert!(!s.contains('Z'), "content past the cell limit stays hidden");
+    }
+
+    #[test]
+    fn render_buffer_cursor_uses_grapheme_display_width() {
+        let mut b = SimpleBuffer::from_text("a\u{301}猫x");
+        b.set_cursor(Cursor { row: 0, col: 3 });
+        let mut out = Vec::new();
+
+        render_buffer(
+            &mut out,
+            &b,
+            RenderViewport::new(0, 0, 2, 8),
+            None,
+            RenderOptions::default(),
+        )
+        .unwrap();
+
+        let rendered = String::from_utf8(out).unwrap();
+        assert!(rendered.contains("a\u{301}猫x"));
+        assert!(rendered.ends_with("\x1b[1;4H"));
     }
 
     #[test]

@@ -11,6 +11,7 @@ use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 
 use crate::buffer::Cursor;
 use crate::editor::selection::{word_bounds, Selection};
+use crate::editor::text_layout;
 
 const DOUBLE_CLICK_WINDOW: Duration = Duration::from_millis(500);
 
@@ -47,7 +48,7 @@ fn mouse_down(
     out: &mut dyn Write,
     event: MouseEvent,
 ) -> io::Result<()> {
-    let Some(cursor) = map_mouse_cursor(app, event, false) else {
+    let Some(cursor) = map_mouse_cursor(app, event, false)? else {
         return Ok(());
     };
     let now = Instant::now();
@@ -76,7 +77,7 @@ fn mouse_drag(
     let Some(anchor) = app.selection.drag_anchor else {
         return Ok(());
     };
-    let Some(cursor) = map_mouse_cursor(app, event, true) else {
+    let Some(cursor) = map_mouse_cursor(app, event, true)? else {
         return Ok(());
     };
     app.buffer.set_cursor(cursor);
@@ -89,7 +90,7 @@ fn mouse_up(app: &mut super::super::App, out: &mut dyn Write, event: MouseEvent)
     let Some(anchor) = app.selection.drag_anchor.take() else {
         return Ok(());
     };
-    let cursor = map_mouse_cursor(app, event, true).unwrap_or_else(|| app.buffer.cursor());
+    let cursor = map_mouse_cursor(app, event, true)?.unwrap_or_else(|| app.buffer.cursor());
     app.buffer.set_cursor(cursor);
     let selection = Selection::new(anchor, app.buffer.cursor());
     app.selection.range = (!selection.is_empty()).then_some(selection);
@@ -116,14 +117,14 @@ fn map_mouse_cursor(
     app: &super::super::App,
     event: MouseEvent,
     clamp_status_row: bool,
-) -> Option<Cursor> {
+) -> io::Result<Option<Cursor>> {
     let content_height = (app.screen.height as usize).saturating_sub(1);
     if content_height == 0 {
-        return None;
+        return Ok(None);
     }
     let screen_row = event.row as usize;
     if screen_row >= content_height && !clamp_status_row {
-        return None;
+        return Ok(None);
     }
     let visible_row = screen_row.min(content_height - 1);
     let row = app
@@ -133,12 +134,21 @@ fn map_mouse_cursor(
         .min(app.buffer.line_count().saturating_sub(1));
     let content_column =
         (event.column as usize).saturating_sub(super::super::view::gutter_width(app));
+    let fetch_width = content_column.saturating_mul(4).saturating_add(32);
+    let line = app
+        .buffer
+        .try_visible_lines_window(row, 1, app.screen.scroll_left, fetch_width)?
+        .into_iter()
+        .next()
+        .map(|line| line.content)
+        .unwrap_or_default();
+    let relative_col = text_layout::scalar_at_cell(&line, content_column);
     let col = app
         .screen
         .scroll_left
-        .saturating_add(content_column)
+        .saturating_add(relative_col)
         .min(app.buffer.line_char_count(row).unwrap_or(0));
-    Some(Cursor { row, col })
+    Ok(Some(Cursor { row, col }))
 }
 
 #[cfg(test)]

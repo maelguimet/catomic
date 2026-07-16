@@ -116,10 +116,16 @@ fn extend_with_arrow(app: &mut super::App, out: &mut dyn Write, code: KeyCode) -
         .range
         .map_or(before, |selection| selection.anchor);
     match code {
-        KeyCode::Left => app.buffer.move_left(),
-        KeyCode::Right => app.buffer.move_right(),
-        KeyCode::Up => app.buffer.move_up(),
-        KeyCode::Down => app.buffer.move_down(),
+        KeyCode::Left => super::navigation::move_grapheme(app, false)?,
+        KeyCode::Right => super::navigation::move_grapheme(app, true)?,
+        KeyCode::Up => {
+            app.buffer.move_up();
+            super::navigation::snap_current_grapheme(app)?;
+        }
+        KeyCode::Down => {
+            app.buffer.move_down();
+            super::navigation::snap_current_grapheme(app)?;
+        }
         _ => unreachable!("caller accepts only arrows"),
     }
     app.selection.range = Some(Selection::new(anchor, app.buffer.cursor()));

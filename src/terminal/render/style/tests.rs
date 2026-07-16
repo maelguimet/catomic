@@ -10,7 +10,7 @@ use crate::editor::syntax::SyntaxKind;
 
 fn rendered(content: &str, start_col: usize, options: RenderOptions) -> String {
     let mut out = Vec::new();
-    write_content_line(&mut out, content, 0, start_col, options).unwrap();
+    write_content_line(&mut out, content, 0, start_col, usize::MAX, options).unwrap();
     String::from_utf8(out).unwrap()
 }
 

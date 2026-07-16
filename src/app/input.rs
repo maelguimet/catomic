@@ -359,20 +359,14 @@ pub(crate) fn handle_key_with(
             code: KeyCode::Backspace,
             ..
         } => {
-            if !selection::replace_active(app, "")? {
-                app.buffer.delete_back();
-            }
-            finish_content_edit(app, out)?;
+            navigation::delete_grapheme(app, out, false)?;
         }
 
         KeyEvent {
             code: KeyCode::Delete,
             ..
         } => {
-            if !selection::replace_active(app, "")? {
-                app.buffer.delete_forward();
-            }
-            finish_content_edit(app, out)?;
+            navigation::delete_grapheme(app, out, true)?;
         }
 
         KeyEvent {
@@ -380,7 +374,7 @@ pub(crate) fn handle_key_with(
             ..
         } => {
             app.selection.clear();
-            app.buffer.move_left();
+            navigation::move_grapheme(app, false)?;
             app.reveal_cursor();
             app.render(out)?;
         }
@@ -390,7 +384,7 @@ pub(crate) fn handle_key_with(
             ..
         } => {
             app.selection.clear();
-            app.buffer.move_right();
+            navigation::move_grapheme(app, true)?;
             app.reveal_cursor();
             app.render(out)?;
         }
@@ -400,6 +394,7 @@ pub(crate) fn handle_key_with(
         } => {
             app.selection.clear();
             app.buffer.move_up();
+            navigation::snap_current_grapheme(app)?;
             app.reveal_cursor();
             app.render(out)?;
         }
@@ -410,6 +405,7 @@ pub(crate) fn handle_key_with(
         } => {
             app.selection.clear();
             app.buffer.move_down();
+            navigation::snap_current_grapheme(app)?;
             app.reveal_cursor();
             app.render(out)?;
         }

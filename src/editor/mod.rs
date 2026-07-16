@@ -12,3 +12,4 @@ pub(crate) mod markdown_preview;
 pub mod search;
 pub mod selection;
 pub(crate) mod syntax;
+pub(crate) mod text_layout;

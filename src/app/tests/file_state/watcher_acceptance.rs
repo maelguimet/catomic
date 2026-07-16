@@ -2,11 +2,12 @@
 //!
 //! Purpose: exercise automatic clean reload plus dirty/config-disabled Ctrl+R fallback.
 //! Owns: deterministic watcher-to-reload acceptance cases.
-//! Must not: change manual Ctrl+R or save conflict behavior; add live notify
-//!   requirements; discard dirty content; introduce flakiness.
+//! Must not: change manual Ctrl+R or save conflict behavior; depend on live notify
+//!   event timing; discard dirty content; introduce flakiness.
 //! Invariants: clean default-on buffers reload immediately; dirty buffers never do;
-//!   second Ctrl+R performs only on exact pending match; tests use TestStub/inject only.
-//! Phase: 2-af split through 2-bx automatic clean reload.
+//!   second Ctrl+R performs only on exact pending match; retarget coverage inspects
+//!   watcher identities directly.
+//! Phase: 2-af split through post-v0.1 watcher identity refresh.
 
 use super::super::super::*;
 use super::super::make_key;
@@ -64,6 +65,64 @@ fn watcher_changed_clean_buffer_auto_reloads() {
     assert!(app.pending_reload.is_none());
 
     let _ = std::fs::remove_file(&p);
+}
+
+#[cfg(unix)]
+#[test]
+fn symlink_retarget_reload_refreshes_watcher_to_new_referent() {
+    use std::os::unix::fs::symlink;
+
+    let root = std::env::temp_dir().join(format!(
+        "catomic_symlink_retarget_{}",
+        std::process::id()
+    ));
+    let link_dir = root.join("links");
+    let target_dir = root.join("targets");
+    let link = link_dir.join("notes.txt");
+    let first = target_dir.join("first.txt");
+    let second = target_dir.join("second.txt");
+
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&link_dir).unwrap();
+    std::fs::create_dir_all(&target_dir).unwrap();
+    std::fs::write(&first, "FIRST").unwrap();
+    std::fs::write(&second, "SECOND-REFERENT").unwrap();
+    symlink("../targets/first.txt", &link).unwrap();
+
+    let mut app = App::new(Some(link.to_str().unwrap())).unwrap();
+    let first = std::fs::canonicalize(&first).unwrap();
+    assert!(
+        app.file_watcher
+            .as_ref()
+            .expect("initial watcher")
+            .watched_targets_for_test()
+            .contains(&first)
+    );
+
+    std::fs::remove_file(&link).unwrap();
+    symlink("../targets/second.txt", &link).unwrap();
+    let observation = crate::file::io::observe_external_file(
+        app.file.path.as_deref(),
+        app.file.disk_snapshot.as_ref(),
+    );
+    assert_eq!(
+        observation.status,
+        crate::file::io::ExternalFileStatus::Modified
+    );
+
+    crate::app::reload::perform_observed_reload(&mut app, &observation);
+
+    assert_eq!(app.buffer.to_string(), "SECOND-REFERENT");
+    let second = std::fs::canonicalize(&second).unwrap();
+    let targets = app
+        .file_watcher
+        .as_ref()
+        .expect("refreshed watcher")
+        .watched_targets_for_test();
+    assert!(targets.contains(&second));
+    assert!(!targets.contains(&first));
+
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

@@ -62,6 +62,25 @@ fn tab_triggers_and_cycles_while_escape_dismisses_without_editing() {
 }
 
 #[test]
+fn tab_without_completion_uses_language_tab_stop_as_one_edit() {
+    let mut app = App::new(None).unwrap();
+    app.editor_config =
+        crate::config::editor::parse("[editor]\ntab_size = 3\n[languages.rs]\ntab_size = 4\n")
+            .unwrap();
+    app.file.path = Some("main.rs".into());
+    app.buffer = Box::new(PieceTable::from_text("  "));
+    app.buffer.set_cursor(Cursor { row: 0, col: 2 });
+    let mut out = Vec::new();
+
+    app.handle_key_with(&mut out, key(KeyCode::Tab, KeyModifiers::NONE))
+        .unwrap();
+
+    assert_eq!(app.buffer.to_string(), "    ");
+    app.buffer.undo();
+    assert_eq!(app.buffer.to_string(), "  ");
+}
+
+#[test]
 fn capability_disabled_does_not_offer_local_completion() {
     let mut app = completion_app();
     app.caps.local_completion = false;

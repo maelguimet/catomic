@@ -46,6 +46,11 @@ pub(crate) fn parse(text: &str) -> io::Result<LinterConfig> {
         }
         config.commands.insert(extension, command);
     }
+    for (extension, command) in super::editor::parse(text)?.language_linters() {
+        config
+            .commands
+            .insert(extension.to_string(), command.to_string());
+    }
     Ok(config)
 }
 
@@ -118,5 +123,15 @@ mod tests {
                 std::io::ErrorKind::InvalidData
             );
         }
+    }
+
+    #[test]
+    fn per_language_linter_overrides_legacy_mapping() {
+        let config = parse(
+            "[linters]\nrs = \"legacy {file}\"\n[languages.rs]\nlinter = \"language {file}\"\n",
+        )
+        .unwrap();
+
+        assert_eq!(config.command_for_extension("rs"), Some("language {file}"));
     }
 }

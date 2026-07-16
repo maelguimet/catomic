@@ -189,6 +189,12 @@ pub(crate) fn handle_key_with(
             paging::handle_page_key(app, out, paging::PageDirection::Previous)?;
         }
 
+        KeyEvent {
+            code: KeyCode::Tab,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => insert_tab(app, out)?,
+
         // Enter produces KeyCode::Enter (not Char('\n')). Handle explicitly.
         // The Char \n/\r check below catches any that might arrive via paste
         // or other terminal paths.
@@ -379,6 +385,19 @@ pub(crate) fn handle_paste(
         return Ok(());
     }
     selection::handle_external_paste(app, out, text)
+}
+
+fn insert_tab(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    let width = app
+        .editor_config
+        .tab_size_for_path(app.file.path.as_deref());
+    let spaces = width - app.buffer.cursor().col % width;
+    let text = " ".repeat(spaces);
+    if !selection::replace_active(app, &text)? {
+        let cursor = app.buffer.cursor();
+        app.buffer.replace_range(cursor, cursor, &text)?;
+    }
+    finish_content_edit(app, out)
 }
 
 pub(super) fn handle_quit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {

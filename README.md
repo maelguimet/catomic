@@ -86,11 +86,22 @@ instead of being rejected or opened read-only. The page size is configurable in
 `~/.config/catomic/config.toml` (or `$XDG_CONFIG_HOME/catomic/config.toml`):
 
 ```toml
+[editor]
+tab_size = 4
+
 [big_files]
 page_lines = 20000
 
 [files]
 auto_reload = true
+
+[languages.rs]
+tab_size = 4
+linter = "cargo check --message-format short {file}"
+
+[languages.py]
+tab_size = 2
+linter = "ruff check {file}"
 ```
 
 Lower values trade more page transitions for less line metadata in memory.
@@ -159,17 +170,27 @@ Linter support is command-based and Project-only. Enter Project mode with
 loaded lazily from `$XDG_CONFIG_HOME/catomic/config.toml` or
 `~/.config/catomic/config.toml`:
 
-Example config idea:
+Language-specific settings are preferred because tab width and linting stay
+together:
 
-```ini
-[linters]
-py = "ruff check {file}"
-js = "eslint {file}"
-md = "markdownlint {file}"
+```toml
+[editor]
+tab_size = 4
+
+[languages.py]
+tab_size = 4
+linter = "ruff check {file}"
+
+[languages.js]
+tab_size = 2
+linter = "eslint {file}"
 ```
 
-Each key is a file extension and every command must contain `{file}`. Commands
-run asynchronously with bounded output and can be cancelled with Escape.
+The older `[linters]` extension-to-command table remains supported. Every
+linter command must contain `{file}`. Language-specific commands take
+precedence over legacy mappings. Tab inserts spaces to the next configured stop
+when no completion candidate exists; the insertion is one undoable edit.
+Commands run asynchronously with bounded output and can be cancelled with Escape.
 `:diagnostics` (or `:dlist`) opens the result list; `:dnext` and `:dprev` jump
 between diagnostics, opening already-discovered files when needed.
 

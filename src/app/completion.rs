@@ -25,6 +25,12 @@ struct ActiveCompletion {
     selected: usize,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OpenOutcome {
+    Handled,
+    NoCandidate,
+}
+
 pub(crate) fn handle_key(
     app: &mut super::App,
     out: &mut dyn Write,
@@ -36,8 +42,8 @@ pub(crate) fn handle_key(
     if !is_trigger(key) {
         return Ok(false);
     }
-    open(app, out)?;
-    Ok(true)
+    let outcome = open(app, out)?;
+    Ok(outcome == OpenOutcome::Handled || key.code != KeyCode::Tab)
 }
 
 pub(crate) fn cancel(app: &mut super::App) -> bool {
@@ -47,10 +53,11 @@ pub(crate) fn cancel(app: &mut super::App) -> bool {
     false
 }
 
-fn open(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+fn open(app: &mut super::App, out: &mut dyn Write) -> io::Result<OpenOutcome> {
     if !app.caps.local_completion || app.completion.is_none() {
         app.message = Some("Local completion is unavailable.".to_string());
-        return app.render(out);
+        app.render(out)?;
+        return Ok(OpenOutcome::Handled);
     }
     if super::view::is_preview(app)
         || super::lint::is_viewing(app)
@@ -58,11 +65,13 @@ fn open(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         || app.buffer.is_read_only()
     {
         app.message = Some("Local completion requires an editable source buffer.".to_string());
-        return app.render(out);
+        app.render(out)?;
+        return Ok(OpenOutcome::Handled);
     }
     if app.selection.active().is_some() {
         app.message = Some("Dismiss the selection before completing a word.".to_string());
-        return app.render(out);
+        app.render(out)?;
+        return Ok(OpenOutcome::Handled);
     }
 
     let cursor = app.buffer.cursor();
@@ -70,22 +79,26 @@ fn open(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         app.message = Some(format!(
             "Completion prefix exceeds the {PREFIX_COLS}-column limit."
         ));
-        return app.render(out);
+        app.render(out)?;
+        return Ok(OpenOutcome::Handled);
     };
     if prefix.text.is_empty() {
         app.message = Some("Type a word prefix before requesting completion.".to_string());
-        return app.render(out);
+        app.render(out)?;
+        return Ok(OpenOutcome::NoCandidate);
     }
     let completion_candidates = match candidates::read_candidates(app, cursor, &prefix)? {
         CandidateRead::Ready(candidates) => candidates,
         CandidateRead::ProjectFilesUnavailable => {
             app.message = Some("Run :files before requesting Project path completion.".to_string());
-            return app.render(out);
+            app.render(out)?;
+            return Ok(OpenOutcome::Handled);
         }
     };
     if completion_candidates.is_empty() {
         app.message = Some(format!("No completion for '{}'.", prefix.text));
-        return app.render(out);
+        app.render(out)?;
+        return Ok(OpenOutcome::NoCandidate);
     }
     let start = Cursor {
         row: cursor.row,
@@ -99,7 +112,8 @@ fn open(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         selected: 0,
     });
     update_message(app);
-    app.render(out)
+    app.render(out)?;
+    Ok(OpenOutcome::Handled)
 }
 
 fn handle_active_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -> io::Result<bool> {

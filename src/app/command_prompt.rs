@@ -118,18 +118,32 @@ fn submit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
 }
 
 fn execute_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> io::Result<()> {
-    let mut words = command.split_whitespace();
-    match (words.next(), words.next(), words.next()) {
-        (Some("goto" | "line"), Some(line), None) => execute_goto(app, out, line),
-        (Some("save" | "write" | "w"), None, None) => super::save::handle_save(app, out),
-        (Some("quit" | "q"), None, None) => super::input::handle_quit(app, out),
-        (Some("project" | "code"), None, None) => super::project_mode::switch_to_project(app, out),
-        (Some("plain" | "text"), None, None) => super::project_mode::switch_to_plain(app, out),
-        (Some("lint"), None, None) => super::lint::start(app, out),
-        (Some("diagnostics" | "dlist"), None, None) => super::lint::show_diagnostics(app, out),
-        (Some("dnext"), None, None) => super::lint::move_diagnostic(app, out, true),
-        (Some("dprev"), None, None) => super::lint::move_diagnostic(app, out, false),
-        (Some("files"), None, None) => super::project_files::start(app, out),
+    let (name, argument) = command
+        .split_once(char::is_whitespace)
+        .map_or((command, ""), |(name, argument)| (name, argument.trim()));
+    match (name, argument) {
+        ("goto" | "line", line) if !line.is_empty() => execute_goto(app, out, line),
+        ("save" | "write" | "w", "") => super::save::handle_save(app, out),
+        ("quit" | "q", "") => super::input::handle_quit(app, out),
+        ("project" | "code", "") => super::project_mode::switch_to_project(app, out),
+        ("plain" | "text", "") => super::project_mode::switch_to_plain(app, out),
+        ("lint", "") => super::lint::start(app, out),
+        ("diagnostics" | "dlist", "") => super::lint::show_diagnostics(app, out),
+        ("dnext", "") => super::lint::move_diagnostic(app, out, true),
+        ("dprev", "") => super::lint::move_diagnostic(app, out, false),
+        ("files", "") => super::project_files::start(app, out),
+        ("meow", instruction) => super::llm_request::begin(
+            app,
+            out,
+            super::llm_request::CurrentLlmCommand::Meow,
+            instruction,
+        ),
+        ("bigmeow", instruction) => super::llm_request::begin(
+            app,
+            out,
+            super::llm_request::CurrentLlmCommand::BigMeow,
+            instruction,
+        ),
         _ => {
             app.message = Some(format!("Unknown command: {command}"));
             app.render(out)

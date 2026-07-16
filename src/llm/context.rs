@@ -49,6 +49,23 @@ pub enum ContextError {
     TooLarge { bytes: usize, lines: usize },
 }
 
+impl std::fmt::Display for ContextError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EmptyContext => write!(formatter, "LLM context is empty"),
+            Self::MissingInstruction => write!(formatter, "an explicit instruction is required"),
+            Self::NoInstructionBlockAtCursor => {
+                write!(formatter, "cursor is not inside a >>> catomic ... <<< block")
+            }
+            Self::InstructionParse(error) => write!(formatter, "invalid instruction block: {error:?}"),
+            Self::TooLarge { bytes, lines } => write!(
+                formatter,
+                "context is {lines} lines/{bytes} bytes; limit is {MAX_CONTEXT_LINES} lines/{MAX_CONTEXT_BYTES} bytes"
+            ),
+        }
+    }
+}
+
 pub fn for_selection(
     text: &str,
     first_line: usize,

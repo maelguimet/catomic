@@ -45,6 +45,7 @@ mod watch;
 mod input;
 mod lint;
 mod llm_preview;
+mod llm_request;
 
 /// High-level application state for the editor.
 pub struct App {
@@ -100,6 +101,10 @@ pub struct App {
     /// Explicit LLM patch preview, absent until a proposal has been parsed and validated.
     /// This is local display state only; it contains no network client or repo broker.
     pub(crate) llm_preview: Option<llm_preview::PatchPreview>,
+    /// Local confirmation state only; contains bounded context/settings but no HTTP client.
+    pub(crate) pending_llm_request: Option<llm_request::PendingLlmRequest>,
+    /// Present only after explicit Enter confirmation; dropping it cancels the transient client.
+    pub(crate) llm_task: Option<llm_request::RunningLlmRequest>,
     /// Per-buffer half-open selection state.
     pub(crate) selection: selection::SelectionUiState,
     /// Always-available process-local clipboard shared across open buffers.
@@ -189,6 +194,8 @@ impl App {
             lint_view: None,
             project_files_view: None,
             llm_preview: None,
+            pending_llm_request: None,
+            llm_task: None,
             selection: selection::SelectionUiState::default(),
             clipboard: String::new(),
             view: view::ViewOptions::default(),
@@ -243,6 +250,7 @@ impl App {
             command_prompt::poll_goto(self, &mut stdout)?;
             lint::poll(self, &mut stdout)?;
             project_files::poll(self, &mut stdout)?;
+            llm_request::poll(self, &mut stdout)?;
 
             // Blocking read for Phase 0. Later we may need non-blocking + resize.
             if event::poll(std::time::Duration::from_millis(100))? {

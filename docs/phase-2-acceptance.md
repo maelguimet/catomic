@@ -28,6 +28,7 @@ in `progress/phase-2-progress.md`; measurement history is in `performance.md`.
 - `cargo test tests::perf::manual_line:: -- --ignored --nocapture`: 2 passed.
 - Live watcher smoke (`live_smoke_watcher_sees_external_change_and_arms` with
   `--ignored --nocapture`): 1 passed against the live notify backend.
+- `cargo build --release`: passed; produced a 794 KiB x86-64 Linux ELF binary.
 - `cargo fmt -- --check` and `git diff --check`: pass for committed changes.
 
 ## Spec reconciliation still required

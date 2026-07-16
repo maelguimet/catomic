@@ -34,6 +34,8 @@ Dropping or cancelling the worker drops the request future and client.
 - Request context is already capped at 64 KiB and 2,000 lines.
 - Response capture is capped before JSON parsing.
 - Timeouts are configured and bounded.
+- Redirect following is disabled; a 3xx response cannot forward confirmed
+  context to another URL.
 - API keys are read from the configured environment variable only after the
   user confirms the endpoint and exact context extent.
 - No telemetry is added.

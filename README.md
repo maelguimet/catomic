@@ -252,6 +252,8 @@ LLM safety rules:
 
 - Context is capped at 64 KiB and 2,000 lines and fails closed rather than
   truncating silently.
+- HTTP redirects are refused, so a confirmed endpoint cannot forward context
+  to a different URL.
 - Active-context dotfile paths and obvious secret-like lines are called out in
   the Enter confirmation.
 - Edits must be a validated single-file unified patch whose headers name the

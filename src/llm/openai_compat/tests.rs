@@ -69,6 +69,28 @@ fn refuses_a_response_larger_than_the_hard_limit() {
     assert!(matches!(result, Err(LlmError::ResponseTooLarge)));
 }
 
+#[test]
+fn refuses_redirects_away_from_the_confirmed_endpoint() {
+    let target = TcpListener::bind("127.0.0.1:0").unwrap();
+    target.set_nonblocking(true).unwrap();
+    let target_url = format!("http://{}", target.local_addr().unwrap());
+    let (base_url, redirect_server) = redirect_server(&target_url);
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let client = OpenAiCompatClient::new(config(base_url, Some("cat-secret"))).unwrap();
+
+    let result = runtime.block_on(client.complete("system", "sensitive context"));
+    redirect_server.join().unwrap();
+
+    assert!(matches!(result, Err(LlmError::Http { status: 307, .. })));
+    assert!(matches!(
+        target.accept(),
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock
+    ));
+}
+
 fn config(base_url: String, api_key: Option<&str>) -> LlmConfig {
     LlmConfig {
         base_url,
@@ -99,6 +121,22 @@ fn fake_server(
         .unwrap();
         let _ = stream.write_all(&body);
         request
+    });
+    (format!("http://{address}/v1"), server)
+}
+
+fn redirect_server(location: &str) -> (String, std::thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let location = location.to_string();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let _ = read_request(&mut stream);
+        write!(
+            stream,
+            "HTTP/1.1 307 Temporary Redirect\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        )
+        .unwrap();
     });
     (format!("http://{address}/v1"), server)
 }

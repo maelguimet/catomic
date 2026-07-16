@@ -12,7 +12,7 @@ is in decision 0008 and measurements are retained in `performance.md`.
 | --- | --- |
 | Capability and construction gates | Plain startup owns no pending request, task, client, repo broker, or answer/preview state. `:meow` builds only a draft; Enter constructs the transient worker. Repo preparation returns immediately unless `repo_llm` and a Project session are present. |
 | Explicit context | Selection plus command instruction, instruction blocks, and current-file context are deterministic. Context fails closed above 64 KiB or 2,000 lines; confirmation names exact lines/bytes, model, endpoint, and sensitivity. |
-| Backend | Lazy `[llm]` configuration targets HTTP(S) OpenAI-compatible endpoints. API keys, Tokio runtime, and Reqwest client are created/read only after Enter. Response size and timeout are bounded. |
+| Backend | Lazy `[llm]` configuration targets HTTP(S) OpenAI-compatible endpoints. API keys, Tokio runtime, and Reqwest client are created/read only after Enter. Response size and timeout are bounded, and redirects away from the confirmed endpoint are refused. |
 | Output validation | Unified-diff parsing checks hunk counts, source context, overlap, bounds, and single-file shape. Current-buffer responses must name the exact confirmed path; repo responses must name the exact active repo-relative path. Another-file and rename-shaped patches fail before preview. Selection fallback accepts only one strict JSON string field capped at 64 KiB. Arbitrary prose cannot become an edit. |
 | Preview, confirmation, undo | Model output first opens a read-only preview. Enter is the only apply action and creates one buffer transaction; Escape makes no edit. Exact golden coverage applies and undoes a patch. |
 | Read-only explanation | Instructions beginning with an explicit `explain` verb select a plain-text answer view with no apply action or edit semantics. |
@@ -32,8 +32,10 @@ cancellable and polled without blocking typing.
 
 ## Verification commands
 
-- `cargo test --all-targets`: 480 passed, 12 intentional manual tests ignored;
+- `cargo test --all-targets`: 481 passed, 12 intentional manual tests ignored;
   7 PTY smokes passed.
+- `cargo test llm::openai_compat::tests`: 4 passed, including a two-listener
+  redirect refusal proving that the redirect target receives no connection.
 - `cargo test app::llm_request`: 11 passed, including exact-path success,
   wrong-target refusal, no-connect pre-send drift, and post-response drift.
 - `cargo test app::repo_llm`: 10 passed, including no-connect confirmation,

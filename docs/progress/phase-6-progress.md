@@ -10,7 +10,8 @@ Phase 6 is complete. Its exit evidence is in
   limits, and visible sensitivity labels.
 - **Transient backend**: lazy OpenAI-compatible configuration and a per-request
   current-thread runtime/client created only after Enter confirmation. Tests
-  use loopback fake HTTP and never a live model.
+  use loopback fake HTTP and never a live model; redirects away from the
+  confirmed endpoint are refused.
 - **Safe output**: strict single-file unified patches, exact active repo-path
   and current-buffer path validation, rename refusal, a strict marked-region
   replacement envelope, read-only explanation results, and fail-closed parsing.

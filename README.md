@@ -14,6 +14,22 @@ It should be:
 - Hard to accidentally destroy work with
 - Pleasant enough that opening it does not feel like entering a monastery
 
+## Build and Install
+
+Catomic targets Linux and stable Rust. Build the optimized binary or install it
+from this checkout:
+
+```sh
+cargo build --release
+# binary: target/release/catomic
+
+cargo install --path .
+```
+
+Run `catomic`, optionally followed by one or more file paths. The completed
+v0.1 roadmap and verification record is in
+[`docs/v0.1-acceptance.md`](docs/v0.1-acceptance.md).
+
 ## Editing Model
 
 - Normal text editor behavior by default
@@ -226,7 +242,7 @@ picker. Nothing scans while Catomic is in Plain mode.
 Rules:
 
 - Run manually first
-- Maybe run on save later
+- Use an explicit `on_save` named-command hook when automatic checks are desired
 - Parse common output formats
 - Jump to error line
 - Never block typing

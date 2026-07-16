@@ -38,6 +38,7 @@ Perf harness is split (for size hygiene):
 - src/tests/perf_default.rs (cheap non-ignored smokes + functional asserts only)
 - src/tests/perf_manual.rs (#[ignore] 10/100 MiB + sparse extreme for baselines)
 - src/tests/perf_extensibility.rs (#[ignore] oversized typed-config acceptance)
+- src/tests/perf_recovery.rs (#[ignore] maximum-default catnap write/read acceptance)
 
 Use `cargo test tests::perf -- --nocapture` (defaults) and the manual ignored commands
 (see Phase 2B baseline section below).
@@ -84,6 +85,24 @@ Reference acceptance budgets on this machine are under 50 ms for the complete
 These are recorded observations, not default-suite timing assertions. A normal
 startup parses a much smaller document once and external processes remain off
 the startup and typing paths.
+
+## Phase 8 catnap acceptance (2026-07-16)
+
+The ignored release fixture allocates the default maximum 1 MiB recovery text
+before timing, atomically writes and fsyncs its private `.catnap` sidecar on the
+recovery worker, then reads it through the capped UTF-8 path.
+
+```text
+PERF sample: label=write atomic catnap 1mib bytes=1048576 elapsed_ms=5-7
+PERF sample: label=read bounded catnap 1mib bytes=1048576 elapsed_ms=0
+Maximum resident set size: 6240 KiB
+```
+
+The zero-millisecond read means it completed below the timer's one-millisecond
+resolution. Reference acceptance budgets on this machine are under 50 ms per
+operation and under 32 MiB peak RSS for the warm release test process. Recovery
+is disabled by default; enabled snapshots are interval-driven, capped, and
+written off the input thread. These are observations, not default timing gates.
 
 ## Phase 2B manual baseline (2026-06-24)
 

@@ -39,3 +39,7 @@ mod tooling;
 #[cfg(test)]
 #[path = "perf_extensibility.rs"]
 mod extensibility;
+
+#[cfg(test)]
+#[path = "perf_recovery.rs"]
+mod recovery;

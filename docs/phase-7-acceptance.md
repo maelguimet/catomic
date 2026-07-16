@@ -38,8 +38,10 @@ at 61,180 KiB RSS. The reference acceptance budgets are under 50 ms and under
 - `/usr/bin/time -v target/release/deps/catomic-... --ignored --exact
   tests::perf::extensibility::manual_phase7_large_config_reports_sample
   --nocapture`: passed at 61,180 KiB peak RSS.
-- `cargo test --all-targets -- --ignored --test-threads=1 --nocapture`: all 13
-  manual checks passed in a real PTY.
+- `cargo test --all-targets -- --ignored --test-threads=1 --nocapture`: 12
+  substantive manual checks passed. The then-present thirteenth ignored check
+  was an empty terminal placeholder and has since been removed; the 9 real
+  binary PTY smokes above are the terminal lifecycle evidence.
 - `cargo clippy --all-targets -- -D warnings`: passed.
 - `cargo build --release`: passed for the optimized binary.
 - `cargo fmt --check` and `git diff --check`: passed for the acceptance slice.

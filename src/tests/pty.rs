@@ -22,15 +22,6 @@ mod tests {
         LOCK.get_or_init(|| Mutex::new(()))
     }
 
-    // NOTE: Real setup/teardown require a tty (enable_raw_mode fails on pipes).
-    // These are ignored in normal `cargo test` environments.
-    // Run with `cargo test -- --ignored` inside a real terminal if desired.
-    #[test]
-    #[ignore]
-    fn terminal_setup_teardown_roundtrip_tty_only() {
-        // Placeholder: would do setup/teardown on a real pty handle.
-    }
-
     #[test]
     fn terminal_guard_drops_without_setup() {
         // Guard must be safe to drop even if setup was never called

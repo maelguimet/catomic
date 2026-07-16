@@ -641,7 +641,12 @@ remain explicitly deferred rather than Phase 7 exit requirements.
 - `:meow` command (or just fun easter egg)
 - Panic handler that prints helpful + funny cat messages
 - `.catnap` autosave / recovery files (simple, opt-in or safe default)
-- Fun but never annoying: occasional "purrs saved" or similar
+- Fun but never annoying: deterministic badge/notices only; no random purr timer
+
+Phase 8 acceptance is complete. The default-on badge is toggleable, `:meow`
+retains its useful confirmed workflow, panic output is helpful, and opt-in
+`.catnap` recovery is bounded, private, preview-first, drift-safe, undoable, and
+removed only after a successful explicit save. See `docs/phase-8-acceptance.md`.
 
 ## Non-Goals for v1 / Early Versions
 
@@ -732,7 +737,9 @@ Update this file as decisions are made or phases complete. Add concrete issues o
 ---
 
 **Current status** (2026-07):
-- Phases 0 through 7 complete; acceptance records are in `docs/`.
+- Phases 0 through 8 complete; acceptance records are in `docs/`.
+- Phase 8 complete: toggleable cat status, panic-safe messaging, and opt-in
+  bounded `.catnap` recovery are accepted.
 - Phase 7 complete: typed TOML, per-language settings, keybinding overrides,
   guarded external commands, ordered lifecycle hooks, preview, and one-step undo
   are accepted.

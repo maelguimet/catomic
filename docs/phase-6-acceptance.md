@@ -53,11 +53,13 @@ request, and final-apply drift workers are polled without blocking typing.
 - `cargo test app::llm_preview`: 7 passed, including exact one-step undo and
   stale-source/path refusal.
 - `cargo test --test pty_smoke`: 7 passed.
-- `cargo test --all-targets -- --ignored --test-threads=1 --nocapture`: all
-  12 manual checks passed in a real PTY. This covered live file notification,
-  terminal setup/teardown, 10/100 MiB dense and line-heavy files, non-ASCII
-  far-window rendering, sparse 1 GiB editing, Extreme paging, Markdown preview,
-  medium-file search, and bounded Project discovery/completion.
+- `cargo test --all-targets -- --ignored --test-threads=1 --nocapture`: 11
+  substantive manual checks passed, covering live file notification, 10/100 MiB
+  dense and line-heavy files, non-ASCII far-window rendering, sparse 1 GiB
+  editing, Extreme paging, Markdown preview, medium-file search, and bounded
+  Project discovery/completion. The then-present twelfth ignored check was an
+  empty terminal placeholder and has since been removed; the 7 real binary PTY
+  smokes above are the terminal setup/teardown evidence.
 - `cargo clippy --all-targets -- -D warnings`: passed after completed-phase
   production/test-seam hygiene and removal of unused future scaffolding.
 - `cargo build --release`: passed for the optimized binary.

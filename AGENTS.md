@@ -10,26 +10,16 @@ See also: [TODO.md](./TODO.md), [README.md](./README.md), and `docs/` (architect
 
 Build the cursor before the cathedral.
 
-Current phase: Phase 5 complete; Phase 6 implementation work.
+`TODO.md` and the acceptance records in `docs/` are the roadmap authority.
+Work on the next incomplete roadmap phase once the preceding phase's acceptance
+tests are green. Do not duplicate a current-phase ledger in this file; it goes
+stale and must never become an accidental implementation gate.
 
-Phases 0 through 5 are complete and have acceptance records in `docs/`:
-- blessed terminal loop, Buffer abstraction, PieceTable, LineIndex, and undo/redo
-- robust file handling, atomic save, external-change safety, and bounded large-file editing
-- search, selection, multiple buffers, Markdown preview, and viewport-only syntax
-- gated Plain/Project lifecycle, local completion, on-demand linting, diagnostics,
-  bounded project discovery, and cached project-path completion
+Permanent boundaries:
 
-Allowed now:
-* Phase 6 work defined in `TODO.md` and `docs/llm-rules.md`
-* deterministic parser, patch, broker, preview, confirmation, and undo tests
-* acceptance hardening and regression fixes for completed phases
-
-Phase 6 feature work is allowed because Phase 5 acceptance tests are green.
-
-Forbidden now:
-* testing LLM features against a live model or endpoint
-* silent network calls or silent writes
-* UI feature expansion (beyond phase needs)
+* never test LLM features against a live model or endpoint
+* never make silent network calls or silent writes
+* keep feature work scoped to the roadmap
 
 ## Workflow
 

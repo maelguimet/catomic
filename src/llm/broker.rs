@@ -12,7 +12,7 @@
 //!
 //! Only construct / use when `repo_llm` capability is enabled.
 
-use crate::project::git::GitContext;
+use crate::project::git::{GitContext, GitError};
 
 /// The broker that the rest of the app (and later the model) talks to.
 pub struct ContextBroker {
@@ -22,10 +22,10 @@ pub struct ContextBroker {
 
 impl ContextBroker {
     /// Must only be created when we have repo_llm capability.
-    pub fn new_for_repo(_root: &std::path::Path) -> Self {
-        Self {
-            git: GitContext::capture(_root),
-        }
+    pub fn new_for_repo(_root: &std::path::Path) -> Result<Self, GitError> {
+        Ok(Self {
+            git: GitContext::capture(_root)?,
+        })
     }
 
     // TODO:

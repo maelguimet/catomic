@@ -161,6 +161,45 @@ fn file_backed_piece_table_edits_undoes_and_streams() {
 }
 
 #[test]
+fn file_backed_piece_table_page_edits_a_nonzero_descriptor_range() {
+    let path = std::env::temp_dir().join(format!(
+        "catomic_file_piece_table_page_{}.txt",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, "zero\none\n猫two\nthree").unwrap();
+
+    let first = PieceTable::from_file_page(std::fs::File::open(&path).unwrap(), 0, 2)
+        .expect("first file-backed page");
+    assert_eq!(first.buffer.to_string(), "zero\none\n");
+    assert_eq!(first.buffer.line_count(), 3);
+    let second_start = first.next_page_start.expect("second page start");
+
+    let mut second =
+        PieceTable::from_file_page(std::fs::File::open(&path).unwrap(), second_start, 2)
+            .expect("second file-backed page");
+    assert_eq!(second.start_byte, second_start);
+    assert_eq!(second.end_byte, "zero\none\n猫two\nthree".len());
+    assert_eq!(second.total_bytes, second.end_byte);
+    assert_eq!(second.next_page_start, None);
+    assert_eq!(second.buffer.line(0).as_deref(), Some("猫two"));
+    second.buffer.insert_char('X');
+    second
+        .buffer
+        .set_cursor(crate::buffer::Cursor { row: 1, col: 0 });
+    second.buffer.insert_char('Y');
+    assert_eq!(second.buffer.to_string(), "X猫two\nYthree");
+    second.buffer.undo();
+    assert_eq!(second.buffer.to_string(), "X猫two\nthree");
+
+    let mut written = Vec::new();
+    second.buffer.write_to(&mut written).unwrap();
+    assert_eq!(written, "X猫two\nthree".as_bytes());
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
 fn file_backed_piece_table_fails_closed_after_descriptor_drift() {
     use std::io::Write;
 

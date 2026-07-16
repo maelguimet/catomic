@@ -17,7 +17,7 @@ use std::path::Path;
 use crate::buffer::Cursor;
 
 mod buffer_impl;
-mod page_scan;
+pub(crate) mod page_scan;
 mod paging;
 pub(crate) mod scan;
 

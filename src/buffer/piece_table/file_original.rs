@@ -15,7 +15,7 @@ use crate::buffer::large_file::LineCheckpoint;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct FileMetadataSnapshot {
-    len: u64,
+    pub(crate) len: u64,
     mtime: Option<std::time::SystemTime>,
 }
 
@@ -31,6 +31,8 @@ impl FileMetadataSnapshot {
 
 #[derive(Debug)]
 pub(crate) struct FileOriginalMetadata {
+    pub(crate) range_start: usize,
+    pub(crate) range_end: usize,
     pub(crate) newline_offsets: Vec<usize>,
     pub(crate) line_char_counts: Vec<usize>,
     pub(crate) line_is_ascii: Vec<bool>,
@@ -198,7 +200,7 @@ impl FileOriginal {
     fn line_start(&self, row: usize) -> usize {
         row.checked_sub(1)
             .and_then(|previous| self.metadata.newline_offsets.get(previous))
-            .map_or(0, |newline| newline + 1)
+            .map_or(self.metadata.range_start, |newline| newline + 1)
     }
 
     fn line_end(&self, row: usize) -> usize {
@@ -206,7 +208,7 @@ impl FileOriginal {
             .newline_offsets
             .get(row)
             .copied()
-            .unwrap_or(self.snapshot.len as usize)
+            .unwrap_or(self.metadata.range_end)
     }
 
     fn line_checkpoints(&self, row: usize) -> &[LineCheckpoint] {

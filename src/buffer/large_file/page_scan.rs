@@ -12,14 +12,14 @@ use std::os::unix::fs::FileExt;
 use super::scan::{scan_ascii_bytes_lines, scan_valid_text_lines, LineScan};
 use super::{LineCheckpoint, SCAN_CHUNK_BYTES};
 
-pub(super) struct PageScan {
-    pub(super) lines: LineScan,
-    pub(super) start_byte: usize,
-    pub(super) end_byte: usize,
-    pub(super) next_page_start: Option<usize>,
+pub(crate) struct PageScan {
+    pub(crate) lines: LineScan,
+    pub(crate) start_byte: usize,
+    pub(crate) end_byte: usize,
+    pub(crate) next_page_start: Option<usize>,
 }
 
-pub(super) fn scan_utf8_page(
+pub(crate) fn scan_utf8_page(
     file: &File,
     start_byte: usize,
     page_lines: usize,

@@ -9,6 +9,7 @@
 //! - Every edit must come back as previewable patch.
 
 pub mod broker;
+pub mod context;
 pub mod instruction;
 pub mod openai_compat;
 pub mod patch;

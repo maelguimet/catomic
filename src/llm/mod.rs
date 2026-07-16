@@ -13,4 +13,5 @@ pub mod context;
 pub mod instruction;
 pub mod openai_compat;
 pub mod patch;
+pub mod replacement;
 pub mod task;

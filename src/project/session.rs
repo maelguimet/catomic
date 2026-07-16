@@ -1,17 +1,20 @@
 //! Purpose: represent the explicitly enabled Project-mode lifetime.
-//! Owns: the stable project root plus explicitly requested linter task/results.
-//! Must not: scan directories, construct LSP/LLM clients, auto-run tools, or network.
-//! Invariants: App owns this only in Project mode; linter task is absent until invocation.
-//! Phase: 5-b bouncer through 5-c on-demand lint state.
+//! Owns: the stable root plus explicitly requested Project task/results.
+//! Must not: scan itself, construct LSP/LLM clients, auto-run tools, or network.
+//! Invariants: App owns this only in Project mode; workers are absent until invocation.
+//! Phase: 5-b bouncer through 5-d on-demand tooling state.
 
 use std::path::{Path, PathBuf};
 
 use super::diagnostics::{Diagnostic, Diagnostics};
+use super::discovery::{Discovery, DiscoveryTask, DiscoveryTaskResult};
 use super::linter::{LinterResult, LinterTask};
 
 pub(crate) struct ProjectSession {
     root: PathBuf,
     linter: Option<LinterTask>,
+    discovery: Option<DiscoveryTask>,
+    discovered: Option<Discovery>,
     diagnostics: Diagnostics,
     diagnostic_index: Option<usize>,
 }
@@ -21,6 +24,8 @@ impl ProjectSession {
         Self {
             root,
             linter: None,
+            discovery: None,
+            discovered: None,
             diagnostics: Diagnostics::new(),
             diagnostic_index: None,
         }
@@ -71,5 +76,32 @@ impl ProjectSession {
 
     pub(crate) fn cancel_linter(&mut self) -> bool {
         self.linter.take().is_some()
+    }
+
+    pub(crate) fn start_discovery(&mut self, task: DiscoveryTask) {
+        self.discovery = Some(task);
+        self.discovered = None;
+    }
+
+    pub(crate) fn is_discovery_running(&self) -> bool {
+        self.discovery.is_some()
+    }
+
+    pub(crate) fn take_discovery_result(&mut self) -> Option<DiscoveryTaskResult> {
+        let result = self.discovery.as_mut()?.try_result()?;
+        self.discovery = None;
+        Some(result)
+    }
+
+    pub(crate) fn set_discovered(&mut self, discovery: Discovery) {
+        self.discovered = Some(discovery);
+    }
+
+    pub(crate) fn discovered(&self) -> Option<&Discovery> {
+        self.discovered.as_ref()
+    }
+
+    pub(crate) fn cancel_discovery(&mut self) -> bool {
+        self.discovery.take().is_some()
     }
 }

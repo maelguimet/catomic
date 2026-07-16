@@ -9,6 +9,9 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+mod task;
+pub(crate) use task::{DiscoveryTask, DiscoveryTaskResult};
+
 const IGNORED_DIRECTORIES: &[&str] = &[".git", "node_modules", "target"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -26,6 +29,19 @@ pub(crate) struct Discovery {
 }
 
 pub(crate) fn discover_files(root: &Path, limits: DiscoveryLimits) -> io::Result<Discovery> {
+    discover_files_until(root, limits, || false)?.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::Interrupted,
+            "project discovery unexpectedly cancelled",
+        )
+    })
+}
+
+fn discover_files_until(
+    root: &Path,
+    limits: DiscoveryLimits,
+    cancelled: impl Fn() -> bool,
+) -> io::Result<Option<Discovery>> {
     if !fs::symlink_metadata(root)?.file_type().is_dir() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -33,11 +49,11 @@ pub(crate) fn discover_files(root: &Path, limits: DiscoveryLimits) -> io::Result
         ));
     }
     if limits.max_files == 0 || limits.max_entries == 0 {
-        return Ok(Discovery {
+        return Ok(Some(Discovery {
             files: Vec::new(),
             truncated: true,
             unreadable_directories: 0,
-        });
+        }));
     }
 
     let mut pending = VecDeque::from([(root.to_path_buf(), 0_usize)]);
@@ -47,6 +63,9 @@ pub(crate) fn discover_files(root: &Path, limits: DiscoveryLimits) -> io::Result
     let mut truncated = false;
 
     'walk: while let Some((directory, depth)) = pending.pop_front() {
+        if cancelled() {
+            return Ok(None);
+        }
         let entries = match fs::read_dir(directory) {
             Ok(entries) => entries,
             Err(_) => {
@@ -55,6 +74,9 @@ pub(crate) fn discover_files(root: &Path, limits: DiscoveryLimits) -> io::Result
             }
         };
         for entry in entries {
+            if cancelled() {
+                return Ok(None);
+            }
             if entries_seen == limits.max_entries || files.len() == limits.max_files {
                 truncated = true;
                 break 'walk;
@@ -86,11 +108,11 @@ pub(crate) fn discover_files(root: &Path, limits: DiscoveryLimits) -> io::Result
         truncated = true;
     }
     files.sort();
-    Ok(Discovery {
+    Ok(Some(Discovery {
         files,
         truncated,
         unreadable_directories,
-    })
+    }))
 }
 
 fn is_ignored_directory(name: &std::ffi::OsStr) -> bool {

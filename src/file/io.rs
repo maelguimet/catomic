@@ -6,12 +6,13 @@
 //!   pure helpers (std fs::metadata only).
 //! Must not: construct watchers or use notify; read file content for change detection
 //!   or hashing; know App, Project, LLM, or UI; perform reload/save-conflict policy.
-//! Invariants: atomic writes use same-dir temp + create_new + sync + rename;
+//! Invariants: atomic writes use same-dir temp + create_new + sync + rename and
+//!   preserve an existing target's Unix permissions;
 //!   observations use len/mtime plus Unix identity/change time when available;
 //!   Absent explicitly represents missing;
 //!   read_to_string returns InvalidData for non-UTF-8; errors other than NotFound
 //!   surface as Unknown(kind) in observation helpers; single-capture observe.
-//! Phase: 2-l foundation through 2-bu Unix metadata identity hardening.
+//! Phase: 2-l foundation through 2-bv Unix save-permission preservation.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
@@ -30,6 +31,7 @@ pub fn read_to_string<P: AsRef<Path>>(path: P) -> io::Result<String> {
 ///
 /// Writes to a sibling temp file (same dir), fsyncs data, renames over target,
 /// then best-effort fsyncs the parent directory on Unix.
+/// Existing Unix permissions are copied to the temp before replacement.
 /// Temp is removed on any error before successful rename.
 /// Unique temp uses target filename + pid. create_new used to avoid clobber.
 /// Linux-first: directory fsync is best-effort; no new dependencies.
@@ -65,10 +67,21 @@ pub fn atomic_write_with(
 
     // Inner closure so we can cleanup temp exactly on failure path.
     let res: io::Result<u64> = (|| {
+        #[cfg(unix)]
+        let existing_permissions = match fs::metadata(&target) {
+            Ok(metadata) => Some(metadata.permissions()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error),
+        };
+
         let mut f = OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&temp_path)?;
+        #[cfg(unix)]
+        if let Some(permissions) = existing_permissions {
+            f.set_permissions(permissions)?;
+        }
         let written = {
             let mut writer = CountingWriter::new(&mut f);
             write_contents(&mut writer)?;

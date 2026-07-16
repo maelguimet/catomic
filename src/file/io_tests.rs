@@ -3,10 +3,11 @@
 //! Purpose: this file must host the #[cfg(test)] tests extracted from src/file/io.rs
 //!   for module size hygiene. All test names and behavior are preserved exactly.
 //! Owns: atomic write tests, FileSnapshot capture/compare, observe_external_file tests.
-//! Must not: add new deps; change any test logic or names; test non-io modules;
+//! Must not: add new deps; test non-io modules;
 //!   perform live watcher or reload mutation tests (those live elsewhere).
-//! Invariants: uses super::* to reach the module under test; same assertions as inline.
-//! Phase: 2-aj (test split hygiene pass; no behavior change).
+//! Invariants: uses super::* to reach the module under test; atomic replacement
+//!   preserves existing Unix permissions and failed writes preserve the target.
+//! Phase: 2-aj test split through 2-bv Unix save-permission preservation.
 
 #![cfg(test)]
 
@@ -90,6 +91,23 @@ fn atomic_write_overwrites_existing() {
     fs::write(&out, "OLD").unwrap();
     atomic_write_string(&out, "NEW\ncontent").unwrap();
     assert_eq!(fs::read_to_string(&out).unwrap(), "NEW\ncontent");
+    cleanup(&out);
+}
+
+#[cfg(unix)]
+#[test]
+fn atomic_write_preserves_existing_file_mode() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let out = temp_path("preserve_mode.txt");
+    cleanup(&out);
+    fs::write(&out, "old").unwrap();
+    fs::set_permissions(&out, fs::Permissions::from_mode(0o751)).unwrap();
+
+    atomic_write_string(&out, "new").unwrap();
+
+    let mode = fs::metadata(&out).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o751, "atomic save must preserve target mode bits");
     cleanup(&out);
 }
 

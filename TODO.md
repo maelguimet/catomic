@@ -744,7 +744,7 @@ Update this file as decisions are made or phases complete. Add concrete issues o
 - PTY harness now includes root integration smokes (`tests/pty_smoke.rs`) that drive the real binary through save/undo/save, external-edit confirmation/reload, Ctrl+F, and multiple-file buffer switching flows, followed by clean quit; broader terminal coverage remains intentionally narrow.
 - No LLM/Project in Plain.
 - Phase 2-a (foundation) complete:
-  - atomic_write_string helper: same-dir temp, create_new, full write+flush+sync_all, rename, best-effort parent dir fsync on Unix; temp cleanup on error.
+  - atomic_write_string helper: same-dir temp, create_new, full write+flush+sync_all, rename, best-effort parent dir fsync on Unix; existing Unix mode bits are preserved and temp files are cleaned up on error.
   - FileState { path: Option<PathBuf>, dirty: bool } replaces raw Option<String>.
   - App saves exclusively through atomic_write_string (Ctrl+S); remembers untitled.txt when needed.
   - Dirty=false after open (existing or missing-file); =true on insert/newline/delete/undo/redo keys; =false after successful save.

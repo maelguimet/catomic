@@ -31,3 +31,7 @@ mod search;
 #[cfg(test)]
 #[path = "perf_render.rs"]
 mod render;
+
+#[cfg(test)]
+#[path = "perf_tooling.rs"]
+mod tooling;

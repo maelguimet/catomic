@@ -1,15 +1,15 @@
 //! Real PTY integration smoke tests for the catomic binary.
 //!
 //! Purpose: drive the compiled binary through a pseudo-terminal so key handling,
-//!   raw-mode setup, render, save, undo, search, external reload, and clean quit are
+//!   raw-mode setup, render, save, undo, search, Project tooling, and clean quit are
 //!   exercised together.
-//! Owns: narrow default PTY smoke coverage for already-existing Phase 0/1/2/3/4
+//! Owns: narrow default PTY smoke coverage for already-existing Phase 0/1/2/3/4/5
 //!   behavior.
-//! Must not: grow into a broad UI harness, depend on Project/LLM/config, or run
+//! Must not: grow into a broad UI harness, depend on LLM/network/config, or run
 //!   large-file/perf scenarios.
 //! Invariants: tests use temporary files, time out and kill the child on hangs,
 //!   and leave Plain startup behavior unchanged.
-//! Phase: 4 acceptance, including live Markdown view toggles.
+//! Phase: 5 acceptance, including explicit Project discovery/path completion.
 
 use std::error::Error;
 use std::fs;
@@ -25,6 +25,40 @@ type TestResult<T = ()> = Result<T, Box<dyn Error>>;
 
 struct TempPath {
     path: PathBuf,
+}
+
+struct TempProject {
+    root: PathBuf,
+}
+
+impl TempProject {
+    fn new(label: &str) -> Self {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock before epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "catomic_pty_project_{label}_{}_{}",
+            std::process::id(),
+            nanos
+        ));
+        fs::create_dir(&root).expect("create PTY project root");
+        Self { root }
+    }
+
+    fn write(&self, relative: &str, text: &str) -> PathBuf {
+        let path = self.root.join(relative);
+        fs::create_dir_all(path.parent().expect("project file parent"))
+            .expect("create PTY project directory");
+        fs::write(&path, text).expect("write PTY project file");
+        path
+    }
+}
+
+impl Drop for TempProject {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
 }
 
 impl TempPath {
@@ -311,5 +345,31 @@ fn pty_markdown_preview_and_view_toggles_leave_source_unchanged() -> TestResult 
         output.contains("\x1b[?1049l"),
         "alternate screen must teardown"
     );
+    Ok(())
+}
+
+#[test]
+fn pty_project_discovery_and_path_completion_save_exact_text() -> TestResult {
+    let project = TempProject::new("completion");
+    let active = project.write("note.txt", "src/ma");
+    project.write("src/main.rs", "fn main() {}\n");
+    let mut editor = PtyEditor::spawn(&active)?;
+
+    editor.wait_for_initial_render()?;
+    editor.wait_for_output("Project completion source", "src/ma")?;
+    editor.send_keys(b"\x1b[80;6uproject\r")?; // Ctrl+Shift+P via CSI-u, then command.
+    editor.wait_for_output("Project mode enabled", "Project mode enabled")?;
+    editor.send_keys(b"\x1b[80;6ufiles\r")?;
+    editor.wait_for_output("Project files discovered", "Found 2 Project file(s)")?;
+    editor.wait_for_output("Project file picker", "src/main.rs")?;
+    editor.send_keys(b"\x1b")?;
+    editor.wait_for_output("Project file picker closed", "Project files closed")?;
+
+    editor.send_keys(b"\x1b[C\x1b[C\x1b[C\x1b[C\x1b[C\x1b[C\0")?; // Right x6, Ctrl+Space.
+    editor.wait_for_output("Project path completion", "Completion 1/1: src/main.rs")?;
+    editor.send_keys(b"\r\x13\x11")?;
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(active)?, "src/main.rs");
     Ok(())
 }

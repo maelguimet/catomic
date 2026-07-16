@@ -9,5 +9,6 @@
 
 pub mod golden;
 pub mod golden_phase4;
+pub mod golden_phase5;
 pub mod perf;
 pub mod pty;

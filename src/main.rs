@@ -7,6 +7,7 @@ mod app;
 mod buffer;
 mod config;
 mod editor;
+mod external;
 mod file;
 mod llm;
 mod mode;

@@ -8,8 +8,9 @@ use std::io::{self, Write};
 
 use crate::buffer::Cursor;
 use crate::config::linters::LinterConfig;
+use crate::external::substitute_file;
 use crate::project::diagnostics::parse_common_output;
-use crate::project::linter::{substitute_file, LinterResult, LinterTask};
+use crate::project::linter::{LinterResult, LinterTask};
 
 mod view;
 pub(crate) use view::{

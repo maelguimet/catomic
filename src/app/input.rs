@@ -11,8 +11,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::file_state::refresh_dirty;
 use super::{
-    buffers, command_prompt, completion, lint, llm_answer, llm_preview, llm_request, paging,
-    project_files, reload, repo_llm, save, search, selection, view,
+    buffers, command_prompt, completion, external_command, lint, llm_answer, llm_preview,
+    llm_request, paging, project_files, reload, repo_llm, save, search, selection, view,
 };
 
 /// Common post-content-mutation cleanup used by insert, delete, newline, undo, redo paths.
@@ -59,6 +59,9 @@ pub(crate) fn handle_key_with(
     out: &mut dyn Write,
     key: KeyEvent,
 ) -> io::Result<()> {
+    if external_command::handle_key(app, out, key)? {
+        return Ok(());
+    }
     if repo_llm::handle_key(app, out, key)? {
         return Ok(());
     }
@@ -368,6 +371,9 @@ pub(crate) fn handle_paste(
     text: &str,
 ) -> io::Result<()> {
     completion::cancel(app);
+    if external_command::handle_paste(app, out)? {
+        return Ok(());
+    }
     if repo_llm::handle_paste(app, out)? {
         return Ok(());
     }

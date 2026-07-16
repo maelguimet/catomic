@@ -247,6 +247,34 @@ Supported actions are `save`, `quit`, `reload`, `search`, `goto-line`,
 key, or `f1` through `f12`. Prompt and picker keys remain local while those
 interfaces are active.
 
+## External commands
+
+Named shell commands are opt-in and run only after `:run <name>`:
+
+```toml
+[commands.upper]
+command = "tr '[:lower:]' '[:upper:]'"
+input = "selection"
+output = "replace-input"
+timeout_secs = 10
+
+[commands.date]
+command = "date +%F"
+output = "insert"
+```
+
+`input` is `none` (the default), `selection`, or `buffer`. `output` is
+`preview` (the default), `insert`, or `replace-input`; replacing input requires
+selection or buffer input. `{file}` expands to the shell-quoted absolute active
+path, and the command runs from that file's directory.
+
+Commands never block typing. Input is capped at 16 MiB, stdout and stderr at
+1 MiB each, and timeouts are limited to 1–300 seconds. Escape cancels a running
+command. Completed output opens read-only; successful, complete output requires
+Enter before insertion or replacement and applies as one undoable edit. Failed
+or truncated output cannot apply. Catomic invokes `/bin/sh -c`, so configured
+commands are trusted user code and may have side effects outside the editor.
+
 ## LLM Support
 
 LLM support is explicit, transient, and caged. Open the command prompt with

@@ -16,6 +16,7 @@ use crossterm::event::{self, Event, KeyEvent};
 
 use crate::buffer::Buffer;
 use crate::config::big_files::BigFileConfig;
+use crate::config::commands::CommandConfig;
 use crate::config::editor::EditorConfig;
 use crate::config::keybindings::KeyBindings;
 use crate::file;
@@ -32,6 +33,7 @@ use file_state::external_file_status;
 mod buffers;
 mod command_prompt;
 mod completion;
+mod external_command;
 mod open;
 mod paging;
 mod project_files;
@@ -67,6 +69,8 @@ pub struct App {
     pub(crate) editor_config: EditorConfig,
     /// Plain-safe normal-mode chord overrides; contains no command runner.
     pub(crate) keybindings: KeyBindings,
+    /// Named command policy only; no process exists until explicit invocation or a hook.
+    pub(crate) command_config: CommandConfig,
     /// The active buffer (trait object for now; concrete type behind it).
     pub buffer: Box<dyn Buffer>,
     /// File path and dirty tracking.
@@ -118,6 +122,8 @@ pub struct App {
     pub(crate) llm_task: Option<llm_request::RunningLlmRequest>,
     /// Project-only repo-context preparation, confirmation, or confirmed network task.
     pub(crate) repo_llm_state: Option<repo_llm::RepoLlmState>,
+    /// External process/preview state; empty at startup and while unused.
+    pub(crate) external_command: external_command::ExternalCommandState,
     /// Per-buffer half-open selection state.
     pub(crate) selection: selection::SelectionUiState,
     /// Always-available process-local clipboard shared across open buffers.
@@ -151,6 +157,7 @@ impl App {
             true,
             EditorConfig::default(),
             KeyBindings::default(),
+            CommandConfig::default(),
         )
     }
 
@@ -160,6 +167,7 @@ impl App {
         auto_reload: bool,
         editor_config: EditorConfig,
         keybindings: KeyBindings,
+        command_config: CommandConfig,
     ) -> io::Result<Self> {
         let mode = Mode::Plain; // Start in Plain by default. User can switch later.
         let caps = Capabilities::from_mode(mode);
@@ -198,6 +206,7 @@ impl App {
             auto_reload,
             editor_config,
             keybindings,
+            command_config,
             buffer,
             file: FileState {
                 path: initial_path.map(PathBuf::from),
@@ -223,6 +232,7 @@ impl App {
             pending_llm_request: None,
             llm_task: None,
             repo_llm_state: None,
+            external_command: external_command::ExternalCommandState::default(),
             selection: selection::SelectionUiState::default(),
             clipboard: String::new(),
             view: view::ViewOptions::default(),
@@ -279,6 +289,7 @@ impl App {
             project_files::poll(self, &mut stdout)?;
             llm_request::poll(self, &mut stdout)?;
             repo_llm::poll(self, &mut stdout)?;
+            external_command::poll(self, &mut stdout)?;
 
             // Blocking read for Phase 0. Later we may need non-blocking + resize.
             if event::poll(std::time::Duration::from_millis(100))? {
@@ -353,7 +364,8 @@ impl App {
         // Screen is single source for dims.
         // Avoid cloning self.message: pass Some(m.as_str()) directly.
         // Status is built locally only for the no-message path and passed as &str.
-        let highlight = (!view::is_preview(self)
+        let highlight = (!external_command::is_viewing(self)
+            && !view::is_preview(self)
             && !lint::is_viewing(self)
             && !project_files::is_viewing(self)
             && !llm_preview::is_viewing(self))
@@ -434,12 +446,14 @@ pub fn run(initial_files: &[String]) -> io::Result<()> {
     let auto_reload = crate::config::auto_reload::load()?;
     let editor_config = crate::config::editor::load()?;
     let keybindings = crate::config::keybindings::load()?;
+    let command_config = crate::config::commands::load()?;
     let mut app = App::new_with_paths_and_config(
         initial_files,
         big_files,
         auto_reload,
         editor_config,
         keybindings,
+        command_config,
     )?;
     app.run()
 }

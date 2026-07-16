@@ -11,13 +11,14 @@ use std::path::{Path, PathBuf};
 
 use crate::buffer::Buffer;
 use crate::config::big_files::BigFileConfig;
+use crate::config::commands::CommandConfig;
 use crate::config::editor::EditorConfig;
 use crate::config::keybindings::KeyBindings;
 use crate::file::watcher::FileWatcher;
 
 use super::{
-    command_prompt, completion, lint, llm_answer, llm_preview, llm_request, project_files, reload,
-    repo_llm, save, search, selection, view, App, FileState,
+    command_prompt, completion, external_command, lint, llm_answer, llm_preview, llm_request,
+    project_files, reload, repo_llm, save, search, selection, view, App, FileState,
 };
 
 pub(crate) struct BufferSlot {
@@ -87,6 +88,7 @@ impl App {
             true,
             EditorConfig::default(),
             KeyBindings::default(),
+            CommandConfig::default(),
         )
     }
 
@@ -96,6 +98,7 @@ impl App {
         auto_reload: bool,
         editor_config: EditorConfig,
         keybindings: KeyBindings,
+        command_config: CommandConfig,
     ) -> io::Result<Self> {
         let first_path = initial_paths.first().map(String::as_str);
         let mut app = Self::new_with_config(
@@ -104,6 +107,7 @@ impl App {
             auto_reload,
             editor_config.clone(),
             keybindings.clone(),
+            command_config.clone(),
         )?;
         for path in initial_paths.iter().skip(1) {
             let extra = Self::new_with_config(
@@ -112,6 +116,7 @@ impl App {
                 auto_reload,
                 editor_config.clone(),
                 keybindings.clone(),
+                command_config.clone(),
             )?;
             app.inactive_buffers.push_back(BufferSlot::from_app(extra));
         }
@@ -151,6 +156,7 @@ impl App {
         }
         llm_request::cancel_all(self);
         repo_llm::cancel_all(self);
+        external_command::cancel_all(self);
         if self.pending_quit_confirm {
             self.message = None;
             self.pending_quit_confirm = false;
@@ -204,6 +210,7 @@ impl App {
             self.auto_reload,
             self.editor_config.clone(),
             self.keybindings.clone(),
+            self.command_config.clone(),
         )?;
         self.inactive_buffers
             .push_front(BufferSlot::from_app(opened));

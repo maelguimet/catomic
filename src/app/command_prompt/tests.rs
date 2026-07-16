@@ -99,6 +99,21 @@ fn command_prompt_dispatches_goto_and_preserves_dirty_quit_guard() {
 }
 
 #[test]
+fn command_prompt_dispatches_configured_external_command() {
+    let mut app = super::super::App::new(None).unwrap();
+    app.command_config =
+        crate::config::commands::parse("[commands.word]\ncommand = \"printf cat\"\n").unwrap();
+    let mut out = Vec::new();
+
+    open_command_prompt(&mut app, &mut out).unwrap();
+    type_text(&mut app, &mut out, "run word");
+    app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
+        .unwrap();
+
+    assert!(super::super::external_command::is_running(&app));
+}
+
+#[test]
 fn paged_goto_switches_to_the_global_logical_line() {
     let path = std::env::temp_dir().join(format!("catomic_app_goto_{}.txt", std::process::id()));
     let _ = std::fs::remove_file(&path);

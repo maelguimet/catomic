@@ -6,7 +6,7 @@
 
 use crate::buffer::{Buffer, PieceTable};
 use crate::editor::syntax::SyntaxKind;
-use crate::terminal::render::{render_buffer, RenderOptions};
+use crate::terminal::render::{render_buffer, RenderOptions, RenderViewport};
 
 use super::helpers::{measure_sample, print_perf_sample};
 
@@ -45,10 +45,7 @@ fn manual_phase4_10mib_markdown_reports_samples() {
                 render_buffer(
                     &mut output,
                     &buffer,
-                    start,
-                    0,
-                    24,
-                    80,
+                    RenderViewport::new(start, 0, 24, 80),
                     None,
                     RenderOptions {
                         syntax: SyntaxKind::Markdown,

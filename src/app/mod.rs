@@ -367,10 +367,12 @@ impl App {
             term::render::render_buffer(
                 stdout,
                 display_buffer,
-                self.screen.scroll_top,
-                self.screen.scroll_left,
-                self.screen.height as usize,
-                self.screen.width as usize,
+                term::render::RenderViewport::new(
+                    self.screen.scroll_top,
+                    self.screen.scroll_left,
+                    self.screen.height as usize,
+                    self.screen.width as usize,
+                ),
                 Some(m.as_str()),
                 render_options,
             )
@@ -392,10 +394,12 @@ impl App {
             term::render::render_buffer(
                 stdout,
                 display_buffer,
-                self.screen.scroll_top,
-                self.screen.scroll_left,
-                self.screen.height as usize,
-                self.screen.width as usize,
+                term::render::RenderViewport::new(
+                    self.screen.scroll_top,
+                    self.screen.scroll_left,
+                    self.screen.height as usize,
+                    self.screen.width as usize,
+                ),
                 Some(status.as_str()),
                 render_options,
             )

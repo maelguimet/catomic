@@ -26,6 +26,25 @@ pub(crate) struct RenderOptions {
     pub(crate) whitespace: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RenderViewport {
+    start_row: usize,
+    start_col: usize,
+    height: usize,
+    width: usize,
+}
+
+impl RenderViewport {
+    pub const fn new(start_row: usize, start_col: usize, height: usize, width: usize) -> Self {
+        Self {
+            start_row,
+            start_col,
+            height,
+            width,
+        }
+    }
+}
+
 pub(crate) fn line_number_gutter(line_count: usize) -> usize {
     line_count.max(1).to_string().len().saturating_add(1)
 }
@@ -36,41 +55,45 @@ pub(crate) fn line_number_gutter(line_count: usize) -> usize {
 /// the buffer's logical cursor. No phantom line is appended after the last
 /// rendered row.
 ///
-/// start/start_col/height/width define the viewport slice.
+/// `viewport` defines the visible row/column origin and terminal dimensions.
 /// Bottom row (height) reserved for minimal message if provided; content uses height-1.
 /// For horizontal: scalar char slicing from start_col, at most width chars.
 /// Least invasive addition: message shown on last row via absolute positioning.
 pub fn render_buffer<W: Write + ?Sized>(
     out: &mut W,
     buffer: &dyn Buffer,
-    start: usize,
-    start_col: usize,
-    height: usize,
-    width: usize,
+    viewport: RenderViewport,
     message: Option<&str>,
     options: RenderOptions,
 ) -> std::io::Result<()> {
+    let RenderViewport {
+        start_row,
+        start_col,
+        height,
+        width,
+    } = viewport;
     // Reserve bottom row for message/status (matches screen.visible_height intent).
     // Horizontal: use width directly as content width (no sidebar/status reservation).
     let content_h = height.saturating_sub(1);
-    let gutter = options
-        .line_numbers
-        .then(|| line_number_gutter(buffer.line_count()))
-        .unwrap_or(0)
-        .min(width);
+    let gutter = if options.line_numbers {
+        line_number_gutter(buffer.line_count())
+    } else {
+        0
+    }
+    .min(width);
     let content_w = width.saturating_sub(gutter);
-    let visible = buffer.try_visible_lines_window(start, content_h, start_col, content_w)?;
+    let visible = buffer.try_visible_lines_window(start_row, content_h, start_col, content_w)?;
     for screen_row in 1..=content_h {
         write!(out, "\x1b[{};1H\x1b[K", screen_row)?;
         if gutter > 0 {
-            write_line_number(out, start + screen_row - 1, gutter)?;
+            write_line_number(out, start_row + screen_row - 1, gutter)?;
         }
         if content_w > 0 {
             if let Some(line) = visible.get(screen_row - 1) {
                 style::write_content_line(
                     out,
                     &line.content,
-                    start + screen_row - 1,
+                    start_row + screen_row - 1,
                     start_col,
                     options,
                 )?;
@@ -91,7 +114,11 @@ pub fn render_buffer<W: Write + ?Sized>(
     // Saturating math so it never panics/underflows.
     // If width is 0 still emit safe cursor position.
     let Cursor { row, col } = buffer.cursor();
-    let screen_row = if row >= start { row - start + 1 } else { 1 };
+    let screen_row = if row >= start_row {
+        row - start_row + 1
+    } else {
+        1
+    };
     let screen_col = gutter
         .saturating_add(col.saturating_sub(start_col))
         .saturating_add(1)
@@ -128,10 +155,7 @@ mod tests {
         render_buffer(
             &mut out,
             &b,
-            0,
-            0,
-            3,
-            20,
+            RenderViewport::new(0, 0, 3, 20),
             None,
             RenderOptions {
                 highlight: Some(TextHighlight {
@@ -155,10 +179,7 @@ mod tests {
         render_buffer(
             &mut out,
             &b,
-            0,
-            0,
-            4,
-            20,
+            RenderViewport::new(0, 0, 4, 20),
             None,
             RenderOptions {
                 highlight: Some(TextHighlight {
@@ -181,8 +202,14 @@ mod tests {
         let b = SimpleBuffer::from_text("hello\nworld\n");
         let mut out: Vec<u8> = Vec::new();
         // Must not panic
-        render_buffer(&mut out, &b, 0, 0, 0, 10, None, RenderOptions::default())
-            .expect("render h=0");
+        render_buffer(
+            &mut out,
+            &b,
+            RenderViewport::new(0, 0, 0, 10),
+            None,
+            RenderOptions::default(),
+        )
+        .expect("render h=0");
         let s = String::from_utf8_lossy(&out);
         // No bottom-row absolute positioning for height 0
         assert!(
@@ -205,10 +232,7 @@ mod tests {
         render_buffer(
             &mut out,
             &b,
-            0,
-            0,
-            1,
-            10,
+            RenderViewport::new(0, 0, 1, 10),
             Some("msg"),
             RenderOptions::default(),
         )
@@ -229,8 +253,14 @@ mod tests {
     fn render_buffer_width_zero_emits_no_content_but_clears_rows_and_positions() {
         let b = SimpleBuffer::from_text("abc\ndef\n");
         let mut out: Vec<u8> = Vec::new();
-        render_buffer(&mut out, &b, 0, 0, 3, 0, None, RenderOptions::default())
-            .expect("render w=0");
+        render_buffer(
+            &mut out,
+            &b,
+            RenderViewport::new(0, 0, 3, 0),
+            None,
+            RenderOptions::default(),
+        )
+        .expect("render w=0");
         let s = String::from_utf8_lossy(&out);
         // No actual text content from lines
         assert!(
@@ -253,10 +283,7 @@ mod tests {
         render_buffer(
             &mut out,
             &b,
-            0,
-            0,
-            4,
-            10,
+            RenderViewport::new(0, 0, 4, 10),
             Some("status"),
             RenderOptions::default(),
         )
@@ -278,10 +305,7 @@ mod tests {
         render_buffer(
             &mut out_default,
             &b,
-            0,
-            0,
-            4,
-            6,
+            RenderViewport::new(0, 0, 4, 6),
             None,
             RenderOptions::default(),
         )
@@ -292,10 +316,7 @@ mod tests {
         render_buffer(
             &mut out_explicit,
             &b,
-            0,
-            0,
-            4,
-            6,
+            RenderViewport::new(0, 0, 4, 6),
             None,
             RenderOptions::default(),
         )
@@ -319,8 +340,14 @@ mod tests {
         let b = SimpleBuffer::from_text("aé猫🙂Z\n");
         let mut out: Vec<u8> = Vec::new();
         // start_col=1, width=3 => take(3) scalars after skip: "é猫🙂"
-        render_buffer(&mut out, &b, 0, 1, 2, 3, None, RenderOptions::default())
-            .expect("render slice multibyte");
+        render_buffer(
+            &mut out,
+            &b,
+            RenderViewport::new(0, 1, 2, 3),
+            None,
+            RenderOptions::default(),
+        )
+        .expect("render slice multibyte");
         let s = String::from_utf8_lossy(&out);
         assert!(
             s.contains("é猫🙂"),
@@ -354,10 +381,7 @@ mod tests {
         let err = render_buffer(
             &mut out,
             &buffer,
-            0,
-            0,
-            2,
-            8,
+            RenderViewport::new(0, 0, 2, 8),
             None,
             RenderOptions::default(),
         )

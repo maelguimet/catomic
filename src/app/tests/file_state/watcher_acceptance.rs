@@ -72,10 +72,8 @@ fn watcher_changed_clean_buffer_auto_reloads() {
 fn symlink_retarget_reload_refreshes_watcher_to_new_referent() {
     use std::os::unix::fs::symlink;
 
-    let root = std::env::temp_dir().join(format!(
-        "catomic_symlink_retarget_{}",
-        std::process::id()
-    ));
+    let root =
+        std::env::temp_dir().join(format!("catomic_symlink_retarget_{}", std::process::id()));
     let link_dir = root.join("links");
     let target_dir = root.join("targets");
     let link = link_dir.join("notes.txt");
@@ -91,13 +89,12 @@ fn symlink_retarget_reload_refreshes_watcher_to_new_referent() {
 
     let mut app = App::new(Some(link.to_str().unwrap())).unwrap();
     let first = std::fs::canonicalize(&first).unwrap();
-    assert!(
-        app.file_watcher
-            .as_ref()
-            .expect("initial watcher")
-            .watched_targets_for_test()
-            .contains(&first)
-    );
+    assert!(app
+        .file_watcher
+        .as_ref()
+        .expect("initial watcher")
+        .watched_targets_for_test()
+        .contains(&first));
 
     std::fs::remove_file(&link).unwrap();
     symlink("../targets/second.txt", &link).unwrap();

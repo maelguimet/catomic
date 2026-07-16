@@ -9,8 +9,8 @@ use std::fs::File;
 use std::io;
 use std::os::unix::fs::FileExt;
 
-use super::scan::{scan_ascii_bytes_lines, scan_valid_text_lines, LineScan};
-use super::{LineCheckpoint, SCAN_CHUNK_BYTES};
+use super::scan::{LineScan, LineScanState};
+use super::SCAN_CHUNK_BYTES;
 
 pub(crate) struct PageScan {
     pub(crate) lines: LineScan,
@@ -98,13 +98,7 @@ struct PageScanState {
     start_byte: usize,
     offset: usize,
     lines_remaining: usize,
-    line_starts: Vec<usize>,
-    line_char_counts: Vec<usize>,
-    line_is_ascii: Vec<bool>,
-    line_checkpoints: Vec<LineCheckpoint>,
-    line_checkpoint_starts: Vec<usize>,
-    current_line_chars: usize,
-    current_line_is_ascii: bool,
+    lines: LineScanState,
     carry: Vec<u8>,
 }
 
@@ -114,13 +108,7 @@ impl PageScanState {
             start_byte,
             offset: start_byte,
             lines_remaining: page_lines,
-            line_starts: vec![start_byte],
-            line_char_counts: Vec::new(),
-            line_is_ascii: Vec::new(),
-            line_checkpoints: Vec::new(),
-            line_checkpoint_starts: vec![0],
-            current_line_chars: 0,
-            current_line_is_ascii: true,
+            lines: LineScanState::new(start_byte),
             carry: Vec::new(),
         }
     }
@@ -147,41 +135,21 @@ impl PageScanState {
         let valid_end = valid_utf8_end(text_bytes)?;
         let valid_text = std::str::from_utf8(&text_bytes[..valid_end])
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-        scan_valid_text_lines(
-            valid_text,
-            text_start_offset,
-            &mut self.line_starts,
-            &mut self.line_char_counts,
-            &mut self.line_is_ascii,
-            &mut self.line_checkpoints,
-            &mut self.line_checkpoint_starts,
-            &mut self.current_line_chars,
-            &mut self.current_line_is_ascii,
-        );
+        self.lines.scan_valid_text(valid_text, text_start_offset);
         self.carry.extend_from_slice(&text_bytes[valid_end..]);
         self.offset += bytes.len();
         Ok(())
     }
 
     fn scan_ascii_bytes(&mut self, bytes: &[u8], text_start_offset: usize) {
-        scan_ascii_bytes_lines(
-            bytes,
-            text_start_offset,
-            &mut self.line_starts,
-            &mut self.line_char_counts,
-            &mut self.line_is_ascii,
-            &mut self.line_checkpoints,
-            &mut self.line_checkpoint_starts,
-            &mut self.current_line_chars,
-            &mut self.current_line_is_ascii,
-        );
+        self.lines.scan_ascii_bytes(bytes, text_start_offset);
     }
 
     fn finish_complete_page(&mut self) -> io::Result<()> {
         if !self.carry.is_empty() {
             return Err(incomplete_utf8_error());
         }
-        self.line_starts.pop();
+        self.lines.finish_complete_page();
         Ok(())
     }
 
@@ -189,23 +157,13 @@ impl PageScanState {
         if !self.carry.is_empty() {
             return Err(incomplete_utf8_error());
         }
-        self.line_char_counts.push(self.current_line_chars);
-        self.line_is_ascii.push(self.current_line_is_ascii);
-        self.line_checkpoint_starts
-            .push(self.line_checkpoints.len());
+        self.lines.finish_final_page();
         Ok(())
     }
 
     fn into_scan(self, next_page_start: Option<usize>) -> PageScan {
         PageScan {
-            lines: LineScan {
-                line_starts: self.line_starts,
-                line_char_counts: self.line_char_counts,
-                line_is_ascii: self.line_is_ascii,
-                line_checkpoints: self.line_checkpoints,
-                line_checkpoint_starts: self.line_checkpoint_starts,
-                total_bytes: self.offset - self.start_byte,
-            },
+            lines: self.lines.into_scan(self.offset - self.start_byte),
             start_byte: self.start_byte,
             end_byte: self.offset,
             next_page_start,

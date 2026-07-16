@@ -12,9 +12,11 @@
 
 use std::fs::File;
 use std::io;
+#[cfg(test)]
 use std::path::Path;
 
 use crate::buffer::large_file::page_scan::scan_utf8_page;
+#[cfg(test)]
 use crate::buffer::large_file::scan::scan_utf8_lines;
 use crate::buffer::line_index::LineIndex;
 use crate::buffer::Cursor;
@@ -27,6 +29,7 @@ pub(crate) struct FileBackedPage {
     pub(crate) start_byte: usize,
     pub(crate) end_byte: usize,
     pub(crate) next_page_start: Option<usize>,
+    #[cfg(test)]
     pub(crate) total_bytes: usize,
 }
 
@@ -73,6 +76,7 @@ impl PieceTable {
         Self::from_normalized_text(normalized)
     }
 
+    #[cfg(test)]
     pub(crate) fn from_file(path: impl AsRef<Path>) -> io::Result<Self> {
         let mut file = File::open(path)?;
         let snapshot = FileMetadataSnapshot::capture(&file)?;
@@ -125,6 +129,7 @@ impl PieceTable {
             start_byte: page.start_byte,
             end_byte: page.end_byte,
             next_page_start: page.next_page_start,
+            #[cfg(test)]
             total_bytes,
         })
     }

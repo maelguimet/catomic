@@ -17,6 +17,7 @@ use crossterm::event::{self, Event, KeyEvent};
 use crate::buffer::Buffer;
 use crate::config::big_files::BigFileConfig;
 use crate::config::editor::EditorConfig;
+use crate::config::keybindings::KeyBindings;
 use crate::file;
 
 use crate::mode::{Capabilities, Mode};
@@ -64,6 +65,8 @@ pub struct App {
     pub(crate) auto_reload: bool,
     /// Plain-safe editor defaults and extension-specific settings loaded at startup.
     pub(crate) editor_config: EditorConfig,
+    /// Plain-safe normal-mode chord overrides; contains no command runner.
+    pub(crate) keybindings: KeyBindings,
     /// The active buffer (trait object for now; concrete type behind it).
     pub buffer: Box<dyn Buffer>,
     /// File path and dirty tracking.
@@ -142,7 +145,13 @@ impl App {
         initial_path: Option<&str>,
         big_files: BigFileConfig,
     ) -> io::Result<Self> {
-        Self::new_with_config(initial_path, big_files, true, EditorConfig::default())
+        Self::new_with_config(
+            initial_path,
+            big_files,
+            true,
+            EditorConfig::default(),
+            KeyBindings::default(),
+        )
     }
 
     pub(crate) fn new_with_config(
@@ -150,6 +159,7 @@ impl App {
         big_files: BigFileConfig,
         auto_reload: bool,
         editor_config: EditorConfig,
+        keybindings: KeyBindings,
     ) -> io::Result<Self> {
         let mode = Mode::Plain; // Start in Plain by default. User can switch later.
         let caps = Capabilities::from_mode(mode);
@@ -187,6 +197,7 @@ impl App {
             big_files,
             auto_reload,
             editor_config,
+            keybindings,
             buffer,
             file: FileState {
                 path: initial_path.map(PathBuf::from),
@@ -422,8 +433,14 @@ pub fn run(initial_files: &[String]) -> io::Result<()> {
     let big_files = crate::config::big_files::load()?;
     let auto_reload = crate::config::auto_reload::load()?;
     let editor_config = crate::config::editor::load()?;
-    let mut app =
-        App::new_with_paths_and_config(initial_files, big_files, auto_reload, editor_config)?;
+    let keybindings = crate::config::keybindings::load()?;
+    let mut app = App::new_with_paths_and_config(
+        initial_files,
+        big_files,
+        auto_reload,
+        editor_config,
+        keybindings,
+    )?;
     app.run()
 }
 

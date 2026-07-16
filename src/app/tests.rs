@@ -10,6 +10,7 @@
 
 mod editing;
 mod file_state;
+mod keybindings;
 mod viewport;
 
 use super::*;

@@ -228,6 +228,25 @@ Later:
 Acceptance is one undoable replacement. No aggressive ghost-text demon is
 enabled.
 
+## Keybindings
+
+Normal-mode chords can override existing editor actions without replacing their
+save, quit, undo, completion, or view logic:
+
+```toml
+[keybindings]
+"ctrl+w" = "save"
+"alt+f" = "search"
+"ctrl+shift+g" = "command-prompt"
+```
+
+Supported actions are `save`, `quit`, `reload`, `search`, `goto-line`,
+`command-prompt`, `undo`, `redo`, `complete`, `next-buffer`, `previous-buffer`,
+`next-page`, `previous-page`, `markdown-preview`, `line-numbers`, and
+`whitespace`. Chords use `ctrl`, `alt`, and `shift` plus a character, navigation
+key, or `f1` through `f12`. Prompt and picker keys remain local while those
+interfaces are active.
+
 ## LLM Support
 
 LLM support is explicit, transient, and caged. Open the command prompt with

@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use crate::buffer::Buffer;
 use crate::config::big_files::BigFileConfig;
 use crate::config::editor::EditorConfig;
+use crate::config::keybindings::KeyBindings;
 use crate::file::watcher::FileWatcher;
 
 use super::{
@@ -80,7 +81,13 @@ impl App {
         initial_paths: &[String],
         big_files: BigFileConfig,
     ) -> io::Result<Self> {
-        Self::new_with_paths_and_config(initial_paths, big_files, true, EditorConfig::default())
+        Self::new_with_paths_and_config(
+            initial_paths,
+            big_files,
+            true,
+            EditorConfig::default(),
+            KeyBindings::default(),
+        )
     }
 
     pub(crate) fn new_with_paths_and_config(
@@ -88,13 +95,24 @@ impl App {
         big_files: BigFileConfig,
         auto_reload: bool,
         editor_config: EditorConfig,
+        keybindings: KeyBindings,
     ) -> io::Result<Self> {
         let first_path = initial_paths.first().map(String::as_str);
-        let mut app =
-            Self::new_with_config(first_path, big_files, auto_reload, editor_config.clone())?;
+        let mut app = Self::new_with_config(
+            first_path,
+            big_files,
+            auto_reload,
+            editor_config.clone(),
+            keybindings.clone(),
+        )?;
         for path in initial_paths.iter().skip(1) {
-            let extra =
-                Self::new_with_config(Some(path), big_files, auto_reload, editor_config.clone())?;
+            let extra = Self::new_with_config(
+                Some(path),
+                big_files,
+                auto_reload,
+                editor_config.clone(),
+                keybindings.clone(),
+            )?;
             app.inactive_buffers.push_back(BufferSlot::from_app(extra));
         }
         Ok(app)
@@ -185,6 +203,7 @@ impl App {
             self.big_files,
             self.auto_reload,
             self.editor_config.clone(),
+            self.keybindings.clone(),
         )?;
         self.inactive_buffers
             .push_front(BufferSlot::from_app(opened));

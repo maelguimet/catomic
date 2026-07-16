@@ -86,6 +86,11 @@ pub(crate) fn handle_key_with(
     if lint::handle_key(app, out, key)? {
         return Ok(());
     }
+    let translated = app.keybindings.translate(key);
+    if translated != key && completion::handle_key(app, out, translated)? {
+        return Ok(());
+    }
+    let key = translated;
     if view::handle_key(app, out, key)? {
         return Ok(());
     }

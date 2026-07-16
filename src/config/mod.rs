@@ -12,6 +12,7 @@ use serde::de::DeserializeOwned;
 pub mod auto_reload;
 pub mod big_files;
 pub(crate) mod editor;
+pub(crate) mod keybindings;
 pub(crate) mod linters;
 pub(crate) mod llm;
 

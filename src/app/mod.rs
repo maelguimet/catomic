@@ -91,6 +91,8 @@ pub struct App {
     pub(crate) command_prompt: command_prompt::CommandPromptState,
     /// Plain-safe local completion UI, constructed only when its capability is enabled.
     pub(crate) completion: Option<completion::CompletionUiState>,
+    /// Project-only read-only diagnostics document, absent until explicitly shown.
+    pub(crate) lint_view: Option<lint::DiagnosticsView>,
     /// Per-buffer half-open selection state.
     pub(crate) selection: selection::SelectionUiState,
     /// Always-available process-local clipboard shared across open buffers.
@@ -177,6 +179,7 @@ impl App {
             search: search::SearchUiState::default(),
             command_prompt: command_prompt::CommandPromptState::default(),
             completion,
+            lint_view: None,
             selection: selection::SelectionUiState::default(),
             clipboard: String::new(),
             view: view::ViewOptions::default(),
@@ -302,7 +305,7 @@ impl App {
         // Screen is single source for dims.
         // Avoid cloning self.message: pass Some(m.as_str()) directly.
         // Status is built locally only for the no-message path and passed as &str.
-        let highlight = (!view::is_preview(self))
+        let highlight = (!view::is_preview(self) && !lint::is_viewing(self))
             .then(|| {
                 self.selection
                     .active()

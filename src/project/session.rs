@@ -6,13 +6,14 @@
 
 use std::path::{Path, PathBuf};
 
-use super::diagnostics::Diagnostics;
+use super::diagnostics::{Diagnostic, Diagnostics};
 use super::linter::{LinterResult, LinterTask};
 
 pub(crate) struct ProjectSession {
     root: PathBuf,
     linter: Option<LinterTask>,
     diagnostics: Diagnostics,
+    diagnostic_index: Option<usize>,
 }
 
 impl ProjectSession {
@@ -21,6 +22,7 @@ impl ProjectSession {
             root,
             linter: None,
             diagnostics: Diagnostics::new(),
+            diagnostic_index: None,
         }
     }
 
@@ -45,9 +47,29 @@ impl ProjectSession {
 
     pub(crate) fn set_diagnostics(&mut self, diagnostics: Diagnostics) {
         self.diagnostics = diagnostics;
+        self.diagnostic_index = None;
     }
 
     pub(crate) fn diagnostics(&self) -> &Diagnostics {
         &self.diagnostics
+    }
+
+    pub(crate) fn move_diagnostic(&mut self, forward: bool) -> Option<(usize, usize, Diagnostic)> {
+        let count = self.diagnostics.items.len();
+        if count == 0 {
+            return None;
+        }
+        let index = match (self.diagnostic_index, forward) {
+            (None, true) => 0,
+            (None, false) => count - 1,
+            (Some(index), true) => index.saturating_add(1) % count,
+            (Some(index), false) => index.saturating_add(count - 1) % count,
+        };
+        self.diagnostic_index = Some(index);
+        Some((index, count, self.diagnostics.items[index].clone()))
+    }
+
+    pub(crate) fn cancel_linter(&mut self) -> bool {
+        self.linter.take().is_some()
     }
 }

@@ -6,9 +6,16 @@
 
 use std::io::{self, Write};
 
+use crate::buffer::Cursor;
 use crate::config::linters::LinterConfig;
 use crate::project::diagnostics::parse_common_output;
 use crate::project::linter::{substitute_file, LinterResult, LinterTask};
+
+mod view;
+pub(crate) use view::{
+    close_view, display_buffer, handle_key, handle_paste, is_viewing, show_diagnostics,
+    DiagnosticsView,
+};
 
 pub(crate) fn start(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     if !app.caps.linters || app.project.is_none() {
@@ -116,67 +123,57 @@ fn finish(app: &mut super::App, output: String, code: Option<i32>) {
     });
 }
 
-#[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-    use std::time::{Duration, Instant};
-
-    use crate::config::linters;
-
-    use super::super::{project_mode, App};
-
-    #[test]
-    fn plain_and_dirty_buffers_spawn_no_linter() {
-        let config = linters::parse("[linters]\nrs = \"true {file}\"\n").unwrap();
-        let mut app = App::new(None).unwrap();
-        app.file.path = Some(PathBuf::from("/tmp/sample.rs"));
-        let mut out = Vec::new();
-
-        super::start_with_config(&mut app, &mut out, config.clone()).unwrap();
-        assert!(app.project.is_none());
-        assert!(app
-            .message
-            .as_deref()
-            .unwrap_or("")
-            .contains("Project mode"));
-
-        project_mode::switch_to_project(&mut app, &mut out).unwrap();
-        app.file.dirty = true;
-        super::start_with_config(&mut app, &mut out, config).unwrap();
-        assert!(!app.project.as_ref().unwrap().is_linter_running());
-        assert!(app.message.as_deref().unwrap_or("").contains("Save"));
+pub(crate) fn move_diagnostic(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    forward: bool,
+) -> io::Result<()> {
+    view::close_view(app);
+    let Some((index, count, diagnostic)) = app
+        .project
+        .as_mut()
+        .and_then(|project| project.move_diagnostic(forward))
+    else {
+        app.message = Some("No diagnostics; run :lint first.".to_string());
+        return app.render(out);
+    };
+    if active_absolute_path(app).as_deref() != Some(diagnostic.file.as_path()) {
+        app.message = Some(format!(
+            "Diagnostic {}/{} is in {}:{}:{}; open that file to jump.",
+            index + 1,
+            count,
+            diagnostic.file.display(),
+            diagnostic.line,
+            diagnostic.col
+        ));
+        return app.render(out);
     }
+    app.buffer.set_cursor(Cursor {
+        row: diagnostic.line.saturating_sub(1),
+        col: diagnostic.col.saturating_sub(1),
+    });
+    app.selection.clear();
+    app.reveal_cursor();
+    app.message = Some(format!(
+        "Diagnostic {}/{}: {}:{}:{} {}",
+        index + 1,
+        count,
+        diagnostic.file.display(),
+        diagnostic.line,
+        diagnostic.col,
+        diagnostic.message
+    ));
+    app.render(out)
+}
 
-    #[test]
-    fn configured_linter_completes_into_project_diagnostics() {
-        let config =
-            linters::parse("[linters]\nrs = \"printf '%s:2:3: warning: found\\n' {file}\"\n")
-                .unwrap();
-        let mut app = App::new(None).unwrap();
-        app.file.path = Some(PathBuf::from("/tmp/sample.rs"));
-        let mut out = Vec::new();
-        project_mode::switch_to_project(&mut app, &mut out).unwrap();
-
-        super::start_with_config(&mut app, &mut out, config).unwrap();
-        assert!(app.project.as_ref().unwrap().is_linter_running());
-        assert!(app.message.as_deref().unwrap_or("").contains("Running"));
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while app.project.as_ref().unwrap().is_linter_running() {
-            super::poll(&mut app, &mut out).unwrap();
-            assert!(Instant::now() < deadline, "linter integration timed out");
-            std::thread::sleep(Duration::from_millis(5));
-        }
-
-        let diagnostics = app.project.as_ref().unwrap().diagnostics();
-        assert_eq!(diagnostics.items.len(), 1);
-        assert_eq!(
-            (diagnostics.items[0].line, diagnostics.items[0].col),
-            (2, 3)
-        );
-        assert!(app
-            .message
-            .as_deref()
-            .unwrap_or("")
-            .contains("1 diagnostic"));
+fn active_absolute_path(app: &super::App) -> Option<std::path::PathBuf> {
+    let path = app.file.path.as_ref()?;
+    if path.is_absolute() {
+        Some(path.clone())
+    } else {
+        std::env::current_dir().ok().map(|cwd| cwd.join(path))
     }
 }
+
+#[cfg(test)]
+mod tests;

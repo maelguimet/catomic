@@ -57,6 +57,9 @@ pub(crate) fn is_preview(app: &super::App) -> bool {
 }
 
 pub(crate) fn display_buffer(app: &super::App) -> &dyn Buffer {
+    if let Some(buffer) = super::lint::display_buffer(app) {
+        return buffer;
+    }
     app.view
         .preview
         .as_ref()
@@ -65,7 +68,9 @@ pub(crate) fn display_buffer(app: &super::App) -> &dyn Buffer {
 }
 
 pub(crate) fn display_syntax(app: &super::App) -> SyntaxKind {
-    if is_preview(app) {
+    if super::lint::is_viewing(app) {
+        SyntaxKind::Plain
+    } else if is_preview(app) {
         SyntaxKind::MarkdownPreview
     } else {
         syntax::syntax_for_path(app.file.path.as_deref())

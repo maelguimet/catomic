@@ -7,6 +7,7 @@
 //! See TODO.md Phase 3 (search, goto, selection) and later.
 
 pub mod command;
+pub(crate) mod completion;
 pub mod cursor;
 pub(crate) mod goto_line;
 pub(crate) mod markdown_preview;

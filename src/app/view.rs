@@ -57,6 +57,9 @@ pub(crate) fn is_preview(app: &super::App) -> bool {
 }
 
 pub(crate) fn display_buffer(app: &super::App) -> &dyn Buffer {
+    if let Some(buffer) = super::project_files::display_buffer(app) {
+        return buffer;
+    }
     if let Some(buffer) = super::lint::display_buffer(app) {
         return buffer;
     }
@@ -68,7 +71,7 @@ pub(crate) fn display_buffer(app: &super::App) -> &dyn Buffer {
 }
 
 pub(crate) fn display_syntax(app: &super::App) -> SyntaxKind {
-    if super::lint::is_viewing(app) {
+    if super::lint::is_viewing(app) || super::project_files::is_viewing(app) {
         SyntaxKind::Plain
     } else if is_preview(app) {
         SyntaxKind::MarkdownPreview

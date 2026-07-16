@@ -144,6 +144,7 @@ fn apply_modified_reload(app: &mut super::App, path: &Path, reloaded: ReloadedMo
     super::command_prompt::cancel_running_goto(app);
     super::completion::cancel(app);
     super::lint::close_view(app);
+    super::project_files::close_view(app);
     super::view::cancel_preview(app);
     app.selection.clear();
     app.buffer = reloaded.buffer;
@@ -173,6 +174,7 @@ fn apply_deleted_reload(app: &mut super::App) {
     super::command_prompt::cancel_running_goto(app);
     super::completion::cancel(app);
     super::lint::close_view(app);
+    super::project_files::close_view(app);
     super::view::cancel_preview(app);
     app.selection.clear();
     app.buffer = Box::new(buffer::PieceTable::new());

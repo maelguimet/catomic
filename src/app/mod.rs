@@ -31,6 +31,7 @@ mod command_prompt;
 mod completion;
 mod open;
 mod paging;
+mod project_files;
 mod project_mode;
 mod reload;
 mod save;
@@ -93,6 +94,8 @@ pub struct App {
     pub(crate) completion: Option<completion::CompletionUiState>,
     /// Project-only read-only diagnostics document, absent until explicitly shown.
     pub(crate) lint_view: Option<lint::DiagnosticsView>,
+    /// Project-only read-only discovered-file picker, absent until explicitly shown.
+    pub(crate) project_files_view: Option<project_files::ProjectFilesView>,
     /// Per-buffer half-open selection state.
     pub(crate) selection: selection::SelectionUiState,
     /// Always-available process-local clipboard shared across open buffers.
@@ -180,6 +183,7 @@ impl App {
             command_prompt: command_prompt::CommandPromptState::default(),
             completion,
             lint_view: None,
+            project_files_view: None,
             selection: selection::SelectionUiState::default(),
             clipboard: String::new(),
             view: view::ViewOptions::default(),
@@ -233,6 +237,7 @@ impl App {
             search::poll_search(self, &mut stdout)?;
             command_prompt::poll_goto(self, &mut stdout)?;
             lint::poll(self, &mut stdout)?;
+            project_files::poll(self, &mut stdout)?;
 
             // Blocking read for Phase 0. Later we may need non-blocking + resize.
             if event::poll(std::time::Duration::from_millis(100))? {
@@ -305,27 +310,29 @@ impl App {
         // Screen is single source for dims.
         // Avoid cloning self.message: pass Some(m.as_str()) directly.
         // Status is built locally only for the no-message path and passed as &str.
-        let highlight = (!view::is_preview(self) && !lint::is_viewing(self))
-            .then(|| {
-                self.selection
-                    .active()
-                    .map(|selection| {
-                        let (start, end) = selection.ordered();
-                        term::render::TextHighlight { start, end }
-                    })
-                    .or_else(|| {
-                        self.search
-                            .active_match()
-                            .map(|found| term::render::TextHighlight {
-                                start: found.start,
-                                end: crate::buffer::Cursor {
-                                    row: found.start.row,
-                                    col: found.end_col,
-                                },
-                            })
-                    })
-            })
-            .flatten();
+        let highlight = (!view::is_preview(self)
+            && !lint::is_viewing(self)
+            && !project_files::is_viewing(self))
+        .then(|| {
+            self.selection
+                .active()
+                .map(|selection| {
+                    let (start, end) = selection.ordered();
+                    term::render::TextHighlight { start, end }
+                })
+                .or_else(|| {
+                    self.search
+                        .active_match()
+                        .map(|found| term::render::TextHighlight {
+                            start: found.start,
+                            end: crate::buffer::Cursor {
+                                row: found.start.row,
+                                col: found.end_col,
+                            },
+                        })
+                })
+        })
+        .flatten();
         let render_options = term::render::RenderOptions {
             highlight,
             syntax: view::display_syntax(self),

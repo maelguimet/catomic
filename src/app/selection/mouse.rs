@@ -22,7 +22,7 @@ pub(crate) fn handle_mouse(
     if super::super::completion::cancel(app) {
         app.message = None;
     }
-    if super::super::lint::is_viewing(app) {
+    if super::super::lint::is_viewing(app) || super::super::project_files::is_viewing(app) {
         return Ok(());
     }
     if super::super::view::is_preview(app)

@@ -129,6 +129,7 @@ fn execute_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> 
         (Some("diagnostics" | "dlist"), None, None) => super::lint::show_diagnostics(app, out),
         (Some("dnext"), None, None) => super::lint::move_diagnostic(app, out, true),
         (Some("dprev"), None, None) => super::lint::move_diagnostic(app, out, false),
+        (Some("files"), None, None) => super::project_files::start(app, out),
         _ => {
             app.message = Some(format!("Unknown command: {command}"));
             app.render(out)

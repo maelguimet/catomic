@@ -14,7 +14,8 @@ use crate::config::big_files::BigFileConfig;
 use crate::file::watcher::FileWatcher;
 
 use super::{
-    command_prompt, completion, lint, reload, save, search, selection, view, App, FileState,
+    command_prompt, completion, lint, project_files, reload, save, search, selection, view, App,
+    FileState,
 };
 
 pub(crate) struct BufferSlot {
@@ -118,6 +119,7 @@ impl App {
             self.message = None;
         }
         lint::close_view(self);
+        project_files::close_view(self);
         if self.pending_quit_confirm {
             self.message = None;
             self.pending_quit_confirm = false;

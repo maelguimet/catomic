@@ -3,13 +3,13 @@
 //! Purpose: drive the compiled binary through a pseudo-terminal so key handling,
 //!   raw-mode setup, render, save, undo, search, external reload, and clean quit are
 //!   exercised together.
-//! Owns: narrow default PTY smoke coverage for already-existing Phase 0/1/2/3
+//! Owns: narrow default PTY smoke coverage for already-existing Phase 0/1/2/3/4
 //!   behavior.
 //! Must not: grow into a broad UI harness, depend on Project/LLM/config, or run
 //!   large-file/perf scenarios.
 //! Invariants: tests use temporary files, time out and kill the child on hangs,
 //!   and leave Plain startup behavior unchanged.
-//! Phase: 3 acceptance, including live Ctrl+F highlighting.
+//! Phase: 4 acceptance, including live Markdown view toggles.
 
 use std::error::Error;
 use std::fs;
@@ -29,11 +29,21 @@ struct TempPath {
 
 impl TempPath {
     fn new(label: &str) -> Self {
+        Self::with_extension(label, "txt")
+    }
+
+    fn with_extension(label: &str, extension: &str) -> Self {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system clock before epoch")
             .as_nanos();
-        let name = format!("catomic_pty_{}_{}_{}.txt", label, std::process::id(), nanos);
+        let name = format!(
+            "catomic_pty_{}_{}_{}.{}",
+            label,
+            std::process::id(),
+            nanos,
+            extension
+        );
         Self {
             path: std::env::temp_dir().join(name),
         }
@@ -260,5 +270,46 @@ fn pty_multiple_cli_files_switch_and_save_active_buffer() -> TestResult {
     assert_eq!(fs::read_to_string(&first.path)?, "first buffer content");
     assert_eq!(fs::read_to_string(&second.path)?, "Xsecond buffer content");
 
+    Ok(())
+}
+
+#[test]
+fn pty_markdown_preview_and_view_toggles_leave_source_unchanged() -> TestResult {
+    let temp = TempPath::with_extension("markdown_preview", "md");
+    let source = "# PTY Heading\n\n- item with `code`\n";
+    fs::write(&temp.path, source)?;
+    let mut editor = PtyEditor::spawn(&temp.path)?;
+
+    editor.wait_for_initial_render()?;
+    editor.wait_for_output("Markdown source", "# PTY Heading")?;
+    editor.send_keys(b"\x1b[17~")?; // F6
+    editor.wait_for_output("preview enabled", "Markdown preview on")?;
+    editor.wait_for_output("rendered heading marker", "▌")?;
+
+    editor.send_keys(b"x")?;
+    editor.wait_for_output("preview read-only guard", "preview is read-only")?;
+    editor.send_keys(b"\x1b[18~")?; // F7
+    editor.wait_for_output("line numbers enabled", "Line numbers on")?;
+    editor.send_keys(b"\x1b[19~")?; // F8
+    editor.wait_for_output("whitespace enabled", "Whitespace indicators on")?;
+    editor.send_keys(b"\x1b")?;
+    editor.wait_for_output("preview disabled", "Markdown preview off")?;
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(&temp.path)?, source);
+    let output = editor.output_string();
+    assert!(
+        output.contains("\x1b[?1000l"),
+        "mouse capture must teardown"
+    );
+    assert!(
+        output.contains("\x1b[?2004l"),
+        "bracketed paste must teardown"
+    );
+    assert!(
+        output.contains("\x1b[?1049l"),
+        "alternate screen must teardown"
+    );
     Ok(())
 }

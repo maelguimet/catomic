@@ -525,7 +525,7 @@ Document the col model (char index / scalar within line for this subphase; inter
   - Key to toggle rendered view (use pulldown-cmark + renderer)
   - Later: split view if width > 120 cols or user requests
 - Line numbers (toggleable, off by default or on for code)
-- Whitespace indicators (optional)
+- Whitespace indicators (optional); acceptance: [`docs/phase-4-acceptance.md`](docs/phase-4-acceptance.md)
 
 ### Phase 5 — Tooling (Linters + Autocomplete)
 

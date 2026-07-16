@@ -405,6 +405,24 @@ complete forward scan while retaining an exact-position correctness assertion.
 - Reference acceptance budget: under 100 ms and under 64 MiB on this machine.
 
 The budget is recorded acceptance evidence, not a default-test timing assertion.
+
+### Phase 4 Markdown/render acceptance (2026-07-16, post 4-c)
+
+The ignored release fixture builds a preview from a 10 MiB line-heavy Markdown
+PieceTable once, then renders the final 23 rows 1,000 times with Markdown syntax,
+line numbers, and whitespace indicators enabled.
+
+```text
+PERF sample: label=preview markdown 10mib bytes=10485760 elapsed_ms=92
+PERF sample: label=render 1000 styled viewports 10mib bytes=10485760 elapsed_ms=15-18
+Maximum resident set size: 125424 KiB
+```
+
+Reference acceptance budgets on this machine are under 150 ms for the explicit
+preview build, under 100 ms for 1,000 styled viewport renders, and under 128 MiB
+peak RSS for the complete release test process. They are recorded evidence, not
+default-suite timing assertions.
+
 Future measurements should use the same fixture name and stable `PERF sample`
 label before comparing results.
 

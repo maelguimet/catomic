@@ -8,5 +8,6 @@
 //! and in `#[cfg(test)]` modules next to the code.
 
 pub mod golden;
+pub mod golden_phase4;
 pub mod perf;
 pub mod pty;

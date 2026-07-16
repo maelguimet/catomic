@@ -27,3 +27,7 @@ mod manual_line;
 #[cfg(test)]
 #[path = "perf_search.rs"]
 mod search;
+
+#[cfg(test)]
+#[path = "perf_render.rs"]
+mod render;

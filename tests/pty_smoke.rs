@@ -3,12 +3,12 @@
 //! Purpose: drive the compiled binary through a pseudo-terminal so key handling,
 //!   raw-mode setup, render, save, undo, search, Project tooling, guarded external
 //!   commands/hooks, explicit LLM confirmation, and clean quit are exercised together.
-//! Owns: narrow default PTY smoke coverage for accepted Phase 0 through 7 behavior.
+//! Owns: narrow default PTY smoke coverage for accepted Phase 0 through 8 behavior.
 //! Must not: grow into a broad UI harness, contact an LLM/network, use ambient config,
 //!   or run large-file/perf scenarios.
 //! Invariants: tests use temporary files, time out and kill the child on hangs,
 //!   and leave Plain startup behavior unchanged.
-//! Phase: 7 acceptance, including external preview and no-network hook confirmation.
+//! Phase: 8 acceptance, including catnap recovery and prior guarded workflows.
 
 use std::error::Error;
 use std::fs;
@@ -472,5 +472,39 @@ fn pty_before_llm_hook_finishes_before_network_confirmation() -> TestResult {
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(active)?, source);
+    Ok(())
+}
+
+#[test]
+fn pty_catnap_recovery_previews_then_saves_explicitly() -> TestResult {
+    let project = TempProject::new("catnap_recovery");
+    project.write(
+        "catomic/config.toml",
+        "[recovery]\nenabled = true\ninterval_secs = 30\nmax_bytes = 1024\n",
+    );
+    let active = project.write("note.txt", "disk");
+    let sidecar = active.with_file_name("note.txt.catnap");
+    fs::write(&sidecar, "recovered")?;
+    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
+
+    editor.wait_for_output(
+        "recovery offer",
+        "Catnap recovery found. Run :recover to preview it.",
+    )?;
+    editor.send_keys(b"\x1b[80;6urecover\r")?;
+    editor.wait_for_output(
+        "recovery preview",
+        "Catnap preview (read-only). Enter recovers; Esc cancels.",
+    )?;
+    assert_eq!(fs::read_to_string(&active)?, "disk");
+
+    editor.send_keys(b"\r")?;
+    editor.wait_for_output("recovery apply", "Catnap recovered; Ctrl+Z undoes it")?;
+    assert_eq!(fs::read_to_string(&active)?, "disk");
+    editor.send_keys(b"\x13\x11")?;
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(active)?, "recovered");
+    assert!(!sidecar.exists(), "successful save must remove the catnap");
     Ok(())
 }

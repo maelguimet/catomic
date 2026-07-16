@@ -19,7 +19,8 @@ use crate::file::watcher::FileWatcher;
 
 use super::{
     command_prompt, completion, external_command, hooks, lint, llm_answer, llm_preview,
-    llm_request, project_files, reload, repo_llm, save, search, selection, view, App, FileState,
+    llm_request, project_files, recovery, reload, repo_llm, save, search, selection, view, App,
+    FileState,
 };
 
 pub(crate) struct BufferSlot {
@@ -30,6 +31,7 @@ pub(crate) struct BufferSlot {
     pending_save_conflict: Option<save::PendingSaveConflict>,
     pending_reload: Option<reload::PendingReload>,
     search: search::SearchUiState,
+    recovery: recovery::RecoveryState,
     selection: selection::SelectionUiState,
     view: view::ViewOptions,
     scroll_top: usize,
@@ -52,6 +54,7 @@ impl BufferSlot {
             pending_save_conflict: app.pending_save_conflict,
             pending_reload: app.pending_reload,
             search: app.search,
+            recovery: app.recovery,
             selection: app.selection,
             view: app.view,
             scroll_top: app.screen.scroll_top,
@@ -70,6 +73,7 @@ impl BufferSlot {
         );
         mem::swap(&mut self.pending_reload, &mut app.pending_reload);
         mem::swap(&mut self.search, &mut app.search);
+        mem::swap(&mut self.recovery, &mut app.recovery);
         mem::swap(&mut self.selection, &mut app.selection);
         mem::swap(&mut self.view, &mut app.view);
         mem::swap(&mut self.scroll_top, &mut app.screen.scroll_top);
@@ -163,6 +167,9 @@ impl App {
         repo_llm::cancel_all(self);
         external_command::cancel_all(self);
         hooks::cancel_all(self);
+        if recovery::close(self) {
+            self.message = None;
+        }
         if self.pending_quit_confirm {
             self.message = None;
             self.pending_quit_confirm = false;

@@ -132,6 +132,7 @@ fn execute_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> 
         ("dnext", "") => super::lint::move_diagnostic(app, out, true),
         ("dprev", "") => super::lint::move_diagnostic(app, out, false),
         ("files", "") => super::project_files::start(app, out),
+        ("recover", "") => super::recovery::start_preview(app, out),
         ("run", name) if !name.is_empty() => super::external_command::start(app, out, name),
         ("meow", instruction) => super::hooks::before_current_llm(
             app,

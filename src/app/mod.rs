@@ -40,6 +40,7 @@ mod open;
 mod paging;
 mod project_files;
 mod project_mode;
+mod recovery;
 mod reload;
 mod repo_llm;
 mod save;
@@ -130,6 +131,8 @@ pub struct App {
     pub(crate) external_command: external_command::ExternalCommandState,
     /// Lifecycle command queue; contains no process and is empty without configured events.
     pub(crate) hooks: hooks::HookState,
+    /// Opt-in per-buffer catnap timer/task/preview state; idle and write-free by default.
+    pub(crate) recovery: recovery::RecoveryState,
     /// Per-buffer half-open selection state.
     pub(crate) selection: selection::SelectionUiState,
     /// Always-available process-local clipboard shared across open buffers.
@@ -243,6 +246,7 @@ impl App {
             repo_llm_state: None,
             external_command: external_command::ExternalCommandState::default(),
             hooks: hooks::HookState::default(),
+            recovery: recovery::RecoveryState::default(),
             selection: selection::SelectionUiState::default(),
             clipboard: String::new(),
             view: view::ViewOptions::default(),
@@ -252,6 +256,7 @@ impl App {
             screen: term::screen::Screen::new(80, 24),
         };
         watch::refresh_file_watcher(&mut app);
+        recovery::initialize(&mut app);
         Ok(app)
     }
 
@@ -303,6 +308,7 @@ impl App {
             repo_llm::poll(self, &mut stdout)?;
             external_command::poll(self, &mut stdout)?;
             hooks::pump(self, &mut stdout)?;
+            recovery::poll(self, &mut stdout)?;
 
             // Blocking read for Phase 0. Later we may need non-blocking + resize.
             if event::poll(std::time::Duration::from_millis(100))? {
@@ -378,6 +384,7 @@ impl App {
         // Avoid cloning self.message: pass Some(m.as_str()) directly.
         // Status is built locally only for the no-message path and passed as &str.
         let highlight = (!external_command::is_viewing(self)
+            && !recovery::is_viewing(self)
             && !view::is_preview(self)
             && !lint::is_viewing(self)
             && !project_files::is_viewing(self)

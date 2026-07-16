@@ -98,6 +98,11 @@ auto_reload = true
 [cat]
 status_messages = true
 
+[recovery]
+enabled = false
+interval_secs = 30
+max_bytes = 1048576
+
 [languages.rs]
 tab_size = 4
 linter = "cargo check --message-format short {file}"
@@ -129,6 +134,15 @@ the setting changes presentation only.
 If Catomic panics, its panic hook first restores the terminal and prints a short
 cat-themed notice that promises only the safety of the last explicit save. The
 ordinary Rust panic details follow for debugging.
+
+Crash recovery is opt-in. With `[recovery] enabled = true`, dirty named files
+up to `max_bytes` get an atomic, owner-only sibling such as
+`notes.txt.catnap` after the configured interval. Untitled, oversized, and
+paged files are skipped; normal startup and typing never create a sidecar when
+recovery is disabled. If a newer sidecar exists on the next open, Catomic
+offers `:recover`. Recovery opens read-only, Enter applies it as one undoable
+buffer edit, and Escape leaves the source untouched. An ordinary successful
+save removes the sidecar. Catomic never replaces the source automatically.
 
 ## Multiple Buffers
 
@@ -405,10 +419,10 @@ Later:
 
 Mandatory cat nonsense:
 
-- Optional cat status messages
-- Cat-themed panic messages
-- Maybe `:meow`
-- Maybe autosave creates `.catnap` recovery files
+- Toggleable cat status badge
+- Helpful cat-themed panic notice after terminal restoration
+- Useful, explicitly confirmed `:meow` LLM command
+- Opt-in, bounded `.catnap` autosave and preview-first recovery
 - Absolutely no productivity-hostile gimmicks enabled by default
 
 ---

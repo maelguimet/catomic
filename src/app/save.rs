@@ -115,6 +115,7 @@ pub(crate) fn handle_save(app: &mut super::App, out: &mut dyn Write) -> io::Resu
 /// and force-save). Extracted here; identical side effects on FileState, snapshot,
 /// pendings, message, and dirty as before.
 pub(crate) fn do_atomic_save(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    super::recovery::finish_before_save(app);
     let target = app
         .file
         .path
@@ -157,7 +158,9 @@ pub(crate) fn do_atomic_save(app: &mut super::App, out: &mut dyn Write) -> io::R
             app.pending_quit_confirm = false;
             app.pending_save_conflict = None;
             app.pending_reload = None;
-            app.message = None;
+            app.message = super::recovery::after_save(app)
+                .err()
+                .map(|error| format!("Saved, but catnap cleanup failed: {error}"));
             super::hooks::trigger_save(app);
         }
         Err(e) => {

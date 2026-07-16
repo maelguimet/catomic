@@ -8,9 +8,17 @@ use std::io::{self, Write};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use crate::editor::goto_line::{self, GotoLineResult, GotoLineTask};
+
 #[derive(Default)]
 pub(crate) struct CommandPromptState {
     active: Option<ActivePrompt>,
+    running: Option<RunningGoto>,
+}
+
+struct RunningGoto {
+    requested_line: usize,
+    task: GotoLineTask,
 }
 
 struct ActivePrompt {
@@ -33,6 +41,7 @@ pub(crate) fn open_command_prompt(app: &mut super::App, out: &mut dyn Write) -> 
 }
 
 fn open_prompt(app: &mut super::App, out: &mut dyn Write, kind: PromptKind) -> io::Result<()> {
+    cancel_running(&mut app.command_prompt);
     app.command_prompt.active = Some(ActivePrompt {
         kind,
         text: String::new(),
@@ -47,6 +56,12 @@ pub(crate) fn handle_active_key(
     key: KeyEvent,
 ) -> io::Result<bool> {
     if app.command_prompt.active.is_none() {
+        if app.command_prompt.running.is_some() && key.code == KeyCode::Esc {
+            cancel_running(&mut app.command_prompt);
+            app.message = Some("Goto cancelled.".to_string());
+            app.render(out)?;
+            return Ok(true);
+        }
         return Ok(false);
     }
     if matches!(key.code, KeyCode::Char('q')) && key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -119,8 +134,13 @@ fn execute_goto(app: &mut super::App, out: &mut dyn Write, input: &str) -> io::R
         app.message = Some("Line numbers start at 1.".to_string());
         return app.render(out);
     }
-    if app.buffer.page_info().is_some() {
-        app.message = Some("Goto line for paged files is not implemented yet.".to_string());
+    if let Some(source) = app.buffer.descriptor_source()? {
+        let task = goto_line::start_descriptor_goto(source, line);
+        app.command_prompt.running = Some(RunningGoto {
+            requested_line: line,
+            task,
+        });
+        app.message = Some(format!("Locating line {line}... Esc cancels."));
         return app.render(out);
     }
     let last_row = app.buffer.line_count().saturating_sub(1);
@@ -138,88 +158,50 @@ fn execute_goto(app: &mut super::App, out: &mut dyn Write, input: &str) -> io::R
     app.render(out)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crossterm::event::{KeyEventKind, KeyEventState};
-
-    fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
-        KeyEvent {
-            code,
-            modifiers,
-            kind: KeyEventKind::Press,
-            state: KeyEventState::NONE,
+pub(crate) fn poll_goto(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    let Some(result) = app
+        .command_prompt
+        .running
+        .as_ref()
+        .and_then(|running| running.task.try_result())
+    else {
+        return Ok(());
+    };
+    let running = app
+        .command_prompt
+        .running
+        .take()
+        .expect("running goto exists");
+    match result {
+        GotoLineResult::Found(found) => {
+            app.buffer.set_descriptor_position(found.position)?;
+            app.reveal_cursor();
+            app.message = Some(if found.line == running.requested_line {
+                format!("Moved to line {}.", found.line)
+            } else {
+                format!(
+                    "Line {} is past end of file; moved to line {}.",
+                    running.requested_line, found.line
+                )
+            });
+        }
+        GotoLineResult::Error(error) => {
+            app.message = Some(format!("Goto error: {error}"));
         }
     }
+    app.render(out)
+}
 
-    fn type_text(app: &mut super::super::App, out: &mut Vec<u8>, text: &str) {
-        for ch in text.chars() {
-            app.handle_key_with(out, key(KeyCode::Char(ch), KeyModifiers::NONE))
-                .unwrap();
-        }
-    }
-
-    #[test]
-    fn ctrl_g_moves_to_a_one_based_line_and_clamps_past_end() {
-        let mut app = super::super::App::new(None).unwrap();
-        app.buffer = Box::new(crate::buffer::PieceTable::from_text("zero\none\ntwo"));
-        let mut out = Vec::new();
-
-        app.handle_key_with(&mut out, key(KeyCode::Char('g'), KeyModifiers::CONTROL))
-            .unwrap();
-        type_text(&mut app, &mut out, "2");
-        app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
-            .unwrap();
-        assert_eq!(
-            app.buffer.cursor(),
-            crate::buffer::Cursor { row: 1, col: 0 }
-        );
-
-        open_goto_prompt(&mut app, &mut out).unwrap();
-        type_text(&mut app, &mut out, "99");
-        app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
-            .unwrap();
-        assert_eq!(
-            app.buffer.cursor(),
-            crate::buffer::Cursor { row: 2, col: 0 }
-        );
-    }
-
-    #[test]
-    fn command_prompt_dispatches_goto_and_preserves_dirty_quit_guard() {
-        let mut app = super::super::App::new(None).unwrap();
-        app.buffer = Box::new(crate::buffer::PieceTable::from_text("zero\none"));
-        let mut out = Vec::new();
-
-        app.handle_key_with(
-            &mut out,
-            key(
-                KeyCode::Char('p'),
-                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
-            ),
-        )
-        .unwrap();
-        type_text(&mut app, &mut out, "goto 2");
-        app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
-            .unwrap();
-        assert_eq!(
-            app.buffer.cursor(),
-            crate::buffer::Cursor { row: 1, col: 0 }
-        );
-
-        app.handle_key_with(&mut out, key(KeyCode::Char('x'), KeyModifiers::NONE))
-            .unwrap();
-        open_command_prompt(&mut app, &mut out).unwrap();
-        type_text(&mut app, &mut out, "quit");
-        app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
-            .unwrap();
-        assert!(!app.should_quit);
-        assert!(app.pending_quit_confirm);
-
-        open_command_prompt(&mut app, &mut out).unwrap();
-        type_text(&mut app, &mut out, "q");
-        app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
-            .unwrap();
-        assert!(app.should_quit);
+fn cancel_running(state: &mut CommandPromptState) {
+    if let Some(running) = state.running.take() {
+        running.task.cancel();
     }
 }
+
+pub(super) fn cancel_running_goto(app: &mut super::App) {
+    cancel_running(&mut app.command_prompt);
+    app.command_prompt.active = None;
+}
+
+#[cfg(test)]
+mod tests;

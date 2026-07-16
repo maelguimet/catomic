@@ -12,7 +12,7 @@ use crate::buffer::Buffer;
 use crate::config::big_files::BigFileConfig;
 use crate::file::watcher::FileWatcher;
 
-use super::{reload, save, search, App, FileState};
+use super::{command_prompt, reload, save, search, App, FileState};
 
 pub(crate) struct BufferSlot {
     buffer: Box<dyn Buffer>,
@@ -104,6 +104,7 @@ impl App {
         }
 
         search::cancel_running_search(self);
+        command_prompt::cancel_running_goto(self);
         if self.pending_quit_confirm {
             self.message = None;
             self.pending_quit_confirm = false;

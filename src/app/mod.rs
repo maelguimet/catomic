@@ -205,6 +205,7 @@ impl App {
             }
 
             search::poll_search(self, &mut stdout)?;
+            command_prompt::poll_goto(self, &mut stdout)?;
 
             // Blocking read for Phase 0. Later we may need non-blocking + resize.
             if event::poll(std::time::Duration::from_millis(100))? {

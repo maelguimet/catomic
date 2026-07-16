@@ -141,6 +141,7 @@ pub(crate) fn perform_observed_reload(app: &mut super::App, obs: &ExternalFileOb
 fn apply_modified_reload(app: &mut super::App, path: &Path, reloaded: ReloadedModifiedBuffer) {
     let reload_message = reload_modified_success_message(reloaded.size_bytes, reloaded.size_tier);
     super::search::cancel_running_search(app);
+    super::command_prompt::cancel_running_goto(app);
     app.buffer = reloaded.buffer;
     app.file.saved_history_position = app.buffer.edit_history_position();
     app.file.dirty = false;
@@ -165,6 +166,7 @@ fn apply_modified_reload(app: &mut super::App, path: &Path, reloaded: ReloadedMo
 
 fn apply_deleted_reload(app: &mut super::App) {
     super::search::cancel_running_search(app);
+    super::command_prompt::cancel_running_goto(app);
     app.buffer = Box::new(buffer::PieceTable::new());
     app.file.saved_history_position = app.buffer.edit_history_position();
     app.file.dirty = false;

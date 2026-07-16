@@ -17,14 +17,13 @@ recorded in [`../phase-2-acceptance.md`](../phase-2-acceptance.md).
 - **3-b paged search navigation**: Enter/Down and Up now select relative to the
   current descriptor match and wrap across logical file pages. The bounded
   scanner still honors edited-page overlays and cross-boundary matches.
-- **3-c command foundation**: Ctrl+G provides a 1-based goto prompt for ordinary
-  buffers. Ctrl+Shift+P accepts `goto N`, `save`/`write`, and `quit`/`q`, reusing
-  the existing conflict-safe save and dirty-buffer quit paths.
+- **3-c command foundation**: Ctrl+G provides a cancellable 1-based goto prompt
+  across ordinary and descriptor-backed paged buffers, including edited-page
+  overlays. Ctrl+Shift+P accepts `goto N`, `save`/`write`, and `quit`/`q`,
+  reusing the existing conflict-safe save and dirty-buffer quit paths.
 
 ## Remaining Phase 3 Work
 
-- Global logical-line goto for descriptor-backed paged files; ordinary-buffer
-  goto and the basic command surface are complete.
 - Selection expansion, mouse click/drag, and selection cut/copy/paste.
 - Phase 3 acceptance definition, medium-file search measurement, and manual UX
   checklist evidence.

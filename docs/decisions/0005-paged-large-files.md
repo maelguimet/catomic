@@ -16,6 +16,8 @@ read-only paged mode.
   `$XDG_CONFIG_HOME/catomic/config.toml` or
   `~/.config/catomic/config.toml`.
 - Page navigation reads only the active page plus bounded scan state.
+- `Ctrl+PageDown` and `Ctrl+PageUp` move to the next and previous file page;
+  the status line reports the active page number and byte range.
 - Whole-file Ctrl+F streams across all pages, preserves matches across read
   boundaries, can be cancelled, and jumps to the page containing a match.
 - Resource or content errors are reported; byte size alone is not refusal.

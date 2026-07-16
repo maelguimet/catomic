@@ -57,7 +57,7 @@ pub(crate) fn save_conflict_message(status: &ExternalFileStatus) -> String {
 pub(crate) fn handle_save(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     if app.buffer.is_read_only() {
         app.pending_save_conflict = None;
-        app.message = Some("Large file is read-only in limited mode; save disabled.".to_string());
+        app.message = Some("Large file is read-only in paged mode; save disabled.".to_string());
         return app.render(out);
     }
 

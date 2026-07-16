@@ -1,18 +1,19 @@
 //! Minimal persistent bottom status line for the editor (Phase 2B).
 //!
 //! Purpose: when no transient app.message is present, compute a single-line
-//!   status string (mode, path, dirty, size, tier, large-file marker) to show
+//!   status string (mode, path, dirty, size, tier, page) to show
 //!   on the reserved bottom row. Messages still override.
 //! Owns: format_status_line (pure, takes the minimal fields it needs).
 //! Must not: mutate state; perform IO; know render details beyond the string;
 //!   construct watchers or Large-file policy changes; touch buffer content.
 //! Invariants: plain/project labels stable; [untitled] for no path; size uses
-//!   existing format_file_size; Large/Huge get explicit "large-file mode" marker
-//!   in addition to tier; never called for content decisions.
-//! Phase: 2-aj (first visible large-file status + disk <size> on-disk metadata labeling); post 2-ak hygiene.
+//!   existing format_file_size; oversized tiers get a marker; active page byte
+//!   ranges come only from Buffer metadata; never called for content decisions.
+//! Phase: 2-bn paged-file navigation/status.
 
 use std::path::Path;
 
+use crate::buffer::PageInfo;
 use crate::file::size::{file_size_tier_label, format_file_size, FileSizeTier};
 
 /// Produce the bottom status string from current App state pieces.
@@ -29,6 +30,7 @@ pub(crate) fn format_status_line(
     dirty: bool,
     size_bytes: Option<u64>,
     size_tier: Option<FileSizeTier>,
+    page: Option<PageInfo>,
 ) -> String {
     let mode = if is_plain { "plain" } else { "project" };
     let name = match path
@@ -50,9 +52,18 @@ pub(crate) fn format_status_line(
     if let Some(t) = size_tier {
         out.push(' ');
         out.push_str(file_size_tier_label(t));
-        if t == FileSizeTier::Large || t == FileSizeTier::Huge {
+        if matches!(
+            t,
+            FileSizeTier::Large | FileSizeTier::Huge | FileSizeTier::Extreme
+        ) {
             out.push_str(" large-file mode");
         }
+    }
+    if let Some(page) = page {
+        out.push_str(&format!(
+            " page {} bytes {}-{} of {}",
+            page.page_number, page.start_byte, page.end_byte, page.total_bytes
+        ));
     }
     out
 }
@@ -68,7 +79,7 @@ mod tests {
 
     #[test]
     fn untitled_clean_status_contains_plain_untitled_saved() {
-        let s = format_status_line(true, None, false, None, None);
+        let s = format_status_line(true, None, false, None, None, None);
         assert!(s.contains("plain"), "status: {}", s);
         assert!(s.contains("[untitled]"), "status: {}", s);
         assert!(s.contains("saved"), "status: {}", s);
@@ -85,6 +96,7 @@ mod tests {
             true,
             Some(123),
             Some(FileSizeTier::Small),
+            None,
         );
         assert!(s.contains("modified"), "status: {}", s);
         assert!(s.contains("notes.txt"), "status: {}", s);
@@ -103,6 +115,7 @@ mod tests {
             false,
             Some(4096),
             Some(FileSizeTier::Small),
+            None,
         );
         assert!(
             s.contains("4.0 KiB") || s.contains("4 KiB") || s.contains("4096"),
@@ -125,6 +138,7 @@ mod tests {
             false,
             Some(10 * 1024 * 1024 + 1),
             Some(FileSizeTier::Large),
+            None,
         );
         assert!(
             s.contains("large-file mode"),
@@ -147,6 +161,7 @@ mod tests {
             true,
             Some(200 * 1024 * 1024),
             Some(FileSizeTier::Huge),
+            None,
         );
         assert!(
             s.contains("large-file mode"),
@@ -159,5 +174,29 @@ mod tests {
             "huge size must be labeled disk metadata: {}",
             s
         );
+    }
+
+    #[test]
+    fn paged_status_includes_page_number_and_byte_range() {
+        let page = PageInfo {
+            page_number: 3,
+            start_byte: 400,
+            end_byte: 600,
+            total_bytes: 1_000,
+            has_previous: true,
+            has_next: true,
+        };
+
+        let status = format_status_line(
+            true,
+            p("huge.log").as_deref(),
+            false,
+            Some(1_000),
+            Some(FileSizeTier::Huge),
+            Some(page),
+        );
+
+        assert!(status.contains("page 3"), "status: {status}");
+        assert!(status.contains("bytes 400-600 of 1000"), "status: {status}");
     }
 }

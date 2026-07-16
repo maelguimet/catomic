@@ -16,7 +16,7 @@ use std::io::{self, Write};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::file_state::refresh_dirty;
-use super::{reload, save};
+use super::{paging, reload, save};
 
 /// Common post-content-mutation cleanup used by insert, delete, newline, undo, redo paths.
 /// Centralizes the exact sequence that must run after any buffer-mutating key:
@@ -27,7 +27,7 @@ use super::{reload, save};
 fn finish_content_edit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     refresh_dirty(&mut app.file, &*app.buffer);
     if app.buffer.is_read_only() {
-        app.message = Some("Large file is read-only in limited mode.".to_string());
+        app.message = Some("Large file is read-only in paged mode.".to_string());
     } else {
         app.pending_quit_confirm = false;
         app.pending_save_conflict = None;
@@ -97,6 +97,22 @@ pub(crate) fn handle_key_with(
             ..
         } => {
             reload::handle_reload_key(app, out)?;
+        }
+
+        KeyEvent {
+            code: KeyCode::PageDown,
+            modifiers,
+            ..
+        } if modifiers.contains(KeyModifiers::CONTROL) => {
+            paging::handle_page_key(app, out, paging::PageDirection::Next)?;
+        }
+
+        KeyEvent {
+            code: KeyCode::PageUp,
+            modifiers,
+            ..
+        } if modifiers.contains(KeyModifiers::CONTROL) => {
+            paging::handle_page_key(app, out, paging::PageDirection::Previous)?;
         }
 
         // Enter produces KeyCode::Enter (not Char('\n')). Handle explicitly.

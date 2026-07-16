@@ -26,6 +26,7 @@ pub use file_state::FileState;
 use file_state::external_file_status;
 
 mod open;
+mod paging;
 mod reload;
 mod save;
 mod status;
@@ -254,6 +255,7 @@ impl App {
                 self.file.dirty,
                 self.file.size_bytes,
                 self.file.size_tier,
+                self.buffer.page_info(),
             );
             term::render::render_buffer(
                 stdout,

@@ -1,15 +1,14 @@
 //! Real PTY integration smoke tests for the catomic binary.
 //!
 //! Purpose: drive the compiled binary through a pseudo-terminal so key handling,
-//!   raw-mode setup, render, save, undo, search, Project tooling, and clean quit are
-//!   exercised together.
-//! Owns: narrow default PTY smoke coverage for already-existing Phase 0/1/2/3/4/5
-//!   behavior.
-//! Must not: grow into a broad UI harness, depend on LLM/network/config, or run
-//!   large-file/perf scenarios.
+//!   raw-mode setup, render, save, undo, search, Project tooling, explicit LLM
+//!   confirmation, and clean quit are exercised together.
+//! Owns: narrow default PTY smoke coverage for accepted Phase 0 through 6 behavior.
+//! Must not: grow into a broad UI harness, contact an LLM/network, use ambient config,
+//!   or run large-file/perf scenarios.
 //! Invariants: tests use temporary files, time out and kill the child on hangs,
 //!   and leave Plain startup behavior unchanged.
-//! Phase: 5 acceptance, including explicit Project discovery/path completion.
+//! Phase: 6 acceptance, including no-network LLM confirmation.
 
 use std::error::Error;
 use std::fs;
@@ -103,6 +102,14 @@ impl PtyEditor {
     }
 
     fn spawn_paths(paths: &[&PathBuf]) -> TestResult<Self> {
+        Self::spawn_with(paths, None)
+    }
+
+    fn spawn_with_xdg(path: &PathBuf, xdg_config_home: &PathBuf) -> TestResult<Self> {
+        Self::spawn_with(&[path], Some(xdg_config_home))
+    }
+
+    fn spawn_with(paths: &[&PathBuf], xdg_config_home: Option<&PathBuf>) -> TestResult<Self> {
         let pty_system = native_pty_system();
         let pair = pty_system.openpty(PtySize {
             rows: 24,
@@ -114,6 +121,9 @@ impl PtyEditor {
         let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
         for path in paths {
             cmd.arg(path);
+        }
+        if let Some(path) = xdg_config_home {
+            cmd.env("XDG_CONFIG_HOME", path);
         }
         let child = pair.slave.spawn_command(cmd)?;
         drop(pair.slave);
@@ -371,5 +381,28 @@ fn pty_project_discovery_and_path_completion_save_exact_text() -> TestResult {
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(active)?, "src/main.rs");
+    Ok(())
+}
+
+#[test]
+fn pty_meow_stops_at_confirmation_and_escape_makes_no_network_edit() -> TestResult {
+    let project = TempProject::new("llm_confirmation");
+    let source = ">>> catomic\nExplain this block without editing it.\n<<<\n";
+    let active = project.write("note.txt", source);
+    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"\x1b[80;6umeow\r")?; // Ctrl+Shift+P via CSI-u, then command.
+    editor.wait_for_output("LLM send confirmation", "Enter confirms; Esc cancels")?;
+    editor.wait_for_output("local default endpoint", "http://127.0.0.1:8080/v1")?;
+    editor.send_keys(b"\x1b")?;
+    editor.wait_for_output(
+        "LLM cancellation before send",
+        "cancelled before sending; no network call made",
+    )?;
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(active)?, source);
     Ok(())
 }

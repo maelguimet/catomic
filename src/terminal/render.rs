@@ -1,11 +1,11 @@
-//! Purpose: render the visible buffer viewport with direct ANSI writes.
-//! Owns: row clearing, visible styled text, bottom annotation, and cursor placement.
+//! Purpose: render the visible buffer viewport as complete ANSI frames.
+//! Owns: frame composition, row clearing, visible styled text, bottom annotation, and cursor placement.
 //! Must not: mutate editor/buffer state, read full buffers, or own terminal setup.
 //! Invariants: file-backed read errors propagate before output; every viewport row is cleared;
-//!   rendering never emits a full-screen clear.
+//!   a frame is committed in one write; rendering never emits a full-screen clear.
 //! Phase: 4-a viewport-only syntax styling.
 
-use std::io::Write;
+use std::io::{self, Write};
 
 use crate::buffer::{Buffer, Cursor};
 use crate::editor::syntax::SyntaxKind;
@@ -74,10 +74,24 @@ pub fn render_buffer<W: Write + ?Sized>(
     viewport: RenderViewport,
     message: Option<&str>,
     options: RenderOptions,
-) -> std::io::Result<()> {
+) -> io::Result<()> {
+    let mut frame = Vec::new();
     if options.soft_wrap {
-        return wrapped::render_buffer(out, buffer, viewport, message, options);
+        wrapped::compose_buffer(&mut frame, buffer, viewport, message, options)?;
+    } else {
+        compose_buffer(&mut frame, buffer, viewport, message, options)?;
     }
+    out.write_all(&frame)?;
+    out.flush()
+}
+
+fn compose_buffer(
+    out: &mut Vec<u8>,
+    buffer: &dyn Buffer,
+    viewport: RenderViewport,
+    message: Option<&str>,
+    options: RenderOptions,
+) -> io::Result<()> {
     let RenderViewport {
         start_row,
         start_col,
@@ -162,7 +176,6 @@ pub fn render_buffer<W: Write + ?Sized>(
         .saturating_add(1)
         .min(width.max(1));
     write!(out, "\x1b[{};{}H", screen_row, screen_col)?;
-    out.flush()?;
     Ok(())
 }
 

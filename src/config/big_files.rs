@@ -1,8 +1,8 @@
 //! Purpose: configure bounded line pages for oversized file viewing.
 //! Owns: page-line default, typed TOML decoding, and config path loading.
 //! Must not: open editor buffers, scan user files, write config, or know App UI.
-//! Invariants: page_lines is nonzero; missing config uses defaults; only the
-//!   `[big_files] page_lines = N` setting affects this configuration.
+//! Invariants: page_lines is nonzero; missing config uses defaults; config roots
+//!   must be absolute; only `[big_files] page_lines = N` affects this configuration.
 //! Phase: 2-bk configurable paged-file policy.
 
 use std::io;
@@ -65,8 +65,14 @@ pub(super) fn config_path(
     home: Option<&std::ffi::OsStr>,
 ) -> Option<PathBuf> {
     let root = xdg_config_home
-        .map(PathBuf::from)
-        .or_else(|| home.map(|home| PathBuf::from(home).join(".config")))?;
+        .map(Path::new)
+        .filter(|path| path.is_absolute())
+        .map(Path::to_path_buf)
+        .or_else(|| {
+            home.map(Path::new)
+                .filter(|path| path.is_absolute())
+                .map(|home| home.join(".config"))
+        })?;
     Some(root.join("catomic").join("config.toml"))
 }
 
@@ -132,5 +138,25 @@ mod tests {
             Some(PathBuf::from("/home/cat/.config/catomic/config.toml"))
         );
         assert_eq!(config_path(None, None), None);
+    }
+
+    #[test]
+    fn config_path_ignores_empty_or_relative_environment_roots() {
+        let home = Some(std::ffi::OsStr::new("/home/cat"));
+        let fallback = Some(PathBuf::from("/home/cat/.config/catomic/config.toml"));
+
+        assert_eq!(config_path(Some(std::ffi::OsStr::new("")), home), fallback);
+        assert_eq!(
+            config_path(Some(std::ffi::OsStr::new("relative-xdg")), home),
+            fallback
+        );
+        assert_eq!(
+            config_path(Some(std::ffi::OsStr::new("relative-xdg")), None),
+            None
+        );
+        assert_eq!(
+            config_path(None, Some(std::ffi::OsStr::new("relative-home"))),
+            None
+        );
     }
 }

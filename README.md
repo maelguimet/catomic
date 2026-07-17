@@ -140,7 +140,7 @@ bounded, but the command itself can have effects outside Catomic.
 
 LLM endpoints use an OpenAI-compatible API. Model actions show the endpoint,
 model, and exact context extent before sending; edits then open read-only and
-require a second confirmation before becoming one undoable buffer change. Use
+require a second confirmation before becoming one undoable buffer change.
 Plain HTTP is allowed for loopback models and unauthenticated LAN models. If an
 API key is present, Catomic refuses to send it over non-loopback HTTP; use HTTPS
 for authenticated remote endpoints. See

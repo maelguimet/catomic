@@ -77,6 +77,31 @@ fn backup_preserves_user_bytes_and_excludes_previous_backups() {
 }
 
 #[test]
+fn backup_excludes_its_destination_when_xdg_roots_overlap() {
+    let root = temp_root("overlapping-backup-roots");
+    let shared = root.join("shared/catomic");
+    fs::create_dir_all(shared.join("update-backups/old")).unwrap();
+    fs::write(shared.join("preferences"), b"preserve me").unwrap();
+    fs::write(
+        shared.join("update-backups/old/secret"),
+        b"do not recurse",
+    )
+    .unwrap();
+    let dirs = super::backup::UserDirs::new(shared.clone(), shared.clone(), shared);
+
+    let backup = super::backup::create_from(&dirs, "0.1.0-test").unwrap();
+
+    for subtree in ["config", "data", "state"] {
+        assert_eq!(
+            fs::read(backup.join(subtree).join("preferences")).unwrap(),
+            b"preserve me"
+        );
+        assert!(!backup.join(subtree).join("update-backups").exists());
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn atomic_install_keeps_and_can_restore_the_old_binary() {
     let root = temp_root("install");
     fs::create_dir(&root).unwrap();

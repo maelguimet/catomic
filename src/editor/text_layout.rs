@@ -122,7 +122,7 @@ pub(crate) fn expand_tabs(text: &str, whitespace: bool, initial_cell: usize) -> 
             if whitespace && grapheme == " " {
                 expanded.push('·');
             } else {
-                expanded.push_str(grapheme);
+                expanded.extend(grapheme.chars().map(terminal_safe_char));
             }
             cell = cell.saturating_add(grapheme_width(grapheme, cell));
         }
@@ -133,8 +133,23 @@ pub(crate) fn expand_tabs(text: &str, whitespace: bool, initial_cell: usize) -> 
 fn grapheme_width(grapheme: &str, cell: usize) -> usize {
     if grapheme == "\t" {
         TAB_WIDTH - (cell % TAB_WIDTH)
+    } else if grapheme.chars().any(char::is_control) {
+        UnicodeWidthStr::width(terminal_safe_text(grapheme).as_str())
     } else {
         UnicodeWidthStr::width(grapheme)
+    }
+}
+
+pub(crate) fn terminal_safe_text(text: &str) -> String {
+    text.chars().map(terminal_safe_char).collect()
+}
+
+fn terminal_safe_char(ch: char) -> char {
+    match ch {
+        '\0'..='\u{001f}' => char::from_u32(0x2400 + u32::from(ch)).unwrap_or('�'),
+        '\u{007f}' => '␡',
+        _ if ch.is_control() => '�',
+        _ => ch,
     }
 }
 
@@ -169,5 +184,14 @@ mod tests {
         assert_eq!(cell_width("a\tb"), 5);
         assert_eq!(expand_tabs("a\tb", false, 0), "a   b");
         assert_eq!(expand_tabs("a\tb", true, 0), "a→  b");
+    }
+
+    #[test]
+    fn terminal_controls_have_visible_width_and_safe_glyphs() {
+        let text = "a\x1b\x07\u{009b}b";
+        assert_eq!(cell_width(text), 5);
+        assert_eq!(scalar_to_cell(text, 4), 4);
+        assert_eq!(expand_tabs(text, false, 0), "a␛␇�b");
+        assert_eq!(terminal_safe_text("\r\n\x7f"), "␍␊␡");
     }
 }

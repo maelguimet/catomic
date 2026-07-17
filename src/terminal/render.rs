@@ -130,7 +130,7 @@ pub fn render_buffer<W: Write + ?Sized>(
     // Shows message text if present (error, quit warning, etc.).
     // When no message, still emit to clear prior content from bottom row.
     if height > 0 {
-        let msg = message.unwrap_or("");
+        let msg = crate::editor::text_layout::terminal_safe_text(message.unwrap_or(""));
         write!(out, "\x1b[{};1H\x1b[K{}", height, msg)?;
     }
 
@@ -233,6 +233,74 @@ mod tests {
         assert!(rendered.contains("zero \x1b[7mhere\x1b[27m"));
         assert!(rendered.contains("\x1b[7mmiddle\x1b[27m"));
         assert!(rendered.contains("\x1b[7mlast\x1b[27m row"));
+    }
+
+    #[test]
+    fn source_buffer_terminal_controls_render_inertly() {
+        let b = SimpleBuffer::from_text(
+            "visible-before\x1b[2JCONTROL-CLEAR\x1b]52;c;cGF5bG9hZA==\x07visible-after\u{009b}?2004h",
+        );
+        let mut out = Vec::new();
+
+        render_buffer(
+            &mut out,
+            &b,
+            RenderViewport::new(0, 0, 3, 120),
+            None,
+            RenderOptions::default(),
+        )
+        .unwrap();
+
+        let rendered = String::from_utf8(out).unwrap();
+        assert!(!rendered.contains("\x1b[2J"));
+        assert!(!rendered.contains("\x1b]52"));
+        assert!(!rendered.contains('\x07'));
+        assert!(!rendered.contains('\u{009b}'));
+        assert!(rendered.contains("visible-before␛[2JCONTROL-CLEAR"));
+        assert!(rendered.contains("␛]52;c;cGF5bG9hZA==␇visible-after�?2004h"));
+    }
+
+    #[test]
+    fn wrapped_command_preview_terminal_controls_render_inertly() {
+        let b = SimpleBuffer::from_text("preview-before\x1b[2Jpreview-after\x07");
+        let mut out = Vec::new();
+
+        render_buffer(
+            &mut out,
+            &b,
+            RenderViewport::new(0, 0, 4, 80),
+            Some("Command output (read-only)."),
+            RenderOptions {
+                soft_wrap: true,
+                ..RenderOptions::default()
+            },
+        )
+        .unwrap();
+
+        let rendered = String::from_utf8(out).unwrap();
+        assert!(!rendered.contains("\x1b[2J"));
+        assert!(!rendered.contains('\x07'));
+        assert!(rendered.contains("preview-before␛[2Jpreview-after␇"));
+    }
+
+    #[test]
+    fn status_terminal_controls_render_inertly() {
+        let b = SimpleBuffer::from_text("");
+        let mut out = Vec::new();
+
+        render_buffer(
+            &mut out,
+            &b,
+            RenderViewport::new(0, 0, 2, 80),
+            Some("error from hostile\x1b]0;title\x07path"),
+            RenderOptions::default(),
+        )
+        .unwrap();
+
+        let rendered = String::from_utf8(out).unwrap();
+        assert!(!rendered.contains("\x1b]0"));
+        assert!(!rendered.contains('\x07'));
+        assert!(rendered.contains("error from hostile␛]0;title␇path"));
     }
 
     #[test]

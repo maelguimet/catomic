@@ -183,6 +183,17 @@ pub trait Buffer {
         Ok(false)
     }
 
+    /// Replace ranges in the supplied order as one logical edit when supported.
+    /// Callers whose coordinates come from one snapshot should pass ranges from
+    /// the end of the document toward the start so earlier coordinates stay valid.
+    fn replace_ranges(&mut self, ranges: &[(Cursor, Cursor)], text: &str) -> io::Result<usize> {
+        let mut changed = 0;
+        for &(start, end) in ranges {
+            changed += usize::from(self.replace_range(start, end, text)?);
+        }
+        Ok(changed)
+    }
+
     /// Return the entire content as a single string for compatibility/tests.
     /// Save paths use `write_to` so large storage need not materialize here.
     fn to_string(&self) -> String;

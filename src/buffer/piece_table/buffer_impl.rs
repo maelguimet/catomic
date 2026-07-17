@@ -123,6 +123,47 @@ impl Buffer for PieceTable {
         Ok(true)
     }
 
+    fn replace_ranges(&mut self, ranges: &[(Cursor, Cursor)], text: &str) -> io::Result<usize> {
+        let before = self.capture_cursor_state();
+        let mut edits = Vec::with_capacity(ranges.len().saturating_mul(2));
+        let mut changed = 0;
+        for &(start, end) in ranges {
+            let (start, end) = self.clamped_ordered_range(start, end);
+            let start_byte = self.byte_offset_at(start.row, start.col);
+            let end_byte = self.byte_offset_at(end.row, end.col);
+            if start_byte == end_byte && text.is_empty() {
+                continue;
+            }
+            let (removed, inserted) = self.splice_replacement(start_byte, end_byte, text);
+            if !removed.is_empty() {
+                edits.push(PieceEdit::Delete {
+                    at: start_byte,
+                    pieces: removed,
+                });
+            }
+            if !inserted.is_empty() {
+                edits.push(PieceEdit::Insert {
+                    at: start_byte,
+                    pieces: inserted,
+                });
+            }
+            self.coalesce();
+            self.rebuild_index();
+            self.cursor = cursor_after_text(start, text);
+            self.cursor_byte_offset = start_byte + text.len();
+            changed += 1;
+        }
+        if self.recording {
+            self.undo_stack.record(Transaction {
+                before,
+                after: self.capture_cursor_state(),
+                edits,
+                id: 0,
+            });
+        }
+        Ok(changed)
+    }
+
     fn to_string(&self) -> String {
         self.slice_to_string(0, self.index.total_bytes)
     }

@@ -6,6 +6,9 @@
 
 pub mod render;
 pub mod screen;
+mod signal;
+
+pub(crate) use signal::{install_process_handlers, termination_signal};
 
 use std::io::{self, Write};
 use std::sync::{Arc, Mutex};

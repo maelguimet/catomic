@@ -43,7 +43,16 @@ fn main() {
         std::process::exit(1);
     }
 
-    if let Err(e) = app::run(&file_args) {
+    if let Err(error) = terminal::install_process_handlers() {
+        eprintln!("catomic: cannot install process signal handlers: {error}");
+        std::process::exit(1);
+    }
+
+    let result = app::run(&file_args);
+    if let Some(signal) = terminal::termination_signal() {
+        std::process::exit(128 + signal);
+    }
+    if let Err(e) = result {
         eprintln!("catomic: {e}");
         std::process::exit(1);
     }

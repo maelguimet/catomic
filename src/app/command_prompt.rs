@@ -56,7 +56,9 @@ pub(super) fn is_active(app: &super::App) -> bool {
 
 fn open_prompt(app: &mut super::App, out: &mut dyn Write, kind: PromptKind) -> io::Result<()> {
     cancel_running(&mut app.command_prompt);
-    app.selection.clear();
+    if !matches!(kind, PromptKind::Command) {
+        app.selection.clear();
+    }
     app.command_prompt.active = Some(ActivePrompt {
         kind,
         text: String::new(),

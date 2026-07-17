@@ -112,6 +112,25 @@ fn f2_opens_the_command_prompt() {
 }
 
 #[test]
+fn command_prompt_preserves_selection_for_meow_confirmation() {
+    let mut app = super::super::App::new(None).unwrap();
+    app.buffer = Box::new(crate::buffer::PieceTable::from_text("selected text"));
+    let mut out = Vec::new();
+
+    app.handle_key_with(&mut out, key(KeyCode::Char('a'), KeyModifiers::CONTROL))
+        .unwrap();
+    app.handle_key_with(&mut out, key(KeyCode::F(2), KeyModifiers::NONE))
+        .unwrap();
+    type_text(&mut app, &mut out, "meow rewrite this");
+    app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
+        .unwrap();
+
+    assert!(app.pending_llm_request.is_some());
+    assert!(app.llm_task.is_none());
+    assert!(app.message.as_deref().unwrap().contains("from selection"));
+}
+
+#[test]
 fn command_prompt_dispatches_configured_external_command() {
     let mut app = super::super::App::new(None).unwrap();
     app.command_config =

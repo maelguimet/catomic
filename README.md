@@ -60,6 +60,8 @@ catomic
 
 Run `catomic --help` for command-line usage. Inside the editor, press `Ctrl+H`
 or `F1` for the complete built-in shortcut reference.
+For installation, editing workflows, configuration, safety behavior, and
+troubleshooting, see the [complete user guide](docs/user-guide.md).
 
 ### Essential shortcuts
 
@@ -173,6 +175,7 @@ Security-sensitive findings should follow [SECURITY.md](SECURITY.md).
 
 ## Project documentation
 
+- [User guide](docs/user-guide.md)
 - [Contributing](CONTRIBUTING.md)
 - [Architecture and development boundaries](docs/architecture.md)
 - [Design decisions](docs/decisions/)

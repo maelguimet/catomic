@@ -146,6 +146,31 @@ fn app_save_error_keeps_dirty_and_sets_error_message() {
     let _ = std::fs::remove_dir_all(&bad);
 }
 
+#[cfg(unix)]
+#[test]
+fn app_save_refuses_read_only_target_and_keeps_buffer_dirty() {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    let path =
+        std::env::temp_dir().join(format!("catomic_read_only_save_{}.txt", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, "protected").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o444)).unwrap();
+    let inode = std::fs::metadata(&path).unwrap().ino();
+    let mut app = App::new(path.to_str()).unwrap();
+
+    app.handle_key(make_key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+
+    assert!(app.file.dirty);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "protected");
+    assert_eq!(std::fs::metadata(&path).unwrap().ino(), inode);
+    assert!(app.message.as_deref().unwrap().contains("read-only"));
+    let _ = std::fs::remove_file(path);
+}
+
 // Phase 2-j: exact save-point dirty tracking tests (history token, no to_string compare on hot paths)
 
 #[test]

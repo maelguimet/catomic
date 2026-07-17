@@ -26,6 +26,9 @@ fn cleanup(p: &PathBuf) {
 #[path = "io_tests/symlink.rs"]
 mod symlink;
 
+#[path = "io_tests/unix_metadata.rs"]
+mod unix_metadata;
+
 #[test]
 fn read_to_string_reads_valid_utf8() {
     let out = temp_path("read_valid_utf8.txt");
@@ -99,17 +102,21 @@ fn atomic_write_overwrites_existing() {
 #[cfg(unix)]
 #[test]
 fn atomic_write_preserves_existing_file_mode() {
-    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
     let out = temp_path("preserve_mode.txt");
     cleanup(&out);
     fs::write(&out, "old").unwrap();
-    fs::set_permissions(&out, fs::Permissions::from_mode(0o751)).unwrap();
+    fs::set_permissions(&out, fs::Permissions::from_mode(0o6751)).unwrap();
+    let before = fs::metadata(&out).unwrap();
 
     atomic_write_string(&out, "new").unwrap();
 
-    let mode = fs::metadata(&out).unwrap().permissions().mode() & 0o777;
-    assert_eq!(mode, 0o751, "atomic save must preserve target mode bits");
+    let after = fs::metadata(&out).unwrap();
+    let mode = after.permissions().mode() & 0o7777;
+    assert_eq!(mode, 0o6751, "atomic save must preserve target mode bits");
+    assert_eq!(after.uid(), before.uid(), "save must preserve ownership");
+    assert_eq!(after.gid(), before.gid(), "save must preserve group");
     cleanup(&out);
 }
 

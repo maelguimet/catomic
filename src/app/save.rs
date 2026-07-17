@@ -136,6 +136,11 @@ pub(crate) fn handle_save_as(
         app.message = Some("Large file is read-only in paged mode; save disabled.".to_string());
         return app.render(out);
     }
+    if let Err(error) = file::io::validate_regular_save_target(&target) {
+        app.pending_save_conflict = None;
+        app.message = Some(format!("Save As error: {error}"));
+        return app.render(out);
+    }
     if app
         .file
         .path

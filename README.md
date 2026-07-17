@@ -60,6 +60,8 @@ catomic
 
 Run `catomic --help` for command-line usage. Inside the editor, press `Ctrl+H`
 or `F1` for the complete built-in shortcut reference.
+For installation, editing workflows, configuration, safety behavior, and
+troubleshooting, see the [complete user guide](docs/user-guide.md).
 
 ### Essential shortcuts
 
@@ -89,15 +91,15 @@ leading `:`.
 
 | Command | Purpose |
 | --- | --- |
-| `open PATH`, `new`, `close`, `close!` | Manage buffers; `close!` explicitly discards local changes |
+| `open PATH`, `new`, `close`, `close!` | Manage buffers; `close!` drops edits |
 | `save`, `save as PATH` | Save the active buffer |
 | `goto LINE`, `replace`, `replace-all` | Navigate and edit |
 | `project`, `plain` | Enter or leave opt-in Project mode |
-| `files`, `lint`, `diagnostics`, `dnext`, `dprev` | Run explicit Project tools |
+| `files`, `lint`, `diagnostics`, `dnext`, `dprev` | Run Project tools |
 | `run NAME` | Run a configured, trusted external command |
 | `recover` | Preview and apply a newer `.catnap` sidecar |
-| `meow TEXT`, `bigmeow TEXT` | Ask a configured model about the selection or current file |
-| `gitmeow TEXT`, `megameow TEXT` | Use bounded repository context in Project mode |
+| `meow TEXT`, `bigmeow TEXT` | Ask a model about this file or selection |
+| `gitmeow TEXT`, `megameow TEXT` | Ask a model using repository context |
 
 ## Configuration
 
@@ -173,6 +175,7 @@ Security-sensitive findings should follow [SECURITY.md](SECURITY.md).
 
 ## Project documentation
 
+- [User guide](docs/user-guide.md)
 - [Contributing](CONTRIBUTING.md)
 - [Architecture and development boundaries](docs/architecture.md)
 - [Design decisions](docs/decisions/)

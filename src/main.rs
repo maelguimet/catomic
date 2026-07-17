@@ -18,10 +18,16 @@ mod terminal;
 mod tests;
 
 use std::env;
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 
 fn main() {
-    let action = parse_args(env::args().skip(1));
+    let action = match parse_args(env::args_os().skip(1)) {
+        Ok(action) => action,
+        Err(error) => {
+            eprintln!("catomic: {error}");
+            std::process::exit(1);
+        }
+    };
     let file_args = match action {
         CliAction::Help => {
             print_help();
@@ -87,22 +93,32 @@ enum CliAction {
     Run(Vec<String>),
 }
 
-fn parse_args(args: impl IntoIterator<Item = String>) -> CliAction {
+fn parse_args<I, S>(args: I) -> Result<CliAction, String>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<OsString>,
+{
     let mut files = Vec::new();
     let mut positional_only = false;
-    for arg in args {
+    for (index, arg) in args.into_iter().enumerate() {
+        let arg = arg.into().into_string().map_err(|_| {
+            format!(
+                "argument {} is not valid UTF-8; non-UTF-8 filenames are not supported",
+                index + 1
+            )
+        })?;
         if positional_only {
             files.push(arg);
             continue;
         }
         match arg.as_str() {
             "--" => positional_only = true,
-            "-h" | "--help" => return CliAction::Help,
-            "-V" | "--version" => return CliAction::Version,
+            "-h" | "--help" => return Ok(CliAction::Help),
+            "-V" | "--version" => return Ok(CliAction::Version),
             _ => files.push(arg),
         }
     }
-    CliAction::Run(files)
+    Ok(CliAction::Run(files))
 }
 
 fn print_help() {
@@ -119,22 +135,42 @@ mod cli_tests {
     #[test]
     fn parses_help_and_version_without_opening_editor() {
         assert!(matches!(
-            parse_args(["--help".to_string()]),
+            parse_args(["--help".to_string()]).unwrap(),
             CliAction::Help
         ));
-        assert!(matches!(parse_args(["-V".to_string()]), CliAction::Version));
+        assert!(matches!(
+            parse_args(["-V".to_string()]).unwrap(),
+            CliAction::Version
+        ));
     }
 
     #[test]
     fn keeps_positional_files_and_double_dash_literals() {
-        match parse_args(["a.txt".to_string(), "b.txt".to_string()]) {
+        match parse_args(["a.txt".to_string(), "b.txt".to_string()]).unwrap() {
             CliAction::Run(files) => assert_eq!(files, ["a.txt", "b.txt"]),
             _ => panic!("expected run action"),
         }
-        match parse_args(["--".to_string(), "--help".to_string()]) {
+        match parse_args(["--".to_string(), "--help".to_string()]).unwrap() {
             CliAction::Run(files) => assert_eq!(files, ["--help"]),
             _ => panic!("expected run action"),
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_non_utf8_argument_without_panicking() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let invalid_path = OsString::from_vec(b"bad-\xff-name.txt".to_vec());
+        let error = parse_args([invalid_path])
+            .err()
+            .expect("non-UTF-8 argument must be rejected");
+
+        assert_eq!(
+            error,
+            "argument 1 is not valid UTF-8; non-UTF-8 filenames are not supported"
+        );
     }
 
     #[test]

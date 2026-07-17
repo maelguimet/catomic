@@ -82,11 +82,7 @@ fn backup_excludes_its_destination_when_xdg_roots_overlap() {
     let shared = root.join("shared/catomic");
     fs::create_dir_all(shared.join("update-backups/old")).unwrap();
     fs::write(shared.join("preferences"), b"preserve me").unwrap();
-    fs::write(
-        shared.join("update-backups/old/secret"),
-        b"do not recurse",
-    )
-    .unwrap();
+    fs::write(shared.join("update-backups/old/secret"), b"do not recurse").unwrap();
     let dirs = super::backup::UserDirs::new(shared.clone(), shared.clone(), shared);
 
     let backup = super::backup::create_from(&dirs, "0.1.0-test").unwrap();

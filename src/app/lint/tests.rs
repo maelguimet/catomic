@@ -69,6 +69,50 @@ fn configured_linter_completes_into_project_diagnostics() {
         .contains("1 diagnostic"));
 }
 
+#[test]
+fn linter_completion_names_origin_after_buffer_switch() {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "catomic-lint-origin-{}-{nonce}",
+        std::process::id()
+    ));
+    std::fs::create_dir(&root).unwrap();
+    let origin = root.join("origin.rs");
+    let other = root.join("other.rs");
+    std::fs::write(&origin, "fn origin() {}\n").unwrap();
+    std::fs::write(&other, "fn other() {}\n").unwrap();
+    let config = linters::parse(
+        "[linters]\nrs = \"sleep 0.05; printf '%s:1:1: warning: found\\n' {file}\"\n",
+    )
+    .unwrap();
+    let mut app = App::new(origin.to_str()).unwrap();
+    let mut out = Vec::new();
+    project_mode::switch_to_project(&mut app, &mut out).unwrap();
+
+    super::start_with_config(&mut app, &mut out, config).unwrap();
+    assert!(app.project.as_ref().unwrap().is_linter_running());
+    app.open_file_buffer(&other).unwrap();
+    assert_eq!(app.file.path.as_deref(), Some(other.as_path()));
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while app.project.as_ref().unwrap().is_linter_running() {
+        super::poll(&mut app, &mut out).unwrap();
+        assert!(Instant::now() < deadline, "linter integration timed out");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+
+    let message = app.message.as_deref().unwrap_or("");
+    assert!(
+        message.contains("origin.rs"),
+        "completion on another active buffer must name its origin: {message:?}"
+    );
+    assert_eq!(app.file.path.as_deref(), Some(other.as_path()));
+    let _ = std::fs::remove_dir_all(root);
+}
+
 fn app_with_diagnostics() -> App {
     let mut app = App::new(None).unwrap();
     app.file.path = Some(PathBuf::from("/tmp/sample.rs"));

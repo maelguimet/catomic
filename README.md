@@ -9,6 +9,8 @@ accidentally destroy work with—without turning into a terminal IDE by default.
 Catomic is entering open beta. Back up important files and read the
 [file-semantics limitations](#limitations) before making it your only editor.
 
+![Catomic editing a Rust file in a Linux terminal](docs/assets/catomic-open-beta.png)
+
 ## Highlights
 
 - Familiar editing: selection, mouse input, search/replace, goto line,

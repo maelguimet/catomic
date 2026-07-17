@@ -1,0 +1,31 @@
+name: Acceptance
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: acceptance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ignored-checks:
+    name: Ignored and environment-sensitive checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      RUST_BACKTRACE: "1"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Install stable Rust
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Run ignored acceptance checks serially
+        run: cargo test --all-targets --locked -- --ignored --test-threads=1 --nocapture

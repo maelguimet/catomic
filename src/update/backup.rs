@@ -4,7 +4,6 @@
 //! Invariants: backup directories are 0700 and regular files are 0600 on Unix.
 //! Phase: safe self-update workflow.
 
-use std::ffi::OsStr;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -47,17 +46,16 @@ pub(super) fn create(version: &str) -> Result<PathBuf, String> {
 pub(super) fn create_from(dirs: &UserDirs, version: &str) -> Result<PathBuf, String> {
     let parent = dirs.state.join("update-backups");
     create_private_dir_all(&parent).map_err(describe("create backup parent"))?;
+    let excluded = parent
+        .canonicalize()
+        .map_err(describe("resolve backup parent"))?;
     let backup = unique_backup_path(&parent);
     create_private_dir(&backup).map_err(describe("create backup directory"))?;
 
     let result = (|| {
-        copy_root(&dirs.config, &backup.join("config"), None)?;
-        copy_root(&dirs.data, &backup.join("data"), None)?;
-        copy_root(
-            &dirs.state,
-            &backup.join("state"),
-            Some(OsStr::new("update-backups")),
-        )?;
+        copy_root(&dirs.config, &backup.join("config"), &excluded)?;
+        copy_root(&dirs.data, &backup.join("data"), &excluded)?;
+        copy_root(&dirs.state, &backup.join("state"), &excluded)?;
         write_manifest(&backup, dirs, version)
     })();
     result.map_err(|error| {
@@ -97,11 +95,14 @@ fn unique_backup_path(parent: &Path) -> PathBuf {
     ))
 }
 
-fn copy_root(source: &Path, destination: &Path, skip: Option<&OsStr>) -> Result<(), String> {
+fn copy_root(source: &Path, destination: &Path, excluded: &Path) -> Result<(), String> {
     match fs::symlink_metadata(source) {
         Ok(metadata) if metadata.file_type().is_dir() => {
+            let source = source
+                .canonicalize()
+                .map_err(|error| format!("resolve {}: {error}", source.display()))?;
             create_private_dir(destination).map_err(describe("create backup subtree"))?;
-            copy_directory_contents(source, destination, skip)
+            copy_directory_contents(&source, destination, excluded)
         }
         Ok(_) => Err(format!(
             "user state root is not a directory: {}",
@@ -115,27 +116,31 @@ fn copy_root(source: &Path, destination: &Path, skip: Option<&OsStr>) -> Result<
 fn copy_directory_contents(
     source: &Path,
     destination: &Path,
-    skip: Option<&OsStr>,
+    excluded: &Path,
 ) -> Result<(), String> {
     let entries =
         fs::read_dir(source).map_err(|error| format!("read {}: {error}", source.display()))?;
     for entry in entries {
         let entry = entry.map_err(|error| format!("read {}: {error}", source.display()))?;
-        if skip.is_some_and(|skip| entry.file_name() == skip) {
+        if entry.path() == excluded {
             continue;
         }
-        copy_entry(&entry.path(), &destination.join(entry.file_name()))?;
+        copy_entry(
+            &entry.path(),
+            &destination.join(entry.file_name()),
+            excluded,
+        )?;
     }
     Ok(())
 }
 
-fn copy_entry(source: &Path, destination: &Path) -> Result<(), String> {
+fn copy_entry(source: &Path, destination: &Path, excluded: &Path) -> Result<(), String> {
     let metadata = fs::symlink_metadata(source)
         .map_err(|error| format!("inspect {}: {error}", source.display()))?;
     let kind = metadata.file_type();
     if kind.is_dir() {
         create_private_dir(destination).map_err(describe("create backup directory"))?;
-        return copy_directory_contents(source, destination, None);
+        return copy_directory_contents(source, destination, excluded);
     }
     if kind.is_file() {
         return copy_file_private(source, destination)

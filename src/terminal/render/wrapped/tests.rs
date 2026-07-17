@@ -36,7 +36,7 @@ fn wrapped_cursor_uses_the_continuation_row_and_cell_width() {
 fn wrapped_render_emits_each_visual_row() {
     let buffer = SimpleBuffer::from_text("abcdef");
     let mut out = Vec::new();
-    render_buffer(
+    super::super::render_buffer(
         &mut out,
         &buffer,
         RenderViewport::new(0, 0, 4, 3),

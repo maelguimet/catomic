@@ -5,6 +5,7 @@
 //! Phase: post-v0.1 core usability.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use std::io::{self, Write};
 
 use crate::buffer::{Cursor, PieceTable};
 
@@ -14,6 +15,45 @@ fn app() -> crate::app::App {
     let mut app = crate::app::App::new(None).unwrap();
     app.buffer = Box::new(PieceTable::from_text("source text"));
     app
+}
+
+#[derive(Default)]
+struct FrameRecorder {
+    writes: Vec<Vec<u8>>,
+    flushes: usize,
+}
+
+impl Write for FrameRecorder {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        self.writes.push(buffer.to_vec());
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.flushes += 1;
+        Ok(())
+    }
+}
+
+#[test]
+fn ctrl_h_commits_help_content_and_status_as_one_frame() {
+    let mut app = app();
+    app.screen.width = 120;
+    app.screen.height = 50;
+    let mut out = FrameRecorder::default();
+
+    let toggle = KeyEvent::new(KeyCode::Char('h'), KeyModifiers::CONTROL);
+    assert!(handle_key(&mut app, &mut out, toggle).unwrap());
+
+    assert_eq!(out.writes.len(), 1, "help redraw must be one output frame");
+    assert_eq!(out.flushes, 1, "the committed frame must be flushed once");
+    let frame = String::from_utf8_lossy(&out.writes[0]);
+    assert!(frame.contains("Catomic shortcuts"));
+    assert!(frame.contains("\x1b[50;1H\x1b[KShortcuts (read-only). Esc or Ctrl+H closes."));
+    assert!(
+        frame.ends_with("\x1b[1;1H"),
+        "frame must include cursor placement"
+    );
 }
 
 #[test]

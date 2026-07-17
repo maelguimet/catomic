@@ -90,8 +90,8 @@ pub(crate) fn start_col_near_cursor(
         .saturating_add(text_layout::scalar_at_cell(&visible, hidden)))
 }
 
-pub(super) fn render_buffer<W: Write + ?Sized>(
-    out: &mut W,
+pub(super) fn compose_buffer(
+    out: &mut Vec<u8>,
     buffer: &dyn Buffer,
     viewport: RenderViewport,
     message: Option<&str>,
@@ -118,8 +118,7 @@ pub(super) fn render_buffer<W: Write + ?Sized>(
         write!(out, "\x1b[{};1H\x1b[K{}", viewport.height, message)?;
     }
     let (cursor_row, cursor_col) = wrapped_cursor_position(buffer.cursor(), &rows, gutter);
-    write!(out, "\x1b[{cursor_row};{cursor_col}H")?;
-    out.flush()
+    write!(out, "\x1b[{cursor_row};{cursor_col}H")
 }
 
 fn append_line_rows(

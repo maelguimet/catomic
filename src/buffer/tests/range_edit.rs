@@ -48,3 +48,21 @@ fn multiline_insert_at_empty_range_is_one_transaction() {
     buffer.undo();
     assert_eq!(buffer.to_string(), "ab");
 }
+
+#[test]
+fn bottom_up_range_replacements_are_one_transaction() {
+    let mut buffer = PieceTable::from_text("α aa α aa");
+    let ranges = [
+        (Cursor { row: 0, col: 7 }, Cursor { row: 0, col: 9 }),
+        (Cursor { row: 0, col: 5 }, Cursor { row: 0, col: 6 }),
+        (Cursor { row: 0, col: 2 }, Cursor { row: 0, col: 4 }),
+        (Cursor { row: 0, col: 0 }, Cursor { row: 0, col: 1 }),
+    ];
+
+    assert_eq!(buffer.replace_ranges(&ranges, "x").unwrap(), 4);
+    assert_eq!(buffer.to_string(), "x x x x");
+    buffer.undo();
+    assert_eq!(buffer.to_string(), "α aa α aa");
+    buffer.redo();
+    assert_eq!(buffer.to_string(), "x x x x");
+}

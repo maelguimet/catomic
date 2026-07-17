@@ -191,10 +191,8 @@ fn replace_all(
         app.message = Some(format!("No matches for '{find}'."));
         return app.render(out);
     }
-    let count = matches.len();
-    for (start, end) in matches.into_iter().rev() {
-        app.buffer.replace_range(start, end, replacement)?;
-    }
+    matches.reverse();
+    let count = app.buffer.replace_ranges(&matches, replacement)?;
     super::input::finish_content_edit_with_message(
         app,
         out,
@@ -249,5 +247,22 @@ mod tests {
 
         assert_eq!(app.buffer.to_string(), "猫 cat 猫\n猫");
         assert!(app.message.as_deref().unwrap().contains("3 occurrence"));
+        app.buffer.undo();
+        assert_eq!(app.buffer.to_string(), "α cat α\nα");
+    }
+
+    #[test]
+    fn replace_all_ascii_occurrences_undo_as_one_command() {
+        let mut app = app("aa aa aa");
+        let mut out = Vec::new();
+        open_prompt(&mut app, &mut out, true).unwrap();
+        type_text(&mut app, &mut out, "aa");
+        handle_key(&mut app, &mut out, key(KeyCode::Enter)).unwrap();
+        type_text(&mut app, &mut out, "b");
+        handle_key(&mut app, &mut out, key(KeyCode::Enter)).unwrap();
+
+        assert_eq!(app.buffer.to_string(), "b b b");
+        app.buffer.undo();
+        assert_eq!(app.buffer.to_string(), "aa aa aa");
     }
 }

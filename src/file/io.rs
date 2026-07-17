@@ -236,16 +236,34 @@ pub struct ExternalFileObservation {
 /// NotFound is mapped to Absent (explicit). Other errors (perm, etc.) bubble up.
 pub fn capture_file_snapshot(path: impl AsRef<Path>) -> io::Result<FileSnapshot> {
     match fs::metadata(path.as_ref()) {
-        Ok(meta) => {
-            let mtime = meta.modified().ok();
-            Ok(FileSnapshot::Present {
-                len: meta.len(),
-                mtime,
-                change_id: file_change_id(&meta),
-            })
-        }
+        Ok(meta) => Ok(snapshot_from_metadata(&meta)),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(FileSnapshot::Absent),
         Err(e) => Err(e),
+    }
+}
+
+/// Capture initial open metadata while refusing paths that are not regular files.
+/// `fs::metadata` follows a final symlink, so symlinks to regular files remain valid.
+pub(crate) fn capture_regular_file_snapshot(path: impl AsRef<Path>) -> io::Result<FileSnapshot> {
+    match fs::metadata(path.as_ref()) {
+        Ok(meta) if meta.is_file() => Ok(snapshot_from_metadata(&meta)),
+        Ok(_) => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "refusing to open non-regular file: {}",
+                path.as_ref().display()
+            ),
+        )),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(FileSnapshot::Absent),
+        Err(error) => Err(error),
+    }
+}
+
+fn snapshot_from_metadata(meta: &fs::Metadata) -> FileSnapshot {
+    FileSnapshot::Present {
+        len: meta.len(),
+        mtime: meta.modified().ok(),
+        change_id: file_change_id(meta),
     }
 }
 

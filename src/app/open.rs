@@ -11,8 +11,8 @@
 //!   initial buffer, know terminal/render, or Project/LLM.
 //! Invariants: identical observable outcomes for all documented App::new cases
 //!   (None, missing, Small, Large, Huge/Extreme paged, hard meta error,
-//!   invalid UTF-8 errors from read after successful metadata); single capture
-//!   for size + snapshot + content plan on the present/missing-file paths.
+//!   invalid UTF-8 errors from read after successful metadata); non-regular paths
+//!   are refused before reads; one capture drives size/snapshot/content planning.
 //! Phase: 2-bm configurable paged open policy.
 
 use std::io::{self, ErrorKind};
@@ -73,7 +73,7 @@ pub(crate) fn prepare_open_file_meta(initial_path: Option<&str>) -> io::Result<O
     let mut meta = OpenFileMeta::default();
     if let Some(p) = initial_path {
         // Single capture for both size decision and snapshot carried to App.
-        match crate::file::io::capture_file_snapshot(p) {
+        match crate::file::io::capture_regular_file_snapshot(p) {
             Ok(snap) => {
                 if let FileSnapshot::Present { len, .. } = &snap {
                     meta.text_format = crate::file::text_format::detect_file_format(p)?;
@@ -223,6 +223,44 @@ mod tests {
         assert!(meta.initial_message.is_none());
 
         cleanup(&path);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fifo_path_is_refused_before_content_read() {
+        let path = temp_path("blocking.fifo");
+        cleanup(&path);
+        let status = std::process::Command::new("mkfifo")
+            .arg(&path)
+            .status()
+            .expect("run mkfifo");
+        assert!(status.success());
+
+        let error = prepare_open_file_meta(Some(&path.to_string_lossy()))
+            .expect_err("FIFO open must fail without reading it");
+
+        assert_eq!(error.kind(), ErrorKind::InvalidInput);
+        assert!(error.to_string().contains("non-regular"));
+        cleanup(&path);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_to_regular_file_remains_openable() {
+        let target = temp_path("symlink-target.txt");
+        let link = temp_path("symlink.txt");
+        cleanup(&target);
+        cleanup(&link);
+        fs::write(&target, "hello").unwrap();
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        let meta = prepare_open_file_meta(Some(&link.to_string_lossy())).unwrap();
+        let buffer = build_open_buffer(&meta, Some(&link.to_string_lossy()), 20_000).unwrap();
+
+        assert_eq!(meta.content_plan, OpenContentPlan::FullRead);
+        assert_eq!(buffer.to_string(), "hello");
+        cleanup(&link);
+        cleanup(&target);
     }
 
     #[test]

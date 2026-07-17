@@ -80,7 +80,7 @@ fn start_with_config(
             app.project
                 .as_mut()
                 .expect("Project checked")
-                .start_linter(task);
+                .start_linter(task, absolute_path.clone());
             app.message = Some(format!("Running linter for {}...", absolute_path.display()));
         }
         Err(error) => app.message = Some(format!("Could not start linter: {error}")),
@@ -93,29 +93,37 @@ pub(crate) fn poll(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
         .project
         .as_mut()
         .and_then(|project| project.take_linter_result());
-    let Some(result) = result else {
+    let Some((source, result)) = result else {
         return Ok(());
     };
     match result {
-        LinterResult::Finished { output, code } => finish(app, output, code),
-        LinterResult::Cancelled => app.message = Some("Linter cancelled.".to_string()),
-        LinterResult::Error(error) => app.message = Some(format!("Linter error: {error}")),
+        LinterResult::Finished { output, code } => finish(app, &source, output, code),
+        LinterResult::Cancelled => {
+            app.message = Some(format!("Linter for {} cancelled.", source.display()))
+        }
+        LinterResult::Error(error) => {
+            app.message = Some(format!("Linter error for {}: {error}", source.display()))
+        }
     }
     app.render(out)
 }
 
-fn finish(app: &mut super::App, output: String, code: Option<i32>) {
+fn finish(app: &mut super::App, source: &std::path::Path, output: String, code: Option<i32>) {
     let project = app.project.as_mut().expect("result requires Project");
     let diagnostics = parse_common_output(&output, project.root());
     let count = diagnostics.items.len();
     project.set_diagnostics(diagnostics);
     app.message = Some(if count > 0 {
-        format!("Lint finished with {count} diagnostic(s). Use :dnext or :diagnostics.")
+        format!(
+            "Lint for {} finished with {count} diagnostic(s). Use :dnext or :diagnostics.",
+            source.display()
+        )
     } else if code == Some(0) {
-        "Lint clean: no diagnostics.".to_string()
+        format!("Lint clean for {}: no diagnostics.", source.display())
     } else {
         format!(
-            "Linter exited {} without parseable diagnostics.",
+            "Linter for {} exited {} without parseable diagnostics.",
+            source.display(),
             code.map_or_else(
                 || "by signal".to_string(),
                 |code| format!("with code {code}")

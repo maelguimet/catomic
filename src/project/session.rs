@@ -12,11 +12,16 @@ use super::linter::{LinterResult, LinterTask};
 
 pub(crate) struct ProjectSession {
     root: PathBuf,
-    linter: Option<LinterTask>,
+    linter: Option<RunningLinter>,
     discovery: Option<DiscoveryTask>,
     discovered: Option<Discovery>,
     diagnostics: Diagnostics,
     diagnostic_index: Option<usize>,
+}
+
+struct RunningLinter {
+    task: LinterTask,
+    source: PathBuf,
 }
 
 impl ProjectSession {
@@ -35,8 +40,8 @@ impl ProjectSession {
         &self.root
     }
 
-    pub(crate) fn start_linter(&mut self, task: LinterTask) {
-        self.linter = Some(task);
+    pub(crate) fn start_linter(&mut self, task: LinterTask, source: PathBuf) {
+        self.linter = Some(RunningLinter { task, source });
         self.diagnostics = Diagnostics::new();
     }
 
@@ -45,10 +50,10 @@ impl ProjectSession {
         self.linter.is_some()
     }
 
-    pub(crate) fn take_linter_result(&mut self) -> Option<LinterResult> {
-        let result = self.linter.as_mut()?.try_result()?;
-        self.linter = None;
-        Some(result)
+    pub(crate) fn take_linter_result(&mut self) -> Option<(PathBuf, LinterResult)> {
+        let result = self.linter.as_mut()?.task.try_result()?;
+        let running = self.linter.take().expect("completed linter is present");
+        Some((running.source, result))
     }
 
     pub(crate) fn set_diagnostics(&mut self, diagnostics: Diagnostics) {

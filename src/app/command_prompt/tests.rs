@@ -272,6 +272,96 @@ fn save_as_existing_target_requires_a_second_confirmation() {
     let _ = std::fs::remove_file(path);
 }
 
+#[cfg(unix)]
+fn create_fifo(path: &Path) {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let path = CString::new(path.as_os_str().as_bytes()).unwrap();
+    let result = unsafe { libc::mkfifo(path.as_ptr(), 0o600) };
+    assert_eq!(
+        result,
+        0,
+        "mkfifo failed: {}",
+        std::io::Error::last_os_error()
+    );
+}
+
+#[cfg(unix)]
+fn assert_save_as_refuses_non_regular(path: &Path, app: &mut super::super::App) {
+    let mut out = Vec::new();
+    for _ in 0..2 {
+        super::super::save::handle_save_as(app, &mut out, path.to_str().unwrap()).unwrap();
+        assert!(app.file.path.is_none());
+        assert!(app.file.dirty);
+        assert!(app.pending_save_conflict.is_none());
+        assert!(app
+            .message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("non-regular"));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn save_as_refuses_fifo_without_offering_overwrite_confirmation() {
+    use std::os::unix::fs::FileTypeExt;
+
+    let fifo = std::env::temp_dir().join(format!("catomic_save_as_fifo_{}", std::process::id()));
+    let _ = std::fs::remove_file(&fifo);
+    create_fifo(&fifo);
+    let mut app = super::super::App::new(None).unwrap();
+    app.handle_key_with(&mut Vec::new(), key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
+
+    assert_save_as_refuses_non_regular(&fifo, &mut app);
+
+    assert!(
+        std::fs::symlink_metadata(&fifo)
+            .unwrap()
+            .file_type()
+            .is_fifo(),
+        "Save As must not replace the FIFO"
+    );
+    let _ = std::fs::remove_file(fifo);
+}
+
+#[cfg(unix)]
+#[test]
+fn save_as_refuses_symlink_to_fifo_without_replacing_either_object() {
+    use std::os::unix::fs::{symlink, FileTypeExt};
+
+    let fifo = std::env::temp_dir().join(format!(
+        "catomic_save_as_symlink_fifo_target_{}",
+        std::process::id()
+    ));
+    let link = std::env::temp_dir().join(format!(
+        "catomic_save_as_symlink_fifo_{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&fifo);
+    let _ = std::fs::remove_file(&link);
+    create_fifo(&fifo);
+    symlink(&fifo, &link).unwrap();
+    let mut app = super::super::App::new(None).unwrap();
+    app.handle_key_with(&mut Vec::new(), key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
+
+    assert_save_as_refuses_non_regular(&link, &mut app);
+
+    assert!(std::fs::symlink_metadata(&link)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert!(std::fs::symlink_metadata(&fifo)
+        .unwrap()
+        .file_type()
+        .is_fifo());
+    let _ = std::fs::remove_file(link);
+    let _ = std::fs::remove_file(fifo);
+}
+
 #[test]
 fn failed_save_as_keeps_the_original_path() {
     let original = std::env::temp_dir().join(format!(

@@ -9,7 +9,8 @@
 //! Invariants: atomic writes use same-dir temp + create_new + sync + rename;
 //!   ordinary saves follow a valid final symlink and refuse a dangling one;
 //!   private sidecars replace, rather than follow, a final symlink;
-//!   existing target Unix permissions are preserved;
+//!   ordinary saves refuse non-regular targets and Unix metadata that an atomic
+//!   replacement cannot preserve safely;
 //!   observations use len/mtime plus Unix identity/change time when available;
 //!   Absent explicitly represents missing;
 //!   read_to_string returns InvalidData for non-UTF-8; errors other than NotFound
@@ -19,6 +20,9 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+
+#[cfg(target_os = "linux")]
+mod atomic_unix;
 
 /// Read entire file as UTF-8 string.
 /// Full-materialization path for current open/reload. Uses fs::read so the
@@ -34,7 +38,9 @@ pub fn read_to_string<P: AsRef<Path>>(path: P) -> io::Result<String> {
 ///
 /// Writes to a sibling temp file (same dir), fsyncs data, renames over target,
 /// then best-effort fsyncs the parent directory on Unix.
-/// Existing Unix permissions are copied to the temp before replacement.
+/// Linux replacement is conditional on the exact inspected target inode.
+/// Existing mode/owner/group must be preserved; hard links and xattrs/ACLs are
+/// refused because replacing the inode cannot safely preserve their semantics.
 /// Temp is removed on any error before successful rename.
 /// Unique temp uses target filename + pid. create_new used to avoid clobber.
 /// Linux-first: directory fsync is best-effort; no new dependencies.
@@ -69,7 +75,8 @@ fn atomic_write_with_policy(
     write_contents: impl FnOnce(&mut dyn Write) -> io::Result<()>,
     private: bool,
 ) -> io::Result<u64> {
-    let target = atomic_write_target(path.as_ref(), private)?;
+    let target_state = atomic_write_target(path.as_ref(), private)?;
+    let target = &target_state.path;
     let parent: PathBuf = target
         .parent()
         .map(|p| p.to_path_buf())
@@ -92,19 +99,29 @@ fn atomic_write_with_policy(
     // A create_new collision belongs to someone else and must remain untouched.
     let mut created_temp = false;
     let res: io::Result<u64> = (|| {
-        #[cfg(unix)]
+        #[cfg(target_os = "linux")]
         let existing_permissions = if private {
-            use std::os::unix::fs::PermissionsExt;
-            Some(fs::Permissions::from_mode(0o600))
+            None
         } else {
-            match fs::metadata(&target) {
+            target_state
+                .existing
+                .as_ref()
+                .map(atomic_unix::ExistingTarget::permissions)
+        };
+
+        #[cfg(all(unix, not(target_os = "linux")))]
+        let existing_permissions = if private {
+            None
+        } else {
+            match fs::metadata(target) {
                 Ok(metadata) if metadata.permissions().readonly() => {
                     return Err(io::Error::new(
                         io::ErrorKind::PermissionDenied,
                         format!("refusing to replace read-only file: {}", target.display()),
                     ));
                 }
-                Ok(metadata) => Some(metadata.permissions()),
+                Ok(metadata) if metadata.is_file() => Some(metadata.permissions()),
+                Ok(_) => return Err(non_regular_save_error(target)),
                 Err(error) if error.kind() == io::ErrorKind::NotFound => None,
                 Err(error) => return Err(error),
             }
@@ -116,8 +133,10 @@ fn atomic_write_with_policy(
             .open(&temp_path)?;
         created_temp = true;
         #[cfg(unix)]
-        if let Some(permissions) = existing_permissions {
-            f.set_permissions(permissions)?;
+        if private {
+            use std::os::unix::fs::PermissionsExt;
+            // Recovery data must never spend the streaming window at a wider mode.
+            f.set_permissions(fs::Permissions::from_mode(0o600))?;
         }
         let written = {
             let mut writer = CountingWriter::new(&mut f);
@@ -125,11 +144,40 @@ fn atomic_write_with_policy(
             writer.flush()?;
             writer.written
         };
+        #[cfg(unix)]
+        if !private {
+            if let Some(permissions) = existing_permissions {
+                // Apply modes after writing because writing can clear setuid/setgid bits.
+                f.set_permissions(permissions)?;
+            }
+        }
+        #[cfg(target_os = "linux")]
+        if !private {
+            atomic_unix::validate_replacement_metadata(&f, target_state.existing.as_ref(), target)?;
+        }
         f.sync_all()?;
         // Ensure file is closed before rename on all platforms.
         drop(f);
 
-        fs::rename(&temp_path, &target)?;
+        if private {
+            fs::rename(&temp_path, target)?;
+            created_temp = false;
+        } else {
+            #[cfg(target_os = "linux")]
+            atomic_unix::commit(
+                &temp_path,
+                target,
+                target_state.existing.as_ref(),
+                &mut created_temp,
+            )?;
+
+            #[cfg(not(target_os = "linux"))]
+            {
+                validate_regular_save_target(target)?;
+                fs::rename(&temp_path, target)?;
+                created_temp = false;
+            }
+        }
 
         // Best-effort: sync the directory so rename is durable (Unix).
         #[cfg(unix)]
@@ -150,17 +198,66 @@ fn atomic_write_with_policy(
 
 /// Resolve only ordinary save targets. Private sidecars deliberately replace a
 /// final symlink so an attacker cannot redirect recovery data into its referent.
-fn atomic_write_target(path: &Path, private: bool) -> io::Result<PathBuf> {
+struct AtomicWriteTarget {
+    path: PathBuf,
+    #[cfg(target_os = "linux")]
+    existing: Option<atomic_unix::ExistingTarget>,
+}
+
+fn atomic_write_target(path: &Path, private: bool) -> io::Result<AtomicWriteTarget> {
     if private {
-        return Ok(path.to_path_buf());
+        return Ok(AtomicWriteTarget {
+            path: path.to_path_buf(),
+            #[cfg(target_os = "linux")]
+            existing: None,
+        });
     }
 
-    match fs::symlink_metadata(path) {
+    let target = match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_symlink() => fs::canonicalize(path),
-        Ok(_) => Ok(path.to_path_buf()),
+        Ok(metadata) if metadata.is_file() => Ok(path.to_path_buf()),
+        Ok(_) => Err(non_regular_save_error(path)),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(path.to_path_buf()),
         Err(error) => Err(error),
+    }?;
+
+    #[cfg(target_os = "linux")]
+    let existing = atomic_unix::open_existing_target(&target)?;
+
+    Ok(AtomicWriteTarget {
+        path: target,
+        #[cfg(target_os = "linux")]
+        existing,
+    })
+}
+
+/// Check the resolved target type before Save As offers overwrite confirmation.
+/// The atomic writer repeats this check because prompt policy is not a security boundary.
+pub(crate) fn validate_regular_save_target(path: impl AsRef<Path>) -> io::Result<()> {
+    let path = path.as_ref();
+    match fs::metadata(path) {
+        Ok(metadata) if metadata.is_file() => Ok(()),
+        Ok(_) => Err(non_regular_save_error(path)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => match fs::symlink_metadata(path) {
+            Err(link_error) if link_error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Ok(_) => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "refusing to save through dangling symlink: {}",
+                    path.display()
+                ),
+            )),
+            Err(link_error) => Err(link_error),
+        },
+        Err(error) => Err(error),
     }
+}
+
+fn non_regular_save_error(path: &Path) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidInput,
+        format!("refusing to replace non-regular file: {}", path.display()),
+    )
 }
 
 struct CountingWriter<'a> {

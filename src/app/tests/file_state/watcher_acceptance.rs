@@ -223,6 +223,50 @@ fn watcher_changed_dirty_external_arms_discard_warning_then_ctrl_r_reloads() {
 }
 
 #[test]
+fn watcher_drift_invalidates_dirty_reload_confirmation() {
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!(
+        "catomic_watcher_dirty_drift_{}.txt",
+        std::process::id()
+    ));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "BASE").unwrap();
+    let mut app = App::new(Some(&p)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
+
+    std::fs::write(&p, "external-A").unwrap();
+    crate::app::watch::apply_file_watch_signal(
+        &mut app,
+        crate::file::watcher::FileWatchSignal::Changed,
+    );
+    assert!(app.pending_reload.is_some());
+
+    std::fs::write(&p, "external-B").unwrap();
+    crate::app::watch::apply_file_watch_signal(
+        &mut app,
+        crate::file::watcher::FileWatchSignal::Changed,
+    );
+    assert!(app.pending_reload.is_none());
+    assert!(app.message.as_deref().unwrap().contains("re-arm"));
+    assert_eq!(app.buffer.to_string(), "xBASE");
+    assert!(app.file.dirty);
+
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(app.pending_reload.is_some());
+    assert_eq!(app.buffer.to_string(), "xBASE");
+    assert!(app.file.dirty);
+
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert_eq!(app.buffer.to_string(), "external-B");
+    assert!(!app.file.dirty);
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
 fn watcher_armed_pending_local_edit_clears_then_next_ctrl_r_rearms() {
     let mut tmp = std::env::temp_dir();
     tmp.push(format!(

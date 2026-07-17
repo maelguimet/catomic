@@ -61,6 +61,23 @@ pub(crate) fn reload_arm_message(status: &ExternalFileStatus, dirty: bool) -> St
     }
 }
 
+pub(crate) fn reload_drift_message(status: &ExternalFileStatus, dirty: bool) -> String {
+    let local = if dirty {
+        " Local changes preserved."
+    } else {
+        ""
+    };
+    match status {
+        ExternalFileStatus::Modified => format!(
+            "File changed again on disk. Press Ctrl+R to re-arm reload confirmation.{local}"
+        ),
+        ExternalFileStatus::Deleted => format!(
+            "File was deleted after reload was armed. Press Ctrl+R to re-arm confirmation.{local}"
+        ),
+        _ => format!("File state changed after reload was armed.{local}"),
+    }
+}
+
 /// Success message after actual reload of modified content.
 pub(crate) fn reload_success_message() -> String {
     "Reloaded from disk.".to_string()
@@ -262,19 +279,7 @@ pub(crate) fn handle_reload_key(app: &mut super::App, out: &mut dyn Write) -> io
     let baseline = app.file.disk_snapshot.as_ref();
     let obs = observe_external_file(current_path.as_deref(), baseline);
 
-    let should_perform = match (&app.pending_reload, &obs.status) {
-        (Some(pend), ExternalFileStatus::Modified)
-            if pend.path == current_path.clone().unwrap_or_default() =>
-        {
-            pend.status == ExternalFileStatus::Modified && pend.snapshot == obs.live_snapshot
-        }
-        (Some(pend), ExternalFileStatus::Deleted)
-            if pend.path == current_path.clone().unwrap_or_default() =>
-        {
-            pend.status == ExternalFileStatus::Deleted && pend.snapshot == obs.live_snapshot
-        }
-        _ => false,
-    };
+    let should_perform = pending_matches_observation(app, &obs);
 
     if should_perform {
         perform_observed_reload(app, &obs);
@@ -285,6 +290,19 @@ pub(crate) fn handle_reload_key(app: &mut super::App, out: &mut dyn Write) -> io
         app.render(out)?;
     }
     Ok(())
+}
+
+pub(crate) fn pending_matches_observation(app: &super::App, obs: &ExternalFileObservation) -> bool {
+    let (Some(pending), Some(path)) = (&app.pending_reload, &app.file.path) else {
+        return false;
+    };
+    pending.path == *path
+        && pending.status == obs.status
+        && pending.snapshot == obs.live_snapshot
+        && matches!(
+            obs.status,
+            ExternalFileStatus::Modified | ExternalFileStatus::Deleted
+        )
 }
 
 #[cfg(test)]

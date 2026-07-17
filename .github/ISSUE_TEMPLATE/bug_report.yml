@@ -1,0 +1,113 @@
+name: Bug report
+description: Report a reproducible crash, data-loss risk, terminal problem, or incorrect behavior
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Catomic. Remove private file contents and credentials from this report. If the issue may be exploitable or exposes sensitive data, use the private [security reporting flow](https://github.com/maelguimet/catomic/security/advisories/new) instead.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior, its impact, and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Give the smallest reliable sequence of commands, keystrokes, and sample-file contents that reproduces the issue.
+      placeholder: |
+        1. Create a sample file with ...
+        2. Run `catomic sample.txt`
+        3. Press ...
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact
+      options:
+        - Data loss or unexpected file replacement
+        - File content or metadata changed incorrectly
+        - Crash or terminal left in a bad state
+        - Incorrect editor behavior
+        - Performance or resource usage
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Catomic version
+      description: Paste `catomic --version`; include the commit hash for a source build.
+      placeholder: "catomic 0.1.0 (commit abc1234)"
+    validations:
+      required: true
+
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal environment
+      description: Name and version of the terminal emulator, plus tmux, screen, SSH, container, or remote-session details when relevant.
+      placeholder: "kitty 0.35.2 inside tmux 3.4"
+    validations:
+      required: true
+
+  - type: input
+    id: term
+    attributes:
+      label: TERM
+      description: Paste the exact value of `printf '%s\n' "$TERM"`.
+      placeholder: "xterm-kitty"
+    validations:
+      required: true
+
+  - type: textarea
+    id: locale
+    attributes:
+      label: Locale
+      description: Paste `locale` output, or at least the exact LC_ALL, LC_CTYPE, and LANG values.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: system
+    attributes:
+      label: Linux environment
+      description: Include distribution, kernel (`uname -a`), architecture, and whether Catomic runs in a VM or container.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: filesystem
+    attributes:
+      label: Filesystem details
+      description: Name the filesystem and mount type (local, removable, network, FUSE, overlay/container, etc.). Include symlink/hard-link use, permissions, ACLs/xattrs, file size, and line endings when relevant.
+      placeholder: "ext4 local mount; regular file mode 0644; no symlink; 12 KiB; LF endings"
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Additional evidence
+      description: Add sanitized logs, panic output, recordings, screenshots, or a minimal fixture. Do not include secrets or private document contents.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Final checks
+      options:
+        - label: I reproduced this with non-sensitive sample data or explained why I could not.
+          required: true
+        - label: I searched existing issues for the same problem.
+          required: true

@@ -34,6 +34,7 @@ pub(crate) enum ExternalCommandResult {
 pub(crate) struct ExternalCommandTask {
     receiver: Receiver<ExternalCommandResult>,
     cancel: Arc<AtomicBool>,
+    worker: Option<std::thread::JoinHandle<()>>,
     disconnected: bool,
 }
 
@@ -49,7 +50,7 @@ impl ExternalCommandTask {
         let worker_cancel = Arc::clone(&cancel);
         let command = command.to_string();
         let cwd = cwd.to_path_buf();
-        std::thread::Builder::new()
+        let worker = std::thread::Builder::new()
             .name("catomic-command".to_string())
             .spawn(move || {
                 let result = run_command(&command, &cwd, input, timeout, &worker_cancel);
@@ -58,6 +59,7 @@ impl ExternalCommandTask {
         Ok(Self {
             receiver,
             cancel,
+            worker: Some(worker),
             disconnected: false,
         })
     }
@@ -82,6 +84,9 @@ impl ExternalCommandTask {
 impl Drop for ExternalCommandTask {
     fn drop(&mut self) {
         self.cancel.store(true, Ordering::Relaxed);
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
     }
 }
 
@@ -156,8 +161,9 @@ fn wait_for_exit(
 
 fn terminate(child: &mut std::process::Child) {
     #[cfg(unix)]
+    let group = format!("-{}", child.id());
+    #[cfg(unix)]
     {
-        let group = format!("-{}", child.id());
         let _ = Command::new("kill")
             .args(["-KILL", "--", &group])
             .stdin(Stdio::null())
@@ -167,6 +173,26 @@ fn terminate(child: &mut std::process::Child) {
     }
     let _ = child.kill();
     let _ = child.wait();
+    #[cfg(unix)]
+    wait_for_process_group_exit(&group);
+}
+
+#[cfg(unix)]
+fn wait_for_process_group_exit(group: &str) {
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while Instant::now() < deadline {
+        let exists = Command::new("kill")
+            .args(["-0", "--", group])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success());
+        if !exists {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
 }
 
 type Reader = std::thread::JoinHandle<(Vec<u8>, bool)>;

@@ -77,7 +77,10 @@ fn xdg_root(name: &str, home: Option<&Path>, fallback: &str) -> Result<PathBuf, 
             .ok_or_else(|| format!("{name} and HOME are unset"))?,
     };
     if !root.is_absolute() {
-        return Err(format!("{name} must be an absolute path: {}", root.display()));
+        return Err(format!(
+            "{name} must be an absolute path: {}",
+            root.display()
+        ));
     }
     Ok(root)
 }
@@ -114,8 +117,8 @@ fn copy_directory_contents(
     destination: &Path,
     skip: Option<&OsStr>,
 ) -> Result<(), String> {
-    let entries = fs::read_dir(source)
-        .map_err(|error| format!("read {}: {error}", source.display()))?;
+    let entries =
+        fs::read_dir(source).map_err(|error| format!("read {}: {error}", source.display()))?;
     for entry in entries {
         let entry = entry.map_err(|error| format!("read {}: {error}", source.display()))?;
         if skip.is_some_and(|skip| entry.file_name() == skip) {
@@ -171,7 +174,9 @@ fn write_manifest(backup: &Path, dirs: &UserDirs, version: &str) -> Result<(), S
     options.write(true).create_new(true);
     #[cfg(unix)]
     options.mode(0o600);
-    let mut file = options.open(&path).map_err(describe("create backup manifest"))?;
+    let mut file = options
+        .open(&path)
+        .map_err(describe("create backup manifest"))?;
     writeln!(file, "Catomic update backup")
         .and_then(|_| writeln!(file, "version={version}"))
         .and_then(|_| writeln!(file, "config_source={}", dirs.config.display()))

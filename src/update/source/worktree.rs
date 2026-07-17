@@ -32,7 +32,10 @@ impl Worktree {
         create_private_dir(&root).map_err(|error| {
             UpdateError::new(
                 EXIT_BUILD,
-                format!("create temporary update directory {}: {error}", root.display()),
+                format!(
+                    "create temporary update directory {}: {error}",
+                    root.display()
+                ),
             )
         })?;
         let checkout = root.join("source");

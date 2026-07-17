@@ -16,9 +16,8 @@ pub(super) fn verify_checksum(
     checksum: &[u8],
     filename: &str,
 ) -> Result<(), UpdateError> {
-    let text = std::str::from_utf8(checksum).map_err(|_| {
-        UpdateError::new(EXIT_NETWORK, "checksum file is not valid UTF-8")
-    })?;
+    let text = std::str::from_utf8(checksum)
+        .map_err(|_| UpdateError::new(EXIT_NETWORK, "checksum file is not valid UTF-8"))?;
     let mut fields = text.split_whitespace();
     let expected = fields.next().filter(|hash| valid_hash(hash));
     let named = fields.next().map(|name| name.trim_start_matches('*'));
@@ -83,8 +82,7 @@ impl ReleaseVersion {
         let numbers: Vec<u64> = core
             .split('.')
             .map(|part| {
-                part
-                    .parse::<u64>()
+                part.parse::<u64>()
                     .map_err(|_| format!("invalid numeric version component {part:?}"))
             })
             .collect::<Result<_, _>>()?;
@@ -135,14 +133,13 @@ impl fmt::Display for ReleaseVersion {
 
 impl Ord for ReleaseVersion {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.core.cmp(&other.core).then_with(|| match (
-            self.prerelease.is_empty(),
-            other.prerelease.is_empty(),
-        ) {
-            (true, true) => Ordering::Equal,
-            (true, false) => Ordering::Greater,
-            (false, true) => Ordering::Less,
-            (false, false) => compare_prerelease(&self.prerelease, &other.prerelease),
+        self.core.cmp(&other.core).then_with(|| {
+            match (self.prerelease.is_empty(), other.prerelease.is_empty()) {
+                (true, true) => Ordering::Equal,
+                (true, false) => Ordering::Greater,
+                (false, true) => Ordering::Less,
+                (false, false) => compare_prerelease(&self.prerelease, &other.prerelease),
+            }
         })
     }
 }

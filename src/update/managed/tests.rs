@@ -62,12 +62,7 @@ fn downloads_release_only_from_local_mock_with_exact_size_and_checksum() {
 
     assert_eq!(release.version, ReleaseVersion::parse("9.8.7").unwrap());
     assert_eq!(downloaded, binary);
-    verify_checksum(
-        &downloaded,
-        &checksum,
-        "catomic-x86_64-unknown-linux-gnu",
-    )
-    .unwrap();
+    verify_checksum(&downloaded, &checksum, "catomic-x86_64-unknown-linux-gnu").unwrap();
 }
 
 #[test]
@@ -83,29 +78,15 @@ fn refuses_untrusted_redirects_and_oversized_assets() {
     server.join().unwrap();
     assert!(error.to_string().contains("request failed"));
 
-    let client = HttpClient::build(
-        "http://127.0.0.1:9/unused",
-        true,
-        Duration::from_secs(1),
-    )
-    .unwrap();
-    let error = block_on(client.get_bounded(
-        "http://127.0.0.1:9/unused",
-        8,
-        Some(9),
-    ))
-    .unwrap_err();
+    let client =
+        HttpClient::build("http://127.0.0.1:9/unused", true, Duration::from_secs(1)).unwrap();
+    let error = block_on(client.get_bounded("http://127.0.0.1:9/unused", 8, Some(9))).unwrap_err();
     assert!(error.to_string().contains("declares more than 8 bytes"));
 }
 
 #[test]
 fn request_timeout_is_bounded() {
-    let (url, server) = one_response(
-        "200 OK",
-        &[],
-        b"late".to_vec(),
-        Duration::from_millis(200),
-    );
+    let (url, server) = one_response("200 OK", &[], b"late".to_vec(), Duration::from_millis(200));
     let client = HttpClient::build(&url, true, Duration::from_millis(30)).unwrap();
 
     let error = block_on(client.get_bounded(&url, 1024, None)).unwrap_err();

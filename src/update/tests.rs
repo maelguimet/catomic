@@ -41,7 +41,10 @@ fn backup_preserves_user_bytes_and_excludes_previous_backups() {
 
     let backup = super::backup::create_from(&dirs, "0.1.0-test").unwrap();
 
-    assert_eq!(fs::read(backup.join("config/config.toml")).unwrap(), config_bytes);
+    assert_eq!(
+        fs::read(backup.join("config/config.toml")).unwrap(),
+        config_bytes
+    );
     assert_eq!(
         fs::read(backup.join("config/themes/night.toml")).unwrap(),
         b"colors = [1, 2]\n"
@@ -57,7 +60,10 @@ fn backup_preserves_user_bytes_and_excludes_previous_backups() {
     assert!(!backup.join("state/update-backups").exists());
     #[cfg(unix)]
     {
-        assert_eq!(fs::metadata(&backup).unwrap().permissions().mode() & 0o777, 0o700);
+        assert_eq!(
+            fs::metadata(&backup).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
         assert_eq!(
             fs::metadata(backup.join("config/config.toml"))
                 .unwrap()

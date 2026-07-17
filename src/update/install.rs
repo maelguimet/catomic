@@ -27,15 +27,16 @@ impl Receipt {
     }
 
     pub(super) fn restore(&self) -> Result<(), String> {
-        let bytes = fs::read(&self.rollback)
-            .map_err(|error| format!("read rollback binary {}: {error}", self.rollback.display()))?;
+        let bytes = fs::read(&self.rollback).map_err(|error| {
+            format!("read rollback binary {}: {error}", self.rollback.display())
+        })?;
         replace_without_backup(&self.executable, &bytes, self.mode)
     }
 }
 
 pub(super) fn replace_current(bytes: &[u8], old_version: &str) -> Result<Receipt, String> {
-    let executable = std::env::current_exe()
-        .map_err(|error| format!("locate current executable: {error}"))?;
+    let executable =
+        std::env::current_exe().map_err(|error| format!("locate current executable: {error}"))?;
     replace(&executable, bytes, old_version)
 }
 

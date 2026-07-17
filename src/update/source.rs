@@ -59,7 +59,10 @@ pub(super) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
     }
     let remote_sha = remote_head()?;
     if remote_sha == install.current_sha {
-        println!("available version: already current ({})", short_sha(&remote_sha));
+        println!(
+            "available version: already current ({})",
+            short_sha(&remote_sha)
+        );
         return Ok(());
     }
     let remote_version = super::managed::source_version_at(&remote_sha)?;
@@ -286,11 +289,16 @@ fn print_local_status(install: &SourceInstall) {
 fn remote_head() -> Result<String, UpdateError> {
     let output = git_network(
         Path::new("."),
-        &["ls-remote", "--heads", "--", OFFICIAL_REMOTE, "refs/heads/master"],
+        &[
+            "ls-remote",
+            "--heads",
+            "--",
+            OFFICIAL_REMOTE,
+            "refs/heads/master",
+        ],
     )?;
-    let text = String::from_utf8(output.stdout).map_err(|_| {
-        UpdateError::new(EXIT_NETWORK, "git ls-remote returned non-UTF-8 output")
-    })?;
+    let text = String::from_utf8(output.stdout)
+        .map_err(|_| UpdateError::new(EXIT_NETWORK, "git ls-remote returned non-UTF-8 output"))?;
     let sha = text
         .split_whitespace()
         .next()

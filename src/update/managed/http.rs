@@ -82,10 +82,7 @@ impl HttpClient {
         })
     }
 
-    pub(super) async fn latest(
-        &self,
-        asset_name: &str,
-    ) -> Result<ReleaseInfo, UpdateError> {
+    pub(super) async fn latest(&self, asset_name: &str) -> Result<ReleaseInfo, UpdateError> {
         let bytes = self
             .get_bounded(&self.api_url, MAX_METADATA_BYTES, None)
             .await?;
@@ -100,7 +97,10 @@ impl HttpClient {
                 format!("invalid GitHub release metadata: {error}"),
             )
         })?;
-        let version_text = release.tag_name.strip_prefix('v').unwrap_or(&release.tag_name);
+        let version_text = release
+            .tag_name
+            .strip_prefix('v')
+            .unwrap_or(&release.tag_name);
         let version = ReleaseVersion::parse(version_text).map_err(|error| {
             UpdateError::new(
                 EXIT_NETWORK,
@@ -232,9 +232,8 @@ fn find_asset(
             format!("release asset {name} exceeds the {limit}-byte limit"),
         ));
     }
-    let url = reqwest::Url::parse(&asset.url).map_err(|error| {
-        UpdateError::new(EXIT_NETWORK, format!("invalid asset URL: {error}"))
-    })?;
+    let url = reqwest::Url::parse(&asset.url)
+        .map_err(|error| UpdateError::new(EXIT_NETWORK, format!("invalid asset URL: {error}")))?;
     if !allowed_url(&url, allow_loopback) {
         return Err(UpdateError::new(
             EXIT_NETWORK,

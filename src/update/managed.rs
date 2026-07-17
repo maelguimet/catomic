@@ -30,16 +30,15 @@ use super::{
     EXIT_UNSUPPORTED,
 };
 
-const LATEST_RELEASE_URL: &str =
-    "https://api.github.com/repos/maelguimet/catomic/releases/latest";
+const LATEST_RELEASE_URL: &str = "https://api.github.com/repos/maelguimet/catomic/releases/latest";
 const MAX_METADATA_BYTES: usize = 1024 * 1024;
 const MAX_CHECKSUM_BYTES: usize = 64 * 1024;
 const MAX_ARTIFACT_BYTES: usize = 64 * 1024 * 1024;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
-pub(super) const fn is_managed_build() -> bool {
-    matches!(option_env!("CATOMIC_MANAGED_RELEASE"), Some("1"))
+pub(super) fn is_managed_build() -> bool {
+    option_env!("CATOMIC_MANAGED_RELEASE").is_some_and(|value| value == "1")
 }
 
 pub(super) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
@@ -99,14 +98,11 @@ pub(super) fn source_version_at(sha: &str) -> Result<String, UpdateError> {
             "refusing invalid source revision",
         ));
     }
-    let url = format!(
-        "https://raw.githubusercontent.com/maelguimet/catomic/{sha}/Cargo.toml"
-    );
+    let url = format!("https://raw.githubusercontent.com/maelguimet/catomic/{sha}/Cargo.toml");
     let client = HttpClient::new(&url)?;
     let bytes = block_on(client.get_bounded(&url, 64 * 1024, None))?;
-    let text = std::str::from_utf8(&bytes).map_err(|_| {
-        UpdateError::new(EXIT_NETWORK, "official Cargo.toml is not valid UTF-8")
-    })?;
+    let text = std::str::from_utf8(&bytes)
+        .map_err(|_| UpdateError::new(EXIT_NETWORK, "official Cargo.toml is not valid UTF-8"))?;
     let manifest: toml::Value = toml::from_str(text).map_err(|error| {
         UpdateError::new(
             EXIT_NETWORK,
@@ -118,12 +114,7 @@ pub(super) fn source_version_at(sha: &str) -> Result<String, UpdateError> {
         .and_then(|package| package.get("version"))
         .and_then(toml::Value::as_str)
         .map(str::to_string)
-        .ok_or_else(|| {
-            UpdateError::new(
-                EXIT_NETWORK,
-                "official Cargo.toml has no package version",
-            )
-        })
+        .ok_or_else(|| UpdateError::new(EXIT_NETWORK, "official Cargo.toml has no package version"))
 }
 
 pub(super) fn source_relation(base: &str, head: &str) -> Result<String, UpdateError> {
@@ -136,9 +127,7 @@ pub(super) fn source_relation(base: &str, head: &str) -> Result<String, UpdateEr
     if base == head {
         return Ok("identical".to_string());
     }
-    let url = format!(
-        "https://api.github.com/repos/maelguimet/catomic/compare/{base}...{head}"
-    );
+    let url = format!("https://api.github.com/repos/maelguimet/catomic/compare/{base}...{head}");
     let client = HttpClient::new(&url)?;
     let bytes = block_on(client.get_bounded(&url, MAX_METADATA_BYTES, None))?;
     #[derive(Deserialize)]
@@ -177,11 +166,19 @@ fn print_check(release: &ReleaseInfo) {
         Ok(current) => {
             println!(
                 "update available: {}",
-                if release.version > current { "yes" } else { "no" }
+                if release.version > current {
+                    "yes"
+                } else {
+                    "no"
+                }
             );
             println!(
                 "can apply: {}",
-                if release.version >= current { "yes" } else { "no" }
+                if release.version >= current {
+                    "yes"
+                } else {
+                    "no"
+                }
             );
             if release.version < current {
                 println!("reason: latest release is older; downgrades are refused");
@@ -278,10 +275,7 @@ impl TempBinary {
         #[cfg(unix)]
         file.set_permissions(fs::Permissions::from_mode(0o700))
             .map_err(|error| {
-                UpdateError::new(
-                    EXIT_INSTALL,
-                    format!("set candidate permissions: {error}"),
-                )
+                UpdateError::new(EXIT_INSTALL, format!("set candidate permissions: {error}"))
             })?;
         file.write_all(bytes)
             .and_then(|_| file.sync_all())

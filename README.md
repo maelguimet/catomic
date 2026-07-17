@@ -48,6 +48,18 @@ To install `catomic` into Cargo's binary directory instead:
 cargo install --path . --locked
 ```
 
+For a clean official `master` checkout, either launch method supports the
+state-preserving updater:
+
+```sh
+catomic update --check
+catomic update --backup
+```
+
+The updater never rewrites Catomic configuration or local source changes. See
+[Updating, backup, and rollback](docs/user-guide.md#updating-backup-and-rollback)
+for supported install methods and recovery behavior.
+
 ## Start editing
 
 Open one or more files, or start with an untitled buffer:

@@ -54,6 +54,7 @@ dependencies = [
  "portable-pty",
  "pulldown-cmark",
  "reqwest",
+ "ring",
  "serde",
  "serde_json",
  "tokio",

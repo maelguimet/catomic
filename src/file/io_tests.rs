@@ -115,6 +115,31 @@ fn atomic_write_preserves_existing_file_mode() {
 
 #[cfg(unix)]
 #[test]
+fn atomic_write_refuses_read_only_existing_file() {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    let out = temp_path("read_only.txt");
+    cleanup(&out);
+    fs::write(&out, "protected").unwrap();
+    fs::set_permissions(&out, fs::Permissions::from_mode(0o444)).unwrap();
+    let inode = fs::metadata(&out).unwrap().ino();
+
+    let error =
+        atomic_write_string(&out, "replacement").expect_err("read-only target must fail closed");
+
+    assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+    assert!(error.to_string().contains("read-only"));
+    assert_eq!(fs::read_to_string(&out).unwrap(), "protected");
+    assert_eq!(fs::metadata(&out).unwrap().ino(), inode);
+    assert_eq!(
+        fs::metadata(&out).unwrap().permissions().mode() & 0o777,
+        0o444
+    );
+    cleanup(&out);
+}
+
+#[cfg(unix)]
+#[test]
 fn atomic_private_write_forces_owner_only_mode() {
     use std::os::unix::fs::PermissionsExt;
 

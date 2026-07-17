@@ -98,6 +98,12 @@ fn atomic_write_with_policy(
             Some(fs::Permissions::from_mode(0o600))
         } else {
             match fs::metadata(&target) {
+                Ok(metadata) if metadata.permissions().readonly() => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        format!("refusing to replace read-only file: {}", target.display()),
+                    ));
+                }
                 Ok(metadata) => Some(metadata.permissions()),
                 Err(error) if error.kind() == io::ErrorKind::NotFound => None,
                 Err(error) => return Err(error),

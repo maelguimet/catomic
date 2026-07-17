@@ -175,28 +175,36 @@ impl<'a> FormatWriter<'a> {
     }
 
     fn consume(&mut self, bytes: &[u8]) -> io::Result<()> {
-        for &byte in bytes {
-            match byte {
-                b'\r' => {
-                    if self.pending_cr {
-                        self.write_newline()?;
-                    }
-                    self.pending_cr = true;
-                }
-                b'\n' => {
-                    self.write_newline()?;
-                    self.pending_cr = false;
-                }
-                _ => {
-                    if self.pending_cr {
-                        self.write_newline()?;
-                        self.pending_cr = false;
-                    }
-                    self.out.write_all(&[byte])?;
-                }
+        let mut bytes = bytes;
+        if self.pending_cr {
+            self.write_newline()?;
+            self.pending_cr = false;
+            if bytes.first() == Some(&b'\n') {
+                bytes = &bytes[1..];
             }
         }
-        Ok(())
+
+        let mut plain_start = 0usize;
+        let mut index = 0usize;
+        while index < bytes.len() {
+            if !matches!(bytes[index], b'\r' | b'\n') {
+                index += 1;
+                continue;
+            }
+            self.out.write_all(&bytes[plain_start..index])?;
+            if bytes[index] == b'\r' && index + 1 == bytes.len() {
+                self.pending_cr = true;
+                return Ok(());
+            }
+            self.write_newline()?;
+            index += if bytes[index] == b'\r' && bytes.get(index + 1) == Some(&b'\n') {
+                2
+            } else {
+                1
+            };
+            plain_start = index;
+        }
+        self.out.write_all(&bytes[plain_start..])
     }
 
     fn finish_prefix(&mut self) -> io::Result<()> {

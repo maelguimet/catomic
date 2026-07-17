@@ -177,6 +177,35 @@ fn command_prompt_accepts_save_as_with_a_path() {
 }
 
 #[test]
+fn completed_open_prompt_does_not_persist_on_source_buffer() {
+    let first = std::env::temp_dir().join(format!(
+        "catomic_open_prompt_first_{}.txt",
+        std::process::id()
+    ));
+    let second = std::env::temp_dir().join(format!(
+        "catomic_open_prompt_second_{}.txt",
+        std::process::id()
+    ));
+    std::fs::write(&first, "first").unwrap();
+    std::fs::write(&second, "second").unwrap();
+    let mut app = super::super::App::new(first.to_str()).unwrap();
+    let mut out = Vec::new();
+
+    open_file_prompt(&mut app, &mut out).unwrap();
+    type_text(&mut app, &mut out, second.to_str().unwrap());
+    app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
+        .unwrap();
+    assert_eq!(app.file.path.as_deref(), Some(second.as_path()));
+
+    assert!(app.switch_buffer(super::super::buffers::BufferDirection::Previous));
+    assert_eq!(app.file.path.as_deref(), Some(first.as_path()));
+    assert_eq!(app.message, None);
+
+    let _ = std::fs::remove_file(first);
+    let _ = std::fs::remove_file(second);
+}
+
+#[test]
 fn save_as_expands_tilde_from_the_supplied_home() {
     let home = std::ffi::OsStr::new("/tmp/catomic-home");
 

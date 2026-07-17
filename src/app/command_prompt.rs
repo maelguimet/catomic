@@ -195,6 +195,8 @@ fn execute_open(app: &mut super::App, out: &mut dyn Write, input: &str) -> io::R
             return app.render(out);
         }
     };
+    // The prompt is complete before open_file_buffer may swap this buffer into a slot.
+    app.message = None;
     match app.open_file_buffer(&path) {
         Ok(true) => app.message = Some(format!("Opened {}.", path.display())),
         Ok(false) => app.message = Some(format!("Already open: {}.", path.display())),

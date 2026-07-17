@@ -27,7 +27,9 @@ enum Continuation {
 }
 
 pub(crate) fn trigger_open(app: &mut super::App) {
-    enqueue(app, HookEvent::Open);
+    if app.file.path.is_some() {
+        enqueue(app, HookEvent::Open);
+    }
 }
 
 pub(crate) fn trigger_save(app: &mut super::App) {

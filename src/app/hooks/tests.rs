@@ -34,7 +34,11 @@ fn close_result(app: &mut super::super::App, out: &mut Vec<u8>) {
 
 #[test]
 fn open_hooks_run_sequentially_in_configuration_order() {
-    let mut app = super::super::App::new(None).unwrap();
+    let path = std::env::temp_dir().join(format!(
+        "catomic_hook_named_open_{}.txt",
+        std::process::id()
+    ));
+    let mut app = super::super::App::new(Some(path.to_str().unwrap())).unwrap();
     configure(
         &mut app,
         "[commands.first]\ncommand = \"printf first\"\n\
@@ -56,6 +60,22 @@ fn open_hooks_run_sequentially_in_configuration_order() {
     pump(&mut app, &mut out).unwrap();
 
     assert!(!is_pending(&app));
+}
+
+#[test]
+fn untitled_startup_does_not_queue_open_hooks() {
+    let mut app = super::super::App::new(None).unwrap();
+    configure(
+        &mut app,
+        "[commands.opened]\ncommand = \"printf opened\"\n[hooks]\non_open = [\"opened\"]\n",
+    );
+    let mut out = Vec::new();
+
+    trigger_open(&mut app);
+    pump(&mut app, &mut out).unwrap();
+
+    assert!(!is_pending(&app));
+    assert!(!super::super::external_command::is_busy(&app));
 }
 
 #[test]

@@ -5,7 +5,25 @@
 //! Phase: post-v0.1 core usability.
 
 use super::*;
-use crate::buffer::PieceTable;
+use crate::buffer::{Buffer, PagedFileBuffer, PieceTable};
+
+#[derive(Default)]
+struct CountingSink {
+    writes: usize,
+    bytes: usize,
+}
+
+impl Write for CountingSink {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.writes += 1;
+        self.bytes += bytes.len();
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
 
 #[test]
 fn decodes_bom_and_crlf_into_normalized_document_text() {
@@ -50,6 +68,47 @@ fn writer_normalizes_existing_crlf_without_doubling_carriage_returns() {
     writer.write_all(b"\ntwo\n").unwrap();
     writer.finish().unwrap();
     assert_eq!(out, b"one\r\ntwo\r\n");
+}
+
+#[test]
+fn writer_batches_long_lines_into_bounded_underlying_writes() {
+    let payload = vec![0_u8; 1024 * 1024];
+    let mut sink = CountingSink::default();
+    let mut writer = FormatWriter::new(&mut sink, TextFormat::default());
+    writer.write_all(&payload).unwrap();
+    writer.finish().unwrap();
+
+    assert_eq!(sink.bytes, payload.len());
+    assert!(
+        sink.writes <= 3,
+        "a long newline-free chunk used {} underlying writes",
+        sink.writes
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn edited_sparse_long_line_streams_in_chunks() {
+    const SPARSE_BYTES: u64 = 8 * 1024 * 1024;
+    let path =
+        std::env::temp_dir().join(format!("catomic_sparse_stream_{}.txt", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    let file = std::fs::File::create(&path).unwrap();
+    file.set_len(SPARSE_BYTES).unwrap();
+    drop(file);
+    let mut buffer = PagedFileBuffer::open(&path, 20_000).unwrap();
+    buffer.insert_char('X');
+    let mut sink = CountingSink::default();
+
+    write_buffer(&buffer, &mut sink, TextFormat::default()).unwrap();
+
+    assert_eq!(sink.bytes as u64, SPARSE_BYTES + 1);
+    assert!(
+        sink.writes < 256,
+        "sparse long-line stream used {} underlying writes",
+        sink.writes
+    );
+    let _ = std::fs::remove_file(path);
 }
 
 #[test]

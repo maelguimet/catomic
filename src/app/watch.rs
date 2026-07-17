@@ -13,6 +13,7 @@
 //!   self-save noise); when a pending_reload exists they clear it, set a status message,
 //!   and return visible (so runtime renders once); Modified/Deleted/Unknown/Error remain
 //!   user-visible; clean Modified/Deleted observations auto-reload when configured;
+//!   watcher drift invalidates rather than silently re-arms confirmation;
 //!   construction failure is non-fatal.
 //! Phase: 2-ad stale pending cleanup through 2-bx automatic clean reload.
 //!
@@ -140,6 +141,18 @@ pub(crate) fn apply_file_watch_signal(
                         && !matches!(obs.status, ExternalFileStatus::Unknown(_))
                     {
                         super::reload::perform_observed_reload(app, &obs);
+                    } else if app.pending_reload.is_some()
+                        && !super::reload::pending_matches_observation(app, &obs)
+                        && matches!(
+                            obs.status,
+                            ExternalFileStatus::Modified | ExternalFileStatus::Deleted
+                        )
+                    {
+                        app.pending_reload = None;
+                        app.message = Some(super::reload::reload_drift_message(
+                            &obs.status,
+                            app.file.dirty,
+                        ));
                     } else {
                         super::reload::apply_check_observation(app, &obs);
                     }

@@ -298,7 +298,7 @@ impl App {
         // Phase 0 render is extremely dumb.
         self.render(&mut stdout)?;
 
-        while !self.should_quit {
+        while !self.should_quit && term::termination_signal().is_none() {
             // Check watcher once per iteration (hint only). Uses the non-blocking seam
             // so we do not block the 100ms poll cycle. If a Changed/Deleted signal is
             // present, check_file_watcher_once does one try_recv + fresh observe_external_file

@@ -49,6 +49,7 @@ name = "catomic"
 version = "0.1.0"
 dependencies = [
  "crossterm",
+ "libc",
  "notify",
  "portable-pty",
  "pulldown-cmark",

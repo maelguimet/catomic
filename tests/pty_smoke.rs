@@ -110,6 +110,17 @@ impl PtyEditor {
     }
 
     fn spawn_with(paths: &[&PathBuf], xdg_config_home: Option<&PathBuf>) -> TestResult<Self> {
+        let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
+        for path in paths {
+            cmd.arg(path);
+        }
+        if let Some(path) = xdg_config_home {
+            cmd.env("XDG_CONFIG_HOME", path);
+        }
+        Self::spawn_command(cmd)
+    }
+
+    fn spawn_command(cmd: CommandBuilder) -> TestResult<Self> {
         let pty_system = native_pty_system();
         let pair = pty_system.openpty(PtySize {
             rows: 24,
@@ -118,13 +129,6 @@ impl PtyEditor {
             pixel_height: 0,
         })?;
 
-        let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
-        for path in paths {
-            cmd.arg(path);
-        }
-        if let Some(path) = xdg_config_home {
-            cmd.env("XDG_CONFIG_HOME", path);
-        }
         let child = pair.slave.spawn_command(cmd)?;
         drop(pair.slave);
 
@@ -191,6 +195,29 @@ impl PtyEditor {
         }
     }
 
+    fn wait_for_exit_code(&mut self, expected: u32) -> TestResult {
+        let start = Instant::now();
+        loop {
+            if let Some(status) = self.child.try_wait()? {
+                if status.exit_code() != expected {
+                    return Err(format!("expected exit {expected}, got {status:?}").into());
+                }
+                return Ok(());
+            }
+            if start.elapsed() >= Duration::from_secs(5) {
+                let _ = self.child.kill();
+                return Err("timed out waiting for catomic to exit".into());
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    fn process_id(&self) -> TestResult<u32> {
+        self.child
+            .process_id()
+            .ok_or_else(|| "PTY child has no process id".into())
+    }
+
     fn output_string(&self) -> String {
         String::from_utf8_lossy(&self.output.lock().expect("pty output mutex")).into_owned()
     }
@@ -237,6 +264,70 @@ fn pty_save_undo_save_quit_writes_expected_file() -> TestResult {
     assert!(!output.contains("\x1b[2J"), "must avoid full-screen clears");
     assert_eq!(fs::read_to_string(&temp.path)?, "ab");
 
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn pty_sigterm_restores_terminal_modes_before_exit() -> TestResult {
+    let temp = TempPath::new("sigterm_restore");
+    fs::write(&temp.path, "unsaved")?;
+    let mut editor = PtyEditor::spawn(&temp.path)?;
+    editor.wait_for_initial_render()?;
+
+    let status = std::process::Command::new("kill")
+        .args(["-TERM", &editor.process_id()?.to_string()])
+        .status()?;
+    assert!(status.success());
+    editor.wait_for_exit_code(128 + 15)?;
+
+    let output = editor.output_string();
+    assert!(output.contains("\x1b[?1000l"), "mouse mode not disabled");
+    assert!(
+        output.contains("\x1b[?2004l"),
+        "bracketed paste not disabled"
+    );
+    assert!(output.contains("\x1b[?1049l"), "alternate screen not left");
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn pty_file_size_limit_save_is_recoverable_and_cleans_temp() -> TestResult {
+    let project = TempProject::new("file_limit");
+    let target = project.write("target.txt", "base");
+    let mut command = CommandBuilder::new("bash");
+    command.arg("-lc");
+    command.arg("ulimit -f 1; exec \"$@\"");
+    command.arg("catomic-file-limit");
+    command.arg(env!("CARGO_BIN_EXE_catomic"));
+    command.arg(&target);
+    let mut editor = PtyEditor::spawn_command(command)?;
+    editor.wait_for_initial_render()?;
+
+    let pasted = "x".repeat(1536);
+    editor.send_keys(b"\x1b[200~")?;
+    editor.send_keys(pasted.as_bytes())?;
+    editor.send_keys(b"\x1b[201~\x13")?;
+    wait_until(
+        "recoverable file-limit error",
+        Duration::from_secs(5),
+        || editor.output_string().contains("Save error:"),
+    )?;
+
+    assert!(
+        editor.child.try_wait()?.is_none(),
+        "editor must remain running"
+    );
+    assert_eq!(fs::read_to_string(&target)?, "base");
+    let leftovers = fs::read_dir(&project.root)?
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp."))
+        .count();
+    assert_eq!(leftovers, 0, "failed save must clean its temp file");
+
+    editor.send_keys(b"\x11\x11")?;
+    editor.wait_for_exit()?;
     Ok(())
 }
 

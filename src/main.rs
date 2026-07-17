@@ -18,6 +18,7 @@ mod terminal;
 mod tests;
 
 use std::env;
+use std::ffi::OsStr;
 
 fn main() {
     let action = parse_args(env::args().skip(1));
@@ -33,9 +34,41 @@ fn main() {
         CliAction::Run(file_args) => file_args,
     };
 
+    if let Err(error) = validate_utf8_locale(
+        env::var_os("LC_ALL").as_deref(),
+        env::var_os("LC_CTYPE").as_deref(),
+        env::var_os("LANG").as_deref(),
+    ) {
+        eprintln!("catomic: {error}");
+        std::process::exit(1);
+    }
+
     if let Err(e) = app::run(&file_args) {
         eprintln!("catomic: {e}");
         std::process::exit(1);
+    }
+}
+
+fn validate_utf8_locale(
+    lc_all: Option<&OsStr>,
+    lc_ctype: Option<&OsStr>,
+    lang: Option<&OsStr>,
+) -> Result<(), String> {
+    let selected = [("LC_ALL", lc_all), ("LC_CTYPE", lc_ctype), ("LANG", lang)]
+        .into_iter()
+        .find(|(_, value)| value.is_some_and(|value| !value.is_empty()));
+    let Some((name, value)) = selected else {
+        return Err("UTF-8 locale required; LC_ALL, LC_CTYPE, and LANG are unset".to_string());
+    };
+    let value = value.expect("selected locale has a non-empty value");
+    let text = value
+        .to_str()
+        .ok_or_else(|| format!("UTF-8 locale required; {name} is not valid UTF-8"))?;
+    let normalized = text.to_ascii_lowercase().replace('-', "");
+    if normalized.contains("utf8") {
+        Ok(())
+    } else {
+        Err(format!("UTF-8 locale required; {name}={text:?}"))
     }
 }
 
@@ -72,7 +105,7 @@ fn print_help() {
 
 #[cfg(test)]
 mod cli_tests {
-    use super::{parse_args, CliAction};
+    use super::{parse_args, validate_utf8_locale, CliAction};
 
     #[test]
     fn parses_help_and_version_without_opening_editor() {
@@ -92,6 +125,32 @@ mod cli_tests {
         match parse_args(["--".to_string(), "--help".to_string()]) {
             CliAction::Run(files) => assert_eq!(files, ["--help"]),
             _ => panic!("expected run action"),
+        }
+    }
+
+    #[test]
+    fn accepts_utf8_locale_spellings_by_precedence() {
+        assert!(validate_utf8_locale(Some("C.UTF-8".as_ref()), None, None).is_ok());
+        assert!(validate_utf8_locale(None, Some("en_US.utf8".as_ref()), None).is_ok());
+        assert!(validate_utf8_locale(None, None, Some("fr_FR.UTF-8@euro".as_ref())).is_ok());
+        assert!(validate_utf8_locale(
+            Some("".as_ref()),
+            Some("C.UTF-8".as_ref()),
+            Some("C".as_ref())
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn rejects_non_utf8_or_missing_locale() {
+        for result in [
+            validate_utf8_locale(Some("C".as_ref()), None, Some("en_US.UTF-8".as_ref())),
+            validate_utf8_locale(None, Some("POSIX".as_ref()), Some("en_US.UTF-8".as_ref())),
+            validate_utf8_locale(None, None, Some("C".as_ref())),
+            validate_utf8_locale(None, None, None),
+        ] {
+            let error = result.expect_err("non-UTF-8 locale must fail closed");
+            assert!(error.contains("UTF-8 locale required"));
         }
     }
 }

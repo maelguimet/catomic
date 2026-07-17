@@ -105,6 +105,10 @@ support LF and CRLF; BOM-prefixed or CR-only files must remain below the paged
 threshold. UTF-16 and other non-UTF-8 encodings are rejected rather than
 silently corrupted.
 
+Editor sessions also require a UTF-8 locale selected by `LC_ALL`, `LC_CTYPE`,
+or `LANG` (in that order). Non-UTF-8 or missing locale settings are refused
+before terminal raw mode; `--help` and `--version` remain available.
+
 Atomic saves through a valid final symlink replace its referent and leave the
 symlink intact. A dangling final symlink is refused rather than replaced. File
 watching tracks both the link and its resolved referent so either kind of

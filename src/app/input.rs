@@ -1,8 +1,8 @@
 //! Purpose: route normalized key and paste events into explicit App/editor actions.
 //! Owns: key precedence, ordinary edit dispatch, and common post-edit cleanup.
 //! Must not: decode raw terminal bytes, access buffer internals, render content, or network.
-//! Invariants: guarded save/quit/reload shortcuts win over text input; one user edit
-//!   invokes one Buffer mutation and clears stale selections/confirmations.
+//! Invariants: active local surfaces handle raw keys before normal-mode overrides;
+//!   guarded shortcuts win over text input; one user edit clears stale confirmations.
 //! Phase: 3-d keyboard selection and bracketed-paste integration.
 
 use std::io::{self, Write};
@@ -97,6 +97,9 @@ pub(crate) fn handle_key_with(
         return Ok(());
     }
     if lint::handle_key(app, out, key)? {
+        return Ok(());
+    }
+    if view::is_preview(app) && view::handle_key(app, out, key)? {
         return Ok(());
     }
     let translated = app.keybindings.translate(key);

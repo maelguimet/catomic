@@ -198,6 +198,32 @@ fn atomic_write_with_error_preserves_target_and_removes_temp() {
     cleanup(&out);
 }
 
+#[test]
+fn atomic_write_temp_collision_preserves_pre_existing_file() {
+    let out = temp_path("temp_collision.txt");
+    cleanup(&out);
+    fs::write(&out, "stable").unwrap();
+    let parent = out.parent().unwrap();
+    let base = out.file_name().unwrap().to_string_lossy();
+    let tid = format!("{:?}", std::thread::current().id());
+    let temp = parent.join(format!("{}.tmp.{}.{}", base, std::process::id(), tid));
+    cleanup(&temp);
+    fs::write(&temp, "pre-existing sibling").unwrap();
+
+    let error = atomic_write_string(&out, "replacement")
+        .expect_err("a colliding temp path must fail closed");
+
+    assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+    assert_eq!(fs::read_to_string(&out).unwrap(), "stable");
+    assert_eq!(
+        fs::read_to_string(&temp).unwrap(),
+        "pre-existing sibling",
+        "failed create_new must not delete a file it did not create"
+    );
+    cleanup(&temp);
+    cleanup(&out);
+}
+
 // Phase 2-l: FileSnapshot / ExternalFileStatus tests (std metadata only; no full read)
 
 #[test]

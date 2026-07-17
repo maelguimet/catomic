@@ -88,7 +88,9 @@ fn atomic_write_with_policy(
     );
     let temp_path: PathBuf = parent.join(tmp_name);
 
-    // Inner closure so we can cleanup temp exactly on failure path.
+    // Inner closure so we can cleanup a temp we created exactly on failure path.
+    // A create_new collision belongs to someone else and must remain untouched.
+    let mut created_temp = false;
     let res: io::Result<u64> = (|| {
         #[cfg(unix)]
         let existing_permissions = if private {
@@ -106,6 +108,7 @@ fn atomic_write_with_policy(
             .write(true)
             .create_new(true)
             .open(&temp_path)?;
+        created_temp = true;
         #[cfg(unix)]
         if let Some(permissions) = existing_permissions {
             f.set_permissions(permissions)?;
@@ -132,8 +135,8 @@ fn atomic_write_with_policy(
         Ok(written)
     })();
 
-    if res.is_err() {
-        // Best-effort cleanup; ignore remove error (file may not exist).
+    if res.is_err() && created_temp {
+        // Best-effort cleanup of only the temp this attempt created.
         let _ = fs::remove_file(&temp_path);
     }
     res

@@ -11,7 +11,7 @@ use std::process::Command;
 use super::*;
 
 #[test]
-fn sends_openai_compatible_json_and_extracts_content() {
+fn loopback_http_with_api_key_sends_openai_compatible_json() {
     let (base_url, server) = fake_server(
         "200 OK",
         "application/json",
@@ -32,6 +32,30 @@ fn sends_openai_compatible_json_and_extracts_content() {
         .contains("authorization: bearer cat-secret"));
     assert!(request.contains("\"model\":\"test-model\""));
     assert!(request.contains("\"content\":\"user context\""));
+}
+
+#[test]
+fn allows_unauthenticated_lan_http_endpoint() {
+    let result = OpenAiCompatClient::new(config("http://192.168.1.23:8080/v1".to_string(), None));
+
+    assert!(result.is_ok());
+}
+
+#[test]
+fn rejects_api_key_for_non_loopback_http_before_sending() {
+    let result = OpenAiCompatClient::new(config(
+        "http://192.168.1.23:8080/v1".to_string(),
+        Some("cat-secret"),
+    ));
+    let error = match result {
+        Ok(_) => panic!("plaintext non-loopback endpoint must be rejected"),
+        Err(error) => error,
+    };
+
+    assert!(matches!(error, LlmError::InsecureApiKey { .. }));
+    let message = error.to_string();
+    assert!(message.contains("refusing to send an API key over plaintext HTTP"));
+    assert!(message.contains("use HTTPS"));
 }
 
 #[test]

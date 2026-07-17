@@ -14,10 +14,11 @@ volume.
 - For a substantial feature or architecture change, open an issue first so its
   scope and fit can be discussed.
 
-The roadmap authority is [TODO.md](TODO.md) together with the acceptance records
-in [`docs/`](docs/). Read [AGENTS.md](AGENTS.md) before changing code; its
-architecture, testing, and scope rules apply to human and automated
-contributors alike.
+The active roadmap authority is [TODO.md](TODO.md) together with the acceptance
+records in [`docs/`](docs/). Historical plans under `docs/progress/` preserve
+design evidence but are not active requirements. Read [AGENTS.md](AGENTS.md)
+before changing code; its architecture, testing, and scope rules apply to human
+and automated contributors alike.
 
 ## Development setup
 
@@ -63,16 +64,19 @@ cargo package --locked --list
 git diff --check
 ```
 
-Release candidates also run the ignored/manual checks serially:
+Ignored and environment-sensitive checks are intentionally excluded from normal
+pull-request CI. Run them serially for release candidates:
 
 ```sh
 cargo test --all-targets --locked -- --ignored --test-threads=1 --nocapture
 ```
 
-Some of those checks create large temporary fixtures or measure live terminal
-and filesystem behavior. Read the relevant acceptance record under `docs/`
-before diagnosing an environment-sensitive result. No verification step may
-contact a live model or public endpoint.
+Maintainers can also run the separate **Acceptance** GitHub Actions workflow
+manually; version-tag pushes run it automatically. Some ignored checks create
+large temporary fixtures or measure live terminal and filesystem behavior.
+Read the relevant acceptance record under `docs/` before diagnosing an
+environment-sensitive result. No verification step may contact a live model or
+public endpoint.
 
 ## Pull requests
 

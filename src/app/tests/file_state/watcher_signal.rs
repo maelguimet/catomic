@@ -109,6 +109,48 @@ fn apply_file_watch_signal_changed_dirty_external_arms_with_discard_warning() {
 }
 
 #[test]
+fn watcher_does_not_hide_matching_save_overwrite_confirmation() {
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!(
+        "catomic_watcher_save_confirmation_{}.txt",
+        std::process::id()
+    ));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, "BASE").unwrap();
+
+    let mut app = App::new(Some(&p)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
+    std::fs::write(&p, "EXTERNAL").unwrap();
+
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(app.pending_save_conflict.is_some());
+    assert_eq!(
+        app.message.as_deref(),
+        Some("File changed on disk. Press Ctrl+S again to overwrite.")
+    );
+
+    let visible = crate::app::watch::apply_file_watch_signal(
+        &mut app,
+        crate::file::watcher::FileWatchSignal::Changed,
+    );
+
+    assert!(visible);
+    assert!(app.pending_save_conflict.is_some());
+    assert!(app.pending_reload.is_some());
+    assert_eq!(
+        app.message.as_deref(),
+        Some("File changed on disk. Press Ctrl+S again to overwrite."),
+        "the visible warning must describe the still-armed destructive save"
+    );
+    assert_eq!(std::fs::read_to_string(&p).unwrap(), "EXTERNAL");
+
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
 fn apply_file_watch_signal_deleted_clean_buffer_auto_clears() {
     let mut tmp = std::env::temp_dir();
     tmp.push(format!("catomic_2aa_sig_del_{}.txt", std::process::id()));

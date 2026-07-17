@@ -136,6 +136,11 @@ pub(crate) fn apply_file_watch_signal(
                 ExternalFileStatus::Modified
                 | ExternalFileStatus::Deleted
                 | ExternalFileStatus::Unknown(_) => {
+                    let matching_save_conflict = current_path.as_deref().is_some_and(|path| {
+                        app.pending_save_conflict
+                            .as_ref()
+                            .is_some_and(|pending| pending.matches_observation(path, &obs))
+                    });
                     if app.auto_reload
                         && !app.file.dirty
                         && !matches!(obs.status, ExternalFileStatus::Unknown(_))
@@ -155,6 +160,9 @@ pub(crate) fn apply_file_watch_signal(
                         ));
                     } else {
                         super::reload::apply_check_observation(app, &obs);
+                    }
+                    if matching_save_conflict {
+                        app.message = Some(super::save::save_conflict_message(&obs.status));
                     }
                     true
                 }

@@ -10,7 +10,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use crate::file;
-use crate::file::io::{ExternalFileStatus, FileSnapshot};
+use crate::file::io::{ExternalFileObservation, ExternalFileStatus, FileSnapshot};
 
 /// Token recorded on first save refusal for a conflict.
 /// Binds to the specific observed disk state (path + status + live snapshot at refusal time),
@@ -24,6 +24,28 @@ pub(crate) struct PendingSaveConflict {
     /// Live snapshot observed when we refused. For Modified this distinguishes
     /// different external states; for Deleted/Unknown kind-matching suffices.
     pub snapshot: Option<FileSnapshot>,
+}
+
+impl PendingSaveConflict {
+    pub(crate) fn matches_observation(
+        &self,
+        path: &Path,
+        observation: &ExternalFileObservation,
+    ) -> bool {
+        if self.path != path {
+            return false;
+        }
+        match (&self.status, &observation.status) {
+            (ExternalFileStatus::Modified, ExternalFileStatus::Modified) => {
+                self.snapshot == observation.live_snapshot
+            }
+            (ExternalFileStatus::Deleted, ExternalFileStatus::Deleted) => true,
+            (ExternalFileStatus::Unknown(first), ExternalFileStatus::Unknown(second)) => {
+                first == second
+            }
+            _ => false,
+        }
+    }
 }
 
 /// Returns the exact refusal message text used for a given external status.
@@ -71,29 +93,11 @@ pub(crate) fn handle_save(app: &mut super::App, out: &mut dyn Write) -> io::Resu
     }
 
     // Conflict status: decide force only if pending token matches the *current observed* state.
-    let should_force = match &app.pending_save_conflict {
-        Some(pend) => {
-            if let Some(ref cp) = current_path {
-                if pend.path == *cp {
-                    match (&pend.status, &obs.status) {
-                        (ExternalFileStatus::Modified, ExternalFileStatus::Modified) => {
-                            pend.snapshot == obs.live_snapshot
-                        }
-                        (ExternalFileStatus::Deleted, ExternalFileStatus::Deleted) => true,
-                        (ExternalFileStatus::Unknown(k1), ExternalFileStatus::Unknown(k2)) => {
-                            k1 == k2
-                        }
-                        _ => false,
-                    }
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
-        }
-        None => false,
-    };
+    let should_force = current_path.as_deref().is_some_and(|path| {
+        app.pending_save_conflict
+            .as_ref()
+            .is_some_and(|pending| pending.matches_observation(path, &obs))
+    });
 
     if should_force {
         do_atomic_save(app, out)

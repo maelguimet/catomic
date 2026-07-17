@@ -206,8 +206,11 @@ fn successful_before_llm_hook_resumes_only_to_local_confirmation() {
 fn closing_buffer_cancels_and_reaps_running_hook() {
     let pid_path =
         std::env::temp_dir().join(format!("catomic-close-hook-{}.pid", std::process::id()));
+    let source_path =
+        std::env::temp_dir().join(format!("catomic-close-hook-source-{}.txt", std::process::id()));
     let _ = std::fs::remove_file(&pid_path);
-    let mut app = super::super::App::new(None).unwrap();
+    let mut app =
+        super::super::App::new(Some(source_path.to_str().expect("UTF-8 temp path"))).unwrap();
     configure(
         &mut app,
         &format!(
@@ -234,8 +237,11 @@ fn closing_buffer_cancels_and_reaps_running_hook() {
 fn project_mode_switch_cancels_and_reaps_running_hook() {
     let pid_path =
         std::env::temp_dir().join(format!("catomic-mode-hook-{}.pid", std::process::id()));
+    let source_path =
+        std::env::temp_dir().join(format!("catomic-mode-hook-source-{}.txt", std::process::id()));
     let _ = std::fs::remove_file(&pid_path);
-    let mut app = super::super::App::new(None).unwrap();
+    let mut app =
+        super::super::App::new(Some(source_path.to_str().expect("UTF-8 temp path"))).unwrap();
     configure(
         &mut app,
         &format!(

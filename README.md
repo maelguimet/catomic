@@ -141,8 +141,10 @@ bounded, but the command itself can have effects outside Catomic.
 LLM endpoints use an OpenAI-compatible API. Model actions show the endpoint,
 model, and exact context extent before sending; edits then open read-only and
 require a second confirmation before becoming one undoable buffer change. Use
-HTTPS for every non-loopback endpoint, especially when `api_key_env` is set.
-See [the LLM safety rules](docs/llm-rules.md) for the full boundary.
+Plain HTTP is allowed for loopback models and unauthenticated LAN models. If an
+API key is present, Catomic refuses to send it over non-loopback HTTP; use HTTPS
+for authenticated remote endpoints. See
+[the LLM safety rules](docs/llm-rules.md) for the full boundary.
 
 ## Limitations
 
@@ -153,10 +155,11 @@ See [the LLM safety rules](docs/llm-rules.md) for the full boundary.
 - Ordinary buffers preserve UTF-8 BOMs and LF, CRLF, or CR line endings. Paged
   large files support LF and CRLF; BOM-prefixed or CR-only files must remain
   below the paging threshold.
-- Atomic save replaces the destination inode. Existing Unix mode bits are
-  preserved, but hard-link identity, ACLs, extended attributes, and ownership or
-  group metadata are not guaranteed to survive. Use another tool when those
-  semantics matter.
+- Atomic save replaces the destination inode. On Linux, Catomic preserves mode,
+  owner, and group, but refuses files with multiple hard links or any extended
+  attributes/ACLs rather than silently discarding those semantics. Save As also
+  refuses FIFOs, sockets, directories, and symlinks resolving to them. Use
+  another tool for a refused target.
 - Terminal clipboard behavior depends on the emulator. Some environments
   intercept `Ctrl`/`Ctrl+Shift` chords or do not support OSC 52.
 - Syntax highlighting is deliberately lexical and viewport-only. Catomic does

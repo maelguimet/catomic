@@ -43,4 +43,6 @@ Dropping or cancelling the worker drops the request future and client.
   must be explicit and shown in the confirmation.
 - API keys are read from the configured environment variable only after the
   user confirms the endpoint and exact context extent.
+- Client construction refuses an API key for non-loopback plaintext HTTP.
+  Loopback HTTP with a key and unauthenticated LAN HTTP remain supported.
 - No telemetry is added.

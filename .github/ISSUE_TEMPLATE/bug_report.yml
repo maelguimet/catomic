@@ -47,7 +47,7 @@ body:
     attributes:
       label: Catomic version
       description: Paste `catomic --version`; include the commit hash for a source build.
-      placeholder: "catomic 0.1.0 (commit abc1234)"
+      placeholder: "catomic 0.1.0-beta.1 (commit abc1234)"
     validations:
       required: true
 

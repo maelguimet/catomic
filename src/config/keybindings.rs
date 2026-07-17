@@ -147,7 +147,11 @@ pub(crate) fn parse(text: &str) -> io::Result<KeyBindings> {
         let chord = parse_chord(&raw_chord)?;
         let action = Action::parse(&raw_action)
             .ok_or_else(|| invalid(format!("unknown keybinding action {raw_action:?}")))?;
-        overrides.insert(chord, action);
+        if overrides.insert(chord, action).is_some() {
+            return Err(invalid(format!(
+                "duplicate keybinding chord after normalization: {raw_chord:?}"
+            )));
+        }
     }
     Ok(KeyBindings { overrides })
 }
@@ -293,6 +297,20 @@ mod tests {
             "[keybindings]\n\"ctrl+f13\" = \"save\"\n",
         ] {
             assert_eq!(parse(text).unwrap_err().kind(), io::ErrorKind::InvalidData);
+        }
+    }
+
+    #[test]
+    fn rejects_duplicate_chords_after_normalization() {
+        for text in [
+            "[keybindings]\n\"ctrl+a\" = \"save\"\n\"ctrl+A\" = \"quit\"\n",
+            "[keybindings]\n\"ctrl+a\" = \"save\"\n\"control+a\" = \"quit\"\n",
+            "[keybindings]\n\"F2\" = \"save\"\n\"f2\" = \"quit\"\n",
+            "[keybindings]\n\"esc\" = \"save\"\n\"escape\" = \"quit\"\n",
+        ] {
+            let error = parse(text).expect_err("normalized duplicate must fail closed");
+            assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+            assert!(error.to_string().contains("duplicate keybinding chord"));
         }
     }
 }

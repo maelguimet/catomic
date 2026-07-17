@@ -5,6 +5,7 @@
 
 mod app;
 mod buffer;
+mod cli;
 mod config;
 mod editor;
 mod external;
@@ -13,37 +14,55 @@ mod llm;
 mod mode;
 mod project;
 mod terminal;
+mod update;
 
 #[cfg(test)]
 mod tests;
 
-use std::env;
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsStr;
 
 fn main() {
-    let action = match parse_args(env::args_os().skip(1)) {
+    let action = match cli::parse(std::env::args_os().skip(1)) {
         Ok(action) => action,
         Err(error) => {
             eprintln!("catomic: {error}");
-            std::process::exit(1);
+            std::process::exit(cli::EXIT_USAGE);
         }
     };
     let file_args = match action {
-        CliAction::Help => {
-            print_help();
+        cli::Action::Help => {
+            cli::print_help();
             return;
         }
-        CliAction::Version => {
+        cli::Action::Version => {
             println!("catomic {}", env!("CARGO_PKG_VERSION"));
             return;
         }
-        CliAction::Run(file_args) => file_args,
+        cli::Action::UpdateHelp => {
+            cli::print_update_help();
+            return;
+        }
+        cli::Action::ValidateConfig => {
+            if let Err(error) = config::validate_all() {
+                eprintln!("catomic: incompatible configuration: {error}");
+                std::process::exit(update::EXIT_CONFIG);
+            }
+            return;
+        }
+        cli::Action::Update(options) => {
+            if let Err(error) = update::run(options) {
+                eprintln!("catomic: {error}");
+                std::process::exit(error.exit_code());
+            }
+            return;
+        }
+        cli::Action::Run(file_args) => file_args,
     };
 
     if let Err(error) = validate_utf8_locale(
-        env::var_os("LC_ALL").as_deref(),
-        env::var_os("LC_CTYPE").as_deref(),
-        env::var_os("LANG").as_deref(),
+        std::env::var_os("LC_ALL").as_deref(),
+        std::env::var_os("LC_CTYPE").as_deref(),
+        std::env::var_os("LANG").as_deref(),
     ) {
         eprintln!("catomic: {error}");
         std::process::exit(1);
@@ -87,91 +106,9 @@ fn validate_utf8_locale(
     }
 }
 
-enum CliAction {
-    Help,
-    Version,
-    Run(Vec<String>),
-}
-
-fn parse_args<I, S>(args: I) -> Result<CliAction, String>
-where
-    I: IntoIterator<Item = S>,
-    S: Into<OsString>,
-{
-    let mut files = Vec::new();
-    let mut positional_only = false;
-    for (index, arg) in args.into_iter().enumerate() {
-        let arg = arg.into().into_string().map_err(|_| {
-            format!(
-                "argument {} is not valid UTF-8; non-UTF-8 filenames are not supported",
-                index + 1
-            )
-        })?;
-        if positional_only {
-            files.push(arg);
-            continue;
-        }
-        match arg.as_str() {
-            "--" => positional_only = true,
-            "-h" | "--help" => return Ok(CliAction::Help),
-            "-V" | "--version" => return Ok(CliAction::Version),
-            _ => files.push(arg),
-        }
-    }
-    Ok(CliAction::Run(files))
-}
-
-fn print_help() {
-    println!(
-        "catomic {}\n\nUsage:\n  catomic [FILE]...\n  catomic --help\n  catomic --version\n\nInside the editor, press Ctrl+H or F1 for shortcuts.",
-        env!("CARGO_PKG_VERSION")
-    );
-}
-
 #[cfg(test)]
 mod cli_tests {
-    use super::{parse_args, validate_utf8_locale, CliAction};
-
-    #[test]
-    fn parses_help_and_version_without_opening_editor() {
-        assert!(matches!(
-            parse_args(["--help".to_string()]).unwrap(),
-            CliAction::Help
-        ));
-        assert!(matches!(
-            parse_args(["-V".to_string()]).unwrap(),
-            CliAction::Version
-        ));
-    }
-
-    #[test]
-    fn keeps_positional_files_and_double_dash_literals() {
-        match parse_args(["a.txt".to_string(), "b.txt".to_string()]).unwrap() {
-            CliAction::Run(files) => assert_eq!(files, ["a.txt", "b.txt"]),
-            _ => panic!("expected run action"),
-        }
-        match parse_args(["--".to_string(), "--help".to_string()]).unwrap() {
-            CliAction::Run(files) => assert_eq!(files, ["--help"]),
-            _ => panic!("expected run action"),
-        }
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn rejects_non_utf8_argument_without_panicking() {
-        use std::ffi::OsString;
-        use std::os::unix::ffi::OsStringExt;
-
-        let invalid_path = OsString::from_vec(b"bad-\xff-name.txt".to_vec());
-        let error = parse_args([invalid_path])
-            .err()
-            .expect("non-UTF-8 argument must be rejected");
-
-        assert_eq!(
-            error,
-            "argument 1 is not valid UTF-8; non-UTF-8 filenames are not supported"
-        );
-    }
+    use super::validate_utf8_locale;
 
     #[test]
     fn accepts_utf8_locale_spellings_by_precedence() {

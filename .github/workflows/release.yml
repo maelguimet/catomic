@@ -1,0 +1,55 @@
+name: Publish managed release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish x86_64 Linux binary
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Install stable Rust
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Verify tag matches package version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
+          test "$TAG" = "v$version"
+
+      - name: Test tagged source
+        run: cargo test --all-targets --locked
+
+      - name: Build managed release binary
+        env:
+          CATOMIC_MANAGED_RELEASE: "1"
+        run: cargo build --release --locked
+
+      - name: Create checksummed release assets
+        run: |
+          mkdir -p dist
+          install -m 0755 target/release/catomic dist/catomic-x86_64-unknown-linux-gnu
+          cd dist
+          sha256sum catomic-x86_64-unknown-linux-gnu > catomic-x86_64-unknown-linux-gnu.sha256
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" \
+            dist/catomic-x86_64-unknown-linux-gnu \
+            dist/catomic-x86_64-unknown-linux-gnu.sha256 \
+            --verify-tag \
+            --generate-notes \
+            --title "Catomic $TAG"

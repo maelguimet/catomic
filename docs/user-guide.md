@@ -12,6 +12,7 @@ it on files with unusual links, ACLs, or extended attributes.
 ## Contents
 
 - [Requirements and installation](#requirements-and-installation)
+- [Updating, backup, and rollback](#updating-backup-and-rollback)
 - [Starting Catomic](#starting-catomic)
 - [The editor screen](#the-editor-screen)
 - [Editing and navigation](#editing-and-navigation)
@@ -59,7 +60,102 @@ catomic --version
 catomic --help
 ```
 
-To update a source installation, pull the latest code and repeat the install:
+## Updating, backup, and rollback
+
+Catomic has an explicit updater. Checking is read-only:
+
+```sh
+catomic update --check
+```
+
+It reports the installed version and method, the available version or source
+revision, whether the update can be applied, and the trusted source it queried.
+The command contacts the official GitHub repository because checking a remote
+version requires a network request, but it does not fetch into the checkout,
+write a cache, create a backup, or change the binary.
+
+The default update prints its source and asks before any network or install
+action. Use `--yes` for deterministic non-interactive operation:
+
+```sh
+catomic update
+catomic update --yes
+```
+
+Use `--backup` to make a private, timestamped copy of user-owned state before
+the update is downloaded or built:
+
+```sh
+catomic update --backup
+```
+
+Backups live below
+`$XDG_STATE_HOME/catomic/update-backups` (normally
+`~/.local/state/catomic/update-backups`). They include Catomic's XDG config,
+data, and state trees, excluding older updater backups. Backup directories use
+mode `0700` and regular files use `0600`; symlinks are copied without following
+them. Caches are not user state and are not included. The updater prints the
+exact backup path.
+
+### Supported install methods
+
+- An official managed x86_64 Linux release downloads the exact architecture
+  asset and its SHA-256 file from the GitHub release. HTTPS origins and
+  redirects are allowlisted, requests have bounded timeouts, responses and
+  declared asset sizes are capped, and the candidate's checksum and version are
+  verified before it can run or replace the installed binary.
+- A binary built in a clean official `master` checkout, including
+  `cargo install --path . --locked`, retains that checkout as its update source.
+  Catomic checks the official remote revision, refuses non-fast-forward history,
+  fetches without running hooks, and builds in an isolated temporary worktree.
+  The new revision must pass all tests and validate the existing configuration
+  before the executable is replaced. Only then is the source checkout
+  fast-forwarded.
+- Cargo registry installs, detached Git installs, forks, missing source
+  checkouts, non-`master` branches, and architectures without a managed release
+  are reported as unsupported. The command exits without changing anything and
+  prints a manual Cargo command where applicable.
+
+Dirty source checkouts are never stashed, reset, cleaned, or overwritten.
+Commit, stash, or back up both tracked and untracked work yourself, then rerun
+the updater. This deliberately leaves stash policy under your control.
+
+### Atomic install and recovery
+
+The new executable is staged beside the installed one, synced, and atomically
+renamed over it. Before that rename, Catomic creates a sibling rollback binary
+containing the old bytes. A failed download, checksum, test, build,
+configuration validation, or staging step leaves the installed executable
+untouched. If final source fast-forwarding fails after replacement, Catomic
+automatically restores the old binary.
+
+On success Catomic prints the old and new versions, backup status, rollback
+path, and an exact recovery command. Roll back manually with the printed
+command, which has this shape:
+
+```sh
+cp -- /path/to/.catomic.rollback-VERSION-TIMESTAMP /path/to/catomic
+```
+
+The rollback copy is intentionally retained after success. Remove it manually
+after the new version has behaved correctly. User configuration is never
+regenerated, normalized, migrated, or deleted by the updater. A future schema
+migration must be an explicit, separately confirmed operation; an incompatible
+configuration makes the update fail closed.
+
+`cargo uninstall catomic` removes a Cargo-managed executable but intentionally
+does not remove XDG configuration, data, state, updater backups, or retained
+rollback binaries. For an official standalone binary, remove the installed
+binary and any sibling `.catomic.rollback-*` files explicitly; user-owned XDG
+state remains untouched unless you separately choose to delete it.
+
+Updater exit codes are stable for automation: `0` means current, successfully
+updated, or user-cancelled; `2` is command-line usage; `3` unsupported install;
+`4` remote/checksum policy failure; `5` unsafe source state or prompt I/O; `6`
+backup failure; `7` candidate configuration failure; `8` test/build failure;
+and `9` install or rollback failure.
+
+If the updater is unavailable for a source install, the manual equivalent is:
 
 ```sh
 git pull --ff-only
@@ -95,11 +191,12 @@ catomic
 If a named path does not exist, Catomic opens an empty buffer for that path. The
 file is not created until you save it.
 
-Only `--help`, `-h`, `--version`, and `-V` are options. Use `--` when a filename
-looks like an option:
+The first argument `update` selects the updater. Use `--` when a filename looks
+like an option or is literally named `update`:
 
 ```sh
 catomic -- --help
+catomic -- update
 ```
 
 File arguments and file contents must be valid UTF-8. The editor also requires

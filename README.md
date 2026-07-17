@@ -2,155 +2,108 @@
 
 [![CI](https://github.com/maelguimet/catomic/actions/workflows/ci.yml/badge.svg)](https://github.com/maelguimet/catomic/actions/workflows/ci.yml)
 
-Catomic should feel like Nano if Nano stopped being afraid of useful shortcuts.
+Catomic is a Linux-first, modeless terminal text editor: Nano that is not afraid
+of useful shortcuts. It aims to be fast, obvious, keyboard-friendly, and hard to
+accidentally destroy work with—without turning into a terminal IDE by default.
 
-It is not trying to be Vim.  
-It is not trying to be Emacs.  
-It is not trying to become Electron wearing terminal cosplay.
+Catomic is entering open beta. Back up important files and read the
+[file-semantics limitations](#limitations) before making it your only editor.
 
-It should be:
+![Catomic editing a Rust file in a Linux terminal](docs/assets/catomic-open-beta.png)
 
-- Fast
-- Obvious
-- Keyboard-friendly
-- Hard to accidentally destroy work with
-- Pleasant enough that opening it does not feel like entering a monastery
+## Highlights
 
-## Build and Install
+- Familiar editing: selection, mouse input, search/replace, goto line,
+  undo/redo, multiple buffers, and GUI-style shortcuts.
+- Unicode-aware cursor movement and terminal layout, including grapheme
+  clusters, wide characters, emoji sequences, and tabs.
+- Editable large-file pages that avoid loading an oversized file into one
+  in-memory string.
+- Atomic saves, external-change detection, explicit overwrite confirmation, and
+  opt-in `.catnap` recovery.
+- Viewport-bounded highlighting for Markdown, Rust, Python, and JSON, plus a
+  read-only Markdown preview.
+- An opt-in Project mode for explicit file discovery, linting, diagnostics, and
+  cached path completion. Plain mode does not scan a repository or start project
+  services.
+- Explicit, preview-first LLM commands. Catomic does not construct a model
+  client or send context until you invoke a command and confirm the destination
+  and context.
 
-Catomic targets Linux and stable Rust. Build the optimized binary or install it
-from this checkout:
+## Install from source
+
+Catomic currently targets Linux and stable Rust. Clone the repository, then
+build an optimized binary:
 
 ```sh
-cargo build --release
-# binary: target/release/catomic
-
-cargo install --path .
+git clone https://github.com/maelguimet/catomic.git
+cd catomic
+cargo build --release --locked
+./target/release/catomic
 ```
 
-Run `catomic`, optionally followed by one or more file paths. The completed
-v0.1 roadmap and verification record is in
-[`docs/v0.1-acceptance.md`](docs/v0.1-acceptance.md).
+To install `catomic` into Cargo's binary directory instead:
 
-## Editing Model
+```sh
+cargo install --path . --locked
+```
 
-- Normal text editor behavior by default
-- Familiar shortcuts: `Ctrl+C` / `Ctrl+V` / `Ctrl+X` / `Ctrl+Z` / `Ctrl+Y` / `Ctrl+F` / `Ctrl+Q`
-  (Note: in a raw terminal these are best-effort; see TODO.md "Terminal Realities" section for the feral raccoon details around paste and Ctrl keys.)
-- Mouse support without making it a crutch
-- Selection should behave like a GUI editor where possible
-- Big-file mode should degrade gracefully instead of exploding
+## Start editing
 
-`Ctrl+F` opens incremental search. Matches move and highlight as you type.
-Enter or Down moves forward, Up moves backward, and Escape closes search. The
-same navigation wraps across oversized paged files without loading them whole.
-`Ctrl+Shift+F` opens a two-stage Find/Replace prompt. `replace-all` in the
-command prompt replaces every non-overlapping match in an ordinary buffer;
-paged-file replacement refuses explicitly instead of silently changing one page.
+Open one or more files, or start with an untitled buffer:
 
-`Ctrl+G` opens a cancellable 1-based goto-line prompt across ordinary and paged
-files. `Ctrl+Shift+S` opens Save As; enter a filename such as `hello.txt`, a
-relative or absolute path, or a home-relative path such as `~/notes/hello.txt`.
-An existing destination requires submitting the same path again before Catomic
-overwrites it. `Ctrl+S` opens this prompt automatically for an untitled buffer.
-`Ctrl+Shift+P` opens the command prompt, with `goto N`,
-`save`/`write`, `save as PATH`, and `quit`/`q`.
-Use `F2` for the same prompt in terminals that reserve or collapse the
-Ctrl+Shift chord.
+```sh
+catomic notes.md
+catomic notes.txt todo.txt server.log
+catomic
+```
 
-`Ctrl+O` opens a path in a buffer, `Ctrl+N` creates an untitled buffer, and
-`Ctrl+W` closes the active clean buffer. A dirty buffer refuses to close until
-saved; use the explicit `close!` command to discard it. The command prompt also
-accepts `open PATH`, `new`, and `close`.
+Run `catomic --help` for command-line usage. Inside the editor, press `Ctrl+H`
+or `F1` for the complete built-in shortcut reference.
 
-`Ctrl+H` or `F1` opens the built-in shortcut reference. The help view is
-read-only; use the arrow keys or Page Up/Down to navigate and Escape to return.
-The command prompt aliases `help` and `shortcuts` open the same view.
+### Essential shortcuts
 
-Hold Shift with the arrow keys to select text, or use `Ctrl+A` for the active
-buffer/page. `Ctrl+C`, `Ctrl+X`, and `Ctrl+V` copy, cut, and paste through an
-always-available internal clipboard; copy also sends OSC 52 to supporting
-terminals. Bracketed terminal paste is inserted as one undoable edit. Terminal
-emulators may intercept `Ctrl+Shift+C`/`Ctrl+Shift+V` before Catomic sees them.
-Mouse clicks move the cursor, left-button drags select text, and a double click
-selects the word or punctuation run under the pointer.
+| Action | Shortcut |
+| --- | --- |
+| Save / Save As | `Ctrl+S` / `Ctrl+Shift+S` |
+| Open / new / close buffer | `Ctrl+O` / `Ctrl+N` / `Ctrl+W` |
+| Previous / next buffer | `Alt+PageUp` / `Alt+PageDown` |
+| Undo / redo | `Ctrl+Z` / `Ctrl+Y` |
+| Find / replace / goto line | `Ctrl+F` / `Ctrl+Shift+F` / `Ctrl+G` |
+| Select / copy / cut / paste | `Ctrl+A` / `Ctrl+C` / `Ctrl+X` / `Ctrl+V` |
+| Local completion | `Ctrl+Space` |
+| Command prompt | `Ctrl+Shift+P` or `F2` |
+| Markdown preview | `F6` |
+| Line numbers / whitespace / soft wrap | `F7` / `F8` / `F9` |
+| Previous / next large-file page | `Ctrl+PageUp` / `Ctrl+PageDown` |
+| Quit | `Ctrl+Q` |
 
-`Home`/`End` move to line edges, `Ctrl+Home`/`Ctrl+End` move to document edges,
-and Page Up/Down move by one visible page. `Ctrl+Left`/`Ctrl+Right` move by word;
-`Ctrl+Backspace`/`Ctrl+Delete` remove a word as one undoable edit. Add Shift to
-the movement forms to extend the selection.
+Terminal emulators and multiplexers can intercept or rewrite some key chords.
+Bracketed paste is inserted as one undoable edit; Catomic also has an internal
+clipboard and sends copied text through OSC 52 when the terminal supports it.
 
-Enter preserves the current line's indentation and adds one configured tab
-level after common block openers. Tab indents selected lines without replacing
-them; Shift+Tab unindents the current or selected lines as one undoable edit.
+### Essential prompt commands
 
-Visible lines are styled automatically for Markdown, Rust, Python, and JSON
-based on the file extension. Highlighting is deliberately lexical and
-viewport-only; opening a large file does not trigger a whole-document parse.
-For Markdown files, `F6` builds a read-only rendered preview of the active
-buffer (or active large-file page); press `F6` or Escape to return to editing.
-Press `F7` to toggle line numbers and `F8` to show spaces and tabs. These view
-settings are retained independently for each open buffer. `F9` toggles bounded
-soft wrapping at the terminal width; wrapped continuations preserve document
-coordinates and mouse mapping instead of inserting newlines.
+Open the prompt with `Ctrl+Shift+P` or `F2`. Enter these commands without a
+leading `:`.
 
-Cursor movement, deletion, clipping, and terminal placement respect extended
-grapheme clusters and terminal-cell width, including combining marks, wide
-characters, emoji sequences, and tabs.
+| Command | Purpose |
+| --- | --- |
+| `open PATH`, `new`, `close`, `close!` | Manage buffers; `close!` explicitly discards local changes |
+| `save`, `save as PATH` | Save the active buffer |
+| `goto LINE`, `replace`, `replace-all` | Navigate and edit |
+| `project`, `plain` | Enter or leave opt-in Project mode |
+| `files`, `lint`, `diagnostics`, `dnext`, `dprev` | Run explicit Project tools |
+| `run NAME` | Run a configured, trusted external command |
+| `recover` | Preview and apply a newer `.catnap` sidecar |
+| `meow TEXT`, `bigmeow TEXT` | Ask a configured model about the selection or current file |
+| `gitmeow TEXT`, `megameow TEXT` | Use bounded repository context in Project mode |
 
-Catomic accepts valid UTF-8 and preserves an optional UTF-8 BOM plus the
-detected LF, CRLF, or CR line-ending style across Save, Save As, and reload. The
-active format appears in the status line. Oversized paged files currently
-support LF and CRLF; BOM-prefixed or CR-only files must remain below the paged
-threshold. UTF-16 and other non-UTF-8 encodings are rejected rather than
-silently corrupted.
+## Configuration
 
-Editor sessions also require a UTF-8 locale selected by `LC_ALL`, `LC_CTYPE`,
-or `LANG` (in that order). Non-UTF-8 or missing locale settings are refused
-before terminal raw mode; `--help` and `--version` remain available.
-
-Atomic saves through a valid final symlink replace its referent and leave the
-symlink intact. A dangling final symlink is refused rather than replaced. File
-watching tracks both the link and its resolved referent so either kind of
-external change wakes reload detection.
-
-## Terminal Behavior
-
-- Linux terminal only (for now)
-- Use raw mode directly
-- Draw with ANSI escape sequences
-- Avoid curses if possible
-- Detect terminal resize
-- Minimize redraws
-- Keep rendering dumb, predictable, and fast
-
-## Buffer Strategy
-
-Catomic needs a real text buffer, not "one giant string and prayers."
-
-Possible approaches:
-
-- **Gap buffer**: simple, good for normal editing
-- **Piece table**: good undo story, good for files loaded from disk
-- **Rope**: better for huge files, more complexity
-
-**Default target**: piece table unless proven annoying.
-
-## Big File Rules
-
-For big files:
-
-- Do not syntax-highlight everything
-- Do not parse the whole file constantly
-- Do not run linters automatically without limits
-- Do not ask an LLM to rewrite the entire file by default
-- Keep line indexing lazy or incremental
-- Offer "large file mode" when needed
-
-Every supported UTF-8 file remains editable. Small and medium files use one
-in-memory PieceTable; oversized files use editable, file-backed line pages
-instead of being rejected or opened read-only. The page size is configurable in
-`~/.config/catomic/config.toml` (or `$XDG_CONFIG_HOME/catomic/config.toml`):
+Catomic reads TOML from `$XDG_CONFIG_HOME/catomic/config.toml` or
+`~/.config/catomic/config.toml`. No configuration file is required. This example
+shows the most common settings:
 
 ```toml
 [editor]
@@ -174,228 +127,6 @@ max_bytes = 1048576
 tab_size = 4
 linter = "cargo check --message-format short {file}"
 
-[languages.py]
-tab_size = 2
-linter = "ruff check {file}"
-```
-
-Lower values trade more page transitions for less line metadata in memory.
-Use `Ctrl+PageDown` and `Ctrl+PageUp` to move between file pages. The status
-line shows the active page number and source byte range. Edits on visited pages
-are retained, undo/redo follows edit order across pages, and `Ctrl+S` atomically
-streams the complete logical document without materializing the whole file.
-Page boundaries stay anchored to the opened file during a session and rebalance
-after reload or reopen. `Ctrl+F` searches all pages, including unsaved page
-edits and matches across edited boundaries; press Enter to run or Escape to
-cancel.
-
-Clean buffers reload automatically when another process changes or deletes the
-file. Set `[files] auto_reload = false` to require manual confirmation instead.
-Dirty buffers are never discarded automatically; Ctrl+R remains the explicit
-check/reload fallback.
-
-The small ASCII cat badge in the status line is enabled by default. Set
-`[cat] status_messages = false` if you want the completely plain status format;
-the setting changes presentation only.
-
-If Catomic panics, its panic hook first restores the terminal and prints a short
-cat-themed notice that promises only the safety of the last explicit save. The
-ordinary Rust panic details follow for debugging.
-
-Crash recovery is opt-in. With `[recovery] enabled = true`, dirty named files
-up to `max_bytes` get an atomic, owner-only sibling such as
-`notes.txt.catnap` after the configured interval. Untitled, oversized, and
-paged files are skipped; normal startup and typing never create a sidecar when
-recovery is disabled. If a newer sidecar exists on the next open, Catomic
-offers `:recover`. Recovery opens read-only, Enter applies it as one undoable
-buffer edit, and Escape leaves the source untouched. An ordinary successful
-save removes the sidecar. Catomic never replaces the source automatically.
-
-## Multiple Buffers
-
-Pass multiple files on the command line to open them in one editor session:
-
-```sh
-catomic notes.txt todo.txt server.log
-```
-
-Use `Alt+PageDown` and `Alt+PageUp` to move to the next and previous buffer.
-Each buffer keeps its own cursor, viewport, dirty state, file watcher, and paged
-file position. The status line shows `buffer N/M` when more than one is open.
-`Ctrl+S` saves the active buffer; `Ctrl+Q` warns if any open buffer is dirty.
-
-## File Watching
-
-Catomic should notice when a clanker or another process edits the current file.
-
-Behavior:
-
-- If file changed externally and local buffer is clean: reload
-- If file changed externally and local buffer has edits: warn
-- If possible, show a small diff or offer:
-  - reload from disk
-  - keep local version
-  - save as conflict copy
-
-## Markdown
-
-Native `.md` support should mean:
-
-- Readable headings
-- Lists
-- Code blocks
-- Blockquotes
-- Maybe inline emphasis
-- No cursed browser engine
-- No "full Markdown spec compliance" illness
-
-Possible modes:
-
-- Edit mode
-- Rendered preview mode
-- Split mode later, if terminal width allows it
-
-## Linter Support
-
-Linter support is command-based and Project-only. Enter Project mode with
-`:project` (or `:code`), then use `:lint` on a saved file. Configuration is
-loaded lazily from `$XDG_CONFIG_HOME/catomic/config.toml` or
-`~/.config/catomic/config.toml`:
-
-Language-specific settings are preferred because tab width and linting stay
-together:
-
-```toml
-[editor]
-tab_size = 4
-
-[languages.py]
-tab_size = 4
-linter = "ruff check {file}"
-
-[languages.js]
-tab_size = 2
-linter = "eslint {file}"
-```
-
-The older `[linters]` extension-to-command table remains supported. Every
-linter command must contain `{file}`. Language-specific commands take
-precedence over legacy mappings. Tab inserts spaces to the next configured stop
-when no completion candidate exists; the insertion is one undoable edit.
-Commands run asynchronously with bounded output and can be cancelled with Escape.
-`:diagnostics` (or `:dlist`) opens the result list; `:dnext` and `:dprev` jump
-between diagnostics, opening already-discovered files when needed.
-
-Project file discovery is also explicit: `:files` performs one bounded,
-cancellable scan rooted at the active file's directory and opens a read-only
-picker. Nothing scans while Catomic is in Plain mode.
-
-Rules:
-
-- Run manually first
-- Use an explicit `on_save` named-command hook when automatic checks are desired
-- Parse common output formats
-- Jump to error line
-- Never block typing
-
-## Autocomplete
-
-Press `Ctrl+Space` or Tab to request completion, Tab/Shift+Tab to cycle, Enter
-to accept, and Escape to dismiss. Plain mode derives candidates only from a
-bounded window of the current buffer. Project mode can additionally complete
-path-like prefixes from the most recent explicit `:files` result; it never
-starts a scan merely because completion was requested.
-
-Current completion sources:
-
-- Words from current buffer
-- Cached Project file paths
-
-Later:
-
-- LSP support
-- Local model completion
-- Remote API completion
-
-Acceptance is one undoable replacement. No aggressive ghost-text demon is
-enabled.
-
-## Keybindings
-
-Normal-mode chords can override existing editor actions without replacing their
-save, quit, undo, completion, or view logic:
-
-```toml
-[keybindings]
-"ctrl+w" = "save"
-"alt+s" = "save-as"
-"alt+f" = "search"
-"ctrl+shift+g" = "command-prompt"
-```
-
-Supported actions are `help`, `save`, `save-as`, `open`, `new`, `close`,
-`replace`, `quit`, `reload`, `search`, `goto-line`, `command-prompt`, `undo`,
-`redo`, `complete`, `next-buffer`, `previous-buffer`, `next-page`,
-`previous-page`, `markdown-preview`, `line-numbers`, `whitespace`, and
-`soft-wrap`. Chords use `ctrl`, `alt`, and `shift` plus a character, navigation
-key, or `f1` through `f12`. Prompt and picker keys remain local while those
-interfaces are active.
-
-## External commands
-
-Named shell commands are opt-in and run only after `:run <name>`:
-
-```toml
-[commands.upper]
-command = "tr '[:lower:]' '[:upper:]'"
-input = "selection"
-output = "replace-input"
-timeout_secs = 10
-
-[commands.date]
-command = "date +%F"
-output = "insert"
-```
-
-`input` is `none` (the default), `selection`, or `buffer`. `output` is
-`preview` (the default), `insert`, or `replace-input`; replacing input requires
-selection or buffer input. `{file}` expands to the shell-quoted absolute active
-path, and the command runs from that file's directory.
-
-Commands never block typing. Input is capped at 16 MiB, stdout and stderr at
-1 MiB each, and timeouts are limited to 1–300 seconds. Escape cancels a running
-command. Completed output opens read-only; successful, complete output requires
-Enter before insertion or replacement and applies as one undoable edit. Failed
-or truncated output cannot apply. Catomic invokes `/bin/sh -c`, so configured
-commands are trusted user code and may have side effects outside the editor.
-
-The same named commands can be attached to lifecycle hooks:
-
-```toml
-[hooks]
-on_open = ["inspect"]
-on_save = ["check"]
-before_llm = ["redact-check", "policy-check"]
-```
-
-Hooks run sequentially in listed order and use the same bounded execution and
-read-only result preview as `:run`. A failed, timed-out, stale, or cancelled
-command stops the remaining chain. `on_save` starts only after a successful
-atomic save; confirmed hook edits make the buffer dirty again. `before_llm`
-finishes before Catomic prepares the ordinary endpoint/context confirmation, so
-no model client or network request exists while hooks are running.
-
-## LLM Support
-
-LLM support is explicit, transient, and caged. Open the command prompt with
-`Ctrl+Shift+P`; Catomic shows the exact context extent, model, and endpoint
-before anything can be sent. Enter confirms the network request and Escape
-cancels it without constructing a client.
-
-Configure any OpenAI-compatible local or remote endpoint lazily in
-`$XDG_CONFIG_HOME/catomic/config.toml` or `~/.config/catomic/config.toml`:
-
-```toml
 [llm]
 base_url = "http://127.0.0.1:8080/v1"
 model = "local-model"
@@ -403,100 +134,52 @@ api_key_env = "OPENAI_API_KEY"
 timeout_secs = 120
 ```
 
-The API key is read from the named environment variable only after Enter.
-Endpoint URLs are canonicalized before confirmation and cannot contain
-credentials, whitespace, a query, or a fragment. With no configuration, the
-local endpoint and model shown above are used.
+Recovery is disabled by default. Named commands and hooks invoke `/bin/sh -c`
+and are trusted user configuration; their input, output, and runtime are
+bounded, but the command itself can have effects outside Catomic.
 
-Current-buffer commands work from Plain mode:
+LLM endpoints use an OpenAI-compatible API. Model actions show the endpoint,
+model, and exact context extent before sending; edits then open read-only and
+require a second confirmation before becoming one undoable buffer change.
+Plain HTTP is allowed for loopback models and unauthenticated LAN models. If an
+API key is present, Catomic refuses to send it over non-loopback HTTP; use HTTPS
+for authenticated remote endpoints. See
+[the LLM safety rules](docs/llm-rules.md) for the full boundary.
 
-- `:meow <instruction>` sends the active selection. With no selection, place
-  the cursor inside an instruction block; its text becomes both instruction
-  and bounded context.
-- `:bigmeow <instruction>` sends the current file. With no command argument,
-  the instruction comes from the block under the cursor.
-- An instruction beginning with `explain` opens a read-only answer instead of
-  an edit preview.
+## Limitations
 
-Instruction block format:
+- Linux terminals are the supported platform for this beta. Windows and macOS
+  are not first-class targets yet.
+- Editor sessions require a UTF-8 locale, and files must contain valid UTF-8.
+  UTF-16 and arbitrary byte-oriented files are refused.
+- Ordinary buffers preserve UTF-8 BOMs and LF, CRLF, or CR line endings. Paged
+  large files support LF and CRLF; BOM-prefixed or CR-only files must remain
+  below the paging threshold.
+- Atomic save replaces the destination inode. On Linux, Catomic preserves mode,
+  owner, and group, but refuses files with multiple hard links or any extended
+  attributes/ACLs rather than silently discarding those semantics. Save As also
+  refuses FIFOs, sockets, directories, and symlinks resolving to them. Use
+  another tool for a refused target.
+- Terminal clipboard behavior depends on the emulator. Some environments
+  intercept `Ctrl`/`Ctrl+Shift` chords or do not support OSC 52.
+- Syntax highlighting is deliberately lexical and viewport-only. Catomic does
+  not provide tree-sitter, a full LSP client, split views, or a plugin ABI.
+- LLM edits are limited to the confirmed active file. Wide multi-file proposals
+  and `:feralmeow` are not implemented.
 
-```
->>> catomic
-Refactor this function.
-Keep behavior identical.
-Do not edit outside this block unless necessary.
-<<<
-```
+If Catomic crashes, corrupts content, or behaves differently on a particular
+filesystem, please use the [bug report form](https://github.com/maelguimet/catomic/issues/new?template=bug_report.yml).
+Security-sensitive findings should follow [SECURITY.md](SECURITY.md).
 
-LLM safety rules:
+## Project documentation
 
-- Context is capped at 64 KiB and 2,000 lines and fails closed rather than
-  truncating silently.
-- HTTP redirects are refused and ambient proxy settings are ignored, so context
-  is sent directly to the confirmed endpoint only.
-- Active-context dotfile paths and obvious secret-like lines are called out in
-  the Enter confirmation.
-- Edits must be a validated single-file unified patch whose headers name the
-  confirmed active path. A selected region may instead use the strict
-  `catomic_replacement` JSON envelope.
-- Every edit opens a read-only preview, requires a second Enter to apply, and
-  becomes one undoable buffer transaction. No command writes a file.
-
-Repo-aware commands require explicit Project mode (`:project` or `:code`) and
-a saved active file inside a Git repository:
-
-- `:gitmeow <instruction>` and `:megameow <instruction>` capture bounded Git
-  state and a bounded file map on a cancellable worker, then show a separate
-  send confirmation.
-- The model can make at most eight read-only broker requests: list files, read
-  a bounded file range, grep, or show a file diff. The total broker response
-  budget is 128 KiB; symlinks, unknown paths, oversized files, and path escapes
-  are refused.
-- Dot paths are omitted from the broker file map. Direct reads and diffs refuse
-  obvious secret-like content; grep skips sensitive files and reports how many
-  were omitted.
-- HEAD, branch, status, tracked diff, and every retrieved file are rechecked
-  after the response and again before preview apply. Drift discards/refuses the
-  proposal.
-- Git context disables pagers, fsmonitor, external diff, and textconv helpers;
-  repository configuration cannot launch helper programs during capture, and
-  inherited `GIT_*` variables cannot redirect repository identity.
-
-`:feralmeow` is not implemented. Wide multi-file proposals are deliberately
-outside the Phase 6 single-file safety contract.
-
-## Plugin System
-
-Plugin support should come after the core editor is stable.
-
-First version:
-
-- External commands
-- Hooks
-- Simple config files
-
-Later:
-
-- Scripting API
-- Editor commands
-- Custom keybindings
-- Custom render overlays
-
-**Do not build a cathedral before the text cursor works.**
-
-## Cat Features
-
-Mandatory cat nonsense:
-
-- Toggleable cat status badge
-- Helpful cat-themed panic notice after terminal restoration
-- Useful, explicitly confirmed `:meow` LLM command
-- Opt-in, bounded `.catnap` autosave and preview-first recovery
-- Absolutely no productivity-hostile gimmicks enabled by default
-
----
-
-See [TODO.md](./TODO.md) for build phases, stack decisions, and research on existing editors.
+- [Contributing](CONTRIBUTING.md)
+- [Architecture and development boundaries](docs/architecture.md)
+- [Design decisions](docs/decisions/)
+- [Performance discipline and measurements](docs/performance.md)
+- [LLM safety rules](docs/llm-rules.md)
+- [Roadmap, research, and design history](TODO.md)
+- [v0.1 acceptance record](docs/v0.1-acceptance.md)
 
 ## License
 

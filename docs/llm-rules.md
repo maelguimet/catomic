@@ -44,6 +44,8 @@ and per-file diff. No command writes or runs a process other than read-only Git.
   Enter confirmation naming endpoint, model, and context extent.
 - Endpoint configuration is parsed and canonicalized before confirmation;
   credentials, whitespace, queries, fragments, and non-HTTP(S) schemes fail.
+- API keys must never cross non-loopback plaintext HTTP. Loopback HTTP may use
+  a key, and unauthenticated LAN HTTP remains available for local models.
 - The transient HTTP client must not follow redirects away from the confirmed
   endpoint; every 3xx response is an error.
 - Ambient proxy environment variables must not reroute context. Proxy support

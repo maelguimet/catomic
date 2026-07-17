@@ -10,7 +10,10 @@ static TERMINATION_SIGNAL: AtomicI32 = AtomicI32::new(0);
 
 pub(crate) fn install_process_handlers() -> io::Result<()> {
     for signal in [libc::SIGHUP, libc::SIGINT, libc::SIGQUIT, libc::SIGTERM] {
-        install(signal, record_termination as libc::sighandler_t)?;
+        install(
+            signal,
+            record_termination as *const () as libc::sighandler_t,
+        )?;
     }
     install(libc::SIGXFSZ, libc::SIG_IGN)
 }

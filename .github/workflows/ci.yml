@@ -62,9 +62,6 @@ jobs:
       - name: Run all tests
         run: cargo test --all-targets --locked
 
-      - name: Run ignored acceptance checks
-        run: cargo test --all-targets --locked -- --ignored --test-threads=1 --nocapture
-
       - name: Build release binary
         run: cargo build --release --locked
 

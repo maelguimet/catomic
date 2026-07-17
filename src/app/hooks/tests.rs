@@ -32,6 +32,33 @@ fn close_result(app: &mut super::super::App, out: &mut Vec<u8>) {
     .unwrap();
 }
 
+#[cfg(unix)]
+fn wait_for_pids(path: &std::path::Path) -> (u32, u32) {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if let Ok(text) = std::fs::read_to_string(path) {
+            let mut fields = text
+                .split_whitespace()
+                .filter_map(|field| field.parse().ok());
+            if let (Some(shell), Some(child)) = (fields.next(), fields.next()) {
+                return (shell, child);
+            }
+        }
+        assert!(Instant::now() < deadline, "hook did not record its pid");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[cfg(unix)]
+fn assert_reaped(pids: (u32, u32)) {
+    for pid in [pids.0, pids.1] {
+        assert!(
+            !std::path::Path::new("/proc").join(pid.to_string()).exists(),
+            "hook process {pid} must be killed and reaped before transition returns"
+        );
+    }
+}
+
 #[test]
 fn open_hooks_run_sequentially_in_configuration_order() {
     let path = std::env::temp_dir().join(format!(
@@ -172,4 +199,59 @@ fn successful_before_llm_hook_resumes_only_to_local_confirmation() {
     assert!(!is_pending(&app));
     assert!(app.pending_llm_request.is_some());
     assert!(app.llm_task.is_none());
+}
+
+#[cfg(unix)]
+#[test]
+fn closing_buffer_cancels_and_reaps_running_hook() {
+    let pid_path =
+        std::env::temp_dir().join(format!("catomic-close-hook-{}.pid", std::process::id()));
+    let _ = std::fs::remove_file(&pid_path);
+    let mut app = super::super::App::new(None).unwrap();
+    configure(
+        &mut app,
+        &format!(
+            "[commands.slow]\ncommand = \"sleep 60 & printf '%s %s' $$ $! > {}; wait\"\n[hooks]\non_open = [\"slow\"]\n",
+            pid_path.display()
+        ),
+    );
+    let mut out = Vec::new();
+    trigger_open(&mut app);
+    pump(&mut app, &mut out).unwrap();
+    let pids = wait_for_pids(&pid_path);
+
+    app.close_active_buffer(false).unwrap();
+
+    assert_eq!(app.message.as_deref(), Some("Buffer closed."));
+    assert!(!is_pending(&app));
+    assert!(!super::super::external_command::is_running(&app));
+    assert_reaped(pids);
+    let _ = std::fs::remove_file(pid_path);
+}
+
+#[cfg(unix)]
+#[test]
+fn project_mode_switch_cancels_and_reaps_running_hook() {
+    let pid_path =
+        std::env::temp_dir().join(format!("catomic-mode-hook-{}.pid", std::process::id()));
+    let _ = std::fs::remove_file(&pid_path);
+    let mut app = super::super::App::new(None).unwrap();
+    configure(
+        &mut app,
+        &format!(
+            "[commands.slow]\ncommand = \"sleep 60 & printf '%s %s' $$ $! > {}; wait\"\n[hooks]\non_open = [\"slow\"]\n",
+            pid_path.display()
+        ),
+    );
+    let mut out = Vec::new();
+    trigger_open(&mut app);
+    pump(&mut app, &mut out).unwrap();
+    let pids = wait_for_pids(&pid_path);
+
+    super::super::project_mode::switch_to_project(&mut app, &mut out).unwrap();
+
+    assert!(!is_pending(&app));
+    assert!(!super::super::external_command::is_running(&app));
+    assert_reaped(pids);
+    let _ = std::fs::remove_file(pid_path);
 }

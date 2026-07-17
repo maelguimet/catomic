@@ -6,7 +6,7 @@
 
 use std::io;
 
-use super::{App, BufferDirection, BufferSlot};
+use super::{external_command, hooks, App, BufferDirection, BufferSlot};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CloseBufferOutcome {
@@ -38,6 +38,8 @@ impl App {
                 Some("Buffer has unsaved changes. Save it or use close! to discard.".to_string());
             return Ok(CloseBufferOutcome::Dirty);
         }
+        external_command::cancel_all(self);
+        hooks::cancel_all(self);
         let replacement = if self.inactive_buffers.is_empty() {
             let blank = Self::new_with_config(
                 None,

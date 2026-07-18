@@ -26,8 +26,12 @@ Before tagging:
    Markdown beside the exact tested candidate binary and checksum, then link
    that durable result from the candidate acceptance record. A different
    checksum, rebuild, or expiring local path is not release evidence.
-3. Require normal `master` CI to pass for the commit that will be tagged.
-4. Create and push an annotated `v<package-version>` tag at that exact commit.
+3. For an open-beta release candidate, use the
+   [daily-driver polish gate](open-beta-daily-driver-gate.md) to bind the human
+   session, candidate SHA, limitations, and final issue comment to the tested
+   release binary.
+4. Require normal `master` CI to pass for the commit that will be tagged.
+5. Create and push an annotated `v<package-version>` tag at that exact commit.
 
 The release workflow then does all of the following on the tagged checkout:
 

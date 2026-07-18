@@ -73,8 +73,10 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-      - name: Check release verifier syntax
-        run: bash -n scripts/verify-release.sh
+      - name: Check acceptance and release scripts
+        run: |
+          bash -n scripts/daily-driver-gate.sh tests/daily_driver_gate.sh scripts/verify-release.sh
+          tests/daily_driver_gate.sh
 
       - name: Check compatibility harness
         run: |

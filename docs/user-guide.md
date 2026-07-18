@@ -305,8 +305,13 @@ before Catomic receives them; see [Troubleshooting](#troubleshooting).
 
 ### Undo and redo
 
-- `Ctrl+Z` undoes the last edit.
-- `Ctrl+Y` or `Ctrl+Shift+Z` redoes it.
+- `Ctrl+Z` — Undo.
+- `Ctrl+Y` / `Ctrl+Shift+Z` — Redo.
+
+Catomic keeps `Ctrl+Shift+Z` as a default GUI-style redo alias. If a terminal
+reports that chord without the Shift modifier, it is indistinguishable from
+`Ctrl+Z`, so Catomic performs undo. The `undo` and `redo` actions remain
+remappable through `[keybindings]`.
 
 Grouped actions such as a bracketed paste, selected-line indentation, Replace
 All, a confirmed command result, or a confirmed model edit are each one undoable
@@ -909,6 +914,8 @@ Keybinding overrides translate a normal-mode chord to an existing action:
 "alt+s" = "save-as"
 "alt+f" = "search"
 "ctrl+shift+g" = "command-prompt"
+"alt+u" = "undo"
+"alt+r" = "redo"
 ```
 
 Chord modifiers are `ctrl`/`control`, `alt`, and `shift`. Keys may be one
@@ -940,7 +947,8 @@ keys remain local to the active interface.
 | Files | Check/reload external change | `Ctrl+R` |
 | Buffers | Previous / next buffer | `Alt+PageUp` / `Alt+PageDown` |
 | Editing | Select/copy/cut/paste | `Ctrl+A` / `Ctrl+C` / `Ctrl+X` / `Ctrl+V` |
-| Editing | Undo / redo | `Ctrl+Z` / `Ctrl+Y` or `Ctrl+Shift+Z` |
+| Editing | Undo | `Ctrl+Z` |
+| Editing | Redo | `Ctrl+Y` / `Ctrl+Shift+Z` |
 | Editing | Indent / unindent | `Tab` / `Shift+Tab` |
 | Editing | Delete previous / next word | `Ctrl+Backspace` / `Ctrl+Delete` |
 | Navigation | Move by word | `Ctrl+Left` / `Ctrl+Right` |
@@ -1055,6 +1063,10 @@ The terminal emulator or multiplexer probably intercepted or rewrote it. Try
 the fallback keys first: `F1` for help and `F2` for the command prompt. Check the
 terminal, tmux, screen, desktop, and SSH-client key mappings. You can also map a
 different chord in `[keybindings]`.
+
+If `Ctrl+Shift+Z` undoes instead of redoing, the terminal omitted the Shift
+modifier and Catomic received an event indistinguishable from `Ctrl+Z`. Catomic
+must treat that event as undo; use `Ctrl+Y` or configure another redo chord.
 
 ### System clipboard copy or paste does not work
 

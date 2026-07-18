@@ -31,8 +31,8 @@ Editing
   Ctrl+Left / Right     Move by word
   Ctrl+Backspace/Delete Delete previous/next word
   Ctrl+A/C/X/V          Select all/copy/cut/paste
-  Ctrl+Z/Y              Undo/redo
-  Ctrl+Shift+Z          Redo
+  Ctrl+Z                  Undo
+  Ctrl+Y / Ctrl+Shift+Z   Redo
   Tab / Shift+Tab       Indent/unindent selection
   Ctrl+Space            Local completion
 

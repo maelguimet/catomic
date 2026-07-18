@@ -49,6 +49,9 @@ fn ctrl_h_commits_help_content_and_status_as_one_frame() {
     assert_eq!(out.flushes, 1, "the committed frame must be flushed once");
     let frame = String::from_utf8_lossy(&out.writes[0]);
     assert!(frame.contains("Catomic shortcuts"));
+    assert!(frame.contains("Ctrl+Z                  Undo"));
+    assert!(frame.contains("Ctrl+Y / Ctrl+Shift+Z   Redo"));
+    assert!(!frame.contains("Ctrl+Z/Y"));
     assert!(frame.contains("\x1b[50;1H\x1b[KShortcuts (read-only). Esc or Ctrl+H closes."));
     assert!(
         frame.ends_with("\x1b[1;1H"),

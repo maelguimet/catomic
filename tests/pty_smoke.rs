@@ -247,6 +247,19 @@ where
     Err(format!("timed out waiting for {label}").into())
 }
 
+fn assert_mouse_capture_lifecycle(output: &str) {
+    for mode in [1000, 1002, 1003, 1015, 1006] {
+        assert!(
+            output.contains(&format!("\x1b[?{mode}h")),
+            "mouse mode {mode} was not enabled"
+        );
+        assert!(
+            output.contains(&format!("\x1b[?{mode}l")),
+            "mouse mode {mode} was not disabled"
+        );
+    }
+}
+
 #[test]
 fn pty_save_undo_save_quit_writes_expected_file() -> TestResult {
     let temp = TempPath::new("save_undo");
@@ -318,7 +331,7 @@ fn pty_sigterm_restores_terminal_modes_before_exit() -> TestResult {
     editor.wait_for_exit_code(128 + 15)?;
 
     let output = editor.output_string();
-    assert!(output.contains("\x1b[?1000l"), "mouse mode not disabled");
+    assert_mouse_capture_lifecycle(&output);
     assert!(
         output.contains("\x1b[?2004l"),
         "bracketed paste not disabled"
@@ -444,6 +457,27 @@ fn pty_help_scrolls_to_model_scopes_and_closes_without_editing() -> TestResult {
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(&temp.path)?, source);
+    Ok(())
+}
+
+#[test]
+fn pty_encoded_sgr_and_x10_clicks_position_the_next_edits() -> TestResult {
+    let temp = TempPath::new("mouse_click");
+    fs::write(&temp.path, "first\nsecond\nthird")?;
+    let mut editor = PtyEditor::spawn(&temp.path)?;
+
+    editor.wait_for_initial_render()?;
+    // SGR left-button press/release at one-based terminal column 4, row 2.
+    editor.send_keys(b"\x1b[<0;4;2M\x1b[<0;4;2m")?;
+    editor.send_keys("猫".as_bytes())?;
+    // Legacy X10 left-button press/release at column 4, row 3.
+    editor.send_keys(b"\x1b[M $#\x1b[M#$#")?;
+    editor.send_keys("🙂".as_bytes())?;
+    editor.send_keys(b"\x13\x11")?;
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(&temp.path)?, "first\nsec猫ond\nthi🙂rd");
+    assert_mouse_capture_lifecycle(&editor.output_string());
     Ok(())
 }
 
@@ -576,10 +610,7 @@ fn pty_markdown_preview_and_view_toggles_leave_source_unchanged() -> TestResult 
 
     assert_eq!(fs::read_to_string(&temp.path)?, source);
     let output = editor.output_string();
-    assert!(
-        output.contains("\x1b[?1000l"),
-        "mouse capture must teardown"
-    );
+    assert_mouse_capture_lifecycle(&output);
     assert!(
         output.contains("\x1b[?2004l"),
         "bracketed paste must teardown"

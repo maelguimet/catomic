@@ -56,6 +56,15 @@ fn markdown_styles_headings_markers_fences_and_inline_code() {
 }
 
 #[test]
+fn markdown_styles_an_empty_atx_heading_without_changing_its_range() {
+    assert_eq!(
+        spans_for_line(SyntaxKind::Markdown, "###"),
+        vec![span(0, 3, SpanStyle::Heading)]
+    );
+    assert!(spans_for_line(SyntaxKind::Markdown, "#######").is_empty());
+}
+
+#[test]
 fn markdown_styles_emphasis_links_tasks_and_table_delimiters() {
     let line = "- [x] **猫** and *é* [link](https://example.com) | `code|x` |";
     let spans = spans_for_line(SyntaxKind::Markdown, line);

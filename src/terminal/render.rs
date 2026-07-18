@@ -299,6 +299,35 @@ mod tests {
     }
 
     #[test]
+    fn markdown_styles_preserve_line_number_tab_selection_and_cursor_cells() {
+        let mut buffer = SimpleBuffer::from_text("\t**猫** | [x](u)");
+        buffer.set_cursor(Cursor { row: 0, col: 3 });
+        let mut out = Vec::new();
+
+        render_buffer(
+            &mut out,
+            &buffer,
+            RenderViewport::new(0, 0, 3, 24),
+            None,
+            RenderOptions {
+                highlight: Some(TextHighlight {
+                    start: Cursor { row: 0, col: 3 },
+                    end: Cursor { row: 0, col: 4 },
+                }),
+                syntax: SyntaxKind::Markdown,
+                line_numbers: true,
+                ..RenderOptions::default()
+            },
+        )
+        .unwrap();
+
+        let rendered = String::from_utf8(out).unwrap();
+        assert!(rendered.contains("\x1b[2;90m1 \x1b[0m    \x1b[3;35m**\x1b[0m"));
+        assert!(rendered.contains("\x1b[3;35;7m猫\x1b[0m"));
+        assert!(rendered.ends_with("\x1b[1;9H"));
+    }
+
+    #[test]
     fn wrapped_command_preview_terminal_controls_render_inertly() {
         let b = SimpleBuffer::from_text("preview-before\x1b[2Jpreview-after\x07");
         let mut out = Vec::new();

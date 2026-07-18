@@ -132,7 +132,7 @@ fn heading(chars: &[char], indent: usize) -> bool {
     (1..=6).contains(&hashes)
         && chars
             .get(indent + hashes)
-            .is_some_and(|ch| ch.is_whitespace())
+            .is_none_or(|ch| ch.is_whitespace())
 }
 
 fn fence(chars: &[char], indent: usize) -> bool {

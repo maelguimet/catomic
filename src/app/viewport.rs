@@ -2,28 +2,137 @@
 //!
 //! Purpose: owns the buffer-aware reveal + clamp + resize handling that
 //! interacts with both Screen and the current Buffer cursor/line state.
-//! Owns: handle_resize, reveal_cursor, clamp_viewport_to_buffer.
+//! Owns: resize, cursor reveal, viewport-only wheel scrolling, and bounds clamping.
 //! Must not: key dispatch, run loop, file state, render core.
-//! Invariants: private to crate; called only from App impl; no behavior change.
-//! Phase: 2 post-k slimming.
+//! Invariants: viewport-only scrolling never mutates a display buffer cursor or source state.
+//! Phase: post-v0.1 viewport-only wheel scrolling.
 
 use std::io::Write;
 
 use crate::app::App; // to mutate self.screen etc, or take pieces
 
+/// Crossterm normalizes terminal and tmux wheel reports to one event per wheel step.
+/// Keep the visible-row amount centralized so configuration can replace it later.
+pub(crate) const MOUSE_WHEEL_ROWS: usize = 3;
+
+#[derive(Clone, Copy)]
+pub(crate) enum ScrollDirection {
+    Up,
+    Down,
+}
+
 /// Smallest helper seam for resize (and testability of it) without redesigning event loop.
-/// Updates screen size, clamps for zero-size safety, reveals cursor, then renders.
+/// Updates screen size, clamps for zero-size safety, preserves an off-screen cursor,
+/// and retains normal cursor-follow behavior when the cursor was visible.
 pub(crate) fn handle_resize(
     app: &mut App,
     w: u16,
     h: u16,
     out: &mut dyn Write,
 ) -> std::io::Result<()> {
+    let cursor_was_visible = display_cursor_is_visible(app);
     app.screen.update_size(w, h);
     app.screen.clamp_scroll();
     clamp_viewport_to_buffer(app);
-    reveal_cursor(app);
+    if cursor_was_visible {
+        reveal_cursor(app);
+    }
     app.render(out)
+}
+
+pub(crate) fn handle_mouse_wheel(
+    app: &mut App,
+    out: &mut dyn Write,
+    direction: ScrollDirection,
+    terminal_row: usize,
+) -> std::io::Result<()> {
+    if terminal_row >= app.screen.visible_height() || mouse_wheel_is_blocked(app) {
+        return Ok(());
+    }
+    if scroll_viewport(app, direction, MOUSE_WHEEL_ROWS)? {
+        app.render(out)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn scroll_viewport(
+    app: &mut App,
+    direction: ScrollDirection,
+    rows: usize,
+) -> std::io::Result<bool> {
+    if rows == 0 || app.screen.visible_height() == 0 {
+        return Ok(false);
+    }
+    if super::view::soft_wrap_active(app) {
+        scroll_wrapped_viewport(app, direction, rows)
+    } else {
+        Ok(scroll_logical_viewport(app, direction, rows))
+    }
+}
+
+fn scroll_logical_viewport(app: &mut App, direction: ScrollDirection, rows: usize) -> bool {
+    let maximum = super::view::display_buffer(app)
+        .line_count()
+        .saturating_sub(app.screen.visible_height());
+    let before = app.screen.scroll_top;
+    app.screen.scroll_top = match direction {
+        ScrollDirection::Up => before.saturating_sub(rows),
+        ScrollDirection::Down => before.saturating_add(rows).min(maximum),
+    };
+    app.screen.scroll_top != before
+}
+
+fn scroll_wrapped_viewport(
+    app: &mut App,
+    direction: ScrollDirection,
+    rows: usize,
+) -> std::io::Result<bool> {
+    let before = (app.screen.scroll_top, app.screen.wrap_col);
+    let forward = matches!(direction, ScrollDirection::Down);
+    let origin = crate::terminal::render::wrapped::scroll_origin(
+        super::view::display_buffer(app),
+        before.0,
+        before.1,
+        app.screen.visible_height(),
+        super::view::content_width(app),
+        rows,
+        forward,
+    )?;
+    app.screen.scroll_top = origin.0;
+    app.screen.wrap_col = origin.1;
+    Ok(origin != before)
+}
+
+fn mouse_wheel_is_blocked(app: &App) -> bool {
+    super::search::is_active(app)
+        || super::command_prompt::is_active(app)
+        || super::replace::is_active(app)
+        || super::completion::is_active(app)
+        || app.pending_llm_request.is_some()
+        || app.llm_task.is_some()
+        || app.repo_llm_state.is_some()
+        || super::external_command::is_running(app)
+}
+
+fn display_cursor_is_visible(app: &App) -> bool {
+    let buffer = super::view::display_buffer(app);
+    if super::view::soft_wrap_active(app) {
+        return crate::terminal::render::wrapped::cursor_is_visible(
+            buffer,
+            app.screen.scroll_top,
+            app.screen.wrap_col,
+            app.screen.visible_height(),
+            super::view::content_width(app),
+        )
+        .unwrap_or(false);
+    }
+    let cursor = buffer.cursor();
+    cursor.row >= app.screen.scroll_top
+        && cursor.row
+            < app
+                .screen
+                .scroll_top
+                .saturating_add(app.screen.visible_height())
 }
 
 /// Reveal the current cursor row/col so they are visible in the content area.
@@ -46,6 +155,9 @@ pub(crate) fn reveal_cursor(app: &mut App) {
     clamp_viewport_to_buffer(app);
     reveal_horizontal_cells(app);
 }
+
+#[cfg(test)]
+mod tests;
 
 fn reveal_wrapped_cursor(app: &mut App) {
     app.screen.scroll_left = 0;
@@ -108,7 +220,8 @@ fn reveal_horizontal_cells(app: &mut App) {
 }
 
 /// Buffer-aware clamp so scroll offsets cannot exceed useful buffer content.
-/// Vertical: if vh==0 => 0; if line_count <= vh => 0; else scroll_top <= line_count - vh.
+/// Vertical: logical views keep a full final viewport; wrapped views retain their
+/// logical-row/wrap-column origin because logical height does not bound visual rows.
 /// Horizontal (scalar chars): clamp scroll_left using current cursor line char count.
 /// Uses line_len + 1 - vw (saturating) to match reveal_col end-of-line math and
 /// keep cursor revealed; clamps excess from prior long lines after move/delete/shrink.
@@ -125,7 +238,13 @@ pub(crate) fn clamp_viewport_to_buffer(app: &mut App) {
         )
     };
     let vh = app.screen.visible_height();
-    if vh == 0 || lc <= vh {
+    if super::view::soft_wrap_active(app) {
+        app.screen.scroll_top = app.screen.scroll_top.min(lc.saturating_sub(1));
+        let start_len = super::view::display_buffer(app)
+            .line_char_count(app.screen.scroll_top)
+            .unwrap_or(0);
+        app.screen.wrap_col = app.screen.wrap_col.min(start_len);
+    } else if vh == 0 || lc <= vh {
         app.screen.scroll_top = 0;
     } else {
         let max_top = lc - vh;

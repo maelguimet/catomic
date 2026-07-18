@@ -11,6 +11,8 @@ use crate::buffer::{Buffer, Cursor};
 use crate::editor::syntax::SyntaxKind;
 use crate::terminal::cursor_style::{self, CursorShape};
 
+#[cfg(test)]
+mod cursor_tests;
 mod status_bar;
 mod style;
 pub(crate) mod wrapped;
@@ -173,17 +175,24 @@ fn compose_buffer(
         )?;
     }
 
-    // Position cursor relative to the rendered viewport (content area).
-    // Horizontal scroll: screen col = (buffer col - start_col) + 1 (1-based).
-    // Saturating math so it never panics/underflows.
-    // If width is 0 still emit safe cursor position.
+    let position = unwrapped_cursor_position(buffer, cursor, &visible, viewport, gutter);
+    write_terminal_cursor(out, position, options.cursor_shape)
+}
+
+fn unwrapped_cursor_position(
+    buffer: &dyn Buffer,
+    cursor: Cursor,
+    visible: &[crate::buffer::LineView],
+    viewport: RenderViewport,
+    gutter: usize,
+) -> Option<(usize, usize)> {
+    let content_h = viewport.height.saturating_sub(1);
+    let content_w = viewport.width.saturating_sub(gutter);
     let Cursor { row, col } = cursor;
-    let screen_row = if row >= start_row {
-        row - start_row + 1
-    } else {
-        1
-    };
-    let cursor_cells = if row >= start_row && row < start_row.saturating_add(content_h) {
+    let start_row = viewport.start_row;
+    let start_col = viewport.start_col;
+    let row_visible = row >= start_row && row < start_row.saturating_add(content_h);
+    let cursor_cells = if row_visible && col >= start_col {
         visible
             .get(row - start_row)
             .map(|line| {
@@ -196,13 +205,30 @@ fn compose_buffer(
     } else {
         0
     };
-    let screen_col = gutter
-        .saturating_add(cursor_cells)
-        .saturating_add(1)
-        .min(width.max(1));
-    cursor_style::write_shape(out, options.cursor_shape)?;
-    write!(out, "\x1b[{};{}H", screen_row, screen_col)?;
-    Ok(())
+    let line_end = buffer.line_char_count(row).unwrap_or(0);
+    let col_visible = col >= start_col
+        && (cursor_cells < content_w || (col == line_end && cursor_cells == content_w));
+    (row_visible && col_visible && content_w > 0).then(|| {
+        (
+            row - start_row + 1,
+            gutter
+                .saturating_add(cursor_cells)
+                .saturating_add(1)
+                .min(viewport.width.max(1)),
+        )
+    })
+}
+
+pub(super) fn write_terminal_cursor(
+    out: &mut Vec<u8>,
+    position: Option<(usize, usize)>,
+    shape: CursorShape,
+) -> io::Result<()> {
+    cursor_style::write_shape(out, shape)?;
+    match position {
+        Some((row, col)) => write!(out, "\x1b[{row};{col}H\x1b[?25h"),
+        None => write!(out, "\x1b[?25l\x1b[1;1H"),
+    }
 }
 
 pub(super) fn write_line_number<W: Write + ?Sized>(
@@ -350,7 +376,7 @@ mod tests {
         let rendered = String::from_utf8(out).unwrap();
         assert!(rendered.contains("\x1b[2;90m1 \x1b[0m    \x1b[3;35m**\x1b[0m"));
         assert!(rendered.contains("\x1b[3;35;7m猫\x1b[0m"));
-        assert!(rendered.ends_with("\x1b[1;9H"));
+        assert!(rendered.ends_with("\x1b[1;9H\x1b[?25h"));
     }
 
     #[test]
@@ -507,7 +533,7 @@ mod tests {
 
         let rendered = String::from_utf8(out).unwrap();
         assert!(rendered.contains("a\u{301}猫x"));
-        assert!(rendered.ends_with("\x1b[1;4H"));
+        assert!(rendered.ends_with("\x1b[1;4H\x1b[?25h"));
     }
 
     #[test]

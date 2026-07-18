@@ -22,12 +22,13 @@ pub(crate) const PANIC_NOTICE: &str =
 /// Setup raw mode + alternate screen.
 /// Must be paired with teardown on all exit paths (including panic).
 pub fn setup<W: Write>(w: &mut W) -> io::Result<()> {
-    use crossterm::{event, execute, terminal};
+    use crossterm::{cursor, event, execute, terminal};
     execute!(
         w,
         terminal::EnterAlternateScreen,
         event::EnableBracketedPaste,
-        event::EnableMouseCapture
+        event::EnableMouseCapture,
+        cursor::Show
     )?;
     terminal::enable_raw_mode()?;
     Ok(())
@@ -36,7 +37,7 @@ pub fn setup<W: Write>(w: &mut W) -> io::Result<()> {
 /// Restore terminal state.
 /// Safe to call multiple times / when not in raw mode.
 pub fn teardown<W: Write>(w: &mut W) -> io::Result<()> {
-    use crossterm::{event, execute, terminal};
+    use crossterm::{cursor, event, execute, terminal};
     // Ignore errors: we are best-effort during panic paths.
     let _ = terminal::disable_raw_mode();
     let _ = cursor_style::restore(w);
@@ -44,6 +45,7 @@ pub fn teardown<W: Write>(w: &mut W) -> io::Result<()> {
         w,
         event::DisableMouseCapture,
         event::DisableBracketedPaste,
+        cursor::Show,
         terminal::LeaveAlternateScreen
     );
     Ok(())

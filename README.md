@@ -95,6 +95,7 @@ troubleshooting, see the [complete user guide](docs/user-guide.md).
 | Redo | `Ctrl+Y` / `Ctrl+Shift+Z` |
 | Insert / overwrite typing | `Insert` (`INS` / `OVR`) |
 | Find / replace / goto line | `Ctrl+F` / `Ctrl+Shift+F` / `Ctrl+G` |
+| Previous / next paragraph | `Ctrl+Up` / `Ctrl+Down` |
 | Select / copy / cut / paste | `Ctrl+A` / `Ctrl+C` / `Ctrl+X` / `Ctrl+V` |
 | Local completion | `Ctrl+Space` |
 | Command prompt | `Ctrl+Shift+P` or `F2` |
@@ -111,6 +112,8 @@ remappable through `[keybindings]`.
 Terminal emulators and multiplexers can intercept or rewrite some key chords.
 Bracketed paste is inserted as one undoable edit; Catomic also has an internal
 clipboard and sends copied text through OSC 52 when the terminal supports it.
+The mouse wheel scrolls the viewport without moving the editing cursor or
+selection; the next keyboard or editing action reveals the logical cursor.
 
 ### Essential prompt commands
 

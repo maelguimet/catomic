@@ -20,6 +20,25 @@ pub(crate) fn handle_mouse(
     out: &mut dyn Write,
     event: MouseEvent,
 ) -> io::Result<()> {
+    match event.kind {
+        MouseEventKind::ScrollUp => {
+            return super::super::viewport::handle_mouse_wheel(
+                app,
+                out,
+                super::super::viewport::ScrollDirection::Up,
+                event.row as usize,
+            );
+        }
+        MouseEventKind::ScrollDown => {
+            return super::super::viewport::handle_mouse_wheel(
+                app,
+                out,
+                super::super::viewport::ScrollDirection::Down,
+                event.row as usize,
+            );
+        }
+        _ => {}
+    }
     if !super::super::view::source_is_displayed(app)
         || super::super::search::is_active(app)
         || super::super::command_prompt::is_active(app)
@@ -156,7 +175,7 @@ fn map_wrapped_cursor(
     let gutter = super::super::view::gutter_width(app);
     let width = super::super::view::content_width(app);
     let rows = crate::terminal::render::wrapped::visible_rows(
-        &*app.buffer,
+        super::super::view::display_buffer(app),
         app.screen.scroll_top,
         app.screen.wrap_col,
         app.screen.visible_height(),

@@ -1,7 +1,8 @@
 //! Purpose: render and map bounded viewport rows for explicit soft wrapping.
 //! Owns: logical-to-visual row splitting, continuation gutters, and wrapped cursor placement.
 //! Must not: mutate buffers/App state, scan whole files, own terminal setup, or save.
-//! Invariants: work is bounded by viewport rows; visual slices end on grapheme boundaries.
+//! Invariants: no whole-document scan; forward work is viewport-bounded; visual slices end on
+//!   grapheme boundaries, and each reverse step inspects at most one logical line.
 //! Phase: post-v0.1 core usability.
 
 use std::io::{self, Write};
@@ -58,9 +59,108 @@ pub(crate) fn cursor_is_visible(
     width: usize,
 ) -> io::Result<bool> {
     let cursor = buffer.cursor();
-    Ok(visible_rows(buffer, start_row, wrap_col, height, width)?
-        .iter()
-        .any(|row| row_contains_cursor(row, cursor)))
+    let rows = visible_rows(buffer, start_row, wrap_col, height, width)?;
+    Ok(wrapped_cursor_position(cursor, &rows, 0, width).is_some())
+}
+
+pub(crate) fn scroll_origin(
+    buffer: &dyn Buffer,
+    start_row: usize,
+    wrap_col: usize,
+    height: usize,
+    width: usize,
+    count: usize,
+    forward: bool,
+) -> io::Result<(usize, usize)> {
+    if width == 0 || height == 0 || count == 0 {
+        return Ok((start_row, wrap_col));
+    }
+    if forward {
+        scroll_origin_forward(buffer, start_row, wrap_col, height, width, count)
+    } else {
+        scroll_origin_backward(buffer, start_row, wrap_col, width, count)
+    }
+}
+
+fn scroll_origin_forward(
+    buffer: &dyn Buffer,
+    start_row: usize,
+    wrap_col: usize,
+    height: usize,
+    width: usize,
+    count: usize,
+) -> io::Result<(usize, usize)> {
+    let rows = visible_rows(
+        buffer,
+        start_row,
+        wrap_col,
+        height.saturating_add(count),
+        width,
+    )?;
+    let advance = count.min(rows.len().saturating_sub(height));
+    Ok(rows
+        .get(advance)
+        .map(|row| (row.document_row, row.start_col))
+        .unwrap_or((start_row, wrap_col)))
+}
+
+fn scroll_origin_backward(
+    buffer: &dyn Buffer,
+    mut row: usize,
+    mut col: usize,
+    width: usize,
+    count: usize,
+) -> io::Result<(usize, usize)> {
+    for _ in 0..count {
+        let previous = previous_origin(buffer, row, col, width)?;
+        if previous == (row, col) {
+            break;
+        }
+        (row, col) = previous;
+    }
+    Ok((row, col))
+}
+
+fn previous_origin(
+    buffer: &dyn Buffer,
+    row: usize,
+    col: usize,
+    width: usize,
+) -> io::Result<(usize, usize)> {
+    if row == 0 && col == 0 {
+        return Ok((0, 0));
+    }
+    let (target_row, target_col) = if col == 0 {
+        let target_row = row.saturating_sub(1);
+        (target_row, buffer.line_char_count(target_row).unwrap_or(0))
+    } else {
+        (row, col)
+    };
+    Ok((
+        target_row,
+        wrapped_start_before(buffer, target_row, target_col, width)?,
+    ))
+}
+
+fn wrapped_start_before(
+    buffer: &dyn Buffer,
+    row: usize,
+    end_col: usize,
+    width: usize,
+) -> io::Result<usize> {
+    let mut start_col = 0;
+    while start_col < end_col {
+        let mut row_slice = Vec::with_capacity(1);
+        append_line_rows(buffer, row, start_col, 1, width, &mut row_slice)?;
+        let Some(next_col) = row_slice.first().map(WrappedRow::end_col) else {
+            break;
+        };
+        if next_col >= end_col || next_col <= start_col {
+            break;
+        }
+        start_col = next_col;
+    }
+    Ok(start_col.min(end_col))
 }
 
 pub(crate) fn start_col_near_cursor(
@@ -123,9 +223,8 @@ pub(super) fn compose_buffer(
             options.status_theme,
         )?;
     }
-    let (cursor_row, cursor_col) = wrapped_cursor_position(buffer.cursor(), &rows, gutter);
-    crate::terminal::cursor_style::write_shape(out, options.cursor_shape)?;
-    write!(out, "\x1b[{cursor_row};{cursor_col}H")
+    let cursor = wrapped_cursor_position(buffer.cursor(), &rows, gutter, content_width);
+    super::write_terminal_cursor(out, cursor, options.cursor_shape)
 }
 
 fn append_line_rows(
@@ -200,19 +299,27 @@ fn write_rows<W: Write + ?Sized>(
     Ok(())
 }
 
-fn wrapped_cursor_position(cursor: Cursor, rows: &[WrappedRow], gutter: usize) -> (usize, usize) {
-    let Some((index, row)) = rows
+fn wrapped_cursor_position(
+    cursor: Cursor,
+    rows: &[WrappedRow],
+    gutter: usize,
+    width: usize,
+) -> Option<(usize, usize)> {
+    let (index, row) = rows
         .iter()
         .enumerate()
-        .find(|(_, row)| row_contains_cursor(row, cursor))
-    else {
-        return (1, gutter.saturating_add(1));
-    };
+        .find(|(_, row)| row_contains_cursor(row, cursor))?;
     let cell = text_layout::scalar_to_cell(&row.content, cursor.col.saturating_sub(row.start_col));
-    (
+    if width == 0 || cell > width || (cell == width && !row.line_end) {
+        return None;
+    }
+    Some((
         index.saturating_add(1),
-        gutter.saturating_add(cell).saturating_add(1),
-    )
+        gutter
+            .saturating_add(cell)
+            .saturating_add(1)
+            .min(gutter.saturating_add(width).max(1)),
+    ))
 }
 
 fn row_contains_cursor(row: &WrappedRow, cursor: Cursor) -> bool {

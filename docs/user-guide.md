@@ -1100,7 +1100,8 @@ First compare the same Catomic command inside and outside the multiplexer, and
 record the terminal version plus `TERM`, `TMUX`, and `STY`. Inside tmux, inspect
 `tmux show-options -gv mouse` and any custom `Mouse...Pane` bindings. A custom
 binding that consumes an event must use `send-keys -M` when it intends to pass
-that event to the program in the pane. See the official
+that event to the program in the pane; see the official
+[tmux mouse-support manual](https://man.openbsd.org/tmux.1#MOUSE_SUPPORT),
 [tmux mouse guide](https://github.com/tmux/tmux/wiki/Getting-Started#using-the-mouse)
 and [tmux FAQ](https://github.com/tmux/tmux/wiki/FAQ#how-do-i-use-the-mouse) for
 the current forwarding and terminal-bypass behavior.
@@ -1109,7 +1110,8 @@ Many terminals reserve a modifier such as `Shift` for selecting terminal
 scrollback even when an application requested mouse input. Do not hold that
 bypass modifier when testing Catomic. Check terminal mouse-reporting settings,
 then include whether click, drag, double-click, and wheel events work in a bug
-report; Catomic cannot recover coordinates that never reach its PTY.
+report along with the Catomic version and terminal dimensions; Catomic cannot
+recover coordinates that never reach its PTY.
 
 ### Save is refused after another program edited the file
 

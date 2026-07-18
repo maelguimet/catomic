@@ -141,6 +141,20 @@ fn help_explains_context_safety_defaults_and_deeper_documentation() {
         "focused bounded repository context",
         "megameow INSTRUCTION",
         "broader bounded repository context",
+        "$XDG_CONFIG_HOME/catomic/config.toml",
+        "~/.config/catomic/config.toml",
+        "[[llm.backends]]",
+        "base_url = \"http://127.0.0.1:8080/v1\"",
+        "model = \"local-model\"",
+        "api_key_env = \"OPENAI_API_KEY\"",
+        "OpenAI-compatible Chat Completions API",
+        "api_key_env names an environment variable, never the key value itself",
+        "Opening help reads no config or secret, builds no client",
+        "F10 or model opens the process-local preset/model selector",
+        "meow explain this",
+        "bigmeow explain this file",
+        "Project mode, a saved active file, and Git",
+        "Inline F3",
         "Standard model commands send nothing until preset, adapter, destination",
         "autocomplete on is the only automatic-call exception",
         "read-only session confirmation with destination and bounded active-buffer",
@@ -151,9 +165,45 @@ fn help_explains_context_safety_defaults_and_deeper_documentation() {
         "does not display effective configured keys",
         "terminal troubleshooting, and safety",
         "Model-assisted commands",
+        "endpoint unavailable or incompatible",
+        "context over",
+        "64 KiB or 2,000 lines",
     ] {
         assert!(text.contains(required), "help is missing {required:?}");
     }
+}
+
+#[test]
+fn narrow_help_reaches_wrapped_model_setup_without_horizontal_scrolling() {
+    let mut app = app();
+    app.screen.width = 24;
+    app.screen.height = 7;
+    let mut out = Vec::new();
+    show(&mut app, &mut out).unwrap();
+
+    let model_row = display_buffer(&app)
+        .unwrap()
+        .to_string()
+        .lines()
+        .position(|line| line.contains("api_key_env names an environment variable"))
+        .expect("model secret-indirection guidance must be present");
+    app.help_view.as_mut().unwrap().buffer.set_cursor(Cursor {
+        row: model_row,
+        col: 0,
+    });
+    out.clear();
+    handle_key(
+        &mut app,
+        &mut out,
+        KeyEvent::new(KeyCode::End, KeyModifiers::NONE),
+    )
+    .unwrap();
+
+    assert!(crate::app::view::soft_wrap_active(&app));
+    assert!(app.screen.scroll_top > 0);
+    assert_eq!(app.screen.scroll_left, 0);
+    assert!(!out.is_empty());
+    assert_eq!(app.buffer.to_string(), "source text");
 }
 
 #[test]

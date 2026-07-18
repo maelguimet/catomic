@@ -29,6 +29,9 @@ making it your only editor.
 - Cat-themed model commands, because of course. They are explicit and
   preview-first: nothing is sent until you invoke a command and confirm where it
   is going and what context it gets.
+- Optional inline writing suggestions stay off until you confirm one bounded
+  active-buffer scope for the session; ghost text never changes the file unless
+  you accept it with `Tab`.
 
 ## Install from source
 
@@ -135,6 +138,7 @@ leading `:`.
 | `model`, `models` | Search configured model/backend presets |
 | `run-clanker`, `inline-meow` | Run the inline instruction (`selection → catblocks → bounded full file`) |
 | `clear-clanker-changes` | Dismiss applied-model highlighting without editing text |
+| `autocomplete on`, `autocomplete off` | Enable or disable confirmed inline suggestions |
 | `meow TEXT`, `bigmeow TEXT` | Ask a model about this file or selection |
 | `gitmeow TEXT`, `megameow TEXT` | Ask a model using repository context |
 
@@ -169,6 +173,15 @@ status_messages = true
 enabled = false
 interval_secs = 30
 max_bytes = 1048576
+
+[autocomplete]
+enabled = false
+idle_debounce_ms = 750
+minimum_prefix_length = 20
+max_context_before = 2048
+max_context_after = 512
+max_generated_tokens = 64
+allow_remote = false
 
 [theme]
 name = "default"
@@ -234,6 +247,15 @@ Plain HTTP is allowed for loopback models and unauthenticated LAN models. If an
 API key is present, Catomic refuses to send it over non-loopback HTTP; use HTTPS
 for authenticated remote endpoints. See
 [the LLM safety rules](docs/llm-rules.md) for the full boundary.
+
+Inline autocomplete is a narrower opt-in exception to per-call confirmation.
+Even when `autocomplete.enabled = true`, the first enable in every process
+shows the selected preset, adapter, model, canonical destination, and exact
+before/after bounds and waits for `Enter`. While enabled, bounded active-buffer
+context is sent automatically after typing pauses. Non-loopback HTTP endpoints
+also require `autocomplete.allow_remote = true`. Catomic supplies no repository,
+path, filesystem, or tool context; a configured command adapter is trusted user
+code and may itself contact services after confirmation.
 
 ## Limitations
 

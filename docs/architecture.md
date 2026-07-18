@@ -20,7 +20,10 @@ Input must not poke buffer internals directly.
 - `editor/`: owns semantic editing (commands, cursor, selection, search).
 - `file/`: io, watcher, recovery.
 - `project/`: Project mode only (git, discovery, diagnostics). Must not be constructed in Plain mode.
-- `llm/`: explicit only (backend adapters, broker, patch, openai_compat). No background calls, no silent writes. Both HTTP and command output enter the same strict proposal/preview path.
+- `llm/`: explicit commands plus the separately confirmed, bounded autocomplete
+  session (backend adapters, broker, patch, openai_compat). No unconfirmed calls
+  or silent writes. Patch output enters the strict proposal/preview path;
+  autocomplete has no patch, filesystem, or repository capability.
 - `config/`: keymaps and settings.
 - `src/tests/`: unit/golden/perf helpers that need crate internals.
 - root `tests/`: real binary integration smokes (for example PTY).

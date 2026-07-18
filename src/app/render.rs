@@ -167,25 +167,5 @@ fn status_line(app: &App) -> String {
         position,
     );
     let status = status::decorate_status_line(status, app.cat_config.status_messages);
-    status_with_autocomplete(
-        status,
-        autocomplete::status_label(app),
-        app.screen.width as usize,
-    )
-}
-
-fn status_with_autocomplete(status: String, label: &str, width: usize) -> String {
-    use crate::editor::text_layout;
-
-    let suffix = format!(" | {label}");
-    let suffix_width = text_layout::cell_width_from(&suffix, 0);
-    if suffix_width >= width {
-        let len = text_layout::clipped_scalar_len(&suffix, width);
-        return suffix.chars().take(len).collect();
-    }
-    let available = width.saturating_sub(suffix_width);
-    let len = text_layout::clipped_scalar_len(&status, available);
-    let mut clipped: String = status.chars().take(len).collect();
-    clipped.push_str(&suffix);
-    clipped
+    format!("{status} | {}", autocomplete::status_label(app))
 }

@@ -156,6 +156,75 @@ fn first_enable_discloses_destination_scope_and_requires_enter() {
 }
 
 #[test]
+fn confirmation_is_read_only_and_restores_the_complete_source_viewport() {
+    let mut app = super::super::App::new(None).unwrap();
+    app.buffer = Box::new(PieceTable::from_text("source\ntext\nrows"));
+    app.screen.scroll_top = 2;
+    app.screen.scroll_left = 3;
+    app.screen.wrap_col = 4;
+    let source = app.buffer.to_string();
+    let mut out = Vec::new();
+
+    begin_with_catalog(&mut app, &mut out, local_catalog()).unwrap();
+    assert_eq!(
+        (
+            app.screen.scroll_top,
+            app.screen.scroll_left,
+            app.screen.wrap_col
+        ),
+        (0, 0, 0)
+    );
+    assert!(handle_paste(&mut app, &mut out).unwrap());
+    assert_eq!(app.buffer.to_string(), source);
+    handle_key(
+        &mut app,
+        &mut out,
+        KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+    )
+    .unwrap();
+
+    assert_eq!(
+        (
+            app.screen.scroll_top,
+            app.screen.scroll_left,
+            app.screen.wrap_col
+        ),
+        (2, 3, 4)
+    );
+    assert_eq!(app.buffer.to_string(), source);
+}
+
+#[test]
+fn command_adapter_is_disclosed_but_not_started_before_confirmation() {
+    let marker = std::env::temp_dir().join(format!(
+        "catomic_autocomplete_unconfirmed_command_{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&marker);
+    let action = toml::Value::String(format!("touch {}", marker.display())).to_string();
+    let catalog = crate::config::llm::parse(&format!(
+        "[llm]\ndefault='command'\n[[llm.backends]]\nname='command'\ntype='command'\nmodel='writer'\nprogram='/bin/sh'\nargs=['-c', {action}]\noutput='claude-json-v1'\n"
+    ))
+    .unwrap();
+    let mut app = super::super::App::new(None).unwrap();
+    let mut out = Vec::new();
+
+    begin_with_catalog(&mut app, &mut out, catalog).unwrap();
+
+    let document = confirmation_text(&app);
+    assert!(document.contains("Adapter: command"));
+    assert!(document.contains("may itself contact services"));
+    assert!(!marker.exists());
+    handle_key(
+        &mut app,
+        &mut out,
+        KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+    )
+    .unwrap();
+    assert!(!marker.exists());
+}
+
+#[test]
 fn remote_endpoint_requires_separate_configuration_before_confirmation() {
     let mut app = super::super::App::new(None).unwrap();
     let mut catalog = local_catalog();

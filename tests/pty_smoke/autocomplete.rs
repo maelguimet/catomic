@@ -86,6 +86,14 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
+fn toml_string(path: &std::path::Path) -> String {
+    toml::Value::String(path.to_string_lossy().into_owned()).to_string()
+}
+
+fn shell_path(path: &std::path::Path) -> String {
+    format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"))
+}
+
 #[test]
 fn pty_autocomplete_confirms_waits_renders_unicode_ghost_and_accepts() -> TestResult {
     let project = TempProject::new("autocomplete_success");
@@ -105,11 +113,8 @@ fn pty_autocomplete_confirms_waits_renders_unicode_ghost_and_accepts() -> TestRe
     let active = project.write("note.txt", "");
     let mut editor = PtyEditor::spawn_with_size_and_xdg(&active, &project.root, 10, 18)?;
 
-    editor.wait_for_output(
-        "autocomplete confirmation",
-        "Autocomplete session confirmation",
-    )?;
-    editor.wait_for_output("autocomplete destination", &base_url)?;
+    editor.wait_for_output("autocomplete confirmation", "Autocomplete sessi")?;
+    editor.wait_for_output("autocomplete destination", "Destination: http:")?;
     editor.wait_for_output("autocomplete model override", "ghost-model")?;
     assert!(accepted.try_recv().is_err());
 
@@ -117,9 +122,9 @@ fn pty_autocomplete_confirms_waits_renders_unicode_ghost_and_accepts() -> TestRe
     editor.wait_for_output("soft wrap for narrow autocomplete", "Soft wrap on")?;
     editor.send_keys(b"prefix text")?;
     accepted.recv_timeout(Duration::from_secs(2))?;
-    editor.wait_for_output("asynchronous requesting status", "autocomplete requesting")?;
+    editor.wait_for_output("asynchronous requesting status", "questing")?;
     assert_eq!(fs::read_to_string(&active)?, "");
-    editor.wait_for_output("ready autocomplete status", "autocomplete ready")?;
+    editor.wait_for_output("ready autocomplete status", "te ready")?;
     wait_until("wrapped Unicode ghost text", Duration::from_secs(2), || {
         let output = editor.output_string();
         output.contains("\x1b[90;2m") && output.contains("猫🙂")
@@ -127,7 +132,7 @@ fn pty_autocomplete_confirms_waits_renders_unicode_ghost_and_accepts() -> TestRe
     assert_eq!(fs::read_to_string(&active)?, "");
 
     editor.send_keys(b"\t")?;
-    editor.wait_for_output("accepted autocomplete", "Autocomplete accepted")?;
+    editor.wait_for_output("accepted autocomplete", "does it.")?;
     editor.send_keys(b"\x1b[80;6uautocomplete off\r\x13\x11")?;
     editor.wait_for_exit()?;
 
@@ -135,6 +140,62 @@ fn pty_autocomplete_confirms_waits_renders_unicode_ghost_and_accepts() -> TestRe
     let request = server.join().expect("join fake model server");
     assert!(request.contains("\"model\":\"ghost-model\""));
     assert!(request.contains("\"max_tokens\":16"));
+    assert!(request.contains("catomic_before_cursor"));
+    assert!(request.contains("catomic_after_cursor"));
+    assert!(!request.contains("note.txt"));
+    assert_clean_teardown(&editor.output_string());
+    Ok(())
+}
+
+#[test]
+fn pty_autocomplete_runs_confirmed_headless_adapter_without_tools() -> TestResult {
+    let project = TempProject::new("autocomplete_command");
+    let request_path = project.root.join("autocomplete-request.txt");
+    let response_path = project.root.join("autocomplete-response.json");
+    fs::write(
+        &response_path,
+        serde_json::json!({
+            "type": "result",
+            "is_error": false,
+            "result": " command continuation",
+        })
+        .to_string(),
+    )?;
+    let script = project.write(
+        "fake-autocomplete.sh",
+        &format!(
+            "#!/bin/sh\nset -eu\ncat > {}\nsleep 0.1\ncat {}\n",
+            shell_path(&request_path),
+            shell_path(&response_path)
+        ),
+    );
+    project.write(
+        "catomic/config.toml",
+        &format!(
+            "[autocomplete]\nenabled=true\nidle_debounce_ms=100\nminimum_prefix_length=1\nmax_context_before=64\nmax_context_after=16\nmax_generated_tokens=16\n\
+             [llm]\ndefault='autocomplete-test'\n[[llm.backends]]\nname='autocomplete-test'\ntype='command'\nmodel='command-writer'\nprogram='/bin/sh'\nargs=[{}]\noutput='claude-json-v1'\ntimeout_secs=2\n",
+            toml_string(&script)
+        ),
+    );
+    let active = project.write("note.txt", "");
+    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
+
+    editor.wait_for_output("command confirmation", "Adapter: command")?;
+    assert!(!request_path.exists());
+    editor.send_keys(b"\rtyped")?;
+    wait_until("command adapter request", Duration::from_secs(2), || {
+        request_path.exists()
+    })?;
+    editor.wait_for_output("command ghost", "command continuation")?;
+    assert_eq!(fs::read_to_string(&active)?, "");
+    editor.send_keys(b"\t")?;
+    editor.wait_for_output("command acceptance", "Ctrl+Z undoes it.")?;
+    editor.send_keys(b"\x1b[80;6uautocomplete off\r\x13\x11")?;
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(&active)?, "typed command continuation");
+    let request = fs::read_to_string(request_path)?;
+    assert!(request.contains("Catomic model request v1"));
     assert!(request.contains("catomic_before_cursor"));
     assert!(request.contains("catomic_after_cursor"));
     assert!(!request.contains("note.txt"));

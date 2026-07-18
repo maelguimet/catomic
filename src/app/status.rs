@@ -1,22 +1,23 @@
-//! Minimal persistent bottom status line for the editor (Phase 2B).
+//! Persistent status text and transient semantic role selection.
 //!
 //! Purpose: when no transient app.message is present, compute a single-line
 //!   status string (mode, path, dirty, size, tier, page, buffer position) to show
-//!   on the reserved bottom row. Messages still override.
-//! Owns: format_status_line (pure, takes the minimal fields it needs).
-//! Must not: mutate state; perform IO; know render details beyond the string;
+//!   on the reserved bottom row. Classify transient UI state for terminal styling.
+//! Owns: pure persistent formatting and normal/info/warning/error/prompt role selection.
+//! Must not: mutate state; perform IO; emit terminal escapes;
 //!   construct watchers or Large-file policy changes; touch buffer content.
 //! Invariants: plain/project labels stable; [untitled] for no path; utf-8 is
 //!   always accurate because open rejects invalid UTF-8; size uses
 //!   existing format_file_size; oversized tiers get a marker; active page byte
 //!   ranges come only from Buffer metadata; never called for content decisions.
-//! Phase: 2-bn paged-file navigation/status.
+//! Phase: post-v0.1 semantic status/message bar.
 
 use std::path::Path;
 
 use crate::buffer::PageInfo;
 use crate::file::size::{file_size_tier_label, format_file_size, FileSizeTier};
 use crate::file::text_format::TextFormat;
+use crate::terminal::render::StatusRole;
 
 pub(crate) struct StatusFile<'a> {
     pub(crate) path: Option<&'a Path>,
@@ -86,6 +87,70 @@ pub(crate) fn decorate_status_line(status: String, cat_status: bool) -> String {
     } else {
         status
     }
+}
+
+pub(crate) fn transient_role(app: &super::App, message: &str) -> StatusRole {
+    if app.pending_quit_confirm
+        || app.pending_save_conflict.is_some()
+        || app.pending_reload.is_some()
+    {
+        return StatusRole::Warning;
+    }
+    if prompt_is_active(app) {
+        return StatusRole::Prompt;
+    }
+    let normalized = message.to_ascii_lowercase();
+    if message_is_error(&normalized) {
+        return StatusRole::Error;
+    }
+    if message_is_warning(&normalized) {
+        return StatusRole::Warning;
+    }
+    StatusRole::Info
+}
+
+fn prompt_is_active(app: &super::App) -> bool {
+    super::command_prompt::is_active(app)
+        || super::search::is_active(app)
+        || super::replace::is_active(app)
+        || app.pending_llm_request.is_some()
+        || matches!(
+            app.repo_llm_state.as_ref(),
+            Some(super::repo_llm::RepoLlmState::Pending(_))
+        )
+        || super::llm_preview::is_viewing(app)
+        || super::recovery::is_viewing(app)
+        || super::external_command::is_viewing(app)
+        || super::project_files::is_viewing(app)
+}
+
+fn message_is_error(message: &str) -> bool {
+    [
+        " error",
+        "error:",
+        "failed",
+        "could not",
+        "cannot ",
+        "invalid ",
+        "unknown ",
+        "refused",
+        "malformed",
+    ]
+    .iter()
+    .any(|marker| message.contains(marker))
+}
+
+fn message_is_warning(message: &str) -> bool {
+    [
+        "unsaved",
+        "warning",
+        "changed on disk",
+        "deleted on disk",
+        "discard local changes",
+        "large file (",
+    ]
+    .iter()
+    .any(|marker| message.contains(marker))
 }
 
 #[cfg(test)]
@@ -266,6 +331,33 @@ mod tests {
         assert_eq!(
             decorate_status_line(status, true),
             "=^..^= plain [untitled] saved utf-8 lf"
+        );
+    }
+
+    #[test]
+    fn transient_roles_cover_info_warning_error_and_prompt_states() {
+        let mut app = super::super::App::new(None).unwrap();
+        assert_eq!(
+            transient_role(&app, "Saved."),
+            crate::terminal::render::StatusRole::Info
+        );
+        assert_eq!(
+            transient_role(&app, "Save error: permission denied"),
+            crate::terminal::render::StatusRole::Error
+        );
+
+        app.pending_quit_confirm = true;
+        assert_eq!(
+            transient_role(&app, "Unsaved changes. Press Ctrl+Q again."),
+            crate::terminal::render::StatusRole::Warning
+        );
+        app.pending_quit_confirm = false;
+
+        let mut out = Vec::new();
+        super::super::command_prompt::open_command_prompt(&mut app, &mut out).unwrap();
+        assert_eq!(
+            transient_role(&app, app.message.as_deref().unwrap()),
+            crate::terminal::render::StatusRole::Prompt
         );
     }
 }

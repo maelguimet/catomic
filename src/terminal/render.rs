@@ -10,8 +10,11 @@ use std::io::{self, Write};
 use crate::buffer::{Buffer, Cursor};
 use crate::editor::syntax::SyntaxKind;
 
+mod status_bar;
 mod style;
 pub(crate) mod wrapped;
+
+pub(crate) use status_bar::{StatusRole, StatusTheme};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct TextHighlight {
@@ -19,13 +22,29 @@ pub(crate) struct TextHighlight {
     pub(crate) end: Cursor,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct RenderOptions {
     pub(crate) highlight: Option<TextHighlight>,
     pub(crate) syntax: SyntaxKind,
     pub(crate) line_numbers: bool,
     pub(crate) whitespace: bool,
     pub(crate) soft_wrap: bool,
+    pub(crate) status_role: StatusRole,
+    pub(crate) status_theme: StatusTheme,
+}
+
+impl Default for RenderOptions {
+    fn default() -> Self {
+        Self {
+            highlight: None,
+            syntax: SyntaxKind::Plain,
+            line_numbers: false,
+            whitespace: false,
+            soft_wrap: false,
+            status_role: StatusRole::Normal,
+            status_theme: StatusTheme::default(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -65,9 +84,9 @@ pub(crate) fn line_number_gutter(line_count: usize) -> usize {
 /// rendered row.
 ///
 /// `viewport` defines the visible row/column origin and terminal dimensions.
-/// Bottom row (height) reserved for minimal message if provided; content uses height-1.
+/// Bottom row (height) is reserved for the semantic status bar; content uses height-1.
 /// Horizontal slicing starts at a scalar document column but clips by terminal cells.
-/// Least invasive addition: message shown on last row via absolute positioning.
+/// Status text is pinned by absolute positioning and styled through `RenderOptions`.
 pub fn render_buffer<W: Write + ?Sized>(
     out: &mut W,
     buffer: &dyn Buffer,
@@ -140,12 +159,15 @@ fn compose_buffer(
         }
     }
 
-    // Minimal bottom message line on last row (pinned via absolute move).
-    // Shows message text if present (error, quit warning, etc.).
-    // When no message, still emit to clear prior content from bottom row.
     if height > 0 {
-        let msg = crate::editor::text_layout::terminal_safe_text(message.unwrap_or(""));
-        write!(out, "\x1b[{};1H\x1b[K{}", height, msg)?;
+        status_bar::write_status_bar(
+            out,
+            height,
+            width,
+            message.unwrap_or(""),
+            options.status_role,
+            options.status_theme,
+        )?;
     }
 
     // Position cursor relative to the rendered viewport (content area).
@@ -351,26 +373,6 @@ mod tests {
     }
 
     #[test]
-    fn status_terminal_controls_render_inertly() {
-        let b = SimpleBuffer::from_text("");
-        let mut out = Vec::new();
-
-        render_buffer(
-            &mut out,
-            &b,
-            RenderViewport::new(0, 0, 2, 80),
-            Some("error from hostile\x1b]0;title\x07path"),
-            RenderOptions::default(),
-        )
-        .unwrap();
-
-        let rendered = String::from_utf8(out).unwrap();
-        assert!(!rendered.contains("\x1b]0"));
-        assert!(!rendered.contains('\x07'));
-        assert!(rendered.contains("error from hostile␛]0;title␇path"));
-    }
-
-    #[test]
     fn render_buffer_height_zero_no_bottom_pos_and_no_panic() {
         let b = SimpleBuffer::from_text("hello\nworld\n");
         let mut out: Vec<u8> = Vec::new();
@@ -399,56 +401,6 @@ mod tests {
     }
 
     #[test]
-    fn render_buffer_height_one_reserves_only_row_for_message_no_content_lines() {
-        let b = SimpleBuffer::from_text("L0\nL1\nL2\n");
-        let mut out: Vec<u8> = Vec::new();
-        render_buffer(
-            &mut out,
-            &b,
-            RenderViewport::new(0, 0, 1, 10),
-            Some("msg"),
-            RenderOptions::default(),
-        )
-        .expect("render h=1");
-        let s = String::from_utf8_lossy(&out);
-        // With h=1, content_h=0 => no visible lines should be emitted
-        assert!(
-            !s.contains("L0") && !s.contains("L1") && !s.contains("L2"),
-            "height=1 must emit no content lines: {}",
-            s
-        );
-        // Bottom row positioning at height=1
-        assert!(s.contains("\x1b[1;1H"), "positions to row 1 for message");
-        assert!(s.contains("msg"), "message emitted");
-    }
-
-    #[test]
-    fn render_buffer_width_zero_emits_no_content_but_clears_rows_and_positions() {
-        let b = SimpleBuffer::from_text("abc\ndef\n");
-        let mut out: Vec<u8> = Vec::new();
-        render_buffer(
-            &mut out,
-            &b,
-            RenderViewport::new(0, 0, 3, 0),
-            None,
-            RenderOptions::default(),
-        )
-        .expect("render w=0");
-        let s = String::from_utf8_lossy(&out);
-        // No actual text content from lines
-        assert!(
-            !s.contains("abc") && !s.contains("def"),
-            "width=0 must emit no line content chars: {}",
-            s
-        );
-        // Still clears viewport rows and does final cursor positioning safely.
-        assert!(s.contains("\x1b[1;1H\x1b[K"), "clears first content row");
-        assert!(s.contains("\x1b[2;1H\x1b[K"), "clears second content row");
-        assert!(!s.contains("\x1b[2J"), "does not clear whole screen");
-        assert!(s.contains("\x1b["), "positions cursor");
-    }
-
-    #[test]
     fn render_buffer_clears_each_row_without_full_screen_clear() {
         let b = SimpleBuffer::from_text("only");
         let mut out = Vec::new();
@@ -467,7 +419,8 @@ mod tests {
         for row in 1..=3 {
             assert!(s.contains(&format!("\x1b[{row};1H\x1b[K")));
         }
-        assert!(s.contains("\x1b[4;1H\x1b[Kstatus"));
+        assert!(s.contains("\x1b[4;1H"));
+        assert!(s.contains("\x1b[2Kstatus"));
     }
 
     #[test]

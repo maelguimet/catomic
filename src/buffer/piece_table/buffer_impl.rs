@@ -9,7 +9,7 @@ use std::borrow::Cow;
 use std::io::{self, Write};
 
 use crate::buffer::undo::{PieceEdit, Transaction};
-use crate::buffer::{Buffer, Cursor, LineView};
+use crate::buffer::{Buffer, Cursor, LineView, TextEdit};
 
 use super::types::{Piece, PieceTable, Source};
 
@@ -151,6 +151,61 @@ impl Buffer for PieceTable {
             self.rebuild_index();
             self.cursor = cursor_after_text(start, text);
             self.cursor_byte_offset = start_byte + text.len();
+            changed += 1;
+        }
+        if self.recording {
+            self.undo_stack.record(Transaction {
+                before,
+                after: self.capture_cursor_state(),
+                edits,
+                id: 0,
+            });
+        }
+        Ok(changed)
+    }
+
+    fn replace_text_edits(&mut self, replacements: &[TextEdit]) -> io::Result<usize> {
+        let mut previous_start = None;
+        for replacement in replacements {
+            let (start, end) = self.clamped_ordered_range(replacement.start, replacement.end);
+            let start_byte = self.byte_offset_at(start.row, start.col);
+            let end_byte = self.byte_offset_at(end.row, end.col);
+            if previous_start.is_some_and(|previous| end_byte > previous) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "text edits must be non-overlapping and ordered from end to start",
+                ));
+            }
+            previous_start = Some(start_byte);
+        }
+        let before = self.capture_cursor_state();
+        let mut edits = Vec::with_capacity(replacements.len().saturating_mul(2));
+        let mut changed = 0;
+        for replacement in replacements {
+            let (start, end) = self.clamped_ordered_range(replacement.start, replacement.end);
+            let start_byte = self.byte_offset_at(start.row, start.col);
+            let end_byte = self.byte_offset_at(end.row, end.col);
+            if start_byte == end_byte && replacement.replacement.is_empty() {
+                continue;
+            }
+            let (removed, inserted) =
+                self.splice_replacement(start_byte, end_byte, &replacement.replacement);
+            if !removed.is_empty() {
+                edits.push(PieceEdit::Delete {
+                    at: start_byte,
+                    pieces: removed,
+                });
+            }
+            if !inserted.is_empty() {
+                edits.push(PieceEdit::Insert {
+                    at: start_byte,
+                    pieces: inserted,
+                });
+            }
+            self.coalesce();
+            self.rebuild_index();
+            self.cursor = cursor_after_text(start, &replacement.replacement);
+            self.cursor_byte_offset = start_byte + replacement.replacement.len();
             changed += 1;
         }
         if self.recording {

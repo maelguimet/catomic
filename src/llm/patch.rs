@@ -15,7 +15,16 @@ pub struct Patch {
 struct Hunk {
     old_start: usize,
     old_count: usize,
+    new_start: usize,
     lines: Vec<HunkLine>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PatchVisualization {
+    /// Zero-based half-open logical line ranges containing model-added/replaced text.
+    pub added_line_ranges: Vec<(usize, usize)>,
+    /// Zero-based proposed-document lines where removed text formerly appeared.
+    pub deleted_at_lines: Vec<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -169,10 +178,43 @@ impl Patch {
             Err(PatchError::UnexpectedPath)
         }
     }
+
+    pub fn visualization(&self) -> PatchVisualization {
+        let mut visualization = PatchVisualization::default();
+        for hunk in &self.hunks {
+            let mut new_line = hunk.new_start.saturating_sub(1);
+            let mut open_added = None;
+            for line in &hunk.lines {
+                if line.kind != HunkLineKind::Add {
+                    if let Some(start) = open_added.take() {
+                        visualization.added_line_ranges.push((start, new_line));
+                    }
+                }
+                match line.kind {
+                    HunkLineKind::Context => {
+                        new_line += 1;
+                    }
+                    HunkLineKind::Remove => {
+                        visualization.deleted_at_lines.push(new_line);
+                    }
+                    HunkLineKind::Add => {
+                        open_added.get_or_insert(new_line);
+                        new_line += 1;
+                    }
+                }
+            }
+            if let Some(start) = open_added {
+                visualization.added_line_ranges.push((start, new_line));
+            }
+        }
+        visualization.deleted_at_lines.sort_unstable();
+        visualization.deleted_at_lines.dedup();
+        visualization
+    }
 }
 
 fn parse_hunk(lines: &[&str], header_line: usize) -> Result<(Hunk, usize), PatchError> {
-    let (old_start, old_count, new_count) = parse_hunk_header(lines[header_line])
+    let (old_start, old_count, new_start, new_count) = parse_hunk_header(lines[header_line])
         .ok_or(PatchError::MalformedHunkHeader { line: header_line })?;
     let mut body: Vec<HunkLine> = Vec::new();
     let mut cursor = header_line + 1;
@@ -219,21 +261,22 @@ fn parse_hunk(lines: &[&str], header_line: usize) -> Result<(Hunk, usize), Patch
         Hunk {
             old_start,
             old_count,
+            new_start,
             lines: body,
         },
         cursor,
     ))
 }
 
-fn parse_hunk_header(header: &str) -> Option<(usize, usize, usize)> {
+fn parse_hunk_header(header: &str) -> Option<(usize, usize, usize, usize)> {
     let (ranges, _) = header.strip_prefix("@@ ")?.split_once(" @@")?;
     let mut parts = ranges.split_whitespace();
     let (old_start, old_count) = parse_range(parts.next()?, '-')?;
-    let (_, new_count) = parse_range(parts.next()?, '+')?;
+    let (new_start, new_count) = parse_range(parts.next()?, '+')?;
     parts
         .next()
         .is_none()
-        .then_some((old_start, old_count, new_count))
+        .then_some((old_start, old_count, new_start, new_count))
 }
 
 fn parse_range(range: &str, prefix: char) -> Option<(usize, usize)> {

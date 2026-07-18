@@ -10,9 +10,9 @@ use std::io;
 use serde::Deserialize;
 
 use super::{
-    validation, BackendAdapter, BackendPreset, CommandInputFormat, CommandOutputFormat,
-    HttpBackend, LlmCatalog, DEFAULT_BASE_URL, DEFAULT_KEY_ENV, DEFAULT_MODEL, DEFAULT_PRESET,
-    DEFAULT_TIMEOUT_SECS,
+    inline, validation, BackendAdapter, BackendPreset, CommandInputFormat, CommandOutputFormat,
+    HttpBackend, InlineSettings, LlmCatalog, DEFAULT_BASE_URL, DEFAULT_KEY_ENV, DEFAULT_MODEL,
+    DEFAULT_PRESET, DEFAULT_TIMEOUT_SECS,
 };
 
 const MAX_PRESETS: usize = 128;
@@ -22,27 +22,29 @@ pub(super) fn parse(text: &str) -> io::Result<LlmCatalog> {
     struct ConfigFile {
         #[serde(default)]
         llm: RawLlm,
+        #[serde(default)]
+        languages: BTreeMap<String, inline::RawLanguageSettings>,
     }
 
-    let raw = toml::from_str::<ConfigFile>(text)
-        .map_err(|error| {
-            let location = error
-                .span()
-                .map_or_else(String::new, |span| format!(" near byte {}", span.start));
-            invalid(format!(
-                "invalid configuration TOML{location}; source text suppressed"
-            ))
-        })?
-        .llm;
+    let raw_file = toml::from_str::<ConfigFile>(text).map_err(|error| {
+        let location = error
+            .span()
+            .map_or_else(String::new, |span| format!(" near byte {}", span.start));
+        invalid(format!(
+            "invalid configuration TOML{location}; source text suppressed"
+        ))
+    })?;
+    let (inline, language_inline) = inline::resolve(&raw_file.llm.inline, raw_file.languages)?;
+    let raw = raw_file.llm;
     if raw.backends.is_empty() {
-        return legacy_catalog(raw);
+        return legacy_catalog(raw, inline, language_inline);
     }
     if raw.has_legacy_fields() {
         return Err(invalid(
             "llm legacy endpoint fields cannot be combined with llm.backends",
         ));
     }
-    preset_catalog(raw)
+    preset_catalog(raw, inline, language_inline)
 }
 
 #[derive(Default, Deserialize)]
@@ -52,6 +54,8 @@ struct RawLlm {
     model: Option<String>,
     api_key_env: Option<String>,
     timeout_secs: Option<u64>,
+    #[serde(default)]
+    inline: inline::RawInlineSettings,
     #[serde(default)]
     backends: Vec<RawBackend>,
 }
@@ -104,7 +108,11 @@ enum RawBackend {
     },
 }
 
-fn legacy_catalog(raw: RawLlm) -> io::Result<LlmCatalog> {
+fn legacy_catalog(
+    raw: RawLlm,
+    inline: InlineSettings,
+    language_inline: BTreeMap<String, inline::RawInlineSettings>,
+) -> io::Result<LlmCatalog> {
     if raw
         .default
         .as_deref()
@@ -141,10 +149,16 @@ fn legacy_catalog(raw: RawLlm) -> io::Result<LlmCatalog> {
     Ok(LlmCatalog {
         default: DEFAULT_PRESET.to_string(),
         presets: vec![preset],
+        inline,
+        language_inline,
     })
 }
 
-fn preset_catalog(raw: RawLlm) -> io::Result<LlmCatalog> {
+fn preset_catalog(
+    raw: RawLlm,
+    inline: InlineSettings,
+    language_inline: BTreeMap<String, inline::RawInlineSettings>,
+) -> io::Result<LlmCatalog> {
     if raw.backends.len() > MAX_PRESETS {
         return Err(invalid("llm.backends exceeds 128 presets"));
     }
@@ -163,7 +177,12 @@ fn preset_catalog(raw: RawLlm) -> io::Result<LlmCatalog> {
             "llm.default names unknown backend {default:?}"
         )));
     }
-    Ok(LlmCatalog { default, presets })
+    Ok(LlmCatalog {
+        default,
+        presets,
+        inline,
+        language_inline,
+    })
 }
 
 fn validate_backend(raw: RawBackend) -> io::Result<BackendPreset> {

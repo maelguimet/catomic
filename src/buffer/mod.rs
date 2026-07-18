@@ -44,6 +44,13 @@ pub struct Cursor {
     pub col: usize,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct TextEdit {
+    pub(crate) start: Cursor,
+    pub(crate) end: Cursor,
+    pub(crate) replacement: String,
+}
+
 /// A view of one line for rendering.
 /// Phase 0: just the string content. Later can carry style info, etc.
 #[derive(Clone, Debug)]
@@ -190,6 +197,16 @@ pub trait Buffer {
         let mut changed = 0;
         for &(start, end) in ranges {
             changed += usize::from(self.replace_range(start, end, text)?);
+        }
+        Ok(changed)
+    }
+
+    /// Apply distinct replacements as one logical edit when supported. Snapshot-based
+    /// callers pass non-overlapping edits from the end of the document toward the start.
+    fn replace_text_edits(&mut self, edits: &[TextEdit]) -> io::Result<usize> {
+        let mut changed = 0;
+        for edit in edits {
+            changed += usize::from(self.replace_range(edit.start, edit.end, &edit.replacement)?);
         }
         Ok(changed)
     }

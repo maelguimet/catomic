@@ -16,6 +16,7 @@ pub(crate) mod command_adapter;
 pub mod context;
 pub(crate) mod discovery;
 pub(crate) mod executable;
+pub mod inline;
 pub mod instruction;
 pub mod openai_compat;
 pub mod patch;

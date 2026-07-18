@@ -4,7 +4,7 @@
 //! Invariants: one replace call produces at most one undo transaction.
 //! Phase: 3-d selection editing foundation.
 
-use crate::buffer::{Buffer, Cursor, PieceTable};
+use crate::buffer::{Buffer, Cursor, PieceTable, TextEdit};
 
 #[test]
 fn text_range_uses_scalar_columns_across_lines() {
@@ -65,4 +65,56 @@ fn bottom_up_range_replacements_are_one_transaction() {
     assert_eq!(buffer.to_string(), "α aa α aa");
     buffer.redo();
     assert_eq!(buffer.to_string(), "x x x x");
+}
+
+#[test]
+fn distinct_bottom_up_replacements_are_one_transaction() {
+    let mut buffer = PieceTable::from_text("instruction\none\nmiddle\ntwo\n");
+    let edits = [
+        TextEdit {
+            start: Cursor { row: 3, col: 0 },
+            end: Cursor { row: 3, col: 3 },
+            replacement: "TWO".to_string(),
+        },
+        TextEdit {
+            start: Cursor { row: 1, col: 0 },
+            end: Cursor { row: 1, col: 3 },
+            replacement: "ONE!".to_string(),
+        },
+        TextEdit {
+            start: Cursor { row: 0, col: 0 },
+            end: Cursor { row: 1, col: 0 },
+            replacement: String::new(),
+        },
+    ];
+
+    assert_eq!(buffer.replace_text_edits(&edits).unwrap(), 3);
+    assert_eq!(buffer.to_string(), "ONE!\nmiddle\nTWO\n");
+    buffer.undo();
+    assert_eq!(buffer.to_string(), "instruction\none\nmiddle\ntwo\n");
+    buffer.redo();
+    assert_eq!(buffer.to_string(), "ONE!\nmiddle\nTWO\n");
+}
+
+#[test]
+fn text_edit_batch_rejects_overlap_before_mutating() {
+    let mut buffer = PieceTable::from_text("abcdef");
+    let edits = [
+        TextEdit {
+            start: Cursor { row: 0, col: 3 },
+            end: Cursor { row: 0, col: 5 },
+            replacement: "X".to_string(),
+        },
+        TextEdit {
+            start: Cursor { row: 0, col: 2 },
+            end: Cursor { row: 0, col: 4 },
+            replacement: "Y".to_string(),
+        },
+    ];
+
+    assert_eq!(
+        buffer.replace_text_edits(&edits).unwrap_err().kind(),
+        std::io::ErrorKind::InvalidInput
+    );
+    assert_eq!(buffer.to_string(), "abcdef");
 }

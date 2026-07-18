@@ -211,11 +211,39 @@ fn wheel_gestures_can_be_swapped_or_unbound_without_crossing_button_types() {
 #[test]
 fn registry_defaults_are_complete_and_collision_free() {
     let bindings = KeyBindings::default();
-    assert_eq!(actions::REGISTRY.len(), 83);
+    assert_eq!(actions::REGISTRY.len(), 85);
     for descriptor in actions::REGISTRY {
         assert!(!descriptor.name.is_empty());
         assert!(!descriptor.scopes.is_empty());
         assert!(!descriptor.defaults.is_empty());
     }
     assert!(!bindings.keys.is_empty());
+}
+
+#[test]
+fn inline_clanker_actions_are_remappable_and_unbindable() {
+    let bindings =
+        parse("[keybindings]\nrun-clanker = [\"alt+x\"]\nclear-clanker-changes = []\n").unwrap();
+
+    assert_eq!(
+        bindings.translate(
+            Scope::Editor,
+            KeyEvent::new(KeyCode::Char('x'), KeyModifiers::ALT)
+        ),
+        Some(KeyEvent::new(KeyCode::F(3), KeyModifiers::NONE))
+    );
+    assert_eq!(
+        bindings.translate(
+            Scope::Editor,
+            KeyEvent::new(KeyCode::F(3), KeyModifiers::NONE)
+        ),
+        None
+    );
+    assert_eq!(
+        bindings.translate(
+            Scope::Editor,
+            KeyEvent::new(KeyCode::F(3), KeyModifiers::SHIFT)
+        ),
+        None
+    );
 }

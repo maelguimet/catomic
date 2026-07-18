@@ -378,6 +378,20 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
     ),
     key!(SoftWrap, "soft-wrap", "Toggle soft wrapping", E, ["f9"]),
     key!(
+        RunClanker,
+        "run-clanker",
+        "Run the confirmed inline clanker workflow",
+        E,
+        ["f3"]
+    ),
+    key!(
+        ClearClankerChanges,
+        "clear-clanker-changes",
+        "Clear inline clanker change highlighting",
+        E,
+        ["shift+f3"]
+    ),
+    key!(
         SelectModel,
         "select-model",
         "Open the session model/backend picker without invoking a backend",

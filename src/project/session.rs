@@ -45,7 +45,6 @@ impl ProjectSession {
         self.diagnostics = Diagnostics::new();
     }
 
-    #[cfg(test)]
     pub(crate) fn is_linter_running(&self) -> bool {
         self.linter.is_some()
     }
@@ -89,7 +88,6 @@ impl ProjectSession {
         self.discovered = None;
     }
 
-    #[cfg(test)]
     pub(crate) fn is_discovery_running(&self) -> bool {
         self.discovery.is_some()
     }

@@ -18,6 +18,14 @@ pub(crate) use view::{
     DiagnosticsView,
 };
 
+pub(super) fn is_active(app: &super::App) -> bool {
+    is_viewing(app)
+        || app
+            .project
+            .as_ref()
+            .is_some_and(crate::project::ProjectSession::is_linter_running)
+}
+
 pub(crate) fn start(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     if !app.caps.linters || app.project.is_none() {
         app.message = Some("Linting requires explicit Project mode (:project).".to_string());

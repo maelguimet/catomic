@@ -319,6 +319,12 @@ Plain `Ctrl+Up`/`Ctrl+Down` clears an active selection like other non-extending
 navigation; it does not infer a selection-extending paragraph action from
 `Shift`.
 
+`Insert` toggles overwrite mode for printable typing in the active buffer. The
+status begins with `INS` or `OVR`, and each buffer retains its own mode. A typed
+character in overwrite mode replaces one complete Unicode grapheme. Newlines,
+paste, prompts, command/model results, and other edit paths keep their normal
+insert/replace semantics.
+
 ### Mouse selection
 
 - A left click moves the cursor.
@@ -977,8 +983,8 @@ tab_size = 4
 linter = "ruff check {file}"
 
 [keybindings]
-"alt+s" = "save-as"
-"alt+f" = "search"
+save-as = ["alt+s"]
+search = ["alt+f"]
 
 [commands.upper]
 command = "tr '[:lower:]' '[:upper:]'"
@@ -1023,34 +1029,66 @@ timeout_secs = 120
 Language extension names are case-normalized and may be written with or without
 a leading dot. Command names may contain ASCII letters, digits, `-`, and `_`.
 
-### Custom keybindings
+### Custom keybindings and action registry
 
-Keybinding overrides translate a normal-mode chord to an existing action:
+The recommended action-oriented form replaces an action's complete default
+chord list. Use an empty array to unbind every default for that action:
 
 ```toml
 [keybindings]
-"ctrl+w" = "save"
-"alt+s" = "save-as"
-"alt+f" = "search"
-"ctrl+shift+g" = "command-prompt"
-"alt+u" = "undo"
-"alt+r" = "redo"
+save = ["ctrl+s", "alt+s"]
+help = []
+prompt-cancel = ["alt+x"]
+mouse-select-word = ["mouse-left-double"]
 ```
+
+The Phase 7 chord-oriented form such as `"alt+s" = "save"` remains accepted as
+an additive compatibility override. Action-oriented entries are preferred
+because replacement and unbinding are explicit.
 
 Chord modifiers are `ctrl`/`control`, `alt`, and `shift`. Keys may be one
-character, `space`, `tab`, `enter`, `esc`, `backspace`, `delete`, `insert`, an arrow key,
-`pageup`, `pagedown`, `home`, `end`, or `f1` through `f12`.
+character, `space`, `tab`, `enter`, `esc`, `backspace`, `delete`, `insert`, an
+arrow key, `pageup`, `pagedown`, `home`, `end`, or `f1` through `f12`. Mouse
+gestures are `mouse-left`, `mouse-left-drag`, `mouse-left-up`, and
+`mouse-left-double`. Catomic rejects configurable unmodified or Shift-only
+printable keys so a remap cannot silently capture ordinary typing.
 
-Supported action names are:
+Global actions have first precedence, followed by the active local surface,
+then editor typing. A chord may therefore have a different local meaning in a
+prompt, search, completion, preview, picker, or help surface. Two actions in the
+same normalized scope cannot share a chord; `config check` reports both action
+names, both input chords, the scope, and the normalized collision. `Ctrl+Space`
+and terminals that report it as Ctrl+Null normalize to the same chord, as do
+`Shift+Tab` and BackTab, modifier aliases, case, and `esc`/`escape`.
+
+The built-in help is generated from this registry. This guide's inventory is
+checked against the same registry in tests:
+
+<!-- action-registry-start -->
 
 ```text
-help save save-as open new close replace quit reload search goto-line
-command-prompt undo redo toggle-overwrite complete next-buffer previous-buffer next-page
-previous-page markdown-preview line-numbers whitespace soft-wrap
+global: help quit
+editor: save save-as open new close reload search replace goto-line command-prompt complete
+editor: undo redo indent unindent insert-newline toggle-overwrite
+editor: delete-backward delete-forward delete-word-backward delete-word-forward
+editor: select-all copy cut paste previous-buffer next-buffer previous-page next-page
+editor: markdown-preview line-numbers whitespace soft-wrap
+navigation: move-left move-right move-up move-down line-start line-end viewport-up viewport-down
+selection: select-left select-right select-up select-down select-line-start select-line-end
+selection: select-viewport-up select-viewport-down
+selection: document-start document-end select-document-start select-document-end
+selection: word-left word-right select-word-left select-word-right
+navigation: paragraph-previous paragraph-next
+prompt: prompt-submit prompt-cancel prompt-delete-backward
+search: search-next search-previous search-cancel
+completion: completion-next completion-previous completion-accept completion-cancel
+preview: preview-accept preview-cancel
+picker: picker-accept picker-cancel
+help: help-close
+mouse: mouse-place-cursor mouse-extend-selection mouse-finish-selection mouse-select-word
 ```
 
-Overrides apply in normal editing mode. Prompt, picker, preview, and completion
-keys remain local to the active interface.
+<!-- action-registry-end -->
 
 ## Shortcut reference
 
@@ -1068,12 +1106,12 @@ keys remain local to the active interface.
 | Editing | Select/copy/cut/paste | `Ctrl+A` / `Ctrl+C` / `Ctrl+X` / `Ctrl+V` |
 | Editing | Undo | `Ctrl+Z` |
 | Editing | Redo | `Ctrl+Y` / `Ctrl+Shift+Z` |
-| Editing | Toggle insert/overwrite typing | `Insert` |
 | Editing | Indent / unindent | `Tab` / `Shift+Tab` |
 | Editing | Delete previous / next word | `Ctrl+Backspace` / `Ctrl+Delete` |
 | Navigation | Move by word | `Ctrl+Left` / `Ctrl+Right` |
 | Navigation | Previous / next paragraph | `Ctrl+Up` / `Ctrl+Down` |
 | Navigation | Start / end of document | `Ctrl+Home` / `Ctrl+End` |
+| Editing | Toggle insert/overwrite mode | `Insert` |
 | Search | Find | `Ctrl+F` |
 | Search | Replace next | `Ctrl+Shift+F` |
 | Search | Go to line | `Ctrl+G` |

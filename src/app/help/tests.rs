@@ -72,10 +72,9 @@ fn ctrl_h_opens_navigates_and_closes_without_editing_source() {
 
     assert!(handle_key(&mut app, &mut out, toggle).unwrap());
     assert!(is_viewing(&app));
-    assert!(display_buffer(&app)
-        .unwrap()
-        .to_string()
-        .contains("Ctrl+Shift+S"));
+    let help = display_buffer(&app).unwrap().to_string();
+    assert!(help.contains("save-as"));
+    assert!(help.contains("ctrl+shift+s"));
 
     handle_key(
         &mut app,

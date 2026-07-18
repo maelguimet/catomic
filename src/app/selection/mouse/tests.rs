@@ -199,3 +199,25 @@ fn click_after_wrapped_wheel_scroll_maps_wide_content_from_wrap_origin() {
         }
     );
 }
+
+#[test]
+fn configured_mouse_gestures_are_remapped_and_defaults_can_be_unbound() {
+    let mut app = app_with("zero alpha!");
+    app.keybindings = crate::config::keybindings::parse(
+        "[keybindings]\nmouse-place-cursor = []\nmouse-select-word = [\"mouse-left\"]\n",
+    )
+    .unwrap();
+    let mut out = Vec::new();
+
+    handle_mouse(
+        &mut app,
+        &mut out,
+        event(MouseEventKind::Down(MouseButton::Left), 6, 0),
+    )
+    .unwrap();
+
+    assert_eq!(
+        app.selection.active().unwrap().ordered(),
+        (Cursor { row: 0, col: 5 }, Cursor { row: 0, col: 10 })
+    );
+}

@@ -18,6 +18,8 @@ use super::{
     replace, repo_llm, save, search, selection, undo_redo, view,
 };
 
+mod scope;
+
 /// Common post-content-mutation cleanup used by insert, delete, newline, undo, redo paths.
 /// Centralizes the exact sequence that must run after any buffer-mutating key:
 /// refresh dirty from history token, clear all transient pending confirmations and
@@ -62,6 +64,10 @@ pub(crate) fn handle_key_with(
     out: &mut dyn Write,
     key: KeyEvent,
 ) -> io::Result<()> {
+    let scope = scope::active(app);
+    let Some(key) = app.keybindings.translate(scope, key) else {
+        return Ok(());
+    };
     if help::handle_key(app, out, key)? {
         return Ok(());
     }
@@ -104,11 +110,6 @@ pub(crate) fn handle_key_with(
     if view::is_preview(app) && view::handle_key(app, out, key)? {
         return Ok(());
     }
-    let translated = app.keybindings.translate(key);
-    if translated != key && completion::handle_key(app, out, translated)? {
-        return Ok(());
-    }
-    let key = translated;
     if help::handle_key(app, out, key)? {
         return Ok(());
     }

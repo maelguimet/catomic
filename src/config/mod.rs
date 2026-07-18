@@ -9,6 +9,7 @@ use std::io;
 
 use serde::de::DeserializeOwned;
 
+pub(crate) mod actions;
 pub mod auto_reload;
 pub mod big_files;
 pub(crate) mod cat;

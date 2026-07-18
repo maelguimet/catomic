@@ -174,16 +174,7 @@ fn is_quit(key: KeyEvent) -> bool {
 }
 
 fn help_text() -> String {
-    let mut text = String::from(concat!(
-        "Catomic help - default keyboard and command quick reference\n\n",
-        "The keys below are built-in defaults. [keybindings] overrides apply only in\n",
-        "normal editing mode; this view does not display effective configured keys.\n\n",
-    ));
-    push_editor_actions(&mut text);
-    text.push_str("\nFixed and context-dependent keys\n");
-    for shortcut in help_catalog::FIXED_SHORTCUTS {
-        push_entry(&mut text, shortcut.keys, &[], shortcut.purpose);
-    }
+    let mut text = crate::config::actions::help_text();
     text.push_str("\nPrompt commands (Ctrl+Shift+P or F2; no leading colon)\n");
     for command in help_catalog::PROMPT_COMMANDS {
         push_entry(&mut text, command.syntax, command.aliases, command.purpose);
@@ -210,20 +201,6 @@ fn help_text() -> String {
         "Escape, Ctrl+H, or F1 closes it. Ctrl+Q keeps the guarded quit path.\n",
     ));
     text
-}
-
-fn push_editor_actions(text: &mut String) {
-    text.push_str("Default normal-mode shortcuts\n");
-    let mut category = "";
-    for action in help_catalog::EDITOR_ACTIONS {
-        if action.category != category {
-            category = action.category;
-            text.push('\n');
-            text.push_str(category);
-            text.push('\n');
-        }
-        push_entry(text, action.default_keys, &[], action.purpose);
-    }
 }
 
 fn push_entry(text: &mut String, label: &str, aliases: &[&str], purpose: &str) {

@@ -365,6 +365,7 @@ fn model_work_active(app: &super::App) -> bool {
     app.pending_llm_request.is_some()
         || app.llm_task.is_some()
         || app.repo_llm_state.is_some()
+        || super::inline_clanker::is_busy(app)
         || super::external_command::is_running(app)
 }
 

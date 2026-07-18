@@ -162,7 +162,7 @@ fn selected_context_sends_and_edits_only_the_exact_selection() {
     assert_eq!(app.buffer.to_string(), "PRIVATE\nPUBLIC\nafter\n");
     server.join().unwrap();
     let request = &requests.lock().unwrap()[0];
-    assert!(request.contains("Context:\\npublic"));
+    assert!(request.contains("Context:\npublic"));
     assert!(!request.contains("PRIVATE"));
     assert!(!request.contains("public\\nafter"));
 }

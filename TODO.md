@@ -60,6 +60,8 @@ The beta already includes:
 - opt-in Project discovery, diagnostics, completion, commands, and hooks;
 - explicit `meow`, `bigmeow`, `gitmeow`, and `megameow` workflows with
   bounded context, preview, drift checks, undo, and no automatic save;
+- a one-key inline clanker workflow with selection/catblock/file precedence,
+  bounded serial queueing, atomic cleanup, and semantic applied-change marks;
 - typed configuration and documented security, performance, and contribution
   boundaries.
 
@@ -97,10 +99,6 @@ Correct advertised behavior before widening the platform surface:
 
 - [#67](https://github.com/maelguimet/catomic/issues/67) establishes model
   presets and the common HTTP/headless-command backend boundary.
-- [#65](https://github.com/maelguimet/catomic/issues/65) builds the one-key inline
-  workflow on that boundary. Treat it as a parent epic: land instruction
-  discovery, context selection, proposal/apply, cleanup/highlighting, multiple
-  blocks, and queueing in independently reviewable slices.
 - [#61](https://github.com/maelguimet/catomic/issues/61) should document the final
   selector/backend configuration after #67 stabilizes it.
 - No model feature may weaken the Plain-mode, confirmation, bounded-context,
@@ -128,9 +126,8 @@ Correct advertised behavior before widening the platform surface:
 2. Establish the shared action registry, configuration, preferences, and
    semantic theme primitives from #62.
 3. Establish the backend/preset abstraction in #67.
-4. Build #65 as tested vertical slices on top of #62 and #67.
-5. Finalize model help in #61 once configuration and picker behavior stop moving.
-6. Reuse cursor, viewport, action, status, and theme primitives for mobile work.
+4. Finalize model help in #61 once configuration and picker behavior stop moving.
+5. Reuse cursor, viewport, action, status, and theme primitives for mobile work.
 
 Independent editor improvements may proceed in parallel when they do not cross
 these foundations.

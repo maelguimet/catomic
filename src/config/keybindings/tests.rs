@@ -14,7 +14,7 @@ fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
 #[test]
 fn action_overrides_replace_all_defaults_and_empty_arrays_unbind() {
     let bindings = parse(
-        "[keybindings]\nsave = [\"alt+s\"]\nhelp = []\ncommand-prompt = [\"alt+p\", \"f3\"]\n",
+        "[keybindings]\nsave = [\"alt+s\"]\nhelp = []\ncommand-prompt = [\"alt+p\", \"f4\"]\n",
     )
     .unwrap();
 
@@ -32,7 +32,7 @@ fn action_overrides_replace_all_defaults_and_empty_arrays_unbind() {
         .translate(Scope::Editor, key(KeyCode::F(1), KeyModifiers::NONE))
         .is_none());
     assert_eq!(
-        bindings.translate(Scope::Editor, key(KeyCode::F(3), KeyModifiers::NONE)),
+        bindings.translate(Scope::Editor, key(KeyCode::F(4), KeyModifiers::NONE)),
         Some(key(
             KeyCode::Char('p'),
             KeyModifiers::CONTROL | KeyModifiers::SHIFT

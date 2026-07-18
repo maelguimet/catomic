@@ -166,7 +166,7 @@ fn wait_until(label: &str, mut condition: impl FnMut() -> bool) -> TestResult {
 fn f3_queue_cancels_then_previews_applies_undoes_redoes_and_clears() -> TestResult {
     let project = TestProject::new("queue");
     let responses = vec![
-        (Duration::from_millis(500), replacement("CANCELLED")),
+        (Duration::from_millis(1500), replacement("CANCELLED")),
         (Duration::ZERO, replacement("ONE")),
         (Duration::ZERO, replacement("TWO")),
     ];
@@ -186,7 +186,7 @@ fn f3_queue_cancels_then_previews_applies_undoes_redoes_and_clears() -> TestResu
 
     editor.wait_for("initial render", "PRIVATE")?;
     editor.send(b"\x1bOR")?; // xterm F3
-    editor.wait_for("F3 confirmation", "Run clanker: model pty-inline-model")?;
+    editor.wait_for("F3 confirmation", "Model: pty-inline-model")?;
     assert_eq!(accepted.load(Ordering::SeqCst), 0);
     editor.send(b"\r")?;
     editor.wait_for("active request progress", "block 1/2")?;
@@ -195,18 +195,24 @@ fn f3_queue_cancels_then_previews_applies_undoes_redoes_and_clears() -> TestResu
     })?;
     let cancelled_at = editor.offset();
     editor.send(b"\x1b")?;
-    editor.wait_for_since(
+    if let Err(error) = editor.wait_for_since(
         "active queue cancellation",
         cancelled_at,
-        "remaining queued blocks cleared",
-    )?;
+        "Inline clanker request cancelled",
+    ) {
+        return Err(format!(
+            "{error}; output after Escape: {:?}",
+            editor.output_since(cancelled_at)
+        )
+        .into());
+    }
 
     let restarted_at = editor.offset();
     editor.send(b"\x1bOR")?;
     editor.wait_for_since(
         "restarted confirmation",
         restarted_at,
-        "Run clanker: model pty-inline-model",
+        "Model: pty-inline-model",
     )?;
     editor.send(b"\r")?;
     editor.wait_for("first preview", "+ONE")?;
@@ -214,8 +220,13 @@ fn f3_queue_cancels_then_previews_applies_undoes_redoes_and_clears() -> TestResu
     editor.send(b"\r")?;
     editor.wait_for("second progress", "block 2/2")?;
     editor.wait_for("second preview", "+TWO")?;
+    let final_apply_at = editor.offset();
     editor.send(b"\r")?;
-    editor.wait_for("final apply", "applied without saving")?;
+    editor.wait_for_since(
+        "final apply",
+        final_apply_at,
+        "Inline clanker proposal applied",
+    )?;
     assert_eq!(accepted.load(Ordering::SeqCst), 3);
     assert!(editor.output().contains("\x1b[31;4m"));
 
@@ -257,7 +268,7 @@ fn f3_full_file_warning_requires_typed_yes_or_no() -> TestResult {
     editor.send(b"maybe\r")?;
     editor.wait_for("invalid warning answer", "Please type yes or no")?;
     editor.send(b"yes\r")?;
-    editor.wait_for("normal confirmation", "Enter confirms; Esc cancels")?;
+    editor.wait_for("normal confirmation", "Enter sends; Esc cancels")?;
     assert!(listener.accept().is_err(), "typed yes must not connect");
     let cancelled_at = editor.offset();
     editor.send(b"\x1b")?;

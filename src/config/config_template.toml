@@ -56,6 +56,7 @@ syntax_number = "yellow"
 search_match = { fg = "black", bg = "yellow" }
 diff_added = "green"
 diff_removed = "red"
+llm_changed = { fg = "red", underline = true }
 preview = "default"
 
 # Action-oriented keybindings replace an action's complete default chord list.
@@ -125,3 +126,16 @@ before_llm = []
 # input = "stdin-text-v1"
 # output = "claude-json-v1" # or "codex-jsonl-v1"
 # timeout_secs = 120
+#
+# F3 uses the active selection, then explicit context blocks, then a bounded
+# retained file. Every send and every apply still requires Enter confirmation.
+# [llm.inline]
+# instruction_prefix = ">>"
+# instruction_suffix = ""
+# context_open = "<catblock>"
+# context_close = "</catblock>"
+# warn_lines = 500
+# block_mode = "combined" # or "queued"
+# queue_limit = 16
+# stop_on_error = true
+# remove_instruction_after_apply = true

@@ -277,11 +277,19 @@ fn cleanup_is_due(prepared: &PreparedWorkflow) -> bool {
 
 fn finalize_change_positions(mut changes: ChangeSet, edits: &[PendingEdit]) -> ChangeSet {
     if edits.iter().all(|pending| pending.target_id.is_none()) {
+        for pending in edits
+            .iter()
+            .filter(|pending| pending.label.contains("instruction cleanup"))
+        {
+            changes
+                .gutter_lines
+                .push(final_start_after_edits(pending.edit.start, &text_edits(edits)).row);
+        }
         changes.gutter_lines.sort_unstable();
         changes.gutter_lines.dedup();
         return changes;
     }
-    let text_edits: Vec<_> = edits.iter().map(|pending| pending.edit.clone()).collect();
+    let text_edits = text_edits(edits);
     let model_starts: Vec<_> = edits
         .iter()
         .filter(|pending| pending.target_id.is_some())
@@ -311,6 +319,10 @@ fn finalize_change_positions(mut changes: ChangeSet, edits: &[PendingEdit]) -> C
     changes.gutter_lines.sort_unstable();
     changes.gutter_lines.dedup();
     changes
+}
+
+fn text_edits(edits: &[PendingEdit]) -> Vec<TextEdit> {
+    edits.iter().map(|pending| pending.edit.clone()).collect()
 }
 
 fn final_start_after_edits(start: Cursor, edits: &[TextEdit]) -> Cursor {

@@ -21,7 +21,7 @@ use crate::file::text_format::TextFormat;
 /// path: target for save (None until first save or Save As succeeds).
 /// dirty: true if current edit_history_position() != saved_history_position.
 /// saved_history_position: token from buffer at last successful open/save.
-/// disk_snapshot: captured metadata identity at last open or successful save.
+/// disk_snapshot: captured bounded disk identity at last open or successful save.
 /// size_bytes / size_tier: metadata-first (fs::metadata len) captured on open for
 ///   existing path, after successful save, and on confirmed reload of Modified content.
 /// The only allowed content-derived fallback is inside the post-successful-save path
@@ -64,7 +64,7 @@ pub(crate) fn mark_saved(file: &mut FileState, buffer: &dyn Buffer) {
     file.dirty = false;
 }
 
-/// Compute ExternalFileStatus by comparing live on-disk metadata to the last captured snapshot.
+/// Compute ExternalFileStatus by comparing live bounded identity to the last snapshot.
 /// Pure: does not read buffer content, does not mutate FileState or any App fields.
 /// Path None -> NoPath.
 /// Path present + snapshot None (edge): live probe, treat present as Unchanged (post-our-write), absent Deleted.

@@ -1,21 +1,24 @@
 //! Purpose: this file must provide explicit full-file UTF-8 reads, atomic file
-//!   IO (write + fsync rename), and metadata-only snapshot/observation helpers
+//!   IO (write + fsync rename), and bounded snapshot/observation helpers
 //!   for external-edit detection.
 //! Owns: read_to_string (for open/reload paths), streaming atomic writes,
 //!   FileSnapshot, ExternalFileStatus, ExternalFileObservation, capture/compare/observe
-//!   pure helpers (std fs::metadata only).
-//! Must not: construct watchers or use notify; read file content for change detection
-//!   or hashing; know App, Project, LLM, or UI; perform reload/save-conflict policy.
+//!   helpers, and streaming content identities for fully editable file tiers.
+//! Must not: construct watchers or use notify; fully scan content above the
+//!   full-read file tier; know App, Project, LLM, or UI; perform reload/save-
+//!   conflict policy.
 //! Invariants: atomic writes use same-dir temp + create_new + sync + rename;
 //!   ordinary saves follow a valid final symlink and refuse a dangling one;
 //!   private sidecars replace, rather than follow, a final symlink;
 //!   ordinary saves refuse non-regular targets and Unix metadata that an atomic
 //!   replacement cannot preserve safely;
-//!   observations use len/mtime plus Unix identity/change time when available;
+//!   observations use len/mtime plus Unix identity/change time when available,
+//!   full SHA-256 through the editable full-read tier, and a fixed-size sampled
+//!   identity for paged files;
 //!   Absent explicitly represents missing;
 //!   read_to_string returns InvalidData for non-UTF-8; errors other than NotFound
 //!   surface as Unknown(kind) in observation helpers; single-capture observe.
-//! Phase: 2-l foundation through 2-bv Unix save-permission preservation.
+//! Phase: 2-l foundation through post-v0.1 metadata-collision hardening.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
@@ -23,11 +26,22 @@ use std::path::{Path, PathBuf};
 
 #[cfg(target_os = "linux")]
 mod atomic_unix;
+mod snapshot;
+
+pub(crate) use snapshot::capture_regular_file_snapshot;
+#[cfg(test)]
+pub(crate) use snapshot::compare_to_snapshot;
+pub use snapshot::{
+    capture_file_snapshot, observe_external_file, ExternalFileObservation, ExternalFileStatus,
+    FileSnapshot,
+};
+#[allow(unused_imports)] // Public field types of the re-exported FileSnapshot.
+pub use snapshot::{FileChangeId, FileContentIdentity};
 
 /// Read entire file as UTF-8 string.
 /// Full-materialization path for current open/reload. Uses fs::read so the
 /// bytes Vec can be moved into String without another content copy after UTF-8
-/// validation. Not for metadata-only change detection.
+/// validation. Not used by bounded snapshot detection.
 #[allow(dead_code)] // Compatibility/performance harness; App uses format-aware reads.
 pub fn read_to_string<P: AsRef<Path>>(path: P) -> io::Result<String> {
     let bytes = fs::read(path.as_ref())?;
@@ -281,190 +295,6 @@ impl Write for CountingWriter<'_> {
     fn flush(&mut self) -> io::Result<()> {
         self.inner.flush()
     }
-}
-
-/// Captured on-disk metadata snapshot using only std metadata.
-/// Explicitly represents a missing file as Absent (never as error for "no file").
-/// mtime is best-effort. Linux/Unix identity and ctime close the common
-/// same-length/same-mtime replacement hole without reading file content.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum FileSnapshot {
-    Present {
-        len: u64,
-        mtime: Option<std::time::SystemTime>,
-        change_id: Option<FileChangeId>,
-    },
-    Absent,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct FileChangeId {
-    device: u64,
-    inode: u64,
-    ctime_seconds: i64,
-    ctime_nanoseconds: i64,
-}
-
-/// Result of comparing live disk state to a previously captured snapshot.
-/// NoPath is reported by callers when there is no remembered path (never from these fns).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ExternalFileStatus {
-    NoPath,
-    Unchanged,
-    Modified,
-    Deleted,
-    /// Metadata read failed (e.g. permission). Carries kind; caller decides.
-    Unknown(std::io::ErrorKind),
-}
-
-/// Observation of a path at a point in time: the status relative to a baseline
-/// plus the live on-disk snapshot observed during the check. Used to bind
-/// save-conflict confirmation to a concrete disk state, not merely a status
-/// variant (e.g. distinguish two different Modified observations).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ExternalFileObservation {
-    pub status: ExternalFileStatus,
-    /// Live snapshot captured at observation time.
-    /// None for NoPath or when live capture failed (Unknown without usable snap).
-    pub live_snapshot: Option<FileSnapshot>,
-}
-
-/// Capture current on-disk state for `path` using std::fs::metadata only.
-/// NotFound is mapped to Absent (explicit). Other errors (perm, etc.) bubble up.
-pub fn capture_file_snapshot(path: impl AsRef<Path>) -> io::Result<FileSnapshot> {
-    match fs::metadata(path.as_ref()) {
-        Ok(meta) => Ok(snapshot_from_metadata(&meta)),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(FileSnapshot::Absent),
-        Err(e) => Err(e),
-    }
-}
-
-/// Capture initial open metadata while refusing paths that are not regular files.
-/// `fs::metadata` follows a final symlink, so symlinks to regular files remain valid.
-pub(crate) fn capture_regular_file_snapshot(path: impl AsRef<Path>) -> io::Result<FileSnapshot> {
-    match fs::metadata(path.as_ref()) {
-        Ok(meta) if meta.is_file() => Ok(snapshot_from_metadata(&meta)),
-        Ok(_) => Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!(
-                "refusing to open non-regular file: {}",
-                path.as_ref().display()
-            ),
-        )),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(FileSnapshot::Absent),
-        Err(error) => Err(error),
-    }
-}
-
-fn snapshot_from_metadata(meta: &fs::Metadata) -> FileSnapshot {
-    FileSnapshot::Present {
-        len: meta.len(),
-        mtime: meta.modified().ok(),
-        change_id: file_change_id(meta),
-    }
-}
-
-/// Compare live disk for `path` against a prior `snap`.
-/// Returns Unchanged / Modified / Deleted accordingly.
-/// Captures live metadata once, then uses pure compare.
-/// Metadata errors become Unknown(kind). Does not read file content.
-#[cfg(test)]
-pub fn compare_to_snapshot(
-    path: impl AsRef<Path>,
-    snap: &FileSnapshot,
-) -> io::Result<ExternalFileStatus> {
-    let current = match capture_file_snapshot(path.as_ref()) {
-        Ok(s) => s,
-        Err(e) => return Ok(ExternalFileStatus::Unknown(e.kind())),
-    };
-    Ok(compare_live_snapshot_to_baseline(&current, snap))
-}
-
-/// Pure comparison of an already-captured live snapshot against a baseline.
-/// Never performs I/O. Enables single-capture observations.
-fn compare_live_snapshot_to_baseline(
-    live: &FileSnapshot,
-    baseline: &FileSnapshot,
-) -> ExternalFileStatus {
-    match (baseline, live) {
-        (FileSnapshot::Absent, FileSnapshot::Absent) => ExternalFileStatus::Unchanged,
-        (FileSnapshot::Absent, FileSnapshot::Present { .. }) => ExternalFileStatus::Modified,
-        (FileSnapshot::Present { .. }, FileSnapshot::Absent) => ExternalFileStatus::Deleted,
-        (
-            FileSnapshot::Present {
-                len: l1,
-                mtime: t1,
-                change_id: c1,
-            },
-            FileSnapshot::Present {
-                len: l2,
-                mtime: t2,
-                change_id: c2,
-            },
-        ) => {
-            if l1 == l2 && t1 == t2 && c1 == c2 {
-                ExternalFileStatus::Unchanged
-            } else {
-                ExternalFileStatus::Modified
-            }
-        }
-    }
-}
-
-/// Observe external state for an optional remembered path against an optional baseline snapshot.
-/// Returns both the status (for messaging/decision) and the live snapshot seen now.
-/// Single-capture: live disk state is captured *once* via capture_file_snapshot (including error paths);
-/// status is derived from that single result. No second fs::metadata.
-///
-/// - path None -> NoPath, live None.
-/// - capture Ok(Present), baseline None -> Unchanged.
-/// - capture Ok(Absent), baseline None -> Deleted.
-/// - capture Err(e), baseline None -> Unknown(e.kind()), live None.
-/// - capture Ok(live), baseline Some -> compare via pure helper.
-/// - capture Err(e), baseline Some -> Unknown(e.kind()), live None.
-///
-/// NotFound maps to Absent inside capture (never Unknown). No content read or hash.
-pub fn observe_external_file(
-    path: Option<&Path>,
-    baseline: Option<&FileSnapshot>,
-) -> ExternalFileObservation {
-    let Some(p) = path else {
-        return ExternalFileObservation {
-            status: ExternalFileStatus::NoPath,
-            live_snapshot: None,
-        };
-    };
-    // Capture exactly once; preserve the full Result so error paths do not re-stat.
-    let live_result = capture_file_snapshot(p);
-    let live_snapshot = live_result.as_ref().ok().cloned();
-    let status = match (&live_result, baseline) {
-        (Ok(FileSnapshot::Present { .. }), None) => ExternalFileStatus::Unchanged,
-        (Ok(FileSnapshot::Absent), None) => ExternalFileStatus::Deleted,
-        (Err(e), None) => ExternalFileStatus::Unknown(e.kind()),
-        (Ok(live), Some(base)) => compare_live_snapshot_to_baseline(live, base),
-        (Err(e), Some(_)) => ExternalFileStatus::Unknown(e.kind()),
-    };
-    ExternalFileObservation {
-        status,
-        live_snapshot,
-    }
-}
-
-#[cfg(unix)]
-fn file_change_id(meta: &fs::Metadata) -> Option<FileChangeId> {
-    use std::os::unix::fs::MetadataExt;
-
-    Some(FileChangeId {
-        device: meta.dev(),
-        inode: meta.ino(),
-        ctime_seconds: meta.ctime(),
-        ctime_nanoseconds: meta.ctime_nsec(),
-    })
-}
-
-#[cfg(not(unix))]
-fn file_change_id(_meta: &fs::Metadata) -> Option<FileChangeId> {
-    None
 }
 
 #[cfg(test)]

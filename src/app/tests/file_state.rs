@@ -15,6 +15,7 @@ mod dirty;
 mod file_size;
 mod file_size_open;
 mod large_editable;
+mod metadata_collision;
 mod save_conflict;
 mod snapshot;
 mod text_format;

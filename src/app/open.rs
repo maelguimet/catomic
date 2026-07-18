@@ -1,7 +1,7 @@
 //! Open-size guardrail extraction + initial snapshot/open plan for App::new (Phase 2B).
 //!
 //! Purpose: encapsulate pre-read size policy (Large warn, Huge/Extreme page)
-//!   the single initial metadata capture (disk_snapshot + content plan), and
+//!   the single initial bounded snapshot capture (disk_snapshot + content plan), and
 //!   the current content-plan-to-buffer construction seam.
 //! Owns: prepare_open_file_meta (OpenSizeDecision + capture_file_snapshot once;
 //!   derives size/tier/content_plan from the snapshot for Present/Absent) and
@@ -12,7 +12,8 @@
 //! Invariants: identical observable outcomes for all documented App::new cases
 //!   (None, missing, Small, Large, Huge/Extreme paged, hard meta error,
 //!   invalid UTF-8 errors from read after successful metadata); non-regular paths
-//!   are refused before reads; one capture drives size/snapshot/content planning.
+//!   are refused before buffer reads; one bounded identity capture drives
+//!   size/snapshot/content planning.
 //! Phase: 2-bm configurable paged open policy.
 
 use std::io::{self, ErrorKind};
@@ -38,7 +39,7 @@ pub(crate) enum OpenContentPlan {
     PagedEditable,
 }
 
-/// Captured pre-read metadata decision for an optional path.
+/// Captured pre-buffer-read decision for an optional path.
 /// size_* are None for no-path or missing (Absent).
 /// initial_message is Some for Large/Huge/Extreme files that warn on first open.
 /// disk_snapshot carries the single initial capture (None for no path;
@@ -57,9 +58,9 @@ pub(crate) struct OpenFileMeta {
     pub text_format: TextFormat,
 }
 
-/// Probe on-disk metadata once (via capture_file_snapshot) and apply open-size
-/// guardrails. Single capture populates both size decision and the disk_snapshot
-/// carried back to App::new (avoids duplicate metadata probe for present files).
+/// Capture bounded on-disk identity once and apply open-size guardrails. The
+/// snapshot fully hashes files through 100 MiB and samples paged files; one
+/// capture supplies both the size decision and App::new disk snapshot.
 ///
 /// - None path: default (snapshot=None, no size, no message).
 /// - Missing: sizes=None, disk_snapshot=Some(Absent); caller opens empty.
@@ -68,7 +69,7 @@ pub(crate) struct OpenFileMeta {
 /// - Existing Huge/Extreme: editable paged storage with an initial warning.
 /// - Hard meta error: propagates Err.
 ///
-/// Does not read content, does not build buffer/App, does not touch watcher.
+/// Does not build a buffer/App or touch the watcher.
 pub(crate) fn prepare_open_file_meta(initial_path: Option<&str>) -> io::Result<OpenFileMeta> {
     let mut meta = OpenFileMeta::default();
     if let Some(p) = initial_path {
@@ -276,6 +277,7 @@ mod tests {
                 len: crate::file::size::LARGE_FILE_LIMIT_BYTES + 1,
                 mtime: None,
                 change_id: None,
+                content_identity: None,
             }),
             content_plan: OpenContentPlan::PagedEditable,
             ..OpenFileMeta::default()

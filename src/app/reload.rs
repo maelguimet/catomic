@@ -2,10 +2,11 @@
 //!
 //! Purpose: owns the pending reload confirmation token, message helpers,
 //! and the Ctrl+R decision + perform logic (extracted in 2-t for mod.rs hygiene).
-//! Uses only metadata (ExternalFileStatus + FileSnapshot) via observe_external_file.
+//! Uses bounded on-disk identities (ExternalFileStatus + FileSnapshot) via
+//! observe_external_file.
 //! Owns: PendingReload struct, arm/perform helpers, handle_reload_key.
-//! Must not: own watcher polling, background work, full content scans for
-//!   *detection*, config parsing, Project, or LLM work.
+//! Must not: own watcher polling, background work, snapshot capture policy,
+//!   config parsing, Project, or LLM work.
 //! Invariants: pending is bound to concrete (path + status + live snapshot);
 //!   second press only acts on exact match; any content mutation clears it;
 //!   automatic reload is invoked only for clean buffers by caller policy;

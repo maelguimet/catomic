@@ -41,7 +41,7 @@ impl PendingSaveConflict {
             }
             (ExternalFileStatus::Deleted, ExternalFileStatus::Deleted) => true,
             (ExternalFileStatus::Unknown(first), ExternalFileStatus::Unknown(second)) => {
-                first == second
+                first == second && *first != io::ErrorKind::Interrupted
             }
             _ => false,
         }
@@ -57,6 +57,10 @@ pub(crate) fn save_conflict_message(status: &ExternalFileStatus) -> String {
         }
         ExternalFileStatus::Deleted => {
             "File was deleted on disk. Press Ctrl+S again to recreate.".to_string()
+        }
+        ExternalFileStatus::Unknown(io::ErrorKind::Interrupted) => {
+            "File changed during status check. Save blocked; try again when it is stable."
+                .to_string()
         }
         ExternalFileStatus::Unknown(_) => {
             "File status check failed. Press Ctrl+S again to overwrite.".to_string()
@@ -161,6 +165,7 @@ pub(crate) fn handle_save_as(
         pending.path == target
             && pending.status == obs.status
             && pending.snapshot == obs.live_snapshot
+            && obs.status != ExternalFileStatus::Unknown(io::ErrorKind::Interrupted)
     });
     if should_force {
         return do_atomic_save_to(app, out, target);
@@ -174,6 +179,9 @@ pub(crate) fn handle_save_as(
     app.message = Some(match obs.status {
         ExternalFileStatus::Modified => {
             "Save As target already exists. Submit the same path again to overwrite.".to_string()
+        }
+        ExternalFileStatus::Unknown(io::ErrorKind::Interrupted) => {
+            "Save As target changed while checking. Submit the path again to recheck.".to_string()
         }
         ExternalFileStatus::Unknown(error) => format!(
             "Save As target could not be checked ({error:?}). Submit the same path again to overwrite."

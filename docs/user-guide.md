@@ -393,7 +393,10 @@ save succeeds.
 ### External file changes
 
 File watching is enabled in both Plain and Project mode. Watch notifications are
-hints; Catomic checks fresh filesystem metadata before acting.
+hints; Catomic captures a fresh bounded disk identity before acting. Files up to
+100 MiB use a streaming SHA-256 of the complete content in addition to size,
+timestamps, and Unix device/inode/change time. This detects rapid same-length
+rewrites even when every available metadata field collides.
 
 - A clean buffer reloads automatically when the file changes or is deleted,
   unless `[files] auto_reload = false`.
@@ -462,6 +465,14 @@ default page contains 20,000 lines and can be changed with
 Page boundaries stay anchored to the opened source during a session and are
 rebuilt after reload or reopen. If the underlying descriptor drifts while a
 paged operation is using it, Catomic fails closed rather than mixing revisions.
+
+For Huge and Extreme paged files, external-change checks hash fixed 64 KiB
+samples at the start, middle, and end (192 KiB total) in addition to filesystem
+metadata. This keeps checks independent of total file size and catches common
+whole-file and boundary rewrites. A same-inode, same-size rewrite confined
+outside all three samples while also preserving every available timestamp is a
+known best-effort case; Catomic cannot prove that revision changed without an
+unbounded scan or an immutable filesystem snapshot.
 
 Paged files support LF and CRLF endings. UTF-8-BOM and CR-only files must remain
 at or below the 100 MiB paging threshold. Replace All, full-buffer external

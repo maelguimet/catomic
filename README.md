@@ -174,6 +174,10 @@ for authenticated remote endpoints. See
   attributes/ACLs rather than silently discarding those semantics. Save As also
   refuses FIFOs, sockets, directories, and symlinks resolving to them. Use
   another tool for a refused target.
+- External-change checks fully hash files through 100 MiB. Huge/Extreme paged
+  files use metadata plus fixed start/middle/end samples so checks stay bounded;
+  an in-place rewrite outside those samples that also preserves size, inode, and
+  all available timestamps remains best-effort.
 - Terminal clipboard behavior depends on the emulator. Some environments
   intercept `Ctrl`/`Ctrl+Shift` chords or do not support OSC 52.
 - Syntax highlighting is deliberately lexical and viewport-only. Catomic does

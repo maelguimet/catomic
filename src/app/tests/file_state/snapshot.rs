@@ -101,6 +101,7 @@ fn app_file_state_save_failure_leaves_snapshot_unchanged() {
         len: 42,
         mtime: None,
         change_id: None,
+        content_identity: None,
     });
     app.file.dirty = true;
 

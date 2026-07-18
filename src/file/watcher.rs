@@ -29,7 +29,7 @@
 //! - Signals are hints only; App policy decides automatic or confirmed reload.
 //! - Unchanged/NoPath from watcher are ignored unless they clear a stale
 //!   pending_reload (see apply_file_watch_signal).
-//! - Metadata observation (observe_external_file) is the source of truth.
+//! - Bounded snapshot observation (observe_external_file) is the source of truth.
 //! - Manual Ctrl+R and save conflict paths are independent.
 
 use std::path::{Path, PathBuf};
@@ -208,7 +208,7 @@ fn watch_directories(targets: &[PathBuf]) -> Vec<PathBuf> {
 /// Rename/name events: notify commonly represents a rename involving the
 /// target as EventKind::Modify(ModifyKind::Name(_)). These hit the Modify
 /// arm and yield Changed. This is only a hint/wakeup; the definitive
-/// decision (reload vs conflict) always uses metadata observation later.
+/// decision (reload vs conflict) always uses a bounded snapshot observation later.
 fn map_event_to_signal(targets: &[PathBuf], event: &notify::Event) -> Option<FileWatchSignal> {
     if !targets.iter().any(|target| is_relevant(target, event)) {
         return None;

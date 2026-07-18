@@ -7,8 +7,8 @@
 //!   behavior or add sleeps in hot paths; assume reliable delivery.
 //! Invariants: marked ignore; uses real (non-teststub) watcher only when
 //!   construction succeeds; bounded waits only; skips cleanly if no watcher.
-//!   This smoke is metadata-only (len+mtime) and subject to same-size/same-mtime
-//!   limitation; CI must never depend on it.
+//!   This smoke depends on live notify delivery; snapshot correctness has
+//!   deterministic coverage elsewhere and CI must never depend on this timing.
 //! Phase: 2-ae through post-v0.1 symlink watch hardening.
 
 use super::super::super::*;
@@ -16,7 +16,7 @@ use super::super::make_key;
 use crossterm::event::{KeyCode, KeyModifiers};
 
 #[test]
-#[ignore = "live OS notify timing smoke (metadata-only; unreliable on CI; run manually with --ignored)"]
+#[ignore = "live OS notify timing smoke (unreliable on CI; run manually with --ignored)"]
 fn live_smoke_watcher_sees_external_change_and_auto_reloads() {
     // Only runs when explicitly requested (cargo test -- --ignored).
     // Default full suite must stay fully deterministic (seams only).

@@ -380,7 +380,7 @@ impl App {
     /// Returns whether (and how) the on-disk file differs from our last captured snapshot.
     /// Used by future watch/reload to decide action; for 2-l this is detection only.
     /// Must not mutate buffer, file state (dirty/snapshot), message, pending, viewport, or history.
-    /// NoPath for untitled; delegates to file_state helper (std metadata compare only).
+    /// NoPath for untitled; delegates to the bounded file-state identity helper.
     #[cfg(test)]
     fn external_file_status(&self) -> crate::file::io::ExternalFileStatus {
         external_file_status(&self.file)

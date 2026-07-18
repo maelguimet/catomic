@@ -15,10 +15,11 @@ use crate::llm::context::RequestDraft;
 use crate::llm::repo_check::{RepoCheckResult, RepoCheckTask};
 use crate::llm::repo_prepare::PreparedRepoContext;
 
-use super::{Pending, RepoLlmState};
+use super::{Pending, RepoLlmCommand, RepoLlmState};
 
 pub(crate) struct CheckingSend {
     task: RepoCheckTask,
+    command: RepoLlmCommand,
     draft: RequestDraft,
     settings: LlmSettings,
     source_snapshot: String,
@@ -55,6 +56,7 @@ fn start(app: &mut super::super::App, pending: Pending) {
             app.message = Some("Rechecking repository before send... Esc cancels.".to_string());
             app.repo_llm_state = Some(RepoLlmState::CheckingSend(CheckingSend {
                 task,
+                command: pending.command,
                 draft: pending.draft,
                 settings: pending.settings,
                 source_snapshot: pending.source_snapshot,
@@ -116,6 +118,7 @@ fn pending(broker: ContextBroker, state: CheckingSend) -> Pending {
             initial_context: state.initial_context,
             active_relative_path: state.relative_path.clone(),
         },
+        command: state.command,
         draft: state.draft,
         settings: state.settings,
         source_snapshot: state.source_snapshot,

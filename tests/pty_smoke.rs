@@ -420,6 +420,34 @@ fn pty_ctrl_f_prompt_finds_content_and_quits() -> TestResult {
 }
 
 #[test]
+fn pty_help_scrolls_to_model_scopes_and_closes_without_editing() -> TestResult {
+    let temp = TempPath::new("model_help");
+    let source = "source stays unchanged";
+    fs::write(&temp.path, source)?;
+    let mut editor = PtyEditor::spawn(&temp.path)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"\x1bOP")?; // F1
+    editor.wait_for_output("built-in help", "Catomic shortcuts")?;
+    editor.send_keys(b"\x1b[6~\x1b[6~\x1b[6~")?; // PageDown x3
+    editor.wait_for_output(
+        "model command scopes",
+        "megameow INSTRUCTION Project only: broader bounded repository context.",
+    )?;
+    editor.wait_for_output(
+        "model safety contract",
+        "Model edits affect only the confirmed active file; they are not auto-saved.",
+    )?;
+    editor.send_keys(b"\x1b")?;
+    editor.wait_for_output("help closes", "Shortcut help closed.")?;
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(&temp.path)?, source);
+    Ok(())
+}
+
+#[test]
 fn pty_multiple_cli_files_switch_and_save_active_buffer() -> TestResult {
     let first = TempPath::new("buffers_first");
     let second = TempPath::new("buffers_second");

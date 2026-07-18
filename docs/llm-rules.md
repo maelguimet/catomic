@@ -16,7 +16,8 @@ Every LLM edit must be previewed, confirmed, undoable.
 
 - `:meow` — selection/block (Plain allowed when explicit)
 - `:bigmeow` — current file
-- `:gitmeow` / `:megameow` — repo-aware (Project only)
+- `:gitmeow` — focused repo-aware request, capped at 64 KiB of broker context (Project only)
+- `:megameow` — broader repo-aware request, capped at 128 KiB of broker context (Project only)
 
 `:feralmeow` remains unimplemented: Phase 6 does not accept wide or multi-file
 patches.

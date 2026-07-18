@@ -52,8 +52,8 @@ Never add full-file scans, full-buffer clones, background work, or network calls
 Phase 6 adds no LLM work to startup or typing. Current-file context collection
 is explicit and capped at 64 KiB/2,000 lines. Project context preparation is an
 explicit cancellable worker capped at 4,096 files, 65,536 entries, depth 64,
-and a 128 KiB returned-context budget. Network latency is not benchmarked and
-no live endpoint is used.
+and a selected 64 KiB (`gitmeow`) or 128 KiB (`megameow`) returned-context
+budget. Network latency is not benchmarked and no live endpoint is used.
 
 Warm debug test-process samples on the local acceptance machine:
 

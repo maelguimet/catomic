@@ -15,6 +15,7 @@ use super::{Preparing, RepoLlmState};
 pub(crate) fn begin(
     app: &mut super::super::App,
     out: &mut dyn Write,
+    command: super::RepoLlmCommand,
     instruction: &str,
 ) -> io::Result<()> {
     if !app.caps.repo_llm || app.project.is_none() {
@@ -28,12 +29,29 @@ pub(crate) fn begin(
             return app.render(out);
         }
     };
-    begin_with_settings(app, out, instruction, settings)
+    begin_with_command_and_settings(app, out, command, instruction, settings)
 }
 
+#[cfg(test)]
 pub(super) fn begin_with_settings(
     app: &mut super::super::App,
     out: &mut dyn Write,
+    instruction: &str,
+    settings: LlmSettings,
+) -> io::Result<()> {
+    begin_with_command_and_settings(
+        app,
+        out,
+        super::RepoLlmCommand::GitMeow,
+        instruction,
+        settings,
+    )
+}
+
+pub(super) fn begin_with_command_and_settings(
+    app: &mut super::super::App,
+    out: &mut dyn Write,
+    command: super::RepoLlmCommand,
     instruction: &str,
     settings: LlmSettings,
 ) -> io::Result<()> {
@@ -58,18 +76,22 @@ pub(super) fn begin_with_settings(
         }
     };
     let root = app.project.as_ref().expect("Project checked").root();
-    match RepoPrepareTask::start(root, &path) {
+    match RepoPrepareTask::start_with_budget(root, &path, command.context_budget()) {
         Ok(task) => {
             app.repo_llm_state = Some(RepoLlmState::Preparing(Preparing {
                 task,
+                command,
                 draft,
                 settings,
                 source_snapshot,
                 path,
             }));
-            app.message = Some(
-                "Building bounded repo context... Esc cancels; typing remains live.".to_string(),
-            );
+            app.message = Some(format!(
+                "Building {} {} repo context ({} KiB max)... Esc cancels; typing remains live.",
+                command.name(),
+                command.profile(),
+                command.context_budget() / 1024
+            ));
         }
         Err(error) => app.message = Some(format!("Could not start repo context worker: {error}")),
     }

@@ -179,9 +179,18 @@ fn execute_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> 
             super::llm_request::CurrentLlmCommand::BigMeow,
             instruction,
         ),
-        ("gitmeow" | "megameow", instruction) => {
-            super::hooks::before_repo_llm(app, out, instruction)
-        }
+        ("gitmeow", instruction) => super::hooks::before_repo_llm(
+            app,
+            out,
+            super::repo_llm::RepoLlmCommand::GitMeow,
+            instruction,
+        ),
+        ("megameow", instruction) => super::hooks::before_repo_llm(
+            app,
+            out,
+            super::repo_llm::RepoLlmCommand::MegaMeow,
+            instruction,
+        ),
         _ => {
             app.message = Some(format!("Unknown command: {command}"));
             app.render(out)

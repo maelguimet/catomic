@@ -58,8 +58,25 @@ Commands (Ctrl+Shift+P or F2)
   project | plain | files
   lint | diagnostics | dnext | dprev
   run NAME | recover
-  meow TEXT | bigmeow TEXT | gitmeow TEXT | megameow TEXT
   quit | q
+
+Model commands (Ctrl+Shift+P or F2)
+  Selection = highlighted text in the active file being edited.
+  Instruction block = >>> catomic ... <<< containing the cursor.
+  Plain mode = default editing; Project mode = opt-in repository tools.
+  Enter Project mode with the project command.
+  meow INSTRUCTION Plain/Project: send selection; otherwise block at cursor.
+  bigmeow INSTRUCTION Plain/Project: send entire current editable file.
+  gitmeow INSTRUCTION Project only: focused task; bounded repository context.
+  megameow INSTRUCTION Project only: broader bounded repository context.
+
+Model safety and workflow
+  Nothing is sent until you confirm the endpoint, model, and exact context.
+  Enter confirms; Escape cancels.
+  Edit proposals open read-only; a second Enter confirms apply.
+  Model edits affect only the confirmed active file; they are not auto-saved.
+  Prefix the instruction with explain for a read-only answer.
+  LLM setup: see "Model-assisted commands" in the user guide.
 
 Arrow keys, Home/End, and PageUp/PageDown scroll this view.
 Escape or Ctrl+H closes it.

@@ -6,6 +6,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::io::{self, Write};
+use unicode_width::UnicodeWidthStr;
 
 use crate::buffer::{Cursor, PieceTable};
 
@@ -83,6 +84,39 @@ fn ctrl_h_opens_navigates_and_closes_without_editing_source() {
     assert!(handle_key(&mut app, &mut out, toggle).unwrap());
     assert!(!is_viewing(&app));
     assert_eq!(app.buffer.to_string(), "source text");
+}
+
+#[test]
+fn help_keeps_model_command_scopes_and_safety_readable_at_80_columns() {
+    let required_lines = [
+        "  Selection = highlighted text in the active file being edited.",
+        "  Instruction block = >>> catomic ... <<< containing the cursor.",
+        "  Plain mode = default editing; Project mode = opt-in repository tools.",
+        "  Enter Project mode with the project command.",
+        "  meow INSTRUCTION Plain/Project: send selection; otherwise block at cursor.",
+        "  bigmeow INSTRUCTION Plain/Project: send entire current editable file.",
+        "  gitmeow INSTRUCTION Project only: focused task; bounded repository context.",
+        "  megameow INSTRUCTION Project only: broader bounded repository context.",
+        "  Nothing is sent until you confirm the endpoint, model, and exact context.",
+        "  Enter confirms; Escape cancels.",
+        "  Edit proposals open read-only; a second Enter confirms apply.",
+        "  Model edits affect only the confirmed active file; they are not auto-saved.",
+        "  Prefix the instruction with explain for a read-only answer.",
+        "  LLM setup: see \"Model-assisted commands\" in the user guide.",
+    ];
+
+    for required in required_lines {
+        assert!(
+            HELP_TEXT.lines().any(|line| line == required),
+            "built-in help is missing required model guidance: {required}"
+        );
+    }
+    for line in HELP_TEXT.lines() {
+        assert!(
+            UnicodeWidthStr::width(line) <= 80,
+            "help line exceeds 80 terminal cells: {line}"
+        );
+    }
 }
 
 #[test]

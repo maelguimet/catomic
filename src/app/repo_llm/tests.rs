@@ -26,11 +26,21 @@ fn plain_command_constructs_no_repo_state() {
     let mut app = super::super::App::new(None).unwrap();
     let mut out = Vec::new();
 
-    begin(&mut app, &mut out, "write tests").unwrap();
+    begin(&mut app, &mut out, RepoLlmCommand::GitMeow, "write tests").unwrap();
 
     assert!(app.repo_llm_state.is_none());
     assert!(app.project.is_none());
     assert!(app.message.as_deref().unwrap().contains("Project mode"));
+}
+
+#[test]
+fn repo_command_variants_have_distinct_bounded_context_profiles() {
+    assert_eq!(RepoLlmCommand::GitMeow.name(), "gitmeow");
+    assert_eq!(RepoLlmCommand::GitMeow.profile(), "focused");
+    assert_eq!(RepoLlmCommand::GitMeow.context_budget(), 64 * 1024);
+    assert_eq!(RepoLlmCommand::MegaMeow.name(), "megameow");
+    assert_eq!(RepoLlmCommand::MegaMeow.profile(), "broader");
+    assert_eq!(RepoLlmCommand::MegaMeow.context_budget(), 128 * 1024);
 }
 
 #[test]
@@ -54,8 +64,17 @@ fn project_preparation_reaches_confirmation_without_connecting() {
         app.repo_llm_state.as_ref(),
         Some(RepoLlmState::Pending(_))
     ));
+    let RepoLlmState::Pending(pending) = app.repo_llm_state.as_ref().unwrap() else {
+        unreachable!()
+    };
+    assert_eq!(
+        pending.prepared.broker.remaining_budget() + pending.prepared.initial_context.len(),
+        64 * 1024
+    );
     assert!(listener.accept().is_err());
     let message = app.message.as_deref().unwrap();
+    assert!(message.contains("gitmeow focused context"));
+    assert!(message.contains("at most 64 KiB"));
     assert!(message.contains("repo bytes"));
     assert!(message.contains("Enter confirms"));
 
@@ -68,6 +87,51 @@ fn project_preparation_reaches_confirmation_without_connecting() {
     assert!(listener.accept().is_err());
     poll_until_send_checked(&mut app, &mut out);
     assert!(app.repo_llm_state.is_none());
+    assert!(listener.accept().is_err());
+}
+
+#[test]
+fn megameow_profile_survives_async_preparation_without_connecting() {
+    let repo = TempRepo::new();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let settings = settings(format!("http://{}/v1", listener.local_addr().unwrap()));
+    let mut app = project_app(&repo);
+    let mut out = Vec::new();
+
+    begin_with_command_and_settings(
+        &mut app,
+        &mut out,
+        RepoLlmCommand::MegaMeow,
+        "write tests",
+        settings,
+    )
+    .unwrap();
+    assert!(matches!(
+        app.repo_llm_state.as_ref(),
+        Some(RepoLlmState::Preparing(Preparing {
+            command: RepoLlmCommand::MegaMeow,
+            ..
+        }))
+    ));
+    assert!(listener.accept().is_err());
+
+    poll_until_pending(&mut app, &mut out);
+    assert!(matches!(
+        app.repo_llm_state.as_ref(),
+        Some(RepoLlmState::Pending(pending))
+            if pending.command == RepoLlmCommand::MegaMeow
+    ));
+    let RepoLlmState::Pending(pending) = app.repo_llm_state.as_ref().unwrap() else {
+        unreachable!()
+    };
+    assert_eq!(
+        pending.prepared.broker.remaining_budget() + pending.prepared.initial_context.len(),
+        128 * 1024
+    );
+    let message = app.message.as_deref().unwrap();
+    assert!(message.contains("megameow broader context"));
+    assert!(message.contains("at most 128 KiB"));
     assert!(listener.accept().is_err());
 }
 

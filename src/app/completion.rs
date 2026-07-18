@@ -6,9 +6,10 @@
 
 use std::io::{self, Write};
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::buffer::Cursor;
+use crate::help_catalog::{self, EditorAction};
 mod candidates;
 use candidates::{CandidateRead, PREFIX_COLS};
 
@@ -196,16 +197,12 @@ fn is_active(app: &super::App) -> bool {
 }
 
 fn is_trigger(key: KeyEvent) -> bool {
-    key.code == KeyCode::Tab || is_control_space(key)
+    key.code == KeyCode::Tab
+        || help_catalog::default_editor_action(key) == Some(EditorAction::Complete)
 }
 
 fn is_cycle_forward(key: KeyEvent) -> bool {
-    key.code == KeyCode::Tab || is_control_space(key)
-}
-
-fn is_control_space(key: KeyEvent) -> bool {
-    matches!(key.code, KeyCode::Char(' ') | KeyCode::Null)
-        && key.modifiers.contains(KeyModifiers::CONTROL)
+    is_trigger(key)
 }
 
 #[cfg(test)]

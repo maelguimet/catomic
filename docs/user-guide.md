@@ -993,8 +993,9 @@ keys remain local to the active interface.
 | View | Soft wrapping | `F9` |
 | Large files | Previous / next page | `Ctrl+PageUp` / `Ctrl+PageDown` |
 
-The in-editor `Ctrl+H`/`F1` reference is the quickest authority when Catomic is
-running.
+This table and the in-editor `Ctrl+H`/`F1` quick reference show built-in
+defaults. `[keybindings]` overrides apply in normal editing mode, but neither
+reference rewrites its labels to show the effective configured chords.
 
 ## Command reference
 

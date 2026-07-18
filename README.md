@@ -77,8 +77,10 @@ suggests either quoting one filename containing spaces or rerunning with
 `--allow-missing` for intentional multi-buffer creation. Missing paths are
 never created until explicitly saved.
 
-Run `catomic --help` for command-line usage. Inside the editor, press `Ctrl+H`
-or `F1` for the complete built-in shortcut reference.
+Run `catomic --help` for command-line behavior and examples. Inside the editor,
+press `Ctrl+H` or `F1` for the built-in default-key and prompt-command quick
+reference; it identifies how configured keybinding overrides relate to the
+displayed defaults.
 For installation, editing workflows, configuration, safety behavior, and
 troubleshooting, see the [complete user guide](docs/user-guide.md).
 

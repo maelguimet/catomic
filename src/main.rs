@@ -10,6 +10,7 @@ mod config;
 mod editor;
 mod external;
 mod file;
+mod help_catalog;
 mod llm;
 mod mode;
 mod project;

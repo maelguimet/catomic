@@ -84,6 +84,9 @@ Run `catomic --help` for command-line behavior and examples. Inside the editor,
 press `Ctrl+H` or `F1` for the built-in default-key and prompt-command quick
 reference; it identifies how configured keybinding overrides relate to the
 displayed defaults.
+On Android/Termux, the automatic action row and its **Menu** palette expose the
+same essential workflow without a hardware keyboard. See the
+[mobile guide](docs/mobile.md) for the supported environment and storage limits.
 For installation, editing workflows, configuration, safety behavior, and
 troubleshooting, see the [complete user guide](docs/user-guide.md).
 
@@ -230,7 +233,8 @@ remove_instruction_after_apply = true
 choice under the XDG state directory for later launches. The saved choice takes
 precedence over `[view].line_numbers`; Catomic never rewrites `config.toml`.
 
-Recovery is disabled by default. Named commands and hooks invoke `/bin/sh -c`
+Recovery is disabled by default. Named commands and hooks invoke the platform's
+POSIX shell (`$PREFIX/bin/sh` on Android/Termux, normally `/bin/sh` on Linux)
 and are trusted user configuration; their input, output, and runtime are
 bounded, but the command itself can have effects outside Catomic.
 
@@ -259,8 +263,9 @@ code and may itself contact services after confirmation.
 
 ## Limitations
 
-- Linux terminals are the supported platform for this beta. Windows and macOS
-  are not first-class targets yet.
+- Linux terminals and the documented Android/Termux environment are supported
+  for this beta. Android boundaries are in the [mobile guide](docs/mobile.md).
+  Windows, macOS, native Android UI, and iOS/iPadOS are not supported.
 - Editor sessions require a UTF-8 locale, and files must contain valid UTF-8.
   UTF-16 and arbitrary byte-oriented files are refused.
 - Ordinary buffers preserve UTF-8 BOMs and LF, CRLF, or CR line endings. Paged

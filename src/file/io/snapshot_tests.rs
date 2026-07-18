@@ -56,6 +56,35 @@ fn content_identity_detects_change_when_all_metadata_fields_collide() {
 }
 
 #[test]
+fn same_length_in_place_rewrite_with_frozen_mtime_is_modified() {
+    let path = temp_path("frozen_mtime_collision.txt");
+    let _ = fs::remove_file(&path);
+    fs::write(&path, "ORIGINAL").unwrap();
+    let baseline = capture_file_snapshot(&path).unwrap();
+    let baseline_mtime = fs::metadata(&path).unwrap().modified().unwrap();
+
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(&path)
+        .unwrap();
+    file.write_all(b"REPLACED").unwrap();
+    file.sync_all().unwrap();
+    file.set_times(std::fs::FileTimes::new().set_modified(baseline_mtime))
+        .unwrap();
+    drop(file);
+
+    let metadata = fs::metadata(&path).unwrap();
+    assert_eq!(metadata.len(), 8);
+    assert_eq!(metadata.modified().unwrap(), baseline_mtime);
+    assert_eq!(
+        observe_external_file(Some(&path), Some(&baseline)).status,
+        ExternalFileStatus::Modified
+    );
+    let _ = fs::remove_file(&path);
+}
+
+#[test]
 fn paged_file_snapshot_uses_and_compares_bounded_samples() {
     let path = temp_path("sampled_collision.bin");
     let _ = fs::remove_file(&path);

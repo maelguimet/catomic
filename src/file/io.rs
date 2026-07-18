@@ -24,7 +24,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 mod atomic_unix;
 mod snapshot;
 
@@ -52,12 +52,12 @@ pub fn read_to_string<P: AsRef<Path>>(path: P) -> io::Result<String> {
 ///
 /// Writes to a sibling temp file (same dir), fsyncs data, renames over target,
 /// then best-effort fsyncs the parent directory on Unix.
-/// Linux replacement is conditional on the exact inspected target inode.
+/// Linux/Android replacement is conditional on the exact inspected target inode.
 /// Existing mode/owner/group must be preserved; hard links and xattrs/ACLs are
 /// refused because replacing the inode cannot safely preserve their semantics.
 /// Temp is removed on any error before successful rename.
 /// Unique temp uses target filename + pid. create_new used to avoid clobber.
-/// Linux-first: directory fsync is best-effort; no new dependencies.
+/// Linux-kernel-first: directory fsync is best-effort; no new dependencies.
 #[allow(dead_code)] // Compatibility/test convenience; App uses the streaming form.
 pub fn atomic_write_string(path: impl AsRef<Path>, contents: &str) -> io::Result<()> {
     atomic_write_with(path, |writer| writer.write_all(contents.as_bytes())).map(|_| ())
@@ -141,7 +141,7 @@ fn atomic_write_with_policy(
     // A create_new collision belongs to someone else and must remain untouched.
     let mut created_temp = false;
     let res: io::Result<u64> = (|| {
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "android"))]
         let existing_permissions = if private {
             None
         } else {
@@ -151,7 +151,7 @@ fn atomic_write_with_policy(
                 .map(atomic_unix::ExistingTarget::permissions)
         };
 
-        #[cfg(all(unix, not(target_os = "linux")))]
+        #[cfg(all(unix, not(any(target_os = "linux", target_os = "android"))))]
         let existing_permissions = if private {
             None
         } else {
@@ -197,7 +197,7 @@ fn atomic_write_with_policy(
                 f.set_permissions(permissions)?;
             }
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "android"))]
         if !private {
             atomic_unix::validate_replacement_metadata(&f, target_state.existing.as_ref(), target)?;
         }
@@ -211,7 +211,7 @@ fn atomic_write_with_policy(
         } else if policy == AtomicWritePolicy::PrivateCreate {
             commit_private_create(&temp_path, target, &mut created_temp)?;
         } else {
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "android"))]
             atomic_unix::commit(
                 &temp_path,
                 target,
@@ -219,7 +219,7 @@ fn atomic_write_with_policy(
                 &mut created_temp,
             )?;
 
-            #[cfg(not(target_os = "linux"))]
+            #[cfg(not(any(target_os = "linux", target_os = "android")))]
             {
                 validate_regular_save_target(target)?;
                 fs::rename(&temp_path, target)?;
@@ -266,7 +266,7 @@ fn commit_private_create(
 /// final symlink so an attacker cannot redirect recovery data into its referent.
 struct AtomicWriteTarget {
     path: PathBuf,
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     existing: Option<atomic_unix::ExistingTarget>,
 }
 
@@ -274,7 +274,7 @@ fn atomic_write_target(path: &Path, private: bool) -> io::Result<AtomicWriteTarg
     if private {
         return Ok(AtomicWriteTarget {
             path: path.to_path_buf(),
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "android"))]
             existing: None,
         });
     }
@@ -287,12 +287,12 @@ fn atomic_write_target(path: &Path, private: bool) -> io::Result<AtomicWriteTarg
         Err(error) => Err(error),
     }?;
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     let existing = atomic_unix::open_existing_target(&target)?;
 
     Ok(AtomicWriteTarget {
         path: target,
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "android"))]
         existing,
     })
 }

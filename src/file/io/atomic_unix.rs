@@ -1,4 +1,4 @@
-//! Purpose: make Linux atomic replacement conditional on the target inode inspected.
+//! Purpose: make Linux-kernel atomic replacement conditional on the target inode inspected.
 //! Owns: hard-link/xattr/ownership guards and race-safe renameat2 commit/rollback.
 //! Must not: format text, choose App save policy, or handle private recovery sidecars.
 //! Invariants: unsafe metadata is refused; a raced target is atomically restored.
@@ -172,7 +172,7 @@ pub(super) fn commit(
 }
 
 fn commit_new_file(temp_path: &Path, target: &Path, cleanup_temp: &mut bool) -> io::Result<()> {
-    match renameat2(temp_path, target, libc::RENAME_NOREPLACE) {
+    match renameat2(temp_path, target, libc::RENAME_NOREPLACE as libc::c_uint) {
         Ok(()) => {
             *cleanup_temp = false;
             Ok(())
@@ -198,7 +198,7 @@ fn commit_replacement(
     cleanup_temp: &mut bool,
 ) -> io::Result<()> {
     validate_target_path(target, existing)?;
-    renameat2(temp_path, target, libc::RENAME_EXCHANGE)?;
+    renameat2(temp_path, target, libc::RENAME_EXCHANGE as libc::c_uint)?;
     *cleanup_temp = false;
 
     if let Err(error) = validate_displaced_target(temp_path, existing) {
@@ -227,7 +227,7 @@ fn validate_displaced_target(path: &Path, existing: &ExistingTarget) -> io::Resu
         return Err(non_regular_error(path));
     }
     let live = UnixMetadata::from(&metadata);
-    // Linux updates ctime when renameat2 exchanges the directory entries. The
+    // Linux kernels update ctime when renameat2 exchanges the directory entries. The
     // inode and all metadata that users expect a save to preserve must match.
     if !same_preserved_metadata(live, existing.baseline) {
         return Err(changed_error(path));
@@ -253,7 +253,11 @@ fn rollback_exchange(
     cleanup_temp: &mut bool,
     original_error: io::Error,
 ) -> io::Result<()> {
-    match renameat2(temp_path, target, libc::RENAME_EXCHANGE) {
+    match renameat2(
+        temp_path,
+        target,
+        libc::RENAME_EXCHANGE as libc::c_uint,
+    ) {
         Ok(()) => {
             *cleanup_temp = true;
             Err(original_error)
@@ -268,8 +272,23 @@ fn rollback_exchange(
 fn renameat2(old_path: &Path, new_path: &Path, flags: libc::c_uint) -> io::Result<()> {
     let old_path = path_to_c_string(old_path)?;
     let new_path = path_to_c_string(new_path)?;
+    #[cfg(not(target_os = "android"))]
     let result = unsafe {
         libc::renameat2(
+            libc::AT_FDCWD,
+            old_path.as_ptr(),
+            libc::AT_FDCWD,
+            new_path.as_ptr(),
+            flags,
+        )
+    };
+    // Bionic did not expose every Linux syscall as a stable libc symbol across
+    // Android API levels. Termux runs on a Linux kernel, so use the syscall
+    // number directly while preserving the same fail-closed semantics.
+    #[cfg(target_os = "android")]
+    let result = unsafe {
+        libc::syscall(
+            libc::SYS_renameat2,
             libc::AT_FDCWD,
             old_path.as_ptr(),
             libc::AT_FDCWD,

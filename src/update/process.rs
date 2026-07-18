@@ -118,13 +118,8 @@ fn wait(child: &mut std::process::Child, timeout: Duration) -> Result<ExitStatus
 fn terminate(child: &mut std::process::Child) {
     #[cfg(unix)]
     {
-        let group = format!("-{}", child.id());
-        let _ = Command::new("kill")
-            .args(["-KILL", "--", &group])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+        let group = child.id() as libc::pid_t;
+        let _ = unsafe { libc::kill(-group, libc::SIGKILL) };
     }
     let _ = child.kill();
     let _ = child.wait();

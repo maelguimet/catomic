@@ -349,4 +349,23 @@ mod tests {
         assert_eq!(app.buffer.to_string(), "# Original");
         assert!(app.message.as_deref().unwrap().contains("read-only"));
     }
+
+    #[test]
+    fn narrow_table_preview_can_pan_to_its_right_edge() {
+        let mut app = super::super::App::new(None).unwrap();
+        app.file.path = Some(PathBuf::from("table.md"));
+        app.buffer = Box::new(crate::buffer::PieceTable::from_text(
+            "| Left | Center | Right |\n| :--- | :----: | ----: |\n| wide 猫 emoji 🐾 | a much longer value | 2,000 |",
+        ));
+        app.screen.width = 44;
+        app.screen.height = 14;
+        let mut out = Vec::new();
+
+        handle_key(&mut app, &mut out, key(KeyCode::F(6))).unwrap();
+        out.clear();
+        handle_key(&mut app, &mut out, key(KeyCode::End)).unwrap();
+
+        assert!(app.screen.scroll_left > 0);
+        assert!(String::from_utf8(out).unwrap().contains("2,000"));
+    }
 }

@@ -5,6 +5,7 @@
 //! Phase: post-v0.1 core usability.
 
 use crate::buffer::{Buffer, Cursor, SimpleBuffer};
+use crate::editor::syntax::SyntaxKind;
 
 use super::*;
 
@@ -50,4 +51,34 @@ fn wrapped_render_emits_each_visual_row() {
     let rendered = String::from_utf8(out).unwrap();
     assert!(rendered.contains("\x1b[1;1H\x1b[Kabc"));
     assert!(rendered.contains("\x1b[2;1H\x1b[Kdef"));
+}
+
+#[test]
+fn markdown_styles_do_not_change_soft_wrap_coordinates() {
+    let source = "**bold** | 猫";
+    let mut buffer = SimpleBuffer::from_text(source);
+    buffer.set_cursor(Cursor { row: 0, col: 8 });
+    let rows = visible_rows(&buffer, 0, 0, 3, 8).unwrap();
+
+    assert_eq!(rows[0].content, "**bold**");
+    assert_eq!(rows[1].start_col, 8);
+    assert_eq!(rows[1].content, " | 猫");
+    assert_eq!(wrapped_cursor_position(buffer.cursor(), &rows, 0), (2, 1));
+
+    let mut out = Vec::new();
+    super::super::render_buffer(
+        &mut out,
+        &buffer,
+        RenderViewport::new(0, 0, 4, 8),
+        None,
+        RenderOptions {
+            syntax: SyntaxKind::Markdown,
+            soft_wrap: true,
+            ..RenderOptions::default()
+        },
+    )
+    .unwrap();
+    assert!(String::from_utf8(out)
+        .unwrap()
+        .contains("\x1b[3;35m**bold**\x1b[0m"));
 }

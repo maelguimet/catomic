@@ -101,6 +101,12 @@ impl PtyEditor {
         Self::spawn_paths(&[path])
     }
 
+    fn spawn_sized(path: &PathBuf, rows: u16, cols: u16) -> TestResult<Self> {
+        let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
+        cmd.arg(path);
+        Self::spawn_command_sized(cmd, rows, cols)
+    }
+
     fn spawn_paths(paths: &[&PathBuf]) -> TestResult<Self> {
         Self::spawn_with(paths, None)
     }
@@ -121,10 +127,14 @@ impl PtyEditor {
     }
 
     fn spawn_command(cmd: CommandBuilder) -> TestResult<Self> {
+        Self::spawn_command_sized(cmd, 24, 80)
+    }
+
+    fn spawn_command_sized(cmd: CommandBuilder, rows: u16, cols: u16) -> TestResult<Self> {
         let pty_system = native_pty_system();
         let pair = pty_system.openpty(PtySize {
-            rows: 24,
-            cols: 80,
+            rows,
+            cols,
             pixel_width: 0,
             pixel_height: 0,
         })?;
@@ -221,6 +231,10 @@ impl PtyEditor {
 
     fn output_string(&self) -> String {
         String::from_utf8_lossy(&self.output.lock().expect("pty output mutex")).into_owned()
+    }
+
+    fn clear_output(&self) {
+        self.output.lock().expect("pty output mutex").clear();
     }
 }
 
@@ -620,6 +634,56 @@ fn pty_markdown_preview_and_view_toggles_leave_source_unchanged() -> TestResult 
         "alternate screen must teardown"
     );
     Ok(())
+}
+
+#[test]
+fn pty_narrow_markdown_table_preview_is_aligned_and_clipped_without_mutation() -> TestResult {
+    let temp = TempPath::with_extension("markdown_table_narrow", "md");
+    let source = "# Markdown showcase\n\n| Left | Center | Right |\n| :--- | :----: | ----: |\n| short | `code` | 10 |\n| wide 猫 emoji 🐾 | a much longer value | 2,000 |\n";
+    fs::write(&temp.path, source)?;
+    let mut editor = PtyEditor::spawn_sized(&temp.path, 14, 44)?;
+
+    editor.wait_for_initial_render()?;
+    editor.wait_for_output("narrow Markdown source", "Markdown showcase")?;
+    editor.clear_output();
+    editor.send_keys(b"\x1b[17~")?; // F6
+    editor.wait_for_output("measured table header divider", "╞")?;
+    editor.wait_for_output("complete narrow preview frame", "Markdown preview on")?;
+
+    let initial_preview = strip_csi(&editor.output_string());
+    assert!(initial_preview.contains("│ Left"));
+    assert!(initial_preview.contains("Center"));
+    assert!(initial_preview.contains("╞════"));
+    assert!(!initial_preview.contains("2,000"));
+
+    editor.send_keys(b"\x1b")?;
+    editor.wait_for_output("leave narrow table preview", "Markdown preview off")?;
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+    assert_eq!(fs::read_to_string(&temp.path)?, source);
+    Ok(())
+}
+
+fn strip_csi(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut output = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == 0x1b && bytes.get(index + 1) == Some(&b'[') {
+            index += 2;
+            while index < bytes.len() {
+                let byte = bytes[index];
+                index += 1;
+                if (0x40..=0x7e).contains(&byte) {
+                    break;
+                }
+            }
+        } else {
+            output.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8_lossy(&output).into_owned()
 }
 
 #[test]

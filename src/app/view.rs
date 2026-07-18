@@ -1,7 +1,8 @@
-//! Purpose: own non-mutating per-buffer display modes and their key bindings.
+//! Purpose: own non-mutating display modes and their key bindings.
 //! Owns: F6 preview, F7/F8 indicators, F9 soft wrap, and display coordinates.
-//! Must not: mutate source text/history, read files, emit terminal setup, or network.
-//! Invariants: preview is explicit/read-only; toggles and source viewport are per buffer.
+//! Must not: mutate source text/history, emit terminal setup, or contact the network.
+//! Invariants: preview is explicit/read-only; F7 is session-global and explicitly persisted;
+//!   F8/F9 and source viewports remain per buffer.
 //! Phase: 4-b/4-c optional indicators and Markdown preview.
 
 use std::io::{self, Write};
@@ -14,7 +15,6 @@ use crate::help_catalog::{self, EditorAction};
 
 #[derive(Debug, Default)]
 pub(crate) struct ViewOptions {
-    pub(crate) line_numbers: bool,
     pub(crate) whitespace: bool,
     pub(crate) soft_wrap: bool,
     preview: Option<PreviewDocument>,
@@ -34,8 +34,8 @@ pub(crate) fn handle_key(
 ) -> io::Result<bool> {
     match help_catalog::default_editor_action(key) {
         Some(EditorAction::MarkdownPreview) => return toggle_preview(app, out),
-        Some(EditorAction::LineNumbers) => return toggle_indicator(app, out, true),
-        Some(EditorAction::Whitespace) => return toggle_indicator(app, out, false),
+        Some(EditorAction::LineNumbers) => return toggle_line_numbers(app, out),
+        Some(EditorAction::Whitespace) => return toggle_whitespace(app, out),
         Some(EditorAction::SoftWrap) => return toggle_soft_wrap(app, out),
         _ => {}
     }
@@ -113,7 +113,7 @@ pub(crate) fn display_syntax(app: &super::App) -> SyntaxKind {
 }
 
 pub(crate) fn gutter_width(app: &super::App) -> usize {
-    if app.view.line_numbers {
+    if app.view_preferences.line_numbers() {
         crate::terminal::render::line_number_gutter(display_buffer(app).line_count())
     } else {
         0
@@ -167,19 +167,25 @@ fn toggle_preview(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool>
     Ok(true)
 }
 
-fn toggle_indicator(
-    app: &mut super::App,
-    out: &mut dyn Write,
-    line_numbers: bool,
-) -> io::Result<bool> {
-    let (label, enabled) = if line_numbers {
-        app.view.line_numbers = !app.view.line_numbers;
-        ("Line numbers", app.view.line_numbers)
-    } else {
-        app.view.whitespace = !app.view.whitespace;
-        ("Whitespace indicators", app.view.whitespace)
-    };
-    app.message = Some(format!("{label} {}.", if enabled { "on" } else { "off" }));
+fn toggle_line_numbers(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {
+    let enabled = !app.view_preferences.line_numbers();
+    app.view_preferences.set_line_numbers(enabled);
+    let state = if enabled { "on" } else { "off" };
+    app.message = Some(match app.view_preferences.persist() {
+        Ok(()) => format!("Line numbers {state}."),
+        Err(error) => format!("Line numbers {state}; preference not saved: {error}."),
+    });
+    reveal_display_cursor(app);
+    app.render(out)?;
+    Ok(true)
+}
+
+fn toggle_whitespace(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {
+    app.view.whitespace = !app.view.whitespace;
+    app.message = Some(format!(
+        "Whitespace indicators {}.",
+        if app.view.whitespace { "on" } else { "off" }
+    ));
     reveal_display_cursor(app);
     app.render(out)?;
     Ok(true)
@@ -272,7 +278,12 @@ mod tests {
         let mut out = Vec::new();
 
         handle_key(&mut app, &mut out, key(KeyCode::F(7))).unwrap();
-        assert!(app.view.line_numbers);
+        assert!(app.view_preferences.line_numbers());
+        assert!(app
+            .message
+            .as_deref()
+            .unwrap()
+            .contains("preference not saved"));
         assert!(String::from_utf8_lossy(&out).contains("1 "));
 
         out.clear();

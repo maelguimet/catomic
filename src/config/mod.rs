@@ -17,6 +17,7 @@ pub(crate) mod editor;
 pub(crate) mod keybindings;
 pub(crate) mod linters;
 pub(crate) mod llm;
+pub(crate) mod view_preferences;
 
 pub(crate) fn decode<T: DeserializeOwned>(text: &str) -> io::Result<T> {
     toml::from_str(text).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
@@ -31,5 +32,6 @@ pub(crate) fn validate_all() -> io::Result<()> {
     keybindings::load()?;
     linters::load()?;
     llm::load()?;
+    view_preferences::load()?;
     Ok(())
 }

@@ -400,7 +400,8 @@ You can also create or open buffers during a session:
 
 Opening an already-open path switches to or reports the existing buffer rather
 than creating a duplicate. Each buffer retains its cursor, viewport, selection,
-dirty state, file watcher, display toggles, and large-file page position.
+dirty state, file watcher, whitespace/wrapping toggles, and large-file page
+position. Line numbers are a session-global preference shared by every buffer.
 
 `Ctrl+S` saves only the active buffer. `Ctrl+Q` checks every open buffer; if any
 are dirty, the first press warns and the second press quits without saving.
@@ -478,13 +479,14 @@ malformed constructs remain ordinary readable text.
 | View | Key | Behavior |
 | --- | --- | --- |
 | Markdown preview | `F6` | Preview the buffer or active large-file page |
-| Line numbers | `F7` | Toggle line numbers for the active buffer |
+| Line numbers | `F7` | Toggle line numbers for all buffers and remember the choice |
 | Visible whitespace | `F8` | Show spaces and tabs |
 | Soft wrapping | `F9` | Wrap at terminal width without inserting newlines |
 
 Press `F6` again or `Escape` to leave Markdown preview. Soft-wrapped
-continuations preserve document coordinates and mouse mapping. View settings
-are stored independently per open buffer.
+continuations preserve document coordinates and mouse mapping. Whitespace and
+soft wrapping remain per-buffer settings. F7 updates every current buffer and
+the default for buffers opened later in the session.
 
 Markdown preview renders headings, nested quotes and lists, tasks, links,
 footnotes, rules, and fenced code with terminal-native markers. Tables retain
@@ -867,6 +869,25 @@ No file is required. Unknown keys are ignored for forward compatibility, but a
 malformed recognized value is a startup error for settings loaded at startup.
 Project-only and model settings are loaded lazily when invoked.
 
+The configured line-number default is:
+
+```toml
+[view]
+line_numbers = false
+```
+
+After an explicit F7 press, Catomic atomically writes the chosen value to
+`$XDG_STATE_HOME/catomic/preferences.toml`, or
+`~/.local/state/catomic/preferences.toml` when `HOME` is absolute. It never
+rewrites `config.toml`, and merely starting Catomic does not create the state
+file. Precedence is the saved F7 preference, then `[view].line_numbers`, then the
+built-in `false` default. Remove `preferences.toml` to return control to
+`config.toml`.
+
+Running instances do not live-reload each other's view state. Each keeps its
+current session choice; atomic replacement prevents partial TOML, and the last
+completed rename determines the default read by the next launch.
+
 ### Complete example
 
 ```toml
@@ -878,6 +899,9 @@ page_lines = 20_000
 
 [files]
 auto_reload = true
+
+[view]
+line_numbers = false
 
 [cat]
 status_messages = true
@@ -926,6 +950,7 @@ timeout_secs = 120
 | `languages.EXT.linter` | none | String containing `{file}` |
 | `big_files.page_lines` | `20000` | Positive integer |
 | `files.auto_reload` | `true` | Boolean |
+| `view.line_numbers` | `false` | Boolean; overridden by the saved F7 choice |
 | `cat.status_messages` | `true` | Boolean |
 | `recovery.enabled` | `false` | Boolean |
 | `recovery.interval_secs` | `30` | Integer `5`–`3600` |
@@ -1106,6 +1131,13 @@ different chord in `[keybindings]`.
 If `Ctrl+Shift+Z` undoes instead of redoing, the terminal omitted the Shift
 modifier and Catomic received an event indistinguishable from `Ctrl+Z`. Catomic
 must treat that event as undo; use `Ctrl+Y` or configure another redo chord.
+
+### F7 says the preference was not saved
+
+The in-memory toggle still applies to every buffer in the current session.
+Check that `XDG_STATE_HOME`, or the `HOME` fallback, is an absolute writable
+path and that its `catomic` directory can be created. Catomic leaves an existing
+complete preference file in place when atomic replacement fails.
 
 ### System clipboard copy or paste does not work
 

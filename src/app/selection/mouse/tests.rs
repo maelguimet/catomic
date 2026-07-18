@@ -46,7 +46,7 @@ fn click_maps_through_both_viewport_offsets() {
 #[test]
 fn click_subtracts_the_line_number_gutter() {
     let mut app = app_with("abcdef");
-    app.view.line_numbers = true;
+    app.view_preferences.set_line_numbers(true);
     let mut out = Vec::new();
 
     handle_mouse(

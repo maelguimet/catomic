@@ -198,7 +198,8 @@ Security-sensitive findings should follow [SECURITY.md](SECURITY.md).
 - [Performance discipline and measurements](docs/performance.md)
 - [LLM safety rules](docs/llm-rules.md)
 - [Roadmap, research, and design history](TODO.md)
-- [v0.1 acceptance record](docs/v0.1-acceptance.md)
+- [Release process and artifact verification](docs/releasing.md)
+- [Historical v0.1 roadmap acceptance record](docs/v0.1-acceptance.md)
 
 ## License
 

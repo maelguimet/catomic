@@ -56,6 +56,9 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: Check release verifier syntax
+        run: bash -n scripts/verify-release.sh
+
       - name: Run Clippy
         run: cargo clippy --all-targets --locked -- -D warnings
 

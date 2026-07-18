@@ -5,51 +5,378 @@ on:
     tags:
       - "v*"
 
-permissions:
-  contents: write
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  release:
-    name: Build and publish x86_64 Linux binary
+  publish:
+    name: Verify tagged source and publish x86_64 Linux assets
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    outputs:
+      attestation_url: ${{ steps.attest.outputs.attestation-url }}
+      binary_name: ${{ steps.identity.outputs.binary_name }}
+      package_name: ${{ steps.identity.outputs.package_name }}
+      source_sha: ${{ steps.identity.outputs.source_sha }}
+      version: ${{ steps.identity.outputs.version }}
     steps:
       - name: Check out tagged source
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          fetch-depth: 0
 
-      - name: Install stable Rust
-        run: rustup toolchain install stable --profile minimal
-
-      - name: Verify tag matches package version
+      - name: Bind the run to the tag and package version
+        id: identity
         env:
           TAG: ${{ github.ref_name }}
         run: |
+          source_sha="$(git rev-parse HEAD)"
+          tagged_sha="$(git rev-parse "${TAG}^{commit}")"
+          test "$source_sha" = "$tagged_sha"
+          test "$source_sha" = "$GITHUB_SHA"
+
           version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
           test "$TAG" = "v$version"
 
-      - name: Test tagged source
-        run: cargo test --all-targets --locked
+          {
+            echo "source_sha=$source_sha"
+            echo "version=$version"
+            echo "binary_name=catomic-x86_64-unknown-linux-gnu"
+            echo "package_name=catomic-$version.crate"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Install verification toolchains
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy,rustfmt
+          rustup toolchain install 1.87.0 --profile minimal
+
+      - name: Record toolchain and runner versions
+        run: |
+          {
+            rustc +stable -Vv
+            cargo +stable -V
+            rustc +1.87.0 -Vv
+            cargo +1.87.0 -V
+            gh --version | head -n 1
+            sha256sum --version | head -n 1
+            file --version | head -n 1
+            readelf --version | head -n 1
+            echo "runner_image_os=${ImageOS:-unknown}"
+            echo "runner_image_version=${ImageVersion:-unknown}"
+            sed -n '1,8p' /etc/os-release
+          } > toolchain.txt
+
+      - name: Verify tagged source
+        run: |
+          cargo +stable fmt --all -- --check
+          cargo +stable clippy --all-targets --locked -- -D warnings
+          cargo +1.87.0 check --all-targets --locked
+          cargo +stable test --all-targets --locked
+          cargo +stable test --all-targets --locked -- --ignored --test-threads=1 --nocapture
+
+      - name: Verify and capture packaged source
+        env:
+          VERSION: ${{ steps.identity.outputs.version }}
+        run: |
+          cargo +stable package --locked --list | tee package-contents.txt
+          cargo +stable package --locked
+          test -f "target/package/catomic-$VERSION.crate"
 
       - name: Build managed release binary
         env:
           CATOMIC_MANAGED_RELEASE: "1"
-        run: cargo build --release --locked
+        run: cargo +stable build --release --locked
 
       - name: Create checksummed release assets
+        env:
+          BINARY: ${{ steps.identity.outputs.binary_name }}
+          PACKAGE: ${{ steps.identity.outputs.package_name }}
+          SOURCE_SHA: ${{ steps.identity.outputs.source_sha }}
+          TAG: ${{ github.ref_name }}
         run: |
-          mkdir -p dist
-          install -m 0755 target/release/catomic dist/catomic-x86_64-unknown-linux-gnu
-          cd dist
-          sha256sum catomic-x86_64-unknown-linux-gnu > catomic-x86_64-unknown-linux-gnu.sha256
+          cat > source-verification.txt <<EOF
+          tag=$TAG
+          source_sha=$SOURCE_SHA
+          source_kind=tagged source
+          cargo +stable fmt --all -- --check=success
+          cargo +stable clippy --all-targets --locked -- -D warnings=success
+          cargo +1.87.0 check --all-targets --locked=success
+          cargo +stable test --all-targets --locked=success
+          cargo +stable test --all-targets --locked -- --ignored --test-threads=1 --nocapture=success
+          cargo +stable package --locked --list=success; output=package-contents.txt
+          cargo +stable package --locked=success; output=$PACKAGE
+          CATOMIC_MANAGED_RELEASE=1 cargo +stable build --release --locked=success; output=$BINARY
+          EOF
 
-      - name: Publish GitHub release
+          mkdir -p dist
+          install -m 0755 target/release/catomic "dist/$BINARY"
+          install -m 0644 "target/package/$PACKAGE" "dist/$PACKAGE"
+          install -m 0644 package-contents.txt toolchain.txt source-verification.txt dist/
+          (
+            cd dist
+            sha256sum "$BINARY" > "$BINARY.sha256"
+            sha256sum \
+              "$BINARY" \
+              "$BINARY.sha256" \
+              "$PACKAGE" \
+              package-contents.txt \
+              source-verification.txt \
+              toolchain.txt > SHA256SUMS
+            sha256sum --check --strict SHA256SUMS
+          )
+
+      - name: Attest binary and packaged source provenance
+        id: attest
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-checksums: dist/SHA256SUMS
+
+      - name: Publish immutable-by-policy release
+        env:
+          BINARY: ${{ steps.identity.outputs.binary_name }}
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE: ${{ steps.identity.outputs.package_name }}
+          SOURCE_SHA: ${{ steps.identity.outputs.source_sha }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          run_url="https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          evidence_url="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/release-evidence.md"
+          source_url="https://github.com/$GITHUB_REPOSITORY/tree/$SOURCE_SHA"
+          manual_url="https://github.com/$GITHUB_REPOSITORY/blob/$SOURCE_SHA/docs/v0.1-acceptance.md"
+          attestation_url="${{ steps.attest.outputs.attestation-url }}"
+
+          cat > release-notes.md <<EOF
+          ## Artifact-bound verification
+
+          This release is built from [$TAG at $SOURCE_SHA]($source_url), not from a branch head.
+
+          - [Release acceptance evidence]($evidence_url) is uploaded only after a fresh runner downloads and verifies the public assets.
+          - [Release workflow and job conclusions]($run_url)
+          - [Build provenance attestation]($attestation_url)
+          - [Historical/manual roadmap acceptance]($manual_url)
+
+          The public binary, packaged Cargo source, package file list, toolchain record,
+          source-verification result, and checksum manifests are attached below. Build
+          provenance binds the checksummed build outputs to this workflow and source SHA;
+          it is not a claim of byte-for-byte reproducibility on another machine.
+
+          Release assets and tags are never silently replaced. A failed verification or
+          corrected build requires a new tag and an explicit superseding release.
+          EOF
+
+          prerelease=()
+          if [[ "$TAG" == *-* ]]; then
+            prerelease+=(--prerelease --latest=false)
+          fi
+          gh release create "$TAG" \
+            "dist/$BINARY" \
+            "dist/$BINARY.sha256" \
+            "dist/$PACKAGE" \
+            dist/package-contents.txt \
+            dist/source-verification.txt \
+            dist/toolchain.txt \
+            dist/SHA256SUMS \
+            --verify-tag \
+            --generate-notes \
+            --notes-file release-notes.md \
+            --title "Catomic $TAG" \
+            "${prerelease[@]}"
+
+  verify-public:
+    name: Independently verify published assets
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      attestations: read
+      contents: write
+    steps:
+      - name: Check out the exact tagged verifier
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          fetch-depth: 0
+
+      - name: Download public release assets on a fresh runner
+        env:
+          BINARY: ${{ needs.publish.outputs.binary_name }}
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE: ${{ needs.publish.outputs.package_name }}
+          SOURCE_SHA: ${{ needs.publish.outputs.source_sha }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = "false"
+          mkdir public-assets
+          for asset in \
+            "$BINARY" \
+            "$BINARY.sha256" \
+            "$PACKAGE" \
+            package-contents.txt \
+            source-verification.txt \
+            toolchain.txt \
+            SHA256SUMS
+          do
+            gh release download "$TAG" --dir public-assets --pattern "$asset"
+          done
+
+      - name: Verify checksum, architecture, version, installed bytes, and PTY teardown
+        env:
+          BINARY: ${{ needs.publish.outputs.binary_name }}
+          SOURCE_SHA: ${{ needs.publish.outputs.source_sha }}
+          TAG: ${{ github.ref_name }}
+        run: scripts/verify-release.sh public-assets "$TAG" "$SOURCE_SHA" "$BINARY" | tee public-verification.txt
+
+      - name: Verify public build provenance
+        env:
+          BINARY: ${{ needs.publish.outputs.binary_name }}
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE: ${{ needs.publish.outputs.package_name }}
+          SOURCE_SHA: ${{ needs.publish.outputs.source_sha }}
+        run: |
+          policy=(
+            --repo "$GITHUB_REPOSITORY"
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
+            --source-digest "$SOURCE_SHA"
+            --source-ref "$GITHUB_REF"
+            --deny-self-hosted-runners
+          )
+          gh attestation verify "public-assets/$BINARY" "${policy[@]}"
+          gh attestation verify "public-assets/$PACKAGE" "${policy[@]}"
+
+      - name: Generate the final release evidence
+        env:
+          ATTESTATION_URL: ${{ needs.publish.outputs.attestation_url }}
+          BINARY: ${{ needs.publish.outputs.binary_name }}
+          PACKAGE: ${{ needs.publish.outputs.package_name }}
+          SOURCE_SHA: ${{ needs.publish.outputs.source_sha }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          run_url="https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          source_url="https://github.com/$GITHUB_REPOSITORY/tree/$SOURCE_SHA"
+          manual_url="https://github.com/$GITHUB_REPOSITORY/blob/$SOURCE_SHA/docs/v0.1-acceptance.md"
+          limitations_url="https://github.com/$GITHUB_REPOSITORY/blob/$SOURCE_SHA/README.md#limitations"
+
+          cat > release-evidence.md <<EOF
+          # Catomic $TAG release evidence
+
+          ## Identity and conclusions
+
+          - Release tag: $TAG
+          - Exact source commit: [$SOURCE_SHA]($source_url)
+          - Certified source kind: tagged source, not a branch head
+          - [Workflow run and authoritative conclusions]($run_url)
+          - Source verification and publication job: success
+          - Fresh-runner public-asset verification job: success
+          - [GitHub build provenance attestation]($ATTESTATION_URL)
+
+          This record certifies the named tag and public assets below. It does not certify
+          later master commits. The attestation establishes build provenance; this project
+          has not established byte-for-byte reproducible builds across independent machines.
+
+          ## Source and package verification
+
+          The exact commands and their successful results are recorded in
+          [source-verification.txt](https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/source-verification.txt).
+          The exact Cargo package contents are recorded in
+          [package-contents.txt](https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/package-contents.txt),
+          and the matching packaged source is $PACKAGE.
+
+          Toolchain and runner versions:
+
+          ~~~text
+          EOF
+          cat public-assets/toolchain.txt >> release-evidence.md
+          cat >> release-evidence.md <<EOF
+          ~~~
+
+          ## Released assets
+
+          | Asset | Bytes | SHA-256 | Architecture / version |
+          | --- | ---: | --- | --- |
+          EOF
+
+          while read -r digest name; do
+            name="${name#\*}"
+            size="$(stat -c %s "public-assets/$name")"
+            detail="metadata"
+            if [[ "$name" = "$BINARY" ]]; then
+              detail="x86-64 Linux ELF; catomic ${TAG#v}"
+            elif [[ "$name" = "$PACKAGE" ]]; then
+              detail="Cargo packaged source"
+            fi
+            printf '| %s | %s | %s | %s |\n' "$name" "$size" "$digest" "$detail" >> release-evidence.md
+          done < public-assets/SHA256SUMS
+
+          manifest_digest="$(sha256sum public-assets/SHA256SUMS | cut -d ' ' -f 1)"
+          manifest_size="$(stat -c %s public-assets/SHA256SUMS)"
+          printf '| SHA256SUMS | %s | %s | checksum manifest |\n' \
+            "$manifest_size" "$manifest_digest" >> release-evidence.md
+
+          cat >> release-evidence.md <<EOF
+
+          release-evidence.md is uploaded after this table is generated and therefore
+          cannot non-recursively contain its own digest.
+
+          ## Independent public verification
+
+          A fresh runner downloaded every listed asset from the published GitHub release,
+          then independently verified:
+
+          - the complete SHA256SUMS manifest and the updater-compatible per-binary checksum;
+          - x86-64 Linux ELF architecture with file and readelf;
+          - the exact catomic ${TAG#v} executable version;
+          - GitHub provenance for both the binary and packaged source;
+          - a temporary installed copy is byte-identical to the verified public binary;
+          - a real PTY can start the installed copy, quit cleanly, and observe mouse,
+            bracketed-paste, and alternate-screen teardown.
+
+          This workflow does not deploy Catomic elsewhere. The temporary installed smoke
+          copy is the only installed binary in scope, and cmp verified it byte-for-byte.
+
+          ## Manual acceptance and limitations
+
+          - [Historical/manual roadmap acceptance at the tagged source]($manual_url)
+          - [Known limitations at the tagged source]($limitations_url)
+
+          The roadmap record is historical evidence for its own named candidate SHA. This
+          release record is the artifact-bound evidence for $TAG.
+
+          ## Replacement policy
+
+          Published assets and tags are not overwritten or moved. If any asset or evidence
+          is wrong, the release remains visible as historical evidence, is explicitly marked
+          as failed or superseded, and a corrected build is published under a new tag.
+          EOF
+
+      - name: Publish and redownload the final evidence
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG" \
-            dist/catomic-x86_64-unknown-linux-gnu \
-            dist/catomic-x86_64-unknown-linux-gnu.sha256 \
-            --verify-tag \
-            --generate-notes \
-            --title "Catomic $TAG"
+          gh release upload "$TAG" release-evidence.md
+          mkdir evidence-redownload
+          gh release download "$TAG" --dir evidence-redownload --pattern release-evidence.md
+          cmp --silent release-evidence.md evidence-redownload/release-evidence.md
+
+      - name: Mark a public release whose verification failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          marker="VERIFICATION-FAILED-$GITHUB_RUN_ID.md"
+          cat > "$marker" <<EOF
+          # Public verification failed
+
+          Workflow run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+
+          This release did not complete independent public-asset verification. No existing
+          tag or asset was replaced. Do not use it as a verified release; any correction
+          must be published under a new tag.
+          EOF
+          gh release upload "$TAG" "$marker"

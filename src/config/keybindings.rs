@@ -71,9 +71,7 @@ pub(crate) fn load_from(path: &Path) -> io::Result<KeyBindings> {
 }
 
 pub(crate) fn load() -> io::Result<KeyBindings> {
-    let xdg = std::env::var_os("XDG_CONFIG_HOME");
-    let home = std::env::var_os("HOME");
-    match super::big_files::config_path(xdg.as_deref(), home.as_deref()) {
+    match super::user_file::optional_path() {
         Some(path) => load_from(&path),
         None => Ok(KeyBindings::default()),
     }

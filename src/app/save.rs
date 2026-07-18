@@ -285,6 +285,13 @@ fn do_atomic_save_to(app: &mut super::App, out: &mut dyn Write, target: PathBuf)
             app.message = super::recovery::after_save(app)
                 .err()
                 .map(|error| format!("Saved, but catnap cleanup failed: {error}"));
+            if crate::config::user_file::optional_path().as_deref() == Some(target.as_path()) {
+                let restart = "Restart Catomic to apply configuration changes.";
+                app.message = Some(match app.message.take() {
+                    Some(message) => format!("{message} {restart}"),
+                    None => format!("Saved configuration. {restart}"),
+                });
+            }
             super::hooks::trigger_save(app);
         }
         Err(e) => {

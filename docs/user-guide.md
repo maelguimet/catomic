@@ -906,6 +906,26 @@ No file is required. Unknown keys are ignored for forward compatibility, but a
 malformed recognized value is a startup error for settings loaded at startup.
 Project-only and model settings are loaded lazily when invoked.
 
+Run `config` from the in-editor command prompt to open that exact path as an
+ordinary editable buffer. If it is missing, Catomic asks before atomically
+creating an owner-only file from a documented, commented template. It never
+overwrites a file that appears during confirmation. Configuration is validated
+and applied as one document at startup, so restart Catomic after saving; the
+running session does not silently apply a partial reload.
+
+Shell workflows can discover, validate, or edit the same path without guessing
+the XDG resolution:
+
+```sh
+catomic config path
+catomic config check
+catomic config edit
+```
+
+`config check` is read-only. `config edit` asks before first creation and then
+launches `$VISUAL`, falling back to `$EDITOR`; it runs before terminal raw mode
+or the alternate screen is entered.
+
 The configured line-number default is:
 
 ```toml
@@ -1076,6 +1096,7 @@ Open the prompt with `Ctrl+Shift+P` or `F2`. Do not add a leading colon.
 | Command | Aliases | Purpose / requirement |
 | --- | --- | --- |
 | `help` | `shortcuts` | Open built-in help |
+| `config` | — | Open the resolved user config; confirm before first creation |
 | `save` | `write`, `w` | Save active buffer |
 | `save as PATH` | `save-as PATH`, `saveas PATH` | Save to a new path |
 | `open PATH` | `edit PATH`, `e PATH` | Open path in a buffer |

@@ -124,6 +124,7 @@ leading `:`.
 | --- | --- |
 | `open PATH`, `new`, `close`, `close!` | Manage buffers; `close!` drops edits |
 | `save`, `save as PATH` | Save the active buffer |
+| `config` | Open the resolved user configuration (confirm before first creation) |
 | `goto LINE`, `replace`, `replace-all` | Navigate and edit |
 | `project`, `plain` | Enter or leave opt-in Project mode |
 | `files`, `lint`, `diagnostics`, `dnext`, `dprev` | Run Project tools |
@@ -137,6 +138,11 @@ leading `:`.
 Catomic reads TOML from `$XDG_CONFIG_HOME/catomic/config.toml` or
 `~/.config/catomic/config.toml`. No configuration file is required. This example
 shows the most common settings:
+
+Use `config` in the command prompt to edit the exact active path, or use
+`catomic config path`, `catomic config check`, and `catomic config edit` from
+the shell. A missing file is created only after confirmation, from a commented
+owner-only template. Restart Catomic after saving configuration changes.
 
 ```toml
 [editor]

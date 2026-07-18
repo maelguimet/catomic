@@ -17,6 +17,7 @@ pub(crate) mod editor;
 pub(crate) mod keybindings;
 pub(crate) mod linters;
 pub(crate) mod llm;
+pub(crate) mod user_file;
 pub(crate) mod view_preferences;
 
 pub(crate) fn decode<T: DeserializeOwned>(text: &str) -> io::Result<T> {

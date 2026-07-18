@@ -32,6 +32,18 @@ fn main() {
         }
     };
     let run_options = match action {
+        cli::Action::Config(action) => {
+            let result = match action {
+                cli::ConfigAction::Path => config::user_file::print_path(),
+                cli::ConfigAction::Check => config::user_file::check(),
+                cli::ConfigAction::Edit => config::user_file::edit(),
+            };
+            if let Err(error) = result {
+                eprintln!("catomic: {error}");
+                std::process::exit(1);
+            }
+            return;
+        }
         cli::Action::Help => {
             cli::print_help();
             return;

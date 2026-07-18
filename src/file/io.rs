@@ -71,7 +71,7 @@ pub fn atomic_write_with(
     path: impl AsRef<Path>,
     write_contents: impl FnOnce(&mut dyn Write) -> io::Result<()>,
 ) -> io::Result<u64> {
-    atomic_write_with_policy(path, write_contents, false)
+    atomic_write_with_policy(path, write_contents, AtomicWritePolicy::Ordinary)
 }
 
 /// Atomically write a private sidecar with Unix mode 0600.
@@ -81,14 +81,42 @@ pub(crate) fn atomic_write_private_string(
     path: impl AsRef<Path>,
     contents: &str,
 ) -> io::Result<()> {
-    atomic_write_with_policy(path, |writer| writer.write_all(contents.as_bytes()), true).map(|_| ())
+    atomic_write_with_policy(
+        path,
+        |writer| writer.write_all(contents.as_bytes()),
+        AtomicWritePolicy::PrivateReplace,
+    )
+    .map(|_| ())
+}
+
+/// Atomically create an owner-only file, failing if any directory entry already
+/// exists at `path`. Unlike private recovery writes, this never replaces a
+/// raced target.
+pub(crate) fn atomic_create_private_string(
+    path: impl AsRef<Path>,
+    contents: &str,
+) -> io::Result<()> {
+    atomic_write_with_policy(
+        path,
+        |writer| writer.write_all(contents.as_bytes()),
+        AtomicWritePolicy::PrivateCreate,
+    )
+    .map(|_| ())
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AtomicWritePolicy {
+    Ordinary,
+    PrivateReplace,
+    PrivateCreate,
 }
 
 fn atomic_write_with_policy(
     path: impl AsRef<Path>,
     write_contents: impl FnOnce(&mut dyn Write) -> io::Result<()>,
-    private: bool,
+    policy: AtomicWritePolicy,
 ) -> io::Result<u64> {
+    let private = policy != AtomicWritePolicy::Ordinary;
     let target_state = atomic_write_target(path.as_ref(), private)?;
     let target = &target_state.path;
     let parent: PathBuf = target
@@ -141,10 +169,14 @@ fn atomic_write_with_policy(
             }
         };
 
-        let mut f = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temp_path)?;
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        if private {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut f = options.open(&temp_path)?;
         created_temp = true;
         #[cfg(unix)]
         if private {
@@ -173,9 +205,11 @@ fn atomic_write_with_policy(
         // Ensure file is closed before rename on all platforms.
         drop(f);
 
-        if private {
+        if policy == AtomicWritePolicy::PrivateReplace {
             fs::rename(&temp_path, target)?;
             created_temp = false;
+        } else if policy == AtomicWritePolicy::PrivateCreate {
+            commit_private_create(&temp_path, target, &mut created_temp)?;
         } else {
             #[cfg(target_os = "linux")]
             atomic_unix::commit(
@@ -208,6 +242,24 @@ fn atomic_write_with_policy(
         let _ = fs::remove_file(&temp_path);
     }
     res
+}
+
+fn commit_private_create(
+    temp_path: &Path,
+    target: &Path,
+    cleanup_temp: &mut bool,
+) -> io::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        atomic_unix::commit(temp_path, target, None, cleanup_temp)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        fs::hard_link(temp_path, target)?;
+        fs::remove_file(temp_path)?;
+        *cleanup_temp = false;
+        Ok(())
+    }
 }
 
 /// Resolve only ordinary save targets. Private sidecars deliberately replace a

@@ -6,7 +6,9 @@
 //! Phase: 2-bk configurable paged-file policy.
 
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(test)]
+use std::path::PathBuf;
 
 use serde::Deserialize;
 
@@ -52,28 +54,18 @@ pub(crate) fn load_from(path: &Path) -> io::Result<BigFileConfig> {
 }
 
 pub(crate) fn load() -> io::Result<BigFileConfig> {
-    let xdg = std::env::var_os("XDG_CONFIG_HOME");
-    let home = std::env::var_os("HOME");
-    match config_path(xdg.as_deref(), home.as_deref()) {
+    match super::user_file::optional_path() {
         Some(path) => load_from(&path),
         None => Ok(BigFileConfig::default()),
     }
 }
 
-pub(super) fn config_path(
+#[cfg(test)]
+fn config_path(
     xdg_config_home: Option<&std::ffi::OsStr>,
     home: Option<&std::ffi::OsStr>,
 ) -> Option<PathBuf> {
-    let root = xdg_config_home
-        .map(Path::new)
-        .filter(|path| path.is_absolute())
-        .map(Path::to_path_buf)
-        .or_else(|| {
-            home.map(Path::new)
-                .filter(|path| path.is_absolute())
-                .map(|home| home.join(".config"))
-        })?;
-    Some(root.join("catomic").join("config.toml"))
+    super::user_file::resolve_path(xdg_config_home, home).ok()
 }
 
 #[cfg(test)]

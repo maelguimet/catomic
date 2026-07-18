@@ -79,6 +79,22 @@ fn local_scope_is_predictable_and_global_actions_win_everywhere() {
 }
 
 #[test]
+fn separate_local_scopes_may_intentionally_reuse_a_chord() {
+    let bindings =
+        parse("[keybindings]\nprompt-cancel = [\"alt+x\"]\ncompletion-cancel = [\"alt+x\"]\n")
+            .unwrap();
+    let chord = key(KeyCode::Char('x'), KeyModifiers::ALT);
+    assert_eq!(
+        bindings.translate(Scope::Prompt, chord),
+        Some(key(KeyCode::Esc, KeyModifiers::NONE))
+    );
+    assert_eq!(
+        bindings.translate(Scope::Completion, chord),
+        Some(key(KeyCode::Esc, KeyModifiers::NONE))
+    );
+}
+
+#[test]
 fn collisions_name_both_actions_and_normalized_chord() {
     let error = parse("[keybindings]\nsave = [\"control+W\"]\n")
         .expect_err("save collides with close default");
@@ -91,6 +107,13 @@ fn collisions_name_both_actions_and_normalized_chord() {
         .expect_err("normalized user duplicates must fail");
     assert!(error.to_string().contains("save"));
     assert!(error.to_string().contains("close"));
+
+    let error = parse("[keybindings]\nsave = [\"alt+s\"]\n\"ALT+S\" = \"open\"\n")
+        .expect_err("legacy and action forms must not silently override each other");
+    let message = error.to_string();
+    assert!(message.contains("save"), "{message}");
+    assert!(message.contains("open"), "{message}");
+    assert!(message.contains("alt+s"), "{message}");
 }
 
 #[test]

@@ -183,23 +183,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn names_are_unique_and_user_guide_inventory_covers_every_action() {
+    fn names_are_unique_and_user_guide_inventory_matches_registry() {
         let mut names = std::collections::HashSet::new();
         let guide = include_str!("../../docs/user-guide.md");
         let inventory = guide
             .split_once("<!-- action-registry-start -->")
             .and_then(|(_, tail)| tail.split_once("<!-- action-registry-end -->"))
             .map(|(inventory, _)| inventory)
-            .expect("user guide action registry markers");
+            .expect("user guide action registry markers")
+            .trim()
+            .strip_prefix("```text\n")
+            .and_then(|inventory| inventory.strip_suffix("\n```"))
+            .expect("user guide action registry text fence");
         for descriptor in REGISTRY {
             assert!(names.insert(descriptor.name), "duplicate action name");
-            assert!(
-                inventory
-                    .split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '-'))
-                    .any(|word| word == descriptor.name),
-                "user guide is missing action {}",
-                descriptor.name
-            );
         }
+        assert_eq!(inventory, registry_reference());
+    }
+
+    fn registry_reference() -> String {
+        REGISTRY
+            .iter()
+            .map(|descriptor| {
+                format!(
+                    "{} | {} | {}",
+                    descriptor.name,
+                    descriptor
+                        .scopes
+                        .iter()
+                        .map(|scope| scope.name())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                    descriptor.defaults.join(", ")
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 }

@@ -80,7 +80,13 @@ impl KeyChord {
 
 struct Builder {
     bindings: KeyBindings,
-    origins: HashMap<(Scope, ShortcutChord), (Action, String)>,
+    origins: HashMap<(Scope, ShortcutChord), (Action, String, bool)>,
+}
+
+#[derive(Clone, Copy)]
+enum InsertPolicy {
+    RejectCollision,
+    ReplaceDefault,
 }
 
 impl Builder {
@@ -98,7 +104,14 @@ impl Builder {
                 let chord = parse_shortcut(raw)?;
                 validate_input(entry.action, chord, raw)?;
                 for scope in entry.scopes {
-                    builder.insert(*scope, chord, entry.action, raw, false)?;
+                    builder.insert(
+                        *scope,
+                        chord,
+                        entry.action,
+                        raw,
+                        false,
+                        InsertPolicy::RejectCollision,
+                    )?;
                     if let ShortcutChord::Key(key) = chord {
                         builder.bindings.default_keys.insert((*scope, key));
                     }
@@ -111,7 +124,7 @@ impl Builder {
     fn remove_action(&mut self, action: Action) {
         self.bindings.keys.retain(|_, bound| *bound != action);
         self.bindings.mouse.retain(|_, bound| *bound != action);
-        self.origins.retain(|_, (bound, _)| *bound != action);
+        self.origins.retain(|_, (bound, _, _)| *bound != action);
     }
 
     fn insert(
@@ -120,15 +133,19 @@ impl Builder {
         chord: ShortcutChord,
         action: Action,
         raw: &str,
-        overwrite: bool,
+        configured: bool,
+        policy: InsertPolicy,
     ) -> io::Result<()> {
         let key = (scope, chord);
-        if !overwrite {
-            if let Some((other, other_raw)) = self.origins.get(&key) {
+        if let Some((other, other_raw, other_configured)) = self.origins.get(&key) {
+            let replaces_default =
+                matches!(policy, InsertPolicy::ReplaceDefault) && !other_configured;
+            if !replaces_default {
                 return Err(collision(scope, *other, other_raw, action, raw, chord));
             }
         }
-        self.origins.insert(key, (action, raw.to_string()));
+        self.origins
+            .insert(key, (action, raw.to_string(), configured));
         match chord {
             ShortcutChord::Key(chord) => {
                 self.bindings.keys.insert((scope, chord), action);
@@ -173,7 +190,14 @@ pub(crate) fn parse(text: &str) -> io::Result<KeyBindings> {
         let descriptor = actions::descriptor(configured.action);
         for (chord, raw) in configured.chords {
             for scope in descriptor.scopes {
-                builder.insert(*scope, chord, configured.action, &raw, false)?;
+                builder.insert(
+                    *scope,
+                    chord,
+                    configured.action,
+                    &raw,
+                    true,
+                    InsertPolicy::RejectCollision,
+                )?;
             }
         }
     }
@@ -186,6 +210,7 @@ pub(crate) fn parse(text: &str) -> io::Result<KeyBindings> {
                 configured.action,
                 &configured.raw_chord,
                 true,
+                InsertPolicy::ReplaceDefault,
             )?;
         }
     }
@@ -195,7 +220,6 @@ pub(crate) fn parse(text: &str) -> io::Result<KeyBindings> {
 fn decode_overrides(table: toml::Table) -> io::Result<(Vec<ActionOverride>, Vec<LegacyOverride>)> {
     let mut actions_out = Vec::new();
     let mut legacy_out = Vec::new();
-    let mut legacy_chords = HashMap::<ShortcutChord, (Action, String)>::new();
     for (raw_name, value) in table {
         if let Some(action) = actions::parse_action(&raw_name) {
             let values = value.as_array().ok_or_else(|| {
@@ -226,16 +250,6 @@ fn decode_overrides(table: toml::Table) -> io::Result<(Vec<ActionOverride>, Vec<
         let chord = parse_shortcut(&raw_name)?;
         validate_input(action, chord, &raw_name)?;
         validate_safe_key(chord, &raw_name)?;
-        if let Some((other, other_raw)) = legacy_chords.insert(chord, (action, raw_name.clone())) {
-            return Err(collision(
-                actions::descriptor(action).scopes[0],
-                other,
-                &other_raw,
-                action,
-                &raw_name,
-                chord,
-            ));
-        }
         legacy_out.push(LegacyOverride {
             chord,
             raw_chord: raw_name,

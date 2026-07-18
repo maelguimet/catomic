@@ -10,7 +10,7 @@ It is also in open beta. Use it, break it, tell me what got weird. But back up
 anything precious and read the [file-semantics limitations](#limitations) before
 making it your only editor.
 
-![Catomic: nano but gooder](docs/assets/catomic.jpg)
+![Catomic terminal text editor open on a Rust source file](docs/assets/catomic.jpg)
 
 ## The good stuff
 

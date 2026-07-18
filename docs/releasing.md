@@ -69,8 +69,9 @@ demonstrated.
 
 Release tags are never moved, and published assets are never overwritten or
 deleted to conceal a mistake. The workflow deliberately does not use
-`gh release upload --clobber`. If fresh public verification fails, it attaches
-a `VERIFICATION-FAILED-<run-id>.md` marker and the run remains failed.
+`gh release upload --clobber`. If publication or fresh public verification
+fails after a release exists, the workflow attaches a
+`VERIFICATION-FAILED-<run-id>.md` marker and the run remains failed.
 
 A correction requires a new version and tag. Keep the old release visible,
 mark it as failed or superseded in its notes, and link both releases to each

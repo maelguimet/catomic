@@ -187,6 +187,26 @@ jobs:
             --title "Catomic $TAG" \
             "${prerelease[@]}"
 
+      - name: Mark a public release if publication fails
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            marker="VERIFICATION-FAILED-$GITHUB_RUN_ID.md"
+            cat > "$marker" <<EOF
+          # Publication or verification failed
+
+          Workflow run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+
+          This release did not complete managed publication. No existing tag or asset was
+          replaced. Do not use it as a verified release; any correction must be published
+          under a new tag.
+          EOF
+            gh release upload "$TAG" "$marker" --repo "$GITHUB_REPOSITORY"
+          fi
+
   verify-public:
     name: Independently verify published assets
     needs: publish
@@ -379,4 +399,4 @@ jobs:
           tag or asset was replaced. Do not use it as a verified release; any correction
           must be published under a new tag.
           EOF
-          gh release upload "$TAG" "$marker"
+          gh release upload "$TAG" "$marker" --repo "$GITHUB_REPOSITORY"

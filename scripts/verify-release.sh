@@ -11,7 +11,6 @@ if [[ $# -ne 4 ]]; then
   exit 2
 fi
 
-asset_dir="$(realpath -- "$1")"
 tag="$2"
 source_sha="$3"
 binary_name="$4"
@@ -23,10 +22,14 @@ die() {
   exit 1
 }
 
+asset_input="$1"
+[[ -d "$asset_input" && ! -L "$asset_input" ]] || \
+  die "asset directory is not a real directory"
+asset_dir="$(realpath -- "$asset_input")"
+
 [[ "$tag" == v* && "$version" != "$tag" ]] || die "tag must start with v"
 [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || die "source SHA must be 40 lowercase hex characters"
 [[ "$binary_name" == "catomic-x86_64-unknown-linux-gnu" ]] || die "unexpected binary name"
-[[ -d "$asset_dir" && ! -L "$asset_dir" ]] || die "asset directory is not a real directory"
 
 required_tools=(cmp file grep install mktemp python3 readelf realpath sha256sum stat)
 for tool in "${required_tools[@]}"; do
@@ -78,7 +81,17 @@ file_info="$(file -b -- "$asset_dir/$binary_name")"
 readelf -h "$asset_dir/$binary_name" | grep -Eq \
   'Machine:[[:space:]]+Advanced Micro Devices X86-64' || die "ELF machine is not x86-64"
 
-reported_version="$("$asset_dir/$binary_name" --version)"
+temp_dir="$(mktemp -d)"
+trap 'rm -rf -- "$temp_dir"' EXIT
+mkdir -p "$temp_dir/bin" "$temp_dir/config" "$temp_dir/data" "$temp_dir/state"
+installed="$temp_dir/bin/catomic"
+install -m 0755 "$asset_dir/$binary_name" "$installed"
+cmp --silent "$asset_dir/$binary_name" "$installed" || \
+  die "installed copy differs from public asset"
+
+# Release downloads are regular data files and need not retain an executable bit.
+# Execute only the byte-identical installed copy whose mode we control.
+reported_version="$("$installed" --version)"
 [[ "$reported_version" == "catomic $version" ]] || \
   die "binary reported $reported_version instead of catomic $version"
 grep -Fxq Cargo.toml "$asset_dir/package-contents.txt" || die "package list omits Cargo.toml"
@@ -88,13 +101,6 @@ grep -Fxq "tag=$tag" "$asset_dir/source-verification.txt" || die "verification t
 grep -Fxq "source_sha=$source_sha" "$asset_dir/source-verification.txt" || \
   die "verification source SHA differs"
 
-temp_dir="$(mktemp -d)"
-trap 'rm -rf -- "$temp_dir"' EXIT
-mkdir -p "$temp_dir/bin" "$temp_dir/config" "$temp_dir/data" "$temp_dir/state"
-installed="$temp_dir/bin/catomic"
-install -m 0755 "$asset_dir/$binary_name" "$installed"
-cmp --silent "$asset_dir/$binary_name" "$installed" || \
-  die "installed copy differs from public asset"
 printf 'release PTY smoke\n' > "$temp_dir/fixture.txt"
 
 python3 - "$installed" "$temp_dir/fixture.txt" "$temp_dir/pty-transcript" "$temp_dir" <<'PY'

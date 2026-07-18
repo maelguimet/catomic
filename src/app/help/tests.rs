@@ -187,10 +187,15 @@ fn narrow_help_reaches_wrapped_model_setup_without_horizontal_scrolling() {
         .lines()
         .position(|line| line.contains("api_key_env names an environment variable"))
         .expect("model secret-indirection guidance must be present");
-    app.help_view.as_mut().unwrap().buffer.set_cursor(Cursor {
-        row: model_row,
-        col: 0,
-    });
+    app.surfaces
+        .help
+        .as_mut()
+        .unwrap()
+        .buffer
+        .set_cursor(Cursor {
+            row: model_row,
+            col: 0,
+        });
     out.clear();
     handle_key(
         &mut app,
@@ -223,10 +228,15 @@ fn narrow_help_soft_wraps_long_safety_lines_and_keeps_navigation_bounded() {
         .lines()
         .position(|line| line.contains("trusted /bin/sh command"))
         .expect("external-command safety line must be present");
-    app.help_view.as_mut().unwrap().buffer.set_cursor(Cursor {
-        row: target_row,
-        col: 0,
-    });
+    app.surfaces
+        .help
+        .as_mut()
+        .unwrap()
+        .buffer
+        .set_cursor(Cursor {
+            row: target_row,
+            col: 0,
+        });
     out.clear();
     handle_key(
         &mut app,

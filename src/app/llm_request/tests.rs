@@ -99,7 +99,11 @@ fn confirmed_loopback_response_enters_preview_then_applies_on_second_enter() {
     poll_until_done(&mut app, &mut out);
     server.join().unwrap();
 
-    assert!(app.llm_preview.is_some(), "status: {:?}", app.message);
+    assert!(
+        app.surfaces.llm_preview.is_some(),
+        "status: {:?}",
+        app.message
+    );
     assert_eq!(app.buffer.to_string(), "one\ntwo\n");
     app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
         .unwrap();
@@ -128,7 +132,7 @@ fn current_file_patch_for_another_path_is_refused_before_preview() {
     poll_until_done(&mut app, &mut out);
     server.join().unwrap();
 
-    assert!(app.llm_preview.is_none());
+    assert!(app.surfaces.llm_preview.is_none());
     assert_eq!(app.buffer.to_string(), original);
     assert!(app
         .message
@@ -189,7 +193,7 @@ fn path_change_while_model_works_discards_response() {
     poll_until_done(&mut app, &mut out);
     server.join().unwrap();
 
-    assert!(app.llm_preview.is_none());
+    assert!(app.surfaces.llm_preview.is_none());
     assert_eq!(app.buffer.to_string(), original);
     assert!(app
         .message
@@ -221,7 +225,11 @@ fn confirmed_marked_region_response_previews_then_replaces_only_selection() {
     handle_key(&mut app, &mut out, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
     poll_until_done(&mut app, &mut out);
     server.join().unwrap();
-    assert!(app.llm_preview.is_some(), "status: {:?}", app.message);
+    assert!(
+        app.surfaces.llm_preview.is_some(),
+        "status: {:?}",
+        app.message
+    );
     assert_eq!(app.buffer.to_string(), "one\ntwo\nthree\n");
 
     app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
@@ -253,8 +261,8 @@ fn confirmed_explain_response_opens_read_only_answer_instead_of_edit_preview() {
     poll_until_done(&mut app, &mut out);
     server.join().unwrap();
 
-    assert!(app.llm_answer.is_some());
-    assert!(app.llm_preview.is_none());
+    assert!(app.surfaces.llm_answer.is_some());
+    assert!(app.surfaces.llm_preview.is_none());
     assert_eq!(app.buffer.to_string(), "fn identity(x: i32) -> i32 { x }");
     app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
         .unwrap();
@@ -315,7 +323,11 @@ fn confirmed_command_backend_uses_the_same_preview_apply_undo_and_no_save_path()
     handle_key(&mut app, &mut out, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
     poll_until_done(&mut app, &mut out);
     assert!(marker.exists());
-    assert!(app.llm_preview.is_some(), "status: {:?}", app.message);
+    assert!(
+        app.surfaces.llm_preview.is_some(),
+        "status: {:?}",
+        app.message
+    );
     assert_eq!(fs::read_to_string(&source_path).unwrap(), "one\ntwo\n");
 
     app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))

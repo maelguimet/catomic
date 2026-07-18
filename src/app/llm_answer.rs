@@ -26,7 +26,7 @@ pub(crate) fn show(app: &mut super::App, out: &mut dyn Write, answer: &str) -> i
     super::project_files::close_view(app);
     super::llm_preview::close(app);
     close(app);
-    app.llm_answer = Some(AnswerView {
+    app.surfaces.llm_answer = Some(AnswerView {
         buffer: PieceTable::from_text(answer),
         source_scroll_top: app.screen.scroll_top,
         source_scroll_left: app.screen.scroll_left,
@@ -79,17 +79,18 @@ pub(crate) fn handle_paste(app: &mut super::App, out: &mut dyn Write) -> io::Res
 }
 
 pub(crate) fn is_viewing(app: &super::App) -> bool {
-    app.llm_answer.is_some()
+    app.surfaces.llm_answer.is_some()
 }
 
 pub(crate) fn display_buffer(app: &super::App) -> Option<&dyn Buffer> {
-    app.llm_answer
+    app.surfaces
+        .llm_answer
         .as_ref()
         .map(|answer| &answer.buffer as &dyn Buffer)
 }
 
 pub(crate) fn close(app: &mut super::App) -> bool {
-    if let Some(answer) = app.llm_answer.take() {
+    if let Some(answer) = app.surfaces.llm_answer.take() {
         app.screen.scroll_top = answer.source_scroll_top;
         app.screen.scroll_left = answer.source_scroll_left;
         true
@@ -106,7 +107,12 @@ enum Move {
 }
 
 fn move_cursor(app: &mut super::App, movement: Move) {
-    let buffer = &mut app.llm_answer.as_mut().expect("answer active").buffer;
+    let buffer = &mut app
+        .surfaces
+        .llm_answer
+        .as_mut()
+        .expect("answer active")
+        .buffer;
     match movement {
         Move::Left => buffer.move_left(),
         Move::Right => buffer.move_right(),
@@ -122,7 +128,12 @@ fn move_page(app: &mut super::App, forward: bool) {
 }
 
 fn set_line_edge(app: &mut super::App, end: bool) {
-    let buffer = &mut app.llm_answer.as_mut().expect("answer active").buffer;
+    let buffer = &mut app
+        .surfaces
+        .llm_answer
+        .as_mut()
+        .expect("answer active")
+        .buffer;
     let row = buffer.cursor().row;
     let col = if end {
         buffer.line_char_count(row).unwrap_or(0)
@@ -134,6 +145,7 @@ fn set_line_edge(app: &mut super::App, end: bool) {
 
 fn reveal_cursor(app: &mut super::App) {
     let cursor = app
+        .surfaces
         .llm_answer
         .as_ref()
         .expect("answer active")

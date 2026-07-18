@@ -8,6 +8,7 @@ use std::io::{self, Write};
 
 pub(super) fn apply(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
     if app
+        .surfaces
         .llm_preview
         .as_ref()
         .is_some_and(|preview| preview.repo_guard.is_some())
@@ -23,6 +24,7 @@ fn begin_repo_check(app: &mut super::super::App, out: &mut dyn Write) -> io::Res
         return refuse(app, out, message);
     }
     let broker = app
+        .surfaces
         .llm_preview
         .as_mut()
         .and_then(|preview| preview.repo_guard.take())
@@ -40,7 +42,7 @@ fn begin_repo_check(app: &mut super::super::App, out: &mut dyn Write) -> io::Res
 }
 
 pub(super) fn finish_apply(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
-    let preview = app.llm_preview.take().expect("preview active");
+    let preview = app.surfaces.llm_preview.take().expect("preview active");
     app.screen.scroll_top = preview.source_scroll_top;
     app.screen.scroll_left = preview.source_scroll_left;
     if app.file.path != preview.source_path {
@@ -72,7 +74,7 @@ pub(super) fn finish_apply(app: &mut super::super::App, out: &mut dyn Write) -> 
 }
 
 fn identity_error(app: &super::super::App) -> Option<&'static str> {
-    let preview = app.llm_preview.as_ref().expect("preview active");
+    let preview = app.surfaces.llm_preview.as_ref().expect("preview active");
     if app.file.path != preview.source_path {
         return Some("Active file path changed; LLM proposal was not applied.");
     }

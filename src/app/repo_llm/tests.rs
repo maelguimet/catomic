@@ -149,7 +149,7 @@ fn confirmed_patch_previews_but_repo_drift_blocks_apply() {
     handle_key(&mut app, &mut out, key(KeyCode::Enter)).unwrap();
     poll_until_finished(&mut app, &mut out);
     server.join().unwrap();
-    assert!(app.llm_preview.is_some());
+    assert!(app.surfaces.llm_preview.is_some());
     assert_eq!(app.buffer.to_string(), original);
 
     fs::write(repo.0.join("other.txt"), "changed again\n").unwrap();
@@ -158,7 +158,7 @@ fn confirmed_patch_previews_but_repo_drift_blocks_apply() {
         app.repo_llm_state.as_ref(),
         Some(RepoLlmState::CheckingApply(_))
     ));
-    assert!(app.llm_preview.is_some());
+    assert!(app.surfaces.llm_preview.is_some());
     poll_until_finished(&mut app, &mut out);
     assert_eq!(app.buffer.to_string(), original);
     assert!(app
@@ -191,7 +191,7 @@ fn confirmed_repo_patch_checks_then_applies_as_one_undo_step() {
     poll_until_finished(&mut app, &mut out);
 
     assert_eq!(app.buffer.to_string(), "one\nTWO\n");
-    assert!(app.llm_preview.is_none());
+    assert!(app.surfaces.llm_preview.is_none());
     app.buffer.undo();
     assert_eq!(app.buffer.to_string(), original);
     assert_eq!(app.buffer.edit_history_position(), original_position);
@@ -242,7 +242,11 @@ fn confirmed_command_backend_reuses_repo_drift_preview_and_no_save_contract() {
     handle_key(&mut app, &mut out, key(KeyCode::Enter)).unwrap();
     poll_until_finished(&mut app, &mut out);
     assert!(marker.exists());
-    assert!(app.llm_preview.is_some(), "status: {:?}", app.message);
+    assert!(
+        app.surfaces.llm_preview.is_some(),
+        "status: {:?}",
+        app.message
+    );
     assert_eq!(
         fs::read_to_string(repo.0.join("note.txt")).unwrap(),
         "one\ntwo\n"
@@ -273,7 +277,7 @@ fn patch_for_a_different_repo_file_is_refused_before_preview() {
     poll_until_finished(&mut app, &mut out);
     server.join().unwrap();
 
-    assert!(app.llm_preview.is_none());
+    assert!(app.surfaces.llm_preview.is_none());
     assert_eq!(app.buffer.to_string(), original);
     assert!(app
         .message

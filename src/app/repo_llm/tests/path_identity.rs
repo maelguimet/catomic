@@ -71,7 +71,7 @@ fn path_change_while_repo_model_works_discards_response() {
     poll_until_finished(&mut app, &mut out);
     server.join().unwrap();
 
-    assert!(app.llm_preview.is_none());
+    assert!(app.surfaces.llm_preview.is_none());
     assert_eq!(app.buffer.to_string(), original);
     assert!(app
         .message

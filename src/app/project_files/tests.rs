@@ -145,6 +145,6 @@ fn picker_is_read_only_and_plain_descent_drops_project_state() {
 
     project_mode::switch_to_plain(&mut app, &mut out).unwrap();
     assert!(app.project.is_none());
-    assert!(app.project_files_view.is_none());
+    assert!(app.surfaces.project_files.is_none());
     assert!(app.caps.is_plain_safe());
 }

@@ -1,0 +1,90 @@
+//! Purpose: run the single terminal event loop and dispatch normalized terminal events.
+//! Owns: setup/teardown guards, runtime polling order, event reads, and resize dispatch.
+//! Must not: decode terminal bytes, implement editor commands, scan projects, or call networks.
+//! Invariants: background work is polled once per loop; terminal teardown is guard-backed.
+//! Phase: bounded post-beta App ownership cleanup.
+
+use std::io::{self, Write};
+
+use crossterm::event::{self, Event, KeyEvent};
+
+use crate::terminal as term;
+
+use super::{
+    autocomplete, command_prompt, external_command, hooks, inline_clanker, input, lint,
+    llm_request, model_picker, project_files, recovery, repo_llm, search, selection, viewport,
+    watch, App,
+};
+
+impl App {
+    /// The main goblin loop. Keep it obvious.
+    pub fn run(&mut self) -> io::Result<()> {
+        let mut stdout = io::stdout();
+        let _guard = term::TerminalGuard::new();
+        term::setup(&mut stdout)?;
+        if let Ok((width, height)) = crossterm::terminal::size() {
+            self.screen.update_size(width, height);
+        }
+        let _panic_guard = term::PanicRestoreGuard::install();
+        hooks::trigger_open(self);
+        if autocomplete::configured_default_enabled(self) {
+            autocomplete::begin_enable(self, &mut stdout)?;
+        } else {
+            self.render(&mut stdout)?;
+        }
+
+        while !self.should_quit && term::termination_signal().is_none() {
+            self.poll_runtime_tasks(&mut stdout)?;
+            if event::poll(std::time::Duration::from_millis(100))? {
+                self.dispatch_terminal_event(&mut stdout, event::read()?)?;
+            }
+        }
+
+        term::teardown(&mut stdout)?;
+        Ok(())
+    }
+
+    fn poll_runtime_tasks(&mut self, out: &mut dyn Write) -> io::Result<()> {
+        watch::check_file_watcher_once_and_render(self, out)?;
+        search::poll_search(self, out)?;
+        command_prompt::poll_goto(self, out)?;
+        lint::poll(self, out)?;
+        project_files::poll(self, out)?;
+        model_picker::poll(self, out)?;
+        llm_request::poll(self, out)?;
+        inline_clanker::poll(self, out)?;
+        repo_llm::poll(self, out)?;
+        external_command::poll(self, out)?;
+        hooks::pump(self, out)?;
+        recovery::poll(self, out)?;
+        autocomplete::poll(self, out)
+    }
+
+    fn dispatch_terminal_event(&mut self, out: &mut dyn Write, event: Event) -> io::Result<()> {
+        match event {
+            Event::Key(key) => self.handle_key(key),
+            Event::Paste(text) => input::handle_paste(self, out, &text),
+            Event::Mouse(mouse) => selection::handle_mouse(self, out, mouse),
+            Event::Resize(width, height) => self.handle_resize(width, height, out),
+            _ => Ok(()),
+        }
+    }
+
+    pub(super) fn handle_key(&mut self, key: KeyEvent) -> io::Result<()> {
+        input::handle_key(self, key)
+    }
+
+    #[cfg(test)]
+    pub(super) fn handle_key_with(&mut self, out: &mut dyn Write, key: KeyEvent) -> io::Result<()> {
+        input::handle_key_with(self, out, key)
+    }
+
+    pub(super) fn handle_resize(
+        &mut self,
+        width: u16,
+        height: u16,
+        out: &mut dyn Write,
+    ) -> io::Result<()> {
+        viewport::handle_resize(self, width, height, out)
+    }
+}

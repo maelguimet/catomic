@@ -1,10 +1,12 @@
 //! Purpose: parse Catomic's small explicit command-line interface.
-//! Owns: top-level actions, update flags, usage errors, and help text.
+//! Owns: top-level actions, update flags, and usage errors.
 //! Must not: inspect files, contact a network, update state, or start the editor.
 //! Invariants: `update` is a subcommand only in argv[1]; `-- update` is a file.
 //! Phase: safe self-update workflow.
 
 use std::ffi::OsString;
+
+mod help;
 
 pub(crate) const EXIT_USAGE: i32 = 2;
 
@@ -64,13 +66,13 @@ where
 fn parse_update(args: &[String]) -> Result<Action, String> {
     let mut options = UpdateOptions::default();
     for arg in args {
-        match arg.as_str() {
-            "-h" | "--help" => return Ok(Action::UpdateHelp),
-            "--check" => options.check = true,
-            "--yes" => options.assume_yes = true,
-            "--backup" => options.backup = true,
-            "--validate-config" => return Ok(Action::ValidateConfig),
-            _ => return Err(format!("unknown update option {arg:?}")),
+        match help::update_option(arg) {
+            Some(help::UpdateOption::Help) => return Ok(Action::UpdateHelp),
+            Some(help::UpdateOption::Check) => options.check = true,
+            Some(help::UpdateOption::Yes) => options.assume_yes = true,
+            Some(help::UpdateOption::Backup) => options.backup = true,
+            Some(help::UpdateOption::ValidateConfig) => return Ok(Action::ValidateConfig),
+            None => return Err(format!("unknown update option {arg:?}")),
         }
     }
     if options.check && (options.assume_yes || options.backup) {
@@ -88,13 +90,13 @@ fn parse_files(args: Vec<String>) -> Result<Action, String> {
             files.push(arg);
             continue;
         }
-        match arg.as_str() {
-            "--" => positional_only = true,
-            "--allow-missing" => allow_missing = true,
-            "-h" | "--help" => return Ok(Action::Help),
-            "-V" | "--version" => return Ok(Action::Version),
-            _ if arg.starts_with('-') => return Err(format!("unknown option {arg:?}")),
-            _ => files.push(arg),
+        match help::main_option(&arg) {
+            Some(help::MainOption::PositionalOnly) => positional_only = true,
+            Some(help::MainOption::AllowMissing) => allow_missing = true,
+            Some(help::MainOption::Help) => return Ok(Action::Help),
+            Some(help::MainOption::Version) => return Ok(Action::Version),
+            None if arg.starts_with('-') => return Err(format!("unknown option {arg:?}")),
+            None => files.push(arg),
         }
     }
     Ok(Action::Run(RunOptions {
@@ -104,16 +106,11 @@ fn parse_files(args: Vec<String>) -> Result<Action, String> {
 }
 
 pub(crate) fn print_help() {
-    println!(
-        "catomic {}\n\nUsage:\n  catomic [--allow-missing] [FILE]...\n  catomic update [--check] [--yes] [--backup]\n  catomic --help\n  catomic --version\n\nOptions:\n  --allow-missing\n            Explicitly allow several file arguments when any do not exist\n\nUse `catomic -- update` to open a file literally named `update`.\nInside the editor, press Ctrl+H or F1 for shortcuts.",
-        env!("CARGO_PKG_VERSION")
-    );
+    print!("{}", help::main_help(env!("CARGO_PKG_VERSION")));
 }
 
 pub(crate) fn print_update_help() {
-    println!(
-        "catomic update\n\nUsage:\n  catomic update\n  catomic update --check\n  catomic update --yes\n  catomic update --backup\n\nOptions:\n  --check   Report update availability without writing anything\n  --yes     Apply non-interactively\n  --backup  Back up user-owned configuration and state before applying\n  -h, --help\n            Show this help"
-    );
+    print!("{}", help::update_help());
 }
 
 #[cfg(test)]
@@ -153,8 +150,12 @@ mod tests {
 
     #[test]
     fn parses_help_version_and_literal_options() {
-        assert_eq!(parse(["--help"]).unwrap(), Action::Help);
-        assert_eq!(parse(["-V"]).unwrap(), Action::Version);
+        for spelling in ["-h", "--help"] {
+            assert_eq!(parse([spelling]).unwrap(), Action::Help);
+        }
+        for spelling in ["-V", "--version"] {
+            assert_eq!(parse([spelling]).unwrap(), Action::Version);
+        }
         assert_eq!(parse(["--", "--help"]).unwrap(), run(&["--help"], false));
     }
 
@@ -172,6 +173,23 @@ mod tests {
             parse(["--", "--allow-missing"]).unwrap(),
             run(&["--allow-missing"], false)
         );
+    }
+
+    #[test]
+    fn parser_recognizes_every_cataloged_option() {
+        for spec in help::MAIN_OPTIONS {
+            for spelling in spec.spellings {
+                assert!(parse([spelling]).is_ok(), "main parser rejected {spelling}");
+            }
+        }
+        for spec in help::UPDATE_OPTIONS {
+            for spelling in spec.spellings {
+                assert!(
+                    parse(["update", spelling]).is_ok(),
+                    "update parser rejected {spelling}"
+                );
+            }
+        }
     }
 
     #[cfg(unix)]

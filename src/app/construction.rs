@@ -138,8 +138,8 @@ mod tests {
         assert!(app.pending_llm_request.is_none());
         assert!(app.llm_task.is_none());
         assert!(app.repo_llm_state.is_none());
-        assert!(app.model_picker.pending.is_none());
-        assert!(app.inline_clanker.running.is_none());
+        assert!(!model_picker::is_viewing(&app));
+        assert!(!inline_clanker::is_busy(&app));
         assert!(app.autocomplete.running.is_none());
     }
 }

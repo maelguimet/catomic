@@ -1,23 +1,25 @@
 //! Purpose: route normalized key and paste events into explicit App/editor actions.
 //! Owns: key precedence, ordinary edit dispatch, and common post-edit cleanup.
 //! Must not: decode raw terminal bytes, access buffer internals, render content, or network.
-//! Invariants: active local surfaces handle raw keys before normal-mode overrides;
-//!   guarded shortcuts win over text input; one user edit clears stale confirmations.
-//! Phase: 3-d keyboard selection and bracketed-paste integration.
+//! Invariants: scoped normalization precedes active surfaces; guarded editor actions win over
+//!   text input; one user edit clears stale confirmations.
+//! Phase: 3-d keyboard selection, with bounded post-beta routing cleanup.
 
 use std::io::{self, Write};
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::KeyEvent;
 
 use crate::help_catalog::{self, EditorAction};
 
 use super::file_state::refresh_dirty;
 use super::{
-    autocomplete, buffers, command_prompt, completion, external_command, help, indentation,
-    inline_clanker, lint, llm_answer, llm_preview, llm_request, model_picker, navigation,
-    overwrite, paging, project_files, recovery, reload, replace, repo_llm, save, search, selection,
-    undo_redo, view,
+    autocomplete, buffers, command_prompt, completion, help, model_picker, overwrite, paging,
+    reload, replace, save, search, selection, view,
 };
+
+mod editing;
+mod shortcuts;
+mod surfaces;
 
 mod scope;
 
@@ -76,218 +78,22 @@ pub(crate) fn handle_key_with(
     let Some(key) = app.keybindings.translate(scope, key) else {
         return Ok(());
     };
-    if autocomplete::handle_key(app, out, key)? {
+    if surfaces::handle_raw_key(app, out, key)? {
         return Ok(());
     }
-    autocomplete::invalidate(app);
-    if model_picker::handle_key(app, out, key)? {
+    if shortcuts::handle_inline_clanker_key(app, out, key)? {
         return Ok(());
     }
-    if help::handle_key(app, out, key)? {
+    if surfaces::handle_translated_key(app, out, key)? {
         return Ok(());
     }
-    if recovery::handle_key(app, out, key)? {
+    if shortcuts::handle_key(app, out, key)? {
         return Ok(());
     }
-    if external_command::handle_key(app, out, key)? {
-        return Ok(());
-    }
-    if repo_llm::handle_key(app, out, key)? {
-        return Ok(());
-    }
-    if llm_request::handle_key(app, out, key)? {
-        return Ok(());
-    }
-    if replace::handle_key(app, out, key)? {
-        return Ok(());
-    }
-    if search::handle_active_key(app, out, key)? {
-        return Ok(());
-    }
-    if command_prompt::handle_active_key(app, out, key)? {
-        return Ok(());
-    }
-    if inline_clanker::handle_key(app, out, key)? {
-        return Ok(());
-    }
-    if llm_preview::handle_key(app, out, key)? {
-        return Ok(());
-    }
-    if llm_answer::handle_key(app, out, key)? {
-        return Ok(());
-    }
-    if completion::handle_key(app, out, key)? {
-        return Ok(());
-    }
-    if project_files::handle_key(app, out, key)? {
-        return Ok(());
-    }
-    if lint::handle_key(app, out, key)? {
-        return Ok(());
-    }
-    if view::is_preview(app) && view::handle_key(app, out, key)? {
-        return Ok(());
-    }
-    match key {
-        KeyEvent {
-            code: KeyCode::F(3),
-            modifiers: KeyModifiers::SHIFT,
-            ..
-        } => {
-            inline_clanker::clear_changes(app, out)?;
-            return Ok(());
-        }
-        KeyEvent {
-            code: KeyCode::F(3),
-            modifiers: KeyModifiers::NONE,
-            ..
-        } => {
-            super::hooks::before_inline_clanker(app, out)?;
-            return Ok(());
-        }
-        _ => {}
-    }
-    if help::handle_key(app, out, key)? {
-        return Ok(());
-    }
-    if view::handle_key(app, out, key)? {
-        return Ok(());
-    }
-    if navigation::handle_key(app, out, key)? {
-        return Ok(());
-    }
-    if selection::handle_shortcut(app, out, key)? {
-        return Ok(());
-    }
-    if let Some(action) = undo_redo::action_for_key(key) {
-        match action {
-            undo_redo::HistoryAction::Undo => app.buffer.undo(),
-            undo_redo::HistoryAction::Redo => app.buffer.redo(),
-        }
-        finish_content_edit(app, out)?;
-        return Ok(());
-    }
-    if let Some(action) = help_catalog::default_editor_action(key) {
-        dispatch_editor_action(app, out, action)?;
-        return Ok(());
-    }
-    match key {
-        KeyEvent {
-            code: KeyCode::Tab,
-            modifiers: KeyModifiers::NONE,
-            ..
-        } => indentation::handle_tab(app, out, false)?,
-
-        KeyEvent {
-            code: KeyCode::BackTab,
-            ..
-        }
-        | KeyEvent {
-            code: KeyCode::Tab,
-            modifiers: KeyModifiers::SHIFT,
-            ..
-        } => indentation::handle_tab(app, out, true)?,
-
-        // Enter produces KeyCode::Enter (not Char('\n')). Handle explicitly.
-        // The Char \n/\r check below catches any that might arrive via paste
-        // or other terminal paths.
-        KeyEvent {
-            code: KeyCode::Enter,
-            ..
-        } => {
-            indentation::insert_newline(app, out)?;
-        }
-
-        // Basic movement + editing (Phase 0)
-        // Accept any Char that is not control. Apply SHIFT modifier for
-        // uppercase letters (crossterm may report lowercase + SHIFT).
-        // Specific Ctrl+S / Ctrl+Q arms above take precedence for CONTROL.
-        KeyEvent {
-            code: KeyCode::Char(c),
-            modifiers,
-            ..
-        } => {
-            if modifiers.contains(KeyModifiers::CONTROL) {
-                // Other Ctrl+letter combos ignored in Phase 0; still reveal/render (existing behavior)
-            } else if c == '\n' || c == '\r' {
-                indentation::insert_newline(app, out)?;
-                return Ok(());
-            } else if !c.is_control() {
-                let ch = if modifiers.contains(KeyModifiers::SHIFT) && c.is_ascii_lowercase() {
-                    c.to_ascii_uppercase()
-                } else {
-                    c
-                };
-                overwrite::type_char(app, ch)?;
-                finish_content_edit(app, out)?;
-                return Ok(());
-            }
-            app.reveal_cursor();
-            app.render(out)?;
-        }
-
-        KeyEvent {
-            code: KeyCode::Backspace,
-            ..
-        } => {
-            navigation::delete_grapheme(app, out, false)?;
-        }
-
-        KeyEvent {
-            code: KeyCode::Delete,
-            ..
-        } => {
-            navigation::delete_grapheme(app, out, true)?;
-        }
-
-        KeyEvent {
-            code: KeyCode::Left,
-            ..
-        } => {
-            app.selection.clear();
-            navigation::move_grapheme(app, false)?;
-            app.reveal_cursor();
-            app.render(out)?;
-        }
-
-        KeyEvent {
-            code: KeyCode::Right,
-            ..
-        } => {
-            app.selection.clear();
-            navigation::move_grapheme(app, true)?;
-            app.reveal_cursor();
-            app.render(out)?;
-        }
-
-        KeyEvent {
-            code: KeyCode::Up, ..
-        } => {
-            app.selection.clear();
-            app.buffer.move_up();
-            navigation::snap_current_grapheme(app)?;
-            app.reveal_cursor();
-            app.render(out)?;
-        }
-
-        KeyEvent {
-            code: KeyCode::Down,
-            ..
-        } => {
-            app.selection.clear();
-            app.buffer.move_down();
-            navigation::snap_current_grapheme(app)?;
-            app.reveal_cursor();
-            app.render(out)?;
-        }
-
-        _ => {}
-    }
-
-    Ok(())
+    editing::handle_key(app, out, key)
 }
 
-fn dispatch_editor_action(
+pub(super) fn dispatch_editor_action(
     app: &mut super::App,
     out: &mut dyn Write,
     action: EditorAction,
@@ -352,43 +158,7 @@ pub(crate) fn handle_paste(
         return Ok(());
     }
     completion::cancel(app);
-    if help::handle_paste(app, out)? {
-        return Ok(());
-    }
-    if replace::handle_paste(app, out, text)? {
-        return Ok(());
-    }
-    if recovery::handle_paste(app, out)? {
-        return Ok(());
-    }
-    if external_command::handle_paste(app, out)? {
-        return Ok(());
-    }
-    if repo_llm::handle_paste(app, out)? {
-        return Ok(());
-    }
-    if llm_request::handle_paste(app, out)? {
-        return Ok(());
-    }
-    if inline_clanker::handle_paste(app, out)? {
-        return Ok(());
-    }
-    if llm_preview::handle_paste(app, out)? {
-        return Ok(());
-    }
-    if llm_answer::handle_paste(app, out)? {
-        return Ok(());
-    }
-    if model_picker::handle_paste(app, out, text)? {
-        return Ok(());
-    }
-    if project_files::handle_paste(app, out)? {
-        return Ok(());
-    }
-    if lint::handle_paste(app, out)? {
-        return Ok(());
-    }
-    if view::handle_paste(app, out)? {
+    if surfaces::handle_paste(app, out, text)? {
         return Ok(());
     }
     selection::handle_external_paste(app, out, text)

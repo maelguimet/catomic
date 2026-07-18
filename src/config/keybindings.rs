@@ -11,9 +11,11 @@ use std::path::Path;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde::Deserialize;
 
+use crate::help_catalog::{self, EditorAction};
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct KeyBindings {
-    overrides: HashMap<KeyChord, Action>,
+    overrides: HashMap<KeyChord, EditorAction>,
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
@@ -22,38 +24,11 @@ struct KeyChord {
     modifiers: KeyModifiers,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Action {
-    Help,
-    Save,
-    SaveAs,
-    Open,
-    New,
-    Close,
-    Replace,
-    Quit,
-    Reload,
-    Search,
-    GotoLine,
-    CommandPrompt,
-    Undo,
-    Redo,
-    Complete,
-    NextBuffer,
-    PreviousBuffer,
-    NextPage,
-    PreviousPage,
-    MarkdownPreview,
-    LineNumbers,
-    Whitespace,
-    SoftWrap,
-}
-
 impl KeyBindings {
     pub(crate) fn translate(&self, key: KeyEvent) -> KeyEvent {
         self.overrides
             .get(&KeyChord::from_event(key))
-            .map_or(key, |action| action.canonical_key())
+            .map_or(key, |action| help_catalog::canonical_key(*action))
     }
 }
 
@@ -63,75 +38,6 @@ impl KeyChord {
             code: normalize_code(key.code),
             modifiers: key.modifiers,
         }
-    }
-}
-
-impl Action {
-    fn parse(name: &str) -> Option<Self> {
-        Some(match name.trim().to_ascii_lowercase().as_str() {
-            "help" => Self::Help,
-            "save" => Self::Save,
-            "save-as" => Self::SaveAs,
-            "open" => Self::Open,
-            "new" => Self::New,
-            "close" => Self::Close,
-            "replace" => Self::Replace,
-            "quit" => Self::Quit,
-            "reload" => Self::Reload,
-            "search" => Self::Search,
-            "goto-line" => Self::GotoLine,
-            "command-prompt" => Self::CommandPrompt,
-            "undo" => Self::Undo,
-            "redo" => Self::Redo,
-            "complete" => Self::Complete,
-            "next-buffer" => Self::NextBuffer,
-            "previous-buffer" => Self::PreviousBuffer,
-            "next-page" => Self::NextPage,
-            "previous-page" => Self::PreviousPage,
-            "markdown-preview" => Self::MarkdownPreview,
-            "line-numbers" => Self::LineNumbers,
-            "whitespace" => Self::Whitespace,
-            "soft-wrap" => Self::SoftWrap,
-            _ => return None,
-        })
-    }
-
-    fn canonical_key(self) -> KeyEvent {
-        let (code, modifiers) = match self {
-            Self::Help => control_char('h'),
-            Self::Save => control_char('s'),
-            Self::SaveAs => (
-                KeyCode::Char('s'),
-                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
-            ),
-            Self::Open => control_char('o'),
-            Self::New => control_char('n'),
-            Self::Close => control_char('w'),
-            Self::Replace => (
-                KeyCode::Char('f'),
-                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
-            ),
-            Self::Quit => control_char('q'),
-            Self::Reload => control_char('r'),
-            Self::Search => control_char('f'),
-            Self::GotoLine => control_char('g'),
-            Self::CommandPrompt => (
-                KeyCode::Char('p'),
-                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
-            ),
-            Self::Undo => control_char('z'),
-            Self::Redo => control_char('y'),
-            Self::Complete => (KeyCode::Char(' '), KeyModifiers::CONTROL),
-            Self::NextBuffer => (KeyCode::PageDown, KeyModifiers::ALT),
-            Self::PreviousBuffer => (KeyCode::PageUp, KeyModifiers::ALT),
-            Self::NextPage => (KeyCode::PageDown, KeyModifiers::CONTROL),
-            Self::PreviousPage => (KeyCode::PageUp, KeyModifiers::CONTROL),
-            Self::MarkdownPreview => (KeyCode::F(6), KeyModifiers::NONE),
-            Self::LineNumbers => (KeyCode::F(7), KeyModifiers::NONE),
-            Self::Whitespace => (KeyCode::F(8), KeyModifiers::NONE),
-            Self::SoftWrap => (KeyCode::F(9), KeyModifiers::NONE),
-        };
-        KeyEvent::new(code, modifiers)
     }
 }
 
@@ -145,7 +51,7 @@ pub(crate) fn parse(text: &str) -> io::Result<KeyBindings> {
     let mut overrides = HashMap::new();
     for (raw_chord, raw_action) in super::decode::<ConfigFile>(text)?.keybindings {
         let chord = parse_chord(&raw_chord)?;
-        let action = Action::parse(&raw_action)
+        let action = help_catalog::editor_action(&raw_action)
             .ok_or_else(|| invalid(format!("unknown keybinding action {raw_action:?}")))?;
         if overrides.insert(chord, action).is_some() {
             return Err(invalid(format!(
@@ -237,10 +143,6 @@ fn normalize_code(code: KeyCode) -> KeyCode {
         KeyCode::Char(ch) if ch.is_ascii_uppercase() => KeyCode::Char(ch.to_ascii_lowercase()),
         other => other,
     }
-}
-
-fn control_char(ch: char) -> (KeyCode, KeyModifiers) {
-    (KeyCode::Char(ch), KeyModifiers::CONTROL)
 }
 
 fn invalid(message: impl Into<String>) -> io::Error {

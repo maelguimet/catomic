@@ -1,8 +1,8 @@
 //! Real PTY integration smoke tests for the catomic binary.
 //!
 //! Purpose: drive the compiled binary through a pseudo-terminal so key handling,
-//!   raw-mode setup, render, save, undo, search, Project tooling, guarded external
-//!   commands/hooks, explicit LLM confirmation, and clean quit are exercised together.
+//!   raw-mode setup, render, help, save, undo, search, Project tooling, guarded
+//!   external commands/hooks, explicit LLM confirmation, and clean quit are exercised.
 //! Owns: narrow default PTY smoke coverage for accepted Phase 0 through 8 behavior.
 //! Must not: grow into a broad UI harness, contact an LLM/network, use ambient config,
 //!   or run large-file/perf scenarios.
@@ -101,14 +101,14 @@ impl PtyEditor {
         Self::spawn_paths(&[path])
     }
 
+    fn spawn_paths(paths: &[&PathBuf]) -> TestResult<Self> {
+        Self::spawn_with(paths, None)
+    }
+
     fn spawn_sized(path: &PathBuf, rows: u16, cols: u16) -> TestResult<Self> {
         let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
         cmd.arg(path);
         Self::spawn_command_sized(cmd, rows, cols)
-    }
-
-    fn spawn_paths(paths: &[&PathBuf]) -> TestResult<Self> {
-        Self::spawn_with(paths, None)
     }
 
     fn spawn_with_xdg(path: &PathBuf, xdg_config_home: &PathBuf) -> TestResult<Self> {
@@ -330,6 +330,30 @@ fn pty_undo_redo_distinguishes_reported_shift() -> TestResult {
     Ok(())
 }
 
+#[test]
+fn pty_f1_help_wraps_and_scrolls_to_reload_reference_in_a_narrow_terminal() -> TestResult {
+    let temp = TempPath::new("narrow_help");
+    fs::write(&temp.path, "source remains unchanged")?;
+    let mut editor = PtyEditor::spawn_sized(&temp.path, 10, 32)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"\x1bOP")?; // F1
+    editor.wait_for_output("F1 built-in help", "Catomic help")?;
+    editor.wait_for_output("default-binding explanation", "built-in defa")?;
+    for _ in 0..8 {
+        editor.send_keys(b"\x1b[6~")?; // PageDown
+    }
+    editor.wait_for_output("Ctrl+R help entry", "Ctrl+R")?;
+
+    editor.send_keys(b"\x1bOP")?;
+    editor.wait_for_output("F1 closes help", "Help closed")?;
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(&temp.path)?, "source remains unchanged");
+    Ok(())
+}
+
 #[cfg(unix)]
 #[test]
 fn pty_sigterm_restores_terminal_modes_before_exit() -> TestResult {
@@ -455,18 +479,18 @@ fn pty_help_scrolls_to_model_scopes_and_closes_without_editing() -> TestResult {
 
     editor.wait_for_initial_render()?;
     editor.send_keys(b"\x1bOP")?; // F1
-    editor.wait_for_output("built-in help", "Catomic shortcuts")?;
-    editor.send_keys(b"\x1b[6~\x1b[6~\x1b[6~")?; // PageDown x3
-    editor.wait_for_output(
-        "model command scopes",
-        "megameow INSTRUCTION Project only: broader bounded repository context.",
-    )?;
+    editor.wait_for_output("built-in help", "Catomic help")?;
+    for _ in 0..12 {
+        editor.send_keys(b"\x1b[6~")?; // PageDown through the generated reference
+    }
+    editor.wait_for_output("model command", "megameow INSTRUCTION")?;
+    editor.wait_for_output("model command scope", "broader bounded repository context")?;
     editor.wait_for_output(
         "model safety contract",
         "Model edits affect only the confirmed active file; they are not auto-saved.",
     )?;
     editor.send_keys(b"\x1b")?;
-    editor.wait_for_output("help closes", "Shortcut help closed.")?;
+    editor.wait_for_output("help closes", "Help closed.")?;
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
 

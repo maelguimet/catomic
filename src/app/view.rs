@@ -10,6 +10,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::{Buffer, Cursor, PieceTable};
 use crate::editor::syntax::{self, SyntaxKind};
+use crate::help_catalog::{self, EditorAction};
 
 #[derive(Debug, Default)]
 pub(crate) struct ViewOptions {
@@ -31,11 +32,11 @@ pub(crate) fn handle_key(
     out: &mut dyn Write,
     key: KeyEvent,
 ) -> io::Result<bool> {
-    match key.code {
-        KeyCode::F(6) => return toggle_preview(app, out),
-        KeyCode::F(7) => return toggle_indicator(app, out, true),
-        KeyCode::F(8) => return toggle_indicator(app, out, false),
-        KeyCode::F(9) => return toggle_soft_wrap(app, out),
+    match help_catalog::default_editor_action(key) {
+        Some(EditorAction::MarkdownPreview) => return toggle_preview(app, out),
+        Some(EditorAction::LineNumbers) => return toggle_indicator(app, out, true),
+        Some(EditorAction::Whitespace) => return toggle_indicator(app, out, false),
+        Some(EditorAction::SoftWrap) => return toggle_soft_wrap(app, out),
         _ => {}
     }
     if !is_preview(app) || is_quit(key) {
@@ -124,15 +125,15 @@ pub(crate) fn content_width(app: &super::App) -> usize {
 }
 
 pub(crate) fn soft_wrap_active(app: &super::App) -> bool {
-    app.view.soft_wrap
-        && !is_preview(app)
-        && !super::help::is_viewing(app)
-        && !super::recovery::is_viewing(app)
-        && !super::external_command::is_viewing(app)
-        && !super::llm_preview::is_viewing(app)
-        && !super::llm_answer::is_viewing(app)
-        && !super::lint::is_viewing(app)
-        && !super::project_files::is_viewing(app)
+    super::help::is_viewing(app)
+        || (app.view.soft_wrap
+            && !is_preview(app)
+            && !super::recovery::is_viewing(app)
+            && !super::external_command::is_viewing(app)
+            && !super::llm_preview::is_viewing(app)
+            && !super::llm_answer::is_viewing(app)
+            && !super::lint::is_viewing(app)
+            && !super::project_files::is_viewing(app))
 }
 
 pub(crate) fn cancel_preview(app: &mut super::App) {

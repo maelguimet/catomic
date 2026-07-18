@@ -9,98 +9,31 @@ use std::io::{self, Write};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::{Buffer, Cursor, PieceTable};
-
-const HELP_TEXT: &str = r#"Catomic shortcuts
-
-Files and app
-  Ctrl+H / F1          Toggle this help
-  Ctrl+Q               Quit (press twice if buffers are dirty)
-  Ctrl+S               Save
-  Ctrl+Shift+S         Save As
-  Ctrl+O               Open file
-  Ctrl+N               New untitled buffer
-  Ctrl+W               Close active buffer
-  Alt+PageUp/Down      Previous/next buffer
-
-Editing
-  Arrows                Move cursor
-  Shift+Arrows          Extend selection
-  Home / End            Start/end of line
-  Ctrl+Home / End       Start/end of document
-  PageUp / PageDown     Move one viewport
-  Ctrl+Left / Right     Move by word
-  Ctrl+Backspace/Delete Delete previous/next word
-  Ctrl+A/C/X/V          Select all/copy/cut/paste
-  Ctrl+Z                  Undo
-  Ctrl+Y / Ctrl+Shift+Z   Redo
-  Tab / Shift+Tab       Indent/unindent selection
-  Ctrl+Space            Local completion
-
-Find and view
-  Ctrl+F                Find; Enter/Down next, Up previous
-  Ctrl+Shift+F          Replace next
-  Ctrl+G                Go to line
-  Ctrl+Shift+P / F2     Command prompt
-  Ctrl+PageUp/Down      Previous/next large-file page
-  F6                    Markdown preview
-  F7                    Toggle line numbers
-  F8                    Toggle visible whitespace
-  F9                    Toggle soft line wrapping
-
-Commands (Ctrl+Shift+P or F2)
-  help | shortcuts
-  save | write | w
-  save as PATH | save-as PATH
-  open PATH | edit PATH | e PATH
-  new | close | close!
-  goto LINE
-  replace | replace-all
-  project | plain | files
-  lint | diagnostics | dnext | dprev
-  run NAME | recover
-  quit | q
-
-Model commands (Ctrl+Shift+P or F2)
-  Selection = highlighted text in the active file being edited.
-  Instruction block = >>> catomic ... <<< containing the cursor.
-  Plain mode = default editing; Project mode = opt-in repository tools.
-  Enter Project mode with the project command.
-  meow INSTRUCTION Plain/Project: send selection; otherwise block at cursor.
-  bigmeow INSTRUCTION Plain/Project: send entire current editable file.
-  gitmeow INSTRUCTION Project only: focused task; bounded repository context.
-  megameow INSTRUCTION Project only: broader bounded repository context.
-
-Model safety and workflow
-  Nothing is sent until you confirm the endpoint, model, and exact context.
-  Enter confirms; Escape cancels.
-  Edit proposals open read-only; a second Enter confirms apply.
-  Model edits affect only the confirmed active file; they are not auto-saved.
-  Prefix the instruction with explain for a read-only answer.
-  LLM setup: see "Model-assisted commands" in the user guide.
-
-Arrow keys, Home/End, and PageUp/PageDown scroll this view.
-Escape or Ctrl+H closes it.
-"#;
+use crate::help_catalog::{self, EditorAction};
 
 pub(crate) struct HelpView {
     buffer: PieceTable,
     source_scroll_top: usize,
     source_scroll_left: usize,
+    source_wrap_col: usize,
 }
 
 pub(crate) fn show(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     close_transients(app);
     let source_scroll_top = app.screen.scroll_top;
     let source_scroll_left = app.screen.scroll_left;
+    let source_wrap_col = app.screen.wrap_col;
     app.help_view = Some(HelpView {
-        buffer: PieceTable::from_text(HELP_TEXT),
+        buffer: PieceTable::from_text(&help_text()),
         source_scroll_top,
         source_scroll_left,
+        source_wrap_col,
     });
     app.screen.scroll_top = 0;
     app.screen.scroll_left = 0;
+    app.screen.wrap_col = 0;
     app.selection.clear();
-    app.message = Some("Shortcuts (read-only). Esc or Ctrl+H closes.".to_string());
+    app.message = Some("Help; Esc closes.".to_string());
     app.render(out)
 }
 
@@ -165,12 +98,13 @@ fn close(app: &mut super::App) -> bool {
     };
     app.screen.scroll_top = view.source_scroll_top;
     app.screen.scroll_left = view.source_scroll_left;
+    app.screen.wrap_col = view.source_wrap_col;
     true
 }
 
 fn close_with_message(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     close(app);
-    app.message = Some("Shortcut help closed.".to_string());
+    app.message = Some("Help closed.".to_string());
     app.reveal_cursor();
     app.render(out)
 }
@@ -228,20 +162,82 @@ fn set_line_edge(app: &mut super::App, end: bool) {
 }
 
 fn reveal_cursor(app: &mut super::App) {
-    let cursor = app.help_view.as_ref().expect("help active").buffer.cursor();
-    app.screen.reveal_row(cursor.row);
-    app.screen
-        .reveal_col_with_width(cursor.col, super::view::content_width(app));
+    app.reveal_cursor();
 }
 
 fn is_toggle(key: KeyEvent) -> bool {
-    key.code == KeyCode::F(1)
-        || (matches!(key.code, KeyCode::Char('h' | 'H'))
-            && key.modifiers.contains(KeyModifiers::CONTROL))
+    help_catalog::default_editor_action(key) == Some(EditorAction::Help)
 }
 
 fn is_quit(key: KeyEvent) -> bool {
     key.code == KeyCode::Char('q') && key.modifiers.contains(KeyModifiers::CONTROL)
+}
+
+fn help_text() -> String {
+    let mut text = String::from(concat!(
+        "Catomic help - default keyboard and command quick reference\n\n",
+        "The keys below are built-in defaults. [keybindings] overrides apply only in\n",
+        "normal editing mode; this view does not display effective configured keys.\n\n",
+    ));
+    push_editor_actions(&mut text);
+    text.push_str("\nFixed and context-dependent keys\n");
+    for shortcut in help_catalog::FIXED_SHORTCUTS {
+        push_entry(&mut text, shortcut.keys, &[], shortcut.purpose);
+    }
+    text.push_str("\nPrompt commands (Ctrl+Shift+P or F2; no leading colon)\n");
+    for command in help_catalog::PROMPT_COMMANDS {
+        push_entry(&mut text, command.syntax, command.aliases, command.purpose);
+    }
+    text.push_str(concat!(
+        "\nModel command context and workflow\n",
+        "  Selection = highlighted text in the active file being edited.\n",
+        "  Instruction block = >>> catomic ... <<< containing the cursor.\n",
+        "  Plain mode = default editing; Project mode = opt-in repository tools.\n",
+        "  Enter Project mode with the project command.\n",
+        "  Nothing is sent until you confirm the endpoint, model, and exact context.\n",
+        "  Enter confirms; Escape cancels.\n",
+        "  Edit proposals open read-only; a second Enter confirms apply.\n",
+        "  Model edits affect only the confirmed active file; they are not auto-saved.\n",
+        "  Prefix the instruction with explain for a read-only answer.\n",
+        "\nMore help\n",
+        "  Configuration: $XDG_CONFIG_HOME/catomic/config.toml or\n",
+        "    ~/.config/catomic/config.toml\n",
+        "  User guide (configuration, terminal troubleshooting, and safety):\n",
+        "    https://github.com/maelguimet/catomic/blob/master/docs/user-guide.md\n",
+        "  Model setup, scopes, confirmations, and safety: user guide section\n",
+        "    Model-assisted commands.\n\n",
+        "Arrows, Home/End, and PageUp/PageDown navigate this read-only view.\n",
+        "Escape, Ctrl+H, or F1 closes it. Ctrl+Q keeps the guarded quit path.\n",
+    ));
+    text
+}
+
+fn push_editor_actions(text: &mut String) {
+    text.push_str("Default normal-mode shortcuts\n");
+    let mut category = "";
+    for action in help_catalog::EDITOR_ACTIONS {
+        if action.category != category {
+            category = action.category;
+            text.push('\n');
+            text.push_str(category);
+            text.push('\n');
+        }
+        push_entry(text, action.default_keys, &[], action.purpose);
+    }
+}
+
+fn push_entry(text: &mut String, label: &str, aliases: &[&str], purpose: &str) {
+    text.push_str("  ");
+    text.push_str(label);
+    text.push('\n');
+    if !aliases.is_empty() {
+        text.push_str("    Aliases: ");
+        text.push_str(&aliases.join(", "));
+        text.push('\n');
+    }
+    text.push_str("    ");
+    text.push_str(purpose);
+    text.push('\n');
 }
 
 #[cfg(test)]

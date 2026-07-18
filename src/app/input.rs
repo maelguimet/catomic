@@ -9,6 +9,8 @@ use std::io::{self, Write};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use crate::help_catalog::{self, EditorAction};
+
 use super::file_state::refresh_dirty;
 use super::{
     buffers, command_prompt, completion, external_command, help, indentation, lint, llm_answer,
@@ -127,150 +129,11 @@ pub(crate) fn handle_key_with(
         finish_content_edit(app, out)?;
         return Ok(());
     }
+    if let Some(action) = help_catalog::default_editor_action(key) {
+        dispatch_editor_action(app, out, action)?;
+        return Ok(());
+    }
     match key {
-        // Quit (Ctrl+Q)
-        // - clean: quit immediately
-        // - dirty + !pending: set pending=true + warning message; do NOT quit
-        // - dirty + pending: quit (force, without save)
-        // Movement keys leave pending/message as-is (simplest behavior; documented).
-        // Actual content-mutating edits (insert/delete/undo/redo) clear BOTH pending_confirm and message
-        // (so stale quit warnings disappear after typing). Save success also clears them.
-        KeyEvent {
-            code: KeyCode::Char('q'),
-            modifiers: KeyModifiers::CONTROL,
-            ..
-        } => {
-            handle_quit(app, out)?;
-        }
-
-        // Save As (Ctrl+Shift+S) opens a dedicated path prompt.
-        KeyEvent {
-            code: KeyCode::Char('s' | 'S'),
-            modifiers,
-            ..
-        } if modifiers.contains(KeyModifiers::CONTROL)
-            && modifiers.contains(KeyModifiers::SHIFT) =>
-        {
-            command_prompt::open_save_as_prompt(app, out)?;
-        }
-
-        // Save (Ctrl+S) -- thin arm; real logic + guard lives in save module
-        // (extracted Phase 2-o to keep this file focused). Semantics unchanged.
-        KeyEvent {
-            code: KeyCode::Char('s'),
-            modifiers: KeyModifiers::CONTROL,
-            ..
-        } => {
-            save::handle_save(app, out)?;
-        }
-
-        // Manual reload check (Phase 2-s). Thin call; decision + perform logic lives in reload.rs.
-        KeyEvent {
-            code: KeyCode::Char('r'),
-            modifiers: KeyModifiers::CONTROL,
-            ..
-        } => {
-            reload::handle_reload_key(app, out)?;
-        }
-
-        KeyEvent {
-            code: KeyCode::Char('f' | 'F'),
-            modifiers,
-            ..
-        } if modifiers.contains(KeyModifiers::CONTROL)
-            && modifiers.contains(KeyModifiers::SHIFT) =>
-        {
-            replace::open_prompt(app, out, false)?;
-        }
-
-        KeyEvent {
-            code: KeyCode::Char('f'),
-            modifiers,
-            ..
-        } if modifiers.contains(KeyModifiers::CONTROL) => {
-            search::open_prompt(app, out)?;
-        }
-
-        KeyEvent {
-            code: KeyCode::Char('g'),
-            modifiers,
-            ..
-        } if modifiers.contains(KeyModifiers::CONTROL) => {
-            command_prompt::open_goto_prompt(app, out)?;
-        }
-
-        KeyEvent {
-            code: KeyCode::Char('p' | 'P'),
-            modifiers,
-            ..
-        } if modifiers.contains(KeyModifiers::CONTROL)
-            && modifiers.contains(KeyModifiers::SHIFT) =>
-        {
-            command_prompt::open_command_prompt(app, out)?;
-        }
-
-        KeyEvent {
-            code: KeyCode::F(2),
-            modifiers: KeyModifiers::NONE,
-            ..
-        } => {
-            command_prompt::open_command_prompt(app, out)?;
-        }
-
-        KeyEvent {
-            code: KeyCode::Char('o'),
-            modifiers: KeyModifiers::CONTROL,
-            ..
-        } => command_prompt::open_file_prompt(app, out)?,
-
-        KeyEvent {
-            code: KeyCode::Char('n'),
-            modifiers: KeyModifiers::CONTROL,
-            ..
-        } => command_prompt::execute_new(app, out)?,
-
-        KeyEvent {
-            code: KeyCode::Char('w'),
-            modifiers: KeyModifiers::CONTROL,
-            ..
-        } => command_prompt::execute_close(app, out, false)?,
-
-        KeyEvent {
-            code: KeyCode::PageDown,
-            modifiers,
-            ..
-        } if modifiers.contains(KeyModifiers::ALT) => {
-            app.switch_buffer(buffers::BufferDirection::Next);
-            app.reveal_cursor();
-            app.render(out)?;
-        }
-
-        KeyEvent {
-            code: KeyCode::PageUp,
-            modifiers,
-            ..
-        } if modifiers.contains(KeyModifiers::ALT) => {
-            app.switch_buffer(buffers::BufferDirection::Previous);
-            app.reveal_cursor();
-            app.render(out)?;
-        }
-
-        KeyEvent {
-            code: KeyCode::PageDown,
-            modifiers,
-            ..
-        } if modifiers.contains(KeyModifiers::CONTROL) => {
-            paging::handle_page_key(app, out, paging::PageDirection::Next)?;
-        }
-
-        KeyEvent {
-            code: KeyCode::PageUp,
-            modifiers,
-            ..
-        } if modifiers.contains(KeyModifiers::CONTROL) => {
-            paging::handle_page_key(app, out, paging::PageDirection::Previous)?;
-        }
-
         KeyEvent {
             code: KeyCode::Tab,
             modifiers: KeyModifiers::NONE,
@@ -388,6 +251,60 @@ pub(crate) fn handle_key_with(
     }
 
     Ok(())
+}
+
+fn dispatch_editor_action(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    action: EditorAction,
+) -> io::Result<()> {
+    match action {
+        EditorAction::Help => help::show(app, out),
+        EditorAction::Quit => handle_quit(app, out),
+        EditorAction::Save => save::handle_save(app, out),
+        EditorAction::SaveAs => command_prompt::open_save_as_prompt(app, out),
+        EditorAction::Reload => reload::handle_reload_key(app, out),
+        EditorAction::Open => command_prompt::open_file_prompt(app, out),
+        EditorAction::New => command_prompt::execute_new(app, out),
+        EditorAction::Close => command_prompt::execute_close(app, out, false),
+        EditorAction::Search => search::open_prompt(app, out),
+        EditorAction::Replace => replace::open_prompt(app, out, false),
+        EditorAction::GotoLine => command_prompt::open_goto_prompt(app, out),
+        EditorAction::CommandPrompt => command_prompt::open_command_prompt(app, out),
+        EditorAction::Undo => {
+            app.buffer.undo();
+            finish_content_edit(app, out)
+        }
+        EditorAction::Redo => {
+            app.buffer.redo();
+            finish_content_edit(app, out)
+        }
+        EditorAction::Complete => {
+            completion::handle_key(app, out, help_catalog::canonical_key(action)).map(|_| ())
+        }
+        EditorAction::PreviousBuffer => switch_buffer(app, out, buffers::BufferDirection::Previous),
+        EditorAction::NextBuffer => switch_buffer(app, out, buffers::BufferDirection::Next),
+        EditorAction::PreviousPage => {
+            paging::handle_page_key(app, out, paging::PageDirection::Previous)
+        }
+        EditorAction::NextPage => paging::handle_page_key(app, out, paging::PageDirection::Next),
+        EditorAction::MarkdownPreview
+        | EditorAction::LineNumbers
+        | EditorAction::Whitespace
+        | EditorAction::SoftWrap => {
+            view::handle_key(app, out, help_catalog::canonical_key(action)).map(|_| ())
+        }
+    }
+}
+
+fn switch_buffer(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    direction: buffers::BufferDirection,
+) -> io::Result<()> {
+    app.switch_buffer(direction);
+    app.reveal_cursor();
+    app.render(out)
 }
 
 pub(crate) fn handle_paste(

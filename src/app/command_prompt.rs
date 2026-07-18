@@ -9,6 +9,7 @@ use std::io::{self, Write};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::editor::goto_line::{self, GotoLineResult, GotoLineTask};
+use crate::help_catalog::{self, PromptCommand};
 
 #[derive(Default)]
 pub(crate) struct CommandPromptState {
@@ -137,65 +138,70 @@ fn execute_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> 
     let (name, argument) = command
         .split_once(char::is_whitespace)
         .map_or((command, ""), |(name, argument)| (name, argument.trim()));
-    match (name, argument) {
-        ("goto" | "line", line) if !line.is_empty() => execute_goto(app, out, line),
-        ("save" | "write" | "w", "") => super::save::handle_save(app, out),
-        ("save" | "write" | "w", "as") | ("saveas" | "save-as", "") => {
-            open_save_as_prompt(app, out)
-        }
-        ("save" | "write" | "w", argument) if argument.starts_with("as ") => {
+    let Some(parsed) = help_catalog::prompt_command(name) else {
+        return unknown_command(app, out, command);
+    };
+    match (parsed, argument) {
+        (PromptCommand::Goto, line) if !line.is_empty() => execute_goto(app, out, line),
+        (PromptCommand::Save, "") => super::save::handle_save(app, out),
+        (PromptCommand::Save, "as") | (PromptCommand::SaveAs, "") => open_save_as_prompt(app, out),
+        (PromptCommand::Save, argument) if argument.starts_with("as ") => {
             super::save::handle_save_as(app, out, argument[3..].trim())
         }
-        ("saveas" | "save-as", path) if !path.is_empty() => {
+        (PromptCommand::SaveAs, path) if !path.is_empty() => {
             super::save::handle_save_as(app, out, path)
         }
-        ("open" | "edit" | "e", "") => open_file_prompt(app, out),
-        ("open" | "edit" | "e", path) => execute_open(app, out, path),
-        ("new", "") => execute_new(app, out),
-        ("close", "") => execute_close(app, out, false),
-        ("close!", "") => execute_close(app, out, true),
-        ("help" | "shortcuts", "") => super::help::show(app, out),
-        ("replace", "") => super::replace::open_prompt(app, out, false),
-        ("replace-all" | "replaceall", "") => super::replace::open_prompt(app, out, true),
-        ("quit" | "q", "") => super::input::handle_quit(app, out),
-        ("project" | "code", "") => super::project_mode::switch_to_project(app, out),
-        ("plain" | "text", "") => super::project_mode::switch_to_plain(app, out),
-        ("lint", "") => super::lint::start(app, out),
-        ("diagnostics" | "dlist", "") => super::lint::show_diagnostics(app, out),
-        ("dnext", "") => super::lint::move_diagnostic(app, out, true),
-        ("dprev", "") => super::lint::move_diagnostic(app, out, false),
-        ("files", "") => super::project_files::start(app, out),
-        ("recover", "") => super::recovery::start_preview(app, out),
-        ("run", name) if !name.is_empty() => super::external_command::start(app, out, name),
-        ("meow", instruction) => super::hooks::before_current_llm(
+        (PromptCommand::Open, "") => open_file_prompt(app, out),
+        (PromptCommand::Open, path) => execute_open(app, out, path),
+        (PromptCommand::New, "") => execute_new(app, out),
+        (PromptCommand::Close, "") => execute_close(app, out, false),
+        (PromptCommand::CloseDiscard, "") => execute_close(app, out, true),
+        (PromptCommand::Help, "") => super::help::show(app, out),
+        (PromptCommand::Replace, "") => super::replace::open_prompt(app, out, false),
+        (PromptCommand::ReplaceAll, "") => super::replace::open_prompt(app, out, true),
+        (PromptCommand::Quit, "") => super::input::handle_quit(app, out),
+        (PromptCommand::Project, "") => super::project_mode::switch_to_project(app, out),
+        (PromptCommand::Plain, "") => super::project_mode::switch_to_plain(app, out),
+        (PromptCommand::Lint, "") => super::lint::start(app, out),
+        (PromptCommand::Diagnostics, "") => super::lint::show_diagnostics(app, out),
+        (PromptCommand::DiagnosticNext, "") => super::lint::move_diagnostic(app, out, true),
+        (PromptCommand::DiagnosticPrevious, "") => super::lint::move_diagnostic(app, out, false),
+        (PromptCommand::Files, "") => super::project_files::start(app, out),
+        (PromptCommand::Recover, "") => super::recovery::start_preview(app, out),
+        (PromptCommand::Run, name) if !name.is_empty() => {
+            super::external_command::start(app, out, name)
+        }
+        (PromptCommand::Meow, instruction) => super::hooks::before_current_llm(
             app,
             out,
             super::llm_request::CurrentLlmCommand::Meow,
             instruction,
         ),
-        ("bigmeow", instruction) => super::hooks::before_current_llm(
+        (PromptCommand::BigMeow, instruction) => super::hooks::before_current_llm(
             app,
             out,
             super::llm_request::CurrentLlmCommand::BigMeow,
             instruction,
         ),
-        ("gitmeow", instruction) => super::hooks::before_repo_llm(
+        (PromptCommand::GitMeow, instruction) => super::hooks::before_repo_llm(
             app,
             out,
             super::repo_llm::RepoLlmCommand::GitMeow,
             instruction,
         ),
-        ("megameow", instruction) => super::hooks::before_repo_llm(
+        (PromptCommand::MegaMeow, instruction) => super::hooks::before_repo_llm(
             app,
             out,
             super::repo_llm::RepoLlmCommand::MegaMeow,
             instruction,
         ),
-        _ => {
-            app.message = Some(format!("Unknown command: {command}"));
-            app.render(out)
-        }
+        _ => unknown_command(app, out, command),
     }
+}
+
+fn unknown_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> io::Result<()> {
+    app.message = Some(format!("Unknown command: {command}"));
+    app.render(out)
 }
 
 fn execute_open(app: &mut super::App, out: &mut dyn Write, input: &str) -> io::Result<()> {

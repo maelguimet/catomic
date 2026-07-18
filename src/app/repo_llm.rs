@@ -17,6 +17,9 @@ use crate::llm::repo_task::RepoLlmTask;
 
 const SYSTEM_PROMPT: &str = "You edit only the named active file using read-only repository context. You may request more context by returning exactly {\"catomic_broker\":{\"command\":\"list_files\"}}, {\"catomic_broker\":{\"command\":\"read_file\",\"path\":\"relative/path\",\"offset\":0,\"limit\":4096}}, {\"catomic_broker\":{\"command\":\"grep\",\"query\":\"text\"}}, or {\"catomic_broker\":{\"command\":\"show_diff\",\"path\":\"relative/path\"}}. Your final response must be one valid single-file unified diff for the active file, with no prose or fences. Never claim an edit was applied.";
 
+const FOCUSED_REPO_CONTEXT_BUDGET: usize = 64 * 1024;
+const BROAD_REPO_CONTEXT_BUDGET: usize = crate::llm::broker::DEFAULT_CONTEXT_BUDGET;
+
 mod apply_check;
 mod checking;
 mod result;
@@ -24,7 +27,36 @@ mod start;
 
 pub(crate) use start::begin;
 #[cfg(test)]
-use start::begin_with_settings;
+use start::{begin_with_command_and_settings, begin_with_settings};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RepoLlmCommand {
+    GitMeow,
+    MegaMeow,
+}
+
+impl RepoLlmCommand {
+    fn name(self) -> &'static str {
+        match self {
+            Self::GitMeow => "gitmeow",
+            Self::MegaMeow => "megameow",
+        }
+    }
+
+    fn profile(self) -> &'static str {
+        match self {
+            Self::GitMeow => "focused",
+            Self::MegaMeow => "broader",
+        }
+    }
+
+    fn context_budget(self) -> usize {
+        match self {
+            Self::GitMeow => FOCUSED_REPO_CONTEXT_BUDGET,
+            Self::MegaMeow => BROAD_REPO_CONTEXT_BUDGET,
+        }
+    }
+}
 
 pub(crate) enum RepoLlmState {
     Preparing(Preparing),
@@ -36,6 +68,7 @@ pub(crate) enum RepoLlmState {
 
 pub(crate) struct Preparing {
     task: RepoPrepareTask,
+    command: RepoLlmCommand,
     draft: RequestDraft,
     settings: LlmSettings,
     source_snapshot: String,
@@ -44,6 +77,7 @@ pub(crate) struct Preparing {
 
 pub(crate) struct Pending {
     prepared: PreparedRepoContext,
+    command: RepoLlmCommand,
     draft: RequestDraft,
     settings: LlmSettings,
     source_snapshot: String,
@@ -120,17 +154,19 @@ fn finish_preparing(app: &mut super::App, prepared: PreparedRepoContext, state: 
         return;
     }
     let relative_path = prepared.active_relative_path.clone();
+    let context_kib = state.command.context_budget() / 1024;
     let sensitive = if state.draft.context.sensitivity.is_empty() {
         ""
     } else {
         " SENSITIVE active-file context detected; Enter explicitly allows it."
     };
     app.message = Some(format!(
-        "Send {} repo bytes + {} active-file bytes to {} at {}?{sensitive} Enter confirms; Esc cancels.",
-        prepared.initial_context.len(), state.draft.context.byte_count, state.settings.model, state.settings.base_url
+        "Send {} {} context: {} initial repo bytes + {} active-file bytes to {} at {} (at most {context_kib} KiB repository context total)?{sensitive} Enter confirms; Esc cancels.",
+        state.command.name(), state.command.profile(), prepared.initial_context.len(), state.draft.context.byte_count, state.settings.model, state.settings.base_url
     ));
     app.repo_llm_state = Some(RepoLlmState::Pending(Box::new(Pending {
         prepared,
+        command: state.command,
         draft: state.draft,
         settings: state.settings,
         source_snapshot: state.source_snapshot,
@@ -212,8 +248,11 @@ pub(super) fn start_confirmed(app: &mut super::App, pending: Pending) {
     ) {
         Ok(task) => {
             app.message = Some(format!(
-                "Sending repo context to {} at {}... Esc cancels.",
-                pending.settings.model, pending.settings.base_url
+                "Sending {} {} repo context to {} at {}... Esc cancels.",
+                pending.command.name(),
+                pending.command.profile(),
+                pending.settings.model,
+                pending.settings.base_url
             ));
             app.repo_llm_state = Some(RepoLlmState::Running(Running {
                 task,
@@ -248,7 +287,9 @@ fn llm_config(settings: &LlmSettings) -> LlmConfig {
 
 fn user_prompt(pending: &Pending) -> String {
     format!(
-        "Active path: {}\nInstruction:\n{}\n\nActive file:\n{}\n\nBounded repository context:\n{}",
+        "Command: {} ({})\nActive path: {}\nInstruction:\n{}\n\nActive file:\n{}\n\nBounded repository context:\n{}",
+        pending.command.name(),
+        pending.command.profile(),
         pending.relative_path,
         pending.draft.instruction,
         pending.draft.context.text,

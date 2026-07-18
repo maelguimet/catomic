@@ -22,6 +22,7 @@ enum Continuation {
         instruction: String,
     },
     RepoLlm {
+        command: super::repo_llm::RepoLlmCommand,
         instruction: String,
     },
 }
@@ -52,9 +53,11 @@ pub(crate) fn before_current_llm(
 pub(crate) fn before_repo_llm(
     app: &mut super::App,
     out: &mut dyn Write,
+    command: super::repo_llm::RepoLlmCommand,
     instruction: &str,
 ) -> io::Result<()> {
     let continuation = Continuation::RepoLlm {
+        command,
         instruction: instruction.to_string(),
     };
     begin_before_llm(app, out, continuation)
@@ -80,7 +83,10 @@ pub(crate) fn pump(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
             command,
             instruction,
         } => super::llm_request::begin(app, out, command, &instruction),
-        Continuation::RepoLlm { instruction } => super::repo_llm::begin(app, out, &instruction),
+        Continuation::RepoLlm {
+            command,
+            instruction,
+        } => super::repo_llm::begin(app, out, command, &instruction),
     }
 }
 
@@ -122,7 +128,10 @@ fn begin_before_llm(
                 command,
                 instruction,
             } => super::llm_request::begin(app, out, command, &instruction),
-            Continuation::RepoLlm { instruction } => super::repo_llm::begin(app, out, &instruction),
+            Continuation::RepoLlm {
+                command,
+                instruction,
+            } => super::repo_llm::begin(app, out, command, &instruction),
         };
     }
     app.hooks.queue.extend(names);

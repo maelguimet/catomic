@@ -20,8 +20,9 @@ Phase 6 is complete. Its exit evidence is in
   Enter applies one buffer transaction, Escape cancels, and undo restores the
   exact source.
 - **Repository broker**: Project-only Git capture, bounded file discovery,
-  128 KiB consumable context budget, and read-only list/range/grep/diff commands
-  across at most eight model broker rounds. Dot paths stay outside its file map;
+  selected 64 KiB (`gitmeow`) or 128 KiB (`megameow`) consumable context
+  budgets, and read-only list/range/grep/diff commands across at most eight
+  model broker rounds. Dot paths stay outside its file map;
   direct secret-like reads/diffs fail closed and grep reports skipped sensitive
   files. Git capture disables configured pagers, fsmonitor, external diff, and
   textconv helpers and strips ambient repository-identity overrides. Git stdin

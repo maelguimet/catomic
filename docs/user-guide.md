@@ -770,9 +770,10 @@ proposal is discarded or refused.
 
 ### Repository-aware commands
 
-`gitmeow INSTRUCTION` asks about a focused task with bounded repository
-context. `megameow INSTRUCTION` asks with broader, still-bounded repository
-context. Both commands require:
+`gitmeow INSTRUCTION` asks about a focused task with at most 64 KiB of
+repository-broker context. `megameow INSTRUCTION` asks with a broader, still
+bounded 128 KiB repository budget. The active-file context remains separately
+capped at 64 KiB for either command. Both commands require:
 
 - explicit Project mode;
 - a saved active file inside a Git repository; and
@@ -781,7 +782,8 @@ context. Both commands require:
 After invocation, Catomic captures bounded Git state and a bounded file map on a
 cancellable worker, then presents a separate send confirmation. The model can
 make at most eight read-only broker requests to list files, read a bounded range,
-grep, or show a file diff. Total broker responses are capped at 128 KiB.
+grep, or show a file diff. Initial and subsequently retrieved repository context
+share the selected command's 64 or 128 KiB total budget.
 
 The broker omits dot paths from its map, refuses path escapes, symlinks, unknown
 or oversized files, and obvious secret-like direct reads. Grep skips sensitive

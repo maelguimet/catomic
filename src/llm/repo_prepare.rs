@@ -31,7 +31,12 @@ pub struct RepoPrepareTask {
 }
 
 impl RepoPrepareTask {
+    #[cfg(test)]
     pub fn start(root: &Path, active_path: &Path) -> io::Result<Self> {
+        Self::start_with_budget(root, active_path, DEFAULT_CONTEXT_BUDGET)
+    }
+
+    pub fn start_with_budget(root: &Path, active_path: &Path, budget: usize) -> io::Result<Self> {
         let (sender, receiver) = mpsc::sync_channel(1);
         let cancel = Arc::new(AtomicBool::new(false));
         let worker_cancel = Arc::clone(&cancel);
@@ -40,7 +45,12 @@ impl RepoPrepareTask {
         std::thread::Builder::new()
             .name("catomic-repo-context".to_string())
             .spawn(move || {
-                let result = prepare(&root, &active_path, &worker_cancel);
+                let result = prepare(
+                    &root,
+                    &active_path,
+                    budget.min(DEFAULT_CONTEXT_BUDGET),
+                    &worker_cancel,
+                );
                 let _ = sender.send(result);
             })?;
         Ok(Self {
@@ -73,10 +83,13 @@ impl Drop for RepoPrepareTask {
     }
 }
 
-fn prepare(root: &Path, active_path: &Path, cancel: &AtomicBool) -> RepoPrepareResult {
-    let broker = match ContextBroker::new_until(root, DEFAULT_CONTEXT_BUDGET, || {
-        cancel.load(Ordering::Acquire)
-    }) {
+fn prepare(
+    root: &Path,
+    active_path: &Path,
+    budget: usize,
+    cancel: &AtomicBool,
+) -> RepoPrepareResult {
+    let broker = match ContextBroker::new_until(root, budget, || cancel.load(Ordering::Acquire)) {
         Ok(Some(broker)) => broker,
         Ok(None) => return RepoPrepareResult::Cancelled,
         Err(error) => return RepoPrepareResult::Error(error.to_string()),

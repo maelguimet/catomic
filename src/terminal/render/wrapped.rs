@@ -307,7 +307,7 @@ fn write_rows<W: Write + ?Sized>(
             continue;
         };
         if change_gutter > 0 && row.start_col == 0 {
-            write_change_gutter(out, row.document_row, options.llm_changes)?;
+            write_change_gutter(out, row.document_row, options.llm_changes, options.theme)?;
         } else if change_gutter > 0 {
             write!(out, "{:change_gutter$}", "")?;
         }

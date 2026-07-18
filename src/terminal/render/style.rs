@@ -12,11 +12,6 @@ use crate::editor::text_layout;
 
 use super::{ContentSurface, HighlightKind, RenderOptions, TextHighlight};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum SemanticRole {
-    LlmChanged,
-}
-
 pub(super) fn write_content_line<W: Write + ?Sized>(
     out: &mut W,
     content: &str,
@@ -161,22 +156,7 @@ fn segment_style(
         style = style.overlay(span_style(theme, span));
     }
     if llm_changed {
-        let changed = if options
-            .llm_changes
-            .is_some_and(|changes| !changes.color_enabled)
-        {
-            Style {
-                underlined: Some(true),
-                reversed: Some(true),
-                ..Style::default()
-            }
-        } else {
-            Style {
-                underlined: Some(true),
-                ..theme.diff_removed
-            }
-        };
-        style = style.overlay(changed);
+        style = style.overlay(theme.llm_changed);
     }
     if highlighted {
         style = style.overlay(match options.highlight_kind {
@@ -334,13 +314,20 @@ fn color_rgb(color: Color) -> (u8, u8, u8) {
 
 pub(super) fn write_semantic_gutter<W: Write + ?Sized>(
     out: &mut W,
-    role: SemanticRole,
-    color_enabled: bool,
+    style: Style,
+    truecolor: bool,
 ) -> io::Result<()> {
-    match (role, color_enabled) {
-        (SemanticRole::LlmChanged, true) => write!(out, "\x1b[31;1m┃\x1b[0m "),
-        (SemanticRole::LlmChanged, false) => write!(out, "\x1b[7m!\x1b[27m "),
-    }
+    let marker = if style.fg.is_some() || style.bg.is_some() {
+        "┃"
+    } else {
+        "!"
+    };
+    let style = style.overlay(Style {
+        bold: Some(true),
+        ..Style::default()
+    });
+    write_styled_text(out, marker, style, truecolor)?;
+    write!(out, " ")
 }
 
 #[cfg(test)]

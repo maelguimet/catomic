@@ -40,6 +40,7 @@ mod external_command;
 mod help;
 mod hooks;
 mod indentation;
+mod inline_clanker;
 mod open;
 mod overwrite;
 mod paging;
@@ -99,6 +100,7 @@ pub struct App {
     pub(crate) view_preferences: ViewPreferences,
     /// Validated semantic colors loaded atomically with startup configuration.
     pub(crate) theme: Theme,
+    /// Process-local color capability. `NO_COLOR` retains semantic non-color attributes.
     /// The active buffer (trait object for now; concrete type behind it).
     pub buffer: Box<dyn Buffer>,
     /// File path and dirty tracking.
@@ -156,6 +158,10 @@ pub struct App {
     pub(crate) model_session: model_session::ModelSession,
     /// Explicit searchable picker and bounded discovery cache; idle and network-free by default.
     pub(crate) model_picker: model_picker::ModelPickerState,
+    /// One-key inline clanker phase. No client exists in warning/confirmation state.
+    pub(crate) inline_clanker: inline_clanker::InlineClankerState,
+    /// Per-buffer render-only history for the latest accepted inline-clanker changes.
+    pub(crate) clanker_changes: inline_clanker::ChangeHistory,
     /// Project-only repo-context preparation, confirmation, or confirmed network task.
     pub(crate) repo_llm_state: Option<repo_llm::RepoLlmState>,
     /// External process/preview state; empty at startup and while unused.
@@ -283,6 +289,8 @@ impl App {
             llm_task: None,
             model_session: model_session::ModelSession::default(),
             model_picker: model_picker::ModelPickerState::default(),
+            inline_clanker: inline_clanker::InlineClankerState::default(),
+            clanker_changes: inline_clanker::ChangeHistory::default(),
             repo_llm_state: None,
             external_command: external_command::ExternalCommandState::default(),
             hooks: hooks::HookState::default(),
@@ -346,6 +354,7 @@ impl App {
             project_files::poll(self, &mut stdout)?;
             model_picker::poll(self, &mut stdout)?;
             llm_request::poll(self, &mut stdout)?;
+            inline_clanker::poll(self, &mut stdout)?;
             repo_llm::poll(self, &mut stdout)?;
             external_command::poll(self, &mut stdout)?;
             hooks::pump(self, &mut stdout)?;

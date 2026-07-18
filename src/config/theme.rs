@@ -80,6 +80,7 @@ pub(crate) struct Theme {
     pub(crate) search_match: Style,
     pub(crate) diff_added: Style,
     pub(crate) diff_removed: Style,
+    pub(crate) llm_changed: Style,
     pub(crate) preview: Style,
     pub(crate) truecolor: bool,
 }
@@ -160,6 +161,7 @@ fn apply_capabilities(mut theme: Theme, monochrome: bool, truecolor: bool) -> Th
         &mut theme.search_match,
         &mut theme.diff_added,
         &mut theme.diff_removed,
+        &mut theme.llm_changed,
         &mut theme.preview,
     ] {
         style.fg = None;
@@ -170,6 +172,8 @@ fn apply_capabilities(mut theme: Theme, monochrome: bool, truecolor: bool) -> Th
     theme.search_match.underlined = Some(true);
     theme.diff_added.bold = Some(true);
     theme.diff_removed.underlined = Some(true);
+    theme.llm_changed.underlined = Some(true);
+    theme.llm_changed.reversed = Some(true);
     theme
 }
 
@@ -214,6 +218,10 @@ fn named(name: &str) -> io::Result<Theme> {
         search_match: Style::pair(black, Color::Ansi(3)),
         diff_added: Style::fg(Color::Ansi(2)),
         diff_removed: Style::fg(Color::Ansi(1)),
+        llm_changed: Style {
+            underlined: Some(true),
+            ..Style::fg(Color::Ansi(1))
+        },
         preview: Style::default(),
         truecolor: false,
     };
@@ -243,6 +251,11 @@ fn named(name: &str) -> io::Result<Theme> {
             theme.syntax_number = plain;
             theme.diff_added = plain;
             theme.diff_removed = plain;
+            theme.llm_changed = Style {
+                underlined: Some(true),
+                reversed: Some(true),
+                ..plain
+            };
         }
         _ => return Err(invalid(format!("unknown theme name {name:?}"))),
     }
@@ -272,6 +285,7 @@ fn apply_role(theme: &mut Theme, role: &str, value: &toml::Value) -> io::Result<
         "search_match" => apply_style(&mut theme.search_match, value, role)?,
         "diff_added" => apply_style(&mut theme.diff_added, value, role)?,
         "diff_removed" => apply_style(&mut theme.diff_removed, value, role)?,
+        "llm_changed" => apply_style(&mut theme.llm_changed, value, role)?,
         "preview" => apply_style(&mut theme.preview, value, role)?,
         _ => {}
     }

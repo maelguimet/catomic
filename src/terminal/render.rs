@@ -46,7 +46,6 @@ pub(crate) enum ContentSurface {
 pub(crate) struct LlmChanges<'a> {
     pub(crate) ranges: &'a [TextHighlight],
     pub(crate) gutter_lines: &'a [usize],
-    pub(crate) color_enabled: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -182,12 +181,13 @@ pub(super) fn write_change_gutter<W: Write + ?Sized>(
     out: &mut W,
     row: usize,
     changes: Option<LlmChanges<'_>>,
+    theme: Theme,
 ) -> std::io::Result<()> {
     let Some(changes) = changes else {
         return write!(out, "  ");
     };
     if changes.gutter_lines.contains(&row) {
-        style::write_semantic_gutter(out, style::SemanticRole::LlmChanged, changes.color_enabled)
+        style::write_semantic_gutter(out, theme.llm_changed, theme.truecolor)
     } else {
         write!(out, "  ")
     }

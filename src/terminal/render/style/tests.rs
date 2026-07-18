@@ -248,7 +248,6 @@ fn llm_changed_ranges_are_red_underlined_and_grapheme_safe() {
             llm_changes: Some(super::super::LlmChanges {
                 ranges: &ranges,
                 gutter_lines: &[0],
-                color_enabled: true,
             }),
             ..RenderOptions::default()
         },
@@ -269,8 +268,8 @@ fn llm_changed_ranges_have_a_non_color_fallback() {
             llm_changes: Some(super::super::LlmChanges {
                 ranges: &ranges,
                 gutter_lines: &[0],
-                color_enabled: false,
             }),
+            theme: crate::config::theme::parse("[theme]\nname = 'mono'\n").unwrap(),
             ..RenderOptions::default()
         },
     );

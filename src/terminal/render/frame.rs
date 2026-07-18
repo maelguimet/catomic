@@ -8,7 +8,10 @@ use std::io;
 
 use crate::buffer::{Buffer, Cursor, LineView};
 
-use super::{line_number_gutter, style, write_line_number, RenderOptions, RenderViewport};
+use super::{
+    change_gutter_width, line_number_gutter, style, write_change_gutter, write_line_number,
+    RenderOptions, RenderViewport,
+};
 
 pub(super) fn compose_buffer(
     out: &mut Vec<u8>,
@@ -25,7 +28,8 @@ pub(super) fn compose_buffer(
         ..
     } = viewport;
     let content_height = height.saturating_sub(1);
-    let gutter = gutter_width(buffer, options, width);
+    let (line_gutter, change_gutter) = gutter_width(buffer, options, width);
+    let gutter = line_gutter.saturating_add(change_gutter);
     let content_width = width.saturating_sub(gutter);
     let cursor = buffer.cursor();
     let fetch_width = fetch_width(cursor, start_row, start_col, content_height, content_width);
@@ -38,7 +42,8 @@ pub(super) fn compose_buffer(
         start_col,
         content_height,
         content_width,
-        gutter,
+        line_gutter,
+        change_gutter,
         options,
     )?;
     if height > 0 {
@@ -55,13 +60,20 @@ pub(super) fn compose_buffer(
     super::write_terminal_cursor(out, position, options.cursor_shape)
 }
 
-fn gutter_width(buffer: &dyn Buffer, options: RenderOptions, width: usize) -> usize {
-    if options.line_numbers {
+fn gutter_width(buffer: &dyn Buffer, options: RenderOptions<'_>, width: usize) -> (usize, usize) {
+    let line_gutter = if options.line_numbers {
         line_number_gutter(buffer.line_count())
     } else {
         0
     }
-    .min(width)
+    .min(width);
+    let change_gutter = change_gutter_width(
+        options
+            .llm_changes
+            .is_some_and(|changes| !changes.gutter_lines.is_empty()),
+    )
+    .min(width.saturating_sub(line_gutter));
+    (line_gutter, change_gutter)
 }
 
 fn fetch_width(
@@ -91,13 +103,22 @@ fn write_rows(
     start_col: usize,
     height: usize,
     width: usize,
-    gutter: usize,
-    options: RenderOptions,
+    line_gutter: usize,
+    change_gutter: usize,
+    options: RenderOptions<'_>,
 ) -> io::Result<()> {
     for screen_row in 1..=height {
         style::write_row_start(out, screen_row, options.theme.text, options.theme.truecolor)?;
-        if gutter > 0 {
-            write_line_number(out, start_row + screen_row - 1, gutter, options.theme)?;
+        if change_gutter > 0 {
+            write_change_gutter(
+                out,
+                start_row + screen_row - 1,
+                options.llm_changes,
+                options.theme,
+            )?;
+        }
+        if line_gutter > 0 {
+            write_line_number(out, start_row + screen_row - 1, line_gutter, options.theme)?;
         }
         if width > 0 {
             if let Some(line) = visible.get(screen_row - 1) {

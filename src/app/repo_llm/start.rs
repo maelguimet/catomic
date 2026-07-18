@@ -56,7 +56,11 @@ pub(super) fn begin_with_command_and_settings(
     instruction: &str,
     preset: BackendPreset,
 ) -> io::Result<()> {
-    if app.repo_llm_state.is_some() || app.pending_llm_request.is_some() || app.llm_task.is_some() {
+    if app.repo_llm_state.is_some()
+        || app.pending_llm_request.is_some()
+        || app.llm_task.is_some()
+        || super::super::inline_clanker::is_busy(app)
+    {
         app.message = Some("An LLM request is already pending or running.".to_string());
         return app.render(out);
     }

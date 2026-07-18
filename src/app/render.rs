@@ -10,12 +10,33 @@ use crate::mode::Mode;
 use crate::terminal as term;
 
 use super::{
-    external_command, help, lint, llm_preview, model_picker, project_files, recovery, status, view,
-    App,
+    external_command, help, inline_clanker, lint, llm_answer, llm_preview, model_picker,
+    project_files, recovery, status, view, App,
 };
 
 pub(super) fn render(app: &App, out: &mut dyn Write) -> io::Result<()> {
-    let mut options = render_options(app);
+    let visible_changes = inline_clanker::preview_changes(app).or_else(|| {
+        view::source_is_displayed(app)
+            .then(|| inline_clanker::source_changes(app))
+            .flatten()
+    });
+    let change_ranges = visible_changes
+        .map(|changes| {
+            changes
+                .ranges
+                .iter()
+                .map(|range| term::render::TextHighlight {
+                    start: range.start,
+                    end: range.end,
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let llm_changes = visible_changes.map(|changes| term::render::LlmChanges {
+        ranges: &change_ranges,
+        gutter_lines: changes.gutter_lines,
+    });
+    let mut options = render_options(app, llm_changes);
     if let Some(message) = app.message.as_deref() {
         options.status_role = status::transient_role(app, message);
         return render_frame(app, out, message, options);
@@ -27,7 +48,7 @@ fn render_frame(
     app: &App,
     out: &mut dyn Write,
     annotation: &str,
-    options: term::render::RenderOptions,
+    options: term::render::RenderOptions<'_>,
 ) -> io::Result<()> {
     term::render::render_buffer(
         out,
@@ -44,7 +65,10 @@ fn render_frame(
     )
 }
 
-fn render_options(app: &App) -> term::render::RenderOptions {
+fn render_options<'a>(
+    app: &App,
+    llm_changes: Option<term::render::LlmChanges<'a>>,
+) -> term::render::RenderOptions<'a> {
     let (highlight, highlight_kind) = active_highlight(app).map_or(
         (None, term::render::HighlightKind::Selection),
         |(range, kind)| (Some(range), kind),
@@ -57,6 +81,7 @@ fn render_options(app: &App) -> term::render::RenderOptions {
         },
         highlight,
         highlight_kind,
+        llm_changes,
         syntax: view::display_syntax(app),
         surface: view::display_surface(app),
         theme: app.theme,
@@ -108,6 +133,8 @@ fn local_surface_is_open(app: &App) -> bool {
         || project_files::is_viewing(app)
         || model_picker::is_viewing(app)
         || llm_preview::is_viewing(app)
+        || llm_answer::is_viewing(app)
+        || inline_clanker::is_previewing(app)
 }
 
 fn status_line(app: &App) -> String {

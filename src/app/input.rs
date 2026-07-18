@@ -13,9 +13,9 @@ use crate::help_catalog::{self, EditorAction};
 
 use super::file_state::refresh_dirty;
 use super::{
-    buffers, command_prompt, completion, external_command, help, indentation, lint, llm_answer,
-    llm_preview, llm_request, model_picker, navigation, overwrite, paging, project_files, recovery,
-    reload, replace, repo_llm, save, search, selection, undo_redo, view,
+    buffers, command_prompt, completion, external_command, help, indentation, inline_clanker, lint,
+    llm_answer, llm_preview, llm_request, model_picker, navigation, overwrite, paging,
+    project_files, recovery, reload, replace, repo_llm, save, search, selection, undo_redo, view,
 };
 
 mod scope;
@@ -42,6 +42,8 @@ pub(super) fn finish_content_edit_with_message(
     completion::cancel(app);
     app.selection.clear();
     refresh_dirty(&mut app.file, &*app.buffer);
+    app.clanker_changes
+        .reconcile(app.buffer.edit_history_position());
     if app.buffer.is_read_only() {
         app.message = Some("Large file is read-only in paged mode.".to_string());
     } else {
@@ -99,6 +101,9 @@ pub(crate) fn handle_key_with(
     if command_prompt::handle_active_key(app, out, key)? {
         return Ok(());
     }
+    if inline_clanker::handle_key(app, out, key)? {
+        return Ok(());
+    }
     if llm_preview::handle_key(app, out, key)? {
         return Ok(());
     }
@@ -116,6 +121,25 @@ pub(crate) fn handle_key_with(
     }
     if view::is_preview(app) && view::handle_key(app, out, key)? {
         return Ok(());
+    }
+    match key {
+        KeyEvent {
+            code: KeyCode::F(3),
+            modifiers: KeyModifiers::SHIFT,
+            ..
+        } => {
+            inline_clanker::clear_changes(app, out)?;
+            return Ok(());
+        }
+        KeyEvent {
+            code: KeyCode::F(3),
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            super::hooks::before_inline_clanker(app, out)?;
+            return Ok(());
+        }
+        _ => {}
     }
     if help::handle_key(app, out, key)? {
         return Ok(());
@@ -335,6 +359,9 @@ pub(crate) fn handle_paste(
         return Ok(());
     }
     if llm_request::handle_paste(app, out)? {
+        return Ok(());
+    }
+    if inline_clanker::handle_paste(app, out)? {
         return Ok(());
     }
     if llm_preview::handle_paste(app, out)? {

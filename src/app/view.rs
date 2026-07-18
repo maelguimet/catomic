@@ -72,6 +72,9 @@ pub(crate) fn display_buffer(app: &super::App) -> &dyn Buffer {
     if let Some(buffer) = super::llm_preview::display_buffer(app) {
         return buffer;
     }
+    if let Some(buffer) = super::inline_clanker::display_buffer(app) {
+        return buffer;
+    }
     if let Some(buffer) = super::llm_answer::display_buffer(app) {
         return buffer;
     }
@@ -105,6 +108,7 @@ pub(crate) fn display_syntax(app: &super::App) -> SyntaxKind {
         || super::recovery::is_viewing(app)
         || super::external_command::is_viewing(app)
         || super::llm_preview::is_viewing(app)
+        || super::inline_clanker::is_previewing(app)
         || super::llm_answer::is_viewing(app)
         || super::model_picker::is_viewing(app)
         || super::lint::is_viewing(app)
@@ -138,11 +142,21 @@ pub(crate) fn display_surface(app: &super::App) -> crate::terminal::render::Cont
 }
 
 pub(crate) fn gutter_width(app: &super::App) -> usize {
-    if app.view_preferences.line_numbers() {
+    let line_numbers = if app.view_preferences.line_numbers() {
         crate::terminal::render::line_number_gutter(display_buffer(app).line_count())
     } else {
         0
-    }
+    };
+    let source_is_visible = source_is_displayed(app);
+    let changes = super::inline_clanker::preview_changes(app).or_else(|| {
+        source_is_visible
+            .then(|| super::inline_clanker::source_changes(app))
+            .flatten()
+    });
+    line_numbers
+        + crate::terminal::render::change_gutter_width(
+            changes.is_some_and(|changes| !changes.gutter_lines.is_empty()),
+        )
 }
 
 pub(crate) fn content_width(app: &super::App) -> usize {
@@ -156,6 +170,7 @@ pub(crate) fn soft_wrap_active(app: &super::App) -> bool {
             && !super::recovery::is_viewing(app)
             && !super::external_command::is_viewing(app)
             && !super::llm_preview::is_viewing(app)
+            && !super::inline_clanker::is_previewing(app)
             && !super::llm_answer::is_viewing(app)
             && !super::model_picker::is_viewing(app)
             && !super::lint::is_viewing(app)

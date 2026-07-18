@@ -162,7 +162,8 @@ impl PtyEditor {
 
     fn wait_for_initial_render(&self) -> TestResult {
         wait_until("initial PTY render", Duration::from_secs(2), || {
-            !self.output.lock().expect("pty output mutex").is_empty()
+            let output = self.output_string();
+            output.contains("\x1b[?1049h") && output.contains("\x1b[1;1H")
         })
     }
 

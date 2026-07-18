@@ -6,7 +6,7 @@ Catomic is the editor I wanted when Nano felt too bare and everything else felt
 like moving into somebody else's operating system. It is Linux-first, modeless,
 quick to open, and full of shortcuts that already make sense.
 
-It is also in open beta. Use it, break it, tell me what got weird—but back up
+It is also in open beta. Use it, break it, tell me what got weird. But back up
 anything precious and read the [file-semantics limitations](#limitations) before
 making it your only editor.
 

@@ -20,6 +20,7 @@ pub(crate) use mouse::handle_mouse;
 pub(crate) struct SelectionUiState {
     range: Option<Selection>,
     drag_anchor: Option<Cursor>,
+    touch_anchor: Option<Cursor>,
     last_click: Option<(Cursor, std::time::Instant)>,
 }
 
@@ -31,8 +32,22 @@ impl SelectionUiState {
     pub(crate) fn clear(&mut self) {
         self.range = None;
         self.drag_anchor = None;
+        self.touch_anchor = None;
         self.last_click = None;
     }
+}
+
+pub(super) fn begin_touch_selection(app: &mut super::App) {
+    app.selection.clear();
+    app.selection.touch_anchor = Some(app.buffer.cursor());
+}
+
+pub(super) fn is_touch_selecting(app: &super::App) -> bool {
+    app.selection.touch_anchor.is_some()
+}
+
+pub(super) fn cancel_touch_selection(app: &mut super::App) {
+    app.selection.touch_anchor = None;
 }
 
 pub(crate) fn move_to(

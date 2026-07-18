@@ -186,13 +186,19 @@ fn apply_local_match(
         app.buffer.set_cursor(found.start);
         app.search.active_match = Some(found);
         app.search.active_descriptor_position = None;
-        app.message = Some(format!(
-            "Found '{query}'. Enter/Down next, Up previous, Esc closes."
-        ));
+        app.message = Some(if app.screen.width < 40 {
+            super::status::format_prompt("Find", query, app.screen.width as usize)
+        } else {
+            format!("Found '{query}'. Enter/Down next, Up previous, Esc closes.")
+        });
         app.reveal_cursor();
     } else {
         app.search.active_match = None;
-        app.message = Some(format!("No matches for '{query}'. Esc closes."));
+        app.message = Some(if app.screen.width < 40 {
+            super::status::format_prompt("No match", query, app.screen.width as usize)
+        } else {
+            format!("No matches for '{query}'. Esc closes.")
+        });
     }
 }
 

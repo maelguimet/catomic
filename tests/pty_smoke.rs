@@ -145,6 +145,20 @@ impl PtyEditor {
         Self::spawn_command_sized_with_environment(cmd, rows, cols, environment)
     }
 
+    fn spawn_mobile(paths: &[&PathBuf], rows: u16, cols: u16) -> TestResult<Self> {
+        let environment = TempProject::new("mobile_environment");
+        let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
+        for path in paths {
+            cmd.arg(path);
+        }
+        cmd.env("CATOMIC_MOBILE", "1");
+        cmd.env("XDG_CONFIG_HOME", &environment.root);
+        cmd.env("XDG_STATE_HOME", &environment.root);
+        cmd.env("HOME", &environment.root);
+        cmd.env("TERM", "xterm-256color");
+        Self::spawn_command_sized_with_environment(cmd, rows, cols, environment)
+    }
+
     fn spawn_with(paths: &[&PathBuf], xdg_config_home: Option<&PathBuf>) -> TestResult<Self> {
         let environment = TempProject::new("environment");
         let xdg_root = xdg_config_home.unwrap_or(&environment.root);
@@ -255,6 +269,18 @@ impl PtyEditor {
         writer.write_all(bytes)?;
         writer.flush()?;
         Ok(())
+    }
+
+    fn tap(&mut self, column: u16, row: u16) -> TestResult {
+        let column = column.saturating_add(1);
+        let row = row.saturating_add(1);
+        self.send_keys(format!("\x1b[<0;{column};{row}M\x1b[<0;{column};{row}m").as_bytes())
+    }
+
+    fn scroll_down(&mut self, column: u16, row: u16) -> TestResult {
+        let column = column.saturating_add(1);
+        let row = row.saturating_add(1);
+        self.send_keys(format!("\x1b[<65;{column};{row}M").as_bytes())
     }
 
     fn resize(&self, rows: u16, cols: u16) -> TestResult {
@@ -449,6 +475,59 @@ fn pty_save_undo_save_quit_writes_expected_file() -> TestResult {
     assert!(!output.contains("\x1b[2J"), "must avoid full-screen clears");
     assert_eq!(fs::read_to_string(&temp.path)?, "ab");
 
+    Ok(())
+}
+
+#[test]
+fn pty_mobile_touch_edit_focus_resize_save_and_quit_need_no_hardware_chord() -> TestResult {
+    let first = TempPath::new("mobile_first");
+    let second = TempPath::new("mobile_second");
+    fs::write(&first.path, "a\t猫e\u{301}🙂\ntarget line\nlast")?;
+    fs::write(&second.path, "second mobile buffer")?;
+    let mut editor = PtyEditor::spawn_mobile(&[&first.path, &second.path], 18, 30)?;
+
+    editor.wait_for_output("mobile action row", "[Menu][Save][Undo]")?;
+    editor.tap(0, 0)?;
+    editor.send_keys(b"X")?;
+    editor.clear_output();
+    editor.send_keys(b"\x1b[O\x1b[I")?;
+    editor.wait_for_output("focus redraw preserves edit", "Xa")?;
+
+    editor.clear_output();
+    editor.resize(8, 20)?;
+    editor.signal_resize()?;
+    editor.wait_for_output("portrait mobile action row", "[Menu][Save][Undo]")?;
+    editor.tap(14, 7)?;
+    editor.wait_for_output("touch undo restores source", "a")?;
+
+    editor.tap(0, 0)?;
+    editor.send_keys(b"!")?;
+    editor.tap(8, 7)?;
+    if let Err(error) = wait_until("mobile save on disk", Duration::from_secs(2), || {
+        fs::read_to_string(&first.path).is_ok_and(|text| text.starts_with("!a"))
+    }) {
+        return Err(format!(
+            "{error}; disk={:?}; output={:?}",
+            fs::read_to_string(&first.path),
+            editor.output_string()
+        )
+        .into());
+    }
+
+    editor.clear_output();
+    editor.resize(18, 30)?;
+    editor.signal_resize()?;
+    editor.wait_for_output("restored mobile dimensions", "[Menu][Save][Undo]")?;
+    editor.tap(1, 17)?;
+    editor.wait_for_output("touch action palette", "Open file")?;
+    for _ in 0..48 {
+        editor.scroll_down(2, 2)?;
+    }
+    editor.tap(15, 17)?;
+    editor.wait_for_exit()?;
+
+    assert!(fs::read_to_string(&first.path)?.starts_with("!a"));
+    assert_eq!(fs::read_to_string(&second.path)?, "second mobile buffer");
     Ok(())
 }
 

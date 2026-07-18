@@ -8,7 +8,7 @@
 //!
 //! Screen owns size + scroll state. Real viewport/reveal behavior is still minimal.
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub struct Screen {
     pub width: u16,
     pub height: u16,
@@ -16,6 +16,14 @@ pub struct Screen {
     pub scroll_left: usize,
     /// Scalar column where the first visual row begins while soft wrap is active.
     pub wrap_col: usize,
+    /// Status plus optional touch action rows reserved below document content.
+    bottom_rows: u16,
+}
+
+impl Default for Screen {
+    fn default() -> Self {
+        Self::new(0, 0)
+    }
 }
 
 impl Screen {
@@ -26,6 +34,7 @@ impl Screen {
             scroll_top: 0,
             scroll_left: 0,
             wrap_col: 0,
+            bottom_rows: 1,
         }
     }
 
@@ -34,9 +43,14 @@ impl Screen {
         self.height = height;
     }
 
+    pub(crate) fn set_action_bar(&mut self, enabled: bool) {
+        self.bottom_rows = if enabled { 2 } else { 1 };
+        self.clamp_scroll();
+    }
+
     /// How many lines we can show.
     pub fn visible_height(&self) -> usize {
-        self.height.saturating_sub(1) as usize // leave room for status later
+        self.height.saturating_sub(self.bottom_rows) as usize
     }
 
     /// How many columns of content we can show (scalar char count for now).
@@ -61,7 +75,7 @@ impl Screen {
     }
 
     /// Ensure `row` is visible within the content area (using visible_height()).
-    /// Bottom row is reserved for message/status; content viewport height is visible_height().
+    /// Bottom row(s) are reserved for status/actions; content height is visible_height().
     /// If visible height is 0, scroll_top is forced to 0.
     /// Uses saturating arithmetic; never panics.
     pub fn reveal_row(&mut self, row: usize) {
@@ -308,5 +322,17 @@ mod tests {
         s.clamp_scroll();
         assert_eq!(s.scroll_top, 0);
         assert_eq!(s.scroll_left, 0);
+    }
+
+    #[test]
+    fn action_bar_reserves_a_second_bottom_row_at_tiny_sizes() {
+        let mut screen = Screen::new(20, 6);
+        assert_eq!(screen.visible_height(), 5);
+        screen.set_action_bar(true);
+        assert_eq!(screen.visible_height(), 4);
+        screen.update_size(20, 1);
+        assert_eq!(screen.visible_height(), 0);
+        screen.set_action_bar(false);
+        assert_eq!(screen.visible_height(), 0);
     }
 }

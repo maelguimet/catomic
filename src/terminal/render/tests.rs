@@ -220,6 +220,33 @@ fn render_buffer_clears_each_row_without_full_screen_clear() {
 }
 
 #[test]
+fn mobile_action_bar_reserves_a_second_bottom_row_and_clips_both_rows() {
+    let b = SimpleBuffer::from_text("one\ntwo\nthree");
+    let mut out = Vec::new();
+    render_buffer(
+        &mut out,
+        &b,
+        RenderViewport::new(0, 0, 4, 10),
+        Some("status that wraps"),
+        RenderOptions {
+            action_bar: Some("[Menu][Save][Undo]"),
+            ..RenderOptions::default()
+        },
+    )
+    .unwrap();
+
+    let rendered = String::from_utf8(out).unwrap();
+    assert!(rendered.contains("\x1b[1;1H\x1b[Kone"));
+    assert!(rendered.contains("\x1b[2;1H\x1b[Ktwo"));
+    assert!(!rendered.contains("three"));
+    assert!(rendered.contains("\x1b[3;1H"));
+    assert!(rendered.contains("statu…raps"), "{rendered:?}");
+    assert!(rendered.contains("\x1b[4;1H"));
+    assert!(rendered.contains("[Menu…ndo]"));
+    assert!(!rendered.contains("status that wraps"));
+}
+
+#[test]
 fn render_buffer_start_col_zero_nonzero_width_preserves_default_visible_output() {
     let b = SimpleBuffer::from_text("0123456789\nABCDEFGHIJ\n");
     let mut out_default: Vec<u8> = Vec::new();

@@ -64,6 +64,7 @@ mod lint;
 mod llm_answer;
 mod llm_preview;
 mod llm_request;
+mod mobile;
 mod model_picker;
 mod model_session;
 mod navigation;
@@ -100,6 +101,8 @@ pub struct App {
     pub(crate) theme: Theme,
     /// Session-level opt-in autocomplete policy; contains no client at startup.
     pub(crate) autocomplete: autocomplete::AutocompleteState,
+    /// Plain-safe touch UI; disabled unless Android/Termux/config explicitly enables it.
+    pub(crate) mobile: mobile::MobileUiState,
     /// The active buffer (trait object for now; concrete type behind it).
     pub buffer: Box<dyn Buffer>,
     /// File path and dirty tracking.

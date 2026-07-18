@@ -72,7 +72,10 @@ impl App {
             Event::Paste(text) => input::handle_paste(self, out, &text),
             Event::Mouse(mouse) => selection::handle_mouse(self, out, mouse),
             Event::Resize(width, height) => self.handle_resize(width, height, out),
-            _ => Ok(()),
+            Event::FocusGained => {
+                viewport::redraw_after_focus(self, crossterm::terminal::size().ok(), out)
+            }
+            Event::FocusLost => Ok(()),
         }
     }
 

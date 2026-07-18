@@ -27,7 +27,7 @@ pub(super) fn compose_buffer(
         width,
         ..
     } = viewport;
-    let content_height = height.saturating_sub(1);
+    let content_height = super::content_height(height, options.action_bar);
     let (line_gutter, change_gutter) = gutter_width(buffer, options, width);
     let gutter = line_gutter.saturating_add(change_gutter);
     let content_width = width.saturating_sub(gutter);
@@ -46,17 +46,8 @@ pub(super) fn compose_buffer(
         change_gutter,
         options,
     )?;
-    if height > 0 {
-        super::status_bar::write_status_bar(
-            out,
-            height,
-            width,
-            message.unwrap_or(""),
-            options.status_role,
-            options.status_theme,
-        )?;
-    }
-    let position = cursor_position(buffer, cursor, &visible, viewport, gutter);
+    super::write_bottom_rows(out, viewport, message, options)?;
+    let position = cursor_position(buffer, cursor, &visible, viewport, gutter, content_height);
     super::write_terminal_cursor(out, position, options.cursor_shape)
 }
 
@@ -142,8 +133,8 @@ fn cursor_position(
     visible: &[LineView],
     viewport: RenderViewport,
     gutter: usize,
+    content_height: usize,
 ) -> Option<(usize, usize)> {
-    let content_height = viewport.height.saturating_sub(1);
     let content_width = viewport.width.saturating_sub(gutter);
     let Cursor { row, col } = cursor;
     let row_visible =

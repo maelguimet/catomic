@@ -13,8 +13,8 @@ use crate::help_catalog::{self, EditorAction};
 
 use super::file_state::refresh_dirty;
 use super::{
-    autocomplete, buffers, command_prompt, completion, help, model_picker, overwrite, paging,
-    reload, replace, save, search, selection, view,
+    autocomplete, buffers, command_prompt, completion, help, mobile, model_picker, overwrite,
+    paging, reload, replace, save, search, selection, view,
 };
 
 mod editing;
@@ -74,10 +74,24 @@ pub(crate) fn handle_key_with(
     out: &mut dyn Write,
     key: KeyEvent,
 ) -> io::Result<()> {
+    if mobile::handle_key(app, out, key)? {
+        return Ok(());
+    }
     let scope = scope::active(app);
     let Some(key) = app.keybindings.translate(scope, key) else {
         return Ok(());
     };
+    handle_normalized_key(app, out, key)
+}
+
+/// Dispatch a canonical key without consulting user hardware bindings.
+/// Mobile actions use this after explicit hit testing so unbinding a keyboard
+/// chord cannot make its corresponding touch action unreachable.
+pub(super) fn handle_normalized_key(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    key: KeyEvent,
+) -> io::Result<()> {
     if surfaces::handle_raw_key(app, out, key)? {
         return Ok(());
     }
@@ -154,6 +168,9 @@ pub(crate) fn handle_paste(
     out: &mut dyn Write,
     text: &str,
 ) -> io::Result<()> {
+    if mobile::handle_paste(app, out)? {
+        return Ok(());
+    }
     if autocomplete::handle_paste(app, out)? {
         return Ok(());
     }
@@ -171,7 +188,11 @@ pub(super) fn handle_quit(app: &mut super::App, out: &mut dyn Write) -> io::Resu
         return Ok(());
     }
     app.pending_quit_confirm = true;
-    app.message = Some(if dirty_count == 1 {
+    app.message = Some(if mobile::is_enabled(app) && dirty_count == 1 {
+        "Unsaved changes. Tap Menu > Quit again to discard, or tap Save.".to_string()
+    } else if mobile::is_enabled(app) {
+        format!("Unsaved changes in {dirty_count} buffers. Tap Menu > Quit again to discard.")
+    } else if dirty_count == 1 {
         "Unsaved changes. Press Ctrl+Q again to quit without saving, Ctrl+S to save.".to_string()
     } else {
         format!(

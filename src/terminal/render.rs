@@ -71,6 +71,8 @@ pub(crate) struct RenderOptions<'a> {
     pub(crate) soft_wrap: bool,
     pub(crate) status_role: StatusRole,
     pub(crate) status_theme: StatusTheme,
+    /// Optional second bottom row for touch actions.
+    pub(crate) action_bar: Option<&'a str>,
 }
 
 impl Default for RenderOptions<'_> {
@@ -88,6 +90,7 @@ impl Default for RenderOptions<'_> {
             soft_wrap: false,
             status_role: StatusRole::Normal,
             status_theme: StatusTheme::default(),
+            action_bar: None,
         }
     }
 }
@@ -136,6 +139,43 @@ pub(crate) fn line_number_gutter(line_count: usize) -> usize {
 
 pub(crate) fn change_gutter_width(has_changes: bool) -> usize {
     usize::from(has_changes) * 2
+}
+
+pub(super) fn content_height(height: usize, action_bar: Option<&str>) -> usize {
+    height
+        .saturating_sub(1)
+        .saturating_sub(usize::from(action_bar.is_some()))
+}
+
+pub(super) fn write_bottom_rows(
+    out: &mut Vec<u8>,
+    viewport: RenderViewport,
+    message: Option<&str>,
+    options: RenderOptions<'_>,
+) -> io::Result<()> {
+    let action_rows = usize::from(options.action_bar.is_some());
+    let status_row = viewport.height.saturating_sub(action_rows);
+    if status_row > 0 {
+        status_bar::write_status_bar(
+            out,
+            status_row,
+            viewport.width,
+            message.unwrap_or(""),
+            options.status_role,
+            options.status_theme,
+        )?;
+    }
+    if let Some(action_bar) = options.action_bar.filter(|_| viewport.height > 0) {
+        status_bar::write_status_bar(
+            out,
+            viewport.height,
+            viewport.width,
+            action_bar,
+            StatusRole::Info,
+            options.status_theme,
+        )?;
+    }
+    Ok(())
 }
 
 /// Basic viewport render with one optional active search highlight.

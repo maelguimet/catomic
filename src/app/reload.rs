@@ -62,6 +62,27 @@ pub(crate) fn reload_arm_message(status: &ExternalFileStatus, dirty: bool) -> St
     }
 }
 
+pub(crate) fn reload_arm_message_for_ui(
+    status: &ExternalFileStatus,
+    dirty: bool,
+    mobile: bool,
+) -> String {
+    if !mobile {
+        return reload_arm_message(status, dirty);
+    }
+    match status {
+        ExternalFileStatus::Modified => mobile_reload_message(
+            "File changed on disk. Tap Menu > Check / reload file again to reload from disk",
+            dirty,
+        ),
+        ExternalFileStatus::Deleted => mobile_reload_message(
+            "File deleted on disk. Tap Menu > Check / reload file again to clear the buffer",
+            dirty,
+        ),
+        _ => reload_arm_message(status, dirty),
+    }
+}
+
 pub(crate) fn reload_drift_message(status: &ExternalFileStatus, dirty: bool) -> String {
     let local = if dirty {
         " Local changes preserved."
@@ -76,6 +97,38 @@ pub(crate) fn reload_drift_message(status: &ExternalFileStatus, dirty: bool) -> 
             "File was deleted after reload was armed. Press Ctrl+R to re-arm confirmation.{local}"
         ),
         _ => format!("File state changed after reload was armed.{local}"),
+    }
+}
+
+pub(crate) fn reload_drift_message_for_ui(
+    status: &ExternalFileStatus,
+    dirty: bool,
+    mobile: bool,
+) -> String {
+    if !mobile {
+        return reload_drift_message(status, dirty);
+    }
+    let local = if dirty {
+        " Local changes preserved."
+    } else {
+        ""
+    };
+    match status {
+        ExternalFileStatus::Modified => format!(
+            "File changed again on disk. Tap Menu > Check / reload file to re-arm confirmation.{local}"
+        ),
+        ExternalFileStatus::Deleted => format!(
+            "File was deleted after reload was armed. Tap Menu > Check / reload file to re-arm confirmation.{local}"
+        ),
+        _ => format!("File state changed after reload was armed.{local}"),
+    }
+}
+
+fn mobile_reload_message(prefix: &str, dirty: bool) -> String {
+    if dirty {
+        format!("{prefix} and discard local changes.")
+    } else {
+        format!("{prefix}.")
     }
 }
 
@@ -266,7 +319,8 @@ pub(crate) fn apply_check_observation(app: &mut super::App, obs: &ExternalFileOb
                 app.pending_reload = None;
             }
             let dirty = app.file.dirty;
-            let text = reload_arm_message(&obs.status, dirty);
+            let text =
+                reload_arm_message_for_ui(&obs.status, dirty, super::mobile::is_enabled(app));
             app.message = Some(text);
         }
     }

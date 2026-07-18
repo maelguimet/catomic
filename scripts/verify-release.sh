@@ -180,6 +180,7 @@ if not os.WIFEXITED(status) or os.WEXITSTATUS(status) != 0:
 PY
 
 grep -Fq $'\033[?1000l' "$temp_dir/pty-transcript" || die "PTY smoke did not disable mouse capture"
+grep -Fq $'\033[?1004l' "$temp_dir/pty-transcript" || die "PTY smoke did not disable focus reporting"
 grep -Fq $'\033[?2004l' "$temp_dir/pty-transcript" || \
   die "PTY smoke did not disable bracketed paste"
 grep -Fq $'\033[?1049l' "$temp_dir/pty-transcript" || die "PTY smoke did not leave alternate screen"

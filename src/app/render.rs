@@ -10,7 +10,7 @@ use crate::mode::Mode;
 use crate::terminal as term;
 
 use super::{
-    autocomplete, external_command, help, inline_clanker, lint, llm_answer, llm_preview,
+    autocomplete, external_command, help, inline_clanker, lint, llm_answer, llm_preview, mobile,
     model_picker, project_files, recovery, status, view, App,
 };
 
@@ -42,7 +42,8 @@ fn render(app: &App, out: &mut dyn Write) -> io::Result<()> {
         ranges: &change_ranges,
         gutter_lines: changes.gutter_lines,
     });
-    let mut options = render_options(app, llm_changes);
+    let action_bar = mobile::action_bar_text(app);
+    let mut options = render_options(app, llm_changes, action_bar.as_deref());
     if let Some(message) = app.message.as_deref() {
         options.status_role = status::transient_role(app, message);
         return render_frame(app, out, message, options);
@@ -82,6 +83,7 @@ fn render_frame(
 fn render_options<'a>(
     app: &App,
     llm_changes: Option<term::render::LlmChanges<'a>>,
+    action_bar: Option<&'a str>,
 ) -> term::render::RenderOptions<'a> {
     let (highlight, highlight_kind) = active_highlight(app).map_or(
         (None, term::render::HighlightKind::Selection),
@@ -104,6 +106,7 @@ fn render_options<'a>(
         soft_wrap: view::soft_wrap_active(app),
         status_role: term::render::StatusRole::Normal,
         status_theme: app.status_theme,
+        action_bar,
     }
 }
 
@@ -139,7 +142,8 @@ fn active_highlight(
 }
 
 fn local_surface_is_open(app: &App) -> bool {
-    external_command::is_viewing(app)
+    mobile::is_viewing(app)
+        || external_command::is_viewing(app)
         || recovery::is_viewing(app)
         || help::is_viewing(app)
         || view::is_preview(app)
@@ -159,7 +163,16 @@ fn status_line(app: &App) -> String {
             app.buffer_count(),
         )
     });
-    let status = status::format_status_line(
+    let autocomplete = autocomplete::status_label(app);
+    let show_autocomplete = !mobile::is_enabled(app) || autocomplete != "ac off";
+    let prefix = show_autocomplete.then(|| format!("[{autocomplete}] "));
+    let available_width = (app.screen.width as usize).saturating_sub(
+        prefix
+            .as_deref()
+            .map(|text| crate::editor::text_layout::cell_width_from(text, 0))
+            .unwrap_or(0),
+    );
+    let status = status::format_status_line_for_width(
         matches!(app.mode, Mode::Plain),
         app.typing_mode.is_overwrite(),
         status::StatusFile {
@@ -171,7 +184,15 @@ fn status_line(app: &App) -> String {
         },
         app.buffer.page_info(),
         position,
+        available_width,
     );
-    let status = status::decorate_status_line(status, app.cat_config.status_messages);
-    format!("[{}] {status}", autocomplete::status_label(app))
+    let status = status::decorate_status_line_for_width(
+        status,
+        app.cat_config.status_messages,
+        available_width,
+    );
+    match prefix {
+        Some(prefix) => format!("{prefix}{status}"),
+        None => status,
+    }
 }

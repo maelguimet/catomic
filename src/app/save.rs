@@ -72,6 +72,29 @@ pub(crate) fn save_conflict_message(status: &ExternalFileStatus) -> String {
     }
 }
 
+pub(crate) fn save_conflict_message_for_ui(status: &ExternalFileStatus, mobile: bool) -> String {
+    if !mobile {
+        return save_conflict_message(status);
+    }
+    match status {
+        ExternalFileStatus::Modified => {
+            "File changed on disk. Tap Save again to overwrite.".to_string()
+        }
+        ExternalFileStatus::Deleted => {
+            "File was deleted on disk. Tap Save again to recreate.".to_string()
+        }
+        ExternalFileStatus::Unknown(io::ErrorKind::Interrupted) => {
+            "File changed during status check. Save blocked; try again when it is stable."
+                .to_string()
+        }
+        ExternalFileStatus::Unknown(_)
+        | ExternalFileStatus::NoPath
+        | ExternalFileStatus::Unchanged => {
+            "File status check failed. Tap Save again to overwrite.".to_string()
+        }
+    }
+}
+
 /// Thin entry for the entire save flow (normal or force-conflict).
 /// Keeps the match arm in mod.rs to a single obvious call.
 /// Phase 2-p: decision uses ExternalFileObservation (status + live snapshot) so that
@@ -114,7 +137,10 @@ pub(crate) fn handle_save(app: &mut super::App, out: &mut dyn Write) -> io::Resu
             status: obs.status.clone(),
             snapshot: obs.live_snapshot,
         });
-        app.message = Some(save_conflict_message(&obs.status));
+        app.message = Some(save_conflict_message_for_ui(
+            &obs.status,
+            super::mobile::is_enabled(app),
+        ));
         app.render(out)
     }
 }
@@ -176,7 +202,27 @@ pub(crate) fn handle_save_as(
         status: obs.status.clone(),
         snapshot: obs.live_snapshot,
     });
-    app.message = Some(match obs.status {
+    app.message = Some(save_as_conflict_message(
+        &obs.status,
+        super::mobile::is_enabled(app),
+    ));
+    app.render(out)
+}
+
+fn save_as_conflict_message(status: &ExternalFileStatus, mobile: bool) -> String {
+    if mobile {
+        let outcome = match status {
+            ExternalFileStatus::Modified => "overwrite",
+            ExternalFileStatus::Unknown(io::ErrorKind::Interrupted)
+            | ExternalFileStatus::Deleted => "recheck",
+            ExternalFileStatus::Unknown(_) => "overwrite",
+            ExternalFileStatus::NoPath | ExternalFileStatus::Unchanged => unreachable!(),
+        };
+        return format!(
+            "Save As target changed or exists. Tap Menu > Save as, then submit the same path again to {outcome}."
+        );
+    }
+    match status {
         ExternalFileStatus::Modified => {
             "Save As target already exists. Submit the same path again to overwrite.".to_string()
         }
@@ -190,8 +236,7 @@ pub(crate) fn handle_save_as(
             "Save As target changed while checking. Submit the same path again to retry.".to_string()
         }
         ExternalFileStatus::NoPath | ExternalFileStatus::Unchanged => unreachable!(),
-    });
-    app.render(out)
+    }
 }
 
 pub(crate) fn expand_user_path(input: &str, home: Option<&OsStr>) -> io::Result<PathBuf> {

@@ -40,6 +40,21 @@ pub(crate) fn handle_resize(
     app.render(out)
 }
 
+/// Re-query size and redraw after a terminal foreground/focus transition.
+/// No prompt, edit, task, or unsaved state is recreated.
+pub(crate) fn redraw_after_focus(
+    app: &mut App,
+    size: Option<(u16, u16)>,
+    out: &mut dyn Write,
+) -> std::io::Result<()> {
+    if let Some((width, height)) = size {
+        app.screen.update_size(width, height);
+        app.screen.clamp_scroll();
+        clamp_viewport_to_buffer(app);
+    }
+    app.render(out)
+}
+
 pub(crate) fn handle_mouse_wheel(
     app: &mut App,
     out: &mut dyn Write,
@@ -68,6 +83,20 @@ pub(crate) fn scroll_viewport(
     } else {
         Ok(scroll_logical_viewport(app, direction, rows))
     }
+}
+
+/// Scroll by a signed number of visual rows and render once.
+/// Used by touch actions whose direction is encoded in the sign.
+pub(crate) fn scroll_view(app: &mut App, out: &mut dyn Write, rows: isize) -> std::io::Result<()> {
+    let direction = if rows < 0 {
+        ScrollDirection::Up
+    } else {
+        ScrollDirection::Down
+    };
+    if scroll_viewport(app, direction, rows.unsigned_abs())? {
+        app.render(out)?;
+    }
+    Ok(())
 }
 
 fn scroll_logical_viewport(app: &mut App, direction: ScrollDirection, rows: usize) -> bool {

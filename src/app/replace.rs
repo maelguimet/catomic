@@ -108,12 +108,18 @@ fn update_message(app: &mut super::App) {
         return;
     };
     let scope = if prompt.all { "Replace all" } else { "Replace" };
-    app.message = Some(match prompt.stage {
-        PromptStage::Find => format!("{scope} find: {}", prompt.find),
-        PromptStage::Replacement => {
-            format!("{scope} '{}' with: {}", prompt.find, prompt.replacement)
-        }
-    });
+    let (label, text) = match prompt.stage {
+        PromptStage::Find => (format!("{scope} find"), prompt.find.as_str()),
+        PromptStage::Replacement => (
+            format!("{scope} '{}' with", prompt.find),
+            prompt.replacement.as_str(),
+        ),
+    };
+    app.message = Some(super::status::format_prompt(
+        &label,
+        text,
+        app.screen.width as usize,
+    ));
 }
 
 fn advance_or_apply(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {

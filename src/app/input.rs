@@ -13,7 +13,7 @@ use super::file_state::refresh_dirty;
 use super::{
     buffers, command_prompt, completion, external_command, help, indentation, lint, llm_answer,
     llm_preview, llm_request, navigation, paging, project_files, recovery, reload, replace,
-    repo_llm, save, search, selection, view,
+    repo_llm, save, search, selection, undo_redo, view,
 };
 
 /// Common post-content-mutation cleanup used by insert, delete, newline, undo, redo paths.
@@ -117,6 +117,14 @@ pub(crate) fn handle_key_with(
         return Ok(());
     }
     if selection::handle_shortcut(app, out, key)? {
+        return Ok(());
+    }
+    if let Some(action) = undo_redo::action_for_key(key) {
+        match action {
+            undo_redo::HistoryAction::Undo => app.buffer.undo(),
+            undo_redo::HistoryAction::Redo => app.buffer.redo(),
+        }
+        finish_content_edit(app, out)?;
         return Ok(());
     }
     match key {
@@ -287,51 +295,6 @@ pub(crate) fn handle_key_with(
             ..
         } => {
             indentation::insert_newline(app, out)?;
-        }
-
-        // Undo / Redo (Phase 1C). Ctrl+Z undo; Ctrl+Y and Ctrl+Shift+Z redo.
-        // Redo must handle both common terminal reports for Ctrl+Shift+Z:
-        //   - KeyCode::Char('z') + CONTROL + SHIFT
-        //   - KeyCode::Char('Z') + CONTROL + SHIFT
-        // Place before generic Char so CONTROL combos fire. No other UI changes.
-        // Dirty is computed exactly from edit_history_position vs saved token (Phase 2-j).
-        KeyEvent {
-            code: KeyCode::Char('z'),
-            modifiers,
-            ..
-        } if modifiers.contains(KeyModifiers::CONTROL)
-            && !modifiers.contains(KeyModifiers::SHIFT) =>
-        {
-            app.buffer.undo();
-            finish_content_edit(app, out)?;
-        }
-        KeyEvent {
-            code: KeyCode::Char('z'),
-            modifiers,
-            ..
-        } if modifiers.contains(KeyModifiers::CONTROL)
-            && modifiers.contains(KeyModifiers::SHIFT) =>
-        {
-            app.buffer.redo();
-            finish_content_edit(app, out)?;
-        }
-        KeyEvent {
-            code: KeyCode::Char('Z'),
-            modifiers,
-            ..
-        } if modifiers.contains(KeyModifiers::CONTROL)
-            && modifiers.contains(KeyModifiers::SHIFT) =>
-        {
-            app.buffer.redo();
-            finish_content_edit(app, out)?;
-        }
-        KeyEvent {
-            code: KeyCode::Char('y'),
-            modifiers,
-            ..
-        } if modifiers.contains(KeyModifiers::CONTROL) => {
-            app.buffer.redo();
-            finish_content_edit(app, out)?;
         }
 
         // Basic movement + editing (Phase 0)

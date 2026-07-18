@@ -50,6 +50,7 @@ mod save;
 mod search;
 mod selection;
 mod status;
+mod undo_redo;
 mod view;
 mod viewport;
 mod watch;

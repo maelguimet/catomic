@@ -89,7 +89,8 @@ troubleshooting, see the [complete user guide](docs/user-guide.md).
 | Save / Save As | `Ctrl+S` / `Ctrl+Shift+S` |
 | Open / new / close buffer | `Ctrl+O` / `Ctrl+N` / `Ctrl+W` |
 | Previous / next buffer | `Alt+PageUp` / `Alt+PageDown` |
-| Undo / redo | `Ctrl+Z` / `Ctrl+Y` |
+| Undo | `Ctrl+Z` |
+| Redo | `Ctrl+Y` / `Ctrl+Shift+Z` |
 | Find / replace / goto line | `Ctrl+F` / `Ctrl+Shift+F` / `Ctrl+G` |
 | Select / copy / cut / paste | `Ctrl+A` / `Ctrl+C` / `Ctrl+X` / `Ctrl+V` |
 | Local completion | `Ctrl+Space` |
@@ -98,6 +99,11 @@ troubleshooting, see the [complete user guide](docs/user-guide.md).
 | Line numbers / whitespace / soft wrap | `F7` / `F8` / `F9` |
 | Previous / next large-file page | `Ctrl+PageUp` / `Ctrl+PageDown` |
 | Quit | `Ctrl+Q` |
+
+Catomic keeps `Ctrl+Shift+Z` as a default GUI-style redo alias. If a terminal
+reports that chord without the Shift modifier, it is indistinguishable from
+`Ctrl+Z`, so Catomic performs undo. The `undo` and `redo` actions remain
+remappable through `[keybindings]`.
 
 Terminal emulators and multiplexers can intercept or rewrite some key chords.
 Bracketed paste is inserted as one undoable edit; Catomic also has an internal

@@ -11,6 +11,7 @@
 mod editing;
 mod file_state;
 mod keybindings;
+mod undo_redo;
 mod viewport;
 
 use super::*;

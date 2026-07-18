@@ -268,6 +268,41 @@ fn pty_save_undo_save_quit_writes_expected_file() -> TestResult {
     Ok(())
 }
 
+#[test]
+fn pty_undo_redo_distinguishes_reported_shift() -> TestResult {
+    let temp = TempPath::new("undo_redo_alias");
+    let mut editor = PtyEditor::spawn(&temp.path)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"x\x13")?;
+    wait_until("initial PTY save", Duration::from_secs(2), || {
+        fs::read_to_string(&temp.path).is_ok_and(|text| text == "x")
+    })?;
+
+    editor.send_keys(b"\x1a\x13")?;
+    wait_until("Ctrl+Z undo", Duration::from_secs(2), || {
+        fs::read_to_string(&temp.path).is_ok_and(|text| text.is_empty())
+    })?;
+
+    editor.send_keys(b"\x1b[90;6u\x13")?;
+    wait_until("Ctrl+Shift+Z redo", Duration::from_secs(2), || {
+        fs::read_to_string(&temp.path).is_ok_and(|text| text == "x")
+    })?;
+
+    editor.send_keys(b"\x1b[90;5u\x13")?;
+    wait_until(
+        "uppercase Ctrl+Z without Shift",
+        Duration::from_secs(2),
+        || fs::read_to_string(&temp.path).is_ok_and(|text| text.is_empty()),
+    )?;
+
+    editor.send_keys(b"\x19\x13\x11")?;
+    editor.wait_for_exit()?;
+    assert_eq!(fs::read_to_string(&temp.path)?, "x");
+
+    Ok(())
+}
+
 #[cfg(unix)]
 #[test]
 fn pty_sigterm_restores_terminal_modes_before_exit() -> TestResult {

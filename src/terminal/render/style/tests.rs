@@ -234,3 +234,45 @@ fn line_numbers_inherit_the_base_background() {
 
     assert_eq!(String::from_utf8(out).unwrap(), "\x1b[36;40m1 \x1b[0m");
 }
+
+#[test]
+fn llm_changed_ranges_are_red_underlined_and_grapheme_safe() {
+    let ranges = [TextHighlight {
+        start: Cursor { row: 0, col: 1 },
+        end: Cursor { row: 0, col: 3 },
+    }];
+    let output = rendered(
+        "a猫🙂z",
+        0,
+        RenderOptions {
+            llm_changes: Some(super::super::LlmChanges {
+                ranges: &ranges,
+                gutter_lines: &[0],
+                color_enabled: true,
+            }),
+            ..RenderOptions::default()
+        },
+    );
+    assert_eq!(output, "a\x1b[31;4m猫🙂\x1b[0mz");
+}
+
+#[test]
+fn llm_changed_ranges_have_a_non_color_fallback() {
+    let ranges = [TextHighlight {
+        start: Cursor { row: 0, col: 1 },
+        end: Cursor { row: 0, col: 4 },
+    }];
+    let output = rendered(
+        "cdef",
+        2,
+        RenderOptions {
+            llm_changes: Some(super::super::LlmChanges {
+                ranges: &ranges,
+                gutter_lines: &[0],
+                color_enabled: false,
+            }),
+            ..RenderOptions::default()
+        },
+    );
+    assert_eq!(output, "\x1b[4;7mcd\x1b[0mef");
+}

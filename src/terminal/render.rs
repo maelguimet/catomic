@@ -43,10 +43,18 @@ pub(crate) enum ContentSurface {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct RenderOptions {
+pub(crate) struct LlmChanges<'a> {
+    pub(crate) ranges: &'a [TextHighlight],
+    pub(crate) gutter_lines: &'a [usize],
+    pub(crate) color_enabled: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct RenderOptions<'a> {
     pub(crate) cursor_shape: CursorShape,
     pub(crate) highlight: Option<TextHighlight>,
     pub(crate) highlight_kind: HighlightKind,
+    pub(crate) llm_changes: Option<LlmChanges<'a>>,
     pub(crate) syntax: SyntaxKind,
     pub(crate) surface: ContentSurface,
     pub(crate) theme: Theme,
@@ -57,12 +65,13 @@ pub(crate) struct RenderOptions {
     pub(crate) status_theme: StatusTheme,
 }
 
-impl Default for RenderOptions {
+impl Default for RenderOptions<'_> {
     fn default() -> Self {
         Self {
             cursor_shape: CursorShape::Default,
             highlight: None,
             highlight_kind: HighlightKind::Selection,
+            llm_changes: None,
             syntax: SyntaxKind::Plain,
             surface: ContentSurface::Normal,
             theme: Theme::default(),
@@ -117,6 +126,10 @@ pub(crate) fn line_number_gutter(line_count: usize) -> usize {
     line_count.max(1).to_string().len().saturating_add(1)
 }
 
+pub(crate) fn change_gutter_width(has_changes: bool) -> usize {
+    usize::from(has_changes) * 2
+}
+
 /// Basic viewport render with one optional active search highlight.
 /// Clears each viewport row, writes the visible window using visible_lines
 /// (not the full .lines() clone), positions the terminal cursor exactly at
@@ -132,7 +145,7 @@ pub fn render_buffer<W: Write + ?Sized>(
     buffer: &dyn Buffer,
     viewport: RenderViewport,
     message: Option<&str>,
-    options: RenderOptions,
+    options: RenderOptions<'_>,
 ) -> io::Result<()> {
     let mut frame = Vec::new();
     style::write_cursor_color(&mut frame, options.theme)?;
@@ -163,6 +176,21 @@ pub(super) fn write_line_number<W: Write + ?Sized>(
         theme.text.overlay(theme.line_number),
         theme.truecolor,
     )
+}
+
+pub(super) fn write_change_gutter<W: Write + ?Sized>(
+    out: &mut W,
+    row: usize,
+    changes: Option<LlmChanges<'_>>,
+) -> std::io::Result<()> {
+    let Some(changes) = changes else {
+        return write!(out, "  ");
+    };
+    if changes.gutter_lines.contains(&row) {
+        style::write_semantic_gutter(out, style::SemanticRole::LlmChanged, changes.color_enabled)
+    } else {
+        write!(out, "  ")
+    }
 }
 
 #[cfg(test)]

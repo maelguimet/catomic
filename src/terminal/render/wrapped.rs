@@ -10,7 +10,10 @@ use std::io::{self, Write};
 use crate::buffer::{Buffer, Cursor};
 use crate::editor::text_layout;
 
-use super::{line_number_gutter, write_line_number, RenderOptions, RenderViewport};
+use super::{
+    change_gutter_width, line_number_gutter, write_change_gutter, write_line_number, RenderOptions,
+    RenderViewport,
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct WrappedRow {
@@ -195,15 +198,22 @@ pub(super) fn compose_buffer(
     buffer: &dyn Buffer,
     viewport: RenderViewport,
     message: Option<&str>,
-    options: RenderOptions,
+    options: RenderOptions<'_>,
 ) -> io::Result<()> {
     let content_height = viewport.height.saturating_sub(1);
-    let gutter = if options.line_numbers {
+    let line_gutter = if options.line_numbers {
         line_number_gutter(buffer.line_count())
     } else {
         0
     }
     .min(viewport.width);
+    let change_gutter = change_gutter_width(
+        options
+            .llm_changes
+            .is_some_and(|changes| !changes.gutter_lines.is_empty()),
+    )
+    .min(viewport.width.saturating_sub(line_gutter));
+    let gutter = line_gutter.saturating_add(change_gutter);
     let content_width = viewport.width.saturating_sub(gutter);
     let rows = visible_rows(
         buffer,
@@ -212,7 +222,15 @@ pub(super) fn compose_buffer(
         content_height,
         content_width,
     )?;
-    write_rows(out, &rows, content_height, content_width, gutter, options)?;
+    write_rows(
+        out,
+        &rows,
+        content_height,
+        content_width,
+        line_gutter,
+        change_gutter,
+        options,
+    )?;
     if viewport.height > 0 {
         super::status_bar::write_status_bar(
             out,
@@ -274,8 +292,9 @@ fn write_rows<W: Write + ?Sized>(
     rows: &[WrappedRow],
     height: usize,
     width: usize,
-    gutter: usize,
-    options: RenderOptions,
+    line_gutter: usize,
+    change_gutter: usize,
+    options: RenderOptions<'_>,
 ) -> io::Result<()> {
     for screen_row in 1..=height {
         super::style::write_row_start(
@@ -287,10 +306,15 @@ fn write_rows<W: Write + ?Sized>(
         let Some(row) = rows.get(screen_row - 1) else {
             continue;
         };
-        if gutter > 0 && row.start_col == 0 {
-            write_line_number(out, row.document_row, gutter, options.theme)?;
-        } else if gutter > 0 {
-            let blank = " ".repeat(gutter);
+        if change_gutter > 0 && row.start_col == 0 {
+            write_change_gutter(out, row.document_row, options.llm_changes)?;
+        } else if change_gutter > 0 {
+            write!(out, "{:change_gutter$}", "")?;
+        }
+        if line_gutter > 0 && row.start_col == 0 {
+            write_line_number(out, row.document_row, line_gutter, options.theme)?;
+        } else if line_gutter > 0 {
+            let blank = " ".repeat(line_gutter);
             super::style::write_styled_text(
                 out,
                 &blank,

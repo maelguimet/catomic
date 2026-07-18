@@ -5,6 +5,7 @@
 //! Phase: post-v0.1 core usability.
 
 use crate::buffer::{Buffer, Cursor, SimpleBuffer};
+use crate::config::theme::{Color, Style, Theme};
 use crate::editor::syntax::SyntaxKind;
 
 use super::*;
@@ -113,4 +114,31 @@ fn markdown_styles_do_not_change_soft_wrap_coordinates() {
     assert!(String::from_utf8(out)
         .unwrap()
         .contains("\x1b[3;35m**bold**\x1b[0m"));
+}
+
+#[test]
+fn wrapped_continuation_gutter_inherits_the_base_background() {
+    let buffer = SimpleBuffer::from_text("abcdef");
+    let mut out = Vec::new();
+    let theme = Theme {
+        text: Style::pair(Color::Ansi(7), Color::Ansi(0)),
+        line_number: Style::fg(Color::Ansi(6)),
+        ..Theme::default()
+    };
+    super::super::render_buffer(
+        &mut out,
+        &buffer,
+        RenderViewport::new(0, 0, 4, 6),
+        None,
+        RenderOptions {
+            soft_wrap: true,
+            line_numbers: true,
+            theme,
+            ..RenderOptions::default()
+        },
+    )
+    .unwrap();
+
+    let rendered = String::from_utf8(out).unwrap();
+    assert!(rendered.contains("\x1b[2;1H\x1b[37;40m\x1b[K\x1b[0m\x1b[36;40m  \x1b[0m"));
 }

@@ -178,3 +178,17 @@ fn markdown_table_styling_composes_with_unicode_selection() {
     assert!(output.contains("\x1b[36m|\x1b[0m \x1b[7m猫\x1b[27m é "));
     assert!(output.contains("\x1b[3;35m**bold**\x1b[0m"));
 }
+
+#[test]
+fn line_numbers_inherit_the_base_background() {
+    let theme = Theme {
+        text: Style::pair(Color::Ansi(7), Color::Ansi(0)),
+        line_number: Style::fg(Color::Ansi(6)),
+        ..Theme::default()
+    };
+    let mut out = Vec::new();
+
+    super::super::write_line_number(&mut out, 0, 2, theme).unwrap();
+
+    assert_eq!(String::from_utf8(out).unwrap(), "\x1b[36;40m1 \x1b[0m");
+}

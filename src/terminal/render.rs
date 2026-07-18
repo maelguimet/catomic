@@ -157,7 +157,12 @@ pub(super) fn write_line_number<W: Write + ?Sized>(
         width = gutter.saturating_sub(1)
     );
     let clipped: String = label.chars().take(gutter).collect();
-    style::write_styled_text(out, &clipped, theme.line_number, theme.truecolor)
+    style::write_styled_text(
+        out,
+        &clipped,
+        theme.text.overlay(theme.line_number),
+        theme.truecolor,
+    )
 }
 
 #[cfg(test)]

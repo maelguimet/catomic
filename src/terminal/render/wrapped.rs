@@ -290,7 +290,13 @@ fn write_rows<W: Write + ?Sized>(
         if gutter > 0 && row.start_col == 0 {
             write_line_number(out, row.document_row, gutter, options.theme)?;
         } else if gutter > 0 {
-            write!(out, "{:gutter$}", "")?;
+            let blank = " ".repeat(gutter);
+            super::style::write_styled_text(
+                out,
+                &blank,
+                options.theme.text.overlay(options.theme.line_number),
+                options.theme.truecolor,
+            )?;
         }
         super::style::write_content_line(
             out,

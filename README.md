@@ -2,33 +2,33 @@
 
 [![CI](https://github.com/maelguimet/catomic/actions/workflows/ci.yml/badge.svg)](https://github.com/maelguimet/catomic/actions/workflows/ci.yml)
 
-Catomic is a Linux-first, modeless terminal text editor: Nano that is not afraid
-of useful shortcuts. It aims to be fast, obvious, keyboard-friendly, and hard to
-accidentally destroy work with—without turning into a terminal IDE by default.
+Catomic is the editor I wanted when Nano felt too bare and everything else felt
+like moving into somebody else's operating system. It is Linux-first, modeless,
+quick to open, and full of shortcuts that already make sense.
 
-Catomic is entering open beta. Back up important files and read the
-[file-semantics limitations](#limitations) before making it your only editor.
+It is also in open beta. Use it, break it, tell me what got weird—but back up
+anything precious and read the [file-semantics limitations](#limitations) before
+making it your only editor.
 
-![Catomic editing a Rust file in a Linux terminal](docs/assets/catomic-open-beta.png)
+![Catomic: nano but gooder](docs/assets/catomic.jpg)
 
-## Highlights
+## The good stuff
 
 - Familiar editing: selection, mouse input, search/replace, goto line,
   undo/redo, multiple buffers, and GUI-style shortcuts.
-- Unicode-aware cursor movement and terminal layout, including grapheme
-  clusters, wide characters, emoji sequences, and tabs.
-- Editable large-file pages that avoid loading an oversized file into one
-  in-memory string.
-- Atomic saves, external-change detection, explicit overwrite confirmation, and
-  opt-in `.catnap` recovery.
-- Viewport-bounded highlighting for Markdown, Rust, Python, and JSON, plus a
+- Proper Unicode cursor movement and layout, including grapheme clusters, wide
+  characters, emoji sequences, and tabs.
+- Large-file paging, so opening a monster log does not mean swallowing the whole
+  thing into one enormous string.
+- Atomic saves, external-change detection, overwrite confirmation, and optional
+  `.catnap` recovery for when reality happens.
+- Fast, viewport-only highlighting for Markdown, Rust, Python, and JSON, plus a
   read-only Markdown preview.
-- An opt-in Project mode for explicit file discovery, linting, diagnostics, and
-  cached path completion. Plain mode does not scan a repository or start project
-  services.
-- Explicit, preview-first LLM commands. Catomic does not construct a model
-  client or send context until you invoke a command and confirm the destination
-  and context.
+- Project mode when you ask for it: files, linting, diagnostics, and cached path
+  completion. Plain mode stays plain and does not quietly scan your repository.
+- Cat-themed model commands, because of course. They are explicit and
+  preview-first: nothing is sent until you invoke a command and confirm where it
+  is going and what context it gets.
 
 ## Install from source
 

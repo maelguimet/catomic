@@ -479,18 +479,18 @@ fn pty_help_scrolls_to_model_scopes_and_closes_without_editing() -> TestResult {
 
     editor.wait_for_initial_render()?;
     editor.send_keys(b"\x1bOP")?; // F1
-    editor.wait_for_output("built-in help", "Catomic shortcuts")?;
-    editor.send_keys(b"\x1b[6~\x1b[6~\x1b[6~")?; // PageDown x3
-    editor.wait_for_output(
-        "model command scopes",
-        "megameow INSTRUCTION Project only: broader bounded repository context.",
-    )?;
+    editor.wait_for_output("built-in help", "Catomic help")?;
+    for _ in 0..12 {
+        editor.send_keys(b"\x1b[6~")?; // PageDown through the generated reference
+    }
+    editor.wait_for_output("model command", "megameow INSTRUCTION")?;
+    editor.wait_for_output("model command scope", "broader bounded repository context")?;
     editor.wait_for_output(
         "model safety contract",
         "Model edits affect only the confirmed active file; they are not auto-saved.",
     )?;
     editor.send_keys(b"\x1b")?;
-    editor.wait_for_output("help closes", "Shortcut help closed.")?;
+    editor.wait_for_output("help closes", "Help closed.")?;
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
 

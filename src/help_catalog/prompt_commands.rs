@@ -59,7 +59,7 @@ const fn command(
 pub(crate) const PROMPT_COMMANDS: &[PromptCommandSpec] = &[
     command(PromptCommand::Help, &["help", "shortcuts"], "help", &["shortcuts"], "Open this read-only help."),
     command(PromptCommand::Save, &["save", "write", "w"], "save", &["write", "w"], "Save the active buffer through the normal conflict guard."),
-    command(PromptCommand::SaveAs, &["save-as", "saveas"], "save as PATH", &["save-as PATH", "saveas PATH"], "Save to a new path; replacing an existing target requires confirmation."),
+    command(PromptCommand::SaveAs, &["save-as", "saveas"], "save as PATH", &["write as PATH", "w as PATH", "save-as PATH", "saveas PATH"], "Save to a new path; replacing an existing target requires confirmation."),
     command(PromptCommand::Open, &["open", "edit", "e"], "open PATH", &["edit PATH", "e PATH"], "Open a buffer; a missing path is not created until save."),
     command(PromptCommand::New, &["new"], "new", &[], "Create an untitled buffer."),
     command(PromptCommand::Close, &["close"], "close", &[], "Close the active buffer only when it has no unsaved edits."),

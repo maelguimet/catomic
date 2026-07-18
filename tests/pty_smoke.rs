@@ -409,6 +409,84 @@ fn pty_multiple_cli_files_switch_and_save_active_buffer() -> TestResult {
 }
 
 #[test]
+fn pty_ambiguous_mixed_cli_files_exit_before_startup_without_writing() -> TestResult {
+    let missing = TempPath::new("ambiguous_missing");
+    let existing = TempPath::new("ambiguous_existing");
+    fs::write(&existing.path, "existing stays unchanged")?;
+    let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
+    command.arg(&missing.path);
+    command.arg(&existing.path);
+    let mut editor = PtyEditor::spawn_command(command)?;
+
+    editor.wait_for_output("ambiguity guard", "ambiguous multi-file arguments")?;
+    editor.wait_for_output("missing path classification", "[missing]")?;
+    editor.wait_for_output("existing path classification", "[existing]")?;
+    editor.wait_for_output("shell quoting guidance", "filename containing spaces")?;
+    editor.wait_for_output("intentional opt-in", "--allow-missing")?;
+    editor.wait_for_output("buffer switching guidance", "Alt+PageUp / Alt+PageDown")?;
+    editor.wait_for_exit_code(2)?;
+
+    assert!(!missing.path.exists());
+    assert_eq!(
+        fs::read_to_string(&existing.path)?,
+        "existing stays unchanged"
+    );
+    Ok(())
+}
+
+#[test]
+fn pty_allow_missing_explicitly_opens_mixed_buffers_without_creating_a_file() -> TestResult {
+    let missing = TempPath::new("allowed_missing");
+    let existing = TempPath::new("allowed_existing");
+    fs::write(&existing.path, "deliberate second buffer")?;
+    let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
+    command.arg("--allow-missing");
+    command.arg(&missing.path);
+    command.arg(&existing.path);
+    let mut editor = PtyEditor::spawn_command(command)?;
+
+    editor.wait_for_initial_render()?;
+    editor.wait_for_output("explicit multi-file position", "buffer 1/2")?;
+    editor.send_keys(b"\x1b[6;3~")?;
+    editor.wait_for_output("explicit existing buffer", "deliberate second buffer")?;
+    editor.wait_for_output("explicit second-buffer position", "buffer 2/2")?;
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+
+    assert!(!missing.path.exists());
+    assert_eq!(
+        fs::read_to_string(&existing.path)?,
+        "deliberate second buffer"
+    );
+    Ok(())
+}
+
+#[test]
+fn pty_spaced_and_literal_option_filenames_each_open_as_one_buffer() -> TestResult {
+    let project = TempProject::new("literal_cli_paths");
+    let spaced = project.write("henlo world.md", "quoted filename content");
+    let mut spaced_editor = PtyEditor::spawn(&spaced)?;
+
+    spaced_editor.wait_for_initial_render()?;
+    spaced_editor.wait_for_output("quoted single path", "quoted filename content")?;
+    spaced_editor.send_keys(b"\x11")?;
+    spaced_editor.wait_for_exit()?;
+
+    project.write("--help", "literal option filename content");
+    let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
+    command.cwd(&project.root);
+    command.arg("--");
+    command.arg("--help");
+    let mut literal_editor = PtyEditor::spawn_command(command)?;
+
+    literal_editor.wait_for_initial_render()?;
+    literal_editor.wait_for_output("literal option path", "literal option filename content")?;
+    literal_editor.send_keys(b"\x11")?;
+    literal_editor.wait_for_exit()?;
+    Ok(())
+}
+
+#[test]
 fn pty_markdown_preview_and_view_toggles_leave_source_unchanged() -> TestResult {
     let temp = TempPath::with_extension("markdown_preview", "md");
     let source = "# PTY Heading\n\n- item with `code`\n";

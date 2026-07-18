@@ -13,6 +13,7 @@ mod file;
 mod llm;
 mod mode;
 mod project;
+mod startup_file_args;
 mod terminal;
 mod update;
 
@@ -29,7 +30,7 @@ fn main() {
             std::process::exit(cli::EXIT_USAGE);
         }
     };
-    let file_args = match action {
+    let run_options = match action {
         cli::Action::Help => {
             cli::print_help();
             return;
@@ -56,8 +57,14 @@ fn main() {
             }
             return;
         }
-        cli::Action::Run(file_args) => file_args,
+        cli::Action::Run(run_options) => run_options,
     };
+
+    if let Err(diagnostic) = startup_file_args::check(&run_options.files, run_options.allow_missing)
+    {
+        eprintln!("{diagnostic}");
+        std::process::exit(cli::EXIT_USAGE);
+    }
 
     if let Err(error) = validate_utf8_locale(
         std::env::var_os("LC_ALL").as_deref(),
@@ -73,7 +80,7 @@ fn main() {
         std::process::exit(1);
     }
 
-    let result = app::run(&file_args);
+    let result = app::run(&run_options.files);
     if let Some(signal) = terminal::termination_signal() {
         std::process::exit(128 + signal);
     }

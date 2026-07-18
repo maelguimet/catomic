@@ -15,7 +15,13 @@ pub(crate) enum Action {
     UpdateHelp,
     Update(UpdateOptions),
     ValidateConfig,
-    Run(Vec<String>),
+    Run(RunOptions),
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct RunOptions {
+    pub(crate) files: Vec<String>,
+    pub(crate) allow_missing: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -75,6 +81,7 @@ fn parse_update(args: &[String]) -> Result<Action, String> {
 
 fn parse_files(args: Vec<String>) -> Result<Action, String> {
     let mut files = Vec::new();
+    let mut allow_missing = false;
     let mut positional_only = false;
     for arg in args {
         if positional_only {
@@ -83,18 +90,22 @@ fn parse_files(args: Vec<String>) -> Result<Action, String> {
         }
         match arg.as_str() {
             "--" => positional_only = true,
+            "--allow-missing" => allow_missing = true,
             "-h" | "--help" => return Ok(Action::Help),
             "-V" | "--version" => return Ok(Action::Version),
             _ if arg.starts_with('-') => return Err(format!("unknown option {arg:?}")),
             _ => files.push(arg),
         }
     }
-    Ok(Action::Run(files))
+    Ok(Action::Run(RunOptions {
+        files,
+        allow_missing,
+    }))
 }
 
 pub(crate) fn print_help() {
     println!(
-        "catomic {}\n\nUsage:\n  catomic [FILE]...\n  catomic update [--check] [--yes] [--backup]\n  catomic --help\n  catomic --version\n\nUse `catomic -- update` to open a file literally named `update`.\nInside the editor, press Ctrl+H or F1 for shortcuts.",
+        "catomic {}\n\nUsage:\n  catomic [--allow-missing] [FILE]...\n  catomic update [--check] [--yes] [--backup]\n  catomic --help\n  catomic --version\n\nOptions:\n  --allow-missing\n            Explicitly allow several file arguments when any do not exist\n\nUse `catomic -- update` to open a file literally named `update`.\nInside the editor, press Ctrl+H or F1 for shortcuts.",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -109,6 +120,13 @@ pub(crate) fn print_update_help() {
 mod tests {
     use super::*;
 
+    fn run(files: &[&str], allow_missing: bool) -> Action {
+        Action::Run(RunOptions {
+            files: files.iter().map(|file| (*file).to_string()).collect(),
+            allow_missing,
+        })
+    }
+
     #[test]
     fn parses_update_options_only_as_a_first_argument_subcommand() {
         assert_eq!(
@@ -119,13 +137,10 @@ mod tests {
                 backup: true,
             })
         );
-        assert_eq!(
-            parse(["--", "update"]).unwrap(),
-            Action::Run(vec!["update".to_string()])
-        );
+        assert_eq!(parse(["--", "update"]).unwrap(), run(&["update"], false));
         assert_eq!(
             parse(["notes", "update"]).unwrap(),
-            Action::Run(vec!["notes".to_string(), "update".to_string()])
+            run(&["notes", "update"], false)
         );
     }
 
@@ -140,9 +155,22 @@ mod tests {
     fn parses_help_version_and_literal_options() {
         assert_eq!(parse(["--help"]).unwrap(), Action::Help);
         assert_eq!(parse(["-V"]).unwrap(), Action::Version);
+        assert_eq!(parse(["--", "--help"]).unwrap(), run(&["--help"], false));
+    }
+
+    #[test]
+    fn parses_explicit_missing_path_opt_in_without_consuming_literal_files() {
         assert_eq!(
-            parse(["--", "--help"]).unwrap(),
-            Action::Run(vec!["--help".to_string()])
+            parse(["first", "--allow-missing", "second"]).unwrap(),
+            run(&["first", "second"], true)
+        );
+        assert_eq!(
+            parse(["--allow-missing", "--", "--help", "--allow-missing"]).unwrap(),
+            run(&["--help", "--allow-missing"], true)
+        );
+        assert_eq!(
+            parse(["--", "--allow-missing"]).unwrap(),
+            run(&["--allow-missing"], false)
         );
     }
 

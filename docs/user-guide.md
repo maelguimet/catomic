@@ -191,12 +191,35 @@ catomic
 If a named path does not exist, Catomic opens an empty buffer for that path. The
 file is not created until you save it.
 
+When two or more file arguments include any missing path, Catomic stops before
+entering terminal mode and prints every parsed argument as `existing`,
+`missing`, or status unavailable. This guards against an unquoted filename with
+spaces accidentally becoming several buffers. For example, if you intended one
+file, quote it in the shell:
+
+```sh
+catomic "henlo world.md"
+```
+
+To deliberately open or create several buffers when any path is missing, use
+the explicit opt-in:
+
+```sh
+catomic --allow-missing draft-one.txt draft-two.txt
+```
+
+The guard's classification is a read-only existence check; neither the guard
+nor the opt-in creates a file. An accepted missing path remains an empty,
+unsaved buffer until you explicitly save it. Several existing paths continue to
+open without the flag.
+
 The first argument `update` selects the updater. Use `--` when a filename looks
 like an option or is literally named `update`:
 
 ```sh
 catomic -- --help
 catomic -- update
+catomic --allow-missing -- --draft.txt another-draft.txt
 ```
 
 File arguments and file contents must be valid UTF-8. The editor also requires
@@ -342,8 +365,9 @@ cancellable with `Escape`.
 
 ## Working with multiple buffers
 
-Every command-line path opens in argument order. You can also create or open
-buffers during a session:
+Every accepted command-line path opens in argument order. Multi-file startup
+with a missing path requires the [explicit `--allow-missing` opt-in](#starting-catomic).
+You can also create or open buffers during a session:
 
 | Action | Shortcut | Command |
 | --- | --- | --- |

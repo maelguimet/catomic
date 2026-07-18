@@ -67,8 +67,15 @@ Open one or more files, or start with an untitled buffer:
 ```sh
 catomic notes.md
 catomic notes.txt todo.txt server.log
+catomic --allow-missing draft-one.txt draft-two.txt
 catomic
 ```
+
+Several existing paths open directly. When several arguments include a missing
+path, Catomic stops before entering the editor, lists which paths exist, and
+suggests either quoting one filename containing spaces or rerunning with
+`--allow-missing` for intentional multi-buffer creation. Missing paths are
+never created until explicitly saved.
 
 Run `catomic --help` for command-line usage. Inside the editor, press `Ctrl+H`
 or `F1` for the complete built-in shortcut reference.

@@ -131,6 +131,13 @@ impl OriginalBacking {
         }
     }
 
+    pub(crate) fn owned_is_char_boundary(&self, offset: usize) -> Option<bool> {
+        match self {
+            Self::Owned(text) => Some(text.is_char_boundary(offset)),
+            Self::File(_) => None,
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn file_read_bytes(&self) -> usize {
         match self {

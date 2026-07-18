@@ -32,13 +32,31 @@ impl LlmTask {
         system: String,
         user: String,
     ) -> io::Result<Self> {
+        Self::start_with_limit(backend, system, user, None)
+    }
+
+    pub(crate) fn start_bounded(
+        backend: ConfirmedBackend,
+        system: String,
+        user: String,
+        max_tokens: u32,
+    ) -> io::Result<Self> {
+        Self::start_with_limit(backend, system, user, Some(max_tokens))
+    }
+
+    fn start_with_limit(
+        backend: ConfirmedBackend,
+        system: String,
+        user: String,
+        max_tokens: Option<u32>,
+    ) -> io::Result<Self> {
         let (sender, receiver) = mpsc::sync_channel(1);
         let cancel = Arc::new(AtomicBool::new(false));
         let worker_cancel = Arc::clone(&cancel);
         let worker = std::thread::Builder::new()
             .name("catomic-llm".to_string())
             .spawn(move || {
-                let result = run_request(backend, system, user, &worker_cancel);
+                let result = run_request(backend, system, user, max_tokens, &worker_cancel);
                 let _ = sender.send(result);
             })?;
         Ok(Self {
@@ -84,6 +102,7 @@ fn run_request(
     backend: ConfirmedBackend,
     system: String,
     user: String,
+    max_tokens: Option<u32>,
     cancel: &AtomicBool,
 ) -> LlmTaskResult {
     if cancel.load(Ordering::Acquire) {
@@ -98,7 +117,11 @@ fn run_request(
             }
         }
     };
-    match runner.complete(&system, &user) {
+    let result = match max_tokens {
+        Some(limit) => runner.complete_bounded(&system, &user, limit),
+        None => runner.complete(&system, &user),
+    };
+    match result {
         Ok(output) => LlmTaskResult::Finished(output),
         Err(error) if error.kind == BackendErrorKind::Cancelled => LlmTaskResult::Cancelled,
         Err(error) => LlmTaskResult::Error {

@@ -6,6 +6,7 @@
 
 use std::io;
 
+use crate::config::autocomplete::AutocompleteConfig;
 use crate::config::big_files::BigFileConfig;
 use crate::config::cat::CatConfig;
 use crate::config::commands::CommandConfig;
@@ -24,6 +25,7 @@ pub(super) struct StartupConfig {
     pub(super) cat: CatConfig,
     pub(super) theme: Theme,
     pub(super) view_preferences: ViewPreferences,
+    pub(super) autocomplete: AutocompleteConfig,
 }
 
 impl StartupConfig {
@@ -45,6 +47,7 @@ impl StartupConfig {
                 text,
                 preference_path,
             )?,
+            autocomplete: crate::config::autocomplete::parse(text)?,
         })
     }
 
@@ -58,6 +61,7 @@ impl StartupConfig {
             cat: app.cat_config,
             theme: app.theme,
             view_preferences: app.view_preferences.clone(),
+            autocomplete: app.autocomplete.config.clone(),
         }
     }
 }
@@ -74,6 +78,7 @@ impl Default for StartupConfig {
             cat: CatConfig::default(),
             theme: Theme::default(),
             view_preferences: ViewPreferences::default(),
+            autocomplete: AutocompleteConfig::default(),
         }
     }
 }
@@ -95,6 +100,7 @@ mod tests {
         assert!(!config.auto_reload);
         assert_eq!(config.editor.tab_size_for_path(None), 2);
         assert!(config.view_preferences.line_numbers());
+        assert!(!config.autocomplete.enabled);
 
         let error = StartupConfig::from_snapshot(
             "[files]\nauto_reload = false\n[theme]\nname = \"missing\"\n",

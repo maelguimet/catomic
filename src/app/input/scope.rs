@@ -8,9 +8,9 @@ use crate::config::actions::Scope;
 
 pub(super) fn active(app: &super::super::App) -> Scope {
     use super::super::{
-        command_prompt, completion, external_command, help, inline_clanker, lint, llm_answer,
-        llm_preview, llm_request, model_picker, project_files, recovery, replace, repo_llm, search,
-        view,
+        autocomplete, command_prompt, completion, external_command, help, inline_clanker, lint,
+        llm_answer, llm_preview, llm_request, model_picker, project_files, recovery, replace,
+        repo_llm, search, view,
     };
 
     if help::is_viewing(app) {
@@ -24,7 +24,8 @@ pub(super) fn active(app: &super::super::App) -> Scope {
     } else if project_files::is_active(app) || lint::is_active(app) || model_picker::is_viewing(app)
     {
         Scope::Picker
-    } else if recovery::is_viewing(app)
+    } else if autocomplete::is_viewing(app)
+        || recovery::is_viewing(app)
         || external_command::is_busy(app)
         || repo_llm::is_active(app)
         || llm_request::is_active(app)

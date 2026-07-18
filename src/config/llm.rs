@@ -126,6 +126,15 @@ impl BackendPreset {
         preset
     }
 
+    pub(crate) fn with_timeout_cap(&self, cap: Duration) -> Self {
+        let mut preset = self.clone();
+        match &mut preset.adapter {
+            BackendAdapter::OpenAiCompatible(http) => http.timeout = http.timeout.min(cap),
+            BackendAdapter::Command(command) => command.timeout = command.timeout.min(cap),
+        }
+        preset
+    }
+
     pub(crate) fn adapter_label(&self) -> &'static str {
         match self.adapter {
             BackendAdapter::OpenAiCompatible(_) => "http",

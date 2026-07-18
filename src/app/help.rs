@@ -114,6 +114,7 @@ fn close_with_message(app: &mut super::App, out: &mut dyn Write) -> io::Result<(
 }
 
 fn close_transients(app: &mut super::App) {
+    super::autocomplete::invalidate(app);
     super::view::cancel_preview(app);
     super::lint::close_view(app);
     super::project_files::close_view(app);

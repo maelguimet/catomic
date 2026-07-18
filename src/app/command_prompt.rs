@@ -62,6 +62,7 @@ pub(super) fn is_active(app: &super::App) -> bool {
 }
 
 fn open_prompt(app: &mut super::App, out: &mut dyn Write, kind: PromptKind) -> io::Result<()> {
+    super::autocomplete::invalidate(app);
     cancel_running(&mut app.command_prompt);
     if !matches!(&kind, PromptKind::Command) {
         app.selection.clear();
@@ -211,6 +212,13 @@ fn execute_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> 
         (PromptCommand::Files, "") => super::project_files::start(app, out),
         (PromptCommand::SelectModel, "") => super::model_picker::show(app, out),
         (PromptCommand::Recover, "") => super::recovery::start_preview(app, out),
+        (PromptCommand::Autocomplete, "") => super::autocomplete::toggle(app, out),
+        (PromptCommand::Autocomplete, "on" | "enable" | "enabled") => {
+            super::autocomplete::begin_enable(app, out)
+        }
+        (PromptCommand::Autocomplete, "off" | "disable" | "disabled") => {
+            super::autocomplete::disable(app, out)
+        }
         (PromptCommand::Run, name) if !name.is_empty() => {
             super::external_command::start(app, out, name)
         }

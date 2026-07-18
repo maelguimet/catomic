@@ -13,9 +13,10 @@ use crate::help_catalog::{self, EditorAction};
 
 use super::file_state::refresh_dirty;
 use super::{
-    buffers, command_prompt, completion, external_command, help, indentation, inline_clanker, lint,
-    llm_answer, llm_preview, llm_request, model_picker, navigation, overwrite, paging,
-    project_files, recovery, reload, replace, repo_llm, save, search, selection, undo_redo, view,
+    autocomplete, buffers, command_prompt, completion, external_command, help, indentation,
+    inline_clanker, lint, llm_answer, llm_preview, llm_request, model_picker, navigation,
+    overwrite, paging, project_files, recovery, reload, replace, repo_llm, save, search, selection,
+    undo_redo, view,
 };
 
 mod scope;
@@ -39,6 +40,7 @@ pub(super) fn finish_content_edit_with_message(
     out: &mut dyn Write,
     message: Option<String>,
 ) -> io::Result<()> {
+    autocomplete::note_content_edit(app);
     completion::cancel(app);
     app.selection.clear();
     refresh_dirty(&mut app.file, &*app.buffer);
@@ -74,6 +76,10 @@ pub(crate) fn handle_key_with(
     let Some(key) = app.keybindings.translate(scope, key) else {
         return Ok(());
     };
+    if autocomplete::handle_key(app, out, key)? {
+        return Ok(());
+    }
+    autocomplete::invalidate(app);
     if model_picker::handle_key(app, out, key)? {
         return Ok(());
     }
@@ -342,6 +348,9 @@ pub(crate) fn handle_paste(
     out: &mut dyn Write,
     text: &str,
 ) -> io::Result<()> {
+    if autocomplete::handle_paste(app, out)? {
+        return Ok(());
+    }
     completion::cancel(app);
     if help::handle_paste(app, out)? {
         return Ok(());

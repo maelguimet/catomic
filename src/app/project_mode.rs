@@ -11,6 +11,7 @@ use crate::mode::{Capabilities, Mode};
 use crate::project::ProjectSession;
 
 pub(crate) fn switch_to_project(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    super::autocomplete::invalidate(app);
     super::external_command::cancel_all(app);
     super::hooks::cancel_all(app);
     super::repo_llm::cancel_all(app);
@@ -37,6 +38,7 @@ pub(crate) fn switch_to_project(app: &mut super::App, out: &mut dyn Write) -> io
 }
 
 pub(crate) fn switch_to_plain(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    super::autocomplete::invalidate(app);
     super::external_command::cancel_all(app);
     super::hooks::cancel_all(app);
     super::repo_llm::cancel_all(app);

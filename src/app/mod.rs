@@ -33,6 +33,7 @@ pub use file_state::FileState;
 #[cfg(test)]
 use file_state::external_file_status;
 
+mod autocomplete;
 mod buffers;
 mod command_prompt;
 mod completion;
@@ -100,7 +101,8 @@ pub struct App {
     pub(crate) view_preferences: ViewPreferences,
     /// Validated semantic colors loaded atomically with startup configuration.
     pub(crate) theme: Theme,
-    /// Process-local color capability. `NO_COLOR` retains semantic non-color attributes.
+    /// Session-level opt-in autocomplete policy; contains no client at startup.
+    pub(crate) autocomplete: autocomplete::AutocompleteState,
     /// The active buffer (trait object for now; concrete type behind it).
     pub buffer: Box<dyn Buffer>,
     /// File path and dirty tracking.
@@ -216,6 +218,7 @@ impl App {
             cat: cat_config,
             theme,
             view_preferences,
+            autocomplete: autocomplete_config,
         } = config;
         let mode = Mode::Plain; // Start in Plain by default. User can switch later.
         let caps = Capabilities::from_mode(mode);
@@ -260,6 +263,7 @@ impl App {
             status_theme: term::render::StatusTheme::from_theme(theme),
             view_preferences,
             theme,
+            autocomplete: autocomplete::AutocompleteState::new(autocomplete_config),
             buffer,
             file: FileState {
                 path: initial_path.map(PathBuf::from),
@@ -332,8 +336,11 @@ impl App {
 
         hooks::trigger_open(self);
 
-        // Phase 0 render is extremely dumb.
-        self.render(&mut stdout)?;
+        if autocomplete::configured_default_enabled(self) {
+            autocomplete::begin_enable(self, &mut stdout)?;
+        } else {
+            self.render(&mut stdout)?;
+        }
 
         while !self.should_quit && term::termination_signal().is_none() {
             // Check watcher once per iteration (hint only). Uses the non-blocking seam
@@ -359,6 +366,7 @@ impl App {
             external_command::poll(self, &mut stdout)?;
             hooks::pump(self, &mut stdout)?;
             recovery::poll(self, &mut stdout)?;
+            autocomplete::poll(self, &mut stdout)?;
 
             // Blocking read for Phase 0. Later we may need non-blocking + resize.
             if event::poll(std::time::Duration::from_millis(100))? {

@@ -72,10 +72,28 @@ impl OpenAiCompatClient {
     }
 
     pub async fn complete_messages(&self, messages: &[ChatMessage]) -> Result<String, LlmError> {
+        self.complete_messages_with_limit(messages, None).await
+    }
+
+    pub(crate) async fn complete_messages_bounded(
+        &self,
+        messages: &[ChatMessage],
+        max_tokens: u32,
+    ) -> Result<String, LlmError> {
+        self.complete_messages_with_limit(messages, Some(max_tokens))
+            .await
+    }
+
+    async fn complete_messages_with_limit(
+        &self,
+        messages: &[ChatMessage],
+        max_tokens: Option<u32>,
+    ) -> Result<String, LlmError> {
         let endpoint = format!("{}/chat/completions", self.config.base_url);
         let request = ChatRequest {
             model: &self.config.model,
             messages,
+            max_tokens,
         };
         let mut builder = self.client.post(endpoint).json(&request);
         if let Some(key) = self.config.api_key.as_deref() {
@@ -174,6 +192,13 @@ fn is_loopback_host(host: &str) -> bool {
         .is_ok_and(|address| address.is_loopback())
 }
 
+pub(crate) fn endpoint_is_loopback(base_url: &str) -> bool {
+    reqwest::Url::parse(base_url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string))
+        .is_some_and(|host| is_loopback_host(&host))
+}
+
 async fn read_bounded(mut response: reqwest::Response, limit: usize) -> Result<Vec<u8>, LlmError> {
     if response
         .content_length()
@@ -199,6 +224,8 @@ async fn read_bounded(mut response: reqwest::Response, limit: usize) -> Result<V
 struct ChatRequest<'a> {
     model: &'a str,
     messages: &'a [ChatMessage],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u32>,
 }
 
 #[derive(Clone, Serialize)]

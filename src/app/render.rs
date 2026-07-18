@@ -10,8 +10,8 @@ use crate::mode::Mode;
 use crate::terminal as term;
 
 use super::{
-    external_command, help, inline_clanker, lint, llm_answer, llm_preview, model_picker,
-    project_files, recovery, status, view, App,
+    autocomplete, external_command, help, inline_clanker, lint, llm_answer, llm_preview,
+    model_picker, project_files, recovery, status, view, App,
 };
 
 pub(super) fn render(app: &App, out: &mut dyn Write) -> io::Result<()> {
@@ -50,7 +50,14 @@ fn render_frame(
     annotation: &str,
     options: term::render::RenderOptions<'_>,
 ) -> io::Result<()> {
-    term::render::render_buffer(
+    let ghost = view::source_is_displayed(app)
+        .then(|| autocomplete::visible_text(app))
+        .flatten()
+        .map(|text| term::render::GhostText {
+            cursor: app.buffer.cursor(),
+            text,
+        });
+    term::render::render_buffer_with_ghost(
         out,
         view::display_buffer(app),
         term::render::RenderViewport::new(
@@ -62,6 +69,7 @@ fn render_frame(
         .with_wrap_col(app.screen.wrap_col),
         Some(annotation),
         options,
+        ghost,
     )
 }
 
@@ -135,6 +143,7 @@ fn local_surface_is_open(app: &App) -> bool {
         || llm_preview::is_viewing(app)
         || llm_answer::is_viewing(app)
         || inline_clanker::is_previewing(app)
+        || autocomplete::is_viewing(app)
 }
 
 fn status_line(app: &App) -> String {
@@ -157,5 +166,26 @@ fn status_line(app: &App) -> String {
         app.buffer.page_info(),
         position,
     );
-    status::decorate_status_line(status, app.cat_config.status_messages)
+    let status = status::decorate_status_line(status, app.cat_config.status_messages);
+    status_with_autocomplete(
+        status,
+        autocomplete::status_label(app),
+        app.screen.width as usize,
+    )
+}
+
+fn status_with_autocomplete(status: String, label: &str, width: usize) -> String {
+    use crate::editor::text_layout;
+
+    let suffix = format!(" | {label}");
+    let suffix_width = text_layout::cell_width_from(&suffix, 0);
+    if suffix_width >= width {
+        let len = text_layout::clipped_scalar_len(&suffix, width);
+        return suffix.chars().take(len).collect();
+    }
+    let available = width.saturating_sub(suffix_width);
+    let len = text_layout::clipped_scalar_len(&status, available);
+    let mut clipped: String = status.chars().take(len).collect();
+    clipped.push_str(&suffix);
+    clipped
 }

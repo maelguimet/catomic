@@ -159,6 +159,7 @@ fn reload_modified_success_message(size_bytes: u64, size_tier: FileSizeTier) -> 
 /// Watcher policy and Ctrl+R confirmation both call this narrow mutation seam.
 /// Errors are surfaced in `message` and leave the existing buffer intact.
 pub(crate) fn perform_observed_reload(app: &mut super::App, obs: &ExternalFileObservation) {
+    super::autocomplete::invalidate(app);
     let Some(path) = app.file.path.clone() else {
         app.message = Some("No file path.".to_string());
         return;

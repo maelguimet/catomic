@@ -275,6 +275,7 @@ fn enter(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     }
     let name = preset.name.clone();
     let model = preset.model.clone();
+    super::autocomplete::model_selection_changed(app);
     app.model_session.select(preset);
     close(app);
     app.message = Some(format!(

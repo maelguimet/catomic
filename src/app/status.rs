@@ -127,6 +127,7 @@ fn prompt_is_active(app: &super::App) -> bool {
         || super::recovery::is_viewing(app)
         || super::external_command::is_viewing(app)
         || super::project_files::is_viewing(app)
+        || super::autocomplete::is_viewing(app)
 }
 
 fn message_is_error(message: &str) -> bool {

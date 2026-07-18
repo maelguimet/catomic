@@ -1,0 +1,256 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/maelguimet/catomic/blob/master/docs/compatibility/result-schema-v1.json",
+  "title": "Catomic compatibility environment result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run",
+    "artifact",
+    "environment",
+    "scenarios",
+    "overall_status"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "catomic-compatibility-v1"
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "started_at_utc", "finished_at_utc", "operator"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "started_at_utc": {"type": "string", "format": "date-time"},
+        "finished_at_utc": {"type": "string", "format": "date-time"},
+        "operator": {"type": "string", "minLength": 1}
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commit",
+        "release",
+        "binary_name",
+        "binary_sha256",
+        "binary_size",
+        "version_output"
+      ],
+      "properties": {
+        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "release": {"type": ["string", "null"]},
+        "binary_name": {"type": "string", "minLength": 1},
+        "binary_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "binary_size": {"type": "integer", "minimum": 1},
+        "version_output": {"type": "string", "pattern": "^catomic "}
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "host", "terminal"],
+      "properties": {
+        "kind": {"enum": ["terminal", "filesystem"]},
+        "id": {"type": "string", "minLength": 1},
+        "host": {"$ref": "#/$defs/host"},
+        "terminal": {"$ref": "#/$defs/terminal"}
+      }
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/scenario"}
+    },
+    "overall_status": {"enum": ["pass", "fail", "unsupported"]}
+  },
+  "$defs": {
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "kernel", "architecture", "locale", "filesystem"],
+      "properties": {
+        "os": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["pretty_name", "id", "version_id"],
+          "properties": {
+            "pretty_name": {"type": "string"},
+            "id": {"type": "string"},
+            "version_id": {"type": "string"}
+          }
+        },
+        "kernel": {"type": "string", "minLength": 1},
+        "architecture": {"type": "string", "minLength": 1},
+        "locale": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["LC_ALL", "LC_CTYPE", "LANG", "resolved"],
+          "properties": {
+            "LC_ALL": {"type": "string"},
+            "LC_CTYPE": {"type": "string"},
+            "LANG": {"type": "string"},
+            "resolved": {"type": "string"}
+          }
+        },
+        "filesystem": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "probe_path",
+            "mount_target",
+            "mount_source",
+            "type",
+            "mount_options",
+            "timestamp_mode"
+          ],
+          "properties": {
+            "probe_path": {"type": "string"},
+            "mount_target": {"type": "string", "minLength": 1},
+            "mount_source": {"type": "string"},
+            "type": {"type": "string", "minLength": 1},
+            "mount_options": {"type": "string"},
+            "timestamp_mode": {"enum": ["native", "frozen-mtime"]}
+          }
+        }
+      }
+    },
+    "terminal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "category",
+        "manual",
+        "emulator",
+        "emulator_version",
+        "TERM",
+        "dimensions",
+        "multiplexer",
+        "multiplexer_version",
+        "ssh_path"
+      ],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "category": {"enum": ["pty", "multiplexer", "remote", "gui"]},
+        "manual": {"type": "boolean"},
+        "emulator": {"type": "string", "minLength": 1},
+        "emulator_version": {"type": "string", "minLength": 1},
+        "TERM": {"type": "string", "minLength": 1},
+        "dimensions": {"type": "string", "minLength": 1},
+        "multiplexer": {"type": "string"},
+        "multiplexer_version": {"type": "string"},
+        "ssh_path": {"type": "string"}
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {"status": {"const": "fail"}},
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "focused_issue": {
+                "type": "string",
+                "pattern": "^https://github\\.com/[^/]+/[^/]+/issues/[1-9][0-9]*$"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {"status": {"const": "unsupported"}},
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {"notes": {"type": "string", "minLength": 1}}
+          }
+        }
+      ],
+      "required": [
+        "id",
+        "expected",
+        "status",
+        "exit_status",
+        "before_sha256",
+        "after_sha256",
+        "terminal_restoration",
+        "evidence",
+        "focused_issue",
+        "notes"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "expected": {"type": "string", "minLength": 1},
+        "status": {"enum": ["pass", "fail", "unsupported"]},
+        "exit_status": {"type": ["integer", "null"]},
+        "before_sha256": {
+          "anyOf": [
+            {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            {"type": "null"}
+          ]
+        },
+        "after_sha256": {
+          "anyOf": [
+            {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            {"type": "null"}
+          ]
+        },
+        "terminal_restoration": {
+          "anyOf": [
+            {"$ref": "#/$defs/restoration"},
+            {"type": "null"}
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "focused_issue": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^https://github\\.com/[^/]+/[^/]+/issues/[1-9][0-9]*$"
+            },
+            {"type": "null"}
+          ]
+        },
+        "notes": {"type": "string"}
+      }
+    },
+    "restoration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["restored", "stty_before", "stty_after", "teardown_sequences"],
+      "properties": {
+        "restored": {"type": "boolean"},
+        "stty_before": {"type": ["string", "null"]},
+        "stty_after": {"type": ["string", "null"]},
+        "teardown_sequences": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mouse_disabled",
+                "bracketed_paste_disabled",
+                "alternate_screen_left"
+              ],
+              "properties": {
+                "mouse_disabled": {"type": "boolean"},
+                "bracketed_paste_disabled": {"type": "boolean"},
+                "alternate_screen_left": {"type": "boolean"}
+              }
+            },
+            {"type": "null"}
+          ]
+        }
+      }
+    }
+  }
+}

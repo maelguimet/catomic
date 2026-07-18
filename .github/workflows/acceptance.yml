@@ -26,3 +26,45 @@ jobs:
 
       - name: Run ignored acceptance checks serially
         run: cargo test --all-targets --locked -- --ignored --test-threads=1 --nocapture
+
+      - name: Build one compatibility candidate artifact
+        run: |
+          cargo build --release --locked
+          mkdir compatibility-results
+          install -m 0755 target/release/catomic compatibility-results/catomic
+          sha256sum compatibility-results/catomic > compatibility-results/catomic.sha256
+
+      - name: Exercise automated terminal and filesystem paths
+        env:
+          BINARY: ${{ github.workspace }}/compatibility-results/catomic
+          COMMIT: ${{ github.sha }}
+        run: |
+          python3 scripts/compatibility/run_terminal.py automated \
+            --binary "$BINARY" --commit "$COMMIT" --path direct-pty \
+            --operator github-actions --output compatibility-results/direct-pty.json
+          python3 scripts/compatibility/run_terminal.py automated \
+            --binary "$BINARY" --commit "$COMMIT" --path tmux \
+            --operator github-actions --output compatibility-results/tmux.json
+          python3 scripts/compatibility/run_filesystem.py \
+            --binary "$BINARY" --commit "$COMMIT" --root "$RUNNER_TEMP" \
+            --environment-id runner-filesystem --operator github-actions \
+            --output compatibility-results/runner-filesystem.json
+          python3 scripts/compatibility/run_filesystem.py \
+            --binary "$BINARY" --commit "$COMMIT" --root /dev/shm \
+            --environment-id tmpfs --operator github-actions \
+            --output compatibility-results/tmpfs.json
+          python3 scripts/compatibility/build_report.py \
+            compatibility-results/direct-pty.json \
+            compatibility-results/tmux.json \
+            compatibility-results/runner-filesystem.json \
+            compatibility-results/tmpfs.json \
+            --output-json compatibility-results/matrix.json \
+            --output-markdown compatibility-results/matrix.md
+
+      - name: Retain exact compatibility artifact and evidence
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: catomic-compatibility-${{ github.sha }}
+          path: compatibility-results/
+          if-no-files-found: error
+          retention-days: 30

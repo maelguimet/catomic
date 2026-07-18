@@ -264,8 +264,11 @@ code and may itself contact services after confirmation.
 ## Limitations
 
 - Linux terminals and the documented Android/Termux environment are supported
-  for this beta. Android boundaries are in the [mobile guide](docs/mobile.md).
-  Windows, macOS, native Android UI, and iOS/iPadOS are not supported.
+  for this beta, within the exact boundaries in the
+  [compatibility matrix](docs/compatibility.md) and
+  [mobile guide](docs/mobile.md). Windows, macOS, native Android UI, and
+  iOS/iPadOS are not supported, and an untested terminal or mount is not
+  silently certified by a different Linux result.
 - Editor sessions require a UTF-8 locale, and files must contain valid UTF-8.
   UTF-16 and arbitrary byte-oriented files are refused.
 - Ordinary buffers preserve UTF-8 BOMs and LF, CRLF, or CR line endings. Paged
@@ -298,6 +301,7 @@ Security-sensitive findings should follow [SECURITY.md](SECURITY.md).
 - [Architecture and development boundaries](docs/architecture.md)
 - [Design decisions](docs/decisions/)
 - [Performance discipline and measurements](docs/performance.md)
+- [Linux terminal and filesystem compatibility](docs/compatibility.md)
 - [LLM safety rules](docs/llm-rules.md)
 - [Roadmap, research, and design history](TODO.md)
 - [Release process and artifact verification](docs/releasing.md)

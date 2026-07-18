@@ -274,6 +274,31 @@ mod tests {
     }
 
     #[test]
+    fn markdown_preview_raw_html_terminal_controls_render_inertly() {
+        let preview =
+            crate::editor::markdown_preview::render("<span>before\x1b[2Jafter\x07</span>");
+        let b = SimpleBuffer::from_text(&preview);
+        let mut out = Vec::new();
+
+        render_buffer(
+            &mut out,
+            &b,
+            RenderViewport::new(0, 0, 3, 80),
+            None,
+            RenderOptions {
+                syntax: SyntaxKind::MarkdownPreview,
+                ..RenderOptions::default()
+            },
+        )
+        .unwrap();
+
+        let rendered = String::from_utf8(out).unwrap();
+        assert!(!rendered.contains("\x1b[2J"));
+        assert!(!rendered.contains('\x07'));
+        assert!(rendered.contains("<span>before␛[2Jafter␇</span>"));
+    }
+
+    #[test]
     fn wrapped_command_preview_terminal_controls_render_inertly() {
         let b = SimpleBuffer::from_text("preview-before\x1b[2Jpreview-after\x07");
         let mut out = Vec::new();

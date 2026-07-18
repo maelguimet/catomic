@@ -462,6 +462,10 @@ auto_reload = false
 Catomic applies lightweight, viewport-bounded syntax styling to Markdown,
 Rust, Python, and JSON based on the file extension. It is deliberately lexical:
 there is no tree-sitter parse or whole-document highlighting pass.
+Markdown source styling keeps every delimiter visible and every document
+coordinate unchanged while distinguishing headings, emphasis, links, inline
+code, fences, quotes, list/task markers, and table delimiters. Unsupported or
+malformed constructs remain ordinary readable text.
 
 | View | Key | Behavior |
 | --- | --- | --- |
@@ -473,6 +477,20 @@ there is no tree-sitter parse or whole-document highlighting pass.
 Press `F6` again or `Escape` to leave Markdown preview. Soft-wrapped
 continuations preserve document coordinates and mouse mapping. View settings
 are stored independently per open buffer.
+
+Markdown preview renders headings, nested quotes and lists, tasks, links,
+footnotes, rules, and fenced code with terminal-native markers. Tables retain
+their parsed column alignments, measure grapheme display cells (including wide
+characters, combining marks, and emoji), and use a heavier separator below the
+header. Inline formatting and escaped pipes stay inside their cells.
+
+To keep explicit preview construction from amplifying a single huge cell,
+individual table cells are capped at 40 terminal cells and clipped at a
+grapheme boundary with `…`. A complete table can still be wider than the
+terminal; use `Left`, `Right`, `Home`, and `End` to move the read-only preview
+cursor and pan horizontally. No source text is changed. Raw HTML is displayed
+as inert text; terminal control characters are converted to visible safe
+glyphs by the normal renderer rather than executed.
 
 ## Large files
 

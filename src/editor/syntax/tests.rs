@@ -56,6 +56,60 @@ fn markdown_styles_headings_markers_fences_and_inline_code() {
 }
 
 #[test]
+fn markdown_styles_emphasis_links_tasks_and_table_delimiters() {
+    let line = "- [x] **猫** and *é* [link](https://example.com) | `code|x` |";
+    let spans = spans_for_line(SyntaxKind::Markdown, line);
+    let chars: Vec<char> = line.chars().collect();
+    let styled: Vec<(String, SpanStyle)> = spans
+        .iter()
+        .map(|span| (chars[span.start..span.end].iter().collect(), span.style))
+        .collect();
+
+    assert_eq!(
+        styled,
+        vec![
+            ("- ".to_string(), SpanStyle::Marker),
+            ("[x] ".to_string(), SpanStyle::Marker),
+            ("**猫**".to_string(), SpanStyle::Emphasis),
+            ("*é*".to_string(), SpanStyle::Emphasis),
+            ("[link](https://example.com)".to_string(), SpanStyle::Link),
+            ("|".to_string(), SpanStyle::Marker),
+            ("`code|x`".to_string(), SpanStyle::Code),
+            ("|".to_string(), SpanStyle::Marker),
+        ]
+    );
+}
+
+#[test]
+fn markdown_table_alignment_row_and_escaped_pipe_keep_scalar_ranges() {
+    assert_eq!(
+        spans_for_line(SyntaxKind::Markdown, "| :--- | :----: | ----: |"),
+        vec![
+            span(0, 1, SpanStyle::Marker),
+            span(2, 6, SpanStyle::Marker),
+            span(7, 8, SpanStyle::Marker),
+            span(9, 15, SpanStyle::Marker),
+            span(16, 17, SpanStyle::Marker),
+            span(18, 23, SpanStyle::Marker),
+            span(24, 25, SpanStyle::Marker),
+        ]
+    );
+    assert_eq!(
+        spans_for_line(SyntaxKind::Markdown, r"| a\|b |"),
+        vec![span(0, 1, SpanStyle::Marker), span(7, 8, SpanStyle::Marker)]
+    );
+}
+
+#[test]
+fn markdown_code_runs_match_only_equal_complete_delimiters() {
+    assert_eq!(
+        spans_for_line(SyntaxKind::Markdown, "``a`b``"),
+        vec![span(0, 7, SpanStyle::Code)]
+    );
+    assert!(spans_for_line(SyntaxKind::Markdown, "`open `` still").is_empty());
+}
+
+#[test]
 fn markdown_preview_styles_rendered_headings_markers_and_code() {
     assert_eq!(
         spans_for_line(SyntaxKind::MarkdownPreview, "▌ Heading"),

@@ -24,6 +24,8 @@ pub(crate) enum SyntaxKind {
 pub(crate) enum SpanStyle {
     Heading,
     Marker,
+    Emphasis,
+    Link,
     Keyword,
     String,
     Comment,

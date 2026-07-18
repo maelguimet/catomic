@@ -119,11 +119,13 @@ fn style_code(style: SpanStyle) -> &'static str {
     match style {
         SpanStyle::Heading => "1;36",
         SpanStyle::Marker => "36",
+        SpanStyle::Emphasis => "3;35",
+        SpanStyle::Link => "4;34",
         SpanStyle::Keyword => "35",
         SpanStyle::String => "32",
         SpanStyle::Comment => "2;90",
         SpanStyle::Number => "33",
-        SpanStyle::Code => "36",
+        SpanStyle::Code => "33",
     }
 }
 

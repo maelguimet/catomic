@@ -30,6 +30,21 @@ fn markdown_heading_is_bold_cyan() {
 }
 
 #[test]
+fn markdown_inline_code_is_distinct_from_cyan_markers() {
+    assert_eq!(
+        rendered(
+            "- `code`",
+            0,
+            RenderOptions {
+                syntax: SyntaxKind::Markdown,
+                ..RenderOptions::default()
+            }
+        ),
+        "\x1b[36m- \x1b[0m\x1b[33m`code`\x1b[0m"
+    );
+}
+
+#[test]
 fn selection_combines_with_keyword_color() {
     let output = rendered(
         "let cat = 1",
@@ -60,4 +75,23 @@ fn highlight_maps_through_horizontal_scroll() {
         },
     );
     assert_eq!(output, "c\x1b[7mde\x1b[27mf");
+}
+
+#[test]
+fn markdown_table_styling_composes_with_unicode_selection() {
+    let output = rendered(
+        "| 猫 é | **bold** |",
+        0,
+        RenderOptions {
+            syntax: SyntaxKind::Markdown,
+            highlight: Some(TextHighlight {
+                start: Cursor { row: 0, col: 2 },
+                end: Cursor { row: 0, col: 3 },
+            }),
+            ..RenderOptions::default()
+        },
+    );
+
+    assert!(output.contains("\x1b[36m|\x1b[0m \x1b[7m猫\x1b[27m é "));
+    assert!(output.contains("\x1b[3;35m**bold**\x1b[0m"));
 }

@@ -23,3 +23,11 @@ construct a parser.
 Preview parses the current active Buffer. For a paged large file that means
 only the active editable page, never the complete backing file. The generated
 preview is then rendered with the existing visible-window query.
+
+Tables are accumulated in a short-lived intermediate model so parser-provided
+alignment metadata survives until every row has been measured with Catomic's
+terminal-cell layout helpers. Per-cell output is capped at 40 display cells and
+clipped grapheme-safely with an ellipsis; the complete table retains its natural
+measured width and the existing read-only cursor provides horizontal navigation.
+Raw HTML remains inert preview text and passes through the renderer's terminal
+control sanitization.

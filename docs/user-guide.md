@@ -770,7 +770,9 @@ proposal is discarded or refused.
 
 ### Repository-aware commands
 
-`gitmeow INSTRUCTION` and `megameow INSTRUCTION` require:
+`gitmeow INSTRUCTION` asks about a focused task with bounded repository
+context. `megameow INSTRUCTION` asks with broader, still-bounded repository
+context. Both commands require:
 
 - explicit Project mode;
 - a saved active file inside a Git repository; and
@@ -994,7 +996,8 @@ Open the prompt with `Ctrl+Shift+P` or `F2`. Do not add a leading colon.
 | `recover` | — | Preview a newer `.catnap` sidecar |
 | `meow TEXT` | — | Send selection/instruction block to configured model |
 | `bigmeow TEXT` | — | Send current ordinary file to configured model |
-| `gitmeow TEXT` | `megameow TEXT` | Use bounded Git context in Project mode |
+| `gitmeow TEXT` | — | Use focused bounded repository context in Project mode |
+| `megameow TEXT` | — | Use broader bounded repository context in Project mode |
 | `quit` | `q` | Use the normal guarded quit path |
 
 ## File formats and save safety

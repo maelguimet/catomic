@@ -1088,6 +1088,60 @@ fn pty_meow_stops_at_confirmation_and_escape_makes_no_network_edit() -> TestResu
 }
 
 #[test]
+fn pty_model_picker_filters_session_selection_without_invoking_backend() -> TestResult {
+    let project = TempProject::new("model_picker");
+    let config = r#"[llm]
+default = "local"
+[[llm.backends]]
+name = "local"
+type = "openai-compatible"
+base_url = "http://127.0.0.1:8080/v1"
+model = "local-model"
+[[llm.backends]]
+name = "hosted"
+type = "openai-compatible"
+base_url = "https://models.example/v1"
+model = "remote-model"
+"#;
+    let config_path = project.write("catomic/config.toml", config);
+    let source = ">>> catomic\nExplain this block without editing it.\n<<<\n";
+    let active = project.write("note.txt", source);
+    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"\x1b[21~")?; // F10
+    editor.wait_for_output("model picker default", "[A-D] local | local-model")?;
+    editor.send_keys(b"hosted")?;
+    editor.wait_for_output("filtered hosted preset", "hosted | remote-model")?;
+    editor.send_keys(b"\r")?;
+    editor.wait_for_output(
+        "session model selected",
+        "Active model for this session: preset hosted, model remote-model",
+    )?;
+
+    editor.send_keys(b"\x1b[80;6umeow\r")?;
+    editor.wait_for_output(
+        "selected preset confirmation",
+        "preset hosted model remote-model",
+    )?;
+    editor.wait_for_output(
+        "selected endpoint confirmation",
+        "https://models.example/v1",
+    )?;
+    editor.send_keys(b"\x1b")?;
+    editor.wait_for_output(
+        "selected model cancellation before send",
+        "cancelled before sending; no network call made",
+    )?;
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(active)?, source);
+    assert_eq!(fs::read_to_string(config_path)?, config);
+    Ok(())
+}
+
+#[test]
 fn pty_external_command_previews_before_one_confirmed_edit() -> TestResult {
     let project = TempProject::new("external_command");
     project.write(

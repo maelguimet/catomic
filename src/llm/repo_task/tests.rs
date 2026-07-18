@@ -49,7 +49,7 @@ fn loopback_dialogue_executes_broker_read_then_returns_patch_with_guard() {
 }
 
 fn two_round_server() -> (
-    LlmConfig,
+    ConfirmedBackend,
     Arc<Mutex<Vec<String>>>,
     std::thread::JoinHandle<()>,
 ) {
@@ -69,12 +69,14 @@ fn two_round_server() -> (
         }
     });
     (
-        LlmConfig {
-            base_url: format!("http://{address}/v1"),
-            api_key: None,
-            model: "test-model".to_string(),
-            timeout: Duration::from_secs(2),
-        },
+        ConfirmedBackend::resolve(
+            crate::config::llm::parse(&format!(
+                "[llm]\nbase_url='http://{address}/v1'\nmodel='test-model'\ntimeout_secs=2\n"
+            ))
+            .unwrap()
+            .default_preset(),
+        )
+        .unwrap(),
         requests,
         server,
     )

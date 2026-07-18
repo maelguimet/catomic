@@ -6,7 +6,7 @@
 
 use std::io::{self, Write};
 
-use crate::config::llm::LlmSettings;
+use crate::config::llm::BackendPreset;
 use crate::llm::context;
 use crate::llm::repo_prepare::RepoPrepareTask;
 
@@ -22,14 +22,15 @@ pub(crate) fn begin(
         app.message = Some("Repo LLM requires explicit Project mode (:project).".to_string());
         return app.render(out);
     }
-    let settings = match crate::config::llm::load() {
-        Ok(settings) => settings,
+    let catalog = match crate::config::llm::load() {
+        Ok(catalog) => catalog,
         Err(error) => {
             app.message = Some(format!("LLM config error: {error}"));
             return app.render(out);
         }
     };
-    begin_with_command_and_settings(app, out, command, instruction, settings)
+    let preset = app.model_session.effective(&catalog);
+    begin_with_command_and_settings(app, out, command, instruction, preset)
 }
 
 #[cfg(test)]
@@ -37,14 +38,14 @@ pub(super) fn begin_with_settings(
     app: &mut super::super::App,
     out: &mut dyn Write,
     instruction: &str,
-    settings: LlmSettings,
+    preset: BackendPreset,
 ) -> io::Result<()> {
     begin_with_command_and_settings(
         app,
         out,
         super::RepoLlmCommand::GitMeow,
         instruction,
-        settings,
+        preset,
     )
 }
 
@@ -53,7 +54,7 @@ pub(super) fn begin_with_command_and_settings(
     out: &mut dyn Write,
     command: super::RepoLlmCommand,
     instruction: &str,
-    settings: LlmSettings,
+    preset: BackendPreset,
 ) -> io::Result<()> {
     if app.repo_llm_state.is_some() || app.pending_llm_request.is_some() || app.llm_task.is_some() {
         app.message = Some("An LLM request is already pending or running.".to_string());
@@ -82,7 +83,7 @@ pub(super) fn begin_with_command_and_settings(
                 task,
                 command,
                 draft,
-                settings,
+                preset,
                 source_snapshot,
                 path,
             }));

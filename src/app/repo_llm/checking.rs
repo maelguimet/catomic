@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::config::llm::LlmSettings;
+use crate::config::llm::BackendPreset;
 use crate::llm::broker::ContextBroker;
 use crate::llm::context::RequestDraft;
 use crate::llm::repo_check::{RepoCheckResult, RepoCheckTask};
@@ -21,11 +21,12 @@ pub(crate) struct CheckingSend {
     task: RepoCheckTask,
     command: RepoLlmCommand,
     draft: RequestDraft,
-    settings: LlmSettings,
+    preset: BackendPreset,
     source_snapshot: String,
     file_path: PathBuf,
     relative_path: String,
     initial_context: String,
+    destination: String,
 }
 
 pub(super) fn begin(app: &mut super::super::App) {
@@ -58,11 +59,12 @@ fn start(app: &mut super::super::App, pending: Pending) {
                 task,
                 command: pending.command,
                 draft: pending.draft,
-                settings: pending.settings,
+                preset: pending.preset,
                 source_snapshot: pending.source_snapshot,
                 file_path: pending.file_path,
                 relative_path: pending.relative_path,
                 initial_context,
+                destination: pending.destination,
             }));
         }
         Err(error) => app.message = Some(format!("Could not start repository check: {error}")),
@@ -120,10 +122,11 @@ fn pending(broker: ContextBroker, state: CheckingSend) -> Pending {
         },
         command: state.command,
         draft: state.draft,
-        settings: state.settings,
+        preset: state.preset,
         source_snapshot: state.source_snapshot,
         file_path: state.file_path,
         relative_path: state.relative_path,
+        destination: state.destination,
     }
 }
 

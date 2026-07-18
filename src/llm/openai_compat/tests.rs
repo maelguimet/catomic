@@ -22,7 +22,7 @@ fn loopback_http_with_api_key_sends_openai_compatible_json() {
         .build()
         .unwrap();
     let client = OpenAiCompatClient::new(config(base_url, Some("cat-secret"))).unwrap();
-    let output = runtime.block_on(client.complete("system rule", "user context"));
+    let output = complete(&runtime, &client, "system rule", "user context");
     let request = server.join().unwrap();
 
     assert_eq!(output.unwrap(), "--- a/a\n+++ b/a\n");
@@ -32,6 +32,33 @@ fn loopback_http_with_api_key_sends_openai_compatible_json() {
         .contains("authorization: bearer cat-secret"));
     assert!(request.contains("\"model\":\"test-model\""));
     assert!(request.contains("\"content\":\"user context\""));
+}
+
+#[test]
+fn sends_only_explicit_provider_headers_to_the_confirmed_endpoint() {
+    let (base_url, server) = fake_server(
+        "200 OK",
+        "application/json",
+        br#"{"choices":[{"message":{"content":"ok"}}]}"#.to_vec(),
+    );
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let mut config = config(base_url, None);
+    config.headers = vec![
+        (
+            "HTTP-Referer".to_string(),
+            "https://catomic.example".to_string(),
+        ),
+        ("X-Title".to_string(), "Catomic".to_string()),
+    ];
+    let client = OpenAiCompatClient::new(config).unwrap();
+    assert_eq!(complete(&runtime, &client, "system", "user").unwrap(), "ok");
+    let request = server.join().unwrap();
+
+    assert!(request.contains("http-referer: https://catomic.example"));
+    assert!(request.contains("x-title: Catomic"));
 }
 
 #[test]
@@ -67,13 +94,69 @@ fn reports_http_errors_without_accepting_them_as_model_output() {
         .build()
         .unwrap();
     let client = OpenAiCompatClient::new(config(base_url, None)).unwrap();
-    let result = runtime.block_on(client.complete("system", "user"));
+    let result = complete(&runtime, &client, "system", "user");
     server.join().unwrap();
 
     assert!(matches!(
         result,
         Err(LlmError::Http { status: 429, ref body }) if body == "slow down"
     ));
+    let error = result.unwrap_err().to_string();
+    assert!(!error.contains("slow down"));
+    assert!(error.contains("response body suppressed"));
+}
+
+#[test]
+fn lists_bounded_static_identifiers_from_openai_compatible_endpoint() {
+    let (base_url, server) = fake_server(
+        "200 OK",
+        "application/json",
+        r#"{"data":[{"id":"model-a"},{"id":"猫-model"},{"id":"model-a"}]}"#
+            .as_bytes()
+            .to_vec(),
+    );
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let client = OpenAiCompatClient::new(config(base_url, None)).unwrap();
+    let models = runtime.block_on(client.list_models()).unwrap();
+    let request = server.join().unwrap();
+
+    assert_eq!(models, ["model-a", "猫-model"]);
+    assert!(request.starts_with("GET /v1/models HTTP/1.1"));
+}
+
+#[test]
+fn refuses_oversized_or_overcount_model_discovery_responses() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let entries = (0..=MAX_DISCOVERED_MODELS)
+        .map(|index| serde_json::json!({"id": format!("model-{index}")}))
+        .collect::<Vec<_>>();
+    let (base_url, server) = fake_server(
+        "200 OK",
+        "application/json",
+        serde_json::json!({"data": entries})
+            .to_string()
+            .into_bytes(),
+    );
+    let client = OpenAiCompatClient::new(config(base_url, None)).unwrap();
+    let result = runtime.block_on(client.list_models());
+    server.join().unwrap();
+    assert!(matches!(result, Err(LlmError::InvalidResponse(_))));
+
+    let (base_url, server) = fake_server(
+        "200 OK",
+        "application/json",
+        vec![b'x'; MAX_MODEL_RESPONSE_BYTES + 1],
+    );
+    let client = OpenAiCompatClient::new(config(base_url, None)).unwrap();
+    let result = runtime.block_on(client.list_models());
+    server.join().unwrap();
+    assert!(matches!(result, Err(LlmError::ResponseTooLarge)));
 }
 
 #[test]
@@ -88,7 +171,7 @@ fn refuses_a_response_larger_than_the_hard_limit() {
         .build()
         .unwrap();
     let client = OpenAiCompatClient::new(config(base_url, None)).unwrap();
-    let result = runtime.block_on(client.complete("system", "user"));
+    let result = complete(&runtime, &client, "system", "user");
     server.join().unwrap();
 
     assert!(matches!(result, Err(LlmError::ResponseTooLarge)));
@@ -106,7 +189,7 @@ fn refuses_redirects_away_from_the_confirmed_endpoint() {
         .unwrap();
     let client = OpenAiCompatClient::new(config(base_url, Some("cat-secret"))).unwrap();
 
-    let result = runtime.block_on(client.complete("system", "sensitive context"));
+    let result = complete(&runtime, &client, "system", "sensitive context");
     redirect_server.join().unwrap();
 
     assert!(matches!(result, Err(LlmError::Http { status: 307, .. })));
@@ -142,6 +225,7 @@ fn config(base_url: String, api_key: Option<&str>) -> LlmConfig {
     LlmConfig {
         base_url,
         api_key: api_key.map(str::to_string),
+        headers: Vec::new(),
         model: "test-model".to_string(),
         timeout: Duration::from_secs(2),
     }
@@ -220,14 +304,23 @@ fn run_proxy_test_child() {
     let client = OpenAiCompatClient::new(LlmConfig {
         base_url: endpoint,
         api_key: Some("cat-secret".to_string()),
+        headers: Vec::new(),
         model: "test-model".to_string(),
         timeout: Duration::from_millis(100),
     })
     .unwrap();
 
-    assert!(runtime
-        .block_on(client.complete("system", "sensitive context"))
-        .is_err());
+    assert!(complete(&runtime, &client, "system", "sensitive context").is_err());
+}
+
+fn complete(
+    runtime: &tokio::runtime::Runtime,
+    client: &OpenAiCompatClient,
+    system: &str,
+    user: &str,
+) -> Result<String, LlmError> {
+    runtime
+        .block_on(client.complete_messages(&[ChatMessage::system(system), ChatMessage::user(user)]))
 }
 
 fn accepted_connection(listener: TcpListener) -> bool {

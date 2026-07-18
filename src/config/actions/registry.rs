@@ -378,6 +378,13 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
     ),
     key!(SoftWrap, "soft-wrap", "Toggle soft wrapping", E, ["f9"]),
     key!(
+        SelectModel,
+        "select-model",
+        "Open the session model/backend picker without invoking a backend",
+        E,
+        ["f10"]
+    ),
+    key!(
         PromptSubmit,
         "prompt-submit",
         "Submit active prompt",

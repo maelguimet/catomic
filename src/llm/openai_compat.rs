@@ -10,11 +10,14 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 const MAX_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
+const MAX_MODEL_RESPONSE_BYTES: usize = 256 * 1024;
+const MAX_DISCOVERED_MODELS: usize = 128;
 
 #[derive(Clone)]
 pub struct LlmConfig {
     pub base_url: String,
     pub api_key: Option<String>,
+    pub headers: Vec<(String, String)>,
     pub model: String,
     pub timeout: Duration,
 }
@@ -40,10 +43,10 @@ impl std::fmt::Display for LlmError {
             ),
             Self::Request(error) => write!(formatter, "request failed: {error}"),
             Self::Http { status, body } => {
-                let summary: String = body.chars().take(200).collect();
-                write!(formatter, "endpoint returned HTTP {status}: {summary}")
+                let _ = body;
+                write!(formatter, "endpoint returned HTTP {status} (response body suppressed)")
             }
-            Self::ResponseTooLarge => write!(formatter, "endpoint response exceeded 2 MiB"),
+            Self::ResponseTooLarge => write!(formatter, "endpoint response exceeded its limit"),
             Self::InvalidResponse(error) => write!(formatter, "invalid endpoint JSON: {error}"),
             Self::MissingContent => write!(formatter, "endpoint response contained no message"),
         }
@@ -67,11 +70,6 @@ impl OpenAiCompatClient {
         Ok(Self { client, config })
     }
 
-    pub async fn complete(&self, system: &str, user: &str) -> Result<String, LlmError> {
-        self.complete_messages(&[ChatMessage::system(system), ChatMessage::user(user)])
-            .await
-    }
-
     pub async fn complete_messages(&self, messages: &[ChatMessage]) -> Result<String, LlmError> {
         let endpoint = format!("{}/chat/completions", self.config.base_url);
         let request = ChatRequest {
@@ -82,12 +80,15 @@ impl OpenAiCompatClient {
         if let Some(key) = self.config.api_key.as_deref() {
             builder = builder.bearer_auth(key);
         }
+        for (name, value) in &self.config.headers {
+            builder = builder.header(name, value);
+        }
         let response = builder
             .send()
             .await
             .map_err(|error| LlmError::Request(error.to_string()))?;
         let status = response.status();
-        let body = read_bounded(response).await?;
+        let body = read_bounded(response, MAX_RESPONSE_BYTES).await?;
         if !status.is_success() {
             return Err(LlmError::Http {
                 status: status.as_u16(),
@@ -103,6 +104,45 @@ impl OpenAiCompatClient {
             .map(|choice| choice.message.content)
             .filter(|content| !content.trim().is_empty())
             .ok_or(LlmError::MissingContent)
+    }
+
+    pub(crate) async fn list_models(&self) -> Result<Vec<String>, LlmError> {
+        let endpoint = format!("{}/models", self.config.base_url);
+        let mut builder = self.client.get(endpoint);
+        if let Some(key) = self.config.api_key.as_deref() {
+            builder = builder.bearer_auth(key);
+        }
+        for (name, value) in &self.config.headers {
+            builder = builder.header(name, value);
+        }
+        let response = builder
+            .send()
+            .await
+            .map_err(|error| LlmError::Request(error.to_string()))?;
+        let status = response.status();
+        let body = read_bounded(response, MAX_MODEL_RESPONSE_BYTES).await?;
+        if !status.is_success() {
+            return Err(LlmError::Http {
+                status: status.as_u16(),
+                body: String::new(),
+            });
+        }
+        let parsed: ModelListResponse = serde_json::from_slice(&body)
+            .map_err(|error| LlmError::InvalidResponse(error.to_string()))?;
+        if parsed.data.len() > MAX_DISCOVERED_MODELS {
+            return Err(LlmError::InvalidResponse(
+                "model list exceeded 128 entries".to_string(),
+            ));
+        }
+        let mut models = Vec::new();
+        for entry in parsed.data {
+            let model = crate::config::llm::validated_model(entry.id)
+                .map_err(|_| LlmError::InvalidResponse("invalid model identifier".to_string()))?;
+            if !models.contains(&model) {
+                models.push(model);
+            }
+        }
+        Ok(models)
     }
 }
 
@@ -133,10 +173,10 @@ fn is_loopback_host(host: &str) -> bool {
         .is_ok_and(|address| address.is_loopback())
 }
 
-async fn read_bounded(mut response: reqwest::Response) -> Result<Vec<u8>, LlmError> {
+async fn read_bounded(mut response: reqwest::Response, limit: usize) -> Result<Vec<u8>, LlmError> {
     if response
         .content_length()
-        .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
+        .is_some_and(|length| length > limit as u64)
     {
         return Err(LlmError::ResponseTooLarge);
     }
@@ -146,7 +186,7 @@ async fn read_bounded(mut response: reqwest::Response) -> Result<Vec<u8>, LlmErr
         .await
         .map_err(|error| LlmError::Request(error.to_string()))?
     {
-        if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
+        if body.len().saturating_add(chunk.len()) > limit {
             return Err(LlmError::ResponseTooLarge);
         }
         body.extend_from_slice(&chunk);
@@ -202,6 +242,16 @@ struct Choice {
 #[derive(Deserialize)]
 struct ResponseMessage {
     content: String,
+}
+
+#[derive(Deserialize)]
+struct ModelListResponse {
+    data: Vec<ModelListEntry>,
+}
+
+#[derive(Deserialize)]
+struct ModelListEntry {
+    id: String,
 }
 
 #[cfg(test)]

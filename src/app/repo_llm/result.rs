@@ -24,15 +24,18 @@ pub(super) fn poll_running(app: &mut super::super::App, out: &mut dyn Write) -> 
         unreachable!()
     };
     match result {
-        RepoLlmTaskResult::Finished { output, broker } => finish_output(
-            app,
-            out,
-            output,
-            *broker,
-            &state.source_snapshot,
-            &state.file_path,
-            &state.relative_path,
-        ),
+        RepoLlmTaskResult::Finished { output, broker } => {
+            app.model_session.record_ready(&state.preset_name);
+            finish_output(
+                app,
+                out,
+                output,
+                *broker,
+                &state.source_snapshot,
+                &state.file_path,
+                &state.relative_path,
+            )
+        }
         RepoLlmTaskResult::RepositoryChanged => render_message(
             app,
             out,
@@ -44,8 +47,9 @@ pub(super) fn poll_running(app: &mut super::super::App, out: &mut dyn Write) -> 
             &format!("Could not recheck repository; response discarded: {error}"),
         ),
         RepoLlmTaskResult::Cancelled => render_message(app, out, "Repo LLM request cancelled."),
-        RepoLlmTaskResult::Error(error) => {
-            render_message(app, out, &format!("Repo LLM request failed: {error}"))
+        RepoLlmTaskResult::Error { kind, message } => {
+            app.model_session.record_failure(&state.preset_name, kind);
+            render_message(app, out, &format!("Repo LLM request failed: {message}"))
         }
     }
 }

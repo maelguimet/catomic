@@ -39,13 +39,14 @@ fn cancellation_drops_an_in_flight_request() {
             }
         }
     });
+    let preset = crate::config::llm::parse(&format!(
+        "[llm]\nbase_url='http://{address}/v1'\nmodel='test'\ntimeout_secs=5\n"
+    ))
+    .unwrap()
+    .default_preset()
+    .clone();
     let mut task = LlmTask::start(
-        LlmConfig {
-            base_url: format!("http://{address}/v1"),
-            api_key: None,
-            model: "test".to_string(),
-            timeout: Duration::from_secs(5),
-        },
+        ConfirmedBackend::resolve(&preset).unwrap(),
         "system".to_string(),
         "user".to_string(),
     )

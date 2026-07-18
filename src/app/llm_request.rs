@@ -9,9 +9,9 @@ use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::config::llm::LlmSettings;
+use crate::config::llm::BackendPreset;
+use crate::llm::backend::ConfirmedBackend;
 use crate::llm::context::{self, RequestDraft};
-use crate::llm::openai_compat::LlmConfig;
 use crate::llm::task::LlmTask;
 
 mod prompt;
@@ -28,9 +28,10 @@ pub(crate) enum CurrentLlmCommand {
 
 pub(crate) struct PendingLlmRequest {
     draft: RequestDraft,
-    settings: LlmSettings,
+    preset: BackendPreset,
     source_snapshot: String,
     path: String,
+    destination: String,
     file_path: Option<PathBuf>,
     replacement_target: Option<super::llm_preview::RegionTarget>,
     purpose: RequestPurpose,
@@ -38,6 +39,7 @@ pub(crate) struct PendingLlmRequest {
 
 pub(crate) struct RunningLlmRequest {
     task: LlmTask,
+    preset_name: String,
     source_snapshot: String,
     path: String,
     file_path: Option<PathBuf>,
@@ -51,14 +53,15 @@ pub(crate) fn begin(
     command: CurrentLlmCommand,
     instruction: &str,
 ) -> io::Result<()> {
-    let settings = match crate::config::llm::load() {
-        Ok(settings) => settings,
+    let catalog = match crate::config::llm::load() {
+        Ok(catalog) => catalog,
         Err(error) => {
             app.message = Some(format!("LLM config error: {error}"));
             return app.render(out);
         }
     };
-    begin_with_settings(app, out, command, instruction, settings)
+    let preset = app.model_session.effective(&catalog);
+    begin_with_settings(app, out, command, instruction, preset)
 }
 
 fn begin_with_settings(
@@ -66,7 +69,7 @@ fn begin_with_settings(
     out: &mut dyn Write,
     command: CurrentLlmCommand,
     instruction: &str,
-    settings: LlmSettings,
+    preset: BackendPreset,
 ) -> io::Result<()> {
     if app.pending_llm_request.is_some() || app.llm_task.is_some() {
         app.message =
@@ -86,15 +89,17 @@ fn begin_with_settings(
         }
     };
     let file_path = app.file.path.clone();
-    let path = display_path(file_path.as_deref());
+    let path = display_path(file_path.as_deref(), &preset);
+    let destination = crate::llm::backend::display_destination(&preset);
     let replacement_target = replacement_target(app, &draft);
     let purpose = prompt::purpose(&draft);
-    app.message = Some(confirmation_message(&draft, &settings));
+    app.message = Some(confirmation_message(&draft, &preset, &destination));
     app.pending_llm_request = Some(PendingLlmRequest {
         draft,
-        settings,
+        preset,
         source_snapshot,
         path,
+        destination,
         file_path,
         replacement_target,
         purpose,
@@ -162,27 +167,40 @@ fn confirm(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         );
         return app.render(out);
     }
-    let api_key = std::env::var(&pending.settings.api_key_env)
-        .ok()
-        .filter(|key| !key.is_empty());
-    let config = LlmConfig {
-        base_url: pending.settings.base_url.clone(),
-        api_key,
-        model: pending.settings.model.clone(),
-        timeout: pending.settings.timeout,
+    let backend = match ConfirmedBackend::resolve(&pending.preset) {
+        Ok(backend) => backend,
+        Err(error) => {
+            app.model_session
+                .record_failure(&pending.preset.name, error.kind);
+            app.message = Some(format!("Could not prepare LLM backend: {error}"));
+            return app.render(out);
+        }
     };
+    if backend.destination() != pending.destination {
+        app.model_session.record_failure(
+            &pending.preset.name,
+            crate::llm::backend::BackendErrorKind::Unavailable,
+        );
+        app.message = Some(
+            "Configured command identity changed after confirmation; request cancelled."
+                .to_string(),
+        );
+        return app.render(out);
+    }
     let user = user_prompt(&pending.draft, &pending.path);
-    match LlmTask::start(config, system_prompt(pending.purpose).to_string(), user) {
+    match LlmTask::start(backend, system_prompt(pending.purpose).to_string(), user) {
         Ok(task) => {
             app.message = Some(format!(
-                "Sending {} lines/{} bytes to {} at {}... Esc cancels.",
+                "Sending {} lines/{} bytes with preset {} model {} to {}... Esc cancels.",
                 pending.draft.context.line_count,
                 pending.draft.context.byte_count,
-                pending.settings.model,
-                pending.settings.base_url
+                pending.preset.name,
+                pending.preset.model,
+                pending.destination
             ));
             app.llm_task = Some(RunningLlmRequest {
                 task,
+                preset_name: pending.preset.name,
                 source_snapshot: pending.source_snapshot,
                 path: pending.path,
                 file_path: pending.file_path,

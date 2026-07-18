@@ -6,13 +6,20 @@
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
+use std::os::unix::fs::PermissionsExt;
 use std::time::{Duration, Instant};
+use std::{
+    fs,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use crate::buffer::{Cursor, PieceTable};
 use crate::llm::context::ContextScope;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::*;
+
+static NEXT_COMMAND_FIXTURE: AtomicUsize = AtomicUsize::new(0);
 
 #[test]
 fn plain_start_constructs_no_pending_request_task_or_client() {
@@ -52,6 +59,16 @@ fn first_meow_builds_confirmation_without_connecting() {
         "first invocation must not connect"
     );
     assert!(app.message.as_deref().unwrap().contains("Enter confirms"));
+
+    app.handle_key_with(&mut out, key(KeyCode::F(10), KeyModifiers::NONE))
+        .unwrap();
+    assert!(app.pending_llm_request.is_some());
+    assert!(!super::super::model_picker::is_viewing(&app));
+    assert!(app
+        .message
+        .as_deref()
+        .unwrap()
+        .contains("send not confirmed"));
 }
 
 #[test]
@@ -79,7 +96,7 @@ fn confirmed_loopback_response_enters_preview_then_applies_on_second_enter() {
     poll_until_done(&mut app, &mut out);
     server.join().unwrap();
 
-    assert!(app.llm_preview.is_some());
+    assert!(app.llm_preview.is_some(), "status: {:?}", app.message);
     assert_eq!(app.buffer.to_string(), "one\ntwo\n");
     app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
         .unwrap();
@@ -201,7 +218,7 @@ fn confirmed_marked_region_response_previews_then_replaces_only_selection() {
     handle_key(&mut app, &mut out, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
     poll_until_done(&mut app, &mut out);
     server.join().unwrap();
-    assert!(app.llm_preview.is_some());
+    assert!(app.llm_preview.is_some(), "status: {:?}", app.message);
     assert_eq!(app.buffer.to_string(), "one\ntwo\nthree\n");
 
     app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
@@ -239,6 +256,73 @@ fn confirmed_explain_response_opens_read_only_answer_instead_of_edit_preview() {
     app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
         .unwrap();
     assert_eq!(app.buffer.edit_history_position(), history);
+}
+
+#[test]
+fn confirmed_command_backend_uses_the_same_preview_apply_undo_and_no_save_path() {
+    let suffix = NEXT_COMMAND_FIXTURE.fetch_add(1, Ordering::Relaxed);
+    let root = std::env::temp_dir().join(format!(
+        "catomic-app-command-llm-{}-{suffix}",
+        std::process::id()
+    ));
+    fs::create_dir(&root).unwrap();
+    let program = root.join("fake claude");
+    let marker = root.join("started marker");
+    let source_path = root.join("note.txt");
+    fs::write(&source_path, "one\ntwo\n").unwrap();
+    let patch = "--- a/note.txt\n+++ b/note.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n";
+    let response = serde_json::json!({
+        "type": "result",
+        "is_error": false,
+        "result": patch,
+    });
+    fs::write(
+        &program,
+        format!(
+            "#!/bin/sh\ninput=$(cat)\ncase \"$input\" in *\"$2\"*) exit 9 ;; esac\nprintf ran > \"$1\"\nprintf '%s' '{}'\n",
+            response
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&program, fs::Permissions::from_mode(0o700)).unwrap();
+    let preset = crate::config::llm::parse(&format!(
+        "[[llm.backends]]\nname='local command'\ntype='command'\nprogram={:?}\nargs=[{:?},{:?}]\nmodel='fixture'\noutput='claude-json-v1'\ntimeout_secs=2\n",
+        program.to_string_lossy(), marker.to_string_lossy(), source_path.to_string_lossy()
+    ))
+    .unwrap()
+    .default_preset()
+    .clone();
+    let mut app = super::super::App::new(source_path.to_str()).unwrap();
+    let mut out = Vec::new();
+
+    begin_with_settings(
+        &mut app,
+        &mut out,
+        CurrentLlmCommand::BigMeow,
+        "uppercase second line",
+        preset,
+    )
+    .unwrap();
+    assert!(
+        !marker.exists(),
+        "command must not start before confirmation"
+    );
+    assert!(app.message.as_deref().unwrap().contains("local command"));
+
+    handle_key(&mut app, &mut out, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+    poll_until_done(&mut app, &mut out);
+    assert!(marker.exists());
+    assert!(app.llm_preview.is_some(), "status: {:?}", app.message);
+    assert_eq!(fs::read_to_string(&source_path).unwrap(), "one\ntwo\n");
+
+    app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
+        .unwrap();
+    assert_eq!(app.buffer.to_string(), "one\nTWO\n");
+    assert!(app.file.dirty);
+    assert_eq!(fs::read_to_string(&source_path).unwrap(), "one\ntwo\n");
+    app.buffer.undo();
+    assert_eq!(app.buffer.to_string(), "one\ntwo\n");
+    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
@@ -290,13 +374,13 @@ fn only_an_explicit_explain_verb_selects_the_read_only_response_path() {
     assert_eq!(prompt::purpose(&tests), RequestPurpose::Edit);
 }
 
-fn settings(base_url: String) -> LlmSettings {
-    LlmSettings {
-        base_url,
-        model: "test-model".to_string(),
-        api_key_env: "CATOMIC_TEST_MISSING_KEY".to_string(),
-        timeout: Duration::from_secs(2),
-    }
+fn settings(base_url: String) -> BackendPreset {
+    crate::config::llm::parse(&format!(
+        "[llm]\nbase_url={base_url:?}\nmodel='test-model'\ntimeout_secs=2\n"
+    ))
+    .unwrap()
+    .default_preset()
+    .clone()
 }
 
 fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
@@ -312,12 +396,12 @@ fn poll_until_done(app: &mut super::super::App, out: &mut Vec<u8>) {
     }
 }
 
-fn patch_server() -> (LlmSettings, std::thread::JoinHandle<()>) {
+fn patch_server() -> (BackendPreset, std::thread::JoinHandle<()>) {
     let patch = "--- a/note.txt\n+++ b/note.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n";
     response_server(patch)
 }
 
-fn response_server(content: &str) -> (LlmSettings, std::thread::JoinHandle<()>) {
+fn response_server(content: &str) -> (BackendPreset, std::thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let content = content.to_string();

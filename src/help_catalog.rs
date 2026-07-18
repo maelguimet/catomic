@@ -38,6 +38,7 @@ pub(crate) enum EditorAction {
     LineNumbers,
     Whitespace,
     SoftWrap,
+    SelectModel,
 }
 
 #[derive(Clone, Copy)]
@@ -381,6 +382,14 @@ pub(crate) const EDITOR_ACTIONS: &[EditorActionSpec] = &[
         "F9",
         "Toggle visual wrapping without inserting newlines.",
         &[ShortcutKey::any(ShortcutCode::Function(9))],
+    ),
+    action(
+        EditorAction::SelectModel,
+        "select-model",
+        "Models",
+        "F10",
+        "Open the searchable session model/backend picker without invoking a backend.",
+        &[ShortcutKey::plain(ShortcutCode::Function(10))],
     ),
 ];
 

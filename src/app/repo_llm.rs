@@ -9,9 +9,9 @@ use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::config::llm::LlmSettings;
+use crate::config::llm::BackendPreset;
+use crate::llm::backend::ConfirmedBackend;
 use crate::llm::context::RequestDraft;
-use crate::llm::openai_compat::LlmConfig;
 use crate::llm::repo_prepare::{PreparedRepoContext, RepoPrepareResult, RepoPrepareTask};
 use crate::llm::repo_task::RepoLlmTask;
 
@@ -70,7 +70,7 @@ pub(crate) struct Preparing {
     task: RepoPrepareTask,
     command: RepoLlmCommand,
     draft: RequestDraft,
-    settings: LlmSettings,
+    preset: BackendPreset,
     source_snapshot: String,
     path: PathBuf,
 }
@@ -79,14 +79,16 @@ pub(crate) struct Pending {
     prepared: PreparedRepoContext,
     command: RepoLlmCommand,
     draft: RequestDraft,
-    settings: LlmSettings,
+    preset: BackendPreset,
     source_snapshot: String,
     file_path: PathBuf,
     relative_path: String,
+    destination: String,
 }
 
 pub(crate) struct Running {
     task: RepoLlmTask,
+    preset_name: String,
     source_snapshot: String,
     file_path: PathBuf,
     relative_path: String,
@@ -155,23 +157,27 @@ fn finish_preparing(app: &mut super::App, prepared: PreparedRepoContext, state: 
     }
     let relative_path = prepared.active_relative_path.clone();
     let context_kib = state.command.context_budget() / 1024;
+    let destination = crate::llm::backend::display_destination(&state.preset);
     let sensitive = if state.draft.context.sensitivity.is_empty() {
         ""
     } else {
         " SENSITIVE active-file context detected; Enter explicitly allows it."
     };
     app.message = Some(format!(
-        "{} at {}: send {} {} context with {} initial repo bytes + {} active-file bytes (at most {context_kib} KiB repository context total)?{sensitive} Enter confirms; Esc cancels.",
-        state.settings.model, state.settings.base_url, state.command.name(), state.command.profile(), prepared.initial_context.len(), state.draft.context.byte_count
+        "Preset {} model {} via {} at {}: send {} {} context with {} initial repo bytes + {} active-file bytes (at most {context_kib} KiB repository context total)?{sensitive} Enter confirms; Esc cancels.",
+        state.preset.name, state.preset.model, state.preset.adapter_label(), destination,
+        state.command.name(), state.command.profile(), prepared.initial_context.len(),
+        state.draft.context.byte_count
     ));
     app.repo_llm_state = Some(RepoLlmState::Pending(Box::new(Pending {
         prepared,
         command: state.command,
         draft: state.draft,
-        settings: state.settings,
+        preset: state.preset,
         source_snapshot: state.source_snapshot,
         file_path: state.path,
         relative_path,
+        destination,
     })));
 }
 
@@ -238,24 +244,45 @@ pub(crate) fn begin_apply_check(
 }
 
 pub(super) fn start_confirmed(app: &mut super::App, pending: Pending) {
-    let config = llm_config(&pending.settings);
+    let backend = match ConfirmedBackend::resolve(&pending.preset) {
+        Ok(backend) => backend,
+        Err(error) => {
+            app.model_session
+                .record_failure(&pending.preset.name, error.kind);
+            app.message = Some(format!("Could not prepare repo LLM backend: {error}"));
+            return;
+        }
+    };
+    if backend.destination() != pending.destination {
+        app.model_session.record_failure(
+            &pending.preset.name,
+            crate::llm::backend::BackendErrorKind::Unavailable,
+        );
+        app.message = Some(
+            "Configured command identity changed after confirmation; repo request cancelled."
+                .to_string(),
+        );
+        return;
+    }
     let user = user_prompt(&pending);
     match RepoLlmTask::start(
-        config,
+        backend,
         pending.prepared.broker,
         SYSTEM_PROMPT.to_string(),
         user,
     ) {
         Ok(task) => {
             app.message = Some(format!(
-                "Sending {} {} repo context to {} at {}... Esc cancels.",
+                "Sending {} {} repo context with preset {} model {} to {}... Esc cancels.",
                 pending.command.name(),
                 pending.command.profile(),
-                pending.settings.model,
-                pending.settings.base_url
+                pending.preset.name,
+                pending.preset.model,
+                pending.destination
             ));
             app.repo_llm_state = Some(RepoLlmState::Running(Running {
                 task,
+                preset_name: pending.preset.name,
                 source_snapshot: pending.source_snapshot,
                 file_path: pending.file_path,
                 relative_path: pending.relative_path,
@@ -287,17 +314,6 @@ pub(super) fn is_active(app: &super::App) -> bool {
 fn cancel_pending(app: &mut super::App) {
     app.repo_llm_state = None;
     app.message = Some("Repo LLM cancelled before sending; no network call made.".to_string());
-}
-
-fn llm_config(settings: &LlmSettings) -> LlmConfig {
-    LlmConfig {
-        base_url: settings.base_url.clone(),
-        api_key: std::env::var(&settings.api_key_env)
-            .ok()
-            .filter(|key| !key.is_empty()),
-        model: settings.model.clone(),
-        timeout: settings.timeout,
-    }
 }
 
 fn user_prompt(pending: &Pending) -> String {

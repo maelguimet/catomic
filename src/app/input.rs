@@ -14,8 +14,8 @@ use crate::help_catalog::{self, EditorAction};
 use super::file_state::refresh_dirty;
 use super::{
     buffers, command_prompt, completion, external_command, help, indentation, lint, llm_answer,
-    llm_preview, llm_request, navigation, overwrite, paging, project_files, recovery, reload,
-    replace, repo_llm, save, search, selection, undo_redo, view,
+    llm_preview, llm_request, model_picker, navigation, overwrite, paging, project_files, recovery,
+    reload, replace, repo_llm, save, search, selection, undo_redo, view,
 };
 
 mod scope;
@@ -72,6 +72,9 @@ pub(crate) fn handle_key_with(
     let Some(key) = app.keybindings.translate(scope, key) else {
         return Ok(());
     };
+    if model_picker::handle_key(app, out, key)? {
+        return Ok(());
+    }
     if help::handle_key(app, out, key)? {
         return Ok(());
     }
@@ -296,6 +299,7 @@ fn dispatch_editor_action(
         | EditorAction::SoftWrap => {
             view::handle_key(app, out, help_catalog::canonical_key(action)).map(|_| ())
         }
+        EditorAction::SelectModel => model_picker::show(app, out),
     }
 }
 
@@ -337,6 +341,9 @@ pub(crate) fn handle_paste(
         return Ok(());
     }
     if llm_answer::handle_paste(app, out)? {
+        return Ok(());
+    }
+    if model_picker::handle_paste(app, out, text)? {
         return Ok(());
     }
     if project_files::handle_paste(app, out)? {

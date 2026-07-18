@@ -20,10 +20,14 @@ pub(crate) fn poll(app: &mut super::super::App, out: &mut dyn Write) -> io::Resu
     };
     let running = app.llm_task.take().expect("completed task exists");
     match result {
-        LlmTaskResult::Finished(output) => finish_output(app, out, output, running),
+        LlmTaskResult::Finished(output) => {
+            app.model_session.record_ready(&running.preset_name);
+            finish_output(app, out, output, running)
+        }
         LlmTaskResult::Cancelled => render_message(app, out, "LLM request cancelled."),
-        LlmTaskResult::Error(error) => {
-            render_message(app, out, &format!("LLM request failed: {error}"))
+        LlmTaskResult::Error { kind, message } => {
+            app.model_session.record_failure(&running.preset_name, kind);
+            render_message(app, out, &format!("LLM request failed: {message}"))
         }
     }
 }

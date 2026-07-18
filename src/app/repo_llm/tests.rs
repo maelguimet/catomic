@@ -10,6 +10,7 @@ mod relevant_file;
 use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpListener;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -197,6 +198,67 @@ fn confirmed_repo_patch_checks_then_applies_as_one_undo_step() {
 }
 
 #[test]
+fn confirmed_command_backend_reuses_repo_drift_preview_and_no_save_contract() {
+    let repo = TempRepo::new();
+    let suffix = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
+    let command_root = std::env::temp_dir().join(format!(
+        "catomic-repo-command-llm-{}-{suffix}",
+        std::process::id()
+    ));
+    fs::create_dir(&command_root).unwrap();
+    let program = command_root.join("fake codex adapter");
+    let marker = command_root.join("started");
+    let patch = "--- a/note.txt\n+++ b/note.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n";
+    let events = [
+        serde_json::json!({"type":"thread.started"}),
+        serde_json::json!({"type":"turn.started"}),
+        serde_json::json!({"type":"item.completed","item":{"type":"agent_message","text":patch}}),
+        serde_json::json!({"type":"turn.completed"}),
+    ]
+    .map(|event| format!("'{}'", event))
+    .join(" ");
+    fs::write(
+        &program,
+        format!(
+            "#!/bin/sh\ncat >/dev/null\nprintf ran > \"$1\"\nprintf '%s\\n' {}\n",
+            events
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&program, fs::Permissions::from_mode(0o700)).unwrap();
+    let preset = crate::config::llm::parse(&format!(
+        "[[llm.backends]]\nname='repo command'\ntype='command'\nprogram={:?}\nargs=[{:?}]\nmodel='fixture'\noutput='codex-jsonl-v1'\ntimeout_secs=2\n",
+        program.to_string_lossy(), marker.to_string_lossy()
+    ))
+    .unwrap()
+    .default_preset()
+    .clone();
+    let mut app = project_app(&repo);
+    let mut out = Vec::new();
+
+    begin_with_settings(&mut app, &mut out, "uppercase second line", preset).unwrap();
+    poll_until_pending(&mut app, &mut out);
+    assert!(!marker.exists(), "repo preparation must not start command");
+    handle_key(&mut app, &mut out, key(KeyCode::Enter)).unwrap();
+    poll_until_finished(&mut app, &mut out);
+    assert!(marker.exists());
+    assert!(app.llm_preview.is_some(), "status: {:?}", app.message);
+    assert_eq!(
+        fs::read_to_string(repo.0.join("note.txt")).unwrap(),
+        "one\ntwo\n"
+    );
+
+    app.handle_key_with(&mut out, key(KeyCode::Enter)).unwrap();
+    poll_until_finished(&mut app, &mut out);
+    assert_eq!(app.buffer.to_string(), "one\nTWO\n");
+    assert_eq!(
+        fs::read_to_string(repo.0.join("note.txt")).unwrap(),
+        "one\ntwo\n"
+    );
+    let _ = fs::remove_dir_all(command_root);
+}
+
+#[test]
 fn patch_for_a_different_repo_file_is_refused_before_preview() {
     let repo = TempRepo::new();
     let patch = "--- a/other.txt\n+++ b/other.txt\n@@ -1 +1 @@\n-stable\n+changed\n";
@@ -272,11 +334,11 @@ fn poll_until_send_checked(app: &mut super::super::App, out: &mut Vec<u8>) {
     }
 }
 
-fn patch_server() -> (LlmSettings, std::thread::JoinHandle<()>) {
+fn patch_server() -> (BackendPreset, std::thread::JoinHandle<()>) {
     response_server("--- a/note.txt\n+++ b/note.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n")
 }
 
-fn response_server(patch: &str) -> (LlmSettings, std::thread::JoinHandle<()>) {
+fn response_server(patch: &str) -> (BackendPreset, std::thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let patch = patch.to_string();
@@ -302,13 +364,13 @@ fn response_server(patch: &str) -> (LlmSettings, std::thread::JoinHandle<()>) {
     (settings(format!("http://{address}/v1")), server)
 }
 
-fn settings(base_url: String) -> LlmSettings {
-    LlmSettings {
-        base_url,
-        model: "test-model".to_string(),
-        api_key_env: "CATOMIC_TEST_MISSING_KEY".to_string(),
-        timeout: Duration::from_secs(2),
-    }
+fn settings(base_url: String) -> BackendPreset {
+    crate::config::llm::parse(&format!(
+        "[llm]\nbase_url={base_url:?}\nmodel='test-model'\ntimeout_secs=2\n"
+    ))
+    .unwrap()
+    .default_preset()
+    .clone()
 }
 
 fn key(code: KeyCode) -> KeyEvent {

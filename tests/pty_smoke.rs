@@ -624,13 +624,77 @@ fn pty_ctrl_f_prompt_finds_content_and_quits() -> TestResult {
     editor.send_keys(b"\x06target")?;
     editor.wait_for_output("Ctrl+F result", "Found 'target'.")?;
     assert!(
-        editor.output_string().contains("\x1b[7mtarget\x1b[27m"),
-        "incremental Ctrl+F should reverse-highlight the live match"
+        editor.output_string().contains("\x1b[30;43mtarget\x1b[0m"),
+        "incremental Ctrl+F should use the search-match theme role"
     );
     editor.send_keys(b"\r")?;
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
 
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn pty_config_command_confirms_private_template_at_exact_xdg_path() -> TestResult {
+    use std::os::unix::fs::PermissionsExt;
+
+    let project = TempProject::new("config_command");
+    let active = project.write("note.txt", "source stays untouched");
+    let config = project.root.join("catomic/config.toml");
+    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"\x1b[80;6uconfig\r")?;
+    editor.wait_for_output("config creation confirmation", "Type yes to confirm")?;
+    assert!(!config.exists(), "prompt must not create configuration");
+
+    editor.send_keys(b"yes\r")?;
+    editor.wait_for_output("config template buffer", "Catomic configuration")?;
+    editor.wait_for_output("exact resolved config path", &config.to_string_lossy())?;
+    let created = fs::read_to_string(&config)?;
+    assert!(created.contains("[theme.colors]"));
+    assert!(created.contains("[keybindings]"));
+    assert_eq!(fs::metadata(&config)?.permissions().mode() & 0o777, 0o600);
+
+    editor.send_keys(b"#\x13")?;
+    editor.wait_for_output(
+        "configuration save policy",
+        "Saved configuration. Restart Catomic to apply configuration changes.",
+    )?;
+    assert!(fs::read_to_string(&config)?.starts_with("## Catomic configuration"));
+
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+    let output = editor.output_string();
+    assert!(output.contains("\x1b[0m"), "terminal styles must reset");
+    assert!(
+        output.contains("\x1b]112\x07"),
+        "terminal cursor color must reset"
+    );
+    assert_eq!(fs::read_to_string(active)?, "source stays untouched");
+    Ok(())
+}
+
+#[test]
+fn pty_custom_theme_reaches_content_status_and_cursor_then_resets() -> TestResult {
+    let project = TempProject::new("custom_theme");
+    project.write(
+        "catomic/config.toml",
+        "[theme.colors]\ntext = \"bright-green\"\nbackground = \"black\"\n\
+         cursor = \"red\"\nstatus = { fg = \"bright-white\", bg = \"blue\" }\n",
+    );
+    let active = project.write("themed.txt", "themed content");
+    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
+
+    editor.wait_for_output("themed content", "\x1b[92;40mthemed content\x1b[0m")?;
+    editor.wait_for_output("themed status", "\x1b[97;44m\x1b[K")?;
+    editor.wait_for_output("themed cursor", "\x1b]12;#cd0000\x07")?;
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+
+    let output = editor.output_string();
+    assert!(output.contains("\x1b[0m\x1b]112\x07"));
     Ok(())
 }
 

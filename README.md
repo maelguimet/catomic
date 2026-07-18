@@ -167,6 +167,17 @@ enabled = false
 interval_secs = 30
 max_bytes = 1048576
 
+[theme]
+name = "default"
+
+[theme.colors]
+selection = { fg = "black", bg = "cyan" }
+status_warning = { fg = "black", bg = "yellow" }
+
+[keybindings]
+save = ["ctrl+s", "alt+s"]
+# help = [] # unbind every default for this action
+
 [languages.rs]
 tab_size = 4
 linter = "cargo check --message-format short {file}"

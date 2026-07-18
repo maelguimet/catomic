@@ -60,10 +60,11 @@ impl ViewPreferences {
 
 pub(crate) fn load() -> io::Result<ViewPreferences> {
     let home = std::env::var_os("HOME");
-    let config_path = super::big_files::config_path(
+    let config_path = super::user_file::resolve_path(
         std::env::var_os("XDG_CONFIG_HOME").as_deref(),
         home.as_deref(),
-    );
+    )
+    .ok();
     let state_path = preference_path(
         std::env::var_os("XDG_STATE_HOME").as_deref(),
         home.as_deref(),

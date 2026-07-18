@@ -1,5 +1,5 @@
 //! Purpose: verify ANSI composition for syntax and active document ranges.
-//! Owns: exact visible-line color, reverse-video, and scalar-offset fixtures.
+//! Owns: exact visible-line color, semantic highlights, and scalar-offset fixtures.
 //! Must not: query buffers, require a terminal, inspect files, or test syntax detection.
 //! Invariants: styled segments end with a full reset so attributes never leak.
 //! Phase: 4-a viewport-only syntax styling.
@@ -15,7 +15,7 @@ fn rendered(content: &str, start_col: usize, options: RenderOptions) -> String {
 }
 
 #[test]
-fn markdown_heading_is_bold_cyan() {
+fn markdown_heading_uses_the_semantic_default() {
     assert_eq!(
         rendered(
             "## Heading",
@@ -25,7 +25,7 @@ fn markdown_heading_is_bold_cyan() {
                 ..RenderOptions::default()
             }
         ),
-        "\x1b[1;36m## Heading\x1b[0m"
+        "\x1b[94;1m## Heading\x1b[0m"
     );
 }
 
@@ -58,7 +58,7 @@ fn selection_combines_with_keyword_color() {
             ..RenderOptions::default()
         },
     );
-    assert_eq!(output, "\x1b[35;7mlet\x1b[0m cat = \x1b[33m1\x1b[0m");
+    assert_eq!(output, "\x1b[30;46mlet\x1b[0m cat = \x1b[33m1\x1b[0m");
 }
 
 #[test]
@@ -74,7 +74,90 @@ fn highlight_maps_through_horizontal_scroll() {
             ..RenderOptions::default()
         },
     );
-    assert_eq!(output, "c\x1b[7mde\x1b[27mf");
+    assert_eq!(output, "c\x1b[30;46mde\x1b[0mf");
+}
+
+#[test]
+fn search_and_selection_use_distinct_semantic_roles() {
+    let range = Some(TextHighlight {
+        start: Cursor { row: 0, col: 0 },
+        end: Cursor { row: 0, col: 3 },
+    });
+    let search = rendered(
+        "cat",
+        0,
+        RenderOptions {
+            highlight: range,
+            highlight_kind: HighlightKind::Search,
+            ..RenderOptions::default()
+        },
+    );
+    let selection = rendered(
+        "cat",
+        0,
+        RenderOptions {
+            highlight: range,
+            ..RenderOptions::default()
+        },
+    );
+    assert_eq!(search, "\x1b[30;43mcat\x1b[0m");
+    assert_eq!(selection, "\x1b[30;46mcat\x1b[0m");
+}
+
+#[test]
+fn rgb_uses_truecolor_or_a_stable_indexed_fallback() {
+    let theme = Theme {
+        text: Style::fg(Color::Rgb(255, 0, 0)),
+        ..Theme::default()
+    };
+    let fallback = rendered(
+        "cat",
+        0,
+        RenderOptions {
+            theme,
+            ..RenderOptions::default()
+        },
+    );
+    let theme = Theme {
+        truecolor: true,
+        ..theme
+    };
+    let truecolor = rendered(
+        "cat",
+        0,
+        RenderOptions {
+            theme,
+            ..RenderOptions::default()
+        },
+    );
+    assert_eq!(fallback, "\x1b[38;5;196mcat\x1b[0m");
+    assert_eq!(truecolor, "\x1b[38;2;255;0;0mcat\x1b[0m");
+}
+
+#[test]
+fn diff_and_preview_styles_overlay_normal_text() {
+    let theme = Theme {
+        text: Style::fg(Color::Ansi(7)),
+        preview: Style {
+            dim: Some(true),
+            ..Style::default()
+        },
+        diff_added: Style::fg(Color::Ansi(10)),
+        ..Theme::default()
+    };
+    assert_eq!(
+        rendered(
+            "+cat",
+            0,
+            RenderOptions {
+                syntax: SyntaxKind::Diff,
+                surface: ContentSurface::Diff,
+                theme,
+                ..RenderOptions::default()
+            }
+        ),
+        "\x1b[92;2m+cat\x1b[0m"
+    );
 }
 
 #[test]

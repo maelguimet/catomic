@@ -11,6 +11,7 @@ use crate::config::cat::CatConfig;
 use crate::config::commands::CommandConfig;
 use crate::config::editor::EditorConfig;
 use crate::config::keybindings::KeyBindings;
+use crate::config::theme::Theme;
 use crate::config::view_preferences::ViewPreferences;
 
 #[derive(Clone)]
@@ -21,6 +22,7 @@ pub(super) struct StartupConfig {
     pub(super) keybindings: KeyBindings,
     pub(super) commands: CommandConfig,
     pub(super) cat: CatConfig,
+    pub(super) theme: Theme,
     pub(super) view_preferences: ViewPreferences,
 }
 
@@ -33,6 +35,7 @@ impl StartupConfig {
             keybindings: crate::config::keybindings::load()?,
             commands: crate::config::commands::load()?,
             cat: crate::config::cat::load()?,
+            theme: crate::config::theme::load()?,
             view_preferences: crate::config::view_preferences::load()?,
         })
     }
@@ -45,6 +48,7 @@ impl StartupConfig {
             keybindings: app.keybindings.clone(),
             commands: app.command_config.clone(),
             cat: app.cat_config,
+            theme: app.theme,
             view_preferences: app.view_preferences.clone(),
         }
     }
@@ -60,6 +64,7 @@ impl Default for StartupConfig {
             keybindings: KeyBindings::default(),
             commands: CommandConfig::default(),
             cat: CatConfig::default(),
+            theme: Theme::default(),
             view_preferences: ViewPreferences::default(),
         }
     }

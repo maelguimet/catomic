@@ -77,6 +77,20 @@ fn ensure_private_directory(path: &Path) -> io::Result<()> {
             fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
         }
     }
+    #[cfg(unix)]
+    if existed {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = fs::symlink_metadata(path)?.permissions().mode() & 0o777;
+        if mode & 0o077 != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!(
+                    "config directory must be user-only (mode 0700): {} has mode {mode:04o}",
+                    path.display()
+                ),
+            ));
+        }
+    }
     Ok(())
 }
 

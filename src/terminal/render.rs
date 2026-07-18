@@ -8,11 +8,13 @@
 use std::io::{self, Write};
 
 use crate::buffer::{Buffer, Cursor};
+use crate::config::theme::Theme;
 use crate::editor::syntax::SyntaxKind;
 use crate::terminal::cursor_style::{self, CursorShape};
 
 #[cfg(test)]
 mod cursor_tests;
+mod frame;
 mod status_bar;
 mod style;
 pub(crate) mod wrapped;
@@ -25,11 +27,29 @@ pub(crate) struct TextHighlight {
     pub(crate) end: Cursor,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum HighlightKind {
+    #[default]
+    Selection,
+    Search,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum ContentSurface {
+    #[default]
+    Normal,
+    Preview,
+    Diff,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct RenderOptions {
     pub(crate) cursor_shape: CursorShape,
     pub(crate) highlight: Option<TextHighlight>,
+    pub(crate) highlight_kind: HighlightKind,
     pub(crate) syntax: SyntaxKind,
+    pub(crate) surface: ContentSurface,
+    pub(crate) theme: Theme,
     pub(crate) line_numbers: bool,
     pub(crate) whitespace: bool,
     pub(crate) soft_wrap: bool,
@@ -42,13 +62,28 @@ impl Default for RenderOptions {
         Self {
             cursor_shape: CursorShape::Default,
             highlight: None,
+            highlight_kind: HighlightKind::Selection,
             syntax: SyntaxKind::Plain,
+            surface: ContentSurface::Normal,
+            theme: Theme::default(),
             line_numbers: false,
             whitespace: false,
             soft_wrap: false,
             status_role: StatusRole::Normal,
             status_theme: StatusTheme::default(),
         }
+    }
+}
+
+pub(super) fn write_terminal_cursor(
+    out: &mut Vec<u8>,
+    position: Option<(usize, usize)>,
+    shape: CursorShape,
+) -> io::Result<()> {
+    cursor_style::write_shape(out, shape)?;
+    match position {
+        Some((row, col)) => write!(out, "\x1b[{row};{col}H\x1b[?25h"),
+        None => write!(out, "\x1b[?25l\x1b[1;1H"),
     }
 }
 
@@ -89,9 +124,9 @@ pub(crate) fn line_number_gutter(line_count: usize) -> usize {
 /// rendered row.
 ///
 /// `viewport` defines the visible row/column origin and terminal dimensions.
-/// Bottom row (height) is reserved for the semantic status bar; content uses height-1.
+/// Bottom row (height) reserved for minimal message if provided; content uses height-1.
 /// Horizontal slicing starts at a scalar document column but clips by terminal cells.
-/// Status text is pinned by absolute positioning and styled through `RenderOptions`.
+/// Least invasive addition: message shown on last row via absolute positioning.
 pub fn render_buffer<W: Write + ?Sized>(
     out: &mut W,
     buffer: &dyn Buffer,
@@ -100,141 +135,21 @@ pub fn render_buffer<W: Write + ?Sized>(
     options: RenderOptions,
 ) -> io::Result<()> {
     let mut frame = Vec::new();
+    style::write_cursor_color(&mut frame, options.theme)?;
     if options.soft_wrap {
         wrapped::compose_buffer(&mut frame, buffer, viewport, message, options)?;
     } else {
-        compose_buffer(&mut frame, buffer, viewport, message, options)?;
+        frame::compose_buffer(&mut frame, buffer, viewport, message, options)?;
     }
     out.write_all(&frame)?;
     out.flush()
-}
-
-fn compose_buffer(
-    out: &mut Vec<u8>,
-    buffer: &dyn Buffer,
-    viewport: RenderViewport,
-    message: Option<&str>,
-    options: RenderOptions,
-) -> io::Result<()> {
-    let RenderViewport {
-        start_row,
-        start_col,
-        height,
-        width,
-        ..
-    } = viewport;
-    // Reserve bottom row for message/status (matches screen.visible_height intent).
-    // Horizontal: use width directly as content width (no sidebar/status reservation).
-    let content_h = height.saturating_sub(1);
-    let gutter = if options.line_numbers {
-        line_number_gutter(buffer.line_count())
-    } else {
-        0
-    }
-    .min(width);
-    let content_w = width.saturating_sub(gutter);
-    let cursor = buffer.cursor();
-    let cursor_window =
-        if cursor.row >= start_row && cursor.row < start_row.saturating_add(content_h) {
-            cursor.col.saturating_sub(start_col).saturating_add(1)
-        } else {
-            0
-        };
-    let fetch_width = content_w
-        .saturating_mul(4)
-        .saturating_add(32)
-        .max(cursor_window);
-    let visible = buffer.try_visible_lines_window(start_row, content_h, start_col, fetch_width)?;
-    for screen_row in 1..=content_h {
-        write!(out, "\x1b[{};1H\x1b[K", screen_row)?;
-        if gutter > 0 {
-            write_line_number(out, start_row + screen_row - 1, gutter)?;
-        }
-        if content_w > 0 {
-            if let Some(line) = visible.get(screen_row - 1) {
-                style::write_content_line(
-                    out,
-                    &line.content,
-                    start_row + screen_row - 1,
-                    start_col,
-                    content_w,
-                    options,
-                )?;
-            }
-        }
-    }
-
-    if height > 0 {
-        status_bar::write_status_bar(
-            out,
-            height,
-            width,
-            message.unwrap_or(""),
-            options.status_role,
-            options.status_theme,
-        )?;
-    }
-
-    let position = unwrapped_cursor_position(buffer, cursor, &visible, viewport, gutter);
-    write_terminal_cursor(out, position, options.cursor_shape)
-}
-
-fn unwrapped_cursor_position(
-    buffer: &dyn Buffer,
-    cursor: Cursor,
-    visible: &[crate::buffer::LineView],
-    viewport: RenderViewport,
-    gutter: usize,
-) -> Option<(usize, usize)> {
-    let content_h = viewport.height.saturating_sub(1);
-    let content_w = viewport.width.saturating_sub(gutter);
-    let Cursor { row, col } = cursor;
-    let start_row = viewport.start_row;
-    let start_col = viewport.start_col;
-    let row_visible = row >= start_row && row < start_row.saturating_add(content_h);
-    let cursor_cells = if row_visible && col >= start_col {
-        visible
-            .get(row - start_row)
-            .map(|line| {
-                crate::editor::text_layout::scalar_to_cell(
-                    &line.content,
-                    col.saturating_sub(start_col),
-                )
-            })
-            .unwrap_or(0)
-    } else {
-        0
-    };
-    let line_end = buffer.line_char_count(row).unwrap_or(0);
-    let col_visible = col >= start_col
-        && (cursor_cells < content_w || (col == line_end && cursor_cells == content_w));
-    (row_visible && col_visible && content_w > 0).then(|| {
-        (
-            row - start_row + 1,
-            gutter
-                .saturating_add(cursor_cells)
-                .saturating_add(1)
-                .min(viewport.width.max(1)),
-        )
-    })
-}
-
-pub(super) fn write_terminal_cursor(
-    out: &mut Vec<u8>,
-    position: Option<(usize, usize)>,
-    shape: CursorShape,
-) -> io::Result<()> {
-    cursor_style::write_shape(out, shape)?;
-    match position {
-        Some((row, col)) => write!(out, "\x1b[{row};{col}H\x1b[?25h"),
-        None => write!(out, "\x1b[?25l\x1b[1;1H"),
-    }
 }
 
 pub(super) fn write_line_number<W: Write + ?Sized>(
     out: &mut W,
     row: usize,
     gutter: usize,
+    theme: Theme,
 ) -> std::io::Result<()> {
     let label = format!(
         "{:>width$} ",
@@ -242,7 +157,7 @@ pub(super) fn write_line_number<W: Write + ?Sized>(
         width = gutter.saturating_sub(1)
     );
     let clipped: String = label.chars().take(gutter).collect();
-    write!(out, "\x1b[2;90m{clipped}\x1b[0m")
+    style::write_styled_text(out, &clipped, theme.line_number, theme.truecolor)
 }
 
 #[cfg(test)]
@@ -265,13 +180,14 @@ mod tests {
                     start: Cursor { row: 0, col: 5 },
                     end: Cursor { row: 0, col: 11 },
                 }),
+                highlight_kind: HighlightKind::Search,
                 ..RenderOptions::default()
             },
         )
         .unwrap();
 
         let rendered = String::from_utf8(out).unwrap();
-        assert!(rendered.contains("zero \x1b[7mtarget\x1b[27m here"));
+        assert!(rendered.contains("zero \x1b[30;43mtarget\x1b[0m here"));
     }
 
     #[test]
@@ -295,9 +211,9 @@ mod tests {
         .unwrap();
 
         let rendered = String::from_utf8(out).unwrap();
-        assert!(rendered.contains("zero \x1b[7mhere\x1b[27m"));
-        assert!(rendered.contains("\x1b[7mmiddle\x1b[27m"));
-        assert!(rendered.contains("\x1b[7mlast\x1b[27m row"));
+        assert!(rendered.contains("zero \x1b[30;46mhere\x1b[0m"));
+        assert!(rendered.contains("\x1b[30;46mmiddle\x1b[0m"));
+        assert!(rendered.contains("\x1b[30;46mlast\x1b[0m row"));
     }
 
     #[test]
@@ -326,60 +242,6 @@ mod tests {
     }
 
     #[test]
-    fn markdown_preview_raw_html_terminal_controls_render_inertly() {
-        let preview =
-            crate::editor::markdown_preview::render("<span>before\x1b[2Jafter\x07</span>");
-        let b = SimpleBuffer::from_text(&preview);
-        let mut out = Vec::new();
-
-        render_buffer(
-            &mut out,
-            &b,
-            RenderViewport::new(0, 0, 3, 80),
-            None,
-            RenderOptions {
-                syntax: SyntaxKind::MarkdownPreview,
-                ..RenderOptions::default()
-            },
-        )
-        .unwrap();
-
-        let rendered = String::from_utf8(out).unwrap();
-        assert!(!rendered.contains("\x1b[2J"));
-        assert!(!rendered.contains('\x07'));
-        assert!(rendered.contains("<span>before␛[2Jafter␇</span>"));
-    }
-
-    #[test]
-    fn markdown_styles_preserve_line_number_tab_selection_and_cursor_cells() {
-        let mut buffer = SimpleBuffer::from_text("\t**猫** | [x](u)");
-        buffer.set_cursor(Cursor { row: 0, col: 3 });
-        let mut out = Vec::new();
-
-        render_buffer(
-            &mut out,
-            &buffer,
-            RenderViewport::new(0, 0, 3, 24),
-            None,
-            RenderOptions {
-                highlight: Some(TextHighlight {
-                    start: Cursor { row: 0, col: 3 },
-                    end: Cursor { row: 0, col: 4 },
-                }),
-                syntax: SyntaxKind::Markdown,
-                line_numbers: true,
-                ..RenderOptions::default()
-            },
-        )
-        .unwrap();
-
-        let rendered = String::from_utf8(out).unwrap();
-        assert!(rendered.contains("\x1b[2;90m1 \x1b[0m    \x1b[3;35m**\x1b[0m"));
-        assert!(rendered.contains("\x1b[3;35;7m猫\x1b[0m"));
-        assert!(rendered.ends_with("\x1b[1;9H\x1b[?25h"));
-    }
-
-    #[test]
     fn wrapped_command_preview_terminal_controls_render_inertly() {
         let b = SimpleBuffer::from_text("preview-before\x1b[2Jpreview-after\x07");
         let mut out = Vec::new();
@@ -400,6 +262,26 @@ mod tests {
         assert!(!rendered.contains("\x1b[2J"));
         assert!(!rendered.contains('\x07'));
         assert!(rendered.contains("preview-before␛[2Jpreview-after␇"));
+    }
+
+    #[test]
+    fn status_terminal_controls_render_inertly() {
+        let b = SimpleBuffer::from_text("");
+        let mut out = Vec::new();
+
+        render_buffer(
+            &mut out,
+            &b,
+            RenderViewport::new(0, 0, 2, 80),
+            Some("error from hostile\x1b]0;title\x07path"),
+            RenderOptions::default(),
+        )
+        .unwrap();
+
+        let rendered = String::from_utf8(out).unwrap();
+        assert!(!rendered.contains("\x1b]0"));
+        assert!(!rendered.contains('\x07'));
+        assert!(rendered.contains("error from hostile␛]0;title␇path"));
     }
 
     #[test]
@@ -431,6 +313,56 @@ mod tests {
     }
 
     #[test]
+    fn render_buffer_height_one_reserves_only_row_for_message_no_content_lines() {
+        let b = SimpleBuffer::from_text("L0\nL1\nL2\n");
+        let mut out: Vec<u8> = Vec::new();
+        render_buffer(
+            &mut out,
+            &b,
+            RenderViewport::new(0, 0, 1, 10),
+            Some("msg"),
+            RenderOptions::default(),
+        )
+        .expect("render h=1");
+        let s = String::from_utf8_lossy(&out);
+        // With h=1, content_h=0 => no visible lines should be emitted
+        assert!(
+            !s.contains("L0") && !s.contains("L1") && !s.contains("L2"),
+            "height=1 must emit no content lines: {}",
+            s
+        );
+        // Bottom row positioning at height=1
+        assert!(s.contains("\x1b[1;1H"), "positions to row 1 for message");
+        assert!(s.contains("msg"), "message emitted");
+    }
+
+    #[test]
+    fn render_buffer_width_zero_emits_no_content_but_clears_rows_and_positions() {
+        let b = SimpleBuffer::from_text("abc\ndef\n");
+        let mut out: Vec<u8> = Vec::new();
+        render_buffer(
+            &mut out,
+            &b,
+            RenderViewport::new(0, 0, 3, 0),
+            None,
+            RenderOptions::default(),
+        )
+        .expect("render w=0");
+        let s = String::from_utf8_lossy(&out);
+        // No actual text content from lines
+        assert!(
+            !s.contains("abc") && !s.contains("def"),
+            "width=0 must emit no line content chars: {}",
+            s
+        );
+        // Still clears viewport rows and does final cursor positioning safely.
+        assert!(s.contains("\x1b[1;1H\x1b[K"), "clears first content row");
+        assert!(s.contains("\x1b[2;1H\x1b[K"), "clears second content row");
+        assert!(!s.contains("\x1b[2J"), "does not clear whole screen");
+        assert!(s.contains("\x1b["), "positions cursor");
+    }
+
+    #[test]
     fn render_buffer_clears_each_row_without_full_screen_clear() {
         let b = SimpleBuffer::from_text("only");
         let mut out = Vec::new();
@@ -449,8 +381,7 @@ mod tests {
         for row in 1..=3 {
             assert!(s.contains(&format!("\x1b[{row};1H\x1b[K")));
         }
-        assert!(s.contains("\x1b[4;1H"));
-        assert!(s.contains("\x1b[2Kstatus"));
+        assert!(s.contains("\x1b[4;1H\x1b[Kstatus"));
     }
 
     #[test]
@@ -533,7 +464,7 @@ mod tests {
 
         let rendered = String::from_utf8(out).unwrap();
         assert!(rendered.contains("a\u{301}猫x"));
-        assert!(rendered.ends_with("\x1b[1;4H\x1b[?25h"));
+        assert!(rendered.ends_with("\x1b[1;4H"));
     }
 
     #[test]

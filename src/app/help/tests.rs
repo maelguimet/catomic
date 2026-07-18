@@ -93,29 +93,20 @@ fn ctrl_h_opens_navigates_and_closes_without_editing_source() {
 fn rendered_help_covers_every_cataloged_shortcut_command_and_alias() {
     let text = help_text();
 
-    for action in crate::help_catalog::EDITOR_ACTIONS {
+    for action in crate::config::actions::REGISTRY {
+        assert!(text.contains(action.name), "missing action {}", action.name);
         assert!(
-            text.contains(action.default_keys),
-            "missing keys for {}",
+            text.contains(action.label),
+            "missing label for {}",
             action.name
         );
-        assert!(
-            text.contains(action.purpose),
-            "missing purpose for {}",
-            action.name
-        );
-    }
-    for shortcut in crate::help_catalog::FIXED_SHORTCUTS {
-        assert!(
-            text.contains(shortcut.keys),
-            "missing fixed keys: {}",
-            shortcut.keys
-        );
-        assert!(
-            text.contains(shortcut.purpose),
-            "missing fixed purpose: {}",
-            shortcut.keys
-        );
+        for chord in action.defaults {
+            assert!(
+                text.contains(chord),
+                "missing chord {chord} for {}",
+                action.name
+            );
+        }
     }
     for command in crate::help_catalog::PROMPT_COMMANDS {
         assert!(

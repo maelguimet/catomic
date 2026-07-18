@@ -1,4 +1,4 @@
-//! Purpose: compose scalar-indexed syntax spans and active-range reverse video.
+//! Purpose: compose scalar-indexed syntax spans and semantic active-range styling.
 //! Owns: visible-line ANSI color selection, boundary splitting, and reset emission.
 //! Must not: query buffers, infer file types, mutate state, or inspect non-visible lines.
 //! Invariants: only the supplied visible text is allocated; every styled segment resets ANSI.
@@ -6,10 +6,11 @@
 
 use std::io::{self, Write};
 
+use crate::config::theme::{Color, Style, Theme};
 use crate::editor::syntax::{self, SpanStyle, StyledSpan};
 use crate::editor::text_layout;
 
-use super::{RenderOptions, TextHighlight};
+use super::{ContentSurface, HighlightKind, RenderOptions, TextHighlight};
 
 pub(super) fn write_content_line<W: Write + ?Sized>(
     out: &mut W,
@@ -32,13 +33,21 @@ pub(super) fn write_content_line<W: Write + ?Sized>(
         if start == end {
             continue;
         }
-        let style = spans
+        let syntax_style = spans
             .iter()
             .find(|span| start >= span.start && start < span.end)
             .map(|span| span.style);
-        let reverse = selected.is_some_and(|(from, to)| start >= from && start < to);
+        let highlighted = selected.is_some_and(|(from, to)| start >= from && start < to);
         let segment: String = chars[start..end].iter().collect();
-        write_segment(out, &segment, style, reverse, options.whitespace, cell)?;
+        let style = segment_style(options, syntax_style, highlighted);
+        write_segment(
+            out,
+            &segment,
+            style,
+            options.whitespace,
+            cell,
+            options.theme.truecolor,
+        )?;
         cell = cell.saturating_add(text_layout::cell_width_from(&segment, cell));
     }
     Ok(())
@@ -100,32 +109,166 @@ fn segment_boundaries(
 fn write_segment<W: Write + ?Sized>(
     out: &mut W,
     text: &str,
-    style: Option<SpanStyle>,
-    reverse: bool,
+    style: Style,
     whitespace: bool,
     initial_cell: usize,
+    truecolor: bool,
 ) -> io::Result<()> {
     let text = text_layout::expand_tabs(text, whitespace, initial_cell);
-    let code = style.map(style_code);
-    match (code, reverse) {
-        (None, false) => write!(out, "{text}"),
-        (None, true) => write!(out, "\x1b[7m{text}\x1b[27m"),
-        (Some(code), false) => write!(out, "\x1b[{code}m{text}\x1b[0m"),
-        (Some(code), true) => write!(out, "\x1b[{code};7m{text}\x1b[0m"),
+    write_styled_text(out, &text, style, truecolor)
+}
+
+fn segment_style(options: RenderOptions, span: Option<SpanStyle>, highlighted: bool) -> Style {
+    let theme = options.theme;
+    let mut style = match options.surface {
+        ContentSurface::Normal => theme.text,
+        ContentSurface::Preview | ContentSurface::Diff => theme.text.overlay(theme.preview),
+    };
+    if let Some(span) = span {
+        style = style.overlay(span_style(theme, span));
+    }
+    if highlighted {
+        style = style.overlay(match options.highlight_kind {
+            HighlightKind::Selection => theme.selection,
+            HighlightKind::Search => theme.search_match,
+        });
+    }
+    style
+}
+
+fn span_style(theme: Theme, style: SpanStyle) -> Style {
+    match style {
+        SpanStyle::Heading => theme.markdown_heading,
+        SpanStyle::Marker => theme.markdown_marker,
+        SpanStyle::Link => theme.markdown_link,
+        SpanStyle::Keyword => theme.syntax_keyword,
+        SpanStyle::String => theme.syntax_string,
+        SpanStyle::Comment => theme.syntax_comment,
+        SpanStyle::Number => theme.syntax_number,
+        SpanStyle::Code => theme.markdown_code,
+        SpanStyle::Emphasis => theme.markdown_emphasis,
+        SpanStyle::DiffAdded => theme.diff_added,
+        SpanStyle::DiffRemoved => theme.diff_removed,
     }
 }
 
-fn style_code(style: SpanStyle) -> &'static str {
-    match style {
-        SpanStyle::Heading => "1;36",
-        SpanStyle::Marker => "36",
-        SpanStyle::Emphasis => "3;35",
-        SpanStyle::Link => "4;34",
-        SpanStyle::Keyword => "35",
-        SpanStyle::String => "32",
-        SpanStyle::Comment => "2;90",
-        SpanStyle::Number => "33",
-        SpanStyle::Code => "33",
+pub(super) fn write_row_start<W: Write + ?Sized>(
+    out: &mut W,
+    row: usize,
+    style: Style,
+    truecolor: bool,
+) -> io::Result<()> {
+    write!(out, "\x1b[{row};1H")?;
+    if write_style_prefix(out, style, truecolor)? {
+        write!(out, "\x1b[K\x1b[0m")
+    } else {
+        write!(out, "\x1b[K")
+    }
+}
+
+pub(super) fn write_styled_text<W: Write + ?Sized>(
+    out: &mut W,
+    text: &str,
+    style: Style,
+    truecolor: bool,
+) -> io::Result<()> {
+    if write_style_prefix(out, style, truecolor)? {
+        write!(out, "{text}\x1b[0m")
+    } else {
+        write!(out, "{text}")
+    }
+}
+
+fn write_style_prefix<W: Write + ?Sized>(
+    out: &mut W,
+    style: Style,
+    truecolor: bool,
+) -> io::Result<bool> {
+    let mut codes = Vec::new();
+    if let Some(color) = style.fg {
+        codes.push(color_code(color, true, truecolor));
+    }
+    if let Some(color) = style.bg {
+        codes.push(color_code(color, false, truecolor));
+    }
+    if style.bold == Some(true) {
+        codes.push("1".to_string());
+    }
+    if style.dim == Some(true) {
+        codes.push("2".to_string());
+    }
+    if codes.is_empty() {
+        return Ok(false);
+    }
+    write!(out, "\x1b[{}m", codes.join(";"))?;
+    Ok(true)
+}
+
+fn color_code(color: Color, foreground: bool, truecolor: bool) -> String {
+    let base = if foreground { 30 } else { 40 };
+    match color {
+        Color::Default => if foreground { "39" } else { "49" }.to_string(),
+        Color::Ansi(index) if index < 8 => (base + u16::from(index)).to_string(),
+        Color::Ansi(index) => (base + 60 + u16::from(index - 8)).to_string(),
+        Color::Indexed(index) => format!("{};5;{index}", if foreground { 38 } else { 48 }),
+        Color::Rgb(red, green, blue) if truecolor => {
+            format!(
+                "{};2;{red};{green};{blue}",
+                if foreground { 38 } else { 48 }
+            )
+        }
+        Color::Rgb(red, green, blue) => {
+            let index = crate::config::theme::indexed_fallback(red, green, blue);
+            format!("{};5;{index}", if foreground { 38 } else { 48 })
+        }
+    }
+}
+
+pub(super) fn write_cursor_color<W: Write + ?Sized>(out: &mut W, theme: Theme) -> io::Result<()> {
+    let Some(color) = theme.cursor else {
+        return Ok(());
+    };
+    let (red, green, blue) = color_rgb(color);
+    write!(out, "\x1b]12;#{red:02x}{green:02x}{blue:02x}\x07")
+}
+
+fn color_rgb(color: Color) -> (u8, u8, u8) {
+    const ANSI: [(u8, u8, u8); 16] = [
+        (0, 0, 0),
+        (205, 0, 0),
+        (0, 205, 0),
+        (205, 205, 0),
+        (0, 0, 238),
+        (205, 0, 205),
+        (0, 205, 205),
+        (229, 229, 229),
+        (127, 127, 127),
+        (255, 0, 0),
+        (0, 255, 0),
+        (255, 255, 0),
+        (92, 92, 255),
+        (255, 0, 255),
+        (0, 255, 255),
+        (255, 255, 255),
+    ];
+    match color {
+        Color::Default => (255, 255, 255),
+        Color::Ansi(index) => ANSI[index.min(15) as usize],
+        Color::Rgb(red, green, blue) => (red, green, blue),
+        Color::Indexed(index) if index < 16 => ANSI[index as usize],
+        Color::Indexed(index) if index < 232 => {
+            let offset = index - 16;
+            let level = |value: u8| if value == 0 { 0 } else { 55 + value * 40 };
+            (
+                level(offset / 36),
+                level((offset / 6) % 6),
+                level(offset % 6),
+            )
+        }
+        Color::Indexed(index) => {
+            let level = 8 + (index - 232) * 10;
+            (level, level, level)
+        }
     }
 }
 

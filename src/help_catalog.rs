@@ -142,27 +142,35 @@ fn code_matches(expected: ShortcutCode, actual: KeyCode) -> bool {
 
 pub(crate) struct EditorActionSpec {
     pub(crate) action: EditorAction,
+    #[cfg(test)]
     pub(crate) name: &'static str,
+    #[cfg(test)]
     pub(crate) category: &'static str,
+    #[cfg(test)]
     pub(crate) default_keys: &'static str,
+    #[cfg(test)]
     pub(crate) purpose: &'static str,
     bindings: &'static [ShortcutKey],
 }
 
 const fn action(
     action: EditorAction,
-    name: &'static str,
-    category: &'static str,
-    default_keys: &'static str,
-    purpose: &'static str,
+    _name: &'static str,
+    _category: &'static str,
+    _default_keys: &'static str,
+    _purpose: &'static str,
     bindings: &'static [ShortcutKey],
 ) -> EditorActionSpec {
     EditorActionSpec {
         action,
-        name,
-        category,
-        default_keys,
-        purpose,
+        #[cfg(test)]
+        name: _name,
+        #[cfg(test)]
+        category: _category,
+        #[cfg(test)]
+        default_keys: _default_keys,
+        #[cfg(test)]
+        purpose: _purpose,
         bindings,
     }
 }
@@ -376,6 +384,7 @@ pub(crate) const EDITOR_ACTIONS: &[EditorActionSpec] = &[
     ),
 ];
 
+#[cfg(test)]
 pub(crate) fn editor_action(name: &str) -> Option<EditorAction> {
     EDITOR_ACTIONS
         .iter()
@@ -398,70 +407,6 @@ pub(crate) fn canonical_key(action: EditorAction) -> KeyEvent {
         .expect("every editor action has a default binding")
         .event()
 }
-
-pub(crate) struct FixedShortcutSpec {
-    pub(crate) keys: &'static str,
-    pub(crate) purpose: &'static str,
-}
-
-pub(crate) const FIXED_SHORTCUTS: &[FixedShortcutSpec] = &[
-    FixedShortcutSpec {
-        keys: "Arrows / Shift+Arrows",
-        purpose: "Move by grapheme or line; Shift extends the selection.",
-    },
-    FixedShortcutSpec {
-        keys: "Home / End",
-        purpose: "Move to line edges; add Shift to extend the selection.",
-    },
-    FixedShortcutSpec {
-        keys: "Ctrl+Home / Ctrl+End",
-        purpose: "Move to document edges; add Shift to extend the selection.",
-    },
-    FixedShortcutSpec {
-        keys: "PageUp / PageDown",
-        purpose: "Move one viewport; add Shift to extend the selection.",
-    },
-    FixedShortcutSpec {
-        keys: "Ctrl+Left / Ctrl+Right",
-        purpose: "Move by word; add Shift to extend the selection.",
-    },
-    FixedShortcutSpec {
-        keys: "Ctrl+Up / Ctrl+Down",
-        purpose: "Move to the previous or next paragraph boundary without extending selection.",
-    },
-    FixedShortcutSpec {
-        keys: "Backspace / Delete",
-        purpose: "Delete the previous or next grapheme.",
-    },
-    FixedShortcutSpec {
-        keys: "Ctrl+Backspace / Ctrl+Delete",
-        purpose: "Delete the previous or next word.",
-    },
-    FixedShortcutSpec {
-        keys: "Ctrl+A / Ctrl+C / Ctrl+X / Ctrl+V",
-        purpose: "Select all, copy, cut, or paste with Catomic's session clipboard.",
-    },
-    FixedShortcutSpec {
-        keys: "Tab / Shift+Tab",
-        purpose: "Cycle active completion; otherwise complete, indent, or unindent by context.",
-    },
-    FixedShortcutSpec {
-        keys: "Enter",
-        purpose: "Insert a newline normally; accept the active prompt, completion, or preview action by context.",
-    },
-    FixedShortcutSpec {
-        keys: "Escape",
-        purpose: "Cancel, dismiss, or close the active prompt, task, completion, or read-only view.",
-    },
-    FixedShortcutSpec {
-        keys: "Mouse click / drag / double-click",
-        purpose: "Move the cursor, select a range, or select a word/punctuation run.",
-    },
-    FixedShortcutSpec {
-        keys: "Mouse wheel",
-        purpose: "Scroll three visible rows without moving the document cursor or selection.",
-    },
-];
 
 mod prompt_commands;
 pub(crate) use prompt_commands::{prompt_command, PromptCommand, PROMPT_COMMANDS};

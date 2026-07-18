@@ -40,6 +40,8 @@ fn template_creation_is_atomic_private_and_never_overwrites() {
     assert_eq!(fs::read_to_string(&path).unwrap(), TEMPLATE);
     assert!(TEMPLATE.contains("Restart Catomic"));
     assert!(TEMPLATE.contains("[theme.colors]"));
+    crate::config::theme::parse(TEMPLATE).expect("template theme must stay valid");
+    crate::config::keybindings::parse(TEMPLATE).expect("template keybindings must stay valid");
 
     #[cfg(unix)]
     {
@@ -79,5 +81,22 @@ fn creation_refuses_a_symlinked_catomic_directory() {
         .expect_err("config directory symlink must be refused");
     assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
     assert!(!elsewhere.join("config.toml").exists());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn creation_refuses_a_group_or_other_accessible_config_directory() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = fixture("directory_mode");
+    let directory = root.join("catomic");
+    fs::create_dir_all(&directory).unwrap();
+    fs::set_permissions(&directory, fs::Permissions::from_mode(0o755)).unwrap();
+    let path = directory.join("config.toml");
+
+    let error = create_template(&path).expect_err("unsafe parent permissions must fail closed");
+    assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+    assert!(!path.exists());
     fs::remove_dir_all(root).unwrap();
 }

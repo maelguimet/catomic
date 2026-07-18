@@ -20,6 +20,7 @@ use crate::config::cat::CatConfig;
 use crate::config::commands::CommandConfig;
 use crate::config::editor::EditorConfig;
 use crate::config::keybindings::KeyBindings;
+use crate::config::theme::Theme;
 use crate::config::view_preferences::ViewPreferences;
 use crate::file;
 
@@ -46,6 +47,7 @@ mod project_files;
 mod project_mode;
 mod recovery;
 mod reload;
+mod render;
 mod replace;
 mod repo_llm;
 mod save;
@@ -88,11 +90,13 @@ pub struct App {
     pub(crate) command_config: CommandConfig,
     /// Presentation-only cat touches; never changes editing or file semantics.
     pub(crate) cat_config: CatConfig,
-    /// Semantic status colors selected once; future theme config can replace this value.
+    /// Semantic status colors selected once from the validated theme and terminal capability.
     pub(crate) status_theme: term::render::StatusTheme,
     /// Session-global line-number default plus its explicit persistence target.
     /// Unlike the remaining view options, this applies to every open buffer.
     pub(crate) view_preferences: ViewPreferences,
+    /// Validated semantic colors loaded atomically with startup configuration.
+    pub(crate) theme: Theme,
     /// The active buffer (trait object for now; concrete type behind it).
     pub buffer: Box<dyn Buffer>,
     /// File path and dirty tracking.
@@ -198,6 +202,7 @@ impl App {
             keybindings,
             commands: command_config,
             cat: cat_config,
+            theme,
             view_preferences,
         } = config;
         let mode = Mode::Plain; // Start in Plain by default. User can switch later.
@@ -240,8 +245,9 @@ impl App {
             typing_mode: overwrite::TypingMode::default(),
             command_config,
             cat_config,
-            status_theme: term::render::StatusTheme::from_environment(),
+            status_theme: term::render::StatusTheme::from_theme(theme),
             view_preferences,
+            theme,
             buffer,
             file: FileState {
                 path: initial_path.map(PathBuf::from),
@@ -402,93 +408,7 @@ impl App {
     }
 
     pub(crate) fn render(&self, stdout: &mut dyn Write) -> io::Result<()> {
-        // Build the semantic bottom annotation, then delegate terminal styling:
-        // - if app.message is Some: show the transient (warning/error/quit etc.)
-        // - else: show persistent status line (mode/path/dirty/size/tier + large-file marker)
-        // App owns the string and role; terminal::render owns ANSI and full-row painting.
-        // Screen remains the single source for dimensions.
-        let highlight = (!external_command::is_viewing(self)
-            && !recovery::is_viewing(self)
-            && !help::is_viewing(self)
-            && !view::is_preview(self)
-            && !lint::is_viewing(self)
-            && !project_files::is_viewing(self)
-            && !llm_preview::is_viewing(self))
-        .then(|| {
-            self.selection
-                .active()
-                .map(|selection| {
-                    let (start, end) = selection.ordered();
-                    term::render::TextHighlight { start, end }
-                })
-                .or_else(|| {
-                    self.search
-                        .active_match()
-                        .map(|found| term::render::TextHighlight {
-                            start: found.start,
-                            end: crate::buffer::Cursor {
-                                row: found.start.row,
-                                col: found.end_col,
-                            },
-                        })
-                })
-        })
-        .flatten();
-        let persistent_status;
-        let (bottom_text, status_role) = if let Some(message) = self.message.as_deref() {
-            (message, status::transient_role(self, message))
-        } else {
-            persistent_status = status::decorate_status_line(
-                status::format_status_line(
-                    matches!(self.mode, Mode::Plain),
-                    self.typing_mode.is_overwrite(),
-                    status::StatusFile {
-                        path: self.file.path.as_deref(),
-                        dirty: self.file.dirty,
-                        size_bytes: self.file.size_bytes,
-                        size_tier: self.file.size_tier,
-                        text_format: self.file.text_format,
-                    },
-                    self.buffer.page_info(),
-                    (self.buffer_count() > 1).then(|| {
-                        (
-                            self.active_buffer_index.saturating_add(1),
-                            self.buffer_count(),
-                        )
-                    }),
-                ),
-                self.cat_config.status_messages,
-            );
-            (persistent_status.as_str(), term::render::StatusRole::Normal)
-        };
-        let render_options = term::render::RenderOptions {
-            cursor_shape: if overwrite::uses_overwrite_cursor(self) {
-                term::cursor_style::CursorShape::Overwrite
-            } else {
-                term::cursor_style::CursorShape::Default
-            },
-            highlight,
-            syntax: view::display_syntax(self),
-            line_numbers: self.view_preferences.line_numbers(),
-            whitespace: self.view.whitespace,
-            soft_wrap: view::soft_wrap_active(self),
-            status_role,
-            status_theme: self.status_theme,
-        };
-        let display_buffer = view::display_buffer(self);
-        term::render::render_buffer(
-            stdout,
-            display_buffer,
-            term::render::RenderViewport::new(
-                self.screen.scroll_top,
-                self.screen.scroll_left,
-                self.screen.height as usize,
-                self.screen.width as usize,
-            )
-            .with_wrap_col(self.screen.wrap_col),
-            Some(bottom_text),
-            render_options,
-        )
+        render::render(self, stdout)
     }
 }
 

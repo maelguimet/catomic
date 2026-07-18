@@ -179,10 +179,7 @@ mod tests {
         );
         assert!(parse(["config"]).is_err());
         assert!(parse(["config", "wat"]).is_err());
-        assert_eq!(
-            parse(["--", "config"]).unwrap(),
-            Action::Run(vec!["config".to_string()])
-        );
+        assert_eq!(parse(["--", "config"]).unwrap(), run(&["config"], false));
     }
 
     #[test]

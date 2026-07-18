@@ -914,8 +914,10 @@ Project-only and model settings are loaded lazily when invoked.
 
 Run `config` from the in-editor command prompt to open that exact path as an
 ordinary editable buffer. If it is missing, Catomic asks before atomically
-creating an owner-only file from a documented, commented template. It never
-overwrites a file that appears during confirmation. Configuration is validated
+creating an owner-only file in an owner-only `catomic` directory from a
+documented, commented template. An existing group/other-accessible config
+directory is refused with a permission error instead of being silently changed.
+It never overwrites a file that appears during confirmation. Configuration is validated
 and applied as one document at startup, so restart Catomic after saving; the
 running session does not silently apply a partial reload.
 
@@ -974,6 +976,32 @@ enabled = false
 interval_secs = 30
 max_bytes = 1_048_576
 
+[theme]
+name = "default"
+
+[theme.colors]
+text = "default"
+background = "default"
+cursor = "default"
+selection = { fg = "black", bg = "cyan" }
+line_number = "bright-black"
+status = { fg = "black", bg = "white" }
+message = { fg = "black", bg = "white" }
+status_warning = { fg = "black", bg = "yellow" }
+error = { fg = "bright-white", bg = "red" }
+markdown_heading = "bright-blue"
+markdown_emphasis = "magenta"
+markdown_code = "green"
+markdown_marker = "bright-cyan"
+syntax_keyword = "magenta"
+syntax_string = "green"
+syntax_comment = "bright-black"
+syntax_number = "yellow"
+search_match = { fg = "black", bg = "yellow" }
+diff_added = "green"
+diff_removed = "red"
+preview = "default"
+
 [languages.rs]
 tab_size = 4
 linter = "cargo check --message-format short {file}"
@@ -1018,6 +1046,7 @@ timeout_secs = 120
 | `recovery.enabled` | `false` | Boolean |
 | `recovery.interval_secs` | `30` | Integer `5`–`3600` |
 | `recovery.max_bytes` | `1048576` | Integer `1`–`16777216` |
+| `theme.name` | `default` | `default`, `high-contrast`, or `mono` |
 | `commands.NAME.input` | `none` | `none`, `selection`, `buffer` |
 | `commands.NAME.output` | `preview` | `preview`, `insert`, `replace-input` |
 | `commands.NAME.timeout_secs` | `10` | Integer `1`–`300` |
@@ -1028,6 +1057,31 @@ timeout_secs = 120
 
 Language extension names are case-normalized and may be written with or without
 a leading dot. Command names may contain ASCII letters, digits, `-`, and `_`.
+
+### Color schemes
+
+Themes use semantic roles, so rendering does not hard-code colors by syntax or
+surface. The complete role inventory is `text`, `background`, `cursor`,
+`selection`, `line_number`, `status`, `message`, `status_warning`, `error`,
+`markdown_heading`, `markdown_emphasis`, `markdown_code`, `markdown_marker`,
+`syntax_keyword`, `syntax_string`, `syntax_comment`, `syntax_number`,
+`search_match`, `diff_added`, `diff_removed`, and `preview`. The syntax roles
+apply consistently to the built-in Rust, Python, and JSON highlighters.
+
+A role may be `"default"`, one of the standard 16 names (`black` through
+`white` and `bright-black` through `bright-white`), an integer from 0 to 255,
+`"index:N"`, `"#RRGGBB"`, or `"rgb(R,G,B)"`. Roles also accept a table such as
+`{ fg = "black", bg = "cyan", bold = true, dim = false }`. RGB is emitted as
+truecolor only when the terminal advertises `COLORTERM=truecolor` or `24bit`;
+otherwise Catomic selects a stable xterm-256 fallback.
+
+The built-in `default` scheme preserves terminal-default text/background while
+keeping selection, search, warnings, and errors distinguishable. Use
+`high-contrast` for explicit black/bright-white base colors or `mono` to remove
+syntax hues. Inline roles override the named scheme. `background` has explicit
+precedence over `text.bg`. Invalid recognized colors fail the whole startup or
+`config check`; no subset is applied. Every styled segment is reset, and exit
+restores SGR attributes and the terminal's cursor color.
 
 ### Custom keybindings and action registry
 

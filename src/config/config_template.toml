@@ -27,20 +27,28 @@ interval_secs = 30
 max_bytes = 1_048_576
 
 [theme]
+# Built-ins: "default", "high-contrast", and "mono".
 name = "default"
 
 [theme.colors]
+# Each role accepts "default", a 16-color name, a 0-255 index, #RRGGBB,
+# rgb(R,G,B), or a { fg, bg, bold, dim } table. RGB falls back safely when
+# truecolor is not advertised by the terminal.
 text = "default"
 background = "default"
 cursor = "default"
 selection = { fg = "black", bg = "cyan" }
 line_number = "bright-black"
 status = { fg = "black", bg = "white" }
-status_warning = { fg = "black", bg = "yellow" }
+message = { fg = "black", bg = "bright-cyan" }
+status_warning = { fg = "black", bg = "bright-yellow", bold = true }
+status_prompt = { fg = "bright-white", bg = "blue", bold = true }
 error = { fg = "bright-white", bg = "red" }
 markdown_heading = "bright-blue"
 markdown_emphasis = "magenta"
 markdown_code = "green"
+markdown_marker = "bright-cyan"
+markdown_link = "bright-blue"
 syntax_keyword = "magenta"
 syntax_string = "green"
 syntax_comment = "bright-black"

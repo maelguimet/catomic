@@ -28,6 +28,7 @@ pub(crate) enum EditorAction {
     CommandPrompt,
     Undo,
     Redo,
+    ToggleOverwrite,
     Complete,
     PreviousBuffer,
     NextBuffer,
@@ -43,6 +44,7 @@ pub(crate) enum EditorAction {
 enum ShortcutCode {
     Char(char),
     Null,
+    Insert,
     PageUp,
     PageDown,
     Function(u8),
@@ -99,6 +101,7 @@ impl ShortcutKey {
         let code = match self.code {
             ShortcutCode::Char(ch) => KeyCode::Char(ch),
             ShortcutCode::Null => KeyCode::Null,
+            ShortcutCode::Insert => KeyCode::Insert,
             ShortcutCode::PageUp => KeyCode::PageUp,
             ShortcutCode::PageDown => KeyCode::PageDown,
             ShortcutCode::Function(number) => KeyCode::F(number),
@@ -129,6 +132,7 @@ fn code_matches(expected: ShortcutCode, actual: KeyCode) -> bool {
             expected.eq_ignore_ascii_case(&actual)
         }
         (ShortcutCode::Null, KeyCode::Null) => true,
+        (ShortcutCode::Insert, KeyCode::Insert) => true,
         (ShortcutCode::PageUp, KeyCode::PageUp) => true,
         (ShortcutCode::PageDown, KeyCode::PageDown) => true,
         (ShortcutCode::Function(expected), KeyCode::F(actual)) => expected == actual,
@@ -331,6 +335,14 @@ pub(crate) const EDITOR_ACTIONS: &[EditorActionSpec] = &[
         ],
     ),
     action(
+        EditorAction::ToggleOverwrite,
+        "toggle-overwrite",
+        "Editing",
+        "Insert",
+        "Toggle session-wide insert/overwrite typing; overwrite replaces one grapheme.",
+        &[ShortcutKey::plain(ShortcutCode::Insert)],
+    ),
+    action(
         EditorAction::MarkdownPreview,
         "markdown-preview",
         "View",
@@ -343,7 +355,7 @@ pub(crate) const EDITOR_ACTIONS: &[EditorActionSpec] = &[
         "line-numbers",
         "View",
         "F7",
-        "Toggle line numbers for the active buffer.",
+        "Toggle line numbers for all buffers and remember the explicit choice.",
         &[ShortcutKey::any(ShortcutCode::Function(7))],
     ),
     action(

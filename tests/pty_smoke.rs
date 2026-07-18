@@ -271,6 +271,15 @@ impl PtyEditor {
     fn clear_output(&self) {
         self.output.lock().expect("pty output mutex").clear();
     }
+
+    fn output_len(&self) -> usize {
+        self.output.lock().expect("pty output mutex").len()
+    }
+
+    fn output_since(&self, offset: usize) -> String {
+        let output = self.output.lock().expect("pty output mutex");
+        String::from_utf8_lossy(output.get(offset..).unwrap_or_default()).into_owned()
+    }
 }
 
 impl Drop for PtyEditor {
@@ -412,6 +421,72 @@ fn pty_f1_help_wraps_and_scrolls_to_reload_reference_in_a_narrow_terminal() -> T
     Ok(())
 }
 
+#[test]
+fn pty_insert_overwrite_cursor_prompt_and_teardown_transitions() -> TestResult {
+    let temp = TempPath::new("insert_overwrite");
+    fs::write(&temp.path, "abc")?;
+    let mut editor = PtyEditor::spawn(&temp.path)?;
+    editor.wait_for_initial_render()?;
+    editor.wait_for_output("initial insert indicator", "INS")?;
+
+    let enable_start = editor.output_len();
+    editor.send_keys(b"\x1b[2~")?; // Insert
+    wait_until(
+        "overwrite status and block cursor",
+        Duration::from_secs(2),
+        || {
+            let output = editor.output_since(enable_start);
+            output.contains("OVR") && output.contains("\x1b[2 q")
+        },
+    )?;
+
+    let prompt_start = editor.output_len();
+    editor.send_keys(b"\x1b[80;6u")?; // Ctrl+Shift+P via CSI-u.
+    wait_until("prompt default cursor", Duration::from_secs(2), || {
+        let output = editor.output_since(prompt_start);
+        output.contains("Command: ") && output.contains("\x1b[0 q")
+    })?;
+    editor.send_keys(b"\x1b[2~")?; // Insert is prompt-local and must not toggle.
+
+    let close_start = editor.output_len();
+    editor.send_keys(b"\x1b")?;
+    wait_until(
+        "overwrite cursor after prompt",
+        Duration::from_secs(2),
+        || {
+            let output = editor.output_since(close_start);
+            output.contains("Prompt cancelled.") && output.contains("\x1b[2 q")
+        },
+    )?;
+
+    editor.send_keys(b"X")?;
+    editor.wait_for_output("PTY overwrite edit", "Xbc")?;
+    let disable_start = editor.output_len();
+    editor.send_keys(b"\x1b[2~")?;
+    wait_until(
+        "insert status and default cursor",
+        Duration::from_secs(2),
+        || {
+            let output = editor.output_since(disable_start);
+            output.contains("INS") && output.contains("\x1b[0 q")
+        },
+    )?;
+    editor.send_keys(b"\x13\x11")?;
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(&temp.path)?, "Xbc");
+    let output = editor.output_string();
+    let final_default = output.rfind("\x1b[0 q").expect("teardown cursor reset");
+    let leave_screen = output
+        .rfind("\x1b[?1049l")
+        .expect("teardown leaves alternate screen");
+    assert!(
+        final_default < leave_screen,
+        "cursor must reset before leaving the alternate screen"
+    );
+    Ok(())
+}
+
 #[cfg(unix)]
 #[test]
 fn pty_sigterm_restores_terminal_modes_before_exit() -> TestResult {
@@ -433,6 +508,10 @@ fn pty_sigterm_restores_terminal_modes_before_exit() -> TestResult {
         "bracketed paste not disabled"
     );
     assert!(output.contains("\x1b[?1049l"), "alternate screen not left");
+    assert!(
+        output.contains("\x1b[0 q"),
+        "cursor style not restored after signal"
+    );
     Ok(())
 }
 
@@ -442,7 +521,7 @@ fn pty_file_size_limit_save_is_recoverable_and_cleans_temp() -> TestResult {
     let project = TempProject::new("file_limit");
     let target = project.write("target.txt", "base");
     let mut command = CommandBuilder::new("bash");
-    command.arg("-lc");
+    command.arg("-c");
     command.arg("ulimit -f 1; exec \"$@\"");
     command.arg("catomic-file-limit");
     command.arg(env!("CARGO_BIN_EXE_catomic"));

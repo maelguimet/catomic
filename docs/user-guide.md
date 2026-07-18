@@ -236,6 +236,7 @@ including:
 - the current mode (`plain` or `project`);
 - the active path, or an untitled-buffer label;
 - whether the active buffer has unsaved changes;
+- the session-wide direct-typing state (`INS` or `OVR`);
 - file size, size tier, and text format when known;
 - `buffer N/M` when several buffers are open; and
 - page information and source byte range for a paged large file.
@@ -272,6 +273,19 @@ Most prompts and read-only result views follow the same small interaction model:
 
 Catomic uses familiar modeless editing. Type to insert text. `Backspace` and
 `Delete` remove text, and `Enter` inserts a newline.
+
+Press `Insert` in the normal editing surface to toggle the session-wide typing
+state. `INS` inserts ordinary typed characters before the cursor. `OVR`
+replaces exactly one Unicode grapheme under the cursor and uses a steady block
+cursor; at an empty line, end of line, or end of file it inserts instead, so
+ordinary typing never overwrites a newline. Each overwritten character is one
+ordinary undoable typing transaction.
+
+Overwrite mode affects direct character typing only. Selection replacement
+keeps its usual range semantics, while paste, completion, indentation, command
+output, and confirmed model edits keep their existing transactional behavior.
+Prompts and read-only views use their own input handling and the terminal's
+default cursor shape; closing them resumes the session's `INS`/`OVR` state.
 
 Cursor movement and deletion operate on Unicode grapheme clusters rather than
 raw bytes. Combining marks, wide characters, emoji sequences, and tabs remain
@@ -981,14 +995,14 @@ Keybinding overrides translate a normal-mode chord to an existing action:
 ```
 
 Chord modifiers are `ctrl`/`control`, `alt`, and `shift`. Keys may be one
-character, `space`, `tab`, `enter`, `esc`, `backspace`, `delete`, an arrow key,
+character, `space`, `tab`, `enter`, `esc`, `backspace`, `delete`, `insert`, an arrow key,
 `pageup`, `pagedown`, `home`, `end`, or `f1` through `f12`.
 
 Supported action names are:
 
 ```text
 help save save-as open new close replace quit reload search goto-line
-command-prompt undo redo complete next-buffer previous-buffer next-page
+command-prompt undo redo toggle-overwrite complete next-buffer previous-buffer next-page
 previous-page markdown-preview line-numbers whitespace soft-wrap
 ```
 
@@ -1011,6 +1025,7 @@ keys remain local to the active interface.
 | Editing | Select/copy/cut/paste | `Ctrl+A` / `Ctrl+C` / `Ctrl+X` / `Ctrl+V` |
 | Editing | Undo | `Ctrl+Z` |
 | Editing | Redo | `Ctrl+Y` / `Ctrl+Shift+Z` |
+| Editing | Toggle insert/overwrite typing | `Insert` |
 | Editing | Indent / unindent | `Tab` / `Shift+Tab` |
 | Editing | Delete previous / next word | `Ctrl+Backspace` / `Ctrl+Delete` |
 | Navigation | Move by word | `Ctrl+Left` / `Ctrl+Right` |

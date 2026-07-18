@@ -269,6 +269,17 @@ pub(crate) fn cancel_all(app: &mut super::App) -> bool {
     app.repo_llm_state.take().is_some()
 }
 
+pub(super) fn blocks_editing_input(app: &super::App) -> bool {
+    matches!(
+        app.repo_llm_state.as_ref(),
+        Some(
+            RepoLlmState::Pending(_)
+                | RepoLlmState::CheckingSend(_)
+                | RepoLlmState::CheckingApply(_)
+        )
+    )
+}
+
 fn cancel_pending(app: &mut super::App) {
     app.repo_llm_state = None;
     app.message = Some("Repo LLM cancelled before sending; no network call made.".to_string());

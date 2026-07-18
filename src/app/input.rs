@@ -14,8 +14,8 @@ use crate::help_catalog::{self, EditorAction};
 use super::file_state::refresh_dirty;
 use super::{
     buffers, command_prompt, completion, external_command, help, indentation, lint, llm_answer,
-    llm_preview, llm_request, navigation, paging, project_files, recovery, reload, replace,
-    repo_llm, save, search, selection, undo_redo, view,
+    llm_preview, llm_request, navigation, overwrite, paging, project_files, recovery, reload,
+    replace, repo_llm, save, search, selection, undo_redo, view,
 };
 
 /// Common post-content-mutation cleanup used by insert, delete, newline, undo, redo paths.
@@ -180,11 +180,7 @@ pub(crate) fn handle_key_with(
                 } else {
                     c
                 };
-                if app.selection.active().is_some() {
-                    selection::replace_active(app, &ch.to_string())?;
-                } else {
-                    app.buffer.insert_char(ch);
-                }
+                overwrite::type_char(app, ch)?;
                 finish_content_edit(app, out)?;
                 return Ok(());
             }
@@ -279,6 +275,7 @@ fn dispatch_editor_action(
             app.buffer.redo();
             finish_content_edit(app, out)
         }
+        EditorAction::ToggleOverwrite => overwrite::toggle(app, out),
         EditorAction::Complete => {
             completion::handle_key(app, out, help_catalog::canonical_key(action)).map(|_| ())
         }

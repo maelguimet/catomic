@@ -37,6 +37,7 @@ pub(crate) struct StatusFile<'a> {
 /// fallback), never a live buffer content scan. Untitled/no-path cases have no disk size.
 pub(crate) fn format_status_line(
     is_plain: bool,
+    overwrite: bool,
     file: StatusFile<'_>,
     page: Option<PageInfo>,
     buffer_position: Option<(usize, usize)>,
@@ -52,7 +53,11 @@ pub(crate) fn format_status_line(
     };
     let dirty_label = if file.dirty { "modified" } else { "saved" };
 
-    let mut out = format!("{mode} {name} {dirty_label} {}", file.text_format.label());
+    let typing_mode = if overwrite { "OVR" } else { "INS" };
+    let mut out = format!(
+        "{mode} {typing_mode} {name} {dirty_label} {}",
+        file.text_format.label()
+    );
 
     if let Some(b) = file.size_bytes {
         out.push(' ');
@@ -179,7 +184,7 @@ mod tests {
 
     #[test]
     fn untitled_clean_status_contains_plain_untitled_saved() {
-        let s = format_status_line(true, file(None, false, None, None), None, None);
+        let s = format_status_line(true, false, file(None, false, None, None), None, None);
         assert!(s.contains("plain"), "status: {}", s);
         assert!(s.contains("[untitled]"), "status: {}", s);
         assert!(s.contains("saved"), "status: {}", s);
@@ -193,6 +198,7 @@ mod tests {
     fn after_edit_shows_modified() {
         let s = format_status_line(
             true,
+            false,
             file(
                 p("notes.txt").as_deref(),
                 true,
@@ -215,6 +221,7 @@ mod tests {
     fn small_file_shows_size_and_tier() {
         let s = format_status_line(
             true,
+            false,
             file(
                 p("small.txt").as_deref(),
                 false,
@@ -241,6 +248,7 @@ mod tests {
     fn large_tier_shows_large_file_mode_marker() {
         let s = format_status_line(
             true,
+            false,
             file(
                 p("big.log").as_deref(),
                 false,
@@ -267,6 +275,7 @@ mod tests {
     fn huge_includes_marker_and_size() {
         let s = format_status_line(
             true,
+            false,
             file(
                 p("/tmp/huge.bin").as_deref(),
                 true,
@@ -302,6 +311,7 @@ mod tests {
 
         let status = format_status_line(
             true,
+            false,
             file(
                 p("huge.log").as_deref(),
                 false,
@@ -318,19 +328,25 @@ mod tests {
 
     #[test]
     fn multiple_buffers_include_active_position() {
-        let status = format_status_line(true, file(None, false, None, None), None, Some((2, 3)));
+        let status = format_status_line(
+            true,
+            false,
+            file(None, false, None, None),
+            None,
+            Some((2, 3)),
+        );
 
         assert!(status.contains("buffer 2/3"), "status: {status}");
     }
 
     #[test]
     fn cat_status_can_be_disabled_without_changing_core_fields() {
-        let status = format_status_line(true, file(None, false, None, None), None, None);
+        let status = format_status_line(true, false, file(None, false, None, None), None, None);
 
         assert_eq!(decorate_status_line(status.clone(), false), status);
         assert_eq!(
             decorate_status_line(status, true),
-            "=^..^= plain [untitled] saved utf-8 lf"
+            "=^..^= plain INS [untitled] saved utf-8 lf"
         );
     }
 
@@ -359,5 +375,14 @@ mod tests {
             transient_role(&app, app.message.as_deref().unwrap()),
             crate::terminal::render::StatusRole::Prompt
         );
+    }
+
+    #[test]
+    fn typing_mode_indicator_is_always_present() {
+        let insert = format_status_line(true, false, file(None, false, None, None), None, None);
+        let overwrite = format_status_line(true, true, file(None, false, None, None), None, None);
+
+        assert!(insert.contains(" INS "), "status: {insert}");
+        assert!(overwrite.contains(" OVR "), "status: {overwrite}");
     }
 }

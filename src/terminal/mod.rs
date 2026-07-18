@@ -4,6 +4,7 @@
 //! Invariants: every enabled terminal mode has a best-effort inverse on all exit paths.
 //! Phase: 8 panic-safe terminal restoration and user-facing crash notice.
 
+pub(crate) mod cursor_style;
 pub mod render;
 pub mod screen;
 mod signal;
@@ -38,6 +39,7 @@ pub fn teardown<W: Write>(w: &mut W) -> io::Result<()> {
     use crossterm::{event, execute, terminal};
     // Ignore errors: we are best-effort during panic paths.
     let _ = terminal::disable_raw_mode();
+    let _ = cursor_style::restore(w);
     let _ = execute!(
         w,
         event::DisableMouseCapture,

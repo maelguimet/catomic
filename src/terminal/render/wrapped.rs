@@ -124,6 +124,7 @@ pub(super) fn compose_buffer(
         )?;
     }
     let (cursor_row, cursor_col) = wrapped_cursor_position(buffer.cursor(), &rows, gutter);
+    crate::terminal::cursor_style::write_shape(out, options.cursor_shape)?;
     write!(out, "\x1b[{cursor_row};{cursor_col}H")
 }
 

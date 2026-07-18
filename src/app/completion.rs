@@ -190,7 +190,7 @@ fn update_message_unless_dismissed(app: &mut super::App) {
     }
 }
 
-fn is_active(app: &super::App) -> bool {
+pub(super) fn is_active(app: &super::App) -> bool {
     app.completion
         .as_ref()
         .is_some_and(|state| state.active.is_some())

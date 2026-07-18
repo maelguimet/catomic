@@ -105,6 +105,17 @@ pub(crate) fn ceil_to_grapheme_col(text: &str, scalar_col: usize) -> usize {
     }
 }
 
+pub(crate) fn continues_grapheme(previous: &str, ch: char) -> bool {
+    if previous.is_empty() {
+        return false;
+    }
+    let before = previous.graphemes(true).count();
+    let mut combined = String::with_capacity(previous.len().saturating_add(ch.len_utf8()));
+    combined.push_str(previous);
+    combined.push(ch);
+    combined.graphemes(true).count() == before
+}
+
 pub(crate) fn expand_tabs(text: &str, whitespace: bool, initial_cell: usize) -> String {
     let mut expanded = String::with_capacity(text.len());
     let mut cell = initial_cell;
@@ -177,6 +188,15 @@ mod tests {
         assert_eq!(clipped_scalar_len(text, 2), 2);
         assert_eq!(clipped_scalar_len(text, 3), 3);
         assert_eq!(snap_to_grapheme_col(text, 1), 0);
+    }
+
+    #[test]
+    fn recognizes_scalars_that_continue_a_typed_grapheme() {
+        assert!(continues_grapheme("e", '\u{301}'));
+        assert!(continues_grapheme("👩", '\u{200d}'));
+        assert!(continues_grapheme("👩\u{200d}", '💻'));
+        assert!(!continues_grapheme("e", 'x'));
+        assert!(!continues_grapheme("", '\u{301}'));
     }
 
     #[test]

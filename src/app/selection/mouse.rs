@@ -20,20 +20,14 @@ pub(crate) fn handle_mouse(
     out: &mut dyn Write,
     event: MouseEvent,
 ) -> io::Result<()> {
-    if super::super::completion::cancel(app) {
-        app.message = None;
-    }
-    if super::super::help::is_viewing(app)
-        || super::super::lint::is_viewing(app)
-        || super::super::project_files::is_viewing(app)
-    {
-        return Ok(());
-    }
-    if super::super::view::is_preview(app)
+    if !super::super::view::source_is_displayed(app)
         || super::super::search::is_active(app)
         || super::super::command_prompt::is_active(app)
     {
         return Ok(());
+    }
+    if super::super::completion::cancel(app) {
+        app.message = None;
     }
     match event.kind {
         MouseEventKind::Down(MouseButton::Left) => mouse_down(app, out, event),

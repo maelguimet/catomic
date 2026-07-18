@@ -292,6 +292,13 @@ active ordinary buffer or the current page of a paged file.
 Mouse coordinates follow visible terminal cells, including tabs, wide
 characters, line numbers, and soft-wrapped lines.
 
+A click in the line-number gutter moves to the start of that displayed row; for
+a soft-wrapped continuation, that is the continuation's first document column.
+A click past the rendered end of a line moves to its end. The bottom status row
+is not document content and ignores clicks. Prompts and read-only views also
+ignore document clicks; close the active surface before positioning the
+editable source cursor.
+
 ### Clipboard and paste
 
 `Ctrl+C`, `Ctrl+X`, and `Ctrl+V` use Catomic's process-local clipboard. The
@@ -1080,6 +1087,31 @@ the session. System clipboard export requires OSC 52 support, and external paste
 depends on the terminal delivering bracketed paste. Some terminals reserve
 `Ctrl+Shift+C` and `Ctrl+Shift+V`; those are terminal shortcuts, not Catomic's
 internal clipboard bindings.
+
+### Mouse clicks do not reach Catomic
+
+Catomic requests xterm-compatible button, drag, and SGR mouse reporting while
+the editor is active, then disables every requested mouse mode during terminal
+teardown. If clicks, drags, double clicks, and wheel events all do nothing, the
+terminal, multiplexer, or SSH client is probably not forwarding mouse reports.
+Keyboard navigation remains available when forwarding is unavailable.
+
+First compare the same Catomic command inside and outside the multiplexer, and
+record the terminal version plus `TERM`, `TMUX`, and `STY`. Inside tmux, inspect
+`tmux show-options -gv mouse` and any custom `Mouse...Pane` bindings. A custom
+binding that consumes an event must use `send-keys -M` when it intends to pass
+that event to the program in the pane; see the official
+[tmux mouse-support manual](https://man.openbsd.org/tmux.1#MOUSE_SUPPORT),
+[tmux mouse guide](https://github.com/tmux/tmux/wiki/Getting-Started#using-the-mouse)
+and [tmux FAQ](https://github.com/tmux/tmux/wiki/FAQ#how-do-i-use-the-mouse) for
+the current forwarding and terminal-bypass behavior.
+
+Many terminals reserve a modifier such as `Shift` for selecting terminal
+scrollback even when an application requested mouse input. Do not hold that
+bypass modifier when testing Catomic. Check terminal mouse-reporting settings,
+then include whether click, drag, double-click, and wheel events work in a bug
+report along with the Catomic version and terminal dimensions; Catomic cannot
+recover coordinates that never reach its PTY.
 
 ### Save is refused after another program edited the file
 

@@ -7,6 +7,9 @@
 use super::*;
 use crossterm::event::KeyModifiers;
 
+mod mapping;
+mod views;
+
 fn event(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
     MouseEvent {
         kind,

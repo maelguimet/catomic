@@ -20,12 +20,12 @@ impl App {
     /// The main goblin loop. Keep it obvious.
     pub fn run(&mut self) -> io::Result<()> {
         let mut stdout = io::stdout();
-        let _guard = term::TerminalGuard::new();
-        term::setup(&mut stdout)?;
+        let terminal_guard = term::TerminalGuard::new();
+        terminal_guard.setup(&mut stdout)?;
         if let Ok((width, height)) = crossterm::terminal::size() {
             self.screen.update_size(width, height);
         }
-        let _panic_guard = term::PanicRestoreGuard::install();
+        let _panic_guard = term::PanicRestoreGuard::install(terminal_guard.restorer());
         hooks::trigger_open(self);
         if autocomplete::configured_default_enabled(self) {
             autocomplete::begin_enable(self, &mut stdout)?;
@@ -46,7 +46,7 @@ impl App {
             }
         }
 
-        term::teardown(&mut stdout)?;
+        terminal_guard.restore(&mut stdout)?;
         Ok(())
     }
 

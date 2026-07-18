@@ -441,4 +441,18 @@ mod tests {
         .unwrap();
         assert_eq!(app.buffer.to_string(), "one three");
     }
+
+    #[test]
+    fn plain_backspace_event_deletes_one_unicode_grapheme() {
+        let mut app = app("one a\u{301}");
+        let mut out = Vec::new();
+        app.buffer.set_cursor(Cursor { row: 0, col: 6 });
+
+        app.handle_key_with(&mut out, key(KeyCode::Backspace, KeyModifiers::NONE))
+            .unwrap();
+
+        assert_eq!(app.buffer.to_string(), "one ");
+        app.buffer.undo();
+        assert_eq!(app.buffer.to_string(), "one a\u{301}");
+    }
 }

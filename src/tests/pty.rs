@@ -5,12 +5,12 @@
 //!
 //! See "Measurement / Test Discipline" in TODO.md.
 //!
-//! Phase 0: we provide a restoration smoke test using an in-memory writer
-//! and std::panic::catch_unwind to verify TerminalGuard + teardown run on
-//! panic paths without double-panic or broken invariants.
+//! Restoration smokes use in-memory writers and std::panic::catch_unwind to
+//! verify terminal modes unwind without double cleanup or broken invariants.
 
 #[cfg(test)]
 mod tests {
+    use std::io::{self, Write};
     use std::panic::{self, AssertUnwindSafe};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex, OnceLock};
@@ -85,5 +85,52 @@ mod tests {
         assert!(notice.contains("Terminal restored"));
         assert!(notice.contains("last explicit save is safe"));
         assert!(!notice.contains("unsaved"));
+    }
+
+    #[test]
+    fn panic_restoration_pops_keyboard_flags_exactly_once() {
+        let _lock = panic_hook_test_lock().lock().unwrap();
+        let terminal = TerminalGuard::new();
+        terminal
+            .enable_output_modes_for_test(&mut Vec::new())
+            .unwrap();
+        let restored = Arc::new(Mutex::new(Vec::new()));
+        let restored_seen = restored.clone();
+        let restorer = terminal.restorer();
+
+        {
+            let _panic_guard = PanicRestoreGuard::install_with_restore_for_test(move || {
+                let _ = restorer.restore(&mut SharedWriter(restored_seen.clone()));
+            });
+            let result = panic::catch_unwind(AssertUnwindSafe(|| {
+                panic!("simulated panic with enhanced keyboard flags");
+            }));
+            assert!(result.is_err());
+        }
+        drop(terminal);
+
+        let restored = restored.lock().unwrap();
+        assert_eq!(count(&restored, b"\x1b[<1u"), 1);
+        assert_eq!(count(&restored, b"\x1b[?1049l"), 1);
+    }
+
+    struct SharedWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for SharedWriter {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn count(bytes: &[u8], needle: &[u8]) -> usize {
+        bytes
+            .windows(needle.len())
+            .filter(|part| *part == needle)
+            .count()
     }
 }

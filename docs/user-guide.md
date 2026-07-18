@@ -329,6 +329,23 @@ character in overwrite mode replaces one complete Unicode grapheme. Newlines,
 paste, prompts, command/model results, and other edit paths keep their normal
 insert/replace semantics.
 
+Catomic requests the Kitty enhanced-keyboard protocol while its alternate
+screen is active. A terminal that honors the request reports plain `Backspace`
+without modifiers and `Ctrl+Backspace` with `Control`, so the former deletes
+one grapheme and the latter deletes one word. Catomic restores the terminal's
+previous keyboard mode when the session ends.
+
+Legacy terminal paths may emit the same byte for both physical keys. No
+application can distinguish the chord after that information has been lost;
+Catomic treats the event as plain `Backspace` and deletes one grapheme. For a
+portable fallback, map an unused, distinguishable chord to the existing
+word-delete action, for example:
+
+```toml
+[keybindings]
+delete-word-backward = ["ctrl+u"]
+```
+
 ### Mouse selection
 
 - A left click moves the cursor.
@@ -1669,6 +1686,41 @@ different chord in `[keybindings]`.
 If `Ctrl+Shift+Z` undoes instead of redoing, the terminal omitted the Shift
 modifier and Catomic received an event indistinguishable from `Ctrl+Z`. Catomic
 must treat that event as undo; use `Ctrl+Y` or configure another redo chord.
+
+### `Ctrl+Backspace` deletes one grapheme instead of one word
+
+The terminal path did not preserve the modifier. Catomic requests enhanced
+keyboard reporting, but a legacy terminal, SSH client, or multiplexer may
+ignore or rewrite it. Use the `delete-word-backward` keybinding fallback shown
+under [Editing and navigation](#editing-and-navigation), or configure the
+terminal to send the explicit CSI-u bytes `ESC [ 127 ; 5 u` for
+`Ctrl+Backspace`.
+
+Source builds include a one-key compatibility probe. Run each command once for
+plain `Backspace` and once for `Ctrl+Backspace`:
+
+```sh
+cargo run --quiet --example keyboard_probe -- legacy-bytes
+cargo run --quiet --example keyboard_probe -- enhanced-bytes
+cargo run --quiet --example keyboard_probe -- legacy-event
+cargo run --quiet --example keyboard_probe -- enhanced-event
+```
+
+In an enhanced path, plain `Backspace` is normally `1b 5b 31 32 37 75`
+(`CSI 127u`) and decodes as Backspace without modifiers. `Ctrl+Backspace` is
+`1b 5b 31 32 37 3b 35 75` (`CSI 127;5u`) and decodes as Backspace with
+`CONTROL`. A legacy `Ctrl+Backspace` may instead produce `08`, which Crossterm
+0.28 decodes as `Ctrl+H`, or the same `7f` and unmodified Backspace event as the
+plain key. Neither legacy result identifies `Ctrl+Backspace`, so that path
+needs the fallback.
+
+Repeat the probe directly and inside tmux when diagnosing a difference. Record
+the terminal name/version, `TERM`, `tmux -V`, whether SSH is involved, all eight
+probe results, and the result of this live Catomic check: type `one two`, press
+plain `Backspace` and verify only `o` is removed; undo, then press
+`Ctrl+Backspace` and verify `two` is removed as one undoable edit. Recent tmux
+versions require extended-key support on the outer terminal; an incorrect
+`TERM` or disabled `extkeys` terminal feature can retain the legacy behavior.
 
 ### F7 says the preference was not saved
 

@@ -1709,10 +1709,12 @@ cargo run --quiet --example keyboard_probe -- enhanced-event
 In an enhanced path, plain `Backspace` is normally `1b 5b 31 32 37 75`
 (`CSI 127u`) and decodes as Backspace without modifiers. `Ctrl+Backspace` is
 `1b 5b 31 32 37 3b 35 75` (`CSI 127;5u`) and decodes as Backspace with
-`CONTROL`. A legacy `Ctrl+Backspace` may instead produce `08`, which Crossterm
-0.28 decodes as `Ctrl+H`, or the same `7f` and unmodified Backspace event as the
-plain key. Neither legacy result identifies `Ctrl+Backspace`, so that path
-needs the fallback.
+`CONTROL`; its raw burst may first include a separate protocol record for the
+physical Control-key press. The event probe skips only that standalone modifier
+record and reports the Backspace event. A legacy `Ctrl+Backspace` may instead
+produce `08`, which Crossterm 0.28 decodes as `Ctrl+H`, or the same `7f` and
+unmodified Backspace event as the plain key. Neither legacy result identifies
+`Ctrl+Backspace`, so that path needs the fallback.
 
 Repeat the probe directly and inside tmux when diagnosing a difference. Record
 the terminal name/version, `TERM`, `tmux -V`, whether SSH is involved, all eight

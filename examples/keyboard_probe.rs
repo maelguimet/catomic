@@ -28,11 +28,10 @@ fn main() {
 }
 
 fn run(mode: Mode) -> io::Result<()> {
-    println!("Press exactly one key now (Backspace or Ctrl+Backspace).");
-    io::stdout().flush()?;
-
     let capture = {
         let _terminal = ProbeTerminal::enter(mode.uses_enhancement())?;
+        println!("Press exactly one key now (Backspace or Ctrl+Backspace).");
+        io::stdout().flush()?;
         match mode {
             Mode::LegacyBytes | Mode::EnhancedBytes => Capture::Bytes(read_one_key_burst()?),
             Mode::LegacyEvent | Mode::EnhancedEvent => Capture::Event(read_one_key_event()?),
@@ -162,7 +161,9 @@ fn input_ready(fd: libc::c_int, timeout_ms: libc::c_int) -> io::Result<bool> {
 fn read_one_key_event() -> io::Result<event::KeyEvent> {
     loop {
         if let Event::Key(key) = event::read()? {
-            return Ok(key);
+            if !matches!(key.code, event::KeyCode::Modifier(_)) {
+                return Ok(key);
+            }
         }
     }
 }

@@ -34,14 +34,16 @@ scripts/daily-driver-gate.sh run /absolute/new/session-directory \
 Use `none` when no multiplexer is present. The directory must not already
 exist; the harness never overwrites or deletes an acceptance session.
 
-Treat Catomic as an ordinary editor for a sustained session. Use only `Ctrl+H`
-or `F1` to discover common actions. Complete open, edit, undo/redo, find, save,
-and close before consulting external documentation. Continue through selection,
-replace, clipboard, soft wrap, multiple buffers, Save As, external-change
-handling, and recovery. Resize to both a narrow and a normal width and inspect
-normal status, prompts, warnings/confirmations, errors, Markdown source, and F6
-preview. The generated `external-change.sh` is an explicit second-terminal
-helper for the external-change scenario.
+Treat Catomic as an ordinary editor for a sustained session of at least eight
+minutes. The validator rejects a shorter record, keeping the session inside the
+ten-minute process bound while preventing a start/quit smoke from satisfying
+this gate. Use only `Ctrl+H` or `F1` to discover common actions. Complete open,
+edit, undo/redo, find, save, and close before consulting external documentation.
+Continue through selection, replace, clipboard, soft wrap, multiple buffers,
+Save As, external-change handling, and recovery. Resize to both a narrow and a
+normal width and inspect normal status, prompts, warnings/confirmations, errors,
+Markdown source, and F6 preview. The generated `external-change.sh` is an
+explicit second-terminal helper for the external-change scenario.
 
 Only after Plain editing feels solid, enter Project mode, run bounded file
 discovery, and return to Plain mode. Open current-file and repository model

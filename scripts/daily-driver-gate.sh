@@ -8,6 +8,7 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/.." && pwd)"
+minimum_session_seconds=480
 
 die() {
   echo "daily-driver gate failed: $*" >&2
@@ -148,6 +149,8 @@ verify_captured_metadata() {
 
   [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || die "manifest source SHA is invalid"
   [[ "$duration" =~ ^[1-9][0-9]*$ ]] || die "session duration must be positive"
+  ((duration >= minimum_session_seconds)) ||
+    die "session duration must be at least $minimum_session_seconds seconds"
   printf -v expected -- "- Source SHA: \`%s\`" "$source_sha"
   require_record_line "$record" "$expected"
   require_record_line "$record" "- Branch: \`$branch\`"
@@ -400,16 +403,22 @@ run_session() {
   [[ -z "$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)" ]] ||
     die "checkout must be clean so the release binary binds to one source SHA"
 
+  local source_sha branch
+  source_sha="$(git -C "$repo_root" rev-parse HEAD)"
+  branch="$(git -C "$repo_root" branch --show-current)"
+  [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || die "checkout did not resolve to a full source SHA"
+  require_single_line "branch" "$branch"
+
   local gate_target_dir="$repo_root/target/daily-driver-gate"
   (cd -- "$repo_root" && CARGO_TARGET_DIR="$gate_target_dir" cargo build --release --locked)
   local built_binary="$gate_target_dir/release/catomic"
   [[ -f "$built_binary" && ! -L "$built_binary" ]] || die "release binary was not built"
-  local source_sha branch release_version
-  source_sha="$(git -C "$repo_root" rev-parse HEAD)"
-  branch="$(git -C "$repo_root" branch --show-current)"
+  [[ "$(git -C "$repo_root" rev-parse HEAD)" == "$source_sha" ]] ||
+    die "checkout HEAD changed while the release binary was built"
+  [[ -z "$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)" ]] ||
+    die "checkout changed while the release binary was built"
+  local release_version
   release_version="$($built_binary --version)"
-  [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || die "checkout did not resolve to a full source SHA"
-  require_single_line "branch" "$branch"
   require_single_line "release version" "$release_version"
 
   umask 077

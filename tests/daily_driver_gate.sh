@@ -137,6 +137,16 @@ if "$gate" verify "$short_deferral" >/dev/null 2>&1; then
   exit 1
 fi
 
+short_session="$temp_dir/short-session"
+cp -a "$complete" "$short_session"
+sed -i 's/duration_seconds=3600/duration_seconds=479/' "$short_session/session.env"
+sed -i 's/Session duration: 3600 seconds/Session duration: 479 seconds/' \
+  "$short_session/final-comment.md"
+if "$gate" verify "$short_session" >/dev/null 2>&1; then
+  echo "short daily-driver session unexpectedly passed" >&2
+  exit 1
+fi
+
 tampered="$temp_dir/tampered"
 cp -a "$complete" "$tampered"
 printf '%s\n' 'tampered' >> "$tampered/release/catomic"

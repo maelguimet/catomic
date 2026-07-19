@@ -66,7 +66,7 @@ fn project_command_constructs_session_at_active_file_directory() {
 }
 
 #[test]
-fn plain_command_drops_project_session_and_restores_plain_status() {
+fn plain_command_drops_project_session_without_mode_chrome() {
     let mut app = App::new(None).unwrap();
     run_command(&mut app, "project");
     assert!(app.project.is_some());
@@ -79,5 +79,7 @@ fn plain_command_drops_project_session_and_restores_plain_status() {
     app.message = None;
     let mut out = Vec::new();
     app.render(&mut out).unwrap();
-    assert!(String::from_utf8(out).unwrap().contains("plain"));
+    let rendered = String::from_utf8(out).unwrap();
+    assert!(rendered.contains("[untitled]"));
+    assert!(!rendered.contains("plain"));
 }

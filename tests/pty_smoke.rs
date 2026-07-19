@@ -446,18 +446,18 @@ fn pty_save_undo_save_quit_writes_expected_file() -> TestResult {
     let mut editor = PtyEditor::spawn_monochrome(&temp.path)?;
 
     editor.wait_for_initial_render()?;
-    editor.wait_for_output("normal status bar", "plain")?;
+    let filename = temp.path.file_name().unwrap().to_string_lossy();
+    editor.wait_for_output("normal status filename", &filename)?;
     let initial = editor.output_string();
     let bar = initial
-        .find("\x1b[24;1H\x1b[7m\x1b[2K")
-        .ok_or("normal status row did not enter inverse video before full-row clear")?;
-    let reset = initial[bar..]
-        .find("\x1b[0m\x1b[0 q\x1b[1;1H")
-        .ok_or("normal status row did not reset and select the cursor before placement")?;
-    assert!(
-        reset > 80,
-        "status frame must paint the full 80-cell PTY row"
-    );
+        .find("\x1b[24;1H\x1b[2K\x1b[0m\x1b[2m")
+        .ok_or("normal status row did not use quiet monochrome styling")?;
+    let status_frame = &initial[bar..initial[bar..]
+        .find("\x1b[0 q\x1b[1;1H")
+        .ok_or("normal status row did not restore the cursor")?
+        + bar];
+    assert!(status_frame.contains(filename.as_ref()));
+    assert!(!status_frame.contains("\x1b[7m"));
 
     editor.send_keys(b"\x1b[80;6u")?; // Ctrl+Shift+P via CSI-u.
     editor.wait_for_output("prompt status", "Command: ")?;
@@ -479,6 +479,9 @@ fn pty_save_undo_save_quit_writes_expected_file() -> TestResult {
         output
     );
     assert!(!output.contains("\x1b[2J"), "must avoid full-screen clears");
+    assert!(output.contains(&format!("\x1b]0;{filename}\x07")));
+    assert_eq!(sequence_count(&output, "\x1b[22;0t"), 1);
+    assert_eq!(sequence_count(&output, "\x1b[23;0t"), 1);
     assert_eq!(fs::read_to_string(&temp.path)?, "ab");
 
     Ok(())
@@ -640,18 +643,14 @@ fn pty_insert_overwrite_cursor_prompt_and_teardown_transitions() -> TestResult {
     fs::write(&temp.path, "abc")?;
     let mut editor = PtyEditor::spawn(&temp.path)?;
     editor.wait_for_initial_render()?;
-    editor.wait_for_output("initial insert indicator", "INS")?;
+    editor.wait_for_output("initial insert cursor", "\x1b[0 q")?;
 
     let enable_start = editor.output_len();
     editor.send_keys(b"\x1b[2~")?; // Insert
-    wait_until(
-        "overwrite status and block cursor",
-        Duration::from_secs(2),
-        || {
-            let output = editor.output_since(enable_start);
-            output.contains("OVR") && output.contains("\x1b[2 q")
-        },
-    )?;
+    wait_until("overwrite block cursor", Duration::from_secs(2), || {
+        let output = editor.output_since(enable_start);
+        output.contains("\x1b[2 q") && !output.contains("OVR")
+    })?;
 
     let prompt_start = editor.output_len();
     editor.send_keys(b"\x1b[80;6u")?; // Ctrl+Shift+P via CSI-u.
@@ -676,14 +675,10 @@ fn pty_insert_overwrite_cursor_prompt_and_teardown_transitions() -> TestResult {
     editor.wait_for_output("PTY overwrite edit", "Xbc")?;
     let disable_start = editor.output_len();
     editor.send_keys(b"\x1b[2~")?;
-    wait_until(
-        "insert status and default cursor",
-        Duration::from_secs(2),
-        || {
-            let output = editor.output_since(disable_start);
-            output.contains("INS") && output.contains("\x1b[0 q")
-        },
-    )?;
+    wait_until("insert default cursor", Duration::from_secs(2), || {
+        let output = editor.output_since(disable_start);
+        output.contains("\x1b[0 q") && !output.contains("INS")
+    })?;
 
     let reenable_start = editor.output_len();
     editor.send_keys(b"\x1b[2~")?;
@@ -692,7 +687,7 @@ fn pty_insert_overwrite_cursor_prompt_and_teardown_transitions() -> TestResult {
         Duration::from_secs(2),
         || {
             let output = editor.output_since(reenable_start);
-            output.contains("OVR") && output.contains("\x1b[2 q")
+            output.contains("\x1b[2 q") && !output.contains("OVR")
         },
     )?;
     editor.send_keys(b"\x13\x11")?;
@@ -727,7 +722,7 @@ fn pty_sigterm_restores_terminal_modes_before_exit() -> TestResult {
         Duration::from_secs(2),
         || {
             let output = editor.output_since(enable_start);
-            output.contains("OVR") && output.contains("\x1b[2 q")
+            output.contains("\x1b[2 q") && !output.contains("OVR")
         },
     )?;
 
@@ -1011,7 +1006,7 @@ fn pty_custom_theme_reaches_content_status_and_cursor_then_resets() -> TestResul
     let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
 
     editor.wait_for_output("themed content", "\x1b[92;40mthemed content\x1b[0m")?;
-    editor.wait_for_output("themed status", "\x1b[97m\x1b[44m\x1b[2K")?;
+    editor.wait_for_output("themed status", "\x1b[24;1H\x1b[2K\x1b[0m\x1b[97m\x1b[44m")?;
     editor.wait_for_output("themed cursor", "\x1b]12;#cd0000\x07")?;
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
@@ -1070,6 +1065,26 @@ fn pty_encoded_sgr_and_x10_clicks_position_the_next_edits() -> TestResult {
 
     assert_eq!(fs::read_to_string(&temp.path)?, "first\nsec猫ond\nthi🙂rd");
     assert_mouse_capture_lifecycle(&editor.output_string());
+    Ok(())
+}
+
+#[test]
+fn pty_mouse_selection_ctrl_c_emits_ghostty_compatible_osc52() -> TestResult {
+    let temp = TempPath::new("ctrl_c_copy");
+    fs::write(&temp.path, "copy me")?;
+    let mut editor = PtyEditor::spawn(&temp.path)?;
+
+    editor.wait_for_initial_render()?;
+    // Select columns 0..4 with SGR mouse reporting, then exercise literal Ctrl+C.
+    editor.send_keys(b"\x1b[<0;1;1M\x1b[<32;5;1M\x1b[<0;5;1m")?;
+    editor.wait_for_output("mouse selection", "\x1b[30;46mcopy\x1b[0m")?;
+    editor.clear_output();
+    editor.send_keys(b"\x03")?;
+    editor.wait_for_output("Ctrl+C OSC 52 clipboard write", "\x1b]52;c;Y29weQ==\x1b\\")?;
+
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+    assert_eq!(fs::read_to_string(&temp.path)?, "copy me");
     Ok(())
 }
 

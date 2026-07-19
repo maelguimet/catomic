@@ -28,19 +28,6 @@ pub struct TextFormat {
     pub line_ending: LineEnding,
 }
 
-impl TextFormat {
-    pub fn label(self) -> &'static str {
-        match (self.utf8_bom, self.line_ending) {
-            (false, LineEnding::Lf) => "utf-8 lf",
-            (false, LineEnding::Crlf) => "utf-8 crlf",
-            (false, LineEnding::Cr) => "utf-8 cr",
-            (true, LineEnding::Lf) => "utf-8-bom lf",
-            (true, LineEnding::Crlf) => "utf-8-bom crlf",
-            (true, LineEnding::Cr) => "utf-8-bom cr",
-        }
-    }
-}
-
 pub struct DecodedText {
     pub text: String,
     pub format: TextFormat,

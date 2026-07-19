@@ -226,29 +226,24 @@ is invalid because they do not enter terminal raw mode.
 ## The editor screen
 
 The main area contains the active buffer. The bottom line shows a transient
-message when an operation needs attention; otherwise it shows persistent state,
-including:
-
-- the current mode (`plain` or `project`);
-- the active path, or an untitled-buffer label;
-- whether the active buffer has unsaved changes;
-- the session-wide direct-typing state (`INS` or `OVR`);
-- file size, size tier, and text format when known;
-- `buffer N/M` when several buffers are open; and
-- page information and source byte range for a paged large file; and
-- inline autocomplete state (`disabled`, `enabled`, `requesting`, `ready`, or
-  `error/backoff`).
+message when an operation needs attention; otherwise it shows only the active
+path (or `[untitled]`) beside the small cat decoration. The parent path is
+muted and the filename is red. Exceptional navigation context is appended as
+`file N/M` or `page N`; an autocomplete request or error is shown only while it
+is active. The terminal window title tracks the active filename and Catomic
+restores the previous title when the editor exits.
 
 The small cat decoration is enabled by default. It changes presentation only
 and can be disabled with `[cat] status_messages = false`.
 
-The reserved row is painted as a full-width status bar so it cannot be mistaken
-for document text. Normal state, informational messages, warnings, errors, and
-interactive prompts use separate semantic styles. Terminals with `NO_COLOR` set,
-`TERM=dumb`, or a monochrome terminal type retain an inverse-video boundary.
-Long status and prompt text is middle-clipped at the terminal edge, preserving
-both its leading context and actionable suffix without splitting a Unicode
-grapheme or allowing control characters to reach the terminal.
+The persistent row has no full-width background: it clears the row, then draws
+the compact identity in subdued colors. Transient informational messages,
+warnings, errors, and interactive prompts still use separate full-width
+semantic styles. `NO_COLOR`, `TERM=dumb`, and monochrome terminals use dim and
+bold distinctions for the persistent identity and inverse-video boundaries for
+transient messages. Long status and prompt text is clipped at the terminal edge
+without splitting a Unicode grapheme or allowing control characters to reach
+the terminal.
 
 Press `Ctrl+H` or `F1` at any time to open the built-in shortcut reference. It
 is read-only: use the arrow keys, `Home`, `End`, `PageUp`, and `PageDown` to
@@ -273,17 +268,17 @@ Catomic uses familiar modeless editing. Type to insert text. `Backspace` and
 `Delete` remove text, and `Enter` inserts a newline.
 
 Press `Insert` in the normal editing surface to toggle the session-wide typing
-state. `INS` inserts ordinary typed characters before the cursor. `OVR`
-replaces exactly one Unicode grapheme under the cursor and uses a steady block
-cursor; at an empty line, end of line, or end of file it inserts instead, so
-ordinary typing never overwrites a newline. Each overwritten character is one
-ordinary undoable typing transaction.
+state. Insert mode adds ordinary typed characters before the cursor. Overwrite
+mode replaces exactly one Unicode grapheme under the cursor and uses a steady
+block cursor; at an empty line, end of line, or end of file it inserts instead,
+so ordinary typing never overwrites a newline. Each overwritten character is
+one ordinary undoable typing transaction.
 
 Overwrite mode affects direct character typing only. Selection replacement
 keeps its usual range semantics, while paste, completion, indentation, command
 output, and confirmed model edits keep their existing transactional behavior.
 Prompts and read-only views use their own input handling and the terminal's
-default cursor shape; closing them resumes the session's `INS`/`OVR` state.
+default cursor shape; closing them resumes the session's insert/overwrite state.
 
 Cursor movement and deletion operate on Unicode grapheme clusters rather than
 raw bytes. Combining marks, wide characters, emoji sequences, and tabs remain
@@ -322,11 +317,11 @@ Plain `Ctrl+Up`/`Ctrl+Down` clears an active selection like other non-extending
 navigation; it does not infer a selection-extending paragraph action from
 `Shift`.
 
-`Insert` toggles the session-wide overwrite mode for printable typing. The
-persistent status includes `INS` or `OVR`, and switching buffers preserves that
-shared state. A typed character in overwrite mode replaces one complete Unicode
-grapheme. Newlines, paste, prompts, command/model results, and other edit paths
-keep their normal insert/replace semantics.
+`Insert` toggles the session-wide overwrite mode for printable typing, and
+switching buffers preserves that shared state. The steady block cursor indicates
+overwrite mode. A typed character in overwrite mode replaces one complete
+Unicode grapheme. Newlines, paste, prompts, command/model results, and other edit
+paths keep their normal insert/replace semantics.
 
 Catomic requests the Kitty enhanced-keyboard protocol and xterm modified-key
 mode 2 while its alternate screen is active. A terminal path that honors a
@@ -358,9 +353,10 @@ characters, line numbers, and soft-wrapped lines.
 A click in the line-number gutter moves to the start of that displayed row; for
 a soft-wrapped continuation, that is the continuation's first document column.
 A click past the rendered end of a line moves to its end. The bottom status row
-is not document content and ignores clicks. Prompts and read-only views also
-ignore document clicks; close the active surface before positioning the
-editable source cursor.
+is not document content: dragging across its persistent path selects that text,
+and `Ctrl+C` copies it through the same clipboard path as a document selection.
+Prompts and read-only views ignore document clicks; close the active surface
+before positioning the editable source cursor.
 
 The mouse wheel scrolls three visible rows per normalized wheel event without
 moving the document cursor or selection. With soft wrap enabled those are
@@ -588,7 +584,7 @@ default page contains 20,000 lines and can be changed with
 
 - `Ctrl+PageDown` opens the next file page.
 - `Ctrl+PageUp` opens the previous file page.
-- The status line shows the page number and source byte range.
+- The status line shows the page number.
 - Edits to visited pages remain available when you move away.
 - Undo and redo follow edit order across pages.
 - `Ctrl+S` streams the complete logical document to an atomic save, combining
@@ -947,9 +943,8 @@ text, those keys retain their normal behavior.
 Editing, paste, navigation, selection changes, prompts, buffer/mode changes,
 model selection, and external refresh cancel stale work. Responses pin the
 buffer revision, cursor, mode, preset, canonical destination, model, and request
-generation. A compact leading bottom-row indicator reports `[ac off]`,
-`[ac on]`, `[ac request]`, `[ac ready]`, or `[ac error]` without displacing
-the status line's file, format, paging, or buffer-position tail.
+generation. Idle autocomplete adds no status noise; only an active request or
+error is appended to the compact file identity.
 
 Requests use only a bounded Unicode-scalar window from the fully loaded active
 buffer; paged buffers are skipped. Catomic supplies explicit before/after
@@ -1259,7 +1254,8 @@ background = "default"
 cursor = "default"
 selection = { fg = "black", bg = "cyan" }
 line_number = "bright-black"
-status = { fg = "black", bg = "white" }
+status = { fg = "bright-black", dim = true }
+status_filename = "bright-red"
 message = { fg = "black", bg = "white" }
 status_warning = { fg = "black", bg = "yellow" }
 error = { fg = "bright-white", bg = "red" }
@@ -1395,7 +1391,8 @@ a leading dot. Command names may contain ASCII letters, digits, `-`, and `_`.
 
 Themes use semantic roles, so rendering does not hard-code colors by syntax or
 surface. The complete role inventory is `text`, `background`, `cursor`,
-`selection`, `line_number`, `status`, `message`, `status_warning`, `status_prompt`, `error`,
+`selection`, `line_number`, `status`, `status_filename`, `message`,
+`status_warning`, `status_prompt`, `error`,
 `markdown_heading`, `markdown_emphasis`, `markdown_code`, `markdown_marker`,
 `markdown_link`, `syntax_keyword`, `syntax_string`, `syntax_comment`, `syntax_number`,
 `search_match`, `diff_added`, `diff_removed`, `llm_changed`, `autocomplete`, and
@@ -1644,9 +1641,8 @@ Catomic accepts valid UTF-8 text. Ordinary buffers preserve:
 - CRLF line endings; or
 - CR-only line endings.
 
-The detected format appears in the status line. UTF-16, arbitrary binary data,
-and non-UTF-8 filenames are refused rather than decoded or rewritten
-heuristically.
+UTF-16, arbitrary binary data, and non-UTF-8 filenames are refused rather than
+decoded or rewritten heuristically.
 
 Paged files support LF and CRLF only. A BOM-prefixed or CR-only file above the
 paging threshold is refused.

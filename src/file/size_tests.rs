@@ -78,14 +78,6 @@ fn classify_zero_and_small_values_are_small() {
     assert_eq!(classify_file_size(1024), FileSizeTier::Small);
 }
 
-#[test]
-fn label_matches_expected() {
-    assert_eq!(file_size_tier_label(FileSizeTier::Small), "small");
-    assert_eq!(file_size_tier_label(FileSizeTier::Large), "large");
-    assert_eq!(file_size_tier_label(FileSizeTier::Huge), "huge");
-    assert_eq!(file_size_tier_label(FileSizeTier::Extreme), "extreme");
-}
-
 // file_size_bytes tests: small real temp files only; no huge allocs.
 
 #[test]

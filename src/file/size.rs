@@ -1,7 +1,7 @@
 //! Purpose: this file must provide metadata-only file size classification and
 //!   pre-read open-size guardrails (Phase 2B). No content read in helpers, no lazy,
 //!   no mmap, no new deps.
-//! Owns: FileSizeTier + OpenSizeDecision, limit consts, classify, label, decision,
+//! Owns: FileSizeTier + OpenSizeDecision, limit consts, classification, decision,
 //!   warning messages, format_file_size, file_size_bytes (metadata only).
 //! Must not: read file content (except file_size_bytes probe at call sites);
 //!   allocate large fixtures; change watcher/reload/save semantics beyond size
@@ -40,17 +40,6 @@ pub fn classify_file_size(bytes: u64) -> FileSizeTier {
         FileSizeTier::Huge
     } else {
         FileSizeTier::Extreme
-    }
-}
-
-/// Return a short stable label for the tier (for future UI/status, not used for
-/// decisions in this pass).
-pub fn file_size_tier_label(tier: FileSizeTier) -> &'static str {
-    match tier {
-        FileSizeTier::Small => "small",
-        FileSizeTier::Large => "large",
-        FileSizeTier::Huge => "huge",
-        FileSizeTier::Extreme => "extreme",
     }
 }
 

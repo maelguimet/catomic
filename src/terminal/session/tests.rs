@@ -25,9 +25,12 @@ fn setup_and_repeated_restore_push_and_pop_keyboard_flags_once() {
     assert_eq!(count(&output, b"\x1b[<1u"), 1);
     assert_eq!(count(&output, b"\x1b[0 q"), 1);
     assert_eq!(count(&output, b"\x1b]112\x07"), 1);
+    assert_eq!(count(&output, b"\x1b[22;0t"), 1);
+    assert_eq!(count(&output, b"\x1b[23;0t"), 1);
     assert!(position(&output, b"\x1b[?1049h") < position(&output, b"\x1b[>1u"));
     assert!(position(&output, b"\x1b[>4;0m") < position(&output, b"\x1b[<1u"));
     assert!(position(&output, b"\x1b[<1u") < position(&output, b"\x1b[?1049l"));
+    assert!(position(&output, b"\x1b[?1049l") < position(&output, b"\x1b[23;0t"));
 }
 
 #[test]
@@ -46,7 +49,7 @@ fn setup_error_before_keyboard_push_leaves_screen_without_pop() {
 #[test]
 fn setup_error_after_both_keyboard_modes_resets_before_leaving_screen() {
     let guard = tmux_guard();
-    let setup_prefix = b"\x1b[?1049h\x1b[>1u\x1b[>4;2m";
+    let setup_prefix = b"\x1b[?1049h\x1b[22;0t\x1b[>1u\x1b[>4;2m";
     let mut failing = FailAfter::new(setup_prefix.len());
 
     assert!(guard.enable_output_modes(&mut failing).is_err());
@@ -62,7 +65,7 @@ fn setup_error_after_both_keyboard_modes_resets_before_leaving_screen() {
 #[test]
 fn setup_error_during_xterm_enable_still_pops_kitty_flags() {
     let guard = tmux_guard();
-    let setup_prefix = b"\x1b[?1049h\x1b[>1u";
+    let setup_prefix = b"\x1b[?1049h\x1b[22;0t\x1b[>1u";
     let mut failing = FailAfter::new(setup_prefix.len());
 
     assert!(guard.enable_output_modes(&mut failing).is_err());
@@ -133,6 +136,21 @@ fn direct_terminal_does_not_enable_xterm_modified_keys() {
     assert_eq!(count(&output, b"\x1b[>4;2m"), 0);
     assert_eq!(count(&output, b"\x1b[>4;0m"), 0);
     assert_eq!(count(&output, b"\x1b[<1u"), 1);
+}
+
+#[test]
+fn failed_title_pop_retries_without_repeating_other_teardown() {
+    let guard = TerminalGuard::with_xterm_extended_keys(false);
+    guard.enable_output_modes(&mut Vec::new()).unwrap();
+    let mut failing = FailOnceOn::new(TITLE_STACK_POP);
+
+    assert!(guard.restore(&mut failing).is_err());
+    assert_eq!(count(&failing.output, b"\x1b[?1049l"), 1);
+
+    let mut retried = Vec::new();
+    guard.restore(&mut retried).unwrap();
+    assert_eq!(count(&retried, TITLE_STACK_POP), 1);
+    assert_eq!(count(&retried, b"\x1b[?1049l"), 0);
 }
 
 fn count(bytes: &[u8], needle: &[u8]) -> usize {

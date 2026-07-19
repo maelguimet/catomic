@@ -1,7 +1,7 @@
-//! Purpose: render the reserved bottom row as a semantic, full-width status bar.
-//! Owns: status roles, injectable role styles, terminal capability fallback, and row painting.
+//! Purpose: render compact persistent identity or a semantic full-width transient message.
+//! Owns: status roles, filename/selection spans, terminal fallback, and row painting.
 //! Must not: inspect App/buffer state, classify messages, mutate editor state, or read config files.
-//! Invariants: text is terminal-safe and cell-clipped; the complete row is styled; ANSI resets last.
+//! Invariants: text is terminal-safe and cell-clipped; normal chrome stays quiet; ANSI resets last.
 //! Phase: post-v0.1 status/message bar accessibility.
 
 use std::io::{self, Write};
@@ -44,6 +44,17 @@ impl StatusStyle {
         }
     }
 
+    const fn foreground(foreground: Color, bold: bool, dim: bool) -> Self {
+        Self {
+            foreground: Some(foreground),
+            background: None,
+            bold,
+            dim,
+            underlined: false,
+            reversed: false,
+        }
+    }
+
     const fn monochrome(bold: bool, underlined: bool) -> Self {
         Self {
             foreground: None,
@@ -59,27 +70,53 @@ impl StatusStyle {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct StatusTheme {
     normal: StatusStyle,
+    filename: StatusStyle,
     info: StatusStyle,
     warning: StatusStyle,
     error: StatusStyle,
     prompt: StatusStyle,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct StatusBarPresentation {
+    pub(super) role: StatusRole,
+    pub(super) theme: StatusTheme,
+    pub(super) filename: Option<(usize, usize)>,
+    pub(super) selection: Option<(usize, usize)>,
+}
+
 impl Default for StatusTheme {
     fn default() -> Self {
-        Self::monochrome()
-            .with_role_colors(StatusRole::Normal, Color::Black, Color::Grey, false)
-            .with_role_colors(StatusRole::Info, Color::Black, Color::Cyan, false)
-            .with_role_colors(StatusRole::Warning, Color::Black, Color::Yellow, true)
-            .with_role_colors(StatusRole::Error, Color::White, Color::DarkRed, true)
-            .with_role_colors(StatusRole::Prompt, Color::White, Color::DarkBlue, true)
+        Self {
+            normal: StatusStyle::foreground(Color::DarkGrey, false, true),
+            filename: StatusStyle::foreground(Color::Red, false, false),
+            info: StatusStyle::colors(Color::Black, Color::Cyan, false),
+            warning: StatusStyle::colors(Color::Black, Color::Yellow, true),
+            error: StatusStyle::colors(Color::White, Color::DarkRed, true),
+            prompt: StatusStyle::colors(Color::White, Color::DarkBlue, true),
+        }
     }
 }
 
 impl StatusTheme {
     pub(crate) const fn monochrome() -> Self {
         Self {
-            normal: StatusStyle::monochrome(false, false),
+            normal: StatusStyle {
+                foreground: None,
+                background: None,
+                bold: false,
+                dim: true,
+                underlined: false,
+                reversed: false,
+            },
+            filename: StatusStyle {
+                foreground: None,
+                background: None,
+                bold: true,
+                dim: false,
+                underlined: false,
+                reversed: false,
+            },
             info: StatusStyle::monochrome(false, false),
             warning: StatusStyle::monochrome(true, false),
             error: StatusStyle::monochrome(true, true),
@@ -99,6 +136,11 @@ impl StatusTheme {
                 theme.status,
                 theme.truecolor,
                 fallback.style(StatusRole::Normal),
+            ),
+            filename: themed_status_style(
+                theme.status_filename,
+                theme.truecolor,
+                fallback.filename,
             ),
             info: themed_status_style(
                 theme.message,
@@ -133,6 +175,7 @@ impl StatusTheme {
         }
     }
 
+    #[cfg(test)]
     pub(crate) const fn with_role_colors(
         self,
         role: StatusRole,
@@ -143,6 +186,7 @@ impl StatusTheme {
         self.with_role(role, StatusStyle::colors(foreground, background, bold))
     }
 
+    #[cfg(test)]
     const fn with_role(mut self, role: StatusRole, style: StatusStyle) -> Self {
         match role {
             StatusRole::Normal => self.normal = style,
@@ -162,6 +206,10 @@ impl StatusTheme {
             StatusRole::Error => self.error,
             StatusRole::Prompt => self.prompt,
         }
+    }
+
+    const fn filename_style(self) -> StatusStyle {
+        self.filename
     }
 }
 
@@ -235,14 +283,26 @@ pub(super) fn write_status_bar<W: Write + ?Sized>(
     row: usize,
     width: usize,
     text: &str,
-    role: StatusRole,
-    theme: StatusTheme,
+    presentation: StatusBarPresentation,
 ) -> io::Result<()> {
     if row == 0 {
         return Ok(());
     }
     write!(out, "\x1b[{row};1H")?;
-    write_style(out, theme.style(role))?;
+
+    if presentation.role == StatusRole::Normal {
+        write!(out, "\x1b[2K")?;
+        return write_persistent_status(
+            out,
+            text,
+            width,
+            presentation.theme,
+            presentation.filename,
+            presentation.selection,
+        );
+    }
+
+    write_style(out, presentation.theme.style(presentation.role))?;
     write!(out, "\x1b[2K")?;
 
     let safe = text_layout::terminal_safe_text(text);
@@ -254,6 +314,60 @@ pub(super) fn write_status_bar<W: Write + ?Sized>(
         "",
         padding = width - used
     )
+}
+
+fn write_persistent_status<W: Write + ?Sized>(
+    out: &mut W,
+    text: &str,
+    width: usize,
+    theme: StatusTheme,
+    filename: Option<(usize, usize)>,
+    selection: Option<(usize, usize)>,
+) -> io::Result<()> {
+    let safe = text_layout::terminal_safe_text(text);
+    if text_layout::cell_width_from(&safe, 0) > width {
+        write_style(out, theme.style(StatusRole::Normal))?;
+        return write!(out, "{}\x1b[0m", clipped_status_text(&safe, width));
+    }
+    let mut boundaries = vec![0, text.len()];
+    for range in [filename, selection].into_iter().flatten() {
+        if valid_range(text, range) {
+            boundaries.extend([range.0, range.1]);
+        }
+    }
+    boundaries.sort_unstable();
+    boundaries.dedup();
+    for pair in boundaries.windows(2) {
+        let start = pair[0];
+        let end = pair[1];
+        if start == end {
+            continue;
+        }
+        let mut style = if filename.is_some_and(|range| start >= range.0 && end <= range.1) {
+            theme.filename_style()
+        } else {
+            theme.style(StatusRole::Normal)
+        };
+        if selection.is_some_and(|range| start >= range.0 && end <= range.1) {
+            style.reversed = true;
+            style.dim = false;
+        }
+        write!(out, "\x1b[0m")?;
+        write_style(out, style)?;
+        write!(
+            out,
+            "{}",
+            text_layout::terminal_safe_text(&text[start..end])
+        )?;
+    }
+    write!(out, "\x1b[0m")
+}
+
+fn valid_range(text: &str, range: (usize, usize)) -> bool {
+    range.0 <= range.1
+        && range.1 <= text.len()
+        && text.is_char_boundary(range.0)
+        && text.is_char_boundary(range.1)
 }
 
 fn clipped_status_text(text: &str, width: usize) -> String {

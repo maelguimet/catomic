@@ -10,8 +10,16 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::Cursor;
 use crate::editor::selection::Selection;
+use crate::editor::text_layout;
 
 const OSC52_MAX_BYTES: usize = 100 * 1024;
+
+#[derive(Clone, Debug)]
+struct StatusSelection {
+    text: String,
+    anchor: usize,
+    focus: usize,
+}
 
 mod mouse;
 pub(crate) use mouse::handle_mouse;
@@ -22,6 +30,8 @@ pub(crate) struct SelectionUiState {
     drag_anchor: Option<Cursor>,
     touch_anchor: Option<Cursor>,
     last_click: Option<(Cursor, std::time::Instant)>,
+    status: Option<StatusSelection>,
+    status_drag_anchor: Option<usize>,
 }
 
 impl SelectionUiState {
@@ -29,12 +39,82 @@ impl SelectionUiState {
         self.range.filter(|selection| !selection.is_empty())
     }
 
+    pub(crate) fn status_range(&self, text: &str) -> Option<(usize, usize)> {
+        let selection = self
+            .status
+            .as_ref()
+            .filter(|selection| selection.text == text)?;
+        let range = ordered_range(selection.anchor, selection.focus);
+        (range.0 != range.1).then_some(range)
+    }
+
+    fn status_text(&self) -> Option<&str> {
+        let selection = self.status.as_ref()?;
+        let (start, end) = ordered_range(selection.anchor, selection.focus);
+        (start != end).then(|| &selection.text[start..end])
+    }
+
     pub(crate) fn clear(&mut self) {
         self.range = None;
         self.drag_anchor = None;
         self.touch_anchor = None;
         self.last_click = None;
+        self.status = None;
+        self.status_drag_anchor = None;
     }
+
+    fn clear_status(&mut self) {
+        self.status = None;
+        self.status_drag_anchor = None;
+    }
+
+    fn begin_status_drag(&mut self, text: String, cell: usize) {
+        self.clear();
+        let anchor = byte_at_cell(&text, cell);
+        self.status = Some(StatusSelection {
+            text,
+            anchor,
+            focus: anchor,
+        });
+        self.status_drag_anchor = Some(anchor);
+    }
+
+    fn update_status_drag(&mut self, cell: usize, finished: bool) {
+        let Some(anchor) = self.status_drag_anchor else {
+            return;
+        };
+        let Some(selection) = self.status.as_mut() else {
+            self.status_drag_anchor = None;
+            return;
+        };
+        selection.anchor = anchor;
+        selection.focus = byte_at_cell(&selection.text, cell);
+        if finished {
+            self.status_drag_anchor = None;
+            if selection.anchor == selection.focus {
+                self.status = None;
+            }
+        }
+    }
+
+    fn is_status_dragging(&self) -> bool {
+        self.status_drag_anchor.is_some()
+    }
+}
+
+fn ordered_range(anchor: usize, focus: usize) -> (usize, usize) {
+    if anchor <= focus {
+        (anchor, focus)
+    } else {
+        (focus, anchor)
+    }
+}
+
+fn byte_at_cell(text: &str, cell: usize) -> usize {
+    let scalar = text_layout::scalar_at_cell(text, cell);
+    text.char_indices()
+        .nth(scalar)
+        .map_or(text.len(), |(byte, _)| byte)
 }
 
 pub(super) fn begin_touch_selection(app: &mut super::App) {
@@ -63,6 +143,7 @@ pub(crate) fn move_to(
         .map_or(before, |selection| selection.anchor);
     app.buffer.set_cursor(cursor);
     if extend {
+        app.selection.clear_status();
         app.selection.range = Some(Selection::new(anchor, app.buffer.cursor()));
     } else {
         app.selection.clear();
@@ -143,6 +224,7 @@ fn extend_with_arrow(app: &mut super::App, out: &mut dyn Write, code: KeyCode) -
         }
         _ => unreachable!("caller accepts only arrows"),
     }
+    app.selection.clear_status();
     app.selection.range = Some(Selection::new(anchor, app.buffer.cursor()));
     app.reveal_cursor();
     app.render(out)
@@ -155,6 +237,7 @@ fn select_all(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         col: app.buffer.line_char_count(last_row).unwrap_or(0),
     };
     app.buffer.set_cursor(end);
+    app.selection.clear_status();
     app.selection.range = Some(Selection::new(Cursor::default(), end));
     app.reveal_cursor();
     app.message = Some(if app.buffer.page_info().is_some() {
@@ -225,13 +308,24 @@ fn replace_or_insert(app: &mut super::App, out: &mut dyn Write, text: &str) -> i
 }
 
 fn capture_selection(app: &mut super::App, out: &mut dyn Write) -> io::Result<Option<bool>> {
+    if let Some(text) = app.selection.status_text().map(str::to_owned) {
+        return export_text(app, out, text);
+    }
     let Some(selection) = app.selection.active() else {
         return Ok(None);
     };
     let (start, end) = selection.ordered();
     let text = app.buffer.text_range(start, end)?;
+    export_text(app, out, text)
+}
+
+fn export_text(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    text: String,
+) -> io::Result<Option<bool>> {
     let exported = if text.len() <= OSC52_MAX_BYTES {
-        write!(out, "\x1b]52;c;{}\x07", base64(text.as_bytes()))?;
+        write!(out, "\x1b]52;c;{}\x1b\\", base64(text.as_bytes()))?;
         true
     } else {
         false

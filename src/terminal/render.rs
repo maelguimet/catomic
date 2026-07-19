@@ -71,6 +71,9 @@ pub(crate) struct RenderOptions<'a> {
     pub(crate) soft_wrap: bool,
     pub(crate) status_role: StatusRole,
     pub(crate) status_theme: StatusTheme,
+    pub(crate) status_filename: Option<(usize, usize)>,
+    pub(crate) status_selection: Option<(usize, usize)>,
+    pub(crate) window_title: Option<&'a str>,
     /// Optional second bottom row for touch actions.
     pub(crate) action_bar: Option<&'a str>,
 }
@@ -90,6 +93,9 @@ impl Default for RenderOptions<'_> {
             soft_wrap: false,
             status_role: StatusRole::Normal,
             status_theme: StatusTheme::default(),
+            status_filename: None,
+            status_selection: None,
+            window_title: None,
             action_bar: None,
         }
     }
@@ -161,8 +167,12 @@ pub(super) fn write_bottom_rows(
             status_row,
             viewport.width,
             message.unwrap_or(""),
-            options.status_role,
-            options.status_theme,
+            status_bar::StatusBarPresentation {
+                role: options.status_role,
+                theme: options.status_theme,
+                filename: options.status_filename,
+                selection: options.status_selection,
+            },
         )?;
     }
     if let Some(action_bar) = options.action_bar.filter(|_| viewport.height > 0) {
@@ -171,8 +181,12 @@ pub(super) fn write_bottom_rows(
             viewport.height,
             viewport.width,
             action_bar,
-            StatusRole::Info,
-            options.status_theme,
+            status_bar::StatusBarPresentation {
+                role: StatusRole::Info,
+                theme: options.status_theme,
+                filename: None,
+                selection: None,
+            },
         )?;
     }
     Ok(())
@@ -197,6 +211,7 @@ pub fn render_buffer<W: Write + ?Sized>(
 ) -> io::Result<()> {
     validate_frame_size(viewport)?;
     let mut frame = Vec::new();
+    super::title::write(&mut frame, options.window_title)?;
     style::write_cursor_color(&mut frame, options.theme)?;
     if options.soft_wrap {
         wrapped::compose_buffer(&mut frame, buffer, viewport, message, options)?;
@@ -220,6 +235,7 @@ pub(crate) fn render_buffer_with_ghost<W: Write + ?Sized>(
     };
     validate_frame_size(viewport)?;
     let mut frame = Vec::new();
+    super::title::write(&mut frame, options.window_title)?;
     style::write_cursor_color(&mut frame, options.theme)?;
     ghost::compose_buffer(&mut frame, buffer, viewport, message, options, ghost)?;
     out.write_all(&frame)?;

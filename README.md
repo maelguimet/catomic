@@ -100,7 +100,7 @@ troubleshooting, see the [complete user guide](docs/user-guide.md).
 | Previous / next buffer | `Alt+PageUp` / `Alt+PageDown` |
 | Undo | `Ctrl+Z` |
 | Redo | `Ctrl+Y` / `Ctrl+Shift+Z` |
-| Insert / overwrite typing | `Insert` (`INS` / `OVR`) |
+| Insert / overwrite typing | `Insert` |
 | Find / replace / goto line | `Ctrl+F` / `Ctrl+Shift+F` / `Ctrl+G` |
 | Previous / next paragraph | `Ctrl+Up` / `Ctrl+Down` |
 | Select / copy / cut / paste | `Ctrl+A` / `Ctrl+C` / `Ctrl+X` / `Ctrl+V` |

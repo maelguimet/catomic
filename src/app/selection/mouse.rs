@@ -1,7 +1,8 @@
 //! Purpose: map normalized terminal mouse events into cursor and selection actions.
 //! Owns: viewport coordinate clamping, drag lifetime, and double-click word expansion.
 //! Must not: enable terminal modes, mutate text, access clipboard, or inspect buffer internals.
-//! Invariants: status-row clicks are ignored; mapped cursors stay within the active page.
+//! Invariants: persistent status selection never maps into document coordinates;
+//!   mapped document cursors stay within the active page.
 //! Phase: 3-e mouse selection interaction.
 
 use std::io::{self, Write};
@@ -23,6 +24,9 @@ pub(crate) fn handle_mouse(
     event: MouseEvent,
 ) -> io::Result<()> {
     if super::super::mobile::handle_mouse(app, out, event)? {
+        return Ok(());
+    }
+    if handle_status_mouse(app, out, event)? {
         return Ok(());
     }
     super::super::autocomplete::invalidate(app);
@@ -54,6 +58,38 @@ pub(crate) fn handle_mouse(
             dispatch_gesture(app, out, event, MouseGesture::LeftUp, true)
         }
         _ => Ok(()),
+    }
+}
+
+fn handle_status_mouse(
+    app: &mut super::super::App,
+    out: &mut dyn Write,
+    event: MouseEvent,
+) -> io::Result<bool> {
+    let status_row = app.screen.visible_height();
+    let persistent_status_is_visible =
+        app.message.is_none() && app.screen.height > 0 && event.row as usize == status_row;
+    match event.kind {
+        MouseEventKind::Down(MouseButton::Left) if persistent_status_is_visible => {
+            let status = super::super::render::status_line(app);
+            app.selection
+                .begin_status_drag(status.text, event.column as usize);
+            app.render(out)?;
+            Ok(true)
+        }
+        MouseEventKind::Drag(MouseButton::Left) if app.selection.is_status_dragging() => {
+            app.selection
+                .update_status_drag(event.column as usize, false);
+            app.render(out)?;
+            Ok(true)
+        }
+        MouseEventKind::Up(MouseButton::Left) if app.selection.is_status_dragging() => {
+            app.selection
+                .update_status_drag(event.column as usize, true);
+            app.render(out)?;
+            Ok(true)
+        }
+        _ => Ok(false),
     }
 }
 
@@ -138,7 +174,7 @@ fn dispatch_action(
     match action {
         Action::MousePlaceCursor => {
             app.buffer.set_cursor(cursor);
-            app.selection.range = None;
+            app.selection.clear();
             app.selection.drag_anchor = Some(cursor);
             app.selection.last_click = Some((cursor, now));
         }

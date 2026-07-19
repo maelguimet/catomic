@@ -13,10 +13,13 @@ use crossterm::event::KeyboardEnhancementFlags;
 const ALTERNATE_SCREEN: u8 = 1 << 0;
 const KITTY_KEYBOARD_FLAGS: u8 = 1 << 1;
 const XTERM_EXTENDED_KEYS: u8 = 1 << 2;
+const TITLE_STACK: u8 = 1 << 3;
 const RESTORING: u8 = 1 << 7;
 
 const XTERM_EXTENDED_KEYS_ENABLE: &[u8] = b"\x1b[>4;2m";
 const XTERM_EXTENDED_KEYS_DISABLE: &[u8] = b"\x1b[>4;0m";
+const TITLE_STACK_PUSH: &[u8] = b"\x1b[22;0t";
+const TITLE_STACK_POP: &[u8] = b"\x1b[23;0t";
 
 pub(crate) const KEYBOARD_FLAGS_REQUEST: KeyboardEnhancementFlags =
     KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES;
@@ -65,6 +68,8 @@ impl TerminalGuard {
 
         execute!(out, terminal::EnterAlternateScreen)?;
         self.restorer.mark_active(ALTERNATE_SCREEN);
+        out.write_all(TITLE_STACK_PUSH)?;
+        self.restorer.mark_active(TITLE_STACK);
         execute!(
             out,
             event::PushKeyboardEnhancementFlags(KEYBOARD_FLAGS_REQUEST)
@@ -171,6 +176,14 @@ fn restore_output_modes<W: Write>(out: &mut W, active: u8) -> (u8, io::Result<()
     {
         match execute!(out, terminal::LeaveAlternateScreen) {
             Ok(()) => remaining &= !ALTERNATE_SCREEN,
+            Err(error) => {
+                first_error.get_or_insert(error);
+            }
+        }
+    }
+    if active & TITLE_STACK != 0 {
+        match out.write_all(TITLE_STACK_POP).and_then(|()| out.flush()) {
+            Ok(()) => remaining &= !TITLE_STACK,
             Err(error) => {
                 first_error.get_or_insert(error);
             }

@@ -1,5 +1,5 @@
 //! Purpose: verify App-level UTF-8 BOM and newline preservation across file lifecycles.
-//! Owns: open/save, Save As, reload, and status integration fixtures.
+//! Owns: open/save, Save As, reload, and format-state fixtures.
 //! Must not: use network, construct Project services, or bypass atomic save paths.
 //! Invariants: buffer text is LF-normalized while disk bytes retain the recorded format.
 //! Phase: post-v0.1 core usability.
@@ -45,7 +45,8 @@ fn open_edit_and_save_preserve_utf8_bom_and_crlf() {
 
     assert_eq!(fs::read(&path).unwrap(), b"\xEF\xBB\xBFXone\r\ntwo\r\n");
     let status = String::from_utf8(out).unwrap();
-    assert!(status.contains("utf-8-bom crlf"));
+    assert!(status.contains(path.file_name().unwrap().to_str().unwrap()));
+    assert!(!status.contains("utf-8-bom crlf"));
     let _ = fs::remove_file(path);
 }
 

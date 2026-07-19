@@ -64,6 +64,7 @@ pub(crate) struct Theme {
     pub(crate) selection: Style,
     pub(crate) line_number: Style,
     pub(crate) status: Style,
+    pub(crate) status_filename: Style,
     pub(crate) message: Style,
     pub(crate) status_warning: Style,
     pub(crate) status_prompt: Style,
@@ -146,6 +147,7 @@ fn apply_capabilities(mut theme: Theme, monochrome: bool, truecolor: bool) -> Th
         &mut theme.selection,
         &mut theme.line_number,
         &mut theme.status,
+        &mut theme.status_filename,
         &mut theme.message,
         &mut theme.status_warning,
         &mut theme.status_prompt,
@@ -190,7 +192,11 @@ fn named(name: &str) -> io::Result<Theme> {
         cursor: None,
         selection: Style::pair(black, Color::Ansi(6)),
         line_number: Style::fg(Color::Ansi(8)),
-        status: Style::pair(black, white),
+        status: Style {
+            dim: Some(true),
+            ..Style::fg(Color::Ansi(8))
+        },
+        status_filename: Style::fg(Color::Ansi(9)),
         message: Style::pair(black, Color::Ansi(14)),
         status_warning: Style {
             bold: Some(true),
@@ -282,6 +288,7 @@ fn apply_role(theme: &mut Theme, role: &str, value: &toml::Value) -> io::Result<
         "selection" => apply_style(&mut theme.selection, value, role)?,
         "line_number" => apply_style(&mut theme.line_number, value, role)?,
         "status" => apply_style(&mut theme.status, value, role)?,
+        "status_filename" => apply_style(&mut theme.status_filename, value, role)?,
         "message" => apply_style(&mut theme.message, value, role)?,
         "status_warning" => apply_style(&mut theme.status_warning, value, role)?,
         "status_prompt" => apply_style(&mut theme.status_prompt, value, role)?,

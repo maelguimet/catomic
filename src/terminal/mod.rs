@@ -9,6 +9,7 @@ pub mod render;
 pub mod screen;
 mod session;
 mod signal;
+mod title;
 
 pub(crate) use session::TerminalGuard;
 pub(crate) use signal::{install_process_handlers, take_resize_pending, termination_signal};

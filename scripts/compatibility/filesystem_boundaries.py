@@ -61,7 +61,11 @@ def read_only_refusal(binary: Path, root: Path):
     target.chmod(0o444)
     try:
         return _refused_save(
-            binary, root, target, "read-only-refusal", b"read-only file"
+            binary,
+            root,
+            target,
+            "read-only-refusal",
+            b"Save error: refusing to replace",
         )
     finally:
         target.chmod(0o644)
@@ -72,7 +76,13 @@ def hard_link_refusal(binary: Path, root: Path):
     peer = root / "hard-link-peer.txt"
     target.write_text("shared", encoding="utf-8")
     os.link(target, peer)
-    record = _refused_save(binary, root, target, "hard-link-refusal", b"hard links")
+    record = _refused_save(
+        binary,
+        root,
+        target,
+        "hard-link-refusal",
+        b"Save error: refusing atomic save",
+    )
     if target.stat().st_ino != peer.stat().st_ino or peer.read_bytes() != b"shared":
         raise PtyError("hard-link refusal changed the peer or inode identity")
     record["evidence"].append(f"both entries retained inode {target.stat().st_ino}")
@@ -89,7 +99,11 @@ def xattr_refusal(binary: Path, root: Path):
             "xattr-refusal", f"filesystem cannot set a user xattr: {error}"
         )
     record = _refused_save(
-        binary, root, target, "xattr-refusal", b"extended attributes or ACLs"
+        binary,
+        root,
+        target,
+        "xattr-refusal",
+        b"Save error: refusing atomic save",
     )
     if os.getxattr(target, b"user.catomic-compat") != b"preserve-me":
         raise PtyError("xattr refusal did not preserve the user attribute")
@@ -116,7 +130,11 @@ def acl_refusal(binary: Path, root: Path):
         )
     before_acl = _getfacl(target)
     record = _refused_save(
-        binary, root, target, "acl-refusal", b"extended attributes or ACLs"
+        binary,
+        root,
+        target,
+        "acl-refusal",
+        b"Save error: refusing atomic save",
     )
     if _getfacl(target) != before_acl:
         raise PtyError("ACL refusal changed the access ACL")

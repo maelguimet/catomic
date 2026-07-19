@@ -21,7 +21,15 @@ Use the live repository, not an old implementation plan:
 Do not copy issue ledgers or completed phase journals into this file. They go
 stale and become accidental gates.
 
+Keep this file durable. Do not pin phase numbers, release status, dependency
+lists, test counts, tool versions, or a copy of CI commands here. Reference the
+canonical file instead. Update this file only when a lasting engineering rule or
+source-of-truth relationship changes.
+
 ## Non-negotiable behavior
+
+The live product contract in `TODO.md` overrides this summary if the product is
+deliberately redesigned. Until then:
 
 - Plain mode performs no repository scan, background indexing, configured
   command or hook, model probing, credential read, or network request.
@@ -146,7 +154,7 @@ Every new dependency needs a concrete justification:
 1. why existing code or the standard library is insufficient;
 2. which mode uses it;
 3. whether it affects Plain startup or typing latency;
-4. Android/Termux, licensing, and security impact;
+4. supported-platform, licensing, and security impact;
 5. how it is tested and how it could later be removed.
 
 Do not add full-buffer clones, full-file scans, blocking work, subprocesses, or
@@ -159,20 +167,11 @@ Every behavior change needs regression coverage at the lowest useful level,
 plus higher-level evidence when it crosses input, editor state, rendering, PTY,
 filesystem, process, or network boundaries.
 
-Use current CI as the command authority. The normal baseline includes:
-
-```sh
-python3 scripts/check_markdown_links.py
-cargo fmt --all -- --check
-cargo clippy --all-targets --locked -- -D warnings
-cargo test --all-targets --locked
-cargo build --release --locked
-```
-
-CI also checks the declared minimum Rust version, Android/Termux compilation,
-release packaging, scripts, compatibility tooling, licenses, and advisories.
-Run the narrowest relevant checks while iterating, then proportionally broader
-checks before completion.
+Inspect the current workflows under `.github/workflows/`, `Cargo.toml`, and the
+relevant scripts before choosing commands. CI is the command authority; this
+file must not preserve a stale copy of it. Run the narrowest relevant checks
+while iterating, then the formatting, linting, tests, builds, documentation, and
+platform checks that current CI applies to the touched area.
 
 Use the dedicated Acceptance workflow for expensive or environment-sensitive
 checks. For terminal interaction bugs, automated state tests may need a focused

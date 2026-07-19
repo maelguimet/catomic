@@ -143,7 +143,7 @@ fn prompt_local_action_remap_reaches_the_existing_cancel_path() {
         .unwrap();
 
     assert!(!super::super::command_prompt::is_active(&app));
-    assert_eq!(app.message.as_deref(), Some("Prompt cancelled."));
+    assert!(app.message.is_none());
 }
 
 #[test]

@@ -244,14 +244,14 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
         "select-word-left",
         "Select one word left",
         E,
-        ["ctrl+shift+left"]
+        ["ctrl+shift+left", "alt+shift+left"]
     ),
     key!(
         SelectWordRight,
         "select-word-right",
         "Select one word right",
         E,
-        ["ctrl+shift+right"]
+        ["ctrl+shift+right", "alt+shift+right"]
     ),
     key!(
         ParagraphPrevious,

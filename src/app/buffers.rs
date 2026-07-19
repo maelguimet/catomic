@@ -393,6 +393,38 @@ mod tests {
     }
 
     #[test]
+    fn terminal_safe_word_selection_fallback_stays_in_the_active_buffer() {
+        let first = temp_file("selection_first", "one two");
+        let second = temp_file("selection_second", "three four");
+        let paths = vec![
+            first.to_string_lossy().into_owned(),
+            second.to_string_lossy().into_owned(),
+        ];
+        let mut app =
+            App::new_with_paths_and_big_file_config(&paths, BigFileConfig::default()).unwrap();
+        let mut out = Vec::new();
+
+        app.handle_key_with(
+            &mut out,
+            key(KeyCode::Right, KeyModifiers::ALT | KeyModifiers::SHIFT),
+        )
+        .unwrap();
+
+        assert_eq!(app.active_buffer_index, 0);
+        assert_eq!(app.buffer.to_string(), "one two");
+        assert_eq!(
+            app.selection.active().unwrap().ordered(),
+            (
+                crate::buffer::Cursor { row: 0, col: 0 },
+                crate::buffer::Cursor { row: 0, col: 4 },
+            )
+        );
+
+        fs::remove_file(first).unwrap();
+        fs::remove_file(second).unwrap();
+    }
+
+    #[test]
     fn quit_guard_includes_a_dirty_inactive_buffer() {
         let first = temp_file("quit_first", "alpha");
         let second = temp_file("quit_second", "beta");

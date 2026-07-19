@@ -215,7 +215,7 @@ fn perf_harness_open_render_smoke_on_small_generated_no_panic() {
 #[test]
 fn render_uses_status_line_when_message_none_and_message_overrides() {
     // Cheap: uses tiny generated file (no 10 MiB). Proves:
-    // - no message => bottom row contains status (plain / saved / size or tier)
+    // - no message => bottom row contains the active file path
     // - message present => that text wins on bottom (overrides status)
     let size: u64 = 256;
     let p = temp_perf_path("status_vs_msg_256.txt");
@@ -229,8 +229,7 @@ fn render_uses_status_line_when_message_none_and_message_overrides() {
     let mut out: Vec<u8> = Vec::new();
     app.render(&mut out).expect("render status");
     let s = String::from_utf8_lossy(&out);
-    let has_status_marker =
-        s.contains("plain") || s.contains("saved") || s.contains("small") || s.contains("B ");
+    let has_status_marker = s.contains(p.file_name().unwrap().to_str().unwrap());
     assert!(
         has_status_marker,
         "expected status line when no message, got bottom: last lines ~{}",
@@ -242,11 +241,9 @@ fn render_uses_status_line_when_message_none_and_message_overrides() {
             .rev()
             .collect::<String>()
     );
-    // size must be labeled as disk metadata, not implied live buffer size
     assert!(
-        s.contains("disk "),
-        "status size must be labeled as disk/on-disk metadata when present: {}",
-        s
+        !s.contains("disk "),
+        "status should contain only useful identity: {s}"
     );
 
     // Force message: must appear (overrides)
@@ -265,7 +262,7 @@ fn render_uses_status_line_when_message_none_and_message_overrides() {
     app.render(&mut out3).expect("render status again");
     let s3 = String::from_utf8_lossy(&out3);
     assert!(
-        s3.contains("plain") || s3.contains("saved"),
+        s3.contains(p.file_name().unwrap().to_str().unwrap()),
         "status should return after clearing message"
     );
 

@@ -13,7 +13,15 @@ fn defaults_and_named_schemes_are_accessible() {
         default.selection,
         Style::pair(Color::Ansi(0), Color::Ansi(6))
     );
-    assert_eq!(default.status, Style::pair(Color::Ansi(0), Color::Ansi(7)));
+    assert_eq!(
+        default.status,
+        Style {
+            fg: Some(Color::Ansi(8)),
+            dim: Some(true),
+            ..Style::default()
+        }
+    );
+    assert_eq!(default.status_filename, Style::fg(Color::Ansi(9)));
     assert_eq!(
         default.message,
         Style::pair(Color::Ansi(0), Color::Ansi(14))

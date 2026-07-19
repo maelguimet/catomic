@@ -381,12 +381,21 @@ mod tests {
         app.handle_key_with(&mut out, key(KeyCode::PageDown, KeyModifiers::ALT))
             .unwrap();
         assert_eq!(app.buffer.to_string(), "beta");
-        assert!(String::from_utf8_lossy(&out).contains("buffer 2/2"));
+        assert!(String::from_utf8_lossy(&out).contains("file 2/2"));
+        assert!(String::from_utf8_lossy(&out).contains(&format!(
+            "\x1b]0;{}\x07",
+            second.file_name().unwrap().to_string_lossy()
+        )));
 
+        out.clear();
         app.handle_key_with(&mut out, key(KeyCode::PageUp, KeyModifiers::ALT))
             .unwrap();
         assert_eq!(app.buffer.to_string(), "alpha");
         assert_eq!(app.active_buffer_index, 0);
+        assert!(String::from_utf8_lossy(&out).contains(&format!(
+            "\x1b]0;{}\x07",
+            first.file_name().unwrap().to_string_lossy()
+        )));
 
         fs::remove_file(first).unwrap();
         fs::remove_file(second).unwrap();

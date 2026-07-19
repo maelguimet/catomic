@@ -130,7 +130,7 @@ fn ordinary_click_clears_an_existing_selection() {
 }
 
 #[test]
-fn complete_status_row_click_preserves_cursor_and_selection() {
+fn complete_status_row_click_preserves_cursor_but_moves_selection_to_chrome() {
     let mut app = app_with("zero\none");
     app.buffer.set_cursor(Cursor { row: 1, col: 2 });
     app.selection.range = Some(Selection::new(
@@ -141,8 +141,6 @@ fn complete_status_row_click_preserves_cursor_and_selection() {
     click(&mut app, 5, 23);
 
     assert_eq!(app.buffer.cursor(), Cursor { row: 1, col: 2 });
-    assert_eq!(
-        app.selection.active().unwrap().ordered(),
-        (Cursor { row: 0, col: 1 }, Cursor { row: 1, col: 2 })
-    );
+    assert!(app.selection.active().is_none());
+    assert!(app.selection.status.is_none());
 }

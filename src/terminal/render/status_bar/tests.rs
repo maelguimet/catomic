@@ -1,4 +1,4 @@
-//! Purpose: verify semantic status styles, full-row painting, clipping, and tiny viewports.
+//! Purpose: verify quiet identity styles, transient row painting, clipping, and tiny viewports.
 //! Owns: deterministic color/monochrome frame assertions for normal and wrapped rendering.
 //! Must not: depend on ambient terminal capabilities, launch a PTY, touch disk, or mutate config.
 //! Invariants: status tests use explicit themes and assert resets after every styled row.
@@ -48,7 +48,7 @@ fn terminal_capability_selection_has_a_monochrome_inverse_fallback() {
 }
 
 #[test]
-fn monochrome_roles_retain_a_persistent_visual_boundary() {
+fn monochrome_messages_keep_a_boundary_while_normal_status_stays_quiet() {
     for role in [
         StatusRole::Normal,
         StatusRole::Info,
@@ -57,17 +57,33 @@ fn monochrome_roles_retain_a_persistent_visual_boundary() {
         StatusRole::Prompt,
     ] {
         let mut out = Vec::new();
-        write_status_bar(&mut out, 3, 4, "ok", role, StatusTheme::monochrome()).unwrap();
+        write_status_bar(
+            &mut out,
+            3,
+            4,
+            "ok",
+            role,
+            StatusTheme::monochrome(),
+            None,
+            None,
+        )
+        .unwrap();
         let rendered = String::from_utf8(out).unwrap();
-        assert!(rendered.contains("\x1b[7m"), "role {role:?}: {rendered:?}");
-        assert!(rendered.ends_with("ok  \x1b[0m"));
+        if role == StatusRole::Normal {
+            assert!(rendered.contains("\x1b[2m"), "role {role:?}: {rendered:?}");
+            assert!(!rendered.contains("\x1b[7m"), "role {role:?}: {rendered:?}");
+            assert!(rendered.ends_with("ok\x1b[0m"));
+        } else {
+            assert!(rendered.contains("\x1b[7m"), "role {role:?}: {rendered:?}");
+            assert!(rendered.ends_with("ok  \x1b[0m"));
+        }
     }
 }
 
 #[test]
 fn default_semantic_roles_use_distinct_basic_color_pairs() {
     let cases = [
-        (StatusRole::Normal, "\x1b[30m\x1b[47m"),
+        (StatusRole::Normal, "\x1b[90m\x1b[2m"),
         (StatusRole::Info, "\x1b[30m\x1b[106m"),
         (StatusRole::Warning, "\x1b[30m\x1b[103m\x1b[1m"),
         (StatusRole::Error, "\x1b[97m\x1b[41m\x1b[1m"),
@@ -75,7 +91,17 @@ fn default_semantic_roles_use_distinct_basic_color_pairs() {
     ];
     for (role, style) in cases {
         let mut out = Vec::new();
-        write_status_bar(&mut out, 2, 2, "ok", role, StatusTheme::default()).unwrap();
+        write_status_bar(
+            &mut out,
+            2,
+            2,
+            "ok",
+            role,
+            StatusTheme::default(),
+            None,
+            None,
+        )
+        .unwrap();
         let rendered = String::from_utf8(out).unwrap();
         assert!(rendered.contains(style), "role {role:?}: {rendered:?}");
     }
@@ -90,7 +116,7 @@ fn custom_semantic_style_is_used_without_changing_bar_logic() {
         false,
     );
     let mut out = Vec::new();
-    write_status_bar(&mut out, 2, 3, "bad", StatusRole::Error, theme).unwrap();
+    write_status_bar(&mut out, 2, 3, "bad", StatusRole::Error, theme, None, None).unwrap();
     let rendered = String::from_utf8(out).unwrap();
 
     assert!(rendered.contains("\x1b[30m\x1b[105m"));
@@ -107,6 +133,8 @@ fn narrow_unicode_status_is_cell_clipped_and_terminal_safe() {
         "猫x\x1b[2Jtail",
         StatusRole::Warning,
         StatusTheme::monochrome(),
+        None,
+        None,
     )
     .unwrap();
     let rendered = String::from_utf8(out).unwrap();
@@ -129,7 +157,7 @@ fn middle_clipping_keeps_prompt_context_and_actionable_tail() {
 }
 
 #[test]
-fn normal_status_paints_full_width_and_resets_before_cursor_placement() {
+fn normal_status_clears_the_row_without_painting_a_full_width_background() {
     let buffer = SimpleBuffer::from_text("text");
     let mut out = Vec::new();
     render_buffer(
@@ -142,8 +170,32 @@ fn normal_status_paints_full_width_and_resets_before_cursor_placement() {
     .unwrap();
 
     let rendered = String::from_utf8(out).unwrap();
-    assert!(rendered.contains("\x1b[2;1H\x1b[7m\x1b[2Kok    \x1b[0m"));
+    assert!(rendered.contains("\x1b[2;1H\x1b[2K\x1b[0m\x1b[2mok\x1b[0m"));
+    assert!(!rendered.contains("ok    "));
     assert!(rendered.ends_with("\x1b[0m\x1b[0 q\x1b[1;1H\x1b[?25h"));
+}
+
+#[test]
+fn persistent_path_uses_muted_parent_red_filename_and_selection_reverse_video() {
+    let mut out = Vec::new();
+    let text = "=^..^=  /work/note.txt";
+    write_status_bar(
+        &mut out,
+        2,
+        40,
+        text,
+        StatusRole::Normal,
+        StatusTheme::default(),
+        Some((14, 22)),
+        Some((8, 22)),
+    )
+    .unwrap();
+    let rendered = String::from_utf8(out).unwrap();
+
+    assert!(rendered.contains("\x1b[90m\x1b[2m=^..^=  "));
+    assert!(rendered.contains("\x1b[90m\x1b[7m/work/"));
+    assert!(rendered.contains("\x1b[91m\x1b[7mnote.txt"));
+    assert!(!rendered.contains("note.txt                  "));
 }
 
 #[test]
@@ -266,6 +318,6 @@ fn width_zero_clears_rows_without_emitting_content_or_style_leaks() {
     assert!(!rendered.contains("abc") && !rendered.contains("def"));
     assert!(rendered.contains("\x1b[1;1H\x1b[K"));
     assert!(rendered.contains("\x1b[2;1H\x1b[K"));
-    assert!(rendered.contains("\x1b[3;1H\x1b[7m\x1b[2K\x1b[0m"));
+    assert!(rendered.contains("\x1b[3;1H\x1b[2K\x1b[0m"));
     assert!(rendered.ends_with("\x1b[0m\x1b[0 q\x1b[?25l\x1b[1;1H"));
 }

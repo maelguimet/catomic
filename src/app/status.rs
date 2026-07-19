@@ -1,161 +1,129 @@
-//! Persistent status text and transient semantic role selection.
+//! Persistent file identity and transient semantic role selection.
 //!
-//! Purpose: when no transient app.message is present, compute a single-line
-//!   status string (mode, path, dirty, size, tier, page, buffer position) to show
-//!   on the reserved bottom row. Classify transient UI state for terminal styling.
-//! Owns: pure persistent formatting and normal/info/warning/error/prompt role selection.
+//! Purpose: show a compact path when no transient app.message is present and
+//!   classify transient UI state for terminal styling.
+//! Owns: pure path formatting, filename spans, and semantic status role selection.
 //! Must not: mutate state; perform IO; emit terminal escapes;
 //!   construct watchers or Large-file policy changes; touch buffer content.
-//! Invariants: plain/project labels stable; [untitled] for no path; utf-8 is
-//!   always accurate because open rejects invalid UTF-8; size uses
-//!   existing format_file_size; oversized tiers get a marker; active page byte
-//!   ranges come only from Buffer metadata; never called for content decisions.
+//! Invariants: [untitled] represents no path; the basename span is a valid UTF-8
+//!   boundary; output is terminal-safe and never wider than the supplied width.
 //! Phase: post-v0.1 semantic status/message bar.
 
 use std::path::Path;
 
 use crate::buffer::PageInfo;
-use crate::file::size::{file_size_tier_label, format_file_size, FileSizeTier};
-use crate::file::text_format::TextFormat;
+use crate::editor::text_layout;
 use crate::terminal::render::StatusRole;
 
-#[derive(Clone, Copy)]
-pub(crate) struct StatusFile<'a> {
-    pub(crate) path: Option<&'a Path>,
-    pub(crate) dirty: bool,
-    pub(crate) size_bytes: Option<u64>,
-    pub(crate) size_tier: Option<FileSizeTier>,
-    pub(crate) text_format: TextFormat,
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct StatusLine {
+    pub(crate) text: String,
+    pub(crate) filename: (usize, usize),
 }
 
-/// Produce the bottom status string from current App state pieces.
-/// Called by App only when message is None (messages take precedence and are
-/// passed through as-is).
-///
-/// Format sketch (stable enough for tests): "plain [untitled] saved utf-8"
-/// or "plain foo.txt modified utf-8 disk 10.0 MiB large large-file mode"
-/// Size is always labeled as last-known on-disk metadata (fs::metadata or post-save
-/// fallback), never a live buffer content scan. Untitled/no-path cases have no disk size.
 pub(crate) fn format_status_line(
-    is_plain: bool,
-    overwrite: bool,
-    file: StatusFile<'_>,
+    path: Option<&Path>,
     page: Option<PageInfo>,
     buffer_position: Option<(usize, usize)>,
-) -> String {
-    let mode = if is_plain { "plain" } else { "project" };
-    let name = match file
-        .path
-        .and_then(|p| p.file_name())
-        .map(|s| s.to_string_lossy().into_owned())
-    {
-        Some(n) if !n.is_empty() => n,
-        _ => "[untitled]".to_string(),
-    };
-    let dirty_label = if file.dirty { "modified" } else { "saved" };
-
-    let typing_mode = if overwrite { "OVR" } else { "INS" };
-    let mut out = format!(
-        "{mode} {typing_mode} {name} {dirty_label} {}",
-        file.text_format.label()
-    );
-
-    if let Some(b) = file.size_bytes {
-        out.push(' ');
-        out.push_str("disk ");
-        out.push_str(&format_file_size(b));
-    }
-    if let Some(t) = file.size_tier {
-        out.push(' ');
-        out.push_str(file_size_tier_label(t));
-        if matches!(
-            t,
-            FileSizeTier::Large | FileSizeTier::Huge | FileSizeTier::Extreme
-        ) {
-            out.push_str(" large-file mode");
-        }
-    }
-    if let Some(page) = page {
-        out.push_str(&format!(
-            " page {} bytes {}-{} of {}",
-            page.page_number, page.start_byte, page.end_byte, page.total_bytes
-        ));
-    }
-    if let Some((active, count)) = buffer_position {
-        out.push_str(&format!(" buffer {active}/{count}"));
-    }
-    out
-}
-
-/// Preserve the state needed to edit safely when a portrait terminal cannot
-/// show the full disk metadata status. Names are tail-clipped on grapheme/cell
-/// boundaries; dirty, typing, buffer, and page state are never displaced by it.
-pub(crate) fn format_status_line_for_width(
-    is_plain: bool,
-    overwrite: bool,
-    file: StatusFile<'_>,
-    page: Option<PageInfo>,
-    buffer_position: Option<(usize, usize)>,
+    activity: Option<&str>,
+    cat_status: bool,
     width: usize,
-) -> String {
-    let full = format_status_line(is_plain, overwrite, file, page, buffer_position);
-    if crate::editor::text_layout::cell_width_from(&full, 0) <= width {
-        return full;
+) -> StatusLine {
+    if width == 0 {
+        return StatusLine {
+            text: String::new(),
+            filename: (0, 0),
+        };
     }
-
-    let mode = if is_plain { "plain" } else { "project" };
-    let typing = if overwrite { "OVR" } else { "INS" };
-    let dirty = if file.dirty { "modified" } else { "saved" };
-    let name = status_name(file.path);
-    let suffix = compact_position_suffix(page, buffer_position);
-    let fixed = format!("{mode} {typing}  {dirty}{suffix}");
-    let fixed_cells = crate::editor::text_layout::cell_width_from(&fixed, 0);
-    if width >= 40 && fixed_cells < width {
-        let name = crate::editor::text_layout::terminal_safe_tail_clipped(
-            &name,
-            width.saturating_sub(fixed_cells),
-        );
-        return format!("{mode} {typing} {name} {dirty}{suffix}");
+    let (parent, mut filename) = status_path_parts(path);
+    let mut metadata = position_suffix(page, buffer_position);
+    let activity = activity
+        .map(|activity| format!("  {activity}"))
+        .unwrap_or_default();
+    if fits(&filename, &metadata, &activity, width) {
+        metadata.push_str(&activity);
     }
-
-    let compact_mode = if is_plain { 'P' } else { 'R' };
-    let changed = if file.dirty { '*' } else { '-' };
-    let compact_typing = if overwrite { 'O' } else { 'I' };
-    let prefix = format!("{compact_mode}{changed}{compact_typing} ");
-    let fixed_cells = crate::editor::text_layout::cell_width_from(&prefix, 0)
-        .saturating_add(crate::editor::text_layout::cell_width_from(&suffix, 0));
-    if fixed_cells >= width {
-        return crate::editor::text_layout::terminal_safe_clipped(
-            &format!("{prefix}{suffix}"),
-            width,
-        );
+    if text_layout::cell_width_from(&filename, 0)
+        .saturating_add(text_layout::cell_width_from(&metadata, 0))
+        > width
+    {
+        metadata.clear();
     }
-    let name = crate::editor::text_layout::terminal_safe_tail_clipped(
-        &name,
-        width.saturating_sub(fixed_cells),
-    );
-    format!("{prefix}{name}{suffix}")
+    let metadata_cells = text_layout::cell_width_from(&metadata, 0);
+    filename =
+        text_layout::terminal_safe_tail_clipped(&filename, width.saturating_sub(metadata_cells));
+    let filename_cells = text_layout::cell_width_from(&filename, 0);
+    let brand = if cat_status { "=^..^=  " } else { "" };
+    let brand = (text_layout::cell_width_from(brand, 0)
+        .saturating_add(text_layout::cell_width_from(&parent, 0))
+        .saturating_add(filename_cells)
+        .saturating_add(metadata_cells)
+        <= width)
+        .then_some(brand)
+        .unwrap_or("");
+    let parent_budget = width
+        .saturating_sub(text_layout::cell_width_from(brand, 0))
+        .saturating_sub(filename_cells)
+        .saturating_sub(metadata_cells);
+    let parent = text_layout::terminal_safe_tail_clipped(&parent, parent_budget);
+    let mut text = format!("{brand}{parent}");
+    let start = text.len();
+    text.push_str(&filename);
+    let end = text.len();
+    text.push_str(&metadata);
+    StatusLine {
+        text,
+        filename: (start, end),
+    }
 }
 
-fn status_name(path: Option<&Path>) -> String {
-    path.and_then(Path::file_name)
-        .map(|name| name.to_string_lossy().into_owned())
-        .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| "[untitled]".to_string())
+fn fits(filename: &str, metadata: &str, activity: &str, width: usize) -> bool {
+    text_layout::cell_width_from(filename, 0)
+        .saturating_add(text_layout::cell_width_from(metadata, 0))
+        .saturating_add(text_layout::cell_width_from(activity, 0))
+        <= width
 }
 
-fn compact_position_suffix(
-    page: Option<PageInfo>,
-    buffer_position: Option<(usize, usize)>,
-) -> String {
+fn status_path_parts(path: Option<&Path>) -> (String, String) {
+    let Some((path, filename)) = path
+        .and_then(|path| path.file_name().map(|filename| (path, filename)))
+        .filter(|(_, filename)| !filename.is_empty())
+    else {
+        return (String::new(), "[untitled]".to_string());
+    };
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .map(|parent| {
+            let mut parent = parent.to_string_lossy().into_owned();
+            if !parent.ends_with(std::path::MAIN_SEPARATOR) {
+                parent.push(std::path::MAIN_SEPARATOR);
+            }
+            text_layout::terminal_safe_text(&parent)
+        })
+        .unwrap_or_default();
+    (
+        parent,
+        text_layout::terminal_safe_text(&filename.to_string_lossy()),
+    )
+}
+
+fn position_suffix(page: Option<PageInfo>, buffer_position: Option<(usize, usize)>) -> String {
     let mut suffix = String::new();
     if let Some((active, count)) = buffer_position {
-        suffix.push_str(&format!(" B{active}/{count}"));
+        suffix.push_str(&format!("  file {active}/{count}"));
     }
     if let Some(page) = page {
-        suffix.push_str(&format!(" P{}", page.page_number));
+        suffix.push_str(&format!("  page {}", page.page_number));
     }
     suffix
+}
+
+pub(crate) fn title(path: Option<&Path>) -> String {
+    path.and_then(Path::file_name)
+        .map(|name| text_layout::terminal_safe_text(&name.to_string_lossy()))
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "untitled".to_string())
 }
 
 pub(crate) fn format_prompt(label: &str, text: &str, width: usize) -> String {
@@ -169,27 +137,6 @@ pub(crate) fn format_prompt(label: &str, text: &str, width: usize) -> String {
         width.saturating_sub(prefix_cells),
     );
     format!("{prefix}{tail}")
-}
-
-pub(crate) fn decorate_status_line(status: String, cat_status: bool) -> String {
-    if cat_status {
-        format!("=^..^= {status}")
-    } else {
-        status
-    }
-}
-
-pub(crate) fn decorate_status_line_for_width(
-    status: String,
-    cat_status: bool,
-    width: usize,
-) -> String {
-    let decorated = decorate_status_line(status.clone(), cat_status);
-    if crate::editor::text_layout::cell_width_from(&decorated, 0) <= width {
-        decorated
-    } else {
-        status
-    }
 }
 
 pub(crate) fn transient_role(app: &super::App, message: &str) -> StatusRole {
@@ -260,193 +207,115 @@ fn message_is_warning(message: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
-    fn p(name: &str) -> Option<PathBuf> {
-        Some(PathBuf::from(name))
-    }
+    #[test]
+    fn persistent_status_is_only_cat_and_full_path() {
+        let status = format_status_line(
+            Some(Path::new("/work/cats/notes.txt")),
+            None,
+            None,
+            None,
+            true,
+            80,
+        );
 
-    fn file(
-        path: Option<&Path>,
-        dirty: bool,
-        size_bytes: Option<u64>,
-        size_tier: Option<FileSizeTier>,
-    ) -> StatusFile<'_> {
-        StatusFile {
-            path,
-            dirty,
-            size_bytes,
-            size_tier,
-            text_format: TextFormat::default(),
+        assert_eq!(status.text, "=^..^=  /work/cats/notes.txt");
+        assert_eq!(
+            &status.text[status.filename.0..status.filename.1],
+            "notes.txt"
+        );
+        for slop in [
+            "ac off", "plain", "INS", "OVR", "saved", "modified", "utf-8", "lf",
+        ] {
+            assert!(!status.text.contains(slop), "status: {}", status.text);
         }
     }
 
     #[test]
-    fn untitled_clean_status_contains_plain_untitled_saved() {
-        let s = format_status_line(true, false, file(None, false, None, None), None, None);
-        assert!(s.contains("plain"), "status: {}", s);
-        assert!(s.contains("[untitled]"), "status: {}", s);
-        assert!(s.contains("saved"), "status: {}", s);
-        assert!(s.contains("utf-8"), "status must show encoding: {s}");
-        // no size or tier or disk label
-        assert!(!s.contains("large-file"));
-        assert!(!s.contains("disk "));
+    fn untitled_and_cat_disabled_are_compact() {
+        let with_cat = format_status_line(None, None, None, None, true, 80);
+        let without_cat = format_status_line(None, None, None, None, false, 80);
+
+        assert_eq!(with_cat.text, "=^..^=  [untitled]");
+        assert_eq!(without_cat.text, "[untitled]");
+        assert_eq!(
+            &without_cat.text[without_cat.filename.0..without_cat.filename.1],
+            "[untitled]"
+        );
     }
 
     #[test]
-    fn after_edit_shows_modified() {
-        let s = format_status_line(
+    fn narrow_status_clips_parent_before_unicode_filename() {
+        let status = format_status_line(
+            Some(Path::new("/one/two/three/猫-notes.txt")),
+            None,
+            None,
+            None,
             true,
-            false,
-            file(
-                p("notes.txt").as_deref(),
-                true,
-                Some(123),
-                Some(FileSizeTier::Small),
-            ),
-            None,
-            None,
+            20,
         );
-        assert!(s.contains("modified"), "status: {}", s);
-        assert!(s.contains("notes.txt"), "status: {}", s);
-        assert!(
-            s.contains("disk "),
-            "dirty small still shows disk size label: {}",
-            s
+
+        assert_eq!(
+            &status.text[status.filename.0..status.filename.1],
+            "猫-notes.txt"
         );
+        assert!(status.text.starts_with('…'), "status: {}", status.text);
+        assert!(text_layout::cell_width_from(&status.text, 0) <= 20);
     }
 
     #[test]
-    fn small_file_shows_size_and_tier() {
-        let s = format_status_line(
-            true,
-            false,
-            file(
-                p("small.txt").as_deref(),
-                false,
-                Some(4096),
-                Some(FileSizeTier::Small),
-            ),
-            None,
-            None,
-        );
-        assert!(
-            s.contains("4.0 KiB") || s.contains("4 KiB") || s.contains("4096"),
-            "status: {}",
-            s
-        );
-        assert!(s.contains("small"), "status: {}", s);
-        assert!(
-            s.contains("disk "),
-            "size label must indicate on-disk metadata: {}",
-            s
-        );
-    }
-
-    #[test]
-    fn large_tier_shows_large_file_mode_marker() {
-        let s = format_status_line(
-            true,
-            false,
-            file(
-                p("big.log").as_deref(),
-                false,
-                Some(10 * 1024 * 1024 + 1),
-                Some(FileSizeTier::Large),
-            ),
-            None,
-            None,
-        );
-        assert!(
-            s.contains("large-file mode"),
-            "large status must include marker: {}",
-            s
-        );
-        assert!(s.contains("large"), "status: {}", s);
-        assert!(
-            s.contains("disk "),
-            "large size must be labeled disk metadata: {}",
-            s
-        );
-    }
-
-    #[test]
-    fn huge_includes_marker_and_size() {
-        let s = format_status_line(
-            true,
-            false,
-            file(
-                p("/tmp/huge.bin").as_deref(),
-                true,
-                Some(200 * 1024 * 1024),
-                Some(FileSizeTier::Huge),
-            ),
-            None,
-            None,
-        );
-        assert!(
-            s.contains("large-file mode"),
-            "huge also gets marker: {}",
-            s
-        );
-        assert!(s.contains("MiB"), "size label: {}", s);
-        assert!(
-            s.contains("disk "),
-            "huge size must be labeled disk metadata: {}",
-            s
-        );
-    }
-
-    #[test]
-    fn paged_status_includes_page_number_and_byte_range() {
+    fn exceptional_navigation_context_stays_human_readable() {
         let page = PageInfo {
             page_number: 3,
-            start_byte: 400,
-            end_byte: 600,
-            total_bytes: 1_000,
+            start_byte: 0,
+            end_byte: 10,
+            total_bytes: 20,
             has_previous: true,
             has_next: true,
         };
-
         let status = format_status_line(
-            true,
-            false,
-            file(
-                p("huge.log").as_deref(),
-                false,
-                Some(1_000),
-                Some(FileSizeTier::Huge),
-            ),
+            Some(Path::new("huge.log")),
             Some(page),
+            Some((2, 4)),
             None,
-        );
-
-        assert!(status.contains("page 3"), "status: {status}");
-        assert!(status.contains("bytes 400-600 of 1000"), "status: {status}");
-    }
-
-    #[test]
-    fn multiple_buffers_include_active_position() {
-        let status = format_status_line(
-            true,
             false,
-            file(None, false, None, None),
-            None,
-            Some((2, 3)),
+            80,
         );
 
-        assert!(status.contains("buffer 2/3"), "status: {status}");
+        assert_eq!(status.text, "huge.log  file 2/4  page 3");
     }
 
     #[test]
-    fn cat_status_can_be_disabled_without_changing_core_fields() {
-        let status = format_status_line(true, false, file(None, false, None, None), None, None);
-
-        assert_eq!(decorate_status_line(status.clone(), false), status);
-        assert_eq!(
-            decorate_status_line(status, true),
-            "=^..^= plain INS [untitled] saved utf-8 lf"
+    fn active_autocomplete_is_shown_without_an_idle_ac_label() {
+        let status = format_status_line(
+            Some(Path::new("notes.txt")),
+            None,
+            None,
+            Some("autocomplete…"),
+            false,
+            80,
         );
+
+        assert_eq!(status.text, "notes.txt  autocomplete…");
+    }
+
+    #[test]
+    fn path_and_title_controls_render_inertly() {
+        let status = format_status_line(
+            Some(Path::new("dir\x1b]0;bad\x07.txt")),
+            None,
+            None,
+            None,
+            false,
+            80,
+        );
+
+        assert_eq!(status.text, "dir␛]0;bad␇.txt");
+        assert_eq!(
+            title(Some(Path::new("dir\x1b]0;bad\x07.txt"))),
+            "dir␛]0;bad␇.txt"
+        );
+        assert_eq!(title(None), "untitled");
     }
 
     #[test]
@@ -473,44 +342,6 @@ mod tests {
         assert_eq!(
             transient_role(&app, app.message.as_deref().unwrap()),
             crate::terminal::render::StatusRole::Prompt
-        );
-    }
-
-    #[test]
-    fn typing_mode_indicator_is_always_present() {
-        let insert = format_status_line(true, false, file(None, false, None, None), None, None);
-        let overwrite = format_status_line(true, true, file(None, false, None, None), None, None);
-
-        assert!(insert.contains(" INS "), "status: {insert}");
-        assert!(overwrite.contains(" OVR "), "status: {overwrite}");
-    }
-
-    #[test]
-    fn portrait_status_keeps_dirty_typing_buffer_page_and_filename_tail() {
-        let page = PageInfo {
-            page_number: 3,
-            start_byte: 0,
-            end_byte: 10,
-            total_bytes: 20,
-            has_previous: true,
-            has_next: true,
-        };
-        let path = p("very-long-猫-notes.txt");
-        let status = format_status_line_for_width(
-            true,
-            true,
-            file(path.as_deref(), true, Some(20), Some(FileSizeTier::Small)),
-            Some(page),
-            Some((2, 4)),
-            20,
-        );
-
-        assert!(status.starts_with("P*O "), "status: {status}");
-        assert!(status.ends_with(" B2/4 P3"), "status: {status}");
-        assert!(crate::editor::text_layout::cell_width(&status) <= 20);
-        assert_eq!(
-            decorate_status_line_for_width(status.clone(), true, 20),
-            status
         );
     }
 

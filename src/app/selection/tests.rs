@@ -33,6 +33,7 @@ fn shift_arrows_select_and_ctrl_c_populates_both_clipboards() {
 
     send(&mut app, &mut out, KeyCode::Right, KeyModifiers::SHIFT);
     send(&mut app, &mut out, KeyCode::Right, KeyModifiers::SHIFT);
+    assert!(!String::from_utf8_lossy(&out).contains("\x1b]52;"));
     send(
         &mut app,
         &mut out,
@@ -47,7 +48,7 @@ fn shift_arrows_select_and_ctrl_c_populates_both_clipboards() {
     );
     assert!(String::from_utf8(out)
         .unwrap()
-        .contains("\x1b]52;c;YWI=\x07"));
+        .contains("\x1b]52;c;YWI=\x1b\\"));
 }
 
 #[test]

@@ -216,7 +216,7 @@ fn render_buffer_clears_each_row_without_full_screen_clear() {
     for row in 1..=3 {
         assert!(s.contains(&format!("\x1b[{row};1H\x1b[K")));
     }
-    assert!(s.contains("\x1b[4;1H\x1b[30m\x1b[47m\x1b[2Kstatus"));
+    assert!(s.contains("\x1b[4;1H\x1b[2K\x1b[0m\x1b[90m\x1b[2mstatus"));
 }
 
 #[test]

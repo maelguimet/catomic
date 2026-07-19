@@ -5,7 +5,7 @@
 //! Phase: 3-e mouse selection interaction.
 
 use super::*;
-use crossterm::event::KeyModifiers;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 mod mapping;
 mod views;
@@ -126,7 +126,7 @@ fn second_click_on_a_word_expands_to_word_bounds() {
 }
 
 #[test]
-fn click_on_status_row_is_ignored() {
+fn status_row_mouse_down_starts_chrome_selection_without_moving_cursor() {
     let mut app = app_with("zero");
     let mut out = Vec::new();
 
@@ -138,7 +138,51 @@ fn click_on_status_row_is_ignored() {
     .unwrap();
 
     assert_eq!(app.buffer.cursor(), Cursor::default());
-    assert!(out.is_empty());
+    assert!(app.selection.is_status_dragging());
+    assert!(!out.is_empty());
+}
+
+#[test]
+fn status_path_drag_is_copied_only_when_ctrl_c_is_pressed() {
+    let mut app = app_with("zero");
+    app.file.path = Some("/work/cats/notes.txt".into());
+    let mut out = Vec::new();
+
+    handle_mouse(
+        &mut app,
+        &mut out,
+        event(MouseEventKind::Down(MouseButton::Left), 8, 23),
+    )
+    .unwrap();
+    handle_mouse(
+        &mut app,
+        &mut out,
+        event(MouseEventKind::Drag(MouseButton::Left), 28, 23),
+    )
+    .unwrap();
+    handle_mouse(
+        &mut app,
+        &mut out,
+        event(MouseEventKind::Up(MouseButton::Left), 28, 23),
+    )
+    .unwrap();
+
+    let status = super::super::super::render::status_line(&app);
+    assert_eq!(
+        app.selection.status_range(&status.text),
+        Some((8, status.text.len()))
+    );
+    assert_eq!(app.clipboard, "");
+    assert!(!String::from_utf8_lossy(&out).contains("\x1b]52;"));
+
+    app.handle_key_with(
+        &mut out,
+        KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+    )
+    .unwrap();
+
+    assert_eq!(app.clipboard, "/work/cats/notes.txt");
+    assert!(String::from_utf8_lossy(&out).contains("\x1b]52;c;L3dvcmsvY2F0cy9ub3Rlcy50eHQ=\x1b\\"));
 }
 
 #[test]

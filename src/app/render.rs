@@ -6,7 +6,6 @@
 
 use std::io::{self, Write};
 
-use crate::mode::Mode;
 use crate::terminal as term;
 
 use super::{
@@ -21,6 +20,7 @@ impl App {
 }
 
 fn render(app: &App, out: &mut dyn Write) -> io::Result<()> {
+    let window_title = status::title(app.file.path.as_deref());
     let visible_changes = inline_clanker::preview_changes(app).or_else(|| {
         view::source_is_displayed(app)
             .then(|| inline_clanker::source_changes(app))
@@ -44,11 +44,15 @@ fn render(app: &App, out: &mut dyn Write) -> io::Result<()> {
     });
     let action_bar = mobile::action_bar_text(app);
     let mut options = render_options(app, llm_changes, action_bar.as_deref());
+    options.window_title = Some(&window_title);
     if let Some(message) = app.message.as_deref() {
         options.status_role = status::transient_role(app, message);
         return render_frame(app, out, message, options);
     }
-    render_frame(app, out, &status_line(app), options)
+    let status = status_line(app);
+    options.status_filename = Some(status.filename);
+    options.status_selection = app.selection.status_range(&status.text);
+    render_frame(app, out, &status.text, options)
 }
 
 fn render_frame(
@@ -106,6 +110,9 @@ fn render_options<'a>(
         soft_wrap: view::soft_wrap_active(app),
         status_role: term::render::StatusRole::Normal,
         status_theme: app.status_theme,
+        status_filename: None,
+        status_selection: None,
+        window_title: None,
         action_bar,
     }
 }
@@ -156,55 +163,29 @@ fn local_surface_is_open(app: &App) -> bool {
         || autocomplete::is_viewing(app)
 }
 
-fn status_line(app: &App) -> String {
+pub(super) fn status_line(app: &App) -> status::StatusLine {
+    let display_path = app
+        .file
+        .path
+        .as_deref()
+        .map(crate::file::watch_path::normalize_path);
     let position = (app.buffer_count() > 1).then(|| {
         (
             app.active_buffer_index.saturating_add(1),
             app.buffer_count(),
         )
     });
-    let autocomplete = autocomplete::status_label(app);
-    let show_autocomplete = !mobile::is_enabled(app) || autocomplete != "ac off";
-    let prefix = show_autocomplete.then(|| format!("[{autocomplete}] "));
-    let available_width = (app.screen.width as usize).saturating_sub(
-        prefix
-            .as_deref()
-            .map(|text| crate::editor::text_layout::cell_width_from(text, 0))
-            .unwrap_or(0),
-    );
-    let file = status::StatusFile {
-        path: app.file.path.as_deref(),
-        dirty: app.file.dirty,
-        size_bytes: app.file.size_bytes,
-        size_tier: app.file.size_tier,
-        text_format: app.file.text_format,
+    let activity = match autocomplete::status_label(app) {
+        "ac request" => Some("autocomplete…"),
+        "ac error" => Some("autocomplete error"),
+        _ => None,
     };
-    let status = if mobile::is_enabled(app) {
-        let status = status::format_status_line_for_width(
-            matches!(app.mode, Mode::Plain),
-            app.typing_mode.is_overwrite(),
-            file,
-            app.buffer.page_info(),
-            position,
-            available_width,
-        );
-        status::decorate_status_line_for_width(
-            status,
-            app.cat_config.status_messages,
-            available_width,
-        )
-    } else {
-        let status = status::format_status_line(
-            matches!(app.mode, Mode::Plain),
-            app.typing_mode.is_overwrite(),
-            file,
-            app.buffer.page_info(),
-            position,
-        );
-        status::decorate_status_line(status, app.cat_config.status_messages)
-    };
-    match prefix {
-        Some(prefix) => format!("{prefix}{status}"),
-        None => status,
-    }
+    status::format_status_line(
+        display_path.as_deref(),
+        app.buffer.page_info(),
+        position,
+        activity,
+        app.cat_config.status_messages,
+        app.screen.width as usize,
+    )
 }

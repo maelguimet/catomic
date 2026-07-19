@@ -65,7 +65,7 @@ fn configured_toggle_overwrite_action_reuses_insert_handler() {
         .unwrap();
 
     assert_eq!(app.buffer.to_string(), "Xbc");
-    assert!(String::from_utf8(out).unwrap().contains("OVR"));
+    assert!(String::from_utf8(out).unwrap().contains("\x1b[2 q"));
 }
 
 #[test]

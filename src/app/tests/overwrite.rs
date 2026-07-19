@@ -26,16 +26,13 @@ fn toggle_overwrite(app: &mut App, out: &mut Vec<u8>) {
 }
 
 #[test]
-fn insert_toggles_status_cursor_shape_and_ascii_replacement() {
+fn insert_toggles_cursor_shape_and_ascii_replacement_without_status_noise() {
     let mut app = app_with("abc");
     let mut out = Vec::new();
 
     toggle_overwrite(&mut app, &mut out);
     let enabled = String::from_utf8(std::mem::take(&mut out)).unwrap();
-    assert!(
-        enabled.contains("OVR"),
-        "overwrite status missing: {enabled:?}"
-    );
+    assert!(!enabled.contains("OVR"));
     assert!(
         enabled.contains("\x1b[2 q"),
         "overwrite block cursor missing: {enabled:?}"
@@ -51,10 +48,7 @@ fn insert_toggles_status_cursor_shape_and_ascii_replacement() {
 
     toggle_overwrite(&mut app, &mut out);
     let disabled = String::from_utf8(out).unwrap();
-    assert!(
-        disabled.contains("INS"),
-        "insert status missing: {disabled:?}"
-    );
+    assert!(!disabled.contains("INS"));
     assert!(
         disabled.contains("\x1b[0 q"),
         "default cursor restore missing: {disabled:?}"

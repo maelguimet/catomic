@@ -43,7 +43,7 @@ fn apply_file_watch_signal_changed_on_unchanged_disk_ignores_to_avoid_noise() {
         "must not overwrite prior message with unchanged"
     );
     assert!(app.pending_reload.is_none());
-    assert_eq!(app.buffer.to_string(), "BASE");
+    assert_eq!(app.buffer.to_string(), "BASE\n");
     assert!(!app.file.dirty);
 
     let _ = std::fs::remove_file(&p);

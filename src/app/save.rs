@@ -1,6 +1,6 @@
 //! Purpose: own atomic save sequencing, Save As paths, and overwrite guards.
 //! Owns: normal/Save As decisions, tilde expansion, atomic writes, and path reassignment.
-//! Must not: decode keys, run the event loop, mutate buffer text, or write non-save files.
+//! Must not: decode keys, run the event loop, or write non-save files.
 //! Invariants: writes are atomic; destination conflicts require confirmation; App's path
 //!             and watcher change only after a successful write.
 //! Phase: 6 explicit file-write lifecycle.
@@ -289,6 +289,21 @@ pub(crate) fn do_atomic_save(app: &mut super::App, out: &mut dyn Write) -> io::R
 
 fn do_atomic_save_to(app: &mut super::App, out: &mut dyn Write, target: PathBuf) -> io::Result<()> {
     super::recovery::finish_before_save(app);
+    let original_page = app.buffer.page_info().map_or(0, |page| page.page_number);
+    let original_cursor = app.buffer.cursor();
+    while app.buffer.next_page()? {}
+    let row = app.buffer.line_count().saturating_sub(1);
+    let end = crate::buffer::Cursor {
+        row,
+        col: app.buffer.line_char_count(row).unwrap_or(0),
+    };
+    if end.col > 0 && app.buffer.replace_range(end, end, "\n")? {
+        super::file_state::refresh_dirty(&mut app.file, &*app.buffer);
+    }
+    while app.buffer.page_info().map_or(0, |page| page.page_number) > original_page {
+        app.buffer.previous_page()?;
+    }
+    app.buffer.set_cursor(original_cursor);
     let path_changed = app.file.path.as_ref() != Some(&target);
     let save_result = file::io::atomic_write_with(&target, |writer| {
         file::text_format::write_buffer(&*app.buffer, writer, app.file.text_format)

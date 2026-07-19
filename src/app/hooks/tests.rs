@@ -119,7 +119,7 @@ fn successful_save_queues_on_save_hook() {
     super::super::save::handle_save(&mut app, &mut Vec::new()).unwrap();
 
     assert!(is_pending(&app));
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), "x");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "x\n");
     let _ = std::fs::remove_file(path);
 }
 

@@ -482,7 +482,7 @@ fn pty_save_undo_save_quit_writes_expected_file() -> TestResult {
     assert!(output.contains(&format!("\x1b]0;{filename}\x07")));
     assert_eq!(sequence_count(&output, "\x1b[22;0t"), 1);
     assert_eq!(sequence_count(&output, "\x1b[23;0t"), 1);
-    assert_eq!(fs::read_to_string(&temp.path)?, "ab");
+    assert_eq!(fs::read_to_string(&temp.path)?, "ab\n");
 
     Ok(())
 }
@@ -545,29 +545,29 @@ fn pty_undo_redo_distinguishes_reported_shift() -> TestResult {
     editor.wait_for_initial_render()?;
     editor.send_keys(b"x\x13")?;
     wait_until("initial PTY save", Duration::from_secs(2), || {
-        fs::read_to_string(&temp.path).is_ok_and(|text| text == "x")
+        fs::read_to_string(&temp.path).is_ok_and(|text| text == "x\n")
     })?;
 
-    editor.send_keys(b"\x1a\x13")?;
+    editor.send_keys(b"\x1a\x1a\x13")?;
     wait_until("Ctrl+Z undo", Duration::from_secs(2), || {
         fs::read_to_string(&temp.path).is_ok_and(|text| text.is_empty())
     })?;
 
-    editor.send_keys(b"\x1b[90;6u\x13")?;
+    editor.send_keys(b"\x1b[90;6u\x1b[90;6u\x13")?;
     wait_until("Ctrl+Shift+Z redo", Duration::from_secs(2), || {
-        fs::read_to_string(&temp.path).is_ok_and(|text| text == "x")
+        fs::read_to_string(&temp.path).is_ok_and(|text| text == "x\n")
     })?;
 
-    editor.send_keys(b"\x1b[90;5u\x13")?;
+    editor.send_keys(b"\x1b[90;5u\x1b[90;5u\x13")?;
     wait_until(
         "uppercase Ctrl+Z without Shift",
         Duration::from_secs(2),
         || fs::read_to_string(&temp.path).is_ok_and(|text| text.is_empty()),
     )?;
 
-    editor.send_keys(b"\x19\x13\x11")?;
+    editor.send_keys(b"\x19\x19\x13\x11")?;
     editor.wait_for_exit()?;
-    assert_eq!(fs::read_to_string(&temp.path)?, "x");
+    assert_eq!(fs::read_to_string(&temp.path)?, "x\n");
 
     Ok(())
 }
@@ -588,7 +588,7 @@ fn pty_legacy_and_enhanced_backspace_paths_remain_distinct() -> TestResult {
     editor.send_keys(b"\x1b[127;5u\x1b[115;5u\x1b[113;5u")?;
     editor.wait_for_exit()?;
 
-    assert_eq!(fs::read_to_string(&temp.path)?, "one ");
+    assert_eq!(fs::read_to_string(&temp.path)?, "one \n");
     let output = editor.output_string();
     assert_eq!(sequence_count(&output, "\x1b[>1u"), 1);
     assert_eq!(sequence_count(&output, "\x1b[<1u"), 1);
@@ -609,7 +609,7 @@ fn pty_legacy_terminal_fallback_chord_deletes_previous_word() -> TestResult {
     editor.send_keys(b"one two\x15\x13\x11")?; // Ctrl+U fallback, save, quit.
     editor.wait_for_exit()?;
 
-    assert_eq!(fs::read_to_string(active)?, "one ");
+    assert_eq!(fs::read_to_string(active)?, "one \n");
     Ok(())
 }
 
@@ -693,7 +693,7 @@ fn pty_insert_overwrite_cursor_prompt_and_teardown_transitions() -> TestResult {
     editor.send_keys(b"\x13\x11")?;
     editor.wait_for_exit()?;
 
-    assert_eq!(fs::read_to_string(&temp.path)?, "Xbc");
+    assert_eq!(fs::read_to_string(&temp.path)?, "Xbc\n");
     let output = editor.output_string();
     let final_block = output.rfind("\x1b[2 q").expect("final overwrite cursor");
     let final_default = output.rfind("\x1b[0 q").expect("teardown cursor reset");
@@ -1063,7 +1063,10 @@ fn pty_encoded_sgr_and_x10_clicks_position_the_next_edits() -> TestResult {
     editor.send_keys(b"\x13\x11")?;
     editor.wait_for_exit()?;
 
-    assert_eq!(fs::read_to_string(&temp.path)?, "first\nsec猫ond\nthi🙂rd");
+    assert_eq!(
+        fs::read_to_string(&temp.path)?,
+        "first\nsec猫ond\nthi🙂rd\n"
+    );
     assert_mouse_capture_lifecycle(&editor.output_string());
     Ok(())
 }
@@ -1147,7 +1150,7 @@ fn pty_unquoted_filename_words_open_save_and_remain_one_buffer() -> TestResult {
     editor.send_keys(b" world\x13\x11")?;
     editor.wait_for_exit()?;
 
-    assert_eq!(fs::read_to_string(&intended)?, "hello world");
+    assert_eq!(fs::read_to_string(&intended)?, "hello world\n");
     assert!(!project.root.join("hello").exists());
     assert!(!project.root.join("world.md").exists());
     assert!(!editor.output_string().contains("buffer 1/2"));
@@ -1357,7 +1360,7 @@ fn pty_project_discovery_and_path_completion_save_exact_text() -> TestResult {
     editor.send_keys(b"\r\x13\x11")?;
     editor.wait_for_exit()?;
 
-    assert_eq!(fs::read_to_string(active)?, "src/main.rs");
+    assert_eq!(fs::read_to_string(active)?, "src/main.rs\n");
     Ok(())
 }
 
@@ -1488,7 +1491,7 @@ fn pty_external_command_previews_before_one_confirmed_edit() -> TestResult {
     editor.send_keys(b"\x13\x11")?;
     editor.wait_for_exit()?;
 
-    assert_eq!(fs::read_to_string(active)?, "CAT");
+    assert_eq!(fs::read_to_string(active)?, "CAT\n");
     Ok(())
 }
 
@@ -1560,7 +1563,7 @@ fn pty_catnap_recovery_previews_then_saves_explicitly() -> TestResult {
     editor.send_keys(b"\x13\x11")?;
     editor.wait_for_exit()?;
 
-    assert_eq!(fs::read_to_string(active)?, "recovered");
+    assert_eq!(fs::read_to_string(active)?, "recovered\n");
     assert!(!sidecar.exists(), "successful save must remove the catnap");
     Ok(())
 }

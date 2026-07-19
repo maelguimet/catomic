@@ -134,7 +134,7 @@ fn pty_autocomplete_confirms_waits_renders_unicode_ghost_and_accepts() -> TestRe
     editor.send_keys(b"\x1b[80;6uautocomplete off\r\x13\x11")?;
     editor.wait_for_exit()?;
 
-    assert_eq!(fs::read_to_string(&active)?, "prefix text continued 猫🙂");
+    assert_eq!(fs::read_to_string(&active)?, "prefix text continued 猫🙂\n");
     let request = server.join().expect("join fake model server");
     assert!(request.contains("\"model\":\"ghost-model\""));
     assert!(request.contains("\"max_tokens\":16"));
@@ -191,7 +191,7 @@ fn pty_autocomplete_runs_confirmed_headless_adapter_without_tools() -> TestResul
     editor.send_keys(b"\x1b[80;6uautocomplete off\r\x13\x11")?;
     editor.wait_for_exit()?;
 
-    assert_eq!(fs::read_to_string(&active)?, "typed command continuation");
+    assert_eq!(fs::read_to_string(&active)?, "typed command continuation\n");
     let request = fs::read_to_string(request_path)?;
     assert!(request.contains("Catomic model request v1"));
     assert!(request.contains("catomic_before_cursor"));

@@ -323,11 +323,11 @@ Plain `Ctrl+Up`/`Ctrl+Down` clears an active selection like other non-extending
 navigation; it does not infer a selection-extending paragraph action from
 `Shift`.
 
-`Insert` toggles overwrite mode for printable typing in the active buffer. The
-status begins with `INS` or `OVR`, and each buffer retains its own mode. A typed
-character in overwrite mode replaces one complete Unicode grapheme. Newlines,
-paste, prompts, command/model results, and other edit paths keep their normal
-insert/replace semantics.
+`Insert` toggles the session-wide overwrite mode for printable typing. The
+persistent status includes `INS` or `OVR`, and switching buffers preserves that
+shared state. A typed character in overwrite mode replaces one complete Unicode
+grapheme. Newlines, paste, prompts, command/model results, and other edit paths
+keep their normal insert/replace semantics.
 
 Catomic requests the Kitty enhanced-keyboard protocol and xterm modified-key
 mode 2 while its alternate screen is active. A terminal path that honors a

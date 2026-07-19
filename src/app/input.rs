@@ -182,6 +182,7 @@ pub(crate) fn handle_paste(
 }
 
 pub(super) fn handle_quit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    // The config command is a temporary detour: quit once returns without closing either buffer.
     if app.buffer_count() > 1
         && command_prompt::take_config_return(app)
         && app.switch_buffer(buffers::BufferDirection::Previous)

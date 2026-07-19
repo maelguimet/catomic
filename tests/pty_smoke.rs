@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use portable_pty::{native_pty_system, Child, CommandBuilder, PtySize};
+use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 
 type TestResult<T = ()> = Result<T, Box<dyn Error>>;
 
@@ -97,7 +97,8 @@ impl Drop for TempPath {
 struct PtyEditor {
     _test_guard: MutexGuard<'static, ()>,
     child: Box<dyn Child + Send + Sync>,
-    writer: Box<dyn Write + Send>,
+    master: Option<Box<dyn MasterPty + Send>>,
+    writer: Option<Box<dyn Write + Send>>,
     output: Arc<Mutex<Vec<u8>>>,
     reader_handle: Option<thread::JoinHandle<()>>,
     _environment: TempProject,
@@ -230,10 +231,12 @@ impl PtyEditor {
             }
         });
 
+        let writer = pair.master.take_writer()?;
         Ok(Self {
             _test_guard: test_guard,
             child,
-            writer: pair.master.take_writer()?,
+            master: Some(pair.master),
+            writer: Some(writer),
             output,
             reader_handle: Some(reader_handle),
             _environment: environment,
@@ -248,8 +251,32 @@ impl PtyEditor {
     }
 
     fn send_keys(&mut self, bytes: &[u8]) -> TestResult {
-        self.writer.write_all(bytes)?;
-        self.writer.flush()?;
+        let writer = self.writer.as_mut().ok_or("PTY writer is closed")?;
+        writer.write_all(bytes)?;
+        writer.flush()?;
+        Ok(())
+    }
+
+    fn resize(&self, rows: u16, cols: u16) -> TestResult {
+        self.master
+            .as_ref()
+            .ok_or("PTY master is closed")?
+            .resize(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })?;
+        Ok(())
+    }
+
+    fn signal_resize(&self) -> TestResult {
+        let process_id = self.process_id()?;
+        let process_id = libc::pid_t::try_from(process_id)?;
+        // SAFETY: process_id belongs to the live PTY child and SIGWINCH has no payload.
+        if unsafe { libc::kill(process_id, libc::SIGWINCH) } == -1 {
+            return Err(std::io::Error::last_os_error().into());
+        }
         Ok(())
     }
 
@@ -327,12 +354,24 @@ impl PtyEditor {
         let output = self.output.lock().expect("pty output mutex");
         String::from_utf8_lossy(output.get(offset..).unwrap_or_default()).into_owned()
     }
+
+    fn wait_for_status_since(&self, offset: usize, row: u16) -> TestResult {
+        let marker = format!("\x1b[{row};1H");
+        wait_until("status at resized PTY row", Duration::from_secs(2), || {
+            self.output_since(offset).contains(&marker)
+        })
+    }
 }
 
 impl Drop for PtyEditor {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        if let Some(handle) = self.reader_handle.take() {
+        self.writer.take();
+        self.master.take();
+        let child_was_running = matches!(self.child.try_wait(), Ok(None));
+        if child_was_running {
+            let _ = self.child.kill();
+            self.reader_handle.take();
+        } else if let Some(handle) = self.reader_handle.take() {
             let _ = handle.join();
         }
     }
@@ -990,6 +1029,36 @@ fn pty_markdown_preview_and_view_toggles_leave_source_unchanged() -> TestResult 
         output.contains("\x1b[?1049l"),
         "alternate screen must teardown"
     );
+    Ok(())
+}
+
+#[test]
+fn pty_live_resize_redraws_at_each_new_status_row() -> TestResult {
+    let temp = TempPath::new("live_resize");
+    let source = (1..=40)
+        .map(|line| format!("resize line {line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(&temp.path, &source)?;
+    let mut editor = PtyEditor::spawn_sized(&temp.path, 24, 80)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"\x1b[18~")?; // F7
+    editor.wait_for_output("line numbers enabled", "Line numbers on")?;
+
+    let first_resize = editor.output_len();
+    editor.resize(10, 40)?;
+    editor.signal_resize()?;
+    editor.wait_for_status_since(first_resize, 10)?;
+
+    let second_resize = editor.output_len();
+    editor.resize(30, 100)?;
+    editor.signal_resize()?;
+    editor.wait_for_status_since(second_resize, 30)?;
+
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+    assert_eq!(fs::read_to_string(&temp.path)?, source);
     Ok(())
 }
 

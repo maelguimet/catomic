@@ -34,6 +34,12 @@ impl App {
         }
 
         while !self.should_quit && term::termination_signal().is_none() {
+            if term::take_resize_pending() {
+                let (width, height) = crossterm::terminal::size()?;
+                if (width, height) != (self.screen.width, self.screen.height) {
+                    self.handle_resize(width, height, &mut stdout)?;
+                }
+            }
             self.poll_runtime_tasks(&mut stdout)?;
             if event::poll(std::time::Duration::from_millis(100))? {
                 self.dispatch_terminal_event(&mut stdout, event::read()?)?;

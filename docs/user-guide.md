@@ -1194,7 +1194,11 @@ overwrites a file that appears during confirmation. Configuration is validated
 and applied as one document at normal startup, so restart Catomic after saving;
 the running session does not silently apply a partial reload. The dedicated
 config action uses built-in defaults, so an invalid config can still be opened
-and repaired.
+and repaired. When the in-editor command opens config from another buffer,
+`Ctrl+Q` closes that temporary config buffer and returns to the invoking buffer.
+Unsaved config changes are never discarded on the first press; a second
+`Ctrl+Q` explicitly discards only the config detour. A config opened directly
+from the shell keeps the editor's normal session-quit behavior.
 
 Shell workflows can discover, validate, or edit the same path without guessing
 the XDG resolution:

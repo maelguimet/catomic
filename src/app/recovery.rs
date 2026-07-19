@@ -1,13 +1,13 @@
 //! Purpose: coordinate opt-in `.catnap` autosave and explicit recovery preview.
 //! Owns: per-buffer timer/task state, `:recover`, preview input, apply, and save cleanup.
 //! Must not: overwrite source files, run when disabled, autosave unbounded buffers, or block typing.
-//! Invariants: recovery is preview-first; Enter applies one undoable edit; source drift refuses apply.
+//! Invariants: offers retain the opened candidate; Enter applies one edit; drift refuses apply.
 //! Phase: 8 bounded crash recovery.
 
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
 
-use crate::file::recovery::{CatnapResult, CatnapTask};
+use crate::file::recovery::{CatnapResult, CatnapTask, RecoveryCandidate};
 
 mod preview;
 pub(crate) use preview::{
@@ -18,6 +18,7 @@ pub(crate) struct RecoveryState {
     last_attempt: Instant,
     last_written_history: Option<u64>,
     task: Option<CatnapTask>,
+    offered_candidate: Option<RecoveryCandidate>,
     preview: Option<preview::RecoveryPreview>,
 }
 
@@ -27,6 +28,7 @@ impl Default for RecoveryState {
             last_attempt: Instant::now(),
             last_written_history: None,
             task: None,
+            offered_candidate: None,
             preview: None,
         }
     }
@@ -37,9 +39,14 @@ pub(crate) fn initialize(app: &mut super::App) {
     let Some(path) = app.file.path.as_deref().filter(|_| config.enabled) else {
         return;
     };
-    match crate::file::recovery::has_candidate(path, config.max_bytes) {
-        Ok(true) if app.message.is_none() => {
-            app.message = Some("Catnap recovery found. Run :recover to preview it.".to_string());
+    app.recovery.offered_candidate = None;
+    match crate::file::recovery::load_candidate(path, config.max_bytes) {
+        Ok(Some(candidate)) => {
+            app.recovery.offered_candidate = Some(candidate);
+            if app.message.is_none() {
+                app.message =
+                    Some("Catnap recovery found. Run :recover to preview it.".to_string());
+            }
         }
         Err(error) if app.message.is_none() => {
             app.message = Some(format!("Catnap check failed: {error}"));
@@ -125,6 +132,7 @@ pub(crate) fn finish_before_save(app: &mut super::App) {
 pub(crate) fn after_save(app: &mut super::App) -> io::Result<()> {
     app.recovery.last_written_history = None;
     app.recovery.last_attempt = Instant::now();
+    app.recovery.offered_candidate = None;
     match app.file.path.as_deref() {
         Some(path) if app.cat_config.recovery.enabled => crate::file::recovery::remove(path),
         _ => Ok(()),

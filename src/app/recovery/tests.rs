@@ -165,6 +165,62 @@ fn source_edit_during_preview_refuses_recovery() {
     cleanup(&original);
 }
 
+#[cfg(unix)]
+#[test]
+fn sidecar_replacement_after_startup_offer_refuses_preview() {
+    let original = path("offered_sidecar_drift.txt");
+    let replacement = path("offered_sidecar_drift_replacement.txt.catnap");
+    cleanup(&original);
+    let _ = std::fs::remove_file(&replacement);
+    std::fs::write(&original, "disk").unwrap();
+    let mut app = super::super::App::new(original.to_str()).unwrap();
+    enabled(&mut app, 1024);
+    let sidecar = crate::file::recovery::catnap_path(&original);
+    crate::file::io::atomic_write_private_string(&sidecar, "recovered").unwrap();
+    initialize(&mut app);
+    assert!(app.message.as_deref().unwrap().contains("recovery found"));
+
+    std::fs::write(&replacement, "recovered").unwrap();
+    std::fs::rename(&replacement, &sidecar).unwrap();
+    start_preview(&mut app, &mut Vec::new()).unwrap();
+
+    assert!(!is_viewing(&app));
+    assert_eq!(app.buffer.to_string(), "disk");
+    assert!(app.message.as_deref().unwrap().contains("No newer catnap"));
+    cleanup(&original);
+    let _ = std::fs::remove_file(replacement);
+}
+
+#[cfg(unix)]
+#[test]
+fn sidecar_replacement_during_preview_refuses_recovery() {
+    let original = path("sidecar_drift.txt");
+    let replacement = path("sidecar_drift_replacement.txt.catnap");
+    cleanup(&original);
+    let _ = std::fs::remove_file(&replacement);
+    std::fs::write(&original, "disk").unwrap();
+    let mut app = super::super::App::new(original.to_str()).unwrap();
+    enabled(&mut app, 1024);
+    let sidecar = crate::file::recovery::catnap_path(&original);
+    crate::file::io::atomic_write_private_string(&sidecar, "recovered").unwrap();
+    let mut out = Vec::new();
+
+    start_preview(&mut app, &mut out).unwrap();
+    std::fs::write(&replacement, "recovered").unwrap();
+    std::fs::rename(&replacement, &sidecar).unwrap();
+    handle_key(
+        &mut app,
+        &mut out,
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+    )
+    .unwrap();
+
+    assert_eq!(app.buffer.to_string(), "disk");
+    assert!(app.message.as_deref().unwrap().contains("Catnap changed"));
+    cleanup(&original);
+    let _ = std::fs::remove_file(replacement);
+}
+
 #[test]
 fn malformed_sidecar_reports_an_error_without_ending_the_editor() {
     let original = path("invalid_utf8.txt");

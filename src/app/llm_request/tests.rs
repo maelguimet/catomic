@@ -59,6 +59,9 @@ fn first_meow_builds_confirmation_without_connecting() {
         "first invocation must not connect"
     );
     assert!(app.message.as_deref().unwrap().contains("Enter confirms"));
+    let confirmation = app.message.as_deref().unwrap();
+    assert!(confirmation.starts_with("To http://127.0.0.1:"));
+    assert!(confirmation.contains("preset local model test-model"));
 
     app.handle_key_with(&mut out, key(KeyCode::F(10), KeyModifiers::NONE))
         .unwrap();

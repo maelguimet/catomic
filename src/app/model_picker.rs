@@ -36,6 +36,7 @@ struct PickerView {
     pending_discovery: Option<usize>,
     source_scroll_top: usize,
     source_scroll_left: usize,
+    source_wrap_col: usize,
 }
 
 struct PickerEntry {
@@ -84,6 +85,7 @@ fn show_with_catalog(
     purge_cache(&mut app.model_picker);
     let source_scroll_top = app.screen.scroll_top;
     let source_scroll_left = app.screen.scroll_left;
+    let source_wrap_col = app.screen.wrap_col;
     let entries = document::build_entries(&catalog, &app.model_picker.cache, &app.model_session);
     let mut view = PickerView {
         catalog,
@@ -94,11 +96,13 @@ fn show_with_catalog(
         pending_discovery: None,
         source_scroll_top,
         source_scroll_left,
+        source_wrap_col,
     };
     document::rebuild(&mut view, &app.model_session);
     app.model_picker.view = Some(view);
     app.screen.scroll_top = 0;
     app.screen.scroll_left = 0;
+    app.screen.wrap_col = 0;
     app.selection.clear();
     document::update_message(app);
     app.render(out)
@@ -248,6 +252,7 @@ pub(crate) fn close(app: &mut super::App) -> bool {
     };
     app.screen.scroll_top = view.source_scroll_top;
     app.screen.scroll_left = view.source_scroll_left;
+    app.screen.wrap_col = view.source_wrap_col;
     true
 }
 
@@ -273,7 +278,7 @@ fn enter(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     app.model_session.select(preset);
     close(app);
     app.message = Some(format!(
-        "Active model for this session: preset {name}, model {model}. Config was not changed."
+        "Active model for this session: preset {name}, model {model}"
     ));
     app.reveal_cursor();
     app.render(out)

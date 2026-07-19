@@ -106,6 +106,41 @@ fn session_selection_survives_buffer_switch_and_picker_cancel() {
 }
 
 #[test]
+fn picker_owns_and_restores_the_complete_viewport() {
+    let mut app = super::super::App::new(None).unwrap();
+    app.buffer = Box::new(PieceTable::from_text("a\nb\nc\nsource"));
+    app.buffer
+        .set_cursor(crate::buffer::Cursor { row: 3, col: 3 });
+    app.view.soft_wrap = true;
+    app.screen.width = 4;
+    app.screen.height = 2;
+    app.screen.scroll_top = 3;
+    app.screen.scroll_left = 0;
+    app.screen.wrap_col = 2;
+    let mut out = Vec::new();
+
+    show_with_catalog(&mut app, &mut out, catalog("http://127.0.0.1:9/v1")).unwrap();
+    assert_eq!(
+        (
+            app.screen.scroll_top,
+            app.screen.scroll_left,
+            app.screen.wrap_col
+        ),
+        (0, 0, 0)
+    );
+
+    handle_key(&mut app, &mut out, key(KeyCode::Esc)).unwrap();
+    assert_eq!(
+        (
+            app.screen.scroll_top,
+            app.screen.scroll_left,
+            app.screen.wrap_col
+        ),
+        (3, 0, 2)
+    );
+}
+
+#[test]
 fn picker_keeps_an_orphaned_session_override_visible_and_active() {
     let mut app = super::super::App::new(None).unwrap();
     let mut out = Vec::new();

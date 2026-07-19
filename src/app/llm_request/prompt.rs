@@ -55,11 +55,10 @@ pub(super) fn confirmation_message(
         " SENSITIVE context detected; Enter explicitly allows sending it."
     };
     format!(
-        "Preset {} model {} via {} at {}: send {} lines/{} bytes from {scope}?{sensitive} Enter confirms; Esc cancels.",
+        "To {destination}: preset {} model {} via {}; send {} lines/{} bytes from {scope}?{sensitive} Enter confirms; Esc cancels.",
         preset.name,
         preset.model,
         adapter_label(&preset.adapter),
-        destination,
         draft.context.line_count,
         draft.context.byte_count
     )

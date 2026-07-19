@@ -46,7 +46,7 @@ pub(crate) fn complete(
     let input = compose_input(command.input, messages);
     let workspace = TempWorkspace::create()?;
     let started = Instant::now();
-    let mut child = spawn(command, &workspace, input.as_bytes())?;
+    let (mut child, input_writer) = spawn(command, &workspace, input.as_bytes())?;
     let stdout = child.stdout.take().expect("piped stdout");
     let stderr = child.stderr.take().expect("piped stderr");
     let overflow = Arc::new(AtomicBool::new(false));
@@ -54,6 +54,7 @@ pub(crate) fn complete(
         Ok(reader) => reader,
         Err(error) => {
             kill_and_reap_group(&mut child);
+            let _ = join_writer(input_writer);
             return Err(thread_error("stdout", &error));
         }
     };
@@ -62,13 +63,17 @@ pub(crate) fn complete(
         Err(error) => {
             kill_and_reap_group(&mut child);
             let _ = join_reader(stdout_reader);
+            let _ = join_writer(input_writer);
             return Err(thread_error("stderr", &error));
         }
     };
     let outcome = wait_for_child(&mut child, command.timeout, started, cancel, &overflow);
-    let stdout = join_reader(stdout_reader)?;
-    let stderr = join_reader(stderr_reader)?;
+    let stdout = join_reader(stdout_reader);
+    let stderr = join_reader(stderr_reader);
+    let input_result = join_writer(input_writer);
     let outcome = outcome?;
+    let stdout = stdout?;
+    let stderr = stderr?;
     if overflow.load(Ordering::Acquire) {
         return Err(output_too_large());
     }
@@ -83,7 +88,10 @@ pub(crate) fn complete(
         )),
         ChildOutcome::OutputTooLarge => Err(output_too_large()),
         ChildOutcome::Exited(status) if !status.success() => Err(exit_error(status, stderr.len())),
-        ChildOutcome::Exited(_) => parse_output(command.output, &stdout),
+        ChildOutcome::Exited(_) => {
+            input_result?;
+            parse_output(command.output, &stdout)
+        }
     }
 }
 
@@ -114,7 +122,7 @@ fn spawn(
     config: &ResolvedCommand,
     workspace: &TempWorkspace,
     input: &[u8],
-) -> Result<std::process::Child, BackendError> {
+) -> Result<(std::process::Child, std::thread::JoinHandle<io::Result<()>>), BackendError> {
     let mut command = Command::new(&config.program);
     command
         .args(&config.args)
@@ -140,22 +148,23 @@ fn spawn(
     })?;
     let mut stdin = child.stdin.take().expect("piped stdin");
     let owned = input.to_vec();
-    if let Err(error) = std::thread::Builder::new()
+    let writer = match std::thread::Builder::new()
         .name("catomic-llm-stdin".to_string())
-        .spawn(move || {
-            let _ = stdin.write_all(&owned);
-        })
+        .spawn(move || stdin.write_all(&owned))
     {
-        kill_and_reap_group(&mut child);
-        return Err(BackendError::new(
-            BackendErrorKind::Failed,
-            format!(
-                "could not start command input writer: {}",
-                safe_io_kind(&error)
-            ),
-        ));
-    }
-    Ok(child)
+        Ok(writer) => writer,
+        Err(error) => {
+            kill_and_reap_group(&mut child);
+            return Err(BackendError::new(
+                BackendErrorKind::Failed,
+                format!(
+                    "could not start command input writer: {}",
+                    safe_io_kind(&error)
+                ),
+            ));
+        }
+    };
+    Ok((child, writer))
 }
 
 enum ChildOutcome {
@@ -260,6 +269,18 @@ fn join_reader(
             BackendError::new(
                 BackendErrorKind::Failed,
                 format!("could not read command output: {}", safe_io_kind(&error)),
+            )
+        })
+}
+
+fn join_writer(writer: std::thread::JoinHandle<io::Result<()>>) -> Result<(), BackendError> {
+    writer
+        .join()
+        .map_err(|_| BackendError::new(BackendErrorKind::Failed, "command input writer panicked"))?
+        .map_err(|error| {
+            BackendError::new(
+                BackendErrorKind::Failed,
+                format!("could not write command input: {}", safe_io_kind(&error)),
             )
         })
 }

@@ -211,7 +211,7 @@ fn wheel_gestures_can_be_swapped_or_unbound_without_crossing_button_types() {
 #[test]
 fn registry_defaults_are_complete_and_collision_free() {
     let bindings = KeyBindings::default();
-    assert_eq!(actions::REGISTRY.len(), 82);
+    assert_eq!(actions::REGISTRY.len(), 83);
     for descriptor in actions::REGISTRY {
         assert!(!descriptor.name.is_empty());
         assert!(!descriptor.scopes.is_empty());

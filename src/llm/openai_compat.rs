@@ -18,6 +18,7 @@ pub struct LlmConfig {
     pub base_url: String,
     pub api_key: Option<String>,
     pub headers: Vec<(String, String)>,
+    pub has_secret_headers: bool,
     pub model: String,
     pub timeout: Duration,
 }
@@ -25,7 +26,7 @@ pub struct LlmConfig {
 #[derive(Debug)]
 pub enum LlmError {
     Client(String),
-    InsecureApiKey { endpoint: String },
+    InsecureCredential { endpoint: String },
     Request(String),
     Http { status: u16, body: String },
     ResponseTooLarge,
@@ -37,9 +38,9 @@ impl std::fmt::Display for LlmError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Client(error) => write!(formatter, "could not create HTTP client: {error}"),
-            Self::InsecureApiKey { endpoint } => write!(
+            Self::InsecureCredential { endpoint } => write!(
                 formatter,
-                "refusing to send an API key over plaintext HTTP to non-loopback endpoint {endpoint}; use HTTPS, remove the API key, or use a loopback endpoint"
+                "refusing to send credentials over plaintext HTTP to non-loopback endpoint {endpoint}; use HTTPS, remove the credentials, or use a loopback endpoint"
             ),
             Self::Request(error) => write!(formatter, "request failed: {error}"),
             Self::Http { status, body } => {
@@ -60,7 +61,7 @@ pub struct OpenAiCompatClient {
 
 impl OpenAiCompatClient {
     pub fn new(config: LlmConfig) -> Result<Self, LlmError> {
-        reject_insecure_api_key(&config)?;
+        reject_insecure_credentials(&config)?;
         let client = reqwest::Client::builder()
             .timeout(config.timeout)
             .redirect(reqwest::redirect::Policy::none())
@@ -146,14 +147,14 @@ impl OpenAiCompatClient {
     }
 }
 
-fn reject_insecure_api_key(config: &LlmConfig) -> Result<(), LlmError> {
-    if config.api_key.is_none() {
+fn reject_insecure_credentials(config: &LlmConfig) -> Result<(), LlmError> {
+    if config.api_key.is_none() && !config.has_secret_headers {
         return Ok(());
     }
     let url = reqwest::Url::parse(&config.base_url)
         .map_err(|error| LlmError::Client(format!("invalid endpoint URL: {error}")))?;
     if url.scheme() == "http" && !url.host_str().is_some_and(is_loopback_host) {
-        return Err(LlmError::InsecureApiKey {
+        return Err(LlmError::InsecureCredential {
             endpoint: config.base_url.clone(),
         });
     }

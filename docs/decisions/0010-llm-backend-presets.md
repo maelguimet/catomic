@@ -30,7 +30,8 @@ The command schema stores an executable and argv separately, declares
 `stdin-text-v1`, and requires a versioned structured output contract. Execution
 adds no implicit shell, uses an isolated temporary cwd, bounded pipes/runtime, and a
 dedicated process group. Cancellation kills that group and reaps its direct
-child. Command error details do not echo stderr.
+child. All pipe workers are joined. Command error details do not echo stderr,
+and terminal control characters in otherwise structured output fail closed.
 
 This is process containment, not an OS sandbox. User-configured executables run
 with the user's permissions and inherited authentication environment after

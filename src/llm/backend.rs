@@ -12,6 +12,8 @@ use crate::config::llm::{BackendAdapter, BackendPreset};
 use super::command_adapter::ResolvedCommand;
 use super::openai_compat::{ChatMessage, LlmConfig, LlmError, OpenAiCompatClient};
 
+const MAX_CREDENTIAL_BYTES: usize = 8_192;
+
 #[derive(Clone)]
 pub(crate) struct ConfirmedBackend {
     adapter: ConfirmedAdapter,
@@ -137,6 +139,7 @@ pub(super) fn resolve_http(
         base_url: http.base_url.clone(),
         api_key,
         headers,
+        has_secret_headers: !http.header_envs.is_empty(),
         model: model.to_string(),
         timeout: http.timeout,
     })
@@ -150,7 +153,21 @@ fn read_secret(name: &str, required: bool) -> Result<Option<String>, BackendErro
             format!("required credential environment variable {name} is missing"),
         ));
     }
+    if let Some(value) = value.as_deref() {
+        validate_secret(name, value)?;
+    }
     Ok(value)
+}
+
+fn validate_secret(name: &str, value: &str) -> Result<(), BackendError> {
+    if value.len() > MAX_CREDENTIAL_BYTES || reqwest::header::HeaderValue::from_str(value).is_err()
+    {
+        return Err(BackendError::new(
+            BackendErrorKind::Unavailable,
+            format!("credential environment variable {name} is not a valid bounded HTTP value"),
+        ));
+    }
+    Ok(())
 }
 
 impl<'a> BackendRunner<'a> {
@@ -188,7 +205,7 @@ impl<'a> BackendRunner<'a> {
         if self.cancel.load(Ordering::Acquire) {
             return Err(BackendError::cancelled());
         }
-        match &mut self.adapter {
+        let result = match &mut self.adapter {
             RunnerAdapter::Http { runtime, client } => {
                 let chat = messages.iter().map(to_chat_message).collect::<Vec<_>>();
                 let cancel = self.cancel;
@@ -202,19 +219,33 @@ impl<'a> BackendRunner<'a> {
             RunnerAdapter::Command(command) => {
                 super::command_adapter::complete(command, messages, self.cancel)
             }
-        }
+        };
+        result.and_then(validate_backend_output)
     }
 }
 
 pub(super) fn http_error(error: LlmError) -> BackendError {
     let kind = match &error {
         LlmError::Client(_) => BackendErrorKind::Failed,
-        LlmError::InsecureApiKey { .. } => BackendErrorKind::Unavailable,
+        LlmError::InsecureCredential { .. } => BackendErrorKind::Unavailable,
         LlmError::Request(_) | LlmError::Http { .. } => BackendErrorKind::Unreachable,
         LlmError::ResponseTooLarge => BackendErrorKind::OutputTooLarge,
         LlmError::InvalidResponse(_) | LlmError::MissingContent => BackendErrorKind::Incompatible,
     };
     BackendError::new(kind, error.to_string())
+}
+
+fn validate_backend_output(output: String) -> Result<String, BackendError> {
+    if output
+        .chars()
+        .any(|ch| ch.is_control() && !matches!(ch, '\n' | '\t'))
+    {
+        return Err(BackendError::new(
+            BackendErrorKind::Incompatible,
+            "backend output contained unsupported control characters",
+        ));
+    }
+    Ok(output)
 }
 
 impl BackendMessage {
@@ -308,5 +339,25 @@ mod tests {
         .default_preset()
         .clone();
         assert!(ConfirmedBackend::resolve(&preset).is_ok());
+    }
+
+    #[test]
+    fn rejects_terminal_control_characters_from_backend_output() {
+        let error = validate_backend_output("proposal\u{1b}[31m".to_string()).unwrap_err();
+        assert_eq!(error.kind, BackendErrorKind::Incompatible);
+        assert!(!error.to_string().contains('\u{1b}'));
+        assert!(validate_backend_output("line one\n\tline two".to_string()).is_ok());
+    }
+
+    #[test]
+    fn rejects_unbounded_or_invalid_secret_values_without_echoing_them() {
+        let oversized = "s".repeat(MAX_CREDENTIAL_BYTES + 1);
+        let error = validate_secret("MODEL_TOKEN", &oversized).unwrap_err();
+        assert_eq!(error.kind, BackendErrorKind::Unavailable);
+        assert!(!error.to_string().contains(&oversized));
+
+        let error = validate_secret("MODEL_TOKEN", "secret\r\nX-Leak: yes").unwrap_err();
+        assert_eq!(error.kind, BackendErrorKind::Unavailable);
+        assert!(!error.to_string().contains("secret"));
     }
 }

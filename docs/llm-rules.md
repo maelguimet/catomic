@@ -51,8 +51,9 @@ and per-file diff. No command writes or runs a process other than read-only Git.
   destination identity, model, and context extent.
 - Endpoint configuration is parsed and canonicalized before confirmation;
   credentials, whitespace, queries, fragments, and non-HTTP(S) schemes fail.
-- API keys must never cross non-loopback plaintext HTTP. Loopback HTTP may use
-  a key, and unauthenticated LAN HTTP remains available for local models.
+- API keys and credential headers must never cross non-loopback plaintext HTTP.
+  Loopback HTTP may use credentials, and unauthenticated LAN HTTP remains
+  available for local models.
 - The transient HTTP client must not follow redirects away from the confirmed
   endpoint; every 3xx response is an error.
 - Ambient proxy environment variables must not reroute context. Proxy support
@@ -62,7 +63,8 @@ and per-file diff. No command writes or runs a process other than read-only Git.
   metadata; credential-looking static headers are rejected in favor of named
   environment variables. Values are scoped to that preset; secret values are
   read only after send or discovery confirmation and are never rendered or
-  copied to another preset.
+  copied to another preset. Static and environment-sourced values are valid,
+  bounded HTTP header values.
 - Model discovery is disabled unless configured for that HTTP preset and still
   requires `Ctrl+D` plus Enter in the picker. It sends no file context, follows
   no redirect, is cancellable, uses at most a ten-second timeout, and caps the
@@ -79,6 +81,7 @@ and per-file diff. No command writes or runs a process other than read-only Git.
 - Command stdout must match exactly `claude-json-v1` or `codex-jsonl-v1`.
   Malformed/partial output and Codex tool/item events fail closed. Stderr and
   HTTP error bodies are suppressed rather than copied into terminal errors.
+  Backend output containing terminal control characters also fails closed.
 - Catomic loads command presets only from the user configuration file. It does
   not accept repository-local command configuration. A configured executable is
   still user-trusted code with the user's OS permissions; use only a verified

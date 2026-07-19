@@ -124,6 +124,15 @@ fn rejects_unsafe_urls_env_names_headers_commands_and_bounds() {
     ] {
         assert_eq!(parse(text).unwrap_err().kind(), io::ErrorKind::InvalidData);
     }
+
+    let oversized_header = format!(
+        "[[llm.backends]]\nname='x'\ntype='openai-compatible'\nmodel='x'\nbase_url='https://x/v1'\nheaders={{ 'X-Metadata'={:?} }}\n",
+        "x".repeat(8_193)
+    );
+    assert_eq!(
+        parse(&oversized_header).unwrap_err().kind(),
+        io::ErrorKind::InvalidData
+    );
 }
 
 #[test]

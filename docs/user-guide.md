@@ -817,9 +817,10 @@ timeout_secs = 120
 The base URL must be plain HTTP or HTTPS without embedded credentials,
 whitespace, query, or fragment. Timeouts must be 1–600 seconds.
 
-Loopback HTTP may use an API key. Unauthenticated LAN HTTP is also allowed for
-local models. Catomic refuses to send an API key to a non-loopback plaintext
-HTTP endpoint; use HTTPS for an authenticated remote endpoint.
+Loopback HTTP may use credentials. Unauthenticated LAN HTTP is also allowed for
+local models. Catomic refuses to send an API key or credential header to a
+non-loopback plaintext HTTP endpoint; use HTTPS for an authenticated remote
+endpoint.
 
 The client refuses redirects and ignores ambient proxy variables so context
 cannot silently leave through a destination other than the one you confirmed.
@@ -828,6 +829,8 @@ per preset. Credential-looking static headers are rejected. Picker and status
 text never show header values. An explicit `api_key_env` or
 `header_envs` variable must be present when that preset is invoked. The implicit
 legacy preset preserves the prior optional-key behavior for local servers.
+Static and environment-sourced HTTP header values are capped at 8192 bytes and
+must be valid HTTP header values.
 
 The `models` array adds static model choices for the same HTTP destination. Set
 `discovery = true` to permit model-list discovery, but this does not make it

@@ -1121,8 +1121,8 @@ model = "remote-model"
 
     editor.send_keys(b"\x1b[80;6umeow\r")?;
     editor.wait_for_output(
-        "selected preset confirmation",
-        "preset hosted model remote-model",
+        "selected confirmation action",
+        "Enter confirms; Esc cancels",
     )?;
     editor.wait_for_output(
         "selected endpoint confirmation",

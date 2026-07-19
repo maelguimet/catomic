@@ -15,6 +15,7 @@ use super::{
 };
 
 const MAX_MODELS: usize = 128;
+const MAX_HEADER_VALUE_BYTES: usize = 8_192;
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn http_backend(
@@ -166,8 +167,13 @@ fn validate_headers(
         if !seen.insert(name.to_ascii_lowercase()) {
             return Err(invalid("HTTP header names must be unique ignoring case"));
         }
-        reqwest::header::HeaderValue::from_str(value)
-            .map_err(|_| invalid(format!("invalid static HTTP header {name:?}")))?;
+        if value.len() > MAX_HEADER_VALUE_BYTES
+            || reqwest::header::HeaderValue::from_str(value).is_err()
+        {
+            return Err(invalid(format!(
+                "static HTTP header {name:?} must be a valid value of at most 8192 bytes"
+            )));
+        }
     }
     for (name, env) in header_envs {
         validate_header_name(name)?;

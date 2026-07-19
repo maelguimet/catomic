@@ -79,10 +79,25 @@ fn rejects_api_key_for_non_loopback_http_before_sending() {
         Err(error) => error,
     };
 
-    assert!(matches!(error, LlmError::InsecureApiKey { .. }));
+    assert!(matches!(error, LlmError::InsecureCredential { .. }));
     let message = error.to_string();
-    assert!(message.contains("refusing to send an API key over plaintext HTTP"));
+    assert!(message.contains("refusing to send credentials over plaintext HTTP"));
     assert!(message.contains("use HTTPS"));
+}
+
+#[test]
+fn rejects_secret_header_for_non_loopback_http_before_sending() {
+    let mut config = config("http://192.168.1.23:8080/v1".to_string(), None);
+    config.headers = vec![("X-Provider-Key".to_string(), "cat-secret".to_string())];
+    config.has_secret_headers = true;
+
+    let error = match OpenAiCompatClient::new(config) {
+        Ok(_) => panic!("plaintext credential header must be rejected"),
+        Err(error) => error,
+    };
+
+    assert!(matches!(error, LlmError::InsecureCredential { .. }));
+    assert!(!error.to_string().contains("cat-secret"));
 }
 
 #[test]
@@ -226,6 +241,7 @@ fn config(base_url: String, api_key: Option<&str>) -> LlmConfig {
         base_url,
         api_key: api_key.map(str::to_string),
         headers: Vec::new(),
+        has_secret_headers: false,
         model: "test-model".to_string(),
         timeout: Duration::from_secs(2),
     }
@@ -305,6 +321,7 @@ fn run_proxy_test_child() {
         base_url: endpoint,
         api_key: Some("cat-secret".to_string()),
         headers: Vec::new(),
+        has_secret_headers: false,
         model: "test-model".to_string(),
         timeout: Duration::from_millis(100),
     })

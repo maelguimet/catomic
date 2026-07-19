@@ -66,6 +66,7 @@ preview = "default"
 # save = ["ctrl+s", "alt+s"]
 # help = []
 # command-prompt = ["ctrl+shift+p", "f2"]
+# select-model = ["f10", "alt+m"]
 
 # Extension names are normalized and may include or omit a leading dot.
 # [languages.rs]
@@ -86,8 +87,41 @@ on_save = []
 before_llm = []
 
 # Model settings are inert until an explicit model command and confirmation.
+# F10 opens the searchable process-local selector without reading credentials,
+# contacting an endpoint, starting a command, or rewriting this file.
 # [llm]
+# default = "local"
+#
+# [[llm.backends]]
+# name = "local"
+# type = "openai-compatible"
 # base_url = "http://127.0.0.1:8080/v1"
 # model = "local-model"
-# api_key_env = "OPENAI_API_KEY"
+# models = ["local-small", "local-large"]
+# discovery = false
+# timeout_secs = 120
+#
+# Hosted credentials must come from named environment variables and require
+# HTTPS. `headers` is for non-secret metadata; use `header_envs` for secrets.
+# [[llm.backends]]
+# name = "hosted"
+# type = "openai-compatible"
+# base_url = "https://models.example/v1"
+# model = "provider/model-id"
+# api_key_env = "MODEL_API_KEY"
+# headers = { "X-Client" = "catomic" }
+# header_envs = { "X-Provider-Key" = "PROVIDER_SECONDARY_KEY" }
+# timeout_secs = 120
+#
+# Command adapters receive direct argv and must emit one supported structured
+# format. They are trusted user code, not a sandbox; configure text-only mode
+# with tools and workspace mutation disabled for the exact installed version.
+# [[llm.backends]]
+# name = "local-headless"
+# type = "command"
+# program = "/usr/local/bin/my-headless-model"
+# args = ["--structured-output"]
+# model = "friendly-model-id"
+# input = "stdin-text-v1"
+# output = "claude-json-v1" # or "codex-jsonl-v1"
 # timeout_secs = 120

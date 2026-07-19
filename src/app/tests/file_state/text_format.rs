@@ -20,6 +20,20 @@ fn temp_path(name: &str) -> std::path::PathBuf {
 }
 
 #[test]
+fn save_adds_only_a_missing_final_newline() {
+    for before in ["", "abc\n", "abc"] {
+        let after = if before == "abc" { "abc\n" } else { before };
+        let path = temp_path(&before.len().to_string());
+        fs::write(&path, before).unwrap();
+        let mut app = App::new(Some(&path.to_string_lossy())).unwrap();
+        super::super::super::save::do_atomic_save(&mut app, &mut Vec::new()).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), after);
+        assert_eq!(app.buffer.to_string(), after);
+        let _ = fs::remove_file(path);
+    }
+}
+
+#[test]
 fn open_edit_and_save_preserve_utf8_bom_and_crlf() {
     let path = temp_path("bom_crlf.txt");
     let _ = fs::remove_file(&path);

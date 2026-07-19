@@ -29,7 +29,7 @@ fn configured_save_chord_uses_normal_atomic_save_path() {
     )
     .unwrap();
 
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), "x");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "x\n");
     assert!(!app.file.dirty);
     let _ = std::fs::remove_file(path);
 }

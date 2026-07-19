@@ -76,7 +76,7 @@ fn app_file_state_save_success_updates_snapshot_len() {
     assert!(!app.file.dirty);
     match &app.file.disk_snapshot {
         Some(crate::file::io::FileSnapshot::Present { len, .. }) => {
-            assert_eq!(*len, 2, "snapshot after save must reflect written len");
+            assert_eq!(*len, 3, "snapshot after save must reflect written len");
         }
         _ => panic!("save success must set Present snapshot"),
     }
@@ -250,7 +250,7 @@ fn app_file_state_regression_successful_save_marks_clean_and_updates_snapshot() 
     match &app.file.disk_snapshot {
         Some(crate::file::io::FileSnapshot::Present { len, .. }) => {
             assert_eq!(
-                *len, 2,
+                *len, 3,
                 "regression: save must update snapshot to Present len"
             );
         }

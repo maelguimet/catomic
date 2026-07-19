@@ -256,7 +256,7 @@ fn successful_save_waits_for_and_removes_catnap() {
 
     super::super::save::do_atomic_save(&mut app, &mut out).unwrap();
 
-    assert_eq!(std::fs::read_to_string(&original).unwrap(), "xbase");
+    assert_eq!(std::fs::read_to_string(&original).unwrap(), "xbase\n");
     assert!(!crate::file::recovery::catnap_path(&original).exists());
     cleanup(&original);
 }

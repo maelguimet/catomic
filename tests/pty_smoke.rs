@@ -1108,6 +1108,31 @@ fn pty_project_discovery_and_path_completion_save_exact_text() -> TestResult {
 }
 
 #[test]
+fn pty_help_scrolls_through_model_setup_without_editing() -> TestResult {
+    let temp = TempPath::new("model_help");
+    let source = "source remains unchanged\n";
+    fs::write(&temp.path, source)?;
+    let mut editor = PtyEditor::spawn(&temp.path)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"\x1bOP")?; // F1.
+    editor.wait_for_output("built-in help", "Catomic help")?;
+    editor.send_keys(&b"\x1b[6~".repeat(32))?; // PageDown through generated catalog.
+    editor.wait_for_output("model config help", "api_key_env = \"OPENAI_API_KEY\"")?;
+    editor.wait_for_output(
+        "model save boundary",
+        "Model edits affect only the confirmed active file; they are not auto-saved",
+    )?;
+    editor.send_keys(b"\x1b")?;
+    editor.wait_for_output("help closed", "Help closed")?;
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(&temp.path)?, source);
+    Ok(())
+}
+
+#[test]
 fn pty_meow_stops_at_confirmation_and_escape_makes_no_network_edit() -> TestResult {
     let project = TempProject::new("llm_confirmation");
     let source = ">>> catomic\nExplain this block without editing it.\n<<<\n";

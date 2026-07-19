@@ -178,10 +178,10 @@ Open a file:
 catomic notes.md
 ```
 
-Open several files in one session:
+Open a filename containing spaces without shell quoting:
 
 ```sh
-catomic notes.txt todo.txt server.log
+catomic hello world.md
 ```
 
 Start with an untitled empty buffer:
@@ -193,38 +193,25 @@ catomic
 If a named path does not exist, Catomic opens an empty buffer for that path. The
 file is not created until you save it.
 
-When two or more file arguments include any missing path, Catomic stops before
-entering terminal mode and prints every parsed argument as `existing`,
-`missing`, or status unavailable. This guards against an unquoted filename with
-spaces accidentally becoming several buffers. For example, if you intended one
-file, quote it in the shell:
+Every non-command word forms one path, joined with spaces. The example above
+therefore opens exactly `hello world.md`, not separate startup buffers. Shell
+quoting remains supported when you prefer it:
 
 ```sh
-catomic "henlo world.md"
+catomic "hello world.md"
 ```
 
-To deliberately open or create several buffers when any path is missing, use
-the explicit opt-in:
-
-```sh
-catomic --allow-missing draft-one.txt draft-two.txt
-```
-
-The guard's classification is a read-only existence check; neither the guard
-nor the opt-in creates a file. An accepted missing path remains an empty,
-unsaved buffer until you explicitly save it. Several existing paths continue to
-open without the flag.
-
-The first argument `update` selects the updater. Use `--` when a filename looks
-like an option or is literally named `update`:
+The first argument `config` or `update` selects that command instead of a file.
+Those commands reject unsupported arguments. Use `--` when a filename looks
+like an option or is literally named after a command:
 
 ```sh
 catomic -- --help
 catomic -- update
-catomic --allow-missing -- --draft.txt another-draft.txt
+catomic -- --draft notes.txt
 ```
 
-File arguments and file contents must be valid UTF-8. The editor also requires
+The file path and file contents must be valid UTF-8. The editor also requires
 a UTF-8 locale selected by the first non-empty value among `LC_ALL`,
 `LC_CTYPE`, and `LANG`. Help and version output remain available when the locale
 is invalid because they do not enter terminal raw mode.
@@ -456,9 +443,8 @@ cancellable with `Escape`.
 
 ## Working with multiple buffers
 
-Every accepted command-line path opens in argument order. Multi-file startup
-with a missing path requires the [explicit `--allow-missing` opt-in](#starting-catomic).
-You can also create or open buffers during a session:
+Startup opens exactly one file buffer. Create or open additional buffers during
+the editor session:
 
 | Action | Shortcut | Command |
 | --- | --- | --- |

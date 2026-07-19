@@ -1,7 +1,8 @@
 //! Purpose: parse Catomic's small explicit command-line interface.
 //! Owns: top-level actions, update flags, and usage errors.
 //! Must not: inspect files, contact a network, update state, or start the editor.
-//! Invariants: `update` is a subcommand only in argv[1]; `-- update` is a file.
+//! Invariants: reserved commands are recognized only in argv[1]; file words
+//! join one path.
 //! Phase: safe self-update workflow.
 
 use std::ffi::OsString;
@@ -23,8 +24,7 @@ pub(crate) enum Action {
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct RunOptions {
-    pub(crate) files: Vec<String>,
-    pub(crate) allow_missing: bool,
+    pub(crate) file: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -53,7 +53,7 @@ where
     if args.first().is_some_and(|arg| arg == "update") {
         return parse_update(&args[1..]);
     }
-    parse_files(args)
+    parse_file(args)
 }
 
 fn parse_config(args: &[String]) -> Result<Action, String> {
@@ -86,10 +86,24 @@ where
 }
 
 fn parse_update(args: &[String]) -> Result<Action, String> {
+    if args
+        .first()
+        .is_some_and(|arg| matches!(help::update_option(arg), Some(help::UpdateOption::Help)))
+    {
+        return match args {
+            [_] => Ok(Action::UpdateHelp),
+            _ => Err(format!(
+                "{} does not take arguments",
+                args.first().expect("help argument exists")
+            )),
+        };
+    }
     let mut options = UpdateOptions::default();
     for arg in args {
         match help::update_option(arg) {
-            Some(help::UpdateOption::Help) => return Ok(Action::UpdateHelp),
+            Some(help::UpdateOption::Help) => {
+                return Err(format!("{arg} must immediately follow `catomic update`"));
+            }
             Some(help::UpdateOption::Check) => options.check = true,
             Some(help::UpdateOption::Yes) => options.assume_yes = true,
             Some(help::UpdateOption::Backup) => options.backup = true,
@@ -103,28 +117,30 @@ fn parse_update(args: &[String]) -> Result<Action, String> {
     Ok(Action::Update(options))
 }
 
-fn parse_files(args: Vec<String>) -> Result<Action, String> {
-    let mut files = Vec::new();
-    let mut allow_missing = false;
-    let mut positional_only = false;
-    for arg in args {
-        if positional_only {
-            files.push(arg);
-            continue;
-        }
-        match help::main_option(&arg) {
-            Some(help::MainOption::PositionalOnly) => positional_only = true,
-            Some(help::MainOption::AllowMissing) => allow_missing = true,
-            Some(help::MainOption::Help) => return Ok(Action::Help),
-            Some(help::MainOption::Version) => return Ok(Action::Version),
-            None if arg.starts_with('-') => return Err(format!("unknown option {arg:?}")),
-            None => files.push(arg),
-        }
+fn parse_file(args: Vec<String>) -> Result<Action, String> {
+    let Some(first) = args.first() else {
+        return Ok(Action::Run(RunOptions::default()));
+    };
+    if first == "--" {
+        return Ok(run_file(&args[1..]));
     }
-    Ok(Action::Run(RunOptions {
-        files,
-        allow_missing,
-    }))
+    match help::main_option(first) {
+        Some(help::MainOption::Help) if args.len() == 1 => Ok(Action::Help),
+        Some(help::MainOption::Version) if args.len() == 1 => Ok(Action::Version),
+        Some(help::MainOption::Help | help::MainOption::Version) => Err(format!(
+            "{first} does not take arguments; use `catomic -- {}` to open that literal filename",
+            args.join(" ")
+        )),
+        Some(help::MainOption::PositionalOnly) => unreachable!("handled above"),
+        None if first.starts_with('-') => Err(format!("unknown option {first:?}")),
+        None => Ok(run_file(&args)),
+    }
+}
+
+fn run_file(words: &[String]) -> Action {
+    Action::Run(RunOptions {
+        file: (!words.is_empty()).then(|| words.join(" ")),
+    })
 }
 
 pub(crate) fn print_help() {
@@ -139,10 +155,9 @@ pub(crate) fn print_update_help() {
 mod tests {
     use super::*;
 
-    fn run(files: &[&str], allow_missing: bool) -> Action {
+    fn run(file: Option<&str>) -> Action {
         Action::Run(RunOptions {
-            files: files.iter().map(|file| (*file).to_string()).collect(),
-            allow_missing,
+            file: file.map(str::to_string),
         })
     }
 
@@ -156,10 +171,10 @@ mod tests {
                 backup: true,
             })
         );
-        assert_eq!(parse(["--", "update"]).unwrap(), run(&["update"], false));
+        assert_eq!(parse(["--", "update"]).unwrap(), run(Some("update")));
         assert_eq!(
             parse(["notes", "update"]).unwrap(),
-            run(&["notes", "update"], false)
+            run(Some("notes update"))
         );
     }
 
@@ -179,7 +194,7 @@ mod tests {
         );
         assert!(parse(["config"]).is_err());
         assert!(parse(["config", "wat"]).is_err());
-        assert_eq!(parse(["--", "config"]).unwrap(), run(&["config"], false));
+        assert_eq!(parse(["--", "config"]).unwrap(), run(Some("config")));
     }
 
     #[test]
@@ -197,23 +212,42 @@ mod tests {
         for spelling in ["-V", "--version"] {
             assert_eq!(parse([spelling]).unwrap(), Action::Version);
         }
-        assert_eq!(parse(["--", "--help"]).unwrap(), run(&["--help"], false));
+        assert_eq!(parse(["--", "--help"]).unwrap(), run(Some("--help")));
     }
 
     #[test]
-    fn parses_explicit_missing_path_opt_in_without_consuming_literal_files() {
+    fn joins_non_command_words_into_one_file_path() {
         assert_eq!(
-            parse(["first", "--allow-missing", "second"]).unwrap(),
-            run(&["first", "second"], true)
+            parse(["hello", "world.md"]).unwrap(),
+            run(Some("hello world.md"))
         );
         assert_eq!(
-            parse(["--allow-missing", "--", "--help", "--allow-missing"]).unwrap(),
-            run(&["--help", "--allow-missing"], true)
+            parse(["hello", "--help"]).unwrap(),
+            run(Some("hello --help"))
         );
         assert_eq!(
-            parse(["--", "--allow-missing"]).unwrap(),
-            run(&["--allow-missing"], false)
+            parse(["--", "--help", "world.md"]).unwrap(),
+            run(Some("--help world.md"))
         );
+        assert_eq!(parse(Vec::<String>::new()).unwrap(), run(None));
+        assert_eq!(parse(["--"]).unwrap(), run(None));
+    }
+
+    #[test]
+    fn commands_that_do_not_accept_arguments_fail_loudly() {
+        assert!(parse(["--help", "notes.md"])
+            .unwrap_err()
+            .contains("does not take arguments"));
+        assert!(parse(["--version", "notes.md"])
+            .unwrap_err()
+            .contains("does not take arguments"));
+        assert!(parse(["update", "--help", "notes.md"])
+            .unwrap_err()
+            .contains("does not take arguments"));
+        assert!(parse(["update", "world.md"])
+            .unwrap_err()
+            .contains("unknown update option"));
+        assert!(parse(["config", "path", "notes.md"]).is_err());
     }
 
     #[test]

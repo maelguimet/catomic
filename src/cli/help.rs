@@ -8,7 +8,6 @@
 pub(super) enum MainOption {
     Help,
     Version,
-    AllowMissing,
     PositionalOnly,
 }
 
@@ -30,14 +29,9 @@ pub(super) const MAIN_OPTIONS: &[MainOptionSpec] = &[
         description: "Show the installed version and exit",
     },
     MainOptionSpec {
-        option: MainOption::AllowMissing,
-        spellings: &["--allow-missing"],
-        description: "Allow multiple file arguments even when one or more paths are missing",
-    },
-    MainOptionSpec {
         option: MainOption::PositionalOnly,
         spellings: &["--"],
-        description: "Treat every remaining argument as a literal file path",
+        description: "Treat all remaining words as one literal file path",
     },
 ];
 
@@ -116,7 +110,7 @@ pub(super) fn main_help(version: &str) -> String {
             "catomic {}\n\n",
             "Catomic is a Linux-first, modeless terminal text editor.\n\n",
             "Usage:\n",
-            "  catomic [OPTION]... [--] [FILE]...\n",
+            "  catomic [OPTION] [--] [FILE]\n",
             "  catomic config path|edit|check\n",
             "  catomic update [--yes] [--backup]\n",
             "  catomic update --check\n",
@@ -124,11 +118,11 @@ pub(super) fn main_help(version: &str) -> String {
             "  catomic (-V | --version)\n",
             "  catomic update (-h | --help)\n\n",
             "Files:\n",
-            "  With no FILE, Catomic opens one untitled empty buffer. One FILE opens one\n",
-            "  buffer; multiple FILE arguments open multiple buffers in argument order.\n",
-            "  One missing path opens as an empty named buffer and is created only when\n",
-            "  saved. With multiple FILE arguments, every path must exist unless explicit\n",
-            "  --allow-missing is present. Paths and contents must be UTF-8.\n\n",
+            "  With no FILE, Catomic opens one untitled empty buffer. Otherwise, every\n",
+            "  non-command word forms one path, joined with spaces. For example,\n",
+            "  `catomic hello world.md` opens exactly `hello world.md`. A missing path\n",
+            "  opens as an empty named buffer and is created only when saved. Quoting\n",
+            "  remains supported but is not required. Paths and contents must be UTF-8.\n\n",
             "Options:\n",
             "{}\n",
             "Subcommands:\n",
@@ -138,9 +132,9 @@ pub(super) fn main_help(version: &str) -> String {
             "          behavior, backup, and rollback details.\n\n",
             "Examples:\n",
             "  catomic\n",
-            "  catomic notes.md todo.txt\n",
-            "  catomic --allow-missing draft.md notes.md\n",
-            "  catomic \"meeting notes.md\"  Shell-quote a path containing spaces\n",
+            "  catomic draft.md\n",
+            "  catomic hello world.md     Open the single path `hello world.md`\n",
+            "  catomic \"meeting notes.md\"  Quoted paths remain supported\n",
             "  catomic -- -draft.md         Open an option-like filename\n",
             "  catomic -- update            Open a first file literally named update\n",
             "  catomic config path          Print the exact resolved configuration path\n",
@@ -236,15 +230,15 @@ mod tests {
     }
 
     #[test]
-    fn main_help_covers_file_semantics_quoting_examples_and_pointers() {
+    fn main_help_covers_single_file_semantics_and_pointers() {
         let text = main_help("test-version");
         for required in [
             "no FILE",
-            "multiple FILE arguments open multiple buffers in argument order",
-            "One missing path opens as an empty named buffer",
+            "non-command word forms one path",
+            "catomic hello world.md",
+            "opens exactly `hello world.md`",
+            "A missing path",
             "created only when",
-            "every path must exist unless explicit",
-            "--allow-missing",
             "catomic -- -draft.md",
             "catomic \"meeting notes.md\"",
             "catomic update --help",

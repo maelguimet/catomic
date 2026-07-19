@@ -65,20 +65,18 @@ for supported install methods and recovery behavior.
 
 ## Start editing
 
-Open one or more files, or start with an untitled buffer:
+Open one file, or start with an untitled buffer:
 
 ```sh
 catomic notes.md
-catomic notes.txt todo.txt server.log
-catomic --allow-missing draft-one.txt draft-two.txt
+catomic hello world.md
 catomic
 ```
 
-Several existing paths open directly. When several arguments include a missing
-path, Catomic stops before entering the editor, lists which paths exist, and
-suggests either quoting one filename containing spaces or rerunning with
-`--allow-missing` for intentional multi-buffer creation. Missing paths are
-never created until explicitly saved.
+All non-command words form one filename, joined with spaces, so the second
+example opens exactly `hello world.md`. Quoting filenames remains supported but
+is not required. A missing path opens as an empty named buffer and is never
+created until explicitly saved.
 
 Run `catomic --help` for command-line behavior and examples. Inside the editor,
 press `Ctrl+H` or `F1` for the built-in default-key and prompt-command quick

@@ -106,11 +106,7 @@ struct PtyEditor {
 
 impl PtyEditor {
     fn spawn(path: &PathBuf) -> TestResult<Self> {
-        Self::spawn_paths(&[path])
-    }
-
-    fn spawn_paths(paths: &[&PathBuf]) -> TestResult<Self> {
-        Self::spawn_with(paths, None)
+        Self::spawn_with(path, None)
     }
 
     fn spawn_sized(path: &PathBuf, rows: u16, cols: u16) -> TestResult<Self> {
@@ -126,7 +122,7 @@ impl PtyEditor {
     }
 
     fn spawn_with_xdg(path: &PathBuf, xdg_config_home: &PathBuf) -> TestResult<Self> {
-        Self::spawn_with(&[path], Some(xdg_config_home))
+        Self::spawn_with(path, Some(xdg_config_home))
     }
 
     fn spawn_with_size_and_xdg(
@@ -145,12 +141,10 @@ impl PtyEditor {
         Self::spawn_command_sized_with_environment(cmd, rows, cols, environment)
     }
 
-    fn spawn_mobile(paths: &[&PathBuf], rows: u16, cols: u16) -> TestResult<Self> {
+    fn spawn_mobile(path: &PathBuf, rows: u16, cols: u16) -> TestResult<Self> {
         let environment = TempProject::new("mobile_environment");
         let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
-        for path in paths {
-            cmd.arg(path);
-        }
+        cmd.arg(path);
         cmd.env("CATOMIC_MOBILE", "1");
         cmd.env("XDG_CONFIG_HOME", &environment.root);
         cmd.env("XDG_STATE_HOME", &environment.root);
@@ -159,13 +153,11 @@ impl PtyEditor {
         Self::spawn_command_sized_with_environment(cmd, rows, cols, environment)
     }
 
-    fn spawn_with(paths: &[&PathBuf], xdg_config_home: Option<&PathBuf>) -> TestResult<Self> {
+    fn spawn_with(path: &PathBuf, xdg_config_home: Option<&PathBuf>) -> TestResult<Self> {
         let environment = TempProject::new("environment");
         let xdg_root = xdg_config_home.unwrap_or(&environment.root);
         let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
-        for path in paths {
-            cmd.arg(path);
-        }
+        cmd.arg(path);
         cmd.env("XDG_CONFIG_HOME", xdg_root);
         cmd.env("XDG_STATE_HOME", xdg_root);
         cmd.env("HOME", &environment.root);
@@ -481,10 +473,8 @@ fn pty_save_undo_save_quit_writes_expected_file() -> TestResult {
 #[test]
 fn pty_mobile_touch_edit_focus_resize_save_and_quit_need_no_hardware_chord() -> TestResult {
     let first = TempPath::new("mobile_first");
-    let second = TempPath::new("mobile_second");
     fs::write(&first.path, "a\t猫e\u{301}🙂\ntarget line\nlast")?;
-    fs::write(&second.path, "second mobile buffer")?;
-    let mut editor = PtyEditor::spawn_mobile(&[&first.path, &second.path], 18, 30)?;
+    let mut editor = PtyEditor::spawn_mobile(&first.path, 18, 30)?;
 
     editor.wait_for_output("mobile action row", "[Menu][Save][Undo]")?;
     editor.tap(0, 0)?;
@@ -527,7 +517,6 @@ fn pty_mobile_touch_edit_focus_resize_save_and_quit_need_no_hardware_chord() -> 
     editor.wait_for_exit()?;
 
     assert!(fs::read_to_string(&first.path)?.starts_with("!a"));
-    assert_eq!(fs::read_to_string(&second.path)?, "second mobile buffer");
     Ok(())
 }
 
@@ -1020,80 +1009,26 @@ fn pty_paragraph_navigation_and_wheel_keep_the_logical_cursor_stable() -> TestRe
 }
 
 #[test]
-fn pty_multiple_cli_files_switch_and_save_active_buffer() -> TestResult {
-    let first = TempPath::new("buffers_first");
-    let second = TempPath::new("buffers_second");
-    fs::write(&first.path, "first buffer content")?;
-    fs::write(&second.path, "second buffer content")?;
-    let mut editor = PtyEditor::spawn_paths(&[&first.path, &second.path])?;
-
-    editor.wait_for_initial_render()?;
-    editor.wait_for_output("first CLI file", "first buffer content")?;
-    editor.wait_for_output("initial buffer position", "buffer 1/2")?;
-
-    // Xterm-compatible Alt+PageDown (CSI PageDown with modifier 3).
-    editor.send_keys(b"\x1b[6;3~")?;
-    editor.wait_for_output("second CLI file", "second buffer content")?;
-    editor.wait_for_output("next buffer position", "buffer 2/2")?;
-    editor.send_keys(b"X\x13\x11")?;
-    editor.wait_for_exit()?;
-
-    assert_eq!(fs::read_to_string(&first.path)?, "first buffer content");
-    assert_eq!(fs::read_to_string(&second.path)?, "Xsecond buffer content");
-
-    Ok(())
-}
-
-#[test]
-fn pty_ambiguous_mixed_cli_files_exit_before_startup_without_writing() -> TestResult {
-    let missing = TempPath::new("ambiguous_missing");
-    let existing = TempPath::new("ambiguous_existing");
-    fs::write(&existing.path, "existing stays unchanged")?;
+fn pty_unquoted_filename_words_open_save_and_remain_one_buffer() -> TestResult {
+    let project = TempProject::new("unquoted_filename_words");
+    let intended = project.root.join("hello world.md");
     let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
-    command.arg(&missing.path);
-    command.arg(&existing.path);
-    let mut editor = PtyEditor::spawn_command(command)?;
-
-    editor.wait_for_output("ambiguity guard", "ambiguous multi-file arguments")?;
-    editor.wait_for_output("missing path classification", "[missing]")?;
-    editor.wait_for_output("existing path classification", "[existing]")?;
-    editor.wait_for_output("shell quoting guidance", "filename containing spaces")?;
-    editor.wait_for_output("intentional opt-in", "--allow-missing")?;
-    editor.wait_for_output("buffer switching guidance", "Alt+PageUp / Alt+PageDown")?;
-    editor.wait_for_exit_code(2)?;
-
-    assert!(!missing.path.exists());
-    assert_eq!(
-        fs::read_to_string(&existing.path)?,
-        "existing stays unchanged"
-    );
-    Ok(())
-}
-
-#[test]
-fn pty_allow_missing_explicitly_opens_mixed_buffers_without_creating_a_file() -> TestResult {
-    let missing = TempPath::new("allowed_missing");
-    let existing = TempPath::new("allowed_existing");
-    fs::write(&existing.path, "deliberate second buffer")?;
-    let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
-    command.arg("--allow-missing");
-    command.arg(&missing.path);
-    command.arg(&existing.path);
+    command.cwd(&project.root);
+    command.arg("hello");
+    command.arg("world.md");
     let mut editor = PtyEditor::spawn_command(command)?;
 
     editor.wait_for_initial_render()?;
-    editor.wait_for_output("explicit multi-file position", "buffer 1/2")?;
+    editor.send_keys(b"hello")?;
+    // Switching buffers must be a no-op because startup created exactly one.
     editor.send_keys(b"\x1b[6;3~")?;
-    editor.wait_for_output("explicit existing buffer", "deliberate second buffer")?;
-    editor.wait_for_output("explicit second-buffer position", "buffer 2/2")?;
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(b" world\x13\x11")?;
     editor.wait_for_exit()?;
 
-    assert!(!missing.path.exists());
-    assert_eq!(
-        fs::read_to_string(&existing.path)?,
-        "deliberate second buffer"
-    );
+    assert_eq!(fs::read_to_string(&intended)?, "hello world");
+    assert!(!project.root.join("hello").exists());
+    assert!(!project.root.join("world.md").exists());
+    assert!(!editor.output_string().contains("buffer 1/2"));
     Ok(())
 }
 

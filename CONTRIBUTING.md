@@ -56,6 +56,7 @@ boundaries are in [docs/llm-rules.md](docs/llm-rules.md).
 Run the normal local gate before submitting a pull request:
 
 ```sh
+python3 scripts/check_markdown_links.py
 cargo fmt --all -- --check
 cargo clippy --all-targets --locked -- -D warnings
 cargo test --all-targets --locked

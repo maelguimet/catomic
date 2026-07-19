@@ -51,6 +51,24 @@ fn configured_chord_shadows_its_built_in_action() {
 }
 
 #[test]
+fn configured_toggle_overwrite_action_reuses_insert_handler() {
+    let mut app = App::new(None).unwrap();
+    app.buffer = Box::new(crate::buffer::PieceTable::from_text("abc"));
+    app.keybindings =
+        crate::config::keybindings::parse("[keybindings]\n\"alt+i\" = \"toggle-overwrite\"\n")
+            .unwrap();
+    let mut out = Vec::new();
+
+    app.handle_key_with(&mut out, make_key(KeyCode::Char('i'), KeyModifiers::ALT))
+        .unwrap();
+    app.handle_key_with(&mut out, make_key(KeyCode::Char('X'), KeyModifiers::SHIFT))
+        .unwrap();
+
+    assert_eq!(app.buffer.to_string(), "Xbc");
+    assert!(String::from_utf8(out).unwrap().contains("OVR"));
+}
+
+#[test]
 fn active_command_prompt_keeps_configured_printable_chord_as_text() {
     let mut app = App::new(None).unwrap();
     app.keybindings = crate::config::keybindings::parse("[keybindings]\nx = \"quit\"\n").unwrap();

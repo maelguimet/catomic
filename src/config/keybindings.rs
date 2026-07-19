@@ -113,6 +113,7 @@ fn parse_code(name: &str) -> io::Result<KeyCode> {
         "esc" | "escape" => KeyCode::Esc,
         "backspace" => KeyCode::Backspace,
         "delete" => KeyCode::Delete,
+        "insert" => KeyCode::Insert,
         "left" => KeyCode::Left,
         "right" => KeyCode::Right,
         "up" => KeyCode::Up,
@@ -163,7 +164,7 @@ mod tests {
     #[test]
     fn configured_chords_translate_to_canonical_actions() {
         let bindings = parse(
-            "[keybindings]\n\"ctrl+w\" = \"save\"\n\"alt+s\" = \"save-as\"\n\"alt+shift+p\" = \"command-prompt\"\n",
+            "[keybindings]\n\"ctrl+w\" = \"save\"\n\"alt+s\" = \"save-as\"\n\"alt+shift+p\" = \"command-prompt\"\n\"alt+i\" = \"toggle-overwrite\"\n",
         )
         .unwrap();
 
@@ -187,6 +188,20 @@ mod tests {
                 KeyCode::Char('p'),
                 KeyModifiers::CONTROL | KeyModifiers::SHIFT
             )
+        );
+        assert_eq!(
+            bindings.translate(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::ALT)),
+            KeyEvent::new(KeyCode::Insert, KeyModifiers::NONE)
+        );
+    }
+
+    #[test]
+    fn insert_key_can_be_remapped_to_another_action() {
+        let bindings = parse("[keybindings]\ninsert = \"save\"\n").unwrap();
+
+        assert_eq!(
+            bindings.translate(KeyEvent::new(KeyCode::Insert, KeyModifiers::NONE)),
+            KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL)
         );
     }
 

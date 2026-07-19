@@ -9,6 +9,7 @@ use std::io::{self, Write};
 
 use crate::buffer::{Buffer, Cursor};
 use crate::editor::syntax::SyntaxKind;
+use crate::terminal::cursor_style::{self, CursorShape};
 
 mod status_bar;
 mod style;
@@ -24,6 +25,7 @@ pub(crate) struct TextHighlight {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct RenderOptions {
+    pub(crate) cursor_shape: CursorShape,
     pub(crate) highlight: Option<TextHighlight>,
     pub(crate) syntax: SyntaxKind,
     pub(crate) line_numbers: bool,
@@ -36,6 +38,7 @@ pub(crate) struct RenderOptions {
 impl Default for RenderOptions {
     fn default() -> Self {
         Self {
+            cursor_shape: CursorShape::Default,
             highlight: None,
             syntax: SyntaxKind::Plain,
             line_numbers: false,
@@ -197,6 +200,7 @@ fn compose_buffer(
         .saturating_add(cursor_cells)
         .saturating_add(1)
         .min(width.max(1));
+    cursor_style::write_shape(out, options.cursor_shape)?;
     write!(out, "\x1b[{};{}H", screen_row, screen_col)?;
     Ok(())
 }

@@ -40,6 +40,7 @@ mod help;
 mod hooks;
 mod indentation;
 mod open;
+mod overwrite;
 mod paging;
 mod project_files;
 mod project_mode;
@@ -81,6 +82,8 @@ pub struct App {
     pub(crate) editor_config: EditorConfig,
     /// Plain-safe normal-mode chord overrides; contains no command runner.
     pub(crate) keybindings: KeyBindings,
+    /// Session-wide direct-typing mode. Prompts and read-only views never consume it.
+    pub(crate) typing_mode: overwrite::TypingMode,
     /// Named command policy only; no process exists until explicit invocation or a hook.
     pub(crate) command_config: CommandConfig,
     /// Presentation-only cat touches; never changes editing or file semantics.
@@ -234,6 +237,7 @@ impl App {
             auto_reload,
             editor_config,
             keybindings,
+            typing_mode: overwrite::TypingMode::default(),
             command_config,
             cat_config,
             status_theme: term::render::StatusTheme::from_environment(),
@@ -437,6 +441,7 @@ impl App {
             persistent_status = status::decorate_status_line(
                 status::format_status_line(
                     matches!(self.mode, Mode::Plain),
+                    self.typing_mode.is_overwrite(),
                     status::StatusFile {
                         path: self.file.path.as_deref(),
                         dirty: self.file.dirty,
@@ -457,6 +462,11 @@ impl App {
             (persistent_status.as_str(), term::render::StatusRole::Normal)
         };
         let render_options = term::render::RenderOptions {
+            cursor_shape: if overwrite::uses_overwrite_cursor(self) {
+                term::cursor_style::CursorShape::Overwrite
+            } else {
+                term::cursor_style::CursorShape::Default
+            },
             highlight,
             syntax: view::display_syntax(self),
             line_numbers: self.view_preferences.line_numbers(),

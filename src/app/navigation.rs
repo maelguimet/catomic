@@ -98,7 +98,7 @@ pub(crate) fn snap_current_grapheme(app: &mut super::App) -> io::Result<()> {
     Ok(())
 }
 
-fn previous_grapheme_cursor(buffer: &dyn Buffer) -> io::Result<Cursor> {
+pub(super) fn previous_grapheme_cursor(buffer: &dyn Buffer) -> io::Result<Cursor> {
     let cursor = buffer.cursor();
     if cursor.col == 0 {
         if cursor.row == 0 {
@@ -125,7 +125,7 @@ fn previous_grapheme_cursor(buffer: &dyn Buffer) -> io::Result<Cursor> {
     }
 }
 
-fn next_grapheme_cursor(buffer: &dyn Buffer) -> io::Result<Cursor> {
+pub(super) fn next_grapheme_cursor(buffer: &dyn Buffer) -> io::Result<Cursor> {
     let cursor = buffer.cursor();
     let line_len = buffer.line_char_count(cursor.row).unwrap_or(0);
     if cursor.col >= line_len {

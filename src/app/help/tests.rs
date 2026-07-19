@@ -53,12 +53,14 @@ fn ctrl_h_commits_help_content_and_status_as_one_frame() {
     assert!(help.contains("Undo the last edit transaction."));
     assert!(help.contains("Ctrl+Y / Ctrl+Shift+Z"));
     assert!(help.contains("Redo the next edit transaction."));
+    assert!(help.contains("Insert"));
+    assert!(help.contains("Toggle session-wide insert/overwrite typing"));
     assert!(!help.contains("Ctrl+Z/Y"));
     assert!(frame.contains("\x1b[50;1H"));
     assert!(frame.contains("\x1b[2KHelp; Esc closes."));
     assert!(
-        frame.ends_with("\x1b[0m\x1b[1;1H"),
-        "frame must reset status styling before cursor placement"
+        frame.ends_with("\x1b[0m\x1b[0 q\x1b[1;1H"),
+        "frame must reset status styling and select the default cursor before placement"
     );
 }
 

@@ -60,8 +60,8 @@ impl App {
         let completion = caps
             .local_completion
             .then(completion::CompletionUiState::default);
-        let meta = open::prepare_open_file_meta(initial_path)?;
-        let buffer = open::build_open_buffer(&meta, initial_path, big_files.page_lines)?;
+        let mut meta = open::prepare_open_file_meta(initial_path)?;
+        let buffer = open::build_open_buffer(&mut meta, initial_path, big_files.page_lines)?;
         let initial_pos = buffer.edit_history_position();
 
         let mut app = App {

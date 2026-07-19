@@ -30,13 +30,13 @@ use std::path::{Path, PathBuf};
 mod atomic_unix;
 mod snapshot;
 
-pub(crate) use snapshot::capture_regular_file_snapshot;
 #[cfg(test)]
 pub(crate) use snapshot::compare_to_snapshot;
 pub use snapshot::{
     capture_file_snapshot, observe_external_file, ExternalFileObservation, ExternalFileStatus,
     FileSnapshot,
 };
+pub(crate) use snapshot::{ensure_path_matches_snapshot, PinnedFile};
 #[allow(unused_imports)] // Public field types of the re-exported FileSnapshot.
 pub use snapshot::{FileChangeId, FileContentIdentity};
 

@@ -144,14 +144,15 @@ pub(crate) fn reload_cleared_message() -> String {
 
 struct ReloadedModifiedBuffer {
     buffer: Box<dyn buffer::Buffer>,
+    snapshot: FileSnapshot,
     size_bytes: u64,
     size_tier: FileSizeTier,
     text_format: crate::file::text_format::TextFormat,
 }
 
-fn observed_present_len(obs: &ExternalFileObservation) -> io::Result<u64> {
-    match obs.live_snapshot {
-        Some(FileSnapshot::Present { len, .. }) => Ok(len),
+fn observed_present_snapshot(obs: &ExternalFileObservation) -> io::Result<&FileSnapshot> {
+    match obs.live_snapshot.as_ref() {
+        Some(snapshot @ FileSnapshot::Present { .. }) => Ok(snapshot),
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "reload modified path missing present size snapshot",
@@ -161,29 +162,49 @@ fn observed_present_len(obs: &ExternalFileObservation) -> io::Result<u64> {
 
 fn build_modified_reload_buffer(
     path: &Path,
-    size_bytes: u64,
+    expected: &FileSnapshot,
     page_lines: usize,
 ) -> io::Result<ReloadedModifiedBuffer> {
+    let mut source = crate::file::io::PinnedFile::open(path)?.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::Interrupted,
+            format!("file disappeared while reloading: {}", path.display()),
+        )
+    })?;
+    if source.snapshot() != expected {
+        return Err(io::Error::new(
+            io::ErrorKind::Interrupted,
+            format!("file changed after reload confirmation: {}", path.display()),
+        ));
+    }
+    let FileSnapshot::Present {
+        len: size_bytes, ..
+    } = source.snapshot()
+    else {
+        unreachable!("PinnedFile always captures a present regular file")
+    };
+    let size_bytes = *size_bytes;
+    let loaded_snapshot = source.snapshot().clone();
     let size_tier = size::classify_file_size(size_bytes);
     let (buffer, text_format): (
         Box<dyn buffer::Buffer>,
         crate::file::text_format::TextFormat,
     ) = match size::open_size_decision(size_bytes) {
         OpenSizeDecision::Paged => {
-            let format = crate::file::text_format::detect_file_format(path)?;
+            let format = crate::file::text_format::detect_file_format_from(source.file_mut())?;
             if format.utf8_bom || format.line_ending == crate::file::text_format::LineEnding::Cr {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     "UTF-8 BOM and CR-only files must be opened below the paged-file threshold",
                 ));
             }
-            (
-                Box::new(buffer::PagedFileBuffer::open(path, page_lines)?),
-                format,
-            )
+            source.ensure_descriptor_unchanged(path)?;
+            let buffer = buffer::PagedFileBuffer::from_file(source.into_file(), page_lines)?;
+            (Box::new(buffer) as Box<dyn buffer::Buffer>, format)
         }
         OpenSizeDecision::Normal | OpenSizeDecision::Warn => {
-            let decoded = crate::file::text_format::read_text_file(path)?;
+            let bytes = source.read_all_verified(path)?;
+            let decoded = crate::file::text_format::decode(bytes)?;
             (
                 Box::new(buffer::PieceTable::from_owned_text(decoded.text)),
                 decoded.format,
@@ -193,6 +214,7 @@ fn build_modified_reload_buffer(
 
     Ok(ReloadedModifiedBuffer {
         buffer,
+        snapshot: loaded_snapshot,
         size_bytes,
         size_tier,
         text_format,
@@ -212,27 +234,41 @@ fn reload_modified_success_message(size_bytes: u64, size_tier: FileSizeTier) -> 
 /// Watcher policy and Ctrl+R confirmation both call this narrow mutation seam.
 /// Errors are surfaced in `message` and leave the existing buffer intact.
 pub(crate) fn perform_observed_reload(app: &mut super::App, obs: &ExternalFileObservation) {
-    super::autocomplete::invalidate(app);
     let Some(path) = app.file.path.clone() else {
         app.message = Some("No file path.".to_string());
         return;
     };
     match obs.status {
         ExternalFileStatus::Modified => {
-            match observed_present_len(obs).and_then(|size_bytes| {
-                build_modified_reload_buffer(&path, size_bytes, app.big_files.page_lines)
+            match observed_present_snapshot(obs).and_then(|expected| {
+                build_modified_reload_buffer(&path, expected, app.big_files.page_lines)
             }) {
-                Ok(reloaded) => apply_modified_reload(app, &path, reloaded),
-                Err(error) => app.message = Some(format!("Reload error: {error}")),
+                Ok(reloaded) => {
+                    if let Err(error) = apply_modified_reload(app, &path, reloaded) {
+                        report_reload_error(app, error);
+                    }
+                }
+                Err(error) => report_reload_error(app, error),
             }
         }
-        ExternalFileStatus::Deleted => apply_deleted_reload(app),
+        ExternalFileStatus::Deleted => {
+            match crate::file::io::ensure_path_matches_snapshot(&path, &FileSnapshot::Absent) {
+                Ok(()) => apply_deleted_reload(app),
+                Err(error) => report_reload_error(app, error),
+            }
+        }
         _ => apply_check_observation(app, obs),
     }
 }
 
-fn apply_modified_reload(app: &mut super::App, path: &Path, reloaded: ReloadedModifiedBuffer) {
+fn apply_modified_reload(
+    app: &mut super::App,
+    path: &Path,
+    reloaded: ReloadedModifiedBuffer,
+) -> io::Result<()> {
+    crate::file::io::ensure_path_matches_snapshot(path, &reloaded.snapshot)?;
     let reload_message = reload_modified_success_message(reloaded.size_bytes, reloaded.size_tier);
+    super::autocomplete::invalidate(app);
     super::search::cancel_running_search(app);
     super::command_prompt::cancel_running_goto(app);
     super::completion::cancel(app);
@@ -244,26 +280,15 @@ fn apply_modified_reload(app: &mut super::App, path: &Path, reloaded: ReloadedMo
     app.file.saved_history_position = app.buffer.edit_history_position();
     app.file.dirty = false;
     app.file.text_format = reloaded.text_format;
-    match crate::file::io::capture_file_snapshot(path) {
-        Ok(snapshot @ FileSnapshot::Present { len, .. }) => {
-            app.file.size_bytes = Some(len);
-            app.file.size_tier = Some(crate::file::size::classify_file_size(len));
-            app.file.disk_snapshot = Some(snapshot);
-        }
-        Ok(snapshot) => {
-            app.file.disk_snapshot = Some(snapshot);
-            app.file.size_bytes = None;
-            app.file.size_tier = None;
-        }
-        Err(_) => {
-            app.file.size_bytes = Some(reloaded.size_bytes);
-            app.file.size_tier = Some(reloaded.size_tier);
-        }
-    }
+    app.file.disk_snapshot = Some(reloaded.snapshot);
+    app.file.size_bytes = Some(reloaded.size_bytes);
+    app.file.size_tier = Some(reloaded.size_tier);
     finish_reload(app, reload_message);
+    Ok(())
 }
 
 fn apply_deleted_reload(app: &mut super::App) {
+    super::autocomplete::invalidate(app);
     super::search::cancel_running_search(app);
     super::command_prompt::cancel_running_goto(app);
     super::completion::cancel(app);
@@ -278,6 +303,22 @@ fn apply_deleted_reload(app: &mut super::App) {
     app.file.size_bytes = None;
     app.file.size_tier = None;
     finish_reload(app, reload_cleared_message());
+}
+
+fn report_reload_error(app: &mut super::App, error: io::Error) {
+    if error.kind() == io::ErrorKind::Interrupted {
+        app.pending_reload = None;
+        let local = if app.file.dirty {
+            " Local changes preserved."
+        } else {
+            ""
+        };
+        app.message = Some(format!(
+            "Reload aborted because the file changed again. Re-arm reload confirmation.{local}"
+        ));
+    } else {
+        app.message = Some(format!("Reload error: {error}"));
+    }
 }
 
 fn finish_reload(app: &mut super::App, message: String) {
@@ -384,9 +425,15 @@ mod tests {
         let path = temp_path("huge_policy.txt");
         cleanup(&path);
         std::fs::write(&path, "first\nsecond").unwrap();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(size::LARGE_FILE_LIMIT_BYTES + 1)
+            .unwrap();
+        let expected = crate::file::io::capture_file_snapshot(&path).unwrap();
 
-        let reloaded =
-            build_modified_reload_buffer(&path, size::LARGE_FILE_LIMIT_BYTES + 1, 1).unwrap();
+        let reloaded = build_modified_reload_buffer(&path, &expected, 1).unwrap();
 
         assert_eq!(reloaded.size_tier, FileSizeTier::Huge);
         assert!(!reloaded.buffer.is_read_only());
@@ -401,14 +448,84 @@ mod tests {
         let path = temp_path("extreme_policy.txt");
         cleanup(&path);
         std::fs::write(&path, "first\nsecond").unwrap();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(size::HUGE_FILE_LIMIT_BYTES + 1)
+            .unwrap();
+        let expected = crate::file::io::capture_file_snapshot(&path).unwrap();
 
-        let reloaded =
-            build_modified_reload_buffer(&path, size::HUGE_FILE_LIMIT_BYTES + 1, 1).unwrap();
+        let reloaded = build_modified_reload_buffer(&path, &expected, 1).unwrap();
 
         assert_eq!(reloaded.size_tier, FileSizeTier::Extreme);
         assert!(!reloaded.buffer.is_read_only());
         assert!(reloaded.buffer.page_info().unwrap().has_next);
 
+        cleanup(&path);
+    }
+
+    #[test]
+    fn loaded_revision_cannot_adopt_a_later_path_revision_as_baseline() {
+        let path = temp_path("loaded_b_path_c.txt");
+        cleanup(&path);
+        std::fs::write(&path, "base").unwrap();
+        let mut app = super::super::App::new(Some(&path.to_string_lossy())).unwrap();
+        app.buffer.insert_char('L');
+        app.file.dirty = true;
+        let local_buffer = app.buffer.to_string();
+        let base_snapshot = app.file.disk_snapshot.clone();
+
+        std::fs::write(&path, "BBBB").unwrap();
+        let observation = observe_external_file(Some(&path), app.file.disk_snapshot.as_ref());
+        assert_eq!(observation.status, ExternalFileStatus::Modified);
+        let expected = observed_present_snapshot(&observation).unwrap();
+        let reloaded = build_modified_reload_buffer(&path, expected, 20_000).unwrap();
+        assert_eq!(reloaded.buffer.to_string(), "BBBB");
+
+        std::fs::write(&path, "CCCC").unwrap();
+        let error = apply_modified_reload(&mut app, &path, reloaded)
+            .expect_err("path revision C must not baseline loaded revision B");
+
+        assert_eq!(error.kind(), io::ErrorKind::Interrupted);
+        assert_eq!(app.buffer.to_string(), local_buffer);
+        assert!(app.file.dirty);
+        assert_eq!(app.file.disk_snapshot, base_snapshot);
+        assert_eq!(
+            observe_external_file(Some(&path), app.file.disk_snapshot.as_ref()).status,
+            ExternalFileStatus::Modified
+        );
+        cleanup(&path);
+    }
+
+    #[test]
+    fn confirmed_revision_drift_requires_rearming_and_preserves_local_edits() {
+        let path = temp_path("confirmed_b_loaded_c.txt");
+        cleanup(&path);
+        std::fs::write(&path, "base").unwrap();
+        let mut app = super::super::App::new(Some(&path.to_string_lossy())).unwrap();
+        app.buffer.insert_char('L');
+        app.file.dirty = true;
+        let local_buffer = app.buffer.to_string();
+        let base_snapshot = app.file.disk_snapshot.clone();
+
+        std::fs::write(&path, "BBBB").unwrap();
+        let confirmed = observe_external_file(Some(&path), app.file.disk_snapshot.as_ref());
+        apply_check_observation(&mut app, &confirmed);
+        assert!(app.pending_reload.is_some());
+
+        std::fs::write(&path, "CCCC").unwrap();
+        perform_observed_reload(&mut app, &confirmed);
+
+        assert_eq!(app.buffer.to_string(), local_buffer);
+        assert!(app.file.dirty);
+        assert_eq!(app.file.disk_snapshot, base_snapshot);
+        assert!(app.pending_reload.is_none());
+        assert!(app
+            .message
+            .as_deref()
+            .unwrap_or("")
+            .contains("Re-arm reload confirmation"));
         cleanup(&path);
     }
 }

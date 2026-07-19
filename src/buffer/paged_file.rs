@@ -8,6 +8,7 @@
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io;
+#[cfg(test)]
 use std::path::Path;
 
 use crate::buffer::large_file::page_scan::find_previous_page_start;
@@ -54,8 +55,12 @@ impl DescriptorSnapshot {
 }
 
 impl PagedFileBuffer {
+    #[cfg(test)]
     pub(crate) fn open(path: impl AsRef<Path>, page_lines: usize) -> io::Result<Self> {
-        let file = File::open(path)?;
+        Self::from_file(File::open(path)?, page_lines)
+    }
+
+    pub(crate) fn from_file(file: File, page_lines: usize) -> io::Result<Self> {
         let snapshot = DescriptorSnapshot::capture(&file)?;
         let total_bytes = usize::try_from(snapshot.len).map_err(|_| {
             io::Error::new(

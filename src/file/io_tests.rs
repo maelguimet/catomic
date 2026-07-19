@@ -29,6 +29,9 @@ mod symlink;
 #[path = "io_tests/unix_metadata.rs"]
 mod unix_metadata;
 
+#[path = "io_tests/permissions.rs"]
+mod permissions;
+
 #[test]
 fn read_to_string_reads_valid_utf8() {
     let out = temp_path("read_valid_utf8.txt");

@@ -1,7 +1,7 @@
 //! Purpose: present `.catnap` content read-only and apply it only after Enter.
 //! Owns: preview construction, navigation, drift checks, one edit, cancel, and display buffer.
 //! Must not: write source files, schedule autosave, load config, remove sidecars, or network.
-//! Invariants: source stays unchanged until Enter; path/history/disk drift refuses apply.
+//! Invariants: source stays unchanged until Enter; source or retained-candidate drift refuses apply.
 //! Phase: 8 recovery preview.
 
 use std::io::{self, Write};
@@ -11,10 +11,11 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::{Buffer, Cursor, PieceTable};
 use crate::file::io::FileSnapshot;
+use crate::file::recovery::RecoveryCandidate;
 
 pub(super) struct RecoveryPreview {
     buffer: PieceTable,
-    proposed_text: String,
+    candidate: RecoveryCandidate,
     source_path: Option<PathBuf>,
     source_history: u64,
     source_disk_snapshot: Option<FileSnapshot>,
@@ -36,7 +37,18 @@ pub(crate) fn start_preview(app: &mut super::super::App, out: &mut dyn Write) ->
         app.message = Some("Catnap recovery requires a named file.".to_string());
         return app.render(out);
     };
-    match crate::file::recovery::has_candidate(&path, config.max_bytes) {
+    let mut candidate = match app.recovery.offered_candidate.take() {
+        Some(candidate) => candidate,
+        None => match crate::file::recovery::load_candidate(&path, config.max_bytes) {
+            Ok(Some(candidate)) => candidate,
+            Ok(None) => {
+                app.message = Some("No newer catnap recovery is available.".to_string());
+                return app.render(out);
+            }
+            Err(error) => return preview_error(app, out, error),
+        },
+    };
+    match candidate.is_current(&path) {
         Ok(true) => {}
         Ok(false) => {
             app.message = Some("No newer catnap recovery is available.".to_string());
@@ -44,11 +56,7 @@ pub(crate) fn start_preview(app: &mut super::super::App, out: &mut dyn Write) ->
         }
         Err(error) => return preview_error(app, out, error),
     }
-    let text = match crate::file::recovery::read_bounded(&path, config.max_bytes) {
-        Ok(text) => text,
-        Err(error) => return preview_error(app, out, error),
-    };
-    open(app, out, text)
+    open(app, out, candidate)
 }
 
 fn preview_error(
@@ -60,15 +68,19 @@ fn preview_error(
     app.render(out)
 }
 
-fn open(app: &mut super::super::App, out: &mut dyn Write, text: String) -> io::Result<()> {
+fn open(
+    app: &mut super::super::App,
+    out: &mut dyn Write,
+    candidate: RecoveryCandidate,
+) -> io::Result<()> {
     super::super::view::cancel_preview(app);
     super::super::llm_preview::close(app);
     super::super::llm_answer::close(app);
     super::super::lint::close_view(app);
     super::super::project_files::close_view(app);
     app.recovery.preview = Some(RecoveryPreview {
-        buffer: PieceTable::from_text(&text),
-        proposed_text: text,
+        buffer: PieceTable::from_text(candidate.text()),
+        candidate,
         source_path: app.file.path.clone(),
         source_history: app.buffer.edit_history_position(),
         source_disk_snapshot: app.file.disk_snapshot.clone(),
@@ -116,7 +128,7 @@ pub(crate) fn handle_paste(app: &mut super::super::App, out: &mut dyn Write) -> 
 }
 
 fn apply(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
-    let preview = app.recovery.preview.take().expect("recovery preview");
+    let mut preview = app.recovery.preview.take().expect("recovery preview");
     restore_scroll(app, &preview);
     if app.file.path != preview.source_path
         || app.buffer.edit_history_position() != preview.source_history
@@ -125,7 +137,16 @@ fn apply(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
         app.message = Some("Source changed during recovery preview; nothing applied.".to_string());
         return app.render(out);
     }
-    if !replace_buffer(&mut *app.buffer, &preview.proposed_text)? {
+    let candidate_is_current = preview
+        .source_path
+        .as_deref()
+        .map(|path| preview.candidate.is_current(path).unwrap_or(false))
+        .unwrap_or(false);
+    if !candidate_is_current {
+        app.message = Some("Catnap changed during recovery preview; nothing applied.".to_string());
+        return app.render(out);
+    }
+    if !replace_buffer(&mut *app.buffer, preview.candidate.text())? {
         app.message = Some("Recovery already matches the current buffer.".to_string());
         return app.render(out);
     }

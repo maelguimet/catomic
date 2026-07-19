@@ -15,6 +15,8 @@
 //!   observations use len/mtime plus Unix identity/change time when available,
 //!   full SHA-256 through the editable full-read tier, and a fixed-size sampled
 //!   identity for paged files;
+//!   Unix temp files remain owner-only while content streams, then restore the
+//!   existing target mode or the new file's umask-derived creation mode;
 //!   Absent explicitly represents missing;
 //!   read_to_string returns InvalidData for non-UTF-8; errors other than NotFound
 //!   surface as Unknown(kind) in observation helpers; single-capture observe.
@@ -176,14 +178,26 @@ fn atomic_write_with_policy(
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600);
         }
-        let mut f = options.open(&temp_path)?;
+        let f = options.open(&temp_path)?;
         created_temp = true;
         #[cfg(unix)]
-        if private {
+        let final_permissions = if private {
+            None
+        } else {
+            Some(match existing_permissions {
+                Some(permissions) => permissions,
+                None => f.metadata()?.permissions(),
+            })
+        };
+        #[cfg(unix)]
+        {
             use std::os::unix::fs::PermissionsExt;
-            // Recovery data must never spend the streaming window at a wider mode.
+            // No content byte is exposed under the umask-derived temporary mode.
+            // New files restore that captured mode after streaming; existing files
+            // restore the target mode after writing has cleared any special bits.
             f.set_permissions(fs::Permissions::from_mode(0o600))?;
         }
+        let mut f = f;
         let written = {
             let mut writer = CountingWriter::new(&mut f);
             write_contents(&mut writer)?;
@@ -191,11 +205,8 @@ fn atomic_write_with_policy(
             writer.written
         };
         #[cfg(unix)]
-        if !private {
-            if let Some(permissions) = existing_permissions {
-                // Apply modes after writing because writing can clear setuid/setgid bits.
-                f.set_permissions(permissions)?;
-            }
+        if let Some(permissions) = final_permissions {
+            f.set_permissions(permissions)?;
         }
         #[cfg(any(target_os = "linux", target_os = "android"))]
         if !private {

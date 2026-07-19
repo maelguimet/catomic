@@ -25,12 +25,12 @@ fn manual_phase8_one_mib_catnap_reports_samples() {
     print_perf_sample(&write_sample);
     assert!(matches!(result, CatnapResult::Written { history: 1, .. }));
 
-    let (read, read_sample) =
+    let (candidate, read_sample) =
         measure_sample("read bounded catnap 1mib", Some(BYTES as u64), || {
-            recovery::read_bounded(&original, BYTES).unwrap()
+            recovery::load_candidate(&original, BYTES).unwrap().unwrap()
         });
     print_perf_sample(&read_sample);
-    assert_eq!(read.len(), BYTES);
+    assert_eq!(candidate.text().len(), BYTES);
 
     recovery::remove(&original).unwrap();
 }

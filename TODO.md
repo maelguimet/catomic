@@ -74,67 +74,15 @@ copy completed implementation journals back into this roadmap.
 
 ## Active work
 
-### Beta correctness and visible polish
-
-Correct advertised behavior before widening the platform surface:
-
-- [#53](https://github.com/maelguimet/catomic/issues/53) — eliminate help-view
-  redraw flicker.
-- [#64](https://github.com/maelguimet/catomic/issues/64) — restore reliable
-  click-to-position behavior.
-- [#63](https://github.com/maelguimet/catomic/issues/63) — make the status and
-  message row visually distinct.
-- [#56](https://github.com/maelguimet/catomic/issues/56) — make redo bindings
-  unambiguous.
-- [#57](https://github.com/maelguimet/catomic/issues/57) — explain the model
-  command variants concisely in built-in help.
-
-### Configuration and customization foundation
-
-- [#62](https://github.com/maelguimet/catomic/issues/62) is the parent design for
-  config discovery/editing, complete action remapping, and semantic color
-  schemes. Deliver it as reviewable vertical slices rather than one giant PR.
-- [#58](https://github.com/maelguimet/catomic/issues/58) should use the resulting
-  preference/state policy for persistent line-number defaults.
-- Status, model-change, warning, and error colors must consume semantic theme
-  roles instead of growing separate hard-coded ANSI paths.
-
-### Clanker-native power
-
-- [#67](https://github.com/maelguimet/catomic/issues/67) establishes model
-  presets and the common HTTP/headless-command backend boundary.
-- [#61](https://github.com/maelguimet/catomic/issues/61) should document the final
-  selector/backend configuration after #67 stabilizes it.
-- No model feature may weaken the Plain-mode, confirmation, bounded-context,
-  preview, drift, undo, or no-auto-save guarantees.
-
-### Editing and document UX
-
-- [#54](https://github.com/maelguimet/catomic/issues/54) — improve Markdown source
-  styling and preview rendering, especially tables.
-- [#59](https://github.com/maelguimet/catomic/issues/59) — add explicit overwrite
-  mode without contaminating ordinary insert, paste, prompt, or proposal paths.
-
-### Distribution and additional platforms
-
-- [#60](https://github.com/maelguimet/catomic/issues/60) — define safe,
-  install-method-aware updates without overwriting user state.
-- [#66](https://github.com/maelguimet/catomic/issues/66) — establish
-  Android/Termux support and touch/soft-keyboard-accessible workflows.
-- Mobile work follows the cursor/mouse, action-remapping, semantic-status, and
-  narrow-layout foundations rather than duplicating them.
+The [open issue queue](https://github.com/maelguimet/catomic/issues?q=is%3Aissue%20is%3Aopen)
+is the live work ledger. No additional product work is currently prioritized in
+this roadmap. Add an entry here only when an open issue needs roadmap-level
+ordering or a cross-issue decision.
 
 ## Dependency order
 
-1. Resolve beta correctness defects and small visible inconsistencies.
-2. Establish the shared action registry, configuration, preferences, and
-   semantic theme primitives from #62.
-3. Establish the backend/preset abstraction in #67.
-4. Finalize model help in #61 once configuration and picker behavior stop moving.
-5. Reuse cursor, viewport, action, status, and theme primitives for mobile work.
-
-Independent editor improvements may proceed in parallel when they do not cross
-these foundations.
+No dependency sequence is currently active. Record one here only while it
+affects open work, and remove it when the relevant issues close.
 
 ## Delivery rules
 

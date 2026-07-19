@@ -49,6 +49,7 @@ mod replace;
 mod repo_llm;
 mod runtime;
 mod save;
+mod save_trace;
 mod search;
 mod selection;
 mod startup_config;
@@ -133,6 +134,14 @@ pub struct App {
     /// Cleared by content edits (insert/delete/undo/redo), successful save, path changes.
     /// Movement/resize/render do not clear. NoPath/Unchanged/Unknown do not arm.
     pub pending_reload: Option<reload::PendingReload>,
+    /// Last actionable save refusal/error for the active buffer. Background work cannot
+    /// obscure it before the next user event; quit can still explain why the buffer is dirty.
+    pub(crate) save_notice: Option<String>,
+    pub(crate) save_notice_protected: bool,
+    /// Debug-build, explicit-env save diagnostics used only by PTY regressions.
+    /// It records paths and state tokens, never document contents.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
+    pub(crate) save_trace: save_trace::SaveTrace,
     /// Explicit Ctrl+F prompt/worker state. No worker exists before invocation.
     pub(crate) search: search::SearchUiState,
     /// Explicit two-stage replace prompt; empty outside direct user invocation.

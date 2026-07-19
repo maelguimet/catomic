@@ -104,6 +104,13 @@ pub(crate) fn apply_file_watch_signal(
     use crate::file::io::ExternalFileStatus;
     use crate::file::watcher::FileWatchSignal;
 
+    let signal_label = match &signal {
+        FileWatchSignal::Changed => "changed",
+        FileWatchSignal::Deleted => "deleted",
+        FileWatchSignal::Error(_) => "error",
+    };
+    super::save_trace::note_watcher(app, signal_label);
+
     match signal {
         FileWatchSignal::Changed | FileWatchSignal::Deleted => {
             let current_path = app.file.path.clone();

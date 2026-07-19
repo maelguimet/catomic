@@ -116,6 +116,46 @@ fn app_ctrl_s_after_dirty_clears_dirty_and_pending() {
 }
 
 #[test]
+fn app_immediate_self_watcher_signal_after_save_stays_at_the_exact_clean_point() {
+    let path = std::env::temp_dir().join(format!(
+        "catomic_immediate_save_watcher_{}.txt",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, "base").unwrap();
+    let mut app = App::new(path.to_str()).unwrap();
+    let mut out = Vec::new();
+
+    app.handle_key_with(&mut out, make_key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key_with(
+        &mut out,
+        make_key(KeyCode::Char('s'), KeyModifiers::CONTROL),
+    )
+    .unwrap();
+    let saved = app.file.saved_history_position;
+
+    let (watcher, _sender) = crate::file::watcher::FileWatcher::new_for_test(path.clone());
+    watcher.inject_signal(crate::file::watcher::FileWatchSignal::Changed);
+    crate::app::watch::replace_file_watcher_for_test(&mut app, watcher);
+    assert!(
+        !crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out).unwrap(),
+        "the self-save watcher hint must observe the new snapshot as unchanged"
+    );
+
+    assert!(!app.file.dirty);
+    assert_eq!(app.buffer.edit_history_position(), saved);
+    app.handle_key_with(
+        &mut out,
+        make_key(KeyCode::Char('q'), KeyModifiers::CONTROL),
+    )
+    .unwrap();
+    assert!(app.should_quit);
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
 fn app_save_error_keeps_dirty_and_sets_error_message() {
     // Use a dedicated subdir under temp (never bare temp_dir or root sibling)
     // so that path points to a directory -> atomic_write fails as intended.
@@ -144,6 +184,52 @@ fn app_save_error_keeps_dirty_and_sets_error_message() {
 
     // cleanup dedicated dir only
     let _ = std::fs::remove_dir_all(&bad);
+}
+
+#[test]
+fn app_save_error_survives_background_message_until_quit_explains_dirty_state() {
+    let bad = std::env::temp_dir().join(format!(
+        "catomic_protected_save_error_{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&bad);
+    std::fs::create_dir_all(&bad).unwrap();
+    let mut app = App::new(None).unwrap();
+    app.file.path = Some(bad.clone());
+    let mut out = Vec::new();
+
+    app.handle_key_with(&mut out, make_key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
+    assert!(app.file.dirty);
+
+    app.handle_key_with(
+        &mut out,
+        make_key(KeyCode::Char('s'), KeyModifiers::CONTROL),
+    )
+    .unwrap();
+    assert!(app.message.as_deref().unwrap().contains("Save error"));
+
+    crate::app::watch::apply_file_watch_signal(
+        &mut app,
+        crate::file::watcher::FileWatchSignal::Error("later watcher detail".to_string()),
+    );
+    out.clear();
+    app.render(&mut out).unwrap();
+    let rendered = String::from_utf8_lossy(&out);
+    assert!(rendered.contains("Save error"));
+    assert!(!rendered.contains("later watcher detail"));
+
+    app.handle_key_with(
+        &mut out,
+        make_key(KeyCode::Char('q'), KeyModifiers::CONTROL),
+    )
+    .unwrap();
+    let warning = app.message.as_deref().unwrap();
+    assert!(warning.contains("Save error"));
+    assert!(warning.contains("Unsaved changes"));
+    assert!(!app.should_quit);
+
+    let _ = std::fs::remove_dir_all(bad);
 }
 
 #[cfg(unix)]

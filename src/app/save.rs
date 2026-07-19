@@ -106,7 +106,12 @@ pub(crate) fn handle_save(app: &mut super::App, out: &mut dyn Write) -> io::Resu
     }
     if app.buffer.is_read_only() {
         app.pending_save_conflict = None;
-        app.message = Some("Large file is read-only in paged mode; save disabled.".to_string());
+        set_notice(
+            app,
+            "Large file is read-only in paged mode; save disabled.".to_string(),
+        );
+        let target = app.file.path.clone().expect("named read-only buffer");
+        record_refused_save(app, &target, "read_only");
         return app.render(out);
     }
 
@@ -133,14 +138,15 @@ pub(crate) fn handle_save(app: &mut super::App, out: &mut dyn Write) -> io::Resu
         // refuse, record a fresh token bound to the *current* observation (incl. snapshot).
         let target_path = current_path.expect("conflict status requires a path");
         app.pending_save_conflict = Some(PendingSaveConflict {
-            path: target_path,
+            path: target_path.clone(),
             status: obs.status.clone(),
             snapshot: obs.live_snapshot,
         });
-        app.message = Some(save_conflict_message_for_ui(
-            &obs.status,
-            super::mobile::is_enabled(app),
-        ));
+        set_notice(
+            app,
+            save_conflict_message_for_ui(&obs.status, super::mobile::is_enabled(app)),
+        );
+        record_refused_save(app, &target_path, "external_conflict");
         app.render(out)
     }
 }
@@ -157,18 +163,23 @@ pub(crate) fn handle_save_as(
     let target = match expand_user_path(input, std::env::var_os("HOME").as_deref()) {
         Ok(path) => path,
         Err(error) => {
-            app.message = Some(format!("Save As error: {error}"));
+            set_notice(app, format!("Save As error: {error}"));
             return app.render(out);
         }
     };
     if app.buffer.is_read_only() {
         app.pending_save_conflict = None;
-        app.message = Some("Large file is read-only in paged mode; save disabled.".to_string());
+        set_notice(
+            app,
+            "Large file is read-only in paged mode; save disabled.".to_string(),
+        );
+        record_refused_save(app, &target, "read_only");
         return app.render(out);
     }
     if let Err(error) = file::io::validate_regular_save_target(&target) {
         app.pending_save_conflict = None;
-        app.message = Some(format!("Save As error: {error}"));
+        set_notice(app, format!("Save As error: {error}"));
+        record_refused_save(app, &target, "invalid_target");
         return app.render(out);
     }
     if app
@@ -198,14 +209,15 @@ pub(crate) fn handle_save_as(
     }
 
     app.pending_save_conflict = Some(PendingSaveConflict {
-        path: target,
+        path: target.clone(),
         status: obs.status.clone(),
         snapshot: obs.live_snapshot,
     });
-    app.message = Some(save_as_conflict_message(
-        &obs.status,
-        super::mobile::is_enabled(app),
-    ));
+    set_notice(
+        app,
+        save_as_conflict_message(&obs.status, super::mobile::is_enabled(app)),
+    );
+    record_refused_save(app, &target, "external_conflict");
     app.render(out)
 }
 
@@ -288,6 +300,7 @@ pub(crate) fn do_atomic_save(app: &mut super::App, out: &mut dyn Write) -> io::R
 }
 
 fn do_atomic_save_to(app: &mut super::App, out: &mut dyn Write, target: PathBuf) -> io::Result<()> {
+    let trace_attempt = super::save_trace::begin(app, &target);
     super::recovery::finish_before_save(app);
     let path_changed = app.file.path.as_ref() != Some(&target);
     let save_result = file::io::atomic_write_with(&target, |writer| {
@@ -327,6 +340,7 @@ fn do_atomic_save_to(app: &mut super::App, out: &mut dyn Write, target: PathBuf)
             app.pending_quit_confirm = false;
             app.pending_save_conflict = None;
             app.pending_reload = None;
+            clear_notice(app);
             app.message = super::recovery::after_save(app)
                 .err()
                 .map(|error| format!("Saved, but catnap cleanup failed: {error}"));
@@ -338,12 +352,34 @@ fn do_atomic_save_to(app: &mut super::App, out: &mut dyn Write, target: PathBuf)
                 });
             }
             super::hooks::trigger_save(app);
+            super::save_trace::finish(app, trace_attempt, true, true, "saved");
         }
         Err(e) => {
-            app.message = Some(format!("Save error: {}", e));
+            set_notice(app, format!("Save error: {e}"));
             // keep dirty; do not clear save conflict (user may still want to force after fixing env)
             // snapshot intentionally NOT updated on failure
+            super::save_trace::finish(app, trace_attempt, true, false, "write_error");
         }
     }
     app.render(out)
+}
+
+fn record_refused_save(app: &mut super::App, target: &Path, outcome: &str) {
+    let attempt = super::save_trace::begin(app, target);
+    super::save_trace::finish(app, attempt, false, false, outcome);
+}
+
+fn set_notice(app: &mut super::App, message: String) {
+    app.message = Some(message.clone());
+    app.save_notice = Some(message);
+    app.save_notice_protected = true;
+}
+
+pub(crate) fn acknowledge_notice(app: &mut super::App) {
+    app.save_notice_protected = false;
+}
+
+pub(crate) fn clear_notice(app: &mut super::App) {
+    app.save_notice = None;
+    app.save_notice_protected = false;
 }

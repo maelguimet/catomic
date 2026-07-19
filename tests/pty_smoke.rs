@@ -26,6 +26,8 @@ static PTY_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 #[path = "pty_smoke/autocomplete.rs"]
 mod autocomplete;
+#[path = "pty_smoke/save_point.rs"]
+mod save_point;
 
 struct TempPath {
     path: PathBuf,

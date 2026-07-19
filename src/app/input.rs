@@ -46,6 +46,8 @@ pub(super) fn finish_content_edit_with_message(
     completion::cancel(app);
     app.selection.clear();
     refresh_dirty(&mut app.file, &*app.buffer);
+    super::save_trace::note_content_edit(app);
+    super::save::clear_notice(app);
     app.clanker_changes
         .reconcile(app.buffer.edit_history_position());
     if app.buffer.is_read_only() {
@@ -196,6 +198,8 @@ pub(super) fn handle_quit(app: &mut super::App, out: &mut dyn Write) -> io::Resu
                 app.message =
                     Some("Returned to previous buffer; configuration remains open.".to_string());
                 app.reveal_cursor();
+                let dirty_count = app.dirty_buffer_count();
+                super::save_trace::note_quit(app, dirty_count, false);
                 return app.render(out);
             }
         }
@@ -203,11 +207,12 @@ pub(super) fn handle_quit(app: &mut super::App, out: &mut dyn Write) -> io::Resu
 
     let dirty_count = app.dirty_buffer_count();
     if dirty_count == 0 || app.pending_quit_confirm {
+        super::save_trace::note_quit(app, dirty_count, true);
         app.should_quit = true;
         return Ok(());
     }
     app.pending_quit_confirm = true;
-    app.message = Some(if mobile::is_enabled(app) && dirty_count == 1 {
+    let warning = if mobile::is_enabled(app) && dirty_count == 1 {
         "Unsaved changes. Tap Menu > Quit again to discard, or tap Save.".to_string()
     } else if mobile::is_enabled(app) {
         format!("Unsaved changes in {dirty_count} buffers. Tap Menu > Quit again to discard.")
@@ -217,6 +222,12 @@ pub(super) fn handle_quit(app: &mut super::App, out: &mut dyn Write) -> io::Resu
         format!(
             "Unsaved changes in {dirty_count} buffers. Press Ctrl+Q again to quit without saving."
         )
+    };
+    app.message = Some(match app.save_notice.take() {
+        Some(notice) => format!("{notice} {warning}"),
+        None => warning,
     });
+    app.save_notice_protected = false;
+    super::save_trace::note_quit(app, dirty_count, false);
     app.render(out)
 }

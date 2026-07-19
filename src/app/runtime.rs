@@ -64,6 +64,7 @@ impl App {
     }
 
     fn poll_runtime_tasks(&mut self, out: &mut dyn Write) -> io::Result<()> {
+        let trace_before = super::save_trace::before_background_poll(self);
         watch::check_file_watcher_once_and_render(self, out)?;
         search::poll_search(self, out)?;
         command_prompt::poll_goto(self, out)?;
@@ -76,13 +77,24 @@ impl App {
         external_command::poll(self, out)?;
         hooks::pump(self, out)?;
         recovery::poll(self, out)?;
-        autocomplete::poll(self, out)
+        autocomplete::poll(self, out)?;
+        super::save_trace::after_background_poll(self, trace_before);
+        Ok(())
     }
 
     fn dispatch_terminal_event(&mut self, out: &mut dyn Write, event: Event) -> io::Result<()> {
+        if matches!(&event, Event::Key(_) | Event::Paste(_) | Event::Mouse(_)) {
+            super::save::acknowledge_notice(self);
+        }
         match event {
-            Event::Key(key) => self.handle_key(key),
-            Event::Paste(text) => input::handle_paste(self, out, &text),
+            Event::Key(key) => {
+                super::save_trace::note_key(self, key);
+                self.handle_key(key)
+            }
+            Event::Paste(text) => {
+                super::save_trace::note_paste(self, &text);
+                input::handle_paste(self, out, &text)
+            }
             Event::Mouse(mouse) => selection::handle_mouse(self, out, mouse),
             Event::Resize(width, height) => self.handle_resize(width, height, out),
             Event::FocusGained => {

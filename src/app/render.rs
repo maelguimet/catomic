@@ -45,7 +45,13 @@ fn render(app: &App, out: &mut dyn Write) -> io::Result<()> {
     let action_bar = mobile::action_bar_text(app);
     let mut options = render_options(app, llm_changes, action_bar.as_deref());
     options.window_title = Some(&window_title);
-    if let Some(message) = app.message.as_deref() {
+    let protected_save_notice = if app.save_notice_protected {
+        app.save_notice.as_deref()
+    } else {
+        None
+    };
+    let message = protected_save_notice.or(app.message.as_deref());
+    if let Some(message) = message {
         options.status_role = status::transient_role(app, message);
         return render_frame(app, out, message, options);
     }

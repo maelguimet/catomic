@@ -35,7 +35,11 @@ pub(crate) fn trigger_open(app: &mut super::App) {
 }
 
 pub(crate) fn trigger_save(app: &mut super::App) {
+    let has_hooks = !app.command_config.hooks_for(HookEvent::Save).is_empty();
     enqueue(app, HookEvent::Save);
+    if has_hooks {
+        super::save_trace::note_hook(app, "queued", None);
+    }
 }
 
 pub(crate) fn before_current_llm(
@@ -73,6 +77,7 @@ pub(crate) fn pump(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
         return Ok(());
     }
     if let Some(name) = app.hooks.queue.pop_front() {
+        super::save_trace::note_hook(app, "started", Some(&name));
         app.hooks.active = Some(name.clone());
         if !super::external_command::start_hook(app, out, &name)? {
             finish_command(app, false);
@@ -100,6 +105,11 @@ pub(crate) fn finish_command(app: &mut super::App, succeeded: bool) -> bool {
     let Some(name) = app.hooks.active.take() else {
         return false;
     };
+    super::save_trace::note_hook(
+        app,
+        if succeeded { "succeeded" } else { "failed" },
+        Some(&name),
+    );
     if !succeeded {
         app.hooks.queue.clear();
         app.hooks.continuation = None;

@@ -29,6 +29,8 @@ pub(crate) struct BufferSlot {
     message: Option<String>,
     pending_save_conflict: Option<save::PendingSaveConflict>,
     pending_reload: Option<reload::PendingReload>,
+    save_notice: Option<String>,
+    save_notice_protected: bool,
     search: search::SearchUiState,
     recovery: recovery::RecoveryState,
     selection: selection::SelectionUiState,
@@ -54,6 +56,8 @@ impl BufferSlot {
             message: app.message,
             pending_save_conflict: app.pending_save_conflict,
             pending_reload: app.pending_reload,
+            save_notice: app.save_notice,
+            save_notice_protected: app.save_notice_protected,
             search: app.search,
             recovery: app.recovery,
             selection: app.selection,
@@ -75,6 +79,11 @@ impl BufferSlot {
             &mut app.pending_save_conflict,
         );
         mem::swap(&mut self.pending_reload, &mut app.pending_reload);
+        mem::swap(&mut self.save_notice, &mut app.save_notice);
+        mem::swap(
+            &mut self.save_notice_protected,
+            &mut app.save_notice_protected,
+        );
         mem::swap(&mut self.search, &mut app.search);
         mem::swap(&mut self.recovery, &mut app.recovery);
         mem::swap(&mut self.selection, &mut app.selection);
@@ -233,7 +242,13 @@ fn absolute_path(path: &Path) -> io::Result<PathBuf> {
 }
 
 fn paths_match(left: &Path, absolute_right: &Path) -> bool {
-    absolute_path(left).is_ok_and(|left| left == absolute_right)
+    let Ok(left) = absolute_path(left) else {
+        return false;
+    };
+    left == absolute_right
+        || std::fs::canonicalize(left)
+            .and_then(|left| std::fs::canonicalize(absolute_right).map(|right| left == right))
+            .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -498,6 +513,48 @@ mod tests {
 
         fs::remove_file(first).unwrap();
         fs::remove_file(second).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_file_buffer_reuses_a_symlink_alias_before_save_and_quit() {
+        use std::os::unix::fs::symlink;
+
+        let source = temp_file("alias_source", "alpha");
+        let alias = source.with_file_name(format!(
+            "{}_alias.txt",
+            source.file_stem().unwrap().to_string_lossy()
+        ));
+        symlink(&source, &alias).unwrap();
+        let mut app = App::new(source.to_str()).unwrap();
+        let mut out = Vec::new();
+
+        app.handle_key_with(&mut out, key(KeyCode::Char('!'), KeyModifiers::NONE))
+            .unwrap();
+        assert!(app.file.dirty);
+
+        assert!(
+            !app.open_file_buffer(&alias).unwrap(),
+            "an alias of the active file must reuse the dirty buffer"
+        );
+        assert_eq!(app.buffer_count(), 1);
+        assert_eq!(app.buffer.to_string(), "!alpha");
+
+        app.handle_key_with(&mut out, key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+            .unwrap();
+        app.handle_key_with(&mut out, key(KeyCode::Char('q'), KeyModifiers::CONTROL))
+            .unwrap();
+
+        assert!(app.should_quit);
+        assert!(!app.file.dirty);
+        assert_eq!(
+            app.file.saved_history_position,
+            app.buffer.edit_history_position()
+        );
+        assert_eq!(fs::read_to_string(&source).unwrap(), "!alpha");
+
+        fs::remove_file(alias).unwrap();
+        fs::remove_file(source).unwrap();
     }
 }
 

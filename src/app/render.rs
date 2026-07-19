@@ -172,25 +172,37 @@ fn status_line(app: &App) -> String {
             .map(|text| crate::editor::text_layout::cell_width_from(text, 0))
             .unwrap_or(0),
     );
-    let status = status::format_status_line_for_width(
-        matches!(app.mode, Mode::Plain),
-        app.typing_mode.is_overwrite(),
-        status::StatusFile {
-            path: app.file.path.as_deref(),
-            dirty: app.file.dirty,
-            size_bytes: app.file.size_bytes,
-            size_tier: app.file.size_tier,
-            text_format: app.file.text_format,
-        },
-        app.buffer.page_info(),
-        position,
-        available_width,
-    );
-    let status = status::decorate_status_line_for_width(
-        status,
-        app.cat_config.status_messages,
-        available_width,
-    );
+    let file = status::StatusFile {
+        path: app.file.path.as_deref(),
+        dirty: app.file.dirty,
+        size_bytes: app.file.size_bytes,
+        size_tier: app.file.size_tier,
+        text_format: app.file.text_format,
+    };
+    let status = if mobile::is_enabled(app) {
+        let status = status::format_status_line_for_width(
+            matches!(app.mode, Mode::Plain),
+            app.typing_mode.is_overwrite(),
+            file,
+            app.buffer.page_info(),
+            position,
+            available_width,
+        );
+        status::decorate_status_line_for_width(
+            status,
+            app.cat_config.status_messages,
+            available_width,
+        )
+    } else {
+        let status = status::format_status_line(
+            matches!(app.mode, Mode::Plain),
+            app.typing_mode.is_overwrite(),
+            file,
+            app.buffer.page_info(),
+            position,
+        );
+        status::decorate_status_line(status, app.cat_config.status_messages)
+    };
     match prefix {
         Some(prefix) => format!("{prefix}{status}"),
         None => status,

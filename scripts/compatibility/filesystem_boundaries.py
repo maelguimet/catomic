@@ -149,7 +149,11 @@ def non_regular_refusal(binary: Path, root: Path):
     os.mkfifo(fifo, 0o600)
     directory.mkdir()
     listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    listener.bind(str(socket_path))
+    root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        listener.bind(f"/proc/self/fd/{root_fd}/{socket_path.name}")
+    finally:
+        os.close(root_fd)
     statuses = []
     try:
         for index, target in enumerate((fifo, directory, socket_path)):

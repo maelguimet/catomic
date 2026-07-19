@@ -65,6 +65,34 @@ fn config_command_opens_the_exact_existing_path_as_an_editable_buffer() {
 }
 
 #[test]
+fn config_quit_returns_to_the_invoking_buffer_when_existing_config_is_not_adjacent() {
+    let config = config_fixture("return_existing");
+    let root = config.parent().unwrap().parent().unwrap();
+    let source = root.join("source.txt");
+    let middle = root.join("middle.txt");
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    std::fs::write(&source, "source").unwrap();
+    std::fs::write(&middle, "middle").unwrap();
+    std::fs::write(&config, "[editor]\ntab_size = 2\n").unwrap();
+    let mut app = super::super::App::new(source.to_str()).unwrap();
+    let mut out = Vec::new();
+
+    app.open_file_buffer(&middle).unwrap();
+    app.open_file_buffer(&config).unwrap();
+    app.switch_buffer(super::super::buffers::BufferDirection::Next);
+    assert_eq!(app.file.path.as_deref(), Some(source.as_path()));
+
+    open_config_path(&mut app, &mut out, &config).unwrap();
+    assert_eq!(app.file.path.as_deref(), Some(config.as_path()));
+    super::super::input::handle_quit(&mut app, &mut out).unwrap();
+
+    assert_eq!(app.file.path.as_deref(), Some(source.as_path()));
+    assert_eq!(app.buffer.to_string(), "source");
+    assert!(!app.should_quit);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn missing_config_requires_confirmation_and_a_race_never_overwrites() {
     let cancelled = config_fixture("cancelled");
     let mut app = super::super::App::new(None).unwrap();

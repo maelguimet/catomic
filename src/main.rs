@@ -15,7 +15,6 @@ mod help_catalog;
 mod llm;
 mod mode;
 mod project;
-mod startup_file_args;
 mod terminal;
 mod update;
 
@@ -84,15 +83,6 @@ fn main() {
         cli::Action::Run(run_options) => EditorRun::Files(run_options),
     };
 
-    if let EditorRun::Files(run_options) = &editor_run {
-        if let Err(diagnostic) =
-            startup_file_args::check(&run_options.files, run_options.allow_missing)
-        {
-            eprintln!("{diagnostic}");
-            std::process::exit(cli::EXIT_USAGE);
-        }
-    }
-
     if let Err(error) = validate_utf8_locale(
         std::env::var_os("LC_ALL").as_deref(),
         std::env::var_os("LC_CTYPE").as_deref(),
@@ -108,7 +98,7 @@ fn main() {
     }
 
     let result = match editor_run {
-        EditorRun::Files(run_options) => app::run(&run_options.files),
+        EditorRun::Files(run_options) => app::run(run_options.file.as_deref()),
         EditorRun::Config => app::run_config(),
     };
     if let Some(signal) = terminal::termination_signal() {

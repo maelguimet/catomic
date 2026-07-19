@@ -199,9 +199,9 @@ impl App {
 }
 
 /// Public entry called from main.rs.
-pub fn run(initial_files: &[String]) -> io::Result<()> {
+pub fn run(initial_file: Option<&str>) -> io::Result<()> {
     let config = StartupConfig::load()?;
-    let mut app = App::new_with_paths_and_config(initial_files, config)?;
+    let mut app = App::new_with_config(initial_file, config)?;
     app.run()
 }
 
@@ -217,7 +217,7 @@ pub fn run_config() -> io::Result<()> {
         })?
         .to_string();
     let config = StartupConfig::without_user_config()?;
-    let mut app = App::new_with_paths_and_config(&[file], config)?;
+    let mut app = App::new_with_config(Some(&file), config)?;
     app.run_config(path)
 }
 

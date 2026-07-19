@@ -101,6 +101,7 @@ impl App {
         )
     }
 
+    #[cfg(test)]
     pub(super) fn new_with_paths_and_config(
         initial_paths: &[String],
         config: StartupConfig,

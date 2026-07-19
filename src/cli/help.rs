@@ -8,7 +8,6 @@
 pub(super) enum MainOption {
     Help,
     Version,
-    AllowMissing,
 }
 
 pub(super) struct MainOptionSpec {
@@ -27,11 +26,6 @@ pub(super) const MAIN_OPTIONS: &[MainOptionSpec] = &[
         option: MainOption::Version,
         spellings: &["-V", "--version"],
         description: "Show the package version and build commit, then exit",
-    },
-    MainOptionSpec {
-        option: MainOption::AllowMissing,
-        spellings: &["--allow-missing"],
-        description: "Allow multiple file arguments even when one or more paths are missing",
     },
 ];
 
@@ -134,7 +128,7 @@ pub(super) fn main_help(version: &str) -> String {
             "catomic {}\n\n",
             "Catomic is a Linux-first, modeless terminal text editor.\n\n",
             "Usage:\n",
-            "  catomic [OPTION]... [FILE]...\n",
+            "  catomic [OPTION] [FILE]\n",
             "  catomic config [path|edit|check]\n",
             "  catomic update [--yes] [--backup]\n",
             "  catomic update --check\n",
@@ -143,11 +137,11 @@ pub(super) fn main_help(version: &str) -> String {
             "  catomic config (-h | --help)\n",
             "  catomic update (-h | --help)\n\n",
             "Files:\n",
-            "  With no FILE, Catomic opens one untitled empty buffer. One FILE opens one\n",
-            "  buffer; multiple FILE arguments open multiple buffers in argument order.\n",
-            "  One missing path opens as an empty named buffer and is created only when\n",
-            "  saved. With multiple FILE arguments, every path must exist unless explicit\n",
-            "  --allow-missing is present. Paths and contents must be UTF-8.\n\n",
+            "  With no FILE, Catomic opens one untitled empty buffer. Otherwise, every\n",
+            "  non-command word forms one path, joined with spaces. For example,\n",
+            "  `catomic hello world.md` opens exactly `hello world.md`. A missing path\n",
+            "  opens as an empty named buffer and is created only when saved. Quoting\n",
+            "  remains supported but is not required. Paths and contents must be UTF-8.\n\n",
             "Options:\n",
             "{}\n",
             "Subcommands:\n",
@@ -159,9 +153,10 @@ pub(super) fn main_help(version: &str) -> String {
             "Examples:\n",
             "  catomic\n",
             "  catomic draft.md\n",
-            "  catomic notes.md todo.txt\n",
-            "  catomic --allow-missing draft.md notes.md\n",
-            "  catomic \"meeting notes.md\"  Shell-quote a path containing spaces\n",
+            "  catomic hello world.md     Open the single path `hello world.md`\n",
+            "  catomic \"meeting notes.md\"  Quoted paths remain supported\n",
+            "  catomic ./-draft.md          Open an option-like filename\n",
+            "  catomic ./update             Open a file literally named update\n",
             "  catomic config               Open the resolved configuration in Catomic\n",
             "  catomic config path          Print the exact resolved configuration path\n",
             "  catomic update               Apply an available Catomic update\n",
@@ -303,15 +298,16 @@ mod tests {
     }
 
     #[test]
-    fn main_help_covers_normal_file_config_and_update_workflows() {
+    fn main_help_covers_single_file_semantics_and_pointers() {
         let text = main_help("test-version");
         for required in [
             "no FILE",
-            "multiple FILE arguments open multiple buffers in argument order",
-            "One missing path opens as an empty named buffer",
+            "non-command word forms one path",
+            "catomic hello world.md",
+            "opens exactly `hello world.md`",
+            "A missing path",
             "created only when",
-            "every path must exist unless explicit",
-            "--allow-missing",
+            "catomic ./-draft.md",
             "catomic draft.md",
             "catomic \"meeting notes.md\"",
             "catomic config               Open the resolved configuration in Catomic",

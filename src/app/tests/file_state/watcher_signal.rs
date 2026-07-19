@@ -268,8 +268,8 @@ fn check_file_watcher_once_with_watcher_no_signal_returns_false_no_mutation() {
 // These exercise the loop integration point without live notify or event injection.
 // A real queued Changed/Deleted from the OS would cause the helper to return true,
 // render, and arm (via the existing apply path); that delivery path is integration-only
-// (see TODO.md: no live OS notify integration tests in default/CI suite).
-// We cover the stable no-signal cases + assert no spurious render.
+// rather than part of the default deterministic suite. We cover the stable no-signal
+// cases and assert that they do not spuriously render.
 
 #[test]
 fn check_file_watcher_once_and_render_no_watcher_returns_false_writes_nothing() {

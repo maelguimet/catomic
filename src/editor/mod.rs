@@ -3,8 +3,6 @@
 //! These are *editor* concepts, not raw terminal events.
 //! The terminal layer translates key events into editor::Command or direct
 //! buffer operations.
-//!
-//! See TODO.md Phase 3 (search, goto, selection) and later.
 
 pub(crate) mod completion;
 pub(crate) mod goto_line;

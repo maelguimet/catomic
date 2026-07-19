@@ -16,6 +16,12 @@ use crate::help_catalog::{self, PromptCommand};
 pub(crate) struct CommandPromptState {
     active: Option<ActivePrompt>,
     running: Option<RunningGoto>,
+    config_return: Option<ConfigReturn>,
+}
+
+struct ConfigReturn {
+    config_path: PathBuf,
+    buffer_index: usize,
 }
 
 struct RunningGoto {
@@ -33,7 +39,10 @@ enum PromptKind {
     Command,
     SaveAs,
     OpenFile,
-    CreateConfig(PathBuf),
+    CreateConfig {
+        path: PathBuf,
+        exit_on_decline: bool,
+    },
     InlineWarning,
 }
 
@@ -59,6 +68,23 @@ pub(crate) fn open_inline_warning(app: &mut super::App, out: &mut dyn Write) -> 
 
 pub(super) fn is_active(app: &super::App) -> bool {
     app.command_prompt.active.is_some() || app.command_prompt.running.is_some()
+}
+
+pub(super) fn take_config_return_target(app: &mut super::App) -> Option<usize> {
+    let active_config = app
+        .command_prompt
+        .config_return
+        .as_ref()
+        .is_some_and(|config_return| {
+            app.file.path.as_deref() == Some(config_return.config_path.as_path())
+        });
+    if !active_config {
+        return None;
+    }
+    app.command_prompt
+        .config_return
+        .take()
+        .map(|config_return| config_return.buffer_index)
 }
 
 fn open_prompt(app: &mut super::App, out: &mut dyn Write, kind: PromptKind) -> io::Result<()> {
@@ -134,7 +160,7 @@ fn update_message(app: &mut super::App) {
         PromptKind::Command => "Command",
         PromptKind::SaveAs => "Save as",
         PromptKind::OpenFile => "Open file",
-        PromptKind::CreateConfig(path) => {
+        PromptKind::CreateConfig { path, .. } => {
             app.message = Some(format!(
                 "Create {} from the documented template? Type yes to confirm: {}",
                 path.display(),
@@ -165,7 +191,10 @@ fn submit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         PromptKind::Command => execute_command(app, out, prompt.text.trim()),
         PromptKind::SaveAs => super::save::handle_save_as(app, out, &prompt.text),
         PromptKind::OpenFile => execute_open(app, out, &prompt.text),
-        PromptKind::CreateConfig(path) => execute_config_create(app, out, path, &prompt.text),
+        PromptKind::CreateConfig {
+            path,
+            exit_on_decline,
+        } => execute_config_create(app, out, path, exit_on_decline, &prompt.text),
         PromptKind::InlineWarning => {
             if super::inline_clanker::answer_warning(app, out, &prompt.text)? {
                 Ok(())
@@ -290,7 +319,7 @@ fn open_path(
 
 fn execute_config(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     match crate::config::user_file::path() {
-        Ok(path) => execute_config_path(app, out, path),
+        Ok(path) => execute_config_path(app, out, path, false),
         Err(error) => {
             app.message = Some(format!("Config error: {error}"));
             app.render(out)
@@ -298,7 +327,20 @@ fn execute_config(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     }
 }
 
-fn execute_config_path(app: &mut super::App, out: &mut dyn Write, path: PathBuf) -> io::Result<()> {
+pub(super) fn open_startup_config(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    path: PathBuf,
+) -> io::Result<()> {
+    execute_config_path(app, out, path, true)
+}
+
+fn execute_config_path(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    path: PathBuf,
+    exit_on_decline: bool,
+) -> io::Result<()> {
     match std::fs::metadata(&path) {
         Ok(metadata) if metadata.is_file() => open_config_path(app, out, &path),
         Ok(_) => {
@@ -308,9 +350,14 @@ fn execute_config_path(app: &mut super::App, out: &mut dyn Write, path: PathBuf)
             ));
             app.render(out)
         }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            open_prompt(app, out, PromptKind::CreateConfig(path))
-        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => open_prompt(
+            app,
+            out,
+            PromptKind::CreateConfig {
+                path,
+                exit_on_decline,
+            },
+        ),
         Err(error) => {
             app.message = Some(format!("Config error: {error}"));
             app.render(out)
@@ -322,16 +369,18 @@ fn execute_config_create(
     app: &mut super::App,
     out: &mut dyn Write,
     path: PathBuf,
+    exit_on_decline: bool,
     answer: &str,
 ) -> io::Result<()> {
     if !matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
         app.message = Some("Configuration creation cancelled; no file was written.".to_string());
+        app.should_quit = exit_on_decline;
         return app.render(out);
     }
     match crate::config::user_file::create_template(&path) {
-        Ok(()) => open_config_path(app, out, &path),
+        Ok(()) => open_created_config_path(app, out, &path),
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-            open_config_path(app, out, &path)
+            open_created_config_path(app, out, &path)
         }
         Err(error) => {
             app.message = Some(format!("Config creation error: {error}"));
@@ -340,8 +389,30 @@ fn execute_config_create(
     }
 }
 
+fn open_created_config_path(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    path: &Path,
+) -> io::Result<()> {
+    if app.file.path.as_deref() == Some(path) {
+        app.replace_active_file_buffer(path)?;
+    }
+    open_config_path(app, out, path)
+}
+
 fn open_config_path(app: &mut super::App, out: &mut dyn Write, path: &Path) -> io::Result<()> {
+    let source_path = app.file.path.clone();
+    let source_buffer_index = app.active_buffer_index;
     open_path(app, out, path, "Configuration opened")?;
+    if app.buffer_count() > 1
+        && source_path.as_deref() != Some(path)
+        && app.file.path.as_deref() == Some(path)
+    {
+        app.command_prompt.config_return = Some(ConfigReturn {
+            config_path: path.to_path_buf(),
+            buffer_index: source_buffer_index,
+        });
+    }
     app.message = Some(format!(
         "Editing {}. Restart Catomic after saving to apply settings.",
         path.display()

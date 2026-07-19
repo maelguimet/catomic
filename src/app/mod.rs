@@ -199,10 +199,26 @@ impl App {
 }
 
 /// Public entry called from main.rs.
-pub fn run(initial_files: &[String]) -> io::Result<()> {
+pub fn run(initial_file: Option<&str>) -> io::Result<()> {
     let config = StartupConfig::load()?;
-    let mut app = App::new_with_paths_and_config(initial_files, config)?;
+    let mut app = App::new_with_config(initial_file, config)?;
     app.run()
+}
+
+/// Open the resolved configuration in Catomic without requiring that configuration
+/// to parse successfully first. Missing-file creation stays inside the live terminal
+/// session so a terminal setup failure cannot leave a newly created file behind.
+pub fn run_config() -> io::Result<()> {
+    let path = crate::config::user_file::path()?;
+    let file = path
+        .to_str()
+        .ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "config path is not valid UTF-8")
+        })?
+        .to_string();
+    let config = StartupConfig::without_user_config()?;
+    let mut app = App::new_with_config(Some(&file), config)?;
+    app.run_config(path)
 }
 
 #[cfg(test)]

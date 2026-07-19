@@ -12,6 +12,20 @@ fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
 }
 
 #[test]
+fn word_selection_defaults_include_terminal_safe_fallbacks() {
+    let bindings = KeyBindings::default();
+    let fallback = KeyModifiers::ALT | KeyModifiers::SHIFT;
+    let canonical = KeyModifiers::CONTROL | KeyModifiers::SHIFT;
+
+    for code in [KeyCode::Left, KeyCode::Right] {
+        assert_eq!(
+            bindings.translate(Scope::Editor, key(code, fallback)),
+            Some(key(code, canonical))
+        );
+    }
+}
+
+#[test]
 fn action_overrides_replace_all_defaults_and_empty_arrays_unbind() {
     let bindings = parse(
         "[keybindings]\nsave = [\"alt+s\"]\nhelp = []\ncommand-prompt = [\"alt+p\", \"f4\"]\n",

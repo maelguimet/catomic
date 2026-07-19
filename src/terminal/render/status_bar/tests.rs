@@ -143,7 +143,7 @@ fn normal_status_paints_full_width_and_resets_before_cursor_placement() {
 
     let rendered = String::from_utf8(out).unwrap();
     assert!(rendered.contains("\x1b[2;1H\x1b[7m\x1b[2Kok    \x1b[0m"));
-    assert!(rendered.ends_with("\x1b[0m\x1b[1;1H"));
+    assert!(rendered.ends_with("\x1b[0m\x1b[0 q\x1b[1;1H"));
 }
 
 #[test]
@@ -267,5 +267,5 @@ fn width_zero_clears_rows_without_emitting_content_or_style_leaks() {
     assert!(rendered.contains("\x1b[1;1H\x1b[K"));
     assert!(rendered.contains("\x1b[2;1H\x1b[K"));
     assert!(rendered.contains("\x1b[3;1H\x1b[7m\x1b[2K\x1b[0m"));
-    assert!(rendered.ends_with("\x1b[0m\x1b[1;1H"));
+    assert!(rendered.ends_with("\x1b[0m\x1b[0 q\x1b[1;1H"));
 }

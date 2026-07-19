@@ -330,8 +330,8 @@ fn pty_save_undo_save_quit_writes_expected_file() -> TestResult {
         .find("\x1b[24;1H\x1b[7m\x1b[2K")
         .ok_or("normal status row did not enter inverse video before full-row clear")?;
     let reset = initial[bar..]
-        .find("\x1b[0m\x1b[1;1H")
-        .ok_or("normal status row did not reset before cursor placement")?;
+        .find("\x1b[0m\x1b[0 q\x1b[1;1H")
+        .ok_or("normal status row did not reset and select the cursor before placement")?;
     assert!(
         reset > 80,
         "status frame must paint the full 80-cell PTY row"

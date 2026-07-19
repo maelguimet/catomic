@@ -147,7 +147,7 @@ def _fallback_session(
     try:
         child.wait_for(b"fallback")
         child.send(b"\x1bOP")
-        child.wait_for(b"Catomic shortcuts")
+        child.wait_for(b"Catomic help")
         child.send(b"\x1b")
         child.wait_for(b"Shortcut help closed.")
         child.send(b"\x1bOQ")

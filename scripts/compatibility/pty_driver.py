@@ -20,6 +20,9 @@ import time
 from pathlib import Path
 
 
+MAX_TRANSCRIPT_BYTES = 8 * 1024 * 1024
+
+
 class PtyError(RuntimeError):
     """The PTY child timed out or violated a scenario expectation."""
 
@@ -33,9 +36,13 @@ class PtyProcess:
         rows: int = 24,
         columns: int = 80,
         cwd: Path | None = None,
+        max_output_bytes: int = MAX_TRANSCRIPT_BYTES,
     ) -> None:
+        if max_output_bytes <= 0:
+            raise PtyError("PTY output limit must be positive")
         self.argv = argv
         self.output = bytearray()
+        self.max_output_bytes = max_output_bytes
         self.wait_status: int | None = None
         pid, master = pty.fork()
         if pid == 0:
@@ -79,7 +86,7 @@ class PtyProcess:
                 self._poll_exit()
                 return b""
             raise
-        self.output.extend(chunk)
+        self._append_output(chunk)
         self._poll_exit()
         return chunk
 
@@ -146,7 +153,14 @@ class PtyProcess:
                 raise
             if not chunk:
                 return
-            self.output.extend(chunk)
+            self._append_output(chunk)
+
+    def _append_output(self, chunk: bytes) -> None:
+        if len(self.output) + len(chunk) > self.max_output_bytes:
+            raise PtyError(
+                f"PTY transcript exceeded {self.max_output_bytes} byte limit"
+            )
+        self.output.extend(chunk)
 
     def _kill_and_reap(self) -> None:
         try:

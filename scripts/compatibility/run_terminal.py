@@ -24,6 +24,7 @@ from compatlib import (
     result,
     scenario,
     sha256_file,
+    stage_artifact,
     utc_now,
     write_new_json,
 )
@@ -80,15 +81,16 @@ def main() -> int:
     work_root = args.work_root.resolve(strict=True) if args.work_root else None
     sandbox = Path(tempfile.mkdtemp(prefix="catomic-terminal-", dir=work_root))
     try:
-        artifact_record = artifact(args.binary, args.commit, args.release)
+        candidate = stage_artifact(args.binary, sandbox)
+        artifact_record = artifact(candidate, args.commit, args.release)
         if args.mode == "automated":
             scenarios = run_automated_terminal(
-                args.binary, args.path, sandbox, args.failure_issue
+                candidate, args.path, sandbox, args.failure_issue
             )
             terminal = terminal_details(args.path)
             environment_id = args.path
         else:
-            terminal, scenarios = run_manual(args, sandbox)
+            terminal, scenarios = run_manual(args, sandbox, candidate)
             environment_id = args.path_id
         environment = {
             "kind": "terminal",
@@ -116,7 +118,7 @@ def main() -> int:
             shutil.rmtree(sandbox, ignore_errors=True)
 
 
-def run_manual(args: argparse.Namespace, sandbox: Path):
+def run_manual(args: argparse.Namespace, sandbox: Path, candidate: Path):
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise EvidenceError("manual terminal evidence requires an interactive TTY")
     fixture = sandbox / "manual-terminal.txt"
@@ -133,7 +135,7 @@ def run_manual(args: argparse.Namespace, sandbox: Path):
             sandbox / "manual-env", os.environ.get("TERM", "unknown")
         )
         completed = subprocess.run(
-            [str(args.binary.resolve(strict=True)), str(fixture)],
+            [str(candidate), str(fixture)],
             env=environment,
             check=False,
         )

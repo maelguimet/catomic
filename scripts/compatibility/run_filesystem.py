@@ -22,6 +22,7 @@ from compatlib import (
     host_environment,
     result,
     scenario,
+    stage_artifact,
     utc_now,
     write_new_json,
 )
@@ -80,12 +81,14 @@ def main() -> int:
     root = args.root.resolve(strict=True)
     sandbox = Path(tempfile.mkdtemp(prefix=".cfc-", dir=root))
     try:
+        candidate = stage_artifact(args.binary, sandbox)
+        artifact_record = artifact(candidate, args.commit, args.release)
         records = []
         for index, (identifier, runner) in enumerate(SCENARIOS):
             try:
                 scenario_root = sandbox / f"s{index}"
                 scenario_root.mkdir()
-                records.append(runner(args.binary, scenario_root))
+                records.append(runner(candidate, scenario_root))
             except Exception as error:
                 if args.failure_issue is None:
                     raise EvidenceError(
@@ -109,7 +112,6 @@ def main() -> int:
                         notes="Filesystem compatibility scenario failed.",
                     )
                 )
-        artifact_record = artifact(args.binary, args.commit, args.release)
         environment = {
             "kind": "filesystem",
             "id": args.environment_id,

@@ -110,6 +110,12 @@ def validate_aggregate(records: list[dict[str, Any]]) -> None:
 
 def release_candidate_errors(records: list[dict[str, Any]]) -> list[str]:
     errors: list[str] = []
+    for record in records:
+        if record["overall_status"] == "fail":
+            environment = record["environment"]
+            errors.append(
+                f"{environment['kind']} {environment['id']} contains failed scenarios"
+            )
     terminals = [
         record for record in records if record["environment"]["kind"] == "terminal"
     ]
@@ -119,9 +125,7 @@ def release_candidate_errors(records: list[dict[str, Any]]) -> list[str]:
         if _passes(record, "core-open-edit-save-quit")
         and _passes(record, "terminal-restoration")
     ]
-    qualifying_paths = {
-        record["environment"]["terminal"]["path"] for record in qualifying
-    }
+    qualifying_paths = {_material_terminal_identity(record) for record in qualifying}
     if len(qualifying_paths) < 3:
         errors.append(
             "three materially different terminal paths must pass core flow and restoration"
@@ -139,7 +143,11 @@ def release_candidate_errors(records: list[dict[str, Any]]) -> list[str]:
         and record["environment"]["terminal"]["category"] == "gui"
         and all(_passes(record, identifier) for identifier in GUI_MANUAL_REQUIRED)
     ]
-    if len(gui) < 2:
+    gui_emulators = {
+        record["environment"]["terminal"]["emulator"].strip().casefold()
+        for record in gui
+    }
+    if len(gui_emulators) < 2:
         errors.append(
             "two real GUI terminal paths must manually pass input/shortcut delivery"
         )
@@ -228,6 +236,14 @@ def _passes(record: dict[str, Any], identifier: str) -> bool:
     return any(
         item["id"] == identifier and item["status"] == "pass"
         for item in record["scenarios"]
+    )
+
+
+def _material_terminal_identity(record: dict[str, Any]) -> tuple[str, ...]:
+    terminal = record["environment"]["terminal"]
+    return tuple(
+        str(terminal[key]).strip().casefold()
+        for key in ("category", "emulator", "multiplexer", "ssh_path")
     )
 
 

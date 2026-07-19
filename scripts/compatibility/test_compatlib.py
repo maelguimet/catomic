@@ -21,7 +21,14 @@ from build_report import (
     release_candidate_errors,
     validate_aggregate,
 )
-from compatlib import EvidenceError, result, scenario, validate_result, write_new_json
+from compatlib import (
+    EvidenceError,
+    result,
+    scenario,
+    stage_artifact,
+    validate_result,
+    write_new_json,
+)
 from pty_driver import PtyError, PtyProcess
 
 
@@ -56,13 +63,25 @@ def fixture_result(status: str = "pass", issue: str | None = None, notes: str = 
             "kind": "terminal",
             "id": "direct-pty",
             "host": {
-                "os": {},
+                "os": {
+                    "pretty_name": "Fixture Linux",
+                    "id": "fixture",
+                    "version_id": "1",
+                },
                 "kernel": "6.12",
                 "architecture": "x86_64",
-                "locale": {},
+                "locale": {
+                    "LC_ALL": "C.UTF-8",
+                    "LC_CTYPE": "",
+                    "LANG": "C.UTF-8",
+                    "resolved": "C.UTF-8",
+                },
                 "filesystem": {
+                    "probe_path": "/fixture",
                     "type": "ext4",
                     "mount_target": "/",
+                    "mount_source": "/dev/fixture",
+                    "mount_options": "rw",
                     "timestamp_mode": "native",
                 },
             },
@@ -114,6 +133,30 @@ class EvidenceValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(EvidenceError, "binary_sha256"):
             validate_result(record)
 
+    def test_schema_fields_cannot_be_omitted_or_invented(self):
+        missing = fixture_result()
+        del missing["environment"]["host"]["filesystem"]["probe_path"]
+        with self.assertRaisesRegex(EvidenceError, "missing probe_path"):
+            validate_result(missing)
+
+        invented = fixture_result()
+        invented["artifact"]["build_host"] = "untrusted"
+        with self.assertRaisesRegex(EvidenceError, "unexpected build_host"):
+            validate_result(invented)
+
+    def test_artifact_is_staged_before_the_source_can_change(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source-catomic"
+            source.write_bytes(b"first candidate")
+            source.chmod(0o755)
+            sandbox = root / "sandbox"
+            sandbox.mkdir()
+            staged = stage_artifact(source, sandbox)
+            source.write_bytes(b"replacement")
+            self.assertEqual(staged.read_bytes(), b"first candidate")
+            self.assertEqual(staged.stat().st_mode & 0o777, 0o755)
+
     def test_writer_refuses_to_replace_prior_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "result.json"
@@ -136,6 +179,14 @@ class PtyDriverTests(unittest.TestCase):
             with self.assertRaisesRegex(PtyError, "timed out waiting"):
                 child.wait_for(b"absent", timeout=0.2)
 
+    def test_transcript_size_is_bounded(self):
+        environment = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
+        with PtyProcess(
+            ["/usr/bin/printf", "12345"], environment, max_output_bytes=4
+        ) as child:
+            with self.assertRaisesRegex(PtyError, "exceeded 4 byte limit"):
+                child.finish()
+
 
 def matrix_scenario(identifier: str):
     item = fixture_scenario()
@@ -150,6 +201,7 @@ def terminal_record(identifier: str, category: str, manual: bool):
     record["environment"]["terminal"]["path"] = identifier
     record["environment"]["terminal"]["category"] = category
     record["environment"]["terminal"]["manual"] = manual
+    record["environment"]["terminal"]["emulator"] = identifier
     record["scenarios"] = [matrix_scenario(item) for item in sorted(TERMINAL_REQUIRED)]
     return record
 
@@ -194,6 +246,39 @@ class MatrixReportTests(unittest.TestCase):
             filesystem_record("tmpfs", "tmpfs"),
         ]
         self.assertEqual(release_candidate_errors(records), [])
+
+    def test_release_gate_rejects_renamed_duplicate_gui_terminals(self):
+        records = [
+            terminal_record("direct-pty", "pty", False),
+            terminal_record("vte-one", "gui", True),
+            terminal_record("vte-two", "gui", True),
+            filesystem_record("ext4", "ext4"),
+            filesystem_record("tmpfs", "tmpfs"),
+        ]
+        records[2]["environment"]["terminal"]["emulator"] = "vte-one"
+        errors = release_candidate_errors(records)
+        self.assertTrue(any("three materially different" in error for error in errors))
+        self.assertTrue(any("two real GUI" in error for error in errors))
+
+    def test_release_gate_rejects_linked_failures(self):
+        records = [
+            terminal_record("direct-pty", "pty", False),
+            terminal_record("vte", "gui", True),
+            terminal_record("kitty", "gui", True),
+            filesystem_record("ext4", "ext4"),
+            filesystem_record("tmpfs", "tmpfs"),
+        ]
+        records[0]["scenarios"][0]["status"] = "fail"
+        records[0]["scenarios"][0]["focused_issue"] = (
+            "https://github.com/maelguimet/catomic/issues/123"
+        )
+        records[0]["overall_status"] = "fail"
+        self.assertTrue(
+            any(
+                "contains failed scenarios" in error
+                for error in release_candidate_errors(records)
+            )
+        )
 
 
 if __name__ == "__main__":

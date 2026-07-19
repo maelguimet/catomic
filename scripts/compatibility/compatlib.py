@@ -13,6 +13,7 @@ import json
 import locale
 import os
 import platform
+import stat
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,6 +34,25 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def stage_artifact(binary: Path, sandbox: Path) -> Path:
+    """Copy the candidate into the private sandbox before collecting evidence."""
+    if binary.is_symlink():
+        raise EvidenceError("binary must be a non-symlink regular file")
+    source = binary.resolve(strict=True)
+    source_stat = source.stat()
+    if not source.is_file():
+        raise EvidenceError("binary must be a non-symlink regular file")
+    destination = sandbox / "candidate" / source.name
+    destination.parent.mkdir(mode=0o700)
+    with source.open("rb") as input_stream, destination.open("xb") as output_stream:
+        for chunk in iter(lambda: input_stream.read(1024 * 1024), b""):
+            output_stream.write(chunk)
+        output_stream.flush()
+        os.fsync(output_stream.fileno())
+    destination.chmod(stat.S_IMODE(source_stat.st_mode))
+    return destination
 
 
 def artifact(binary: Path, commit: str, release: str | None) -> dict[str, Any]:

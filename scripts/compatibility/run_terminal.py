@@ -124,12 +124,13 @@ def run_manual(args: argparse.Namespace, sandbox: Path, candidate: Path):
     fixture = sandbox / "manual-terminal.txt"
     fixture.write_text("Catomic compatibility fixture\nsecond line\n", encoding="utf-8")
     before = sha256_file(fixture)
-    tty = Path("/dev/tty").open("r+", encoding="utf-8", buffering=1)
+    tty_input = Path("/dev/tty").open("r", encoding="utf-8", buffering=1)
+    tty_output = Path("/dev/tty").open("w", encoding="utf-8", buffering=1)
     try:
-        _print_manual_instructions(tty)
-        tty.write("Press Enter to launch the exact binary... ")
-        tty.readline()
-        stty_before = _stty_state(tty)
+        _print_manual_instructions(tty_output)
+        tty_output.write("Press Enter to launch the exact binary... ")
+        tty_input.readline()
+        stty_before = _stty_state(tty_input)
         dimensions_before = shutil.get_terminal_size()
         environment = isolated_environment(
             sandbox / "manual-env", os.environ.get("TERM", "unknown")
@@ -139,10 +140,12 @@ def run_manual(args: argparse.Namespace, sandbox: Path, candidate: Path):
             env=environment,
             check=False,
         )
-        stty_after = _stty_state(tty)
+        stty_after = _stty_state(tty_input)
         after = sha256_file(fixture)
         visual_restore = _ask_yes_no(
-            tty, "Did the normal screen, cursor, echo, and input mode return?"
+            tty_input,
+            tty_output,
+            "Did the normal screen, cursor, echo, and input mode return?",
         )
         restore = {
             "restored": stty_before == stty_after and visual_restore,
@@ -153,7 +156,9 @@ def run_manual(args: argparse.Namespace, sandbox: Path, candidate: Path):
         records = []
         for identifier in TERMINAL_SCENARIOS:
             expected = _manual_expected(identifier)
-            status, issue, notes = _ask_status(tty, identifier, expected)
+            status, issue, notes = _ask_status(
+                tty_input, tty_output, identifier, expected
+            )
             records.append(
                 scenario(
                     identifier,
@@ -190,7 +195,8 @@ def run_manual(args: argparse.Namespace, sandbox: Path, candidate: Path):
         }
         return terminal, records
     finally:
-        tty.close()
+        tty_input.close()
+        tty_output.close()
 
 
 def _print_manual_instructions(tty) -> None:
@@ -211,30 +217,32 @@ def _stty_state(tty) -> str:
     return completed.stdout.strip()
 
 
-def _ask_yes_no(tty, prompt: str) -> bool:
+def _ask_yes_no(tty_input, tty_output, prompt: str) -> bool:
     while True:
-        tty.write(f"{prompt} [y/n] ")
-        answer = tty.readline().strip().lower()
+        tty_output.write(f"{prompt} [y/n] ")
+        answer = tty_input.readline().strip().lower()
         if answer in {"y", "yes"}:
             return True
         if answer in {"n", "no"}:
             return False
 
 
-def _ask_status(tty, identifier: str, expected: str):
+def _ask_status(tty_input, tty_output, identifier: str, expected: str):
     while True:
-        tty.write(f"\n{identifier}: {expected}\nStatus [pass/fail/unsupported]: ")
-        status = tty.readline().strip().lower()
+        tty_output.write(
+            f"\n{identifier}: {expected}\nStatus [pass/fail/unsupported]: "
+        )
+        status = tty_input.readline().strip().lower()
         if status in {"pass", "fail", "unsupported"}:
             break
     issue = None
     notes = ""
     if status == "fail":
-        tty.write("Focused GitHub issue URL containing this exact evidence: ")
-        issue = tty.readline().strip()
+        tty_output.write("Focused GitHub issue URL containing this exact evidence: ")
+        issue = tty_input.readline().strip()
     if status == "unsupported":
-        tty.write("Why is this unsupported in the named path? ")
-        notes = tty.readline().strip()
+        tty_output.write("Why is this unsupported in the named path? ")
+        notes = tty_input.readline().strip()
     return status, issue, notes
 
 

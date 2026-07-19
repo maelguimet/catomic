@@ -9,6 +9,7 @@ Phase: post-v0.1 Linux compatibility matrix.
 from __future__ import annotations
 
 import copy
+import io
 import json
 import tempfile
 import unittest
@@ -30,6 +31,7 @@ from compatlib import (
     write_new_json,
 )
 from pty_driver import PtyError, PtyProcess
+from run_terminal import _ask_status, _ask_yes_no
 
 
 def fixture_scenario(status: str = "pass", issue: str | None = None, notes: str = ""):
@@ -167,6 +169,20 @@ class EvidenceValidationTests(unittest.TestCase):
 
 
 class PtyDriverTests(unittest.TestCase):
+    def test_manual_prompts_use_separate_input_and_output_streams(self):
+        output = io.StringIO()
+        self.assertTrue(_ask_yes_no(io.StringIO("yes\n"), output, "restored?"))
+        self.assertEqual(
+            _ask_status(
+                io.StringIO("unsupported\nno clipboard provider\n"),
+                output,
+                "osc52",
+                "host clipboard receives the selection",
+            ),
+            ("unsupported", None, "no clipboard provider"),
+        )
+        self.assertIn("restored? [y/n]", output.getvalue())
+
     def test_captures_unicode_output_and_exit_status(self):
         environment = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
         with PtyProcess(["/usr/bin/printf", "Å中🙂"], environment) as child:

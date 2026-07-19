@@ -167,10 +167,12 @@ pub(super) fn write_bottom_rows(
             status_row,
             viewport.width,
             message.unwrap_or(""),
-            options.status_role,
-            options.status_theme,
-            options.status_filename,
-            options.status_selection,
+            status_bar::StatusBarPresentation {
+                role: options.status_role,
+                theme: options.status_theme,
+                filename: options.status_filename,
+                selection: options.status_selection,
+            },
         )?;
     }
     if let Some(action_bar) = options.action_bar.filter(|_| viewport.height > 0) {
@@ -179,10 +181,12 @@ pub(super) fn write_bottom_rows(
             viewport.height,
             viewport.width,
             action_bar,
-            StatusRole::Info,
-            options.status_theme,
-            None,
-            None,
+            status_bar::StatusBarPresentation {
+                role: StatusRole::Info,
+                theme: options.status_theme,
+                filename: None,
+                selection: None,
+            },
         )?;
     }
     Ok(())

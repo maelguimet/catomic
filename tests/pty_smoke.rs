@@ -866,7 +866,7 @@ fn pty_ctrl_f_prompt_finds_content_and_quits() -> TestResult {
 
 #[cfg(unix)]
 #[test]
-fn pty_config_command_confirms_private_template_at_exact_xdg_path() -> TestResult {
+fn pty_config_command_returns_to_dirty_source_before_guarded_quit() -> TestResult {
     use std::os::unix::fs::PermissionsExt;
 
     let project = TempProject::new("config_command");
@@ -875,6 +875,8 @@ fn pty_config_command_confirms_private_template_at_exact_xdg_path() -> TestResul
     let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
 
     editor.wait_for_initial_render()?;
+    editor.send_keys(b"X")?;
+    editor.wait_for_output("dirty source buffer", "Xsource stays untouched")?;
     editor.send_keys(b"\x1b[80;6uconfig\r")?;
     editor.wait_for_output("config creation confirmation", "Type yes to confirm")?;
     assert!(!config.exists(), "prompt must not create configuration");
@@ -894,6 +896,17 @@ fn pty_config_command_confirms_private_template_at_exact_xdg_path() -> TestResul
     )?;
     assert!(fs::read_to_string(&config)?.starts_with("## Catomic configuration"));
 
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_output(
+        "return from configuration",
+        "Returned to previous buffer; configuration remains open.",
+    )?;
+    editor.wait_for_output("restored dirty source", "Xsource stays untouched")?;
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_output(
+        "dirty source quit guard",
+        "Unsaved changes. Press Ctrl+Q again to quit without saving",
+    )?;
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
     let output = editor.output_string();

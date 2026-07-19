@@ -10,7 +10,8 @@ use crate::mode::Mode;
 use crate::terminal as term;
 
 use super::{
-    external_command, help, lint, llm_preview, project_files, recovery, status, view, App,
+    external_command, help, lint, llm_preview, model_picker, project_files, recovery, status, view,
+    App,
 };
 
 pub(super) fn render(app: &App, out: &mut dyn Write) -> io::Result<()> {
@@ -105,6 +106,7 @@ fn local_surface_is_open(app: &App) -> bool {
         || view::is_preview(app)
         || lint::is_viewing(app)
         || project_files::is_viewing(app)
+        || model_picker::is_viewing(app)
         || llm_preview::is_viewing(app)
 }
 

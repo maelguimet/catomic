@@ -9,9 +9,13 @@
 //! - Every edit is a validated patch or strict marked-region replacement and
 //!   must pass through a read-only, explicitly confirmed preview.
 
+pub(crate) mod backend;
 pub mod broker;
 pub mod broker_protocol;
+pub(crate) mod command_adapter;
 pub mod context;
+pub(crate) mod discovery;
+pub(crate) mod executable;
 pub mod instruction;
 pub mod openai_compat;
 pub mod patch;

@@ -781,32 +781,124 @@ the hook is running.
 
 ## Model-assisted commands
 
-Model support uses an OpenAI-compatible Chat Completions endpoint. It is
-explicit, transient, and preview-first. Catomic does not construct an HTTP
-client or read the configured API-key environment variable until you invoke a
-model command and confirm its destination and context.
+Model support is explicit, transient, and preview-first. A named preset can use
+an OpenAI-compatible Chat Completions endpoint or a headless command adapter.
+Catomic does not construct an HTTP client, read a credential value, or start a
+command until you invoke a model action and confirm its destination and context.
 
-### Endpoint configuration
+### Presets and HTTP configuration
 
-The defaults target a local service:
+The no-config default remains the original local endpoint. Existing single
+`[llm]` configuration continues to work and becomes one implicit `local`
+preset. New configurations can name several presets:
 
 ```toml
 [llm]
+default = "local"
+
+[[llm.backends]]
+name = "local"
+type = "openai-compatible"
 base_url = "http://127.0.0.1:8080/v1"
 model = "local-model"
-api_key_env = "OPENAI_API_KEY"
+models = ["local-model-small", "local-model-large"]
+
+[[llm.backends]]
+name = "openrouter"
+type = "openai-compatible"
+base_url = "https://openrouter.ai/api/v1"
+model = "provider/model-id"
+api_key_env = "OPENROUTER_API_KEY"
+headers = { "HTTP-Referer" = "https://example.invalid/catomic" }
+header_envs = { "X-Provider-Key" = "PROVIDER_SECONDARY_KEY" }
 timeout_secs = 120
 ```
 
 The base URL must be plain HTTP or HTTPS without embedded credentials,
 whitespace, query, or fragment. Timeouts must be 1–600 seconds.
 
-Loopback HTTP may use an API key. Unauthenticated LAN HTTP is also allowed for
-local models. Catomic refuses to send an API key to a non-loopback plaintext
-HTTP endpoint; use HTTPS for an authenticated remote endpoint.
+Loopback HTTP may use credentials. Unauthenticated LAN HTTP is also allowed for
+local models. Catomic refuses to send an API key or credential header to a
+non-loopback plaintext HTTP endpoint; use HTTPS for an authenticated remote
+endpoint.
 
 The client refuses redirects and ignores ambient proxy variables so context
 cannot silently leave through a destination other than the one you confirmed.
+Static non-secret metadata `headers` and credential `header_envs` are explicit
+per preset. Credential-looking static headers are rejected. Picker and status
+text never show header values. An explicit `api_key_env` or
+`header_envs` variable must be present when that preset is invoked. The implicit
+legacy preset preserves the prior optional-key behavior for local servers.
+Static and environment-sourced HTTP header values are capped at 8192 bytes and
+must be valid HTTP header values.
+
+The `models` array adds static model choices for the same HTTP destination. Set
+`discovery = true` to permit model-list discovery, but this does not make it
+automatic: select that preset in the picker, press `Ctrl+D`, inspect the shown
+`BASE_URL/models` destination, then press `Enter`. Discovery sends no document
+content, is cancellable, refuses redirects/proxies, accepts at most 256 KiB and
+128 validated model identifiers, uses at most a ten-second request timeout, and
+keeps them in memory for five minutes.
+Discovered choices never become executable configuration and are never written
+to disk.
+
+### Headless command presets
+
+A command preset is an argv adapter, not a shell string:
+
+```toml
+[[llm.backends]]
+name = "local-headless"
+type = "command"
+program = "/usr/local/bin/my-headless-model"
+args = ["--structured-output"]
+model = "friendly-model-id"
+input = "stdin-text-v1"
+output = "claude-json-v1"
+timeout_secs = 120
+```
+
+`program` must be an absolute path or a bare name resolved through absolute
+`PATH` entries. Arguments are passed exactly, including spaces and Unicode;
+Catomic adds no implicit `/bin/sh -c`. `stdin-text-v1` writes a transcript beginning
+with `Catomic model request v1`, followed by `[system]`, `[user]`, and (for repo
+broker rounds) `[assistant]` sections.
+
+Two output contracts are supported:
+
+- `claude-json-v1`: one successful JSON result object with `type = "result"`,
+  `is_error = false`, and a non-empty string `result`;
+- `codex-jsonl-v1`: JSONL lifecycle events ending in `turn.completed`, with one
+  or more `item.completed` agent-message items. Reasoning items are ignored;
+  tool, command, file-change, or unknown items fail closed.
+
+Vendor CLI flags and event schemas change. Catomic deliberately does not append
+illustrative Claude, Codex, Grok, or other flags. Configure and test the
+non-interactive text/proposal mode for the exact installed version. The child
+runs with a private temporary working directory, bounded stdin/stdout/stderr and
+runtime, and a dedicated process group that is killed while its direct child is
+reaped on cancellation.
+Stderr is suppressed from errors. A configured executable is still trusted user
+code with your OS permissions and inherited authentication environment after
+confirmation; Catomic is not an OS sandbox. Never configure an agent/tool mode
+that can mutate the workspace. Repository-local command presets are not loaded.
+For command requests, the prompt names only the active file's basename (or the
+confirmed repository-relative path), never the workspace's absolute path.
+
+### Selecting the active model
+
+Press `F10`, run `model`/`models`, or bind any normal-mode chord to the canonical
+`select-model` action. Type to filter by preset, model, adapter, destination, or
+availability. Use arrows/PageUp/PageDown and `Enter`; `Escape` cancels. Each row
+starts with `A` for the effective active choice, `S` for an explicit session
+override, and `D` for the configured default. The row also shows local/remote,
+the canonical URL or resolved executable, and availability.
+
+Selection changes subsequent `meow`, `bigmeow`, `gitmeow`, and `megameow`
+requests for every buffer in this Catomic process. It never invokes the backend,
+reads credential values, or rewrites configuration. To persist another default,
+edit `llm.default` as a separate explicit configuration action. Reopening or
+filtering the picker and switching buffers never persists anything.
 
 ### Current-file commands
 
@@ -830,9 +922,10 @@ With no `bigmeow` argument, an instruction block under the cursor supplies the
 instruction. An instruction beginning with `explain` requests a read-only answer
 instead of an edit proposal.
 
-Before sending, Catomic shows the canonical endpoint, model, exact context
-extent, and warnings for a dotfile path or obvious secret-like lines. `Enter`
-confirms the request; `Escape` cancels without constructing the client.
+Before sending, Catomic shows the active preset, adapter, canonical endpoint or
+resolved executable, model, exact context extent, and warnings for a dotfile
+path or obvious secret-like lines. `Enter` confirms the request; `Escape`
+cancels without constructing the client or starting the command.
 
 Context is capped at 64 KiB and 2,000 lines. Oversized context fails closed
 rather than being silently truncated. A proposed edit must be either:
@@ -1026,9 +1119,24 @@ on_save = []
 before_llm = []
 
 [llm]
+default = "local"
+
+[[llm.backends]]
+name = "local"
+type = "openai-compatible"
 base_url = "http://127.0.0.1:8080/v1"
 model = "local-model"
-api_key_env = "OPENAI_API_KEY"
+models = ["local-model-small"]
+timeout_secs = 120
+
+[[llm.backends]]
+name = "headless"
+type = "command"
+program = "/usr/local/bin/my-headless-model"
+args = ["--structured-output"]
+model = "headless-model"
+input = "stdin-text-v1"
+output = "claude-json-v1"
 timeout_secs = 120
 ```
 
@@ -1050,10 +1158,23 @@ timeout_secs = 120
 | `commands.NAME.input` | `none` | `none`, `selection`, `buffer` |
 | `commands.NAME.output` | `preview` | `preview`, `insert`, `replace-input` |
 | `commands.NAME.timeout_secs` | `10` | Integer `1`–`300` |
-| `llm.base_url` | `http://127.0.0.1:8080/v1` | Canonical HTTP(S) base URL |
-| `llm.model` | `local-model` | Non-empty string |
-| `llm.api_key_env` | `OPENAI_API_KEY` | Valid environment-variable name |
-| `llm.timeout_secs` | `120` | Integer `1`–`600` |
+| `llm.default` | first backend / implicit `local` | Existing backend name |
+| `llm.backends[].name` | required | Unique printable name, 1–64 characters |
+| `llm.backends[].type` | required | `openai-compatible` or `command` |
+| HTTP `base_url`, `model` | required | Canonical HTTP(S) URL; printable model ID |
+| HTTP `models` | empty | At most 128 printable static model IDs |
+| HTTP `api_key_env`, `header_envs` | none | Valid environment-variable names |
+| HTTP `headers` | empty | Explicit non-secret metadata; 32 total headers max |
+| HTTP `discovery` | `false` | Boolean; still requires picker confirmation |
+| Command `program`, `args` | required / empty | Absolute or bare executable; at most 64 bounded args |
+| Command `input` | `stdin-text-v1` | Versioned stdin transcript contract |
+| Command `output` | required | `claude-json-v1` or `codex-jsonl-v1` |
+| Backend `enabled` | `true` | Boolean; disabled presets remain visible but cannot select |
+| Backend `timeout_secs` | `120` | Integer `1`–`600` |
+
+Legacy `llm.base_url`, `llm.model`, `llm.api_key_env`, and `llm.timeout_secs`
+remain valid only when `llm.backends` is absent. Mixing the two shapes is an
+error rather than an ambiguous partial migration.
 
 Language extension names are case-normalized and may be written with or without
 a leading dot. Command names may contain ASCII letters, digits, `-`, and `_`.
@@ -1099,6 +1220,7 @@ save = ["ctrl+s", "alt+s"]
 help = []
 prompt-cancel = ["alt+x"]
 mouse-select-word = ["mouse-left-double"]
+select-model = ["alt+m"]
 ```
 
 The Phase 7 chord-oriented form such as `"alt+s" = "save"` remains accepted as
@@ -1190,6 +1312,7 @@ markdown-preview | editor,preview | f6
 line-numbers | editor | f7
 whitespace | editor | f8
 soft-wrap | editor | f9
+select-model | editor | f10
 prompt-submit | prompt | enter
 prompt-cancel | prompt | esc
 prompt-delete-backward | prompt,search | backspace
@@ -1246,6 +1369,7 @@ mouse-scroll-down | editor,preview,picker,help | mouse-wheel-down
 | View | Line numbers | `F7` |
 | View | Visible whitespace | `F8` |
 | View | Soft wrapping | `F9` |
+| Tools | Select model/backend for this session | `F10` |
 | Large files | Previous / next page | `Ctrl+PageUp` / `Ctrl+PageDown` |
 
 This table and the in-editor `Ctrl+H`/`F1` quick reference show built-in
@@ -1278,6 +1402,7 @@ Open the prompt with `Ctrl+Shift+P` or `F2`. Do not add a leading colon.
 | `dprev` | — | Jump to previous diagnostic |
 | `run NAME` | — | Run a configured trusted command |
 | `recover` | — | Preview a newer `.catnap` sidecar |
+| `model` | `models`, `select-model` | Search/select a process-local model preset |
 | `meow TEXT` | — | Send selection/instruction block to configured model |
 | `bigmeow TEXT` | — | Send current ordinary file to configured model |
 | `gitmeow TEXT` | — | Use focused bounded repository context in Project mode |
@@ -1428,11 +1553,19 @@ Confirm that you:
 
 ### A model command cannot connect or refuses the endpoint
 
-Check the configured base URL and whether the service implements an
-OpenAI-compatible Chat Completions endpoint. Make sure `api_key_env` names an
-environment variable rather than containing the key itself. Authenticated remote
-endpoints require HTTPS; redirects, embedded URL credentials, ambient proxies,
-and non-loopback plaintext keys are intentionally refused.
+Open `models` and inspect the preset state and exact destination. For HTTP,
+check the base URL and whether the service implements OpenAI-compatible Chat
+Completions. Make sure `api_key_env`/`header_envs` name present environment
+variables rather than containing keys. Authenticated remote endpoints require
+HTTPS; redirects, embedded URL credentials, ambient proxies, and non-loopback
+plaintext keys are intentionally refused.
+
+For command presets, install the displayed resolved executable and verify that
+the configured CLI version emits exactly the declared structured format. A
+missing binary, timeout, oversized output, non-UTF-8/malformed/partial JSON,
+non-zero exit, or tool event fails closed. Raw stderr and provider response
+bodies are intentionally not printed; use the CLI's own safe diagnostic command
+outside Catomic when authentication or version setup needs more detail.
 
 An edit response must be a single-file unified patch for the confirmed active
 path, or the strict selected-region replacement envelope. Prose or full-file

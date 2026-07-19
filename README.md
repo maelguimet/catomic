@@ -101,6 +101,7 @@ troubleshooting, see the [complete user guide](docs/user-guide.md).
 | Command prompt | `Ctrl+Shift+P` or `F2` |
 | Markdown preview | `F6` |
 | Line numbers / whitespace / soft wrap | `F7` / `F8` / `F9` |
+| Select model/backend for this session | `F10` |
 | Previous / next large-file page | `Ctrl+PageUp` / `Ctrl+PageDown` |
 | Quit | `Ctrl+Q` |
 
@@ -130,6 +131,7 @@ leading `:`.
 | `files`, `lint`, `diagnostics`, `dnext`, `dprev` | Run Project tools |
 | `run NAME` | Run a configured, trusted external command |
 | `recover` | Preview and apply a newer `.catnap` sidecar |
+| `model`, `models` | Search configured model/backend presets |
 | `meow TEXT`, `bigmeow TEXT` | Ask a model about this file or selection |
 | `gitmeow TEXT`, `megameow TEXT` | Ask a model using repository context |
 
@@ -181,10 +183,21 @@ tab_size = 4
 linter = "cargo check --message-format short {file}"
 
 [llm]
+default = "local"
+
+[[llm.backends]]
+name = "local"
+type = "openai-compatible"
 base_url = "http://127.0.0.1:8080/v1"
 model = "local-model"
-api_key_env = "OPENAI_API_KEY"
-timeout_secs = 120
+models = ["local-model-small"]
+
+[[llm.backends]]
+name = "hosted"
+type = "openai-compatible"
+base_url = "https://openrouter.ai/api/v1"
+model = "provider/model-id"
+api_key_env = "OPENROUTER_API_KEY"
 ```
 
 `F7` changes line numbers for the whole session and atomically remembers that
@@ -195,8 +208,11 @@ Recovery is disabled by default. Named commands and hooks invoke `/bin/sh -c`
 and are trusted user configuration; their input, output, and runtime are
 bounded, but the command itself can have effects outside Catomic.
 
-LLM endpoints use an OpenAI-compatible API. Model actions show the endpoint,
-model, and exact context extent before sending; edits then open read-only and
+LLM presets can use an OpenAI-compatible HTTP endpoint or a configured headless
+command with a declared structured-output adapter. Press `F10` or run `models`
+to switch the process-local session preset without invoking it or rewriting
+configuration. Model actions show the preset, model, destination, and exact
+context extent before sending; edits then open read-only and
 require a second confirmation before becoming one undoable buffer change.
 Plain HTTP is allowed for loopback models and unauthenticated LAN models. If an
 API key is present, Catomic refuses to send it over non-loopback HTTP; use HTTPS

@@ -103,6 +103,7 @@ pub(crate) enum Action {
     LineNumbers,
     Whitespace,
     SoftWrap,
+    SelectModel,
     PromptSubmit,
     PromptCancel,
     PromptDeleteBackward,

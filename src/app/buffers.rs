@@ -16,8 +16,8 @@ use crate::file::watcher::FileWatcher;
 
 use super::{
     command_prompt, completion, external_command, hooks, lint, llm_answer, llm_preview,
-    llm_request, project_files, recovery, reload, repo_llm, save, search, selection, view, App,
-    FileState, StartupConfig,
+    llm_request, model_picker, project_files, recovery, reload, repo_llm, save, search, selection,
+    view, App, FileState, StartupConfig,
 };
 
 mod lifecycle;
@@ -136,6 +136,7 @@ impl App {
         }
         lint::close_view(self);
         project_files::close_view(self);
+        model_picker::close(self);
         if llm_preview::close(self) {
             self.message = None;
         }

@@ -102,6 +102,10 @@ fn close(app: &mut super::App) -> bool {
     true
 }
 
+pub(crate) fn close_for_transient(app: &mut super::App) -> bool {
+    close(app)
+}
+
 fn close_with_message(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     close(app);
     app.message = Some("Help closed.".to_string());
@@ -113,6 +117,7 @@ fn close_transients(app: &mut super::App) {
     super::view::cancel_preview(app);
     super::lint::close_view(app);
     super::project_files::close_view(app);
+    super::model_picker::close(app);
     super::llm_preview::close(app);
     super::llm_answer::close(app);
     super::recovery::close(app);

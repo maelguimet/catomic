@@ -65,6 +65,8 @@ mod lint;
 mod llm_answer;
 mod llm_preview;
 mod llm_request;
+mod model_picker;
+mod model_session;
 mod navigation;
 
 use startup_config::StartupConfig;
@@ -150,6 +152,10 @@ pub struct App {
     pub(crate) pending_llm_request: Option<llm_request::PendingLlmRequest>,
     /// Present only after explicit Enter confirmation; dropping it cancels the transient client.
     pub(crate) llm_task: Option<llm_request::RunningLlmRequest>,
+    /// Process-local model override shared across buffers and never persisted implicitly.
+    pub(crate) model_session: model_session::ModelSession,
+    /// Explicit searchable picker and bounded discovery cache; idle and network-free by default.
+    pub(crate) model_picker: model_picker::ModelPickerState,
     /// Project-only repo-context preparation, confirmation, or confirmed network task.
     pub(crate) repo_llm_state: Option<repo_llm::RepoLlmState>,
     /// External process/preview state; empty at startup and while unused.
@@ -275,6 +281,8 @@ impl App {
             help_view: None,
             pending_llm_request: None,
             llm_task: None,
+            model_session: model_session::ModelSession::default(),
+            model_picker: model_picker::ModelPickerState::default(),
             repo_llm_state: None,
             external_command: external_command::ExternalCommandState::default(),
             hooks: hooks::HookState::default(),
@@ -336,6 +344,7 @@ impl App {
             command_prompt::poll_goto(self, &mut stdout)?;
             lint::poll(self, &mut stdout)?;
             project_files::poll(self, &mut stdout)?;
+            model_picker::poll(self, &mut stdout)?;
             llm_request::poll(self, &mut stdout)?;
             repo_llm::poll(self, &mut stdout)?;
             external_command::poll(self, &mut stdout)?;

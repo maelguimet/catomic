@@ -20,13 +20,25 @@ pub(super) fn write_content_line<W: Write + ?Sized>(
     max_cells: usize,
     options: RenderOptions<'_>,
 ) -> io::Result<()> {
+    write_content_line_with_ghost(out, content, row, start_col, max_cells, options, None)
+}
+
+pub(super) fn write_content_line_with_ghost<W: Write + ?Sized>(
+    out: &mut W,
+    content: &str,
+    row: usize,
+    start_col: usize,
+    max_cells: usize,
+    options: RenderOptions<'_>,
+    ghost: Option<(usize, usize)>,
+) -> io::Result<()> {
     let visible_len = text_layout::clipped_scalar_len(content, max_cells);
     let content: String = content.chars().take(visible_len).collect();
     let chars: Vec<char> = content.chars().collect();
     let spans = syntax::spans_for_line(options.syntax, &content);
     let selected = visible_highlight(options.highlight, row, start_col, chars.len());
     let changed = visible_changes(options, row, start_col, chars.len());
-    let boundaries = segment_boundaries(&content, &spans, selected, &changed);
+    let boundaries = segment_boundaries(&content, &spans, selected, &changed, ghost);
     let mut cell = 0;
     for range in boundaries.windows(2) {
         let start = range[0];
@@ -42,8 +54,9 @@ pub(super) fn write_content_line<W: Write + ?Sized>(
         let llm_changed = changed
             .iter()
             .any(|(from, to)| start >= *from && start < *to);
+        let ghost_text = ghost.is_some_and(|(from, to)| start >= from && start < to);
         let segment: String = chars[start..end].iter().collect();
-        let style = segment_style(options, syntax_style, highlighted, llm_changed);
+        let style = segment_style(options, syntax_style, highlighted, llm_changed, ghost_text);
         write_segment(
             out,
             &segment,
@@ -103,6 +116,7 @@ fn segment_boundaries(
     spans: &[StyledSpan],
     selected: Option<(usize, usize)>,
     changed: &[(usize, usize)],
+    ghost: Option<(usize, usize)>,
 ) -> Vec<usize> {
     let content_len = content.chars().count();
     let mut boundaries = vec![0, content_len];
@@ -117,6 +131,10 @@ fn segment_boundaries(
     for &(start, end) in changed {
         boundaries.push(start);
         boundaries.push(end);
+    }
+    if let Some((start, end)) = ghost {
+        boundaries.push(start.min(content_len));
+        boundaries.push(end.min(content_len));
     }
     boundaries.sort_unstable();
     boundaries = boundaries
@@ -146,6 +164,7 @@ fn segment_style(
     span: Option<SpanStyle>,
     highlighted: bool,
     llm_changed: bool,
+    ghost: bool,
 ) -> Style {
     let theme = options.theme;
     let mut style = match options.surface {
@@ -157,6 +176,9 @@ fn segment_style(
     }
     if llm_changed {
         style = style.overlay(theme.llm_changed);
+    }
+    if ghost {
+        style = style.overlay(theme.autocomplete);
     }
     if highlighted {
         style = style.overlay(match options.highlight_kind {

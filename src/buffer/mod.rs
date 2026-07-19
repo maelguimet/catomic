@@ -82,6 +82,12 @@ pub(crate) struct DescriptorOverlay {
     pub(crate) content: Vec<u8>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct CursorContext {
+    pub(crate) before: String,
+    pub(crate) after: String,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct DescriptorPosition {
     pub(crate) page_start: u64,
@@ -159,6 +165,15 @@ pub trait Buffer {
         Ok(false)
     }
     fn set_cursor(&mut self, cursor: Cursor);
+
+    /// Return a bounded scalar window around the cursor without materializing
+    /// unrelated document text. Storage backends must opt in explicitly.
+    fn cursor_context(&self, _max_before: usize, _max_after: usize) -> io::Result<CursorContext> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "bounded cursor context is unavailable for this buffer",
+        ))
+    }
 
     /// Return the text in a half-open scalar-coordinate range on the active
     /// logical document/page. Newlines between selected rows are included.

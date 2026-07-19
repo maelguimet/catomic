@@ -245,7 +245,7 @@ pub(super) fn compose_buffer(
     super::write_terminal_cursor(out, cursor, options.cursor_shape)
 }
 
-fn append_line_rows(
+pub(super) fn append_line_rows(
     buffer: &dyn Buffer,
     document_row: usize,
     mut start_col: usize,

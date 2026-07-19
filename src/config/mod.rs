@@ -11,6 +11,7 @@ use serde::de::DeserializeOwned;
 
 pub(crate) mod actions;
 pub mod auto_reload;
+pub(crate) mod autocomplete;
 pub mod big_files;
 pub(crate) mod cat;
 pub(crate) mod commands;
@@ -33,6 +34,7 @@ pub(crate) fn validate_all() -> io::Result<()> {
 
 pub(crate) fn validate_text(text: &str) -> io::Result<()> {
     auto_reload::parse(text)?;
+    autocomplete::parse(text)?;
     big_files::parse(text)?;
     cat::parse(text)?;
     commands::parse(text)?;

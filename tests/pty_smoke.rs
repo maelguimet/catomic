@@ -4,23 +4,28 @@
 //!   raw-mode setup, render, help, save, undo, search, Project tooling, guarded
 //!   external commands/hooks, explicit LLM confirmation, and clean quit are exercised.
 //! Owns: narrow default PTY smoke coverage for accepted Phase 0 through 8 behavior.
-//! Must not: grow into a broad UI harness, contact an LLM/network, use ambient config,
-//!   or run large-file/perf scenarios.
-//! Invariants: tests use temporary files, time out and kill the child on hangs,
-//!   and leave Plain startup behavior unchanged.
+//! Must not: grow into a broad UI harness, contact a live/public LLM, use ambient config,
+//!   or run large-file/perf scenarios; model tests use private loopback fakes only.
+//! Invariants: PTY children run serially, use temporary files, time out and are
+//!   killed on hangs, and leave Plain startup behavior unchanged.
 //! Phase: 8 acceptance, including catnap recovery and prior guarded workflows.
 
 use std::error::Error;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use portable_pty::{native_pty_system, Child, CommandBuilder, PtySize};
 
 type TestResult<T = ()> = Result<T, Box<dyn Error>>;
+
+static PTY_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+#[path = "pty_smoke/autocomplete.rs"]
+mod autocomplete;
 
 struct TempPath {
     path: PathBuf,
@@ -90,6 +95,7 @@ impl Drop for TempPath {
 }
 
 struct PtyEditor {
+    _test_guard: MutexGuard<'static, ()>,
     child: Box<dyn Child + Send + Sync>,
     writer: Box<dyn Write + Send>,
     output: Arc<Mutex<Vec<u8>>>,
@@ -120,6 +126,22 @@ impl PtyEditor {
 
     fn spawn_with_xdg(path: &PathBuf, xdg_config_home: &PathBuf) -> TestResult<Self> {
         Self::spawn_with(&[path], Some(xdg_config_home))
+    }
+
+    fn spawn_with_size_and_xdg(
+        path: &PathBuf,
+        xdg_config_home: &PathBuf,
+        rows: u16,
+        cols: u16,
+    ) -> TestResult<Self> {
+        let environment = TempProject::new("sized_xdg_environment");
+        let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
+        cmd.arg(path);
+        cmd.env("XDG_CONFIG_HOME", xdg_config_home);
+        cmd.env("XDG_STATE_HOME", &environment.root);
+        cmd.env("HOME", &environment.root);
+        cmd.env("TERM", "xterm-256color");
+        Self::spawn_command_sized_with_environment(cmd, rows, cols, environment)
     }
 
     fn spawn_with(paths: &[&PathBuf], xdg_config_home: Option<&PathBuf>) -> TestResult<Self> {
@@ -174,6 +196,9 @@ impl PtyEditor {
         // PTY capability assertions must not depend on the test runner's
         // ambient NO_COLOR/TERM. Constructors pin TERM for their intended path.
         cmd.env_remove("NO_COLOR");
+        let test_guard = PTY_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let pty_system = native_pty_system();
         let pair = pty_system.openpty(PtySize {
             rows,
@@ -206,6 +231,7 @@ impl PtyEditor {
         });
 
         Ok(Self {
+            _test_guard: test_guard,
             child,
             writer: pair.master.take_writer()?,
             output,
@@ -580,12 +606,24 @@ fn pty_file_size_limit_save_is_recoverable_and_cleans_temp() -> TestResult {
     editor.send_keys(b"\x1b[200~")?;
     editor.send_keys(pasted.as_bytes())?;
     editor.send_keys(b"\x1b[201~\x13")?;
-    wait_until(
+    if let Err(error) = wait_until(
         "recoverable file-limit error",
         // Full all-target runs execute this PTY beside the unit-test binary.
         Duration::from_secs(10),
         || editor.output_string().contains("Save error:"),
-    )?;
+    ) {
+        let status = editor.child.try_wait()?;
+        let output = editor.output_string();
+        let tail: String = output
+            .chars()
+            .rev()
+            .take(2_000)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        return Err(format!("{error}; child status: {status:?}; output tail: {tail:?}").into());
+    }
 
     assert!(
         editor.child.try_wait()?.is_none(),
@@ -901,6 +939,7 @@ fn pty_spaced_and_literal_option_filenames_each_open_as_one_buffer() -> TestResu
     spaced_editor.wait_for_output("quoted single path", "quoted filename content")?;
     spaced_editor.send_keys(b"\x11")?;
     spaced_editor.wait_for_exit()?;
+    drop(spaced_editor);
 
     project.write("--help", "literal option filename content");
     let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
@@ -1030,6 +1069,7 @@ fn pty_f7_persists_across_relaunch_and_applies_to_new_unicode_buffer() -> TestRe
 
     let saved = fs::read_to_string(&preference_path)?;
     assert!(saved.contains("line_numbers = true"));
+    drop(editor);
 
     let mut relaunched = PtyEditor::spawn_with_xdg(&active, &project.root)?;
     relaunched.wait_for_output(

@@ -26,6 +26,17 @@ enabled = false
 interval_secs = 30
 max_bytes = 1_048_576
 
+[autocomplete]
+# Disabled by default. Enabling only opens a per-process confirmation; no
+# automatic request starts until Enter confirms the exact destination/scope.
+enabled = false
+idle_debounce_ms = 750
+minimum_prefix_length = 20
+max_context_before = 2_048
+max_context_after = 512
+max_generated_tokens = 64
+allow_remote = false
+
 [theme]
 # Built-ins: "default", "high-contrast", and "mono".
 name = "default"
@@ -57,6 +68,7 @@ search_match = { fg = "black", bg = "yellow" }
 diff_added = "green"
 diff_removed = "red"
 llm_changed = { fg = "red", underline = true }
+autocomplete = { fg = "bright-black", dim = true }
 preview = "default"
 
 # Action-oriented keybindings replace an action's complete default chord list.
@@ -87,7 +99,8 @@ on_open = []
 on_save = []
 before_llm = []
 
-# Model settings are inert until an explicit model command and confirmation.
+# Model settings are inert until an explicit model command and confirmation, or
+# the separately confirmed autocomplete session described above.
 # F10 opens the searchable process-local selector without reading credentials,
 # contacting an endpoint, starting a command, or rewriting this file.
 # [llm]

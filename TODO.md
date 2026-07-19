@@ -35,7 +35,9 @@ not a permanently visible IDE mode and never becomes ambient automation.
 - Opening a file, opening help, or opening a model picker must not construct an
   LLM client, read an API-key value, probe a provider, or start a model process.
 - Model work begins only after explicit invocation and confirmation of the
-  destination, model, and exact context scope.
+  destination, model, and exact context scope. The sole automatic-call exception
+  is disabled-by-default inline autocomplete after an equally explicit,
+  bounded, active-buffer-only session confirmation.
 - Model output is bounded and untrusted. Edits remain read-only until separately
   accepted, fail closed on drift or malformed ranges, apply as undoable buffer
   transactions, and never save automatically.
@@ -62,6 +64,8 @@ The beta already includes:
   bounded context, preview, drift checks, undo, and no automatic save;
 - a one-key inline clanker workflow with selection/catblock/file precedence,
   bounded serial queueing, atomic cleanup, and semantic applied-change marks;
+- opt-in inline continuation ghost text with bounded active-buffer-only context,
+  session confirmation, cancellation, stale-response guards, and explicit apply;
 - typed configuration and documented security, performance, and contribution
   boundaries.
 
@@ -152,7 +156,8 @@ these foundations.
 
 ## Explicit non-goals
 
-- Always-on agents, ambient model suggestions, or silent model/provider probing.
+- Always-on agents, unconfirmed ambient model suggestions, or silent
+  model/provider probing.
 - Background repository indexing in Plain mode.
 - Turning ordinary startup into an IDE dashboard or model configuration flow.
 - Silent file writes, silent model edits, or automatic saves after model output.

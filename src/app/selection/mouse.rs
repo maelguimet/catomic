@@ -22,6 +22,7 @@ pub(crate) fn handle_mouse(
     out: &mut dyn Write,
     event: MouseEvent,
 ) -> io::Result<()> {
+    super::super::autocomplete::invalidate(app);
     match event.kind {
         MouseEventKind::ScrollUp => {
             return dispatch_scroll(app, out, MouseGesture::ScrollUp, event)

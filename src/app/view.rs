@@ -60,6 +60,9 @@ pub(crate) fn is_preview(app: &super::App) -> bool {
 }
 
 pub(crate) fn display_buffer(app: &super::App) -> &dyn Buffer {
+    if let Some(buffer) = super::autocomplete::display_buffer(app) {
+        return buffer;
+    }
     if let Some(buffer) = super::help::display_buffer(app) {
         return buffer;
     }
@@ -104,7 +107,8 @@ pub(crate) fn source_is_displayed(app: &super::App) -> bool {
 pub(crate) fn display_syntax(app: &super::App) -> SyntaxKind {
     if super::llm_preview::is_viewing(app) {
         SyntaxKind::Diff
-    } else if super::help::is_viewing(app)
+    } else if super::autocomplete::is_viewing(app)
+        || super::help::is_viewing(app)
         || super::recovery::is_viewing(app)
         || super::external_command::is_viewing(app)
         || super::llm_preview::is_viewing(app)
@@ -126,7 +130,8 @@ pub(crate) fn display_surface(app: &super::App) -> crate::terminal::render::Cont
     use crate::terminal::render::ContentSurface;
     if super::llm_preview::is_viewing(app) {
         ContentSurface::Diff
-    } else if super::help::is_viewing(app)
+    } else if super::autocomplete::is_viewing(app)
+        || super::help::is_viewing(app)
         || super::recovery::is_viewing(app)
         || super::external_command::is_viewing(app)
         || super::llm_answer::is_viewing(app)
@@ -164,7 +169,8 @@ pub(crate) fn content_width(app: &super::App) -> usize {
 }
 
 pub(crate) fn soft_wrap_active(app: &super::App) -> bool {
-    super::help::is_viewing(app)
+    super::autocomplete::is_viewing(app)
+        || super::help::is_viewing(app)
         || (app.view.soft_wrap
             && !is_preview(app)
             && !super::recovery::is_viewing(app)

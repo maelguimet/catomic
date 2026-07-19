@@ -3,7 +3,9 @@
 Catomic is a Linux-first, modeless terminal text editor. Its default Plain mode
 behaves like a conventional editor and does not scan repositories, start
 linters, or contact a network service. Project tools and model-assisted commands
-exist, but they run only after you invoke them explicitly.
+exist, but they run only after you invoke them explicitly. Inline autocomplete
+is disabled by default and begins automatic calls only after a separate,
+scoped session confirmation.
 
 Catomic is currently open-beta software. Keep backups of important files, and
 read [File formats and save safety](#file-formats-and-save-safety) before using
@@ -239,7 +241,9 @@ including:
 - the session-wide direct-typing state (`INS` or `OVR`);
 - file size, size tier, and text format when known;
 - `buffer N/M` when several buffers are open; and
-- page information and source byte range for a paged large file.
+- page information and source byte range for a paged large file; and
+- inline autocomplete state (`disabled`, `enabled`, `requesting`, `ready`, or
+  `error/backoff`).
 
 The small cat decoration is enabled by default. It changes presentation only
 and can be disabled with `[cat] status_messages = false`.
@@ -784,7 +788,9 @@ the hook is running.
 Model support is explicit, transient, and preview-first. A named preset can use
 an OpenAI-compatible Chat Completions endpoint or a headless command adapter.
 Catomic does not construct an HTTP client, read a credential value, or start a
-command until you invoke a model action and confirm its destination and context.
+command until you invoke a model action and confirm its destination and context,
+or confirm the scoped autocomplete session. Credentials are resolved only when
+a confirmed request is about to start.
 
 ### Presets and HTTP configuration
 
@@ -899,6 +905,45 @@ requests for every buffer in this Catomic process. It never invokes the backend,
 reads credential values, or rewrites configuration. To persist another default,
 edit `llm.default` as a separate explicit configuration action. Reopening or
 filtering the picker and switching buffers never persists anything.
+
+### Inline autocomplete
+
+Inline autocomplete is off by default. Use `autocomplete on` or
+`autocomplete off` in the command prompt. The first enable in each process
+opens a read-only document showing the selected preset, adapter, model,
+canonical URL or executable, idle delay, exact bounded context before and after
+the cursor, output limit, and automatic-send risk. `Enter` confirms this exact
+session policy; `Escape` leaves it disabled and starts nothing. Setting
+`autocomplete.enabled = true` only opens that confirmation at startup.
+
+After a confirmed typing pause, a continuation may appear at the cursor as
+semantically styled ghost text. It is display state, not document text: it does
+not dirty the buffer, enter history, or save. `Tab` accepts the whole visible
+continuation as one undoable edit. `Escape` dismisses it. Without visible ghost
+text, those keys retain their normal behavior.
+
+Editing, paste, navigation, selection changes, prompts, buffer/mode changes,
+model selection, and external refresh cancel stale work. Responses pin the
+buffer revision, cursor, mode, preset, canonical destination, model, and request
+generation. A compact leading bottom-row indicator reports `[ac off]`,
+`[ac on]`, `[ac request]`, `[ac ready]`, or `[ac error]` without displacing
+the status line's file, format, paging, or buffer-position tail.
+
+Requests use only a bounded Unicode-scalar window from the fully loaded active
+buffer; paged buffers are skipped. Catomic supplies explicit before/after
+delimiters but no path, repository broker, filesystem context, or tool access.
+Only one cancellable request runs at a time. Its timeout is capped at 30 seconds,
+failures use bounded 1–30 second backoff, and malformed/control-heavy or
+oversized output is rejected.
+
+Non-loopback HTTP—including LAN hosts—requires
+`autocomplete.allow_remote = true`. This separate capability matters because
+confirmed autocomplete sends context automatically after typing pauses. The
+selected preset retains the normal redirect, proxy, credential, URL, and
+plaintext-HTTP protections. A configured command adapter is trusted user code
+with the same warnings described above and may itself contact services.
+`autocomplete.model` optionally overrides the selected preset's model only for
+this feature.
 
 ### One-key inline clanker
 
@@ -1165,6 +1210,16 @@ enabled = false
 interval_secs = 30
 max_bytes = 1_048_576
 
+[autocomplete]
+enabled = false
+idle_debounce_ms = 750
+minimum_prefix_length = 20
+max_context_before = 2_048
+max_context_after = 512
+max_generated_tokens = 64
+# model = "writer-model"
+allow_remote = false
+
 [theme]
 name = "default"
 
@@ -1189,6 +1244,8 @@ syntax_number = "yellow"
 search_match = { fg = "black", bg = "yellow" }
 diff_added = "green"
 diff_removed = "red"
+llm_changed = { fg = "red", underline = true }
+autocomplete = { fg = "bright-black", dim = true }
 preview = "default"
 
 [languages.rs]
@@ -1261,6 +1318,14 @@ remove_instruction_after_apply = true
 | `recovery.enabled` | `false` | Boolean |
 | `recovery.interval_secs` | `30` | Integer `5`–`3600` |
 | `recovery.max_bytes` | `1048576` | Integer `1`–`16777216` |
+| `autocomplete.enabled` | `false` | Boolean; still requires session confirmation |
+| `autocomplete.idle_debounce_ms` | `750` | Integer `100`–`10000` |
+| `autocomplete.minimum_prefix_length` | `20` | Integer `1`–`4096`, no greater than context-before |
+| `autocomplete.max_context_before` | `2048` | Unicode scalars, integer `64`–`65536` |
+| `autocomplete.max_context_after` | `512` | Unicode scalars, integer `0`–`16384` |
+| `autocomplete.max_generated_tokens` | `64` | Integer `1`–`512` |
+| `autocomplete.model` | selected model | Optional non-empty model override |
+| `autocomplete.allow_remote` | `false` | Boolean; permits non-loopback automatic HTTP sending |
 | `theme.name` | `default` | `default`, `high-contrast`, or `mono` |
 | `commands.NAME.input` | `none` | `none`, `selection`, `buffer` |
 | `commands.NAME.output` | `preview` | `preview`, `insert`, `replace-input` |
@@ -1302,7 +1367,8 @@ surface. The complete role inventory is `text`, `background`, `cursor`,
 `selection`, `line_number`, `status`, `message`, `status_warning`, `status_prompt`, `error`,
 `markdown_heading`, `markdown_emphasis`, `markdown_code`, `markdown_marker`,
 `markdown_link`, `syntax_keyword`, `syntax_string`, `syntax_comment`, `syntax_number`,
-`search_match`, `diff_added`, `diff_removed`, `llm_changed`, and `preview`. The syntax roles
+`search_match`, `diff_added`, `diff_removed`, `llm_changed`, `autocomplete`, and
+`preview`. The syntax roles
 apply consistently to the built-in Rust, Python, and JSON highlighters.
 
 A role may be `"default"`, one of the standard 16 names (`black` through
@@ -1525,6 +1591,8 @@ Open the prompt with `Ctrl+Shift+P` or `F2`. Do not add a leading colon.
 | `model` | `models`, `select-model` | Search/select a process-local model preset |
 | `run-clanker` | `inline-meow` | Run document instruction with automatic bounded scope |
 | `clear-clanker-changes` | — | Dismiss applied-model marks without editing text |
+| `autocomplete on` | `autocomplete enable` | Confirm and enable inline suggestions |
+| `autocomplete off` | `autocomplete disable` | Cancel work and disable inline suggestions |
 | `meow TEXT` | — | Send selection/instruction block to configured model |
 | `bigmeow TEXT` | — | Send current ordinary file to configured model |
 | `gitmeow TEXT` | — | Use focused bounded repository context in Project mode |

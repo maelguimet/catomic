@@ -16,6 +16,7 @@ pub(crate) enum CloseBufferOutcome {
 
 impl App {
     pub(crate) fn new_file_buffer(&mut self) -> io::Result<()> {
+        super::super::autocomplete::invalidate(self);
         let new_buffer = Self::new_with_config(None, StartupConfig::for_new_buffer(self))?;
         self.inactive_buffers
             .push_front(BufferSlot::from_app(new_buffer));
@@ -30,6 +31,7 @@ impl App {
                 Some("Buffer has unsaved changes. Save it or use close! to discard.".to_string());
             return Ok(CloseBufferOutcome::Dirty);
         }
+        super::super::autocomplete::invalidate(self);
         external_command::cancel_all(self);
         hooks::cancel_all(self);
         super::inline_clanker::cancel_all(self);

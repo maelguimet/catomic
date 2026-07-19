@@ -81,6 +81,7 @@ pub(crate) struct Theme {
     pub(crate) diff_added: Style,
     pub(crate) diff_removed: Style,
     pub(crate) llm_changed: Style,
+    pub(crate) autocomplete: Style,
     pub(crate) preview: Style,
     pub(crate) truecolor: bool,
 }
@@ -162,6 +163,7 @@ fn apply_capabilities(mut theme: Theme, monochrome: bool, truecolor: bool) -> Th
         &mut theme.diff_added,
         &mut theme.diff_removed,
         &mut theme.llm_changed,
+        &mut theme.autocomplete,
         &mut theme.preview,
     ] {
         style.fg = None;
@@ -174,6 +176,8 @@ fn apply_capabilities(mut theme: Theme, monochrome: bool, truecolor: bool) -> Th
     theme.diff_removed.underlined = Some(true);
     theme.llm_changed.underlined = Some(true);
     theme.llm_changed.reversed = Some(true);
+    theme.autocomplete.dim = Some(true);
+    theme.autocomplete.underlined = Some(true);
     theme
 }
 
@@ -222,6 +226,10 @@ fn named(name: &str) -> io::Result<Theme> {
             underlined: Some(true),
             ..Style::fg(Color::Ansi(1))
         },
+        autocomplete: Style {
+            dim: Some(true),
+            ..Style::fg(Color::Ansi(8))
+        },
         preview: Style::default(),
         truecolor: false,
     };
@@ -256,6 +264,11 @@ fn named(name: &str) -> io::Result<Theme> {
                 reversed: Some(true),
                 ..plain
             };
+            theme.autocomplete = Style {
+                dim: Some(true),
+                underlined: Some(true),
+                ..plain
+            };
         }
         _ => return Err(invalid(format!("unknown theme name {name:?}"))),
     }
@@ -286,6 +299,7 @@ fn apply_role(theme: &mut Theme, role: &str, value: &toml::Value) -> io::Result<
         "diff_added" => apply_style(&mut theme.diff_added, value, role)?,
         "diff_removed" => apply_style(&mut theme.diff_removed, value, role)?,
         "llm_changed" => apply_style(&mut theme.llm_changed, value, role)?,
+        "autocomplete" => apply_style(&mut theme.autocomplete, value, role)?,
         "preview" => apply_style(&mut theme.preview, value, role)?,
         _ => {}
     }

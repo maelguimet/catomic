@@ -157,7 +157,9 @@ Use `catomic config` from the shell, or `config` in the command prompt, to open
 the exact active path inside Catomic. `catomic config edit` is a compatible alias;
 `catomic config path` and `catomic config check` remain non-editor utilities. If
 the file is later removed, the editor confirms before recreating the same private
-template atomically. Restart Catomic after saving configuration changes.
+template atomically. When opened from another buffer, `Ctrl+Q` closes the config
+detour and returns to that buffer; unsaved config changes require a second
+`Ctrl+Q` to discard. Restart Catomic after saving configuration changes.
 
 ```toml
 [editor]

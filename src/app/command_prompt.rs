@@ -22,6 +22,15 @@ pub(crate) struct CommandPromptState {
 struct ConfigReturn {
     config_path: PathBuf,
     buffer_index: usize,
+    discard_pending: bool,
+}
+
+pub(super) enum ConfigCloseRequest {
+    WarnDirty,
+    Close {
+        return_target: usize,
+        discard: bool,
+    },
 }
 
 struct RunningGoto {
@@ -70,7 +79,32 @@ pub(super) fn is_active(app: &super::App) -> bool {
     app.command_prompt.active.is_some() || app.command_prompt.running.is_some()
 }
 
-pub(super) fn take_config_return_target(app: &mut super::App) -> Option<usize> {
+pub(super) fn request_config_close(app: &mut super::App) -> Option<ConfigCloseRequest> {
+    let config_return = app.command_prompt.config_return.as_mut()?;
+    if app.file.path.as_deref() != Some(config_return.config_path.as_path()) {
+        return None;
+    }
+    if app.file.dirty && !config_return.discard_pending {
+        config_return.discard_pending = true;
+        return Some(ConfigCloseRequest::WarnDirty);
+    }
+    let discard = app.file.dirty;
+    app.command_prompt
+        .config_return
+        .take()
+        .map(|config_return| ConfigCloseRequest::Close {
+            return_target: config_return.buffer_index,
+            discard,
+        })
+}
+
+pub(super) fn clear_config_discard_confirmation(app: &mut super::App) {
+    if let Some(config_return) = app.command_prompt.config_return.as_mut() {
+        config_return.discard_pending = false;
+    }
+}
+
+pub(super) fn forget_active_config_detour(app: &mut super::App) {
     let active_config = app
         .command_prompt
         .config_return
@@ -78,13 +112,9 @@ pub(super) fn take_config_return_target(app: &mut super::App) -> Option<usize> {
         .is_some_and(|config_return| {
             app.file.path.as_deref() == Some(config_return.config_path.as_path())
         });
-    if !active_config {
-        return None;
+    if active_config {
+        app.command_prompt.config_return = None;
     }
-    app.command_prompt
-        .config_return
-        .take()
-        .map(|config_return| config_return.buffer_index)
 }
 
 fn open_prompt(app: &mut super::App, out: &mut dyn Write, kind: PromptKind) -> io::Result<()> {
@@ -411,6 +441,7 @@ fn open_config_path(app: &mut super::App, out: &mut dyn Write, path: &Path) -> i
         app.command_prompt.config_return = Some(ConfigReturn {
             config_path: path.to_path_buf(),
             buffer_index: source_buffer_index,
+            discard_pending: false,
         });
     }
     app.message = Some(format!(

@@ -1,13 +1,16 @@
 //! Purpose: this file must run read-only Git children with hard resource/lifetime bounds.
 //! Owns: safe command construction, capped stdout capture, cancellation, timeout, and reaping.
 //! Must not: invoke a shell, inherit Git identity overrides, write repositories, or network.
-//! Invariants: every spawned child is waited; cancellation/timeout kills before returning.
+//! Invariants: every child is waited; its process group ends before output readers are joined.
 //! Phase: 6 acceptance hardening.
 
 use std::io::Read;
 use std::path::Path;
 use std::process::{Child, ChildStdout, Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
+
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 
 use super::{GitError, MAX_TEXT_OUTPUT};
 
@@ -59,9 +62,11 @@ pub(super) fn run_bounded_with_timeout(
     cancelled: &dyn Fn() -> bool,
     timeout: Duration,
 ) -> Result<(ExitStatus, Vec<u8>), GitError> {
-    let mut child = git_command(root, args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+    let mut command = git_command(root, args);
+    command.stdout(Stdio::piped()).stderr(Stdio::null());
+    #[cfg(unix)]
+    command.process_group(0);
+    let mut child = command
         .spawn()
         .map_err(|error| GitError::Spawn(error.to_string()))?;
     let stdout = child.stdout.take().expect("piped stdout");
@@ -109,9 +114,11 @@ pub(super) fn run_status(
     args: &[&str],
     cancelled: &dyn Fn() -> bool,
 ) -> Result<ExitStatus, GitError> {
-    let mut child = git_command(root, args)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+    let mut command = git_command(root, args);
+    command.stdout(Stdio::null()).stderr(Stdio::null());
+    #[cfg(unix)]
+    command.process_group(0);
+    let mut child = command
         .spawn()
         .map_err(|error| GitError::Spawn(error.to_string()))?;
     wait_for_child(&mut child, args, cancelled, GIT_TIMEOUT)
@@ -139,7 +146,10 @@ fn wait_for_child(
             });
         }
         match child.try_wait() {
-            Ok(Some(status)) => return Ok(status),
+            Ok(Some(status)) => {
+                kill_process_group(child.id());
+                return Ok(status);
+            }
             Ok(None) => std::thread::sleep(POLL_INTERVAL),
             Err(error) => {
                 terminate(child);
@@ -150,9 +160,18 @@ fn wait_for_child(
 }
 
 fn terminate(child: &mut Child) {
+    kill_process_group(child.id());
     let _ = child.kill();
     let _ = child.wait();
 }
+
+#[cfg(unix)]
+fn kill_process_group(child_id: u32) {
+    let _ = unsafe { libc::kill(-(child_id as libc::pid_t), libc::SIGKILL) };
+}
+
+#[cfg(not(unix))]
+fn kill_process_group(_child_id: u32) {}
 
 fn git_command(root: &Path, args: &[&str]) -> Command {
     let mut command = Command::new("git");

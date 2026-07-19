@@ -90,3 +90,30 @@ fn mobile_warning_chrome_exposes_full_details_and_touch_instructions() {
         warning
     );
 }
+
+#[test]
+fn autocomplete_opt_in_can_be_confirmed_from_the_touch_action_row() {
+    let mut app = app_with("document");
+    app.screen.update_size(20, 6);
+    let mut out = Vec::new();
+
+    super::super::autocomplete::begin_with_catalog(
+        &mut app,
+        &mut out,
+        crate::config::llm::LlmCatalog::default(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        action_bar_text(&app).as_deref(),
+        Some("[Info][No][Yes][Up]")
+    );
+    assert!(!app.autocomplete.enabled);
+    assert!(app.autocomplete.pending.is_some());
+
+    handle_mouse(&mut app, &mut out, left_down(13, 5)).unwrap();
+
+    assert!(app.autocomplete.enabled);
+    assert!(app.autocomplete.pending.is_none());
+    assert!(app.autocomplete.running.is_none());
+}

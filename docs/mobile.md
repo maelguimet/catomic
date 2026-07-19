@@ -62,8 +62,12 @@ On Termux private storage, Android uses the same guarded save path as desktop
 Linux. Catomic preserves mode, owner, and group; refuses non-regular files,
 dangling final symlinks, multiple hard links, and extended attributes/ACLs; and
 detects a target inode race at commit. A valid final symlink is retained while
-its regular-file referent is replaced. Watch notifications are hints followed
-by a fresh file identity check, and dirty buffers are never reloaded silently.
+its regular-file referent is replaced. Android's mandatory, kernel-managed
+`security.selinux` application-data label is the sole xattr exception; user
+xattrs and POSIX ACL attributes remain fail-closed. Same-directory temporary
+files receive the application-data label from Android policy. Watch
+notifications are hints followed by a fresh file identity check, and dirty
+buffers are never reloaded silently.
 
 Optional `.catnap` recovery sidecars remain disabled by default. When enabled,
 they are atomic owner-only siblings, so keep the source in Termux private

@@ -135,6 +135,23 @@ pub(super) fn validate_replacement_metadata(
 fn ensure_no_extended_attributes(file: &File, path: &Path) -> io::Result<()> {
     let count = unsafe { libc::flistxattr(file.as_raw_fd(), std::ptr::null_mut(), 0) };
     if count > 0 {
+        let mut names = vec![0_u8; count as usize];
+        let written =
+            unsafe { libc::flistxattr(file.as_raw_fd(), names.as_mut_ptr().cast(), names.len()) };
+        if written < 0 {
+            let error = io::Error::last_os_error();
+            return Err(io::Error::new(
+                error.kind(),
+                format!(
+                    "could not verify extended attributes for {}: {error}",
+                    path.display()
+                ),
+            ));
+        }
+        names.truncate(written as usize);
+        if !has_unpreserved_attribute_names(&names, cfg!(target_os = "android")) {
+            return Ok(());
+        }
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             format!(
@@ -157,6 +174,18 @@ fn ensure_no_extended_attributes(file: &File, path: &Path) -> io::Result<()> {
             path.display()
         ),
     ))
+}
+
+fn has_unpreserved_attribute_names(names: &[u8], allow_android_selinux: bool) -> bool {
+    if names.is_empty() {
+        return false;
+    }
+    if names.last() != Some(&0) {
+        return true;
+    }
+    names
+        .split(|byte| *byte == 0)
+        .any(|name| !name.is_empty() && !(allow_android_selinux && name == b"security.selinux"))
 }
 
 pub(super) fn commit(
@@ -327,4 +356,31 @@ fn changed_error(path: &Path) -> io::Error {
             path.display()
         ),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::has_unpreserved_attribute_names;
+
+    #[test]
+    fn android_managed_selinux_label_is_the_only_xattr_exception() {
+        assert!(!has_unpreserved_attribute_names(b"", true));
+        assert!(!has_unpreserved_attribute_names(
+            b"security.selinux\0",
+            true
+        ));
+        assert!(has_unpreserved_attribute_names(
+            b"security.selinux\0user.note\0",
+            true
+        ));
+        assert!(has_unpreserved_attribute_names(
+            b"system.posix_acl_access\0",
+            true
+        ));
+        assert!(has_unpreserved_attribute_names(
+            b"security.selinux\0",
+            false
+        ));
+        assert!(has_unpreserved_attribute_names(b"security.selinux", true));
+    }
 }

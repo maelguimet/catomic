@@ -62,10 +62,12 @@ fn monochrome_messages_keep_a_boundary_while_normal_status_stays_quiet() {
             3,
             4,
             "ok",
-            role,
-            StatusTheme::monochrome(),
-            None,
-            None,
+            StatusBarPresentation {
+                role,
+                theme: StatusTheme::monochrome(),
+                filename: None,
+                selection: None,
+            },
         )
         .unwrap();
         let rendered = String::from_utf8(out).unwrap();
@@ -96,10 +98,12 @@ fn default_semantic_roles_use_distinct_basic_color_pairs() {
             2,
             2,
             "ok",
-            role,
-            StatusTheme::default(),
-            None,
-            None,
+            StatusBarPresentation {
+                role,
+                theme: StatusTheme::default(),
+                filename: None,
+                selection: None,
+            },
         )
         .unwrap();
         let rendered = String::from_utf8(out).unwrap();
@@ -116,7 +120,19 @@ fn custom_semantic_style_is_used_without_changing_bar_logic() {
         false,
     );
     let mut out = Vec::new();
-    write_status_bar(&mut out, 2, 3, "bad", StatusRole::Error, theme, None, None).unwrap();
+    write_status_bar(
+        &mut out,
+        2,
+        3,
+        "bad",
+        StatusBarPresentation {
+            role: StatusRole::Error,
+            theme,
+            filename: None,
+            selection: None,
+        },
+    )
+    .unwrap();
     let rendered = String::from_utf8(out).unwrap();
 
     assert!(rendered.contains("\x1b[30m\x1b[105m"));
@@ -131,10 +147,12 @@ fn narrow_unicode_status_is_cell_clipped_and_terminal_safe() {
         2,
         4,
         "猫x\x1b[2Jtail",
-        StatusRole::Warning,
-        StatusTheme::monochrome(),
-        None,
-        None,
+        StatusBarPresentation {
+            role: StatusRole::Warning,
+            theme: StatusTheme::monochrome(),
+            filename: None,
+            selection: None,
+        },
     )
     .unwrap();
     let rendered = String::from_utf8(out).unwrap();
@@ -184,10 +202,12 @@ fn persistent_path_uses_muted_parent_red_filename_and_selection_reverse_video() 
         2,
         40,
         text,
-        StatusRole::Normal,
-        StatusTheme::default(),
-        Some((14, 22)),
-        Some((8, 22)),
+        StatusBarPresentation {
+            role: StatusRole::Normal,
+            theme: StatusTheme::default(),
+            filename: Some((14, 22)),
+            selection: Some((8, 22)),
+        },
     )
     .unwrap();
     let rendered = String::from_utf8(out).unwrap();

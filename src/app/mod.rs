@@ -168,6 +168,8 @@ pub struct App {
     pub(crate) selection: selection::SelectionUiState,
     /// Always-available process-local clipboard shared across open buffers.
     pub(crate) clipboard: String,
+    /// Consecutive cut-line commands append to the session clipboard until another action.
+    pub(crate) cut_line_append: bool,
     /// Remaining per-buffer display toggles; they never mutate document content.
     pub(crate) view: view::ViewOptions,
     /// Inactive buffers in next-buffer order. The active buffer remains in the

@@ -23,6 +23,7 @@ pub(crate) fn handle_mouse(
     out: &mut dyn Write,
     event: MouseEvent,
 ) -> io::Result<()> {
+    super::end_cut_line_chain(app);
     if super::super::mobile::handle_mouse(app, out, event)? {
         return Ok(());
     }

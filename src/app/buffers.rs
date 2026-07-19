@@ -137,6 +137,7 @@ impl App {
     }
 
     pub(crate) fn switch_buffer(&mut self, direction: BufferDirection) -> bool {
+        selection::end_cut_line_chain(self);
         if self.inactive_buffers.is_empty() {
             return false;
         }

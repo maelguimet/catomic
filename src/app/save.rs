@@ -111,6 +111,27 @@ pub(crate) fn handle_save(app: &mut super::App, out: &mut dyn Write) -> io::Resu
     }
 
     let current_path = app.file.path.clone();
+    if let Some(path) = current_path.as_deref() {
+        match app.another_buffer_represents_path(path) {
+            Ok(true) => {
+                app.pending_save_conflict = None;
+                app.message = Some(
+                    "Save blocked: this file is also open in another buffer. Close the conflicting buffer first."
+                        .to_string(),
+                );
+                return app.render(out);
+            }
+            Ok(false) => {}
+            Err(error) => {
+                app.pending_save_conflict = None;
+                app.message = Some(format!(
+                    "Save error: could not compare open buffers: {error}"
+                ));
+                return app.render(out);
+            }
+        }
+    }
+
     let baseline = app.file.disk_snapshot.as_ref();
     let obs = crate::file::io::observe_external_file(current_path.as_deref(), baseline);
 
@@ -170,6 +191,24 @@ pub(crate) fn handle_save_as(
         app.pending_save_conflict = None;
         app.message = Some(format!("Save As error: {error}"));
         return app.render(out);
+    }
+    match app.another_buffer_represents_path(&target) {
+        Ok(true) => {
+            app.pending_save_conflict = None;
+            app.message = Some(
+                "Save As blocked: target is already open in another buffer. Switch to or close that buffer first."
+                    .to_string(),
+            );
+            return app.render(out);
+        }
+        Ok(false) => {}
+        Err(error) => {
+            app.pending_save_conflict = None;
+            app.message = Some(format!(
+                "Save As error: could not compare open buffers: {error}"
+            ));
+            return app.render(out);
+        }
     }
     if app
         .file

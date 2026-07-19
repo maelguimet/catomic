@@ -3,7 +3,9 @@
 > Archived from `TODO.md` on 2026-07-17 after phases 0–8 were completed.
 > This preserves the original design research, phase specifications, acceptance
 > criteria, and implementation record. It is historical evidence, not the
-> current roadmap. See [`TODO.md`](../../TODO.md) for active priorities.
+> current roadmap. See the
+> [GitHub issue queue](https://github.com/maelguimet/catomic/issues) for active
+> work and priorities.
 
 # Catomic Build Plan
 

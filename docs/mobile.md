@@ -25,7 +25,7 @@ export LANG=C.UTF-8
 git clone https://github.com/maelguimet/catomic.git
 cd catomic
 rustc --version
-cargo install --path . --locked
+./scripts/install.sh
 catomic --version
 catomic ~/notes.txt
 ```
@@ -34,7 +34,7 @@ Rust must be 1.87 or newer. `~/.cargo/bin` is normally on Termux's `PATH`; add
 it if `catomic` is not found. Build and run Catomic directly in Termux, not in a
 `proot` guest. Managed Android release binaries are not currently published;
 update a source install explicitly with `git pull --ff-only` and rerun
-`cargo install --path . --locked --force`.
+`./scripts/install.sh --force`.
 
 ## Storage and save safety
 

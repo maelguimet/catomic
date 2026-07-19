@@ -49,11 +49,17 @@ cargo build --release --locked
 ./target/release/catomic
 ```
 
-To install it into Cargo's binary directory, normally `~/.cargo/bin`:
+To install it into Cargo's binary directory, normally `~/.cargo/bin`, and
+provision the private commented user configuration:
 
 ```sh
-cargo install --path . --locked
+./scripts/install.sh
 ```
+
+The installer creates `$XDG_CONFIG_HOME/catomic/config.toml` when the XDG root
+is absolute, otherwise `~/.config/catomic/config.toml`. It uses directory mode
+`0700` and file mode `0600`, publishes the template without overwriting a racing
+path, and leaves any existing configuration byte-for-byte untouched.
 
 Make sure Cargo's binary directory is in `PATH`, then verify the installation:
 
@@ -106,8 +112,8 @@ exact backup path.
   redirects are allowlisted, requests have bounded timeouts, responses and
   declared asset sizes are capped, and the candidate's checksum and version are
   verified before it can run or replace the installed binary.
-- A binary built in a clean official `master` checkout, including
-  `cargo install --path . --locked`, retains that checkout as its update source.
+- A binary built in a clean official `master` checkout, including one installed
+  by `./scripts/install.sh`, retains that checkout as its update source.
   Catomic checks the official remote revision, refuses non-fast-forward history,
   fetches without running hooks, and builds in an isolated temporary worktree.
   The new revision must pass all tests and validate the existing configuration
@@ -161,7 +167,7 @@ If the updater is unavailable for a source install, the manual equivalent is:
 
 ```sh
 git pull --ff-only
-cargo install --path . --locked --force
+./scripts/install.sh --force
 ```
 
 To remove a Cargo-installed copy:
@@ -178,10 +184,10 @@ Open a file:
 catomic notes.md
 ```
 
-Open several files in one session:
+Open a filename containing spaces without shell quoting:
 
 ```sh
-catomic notes.txt todo.txt server.log
+catomic hello world.md
 ```
 
 Start with an untitled empty buffer:
@@ -193,38 +199,26 @@ catomic
 If a named path does not exist, Catomic opens an empty buffer for that path. The
 file is not created until you save it.
 
-When two or more file arguments include any missing path, Catomic stops before
-entering terminal mode and prints every parsed argument as `existing`,
-`missing`, or status unavailable. This guards against an unquoted filename with
-spaces accidentally becoming several buffers. For example, if you intended one
-file, quote it in the shell:
+Every non-command word forms one path, joined with spaces. The example above
+therefore opens exactly `hello world.md`, not separate startup buffers. Shell
+quoting remains supported when you prefer it:
 
 ```sh
-catomic "henlo world.md"
+catomic "hello world.md"
 ```
 
-To deliberately open or create several buffers when any path is missing, use
-the explicit opt-in:
+The first argument `config` or `update` selects that command instead of a file.
+Those commands reject unsupported arguments. A working-directory file with a
+reserved or option-like name remains an ordinary file when written as an
+explicit path:
 
 ```sh
-catomic --allow-missing draft-one.txt draft-two.txt
+catomic ./config
+catomic ./update
+catomic ./-draft.md
 ```
 
-The guard's classification is a read-only existence check; neither the guard
-nor the opt-in creates a file. An accepted missing path remains an empty,
-unsaved buffer until you explicitly save it. Several existing paths continue to
-open without the flag.
-
-The first argument `update` selects the updater. Use `--` when a filename looks
-like an option or is literally named `update`:
-
-```sh
-catomic -- --help
-catomic -- update
-catomic --allow-missing -- --draft.txt another-draft.txt
-```
-
-File arguments and file contents must be valid UTF-8. The editor also requires
+The file path and file contents must be valid UTF-8. The editor also requires
 a UTF-8 locale selected by the first non-empty value among `LC_ALL`,
 `LC_CTYPE`, and `LANG`. Help and version output remain available when the locale
 is invalid because they do not enter terminal raw mode.
@@ -310,6 +304,11 @@ one visual unit where appropriate.
 Add `Shift` to the grapheme, line, word, page, and document-edge movement forms
 to extend the selection. `Ctrl+A` selects the active ordinary buffer or the
 current page of a paged file. Paragraph movement follows the exception below.
+
+Some terminal emulators reserve `Ctrl+Shift+Left` and `Ctrl+Shift+Right` for
+terminal-tab navigation and never send those events to Catomic. Use
+`Alt+Shift+Left` and `Alt+Shift+Right` as the built-in word-selection fallbacks;
+the standard chords remain available when the terminal forwards them.
 
 A paragraph is a maximal run of non-blank logical lines; one or more blank
 lines separate paragraphs. `Ctrl+Down` skips the remainder of the current
@@ -456,9 +455,8 @@ cancellable with `Escape`.
 
 ## Working with multiple buffers
 
-Every accepted command-line path opens in argument order. Multi-file startup
-with a missing path requires the [explicit `--allow-missing` opt-in](#starting-catomic).
-You can also create or open buffers during a session:
+Startup opens exactly one file buffer. Create or open additional buffers during
+the editor session:
 
 | Action | Shortcut | Command |
 | --- | --- | --- |
@@ -1166,31 +1164,39 @@ Catomic reads one TOML file from:
    path; otherwise
 2. `~/.config/catomic/config.toml` when `HOME` is an absolute path.
 
-No file is required. Unknown keys are ignored for forward compatibility, but a
-malformed recognized value is a startup error for settings loaded at startup.
-Project-only and model settings are loaded lazily when invoked.
+The source installer creates this file from Catomic's documented template and
+never replaces an existing path. Unknown keys are ignored for forward
+compatibility, but a malformed recognized value is a startup error for settings
+loaded at startup. Project-only and model settings are loaded lazily when
+invoked.
 
-Run `config` from the in-editor command prompt to open that exact path as an
-ordinary editable buffer. If it is missing, Catomic asks before atomically
-creating an owner-only file in an owner-only `catomic` directory from a
-documented, commented template. An existing group/other-accessible config
-directory is refused with a permission error instead of being silently changed.
-It never overwrites a file that appears during confirmation. Configuration is validated
-and applied as one document at startup, so restart Catomic after saving; the
-running session does not silently apply a partial reload.
+Run `catomic config` from the shell, or `config` from the in-editor command
+prompt, to open that exact path as an ordinary editable buffer inside Catomic.
+`catomic config edit` is an alias for the same Catomic-native action and does not
+use `$VISUAL`, `$EDITOR`, `/bin/sh`, or another editor. If the file is later
+missing, Catomic asks inside the live editor before atomically recreating an
+owner-only file in an owner-only `catomic` directory from the same documented,
+commented template. An existing group/other-accessible config directory is
+refused with a permission error instead of being silently changed. It never
+overwrites a file that appears during confirmation. Configuration is validated
+and applied as one document at normal startup, so restart Catomic after saving;
+the running session does not silently apply a partial reload. The dedicated
+config action uses built-in defaults, so an invalid config can still be opened
+and repaired.
 
 Shell workflows can discover, validate, or edit the same path without guessing
 the XDG resolution:
 
 ```sh
+catomic config
 catomic config path
 catomic config check
 catomic config edit
 ```
 
-`config check` is read-only. `config edit` asks before first creation and then
-launches `$VISUAL`, falling back to `$EDITOR`; it runs before terminal raw mode
-or the alternate screen is entered.
+`config check` is read-only. `config` and `config edit` are equivalent; both
+enter Catomic and ask before recreating a missing file. If terminal setup fails,
+no missing configuration is created.
 
 The configured line-number default is:
 
@@ -1495,8 +1501,8 @@ select-viewport-up | editor | shift+pageup
 select-viewport-down | editor | shift+pagedown
 word-left | editor | ctrl+left
 word-right | editor | ctrl+right
-select-word-left | editor | ctrl+shift+left
-select-word-right | editor | ctrl+shift+right
+select-word-left | editor | ctrl+shift+left, alt+shift+left
+select-word-right | editor | ctrl+shift+right, alt+shift+right
 paragraph-previous | editor | ctrl+up
 paragraph-next | editor | ctrl+down
 delete-backward | editor | backspace

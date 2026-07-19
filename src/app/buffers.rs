@@ -101,6 +101,7 @@ impl App {
         )
     }
 
+    #[cfg(test)]
     pub(super) fn new_with_paths_and_config(
         initial_paths: &[String],
         config: StartupConfig,
@@ -209,6 +210,17 @@ impl App {
         debug_assert!(switched, "new buffer must be switchable");
         hooks::trigger_open(self);
         Ok(true)
+    }
+
+    pub(crate) fn replace_active_file_buffer(&mut self, path: &Path) -> io::Result<()> {
+        let path = path.to_str().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "file path is not valid UTF-8")
+        })?;
+        let opened = Self::new_with_config(Some(path), StartupConfig::for_new_buffer(self))?;
+        let mut replacement = BufferSlot::from_app(opened);
+        replacement.swap_with_active(self);
+        hooks::trigger_open(self);
+        Ok(())
     }
 }
 
@@ -387,6 +399,38 @@ mod tests {
             .unwrap();
         assert_eq!(app.buffer.to_string(), "alpha");
         assert_eq!(app.active_buffer_index, 0);
+
+        fs::remove_file(first).unwrap();
+        fs::remove_file(second).unwrap();
+    }
+
+    #[test]
+    fn terminal_safe_word_selection_fallback_stays_in_the_active_buffer() {
+        let first = temp_file("selection_first", "one two");
+        let second = temp_file("selection_second", "three four");
+        let paths = vec![
+            first.to_string_lossy().into_owned(),
+            second.to_string_lossy().into_owned(),
+        ];
+        let mut app =
+            App::new_with_paths_and_big_file_config(&paths, BigFileConfig::default()).unwrap();
+        let mut out = Vec::new();
+
+        app.handle_key_with(
+            &mut out,
+            key(KeyCode::Right, KeyModifiers::ALT | KeyModifiers::SHIFT),
+        )
+        .unwrap();
+
+        assert_eq!(app.active_buffer_index, 0);
+        assert_eq!(app.buffer.to_string(), "one two");
+        assert_eq!(
+            app.selection.active().unwrap().ordered(),
+            (
+                crate::buffer::Cursor { row: 0, col: 0 },
+                crate::buffer::Cursor { row: 0, col: 4 },
+            )
+        );
 
         fs::remove_file(first).unwrap();
         fs::remove_file(second).unwrap();

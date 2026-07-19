@@ -1,7 +1,7 @@
 //! Mode and Capabilities.
 //!
 //! This is the "bouncer" for every feature.
-//! See TODO.md → "Product Modes" and "Capabilities".
+//! See `docs/architecture.md` for the system boundaries enforced here.
 //!
 //! The core rule:
 //! - In Plain mode, Project-only services must **not be constructed**.
@@ -49,7 +49,7 @@ impl fmt::Display for Mode {
 /// Every subsystem must be constructed **only** when its flag is true.
 /// This is checked at construction sites and in tests.
 ///
-/// See TODO.md Mode Acceptance Tests: "not merely unused but not constructed".
+/// Project-only subsystems must be absent, not merely idle, when their flag is false.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Capabilities {
     /// Markdown rendering + .md-aware display.

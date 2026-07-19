@@ -5,6 +5,7 @@
 //! Phase: bounded post-beta App ownership cleanup.
 
 use std::io::{self, Write};
+use std::path::PathBuf;
 
 use crossterm::event::{self, Event, KeyEvent};
 
@@ -19,6 +20,14 @@ use super::{
 impl App {
     /// The main goblin loop. Keep it obvious.
     pub fn run(&mut self) -> io::Result<()> {
+        self.run_with_startup_config(None)
+    }
+
+    pub(super) fn run_config(&mut self, path: PathBuf) -> io::Result<()> {
+        self.run_with_startup_config(Some(path))
+    }
+
+    fn run_with_startup_config(&mut self, config_path: Option<PathBuf>) -> io::Result<()> {
         let mut stdout = io::stdout();
         let terminal_guard = term::TerminalGuard::new();
         terminal_guard.setup(&mut stdout)?;
@@ -26,11 +35,15 @@ impl App {
             self.screen.update_size(width, height);
         }
         let _panic_guard = term::PanicRestoreGuard::install(terminal_guard.restorer());
-        hooks::trigger_open(self);
-        if autocomplete::configured_default_enabled(self) {
-            autocomplete::begin_enable(self, &mut stdout)?;
+        if let Some(path) = config_path {
+            command_prompt::open_startup_config(self, &mut stdout, path)?;
         } else {
-            self.render(&mut stdout)?;
+            hooks::trigger_open(self);
+            if autocomplete::configured_default_enabled(self) {
+                autocomplete::begin_enable(self, &mut stdout)?;
+            } else {
+                self.render(&mut stdout)?;
+            }
         }
 
         while !self.should_quit && term::termination_signal().is_none() {

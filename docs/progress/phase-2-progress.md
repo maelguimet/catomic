@@ -6,10 +6,9 @@
 **Moved from**: The "**Current status** (2026-06):" section at the end of TODO.md.
 **Status**: Historical record only. Content preserved verbatim. No behavior or code implications.
 
-Completed Phase 2 progress is archived here. See TODO.md for:
-- current active Phase 2 goals / exit criteria
-- the compact pointer to this archive
-- the latest unresolved limitations that still matter
+Completed Phase 2 progress is archived here. It has no active requirements;
+current work and unresolved defects are tracked in the
+[GitHub issue queue](https://github.com/maelguimet/catomic/issues).
 
 ---
 

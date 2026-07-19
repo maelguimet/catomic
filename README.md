@@ -45,11 +45,14 @@ cargo build --release --locked
 ./target/release/catomic
 ```
 
-To install `catomic` into Cargo's binary directory instead:
+To install `catomic` into Cargo's binary directory and create its private,
+commented user configuration:
 
 ```sh
-cargo install --path . --locked
+./scripts/install.sh
 ```
+
+The installer never replaces an existing configuration.
 
 For a clean official `master` checkout, either launch method supports the
 state-preserving updater:
@@ -146,13 +149,15 @@ leading `:`.
 ## Configuration
 
 Catomic reads TOML from `$XDG_CONFIG_HOME/catomic/config.toml` or
-`~/.config/catomic/config.toml`. No configuration file is required. This example
-shows the most common settings:
+`~/.config/catomic/config.toml`. The source installer creates that file from the
+commented owner-only template without replacing existing configuration. This
+example shows the most common settings:
 
-Use `config` in the command prompt to edit the exact active path, or use
-`catomic config path`, `catomic config check`, and `catomic config edit` from
-the shell. A missing file is created only after confirmation, from a commented
-owner-only template. Restart Catomic after saving configuration changes.
+Use `catomic config` from the shell, or `config` in the command prompt, to open
+the exact active path inside Catomic. `catomic config edit` is a compatible alias;
+`catomic config path` and `catomic config check` remain non-editor utilities. If
+the file is later removed, the editor confirms before recreating the same private
+template atomically. Restart Catomic after saving configuration changes.
 
 ```toml
 [editor]
@@ -301,7 +306,8 @@ Security-sensitive findings should follow [SECURITY.md](SECURITY.md).
 - [Performance discipline and measurements](docs/performance.md)
 - [Linux terminal and filesystem compatibility](docs/compatibility.md)
 - [LLM safety rules](docs/llm-rules.md)
-- [Roadmap, research, and design history](TODO.md)
+- [Active bugs, features, and priorities](https://github.com/maelguimet/catomic/issues)
+- [Historical roadmap, research, and design record](docs/progress/roadmap-history.md)
 - [Release process and artifact verification](docs/releasing.md)
 - [Historical v0.1 roadmap acceptance record](docs/v0.1-acceptance.md)
 

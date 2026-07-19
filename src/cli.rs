@@ -1,5 +1,5 @@
 //! Purpose: parse Catomic's small explicit command-line interface.
-//! Owns: top-level actions, update flags, and usage errors.
+//! Owns: top-level actions, config/update flags, and usage errors.
 //! Must not: inspect files, contact a network, update state, or start the editor.
 //! Invariants: reserved commands are recognized only in argv[1]; file words
 //! join one path.
@@ -14,6 +14,7 @@ pub(crate) const EXIT_USAGE: i32 = 2;
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Action {
     Config(ConfigAction),
+    ConfigHelp,
     Help,
     Version,
     UpdateHelp,
@@ -58,10 +59,13 @@ where
 
 fn parse_config(args: &[String]) -> Result<Action, String> {
     let action = match args {
+        [] => ConfigAction::Edit,
         [command] if command == "path" => ConfigAction::Path,
         [command] if command == "edit" => ConfigAction::Edit,
         [command] if command == "check" => ConfigAction::Check,
-        [] => return Err("config requires one of: path, edit, check".to_string()),
+        [option] if help::config_option(option) == Some(help::ConfigOption::Help) => {
+            return Ok(Action::ConfigHelp);
+        }
         _ => return Err(format!("unknown config command {:?}", args.join(" "))),
     };
     Ok(Action::Config(action))
@@ -121,17 +125,12 @@ fn parse_file(args: Vec<String>) -> Result<Action, String> {
     let Some(first) = args.first() else {
         return Ok(Action::Run(RunOptions::default()));
     };
-    if first == "--" {
-        return Ok(run_file(&args[1..]));
-    }
     match help::main_option(first) {
         Some(help::MainOption::Help) if args.len() == 1 => Ok(Action::Help),
         Some(help::MainOption::Version) if args.len() == 1 => Ok(Action::Version),
         Some(help::MainOption::Help | help::MainOption::Version) => Err(format!(
-            "{first} does not take arguments; use `catomic -- {}` to open that literal filename",
-            args.join(" ")
+            "{first} does not take arguments; prefix an option-like filename with `./`"
         )),
-        Some(help::MainOption::PositionalOnly) => unreachable!("handled above"),
         None if first.starts_with('-') => Err(format!("unknown option {first:?}")),
         None => Ok(run_file(&args)),
     }
@@ -145,6 +144,10 @@ fn run_file(words: &[String]) -> Action {
 
 pub(crate) fn print_help() {
     print!("{}", help::main_help(env!("CARGO_PKG_VERSION")));
+}
+
+pub(crate) fn print_config_help() {
+    print!("{}", help::config_help());
 }
 
 pub(crate) fn print_update_help() {
@@ -171,15 +174,19 @@ mod tests {
                 backup: true,
             })
         );
-        assert_eq!(parse(["--", "update"]).unwrap(), run(Some("update")));
         assert_eq!(
             parse(["notes", "update"]).unwrap(),
             run(Some("notes update"))
         );
+        assert!(parse(["--", "update"]).is_err());
     }
 
     #[test]
-    fn parses_config_discovery_commands_only_as_a_first_argument_subcommand() {
+    fn parses_config_commands_only_as_a_first_argument_subcommand() {
+        assert_eq!(
+            parse(["config"]).unwrap(),
+            Action::Config(ConfigAction::Edit)
+        );
         assert_eq!(
             parse(["config", "path"]).unwrap(),
             Action::Config(ConfigAction::Path)
@@ -192,9 +199,18 @@ mod tests {
             parse(["config", "check"]).unwrap(),
             Action::Config(ConfigAction::Check)
         );
-        assert!(parse(["config"]).is_err());
+        for spelling in ["-h", "--help"] {
+            assert_eq!(parse(["config", spelling]).unwrap(), Action::ConfigHelp);
+        }
         assert!(parse(["config", "wat"]).is_err());
-        assert_eq!(parse(["--", "config"]).unwrap(), run(Some("config")));
+        assert!(parse(["--", "config"]).is_err());
+    }
+
+    #[test]
+    fn command_name_files_use_an_explicit_relative_path() {
+        assert_eq!(parse(["./update"]).unwrap(), run(Some("./update")));
+        assert_eq!(parse(["./config"]).unwrap(), run(Some("./config")));
+        assert_eq!(parse(["./-draft.md"]).unwrap(), run(Some("./-draft.md")));
     }
 
     #[test]
@@ -205,14 +221,15 @@ mod tests {
     }
 
     #[test]
-    fn parses_help_version_and_literal_options() {
+    fn parses_help_and_version_and_rejects_positional_only_syntax() {
         for spelling in ["-h", "--help"] {
             assert_eq!(parse([spelling]).unwrap(), Action::Help);
         }
         for spelling in ["-V", "--version"] {
             assert_eq!(parse([spelling]).unwrap(), Action::Version);
         }
-        assert_eq!(parse(["--", "--help"]).unwrap(), run(Some("--help")));
+        assert!(parse(["--"]).is_err());
+        assert!(parse(["--", "--help"]).is_err());
     }
 
     #[test]
@@ -225,12 +242,7 @@ mod tests {
             parse(["hello", "--help"]).unwrap(),
             run(Some("hello --help"))
         );
-        assert_eq!(
-            parse(["--", "--help", "world.md"]).unwrap(),
-            run(Some("--help world.md"))
-        );
         assert_eq!(parse(Vec::<String>::new()).unwrap(), run(None));
-        assert_eq!(parse(["--"]).unwrap(), run(None));
     }
 
     #[test]
@@ -255,6 +267,14 @@ mod tests {
         for spec in help::MAIN_OPTIONS {
             for spelling in spec.spellings {
                 assert!(parse([spelling]).is_ok(), "main parser rejected {spelling}");
+            }
+        }
+        for spec in help::CONFIG_OPTIONS {
+            for spelling in spec.spellings {
+                assert!(
+                    parse(["config", spelling]).is_ok(),
+                    "config parser rejected {spelling}"
+                );
             }
         }
         for spec in help::UPDATE_OPTIONS {

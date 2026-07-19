@@ -14,11 +14,12 @@ volume.
 - For a substantial feature or architecture change, open an issue first so its
   scope and fit can be discussed.
 
-The active roadmap authority is [TODO.md](TODO.md) together with the acceptance
-records in [`docs/`](docs/). Historical plans under `docs/progress/` preserve
-design evidence but are not active requirements. Read [AGENTS.md](AGENTS.md)
-before changing code; its architecture, testing, and scope rules apply to human
-and automated contributors alike.
+The [GitHub issue queue](https://github.com/maelguimet/catomic/issues) is the
+authority for active work and priorities. Acceptance records in [`docs/`](docs/)
+preserve verification evidence; historical plans under `docs/progress/` are not
+active requirements. Read [AGENTS.md](AGENTS.md) before changing code; its
+architecture, testing, and scope rules apply to human and automated contributors
+alike.
 
 ## Development setup
 

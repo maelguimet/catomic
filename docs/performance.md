@@ -534,7 +534,8 @@ All numbers remain advisory. Do not turn these into `#[test]` pass/fail gates in
 - Editable large-file semantics and external-change policy are resolved in `docs/decisions/0006-editable-paged-files.md`. Remaining performance work is measurement-led optimization, especially giant Unicode lines and retained-row rendering.
 - The ignored manual open tests emit stable phase samples for the open path: "metadata", "read_to_string", "PieceTable::from_owned_text", "App::new" (end-to-end), and "render". Dense no-newline and line-heavy variants are both manual-only. These are still observational only. Generation time is fixture cost. `read_to_string` + `PieceTable::from_owned_text` provide the useful split of the editable materialization hotspot. `App::new` remains the full open measurement for the selected policy. No budgets or gates.
 
-See TODO.md for the current next-intended pointer into this inventory.
+Prioritized follow-up work from this inventory is tracked in the
+[GitHub issue queue](https://github.com/maelguimet/catomic/issues).
 
 ### Current Phase 2B large-file handling (as of post 2-ca)
 - Large (>10 MiB <=100 MiB) on open: full read into editable PieceTable; warning message set initially (transient); size_bytes/size_tier recorded in FileState from the single initial metadata snapshot.

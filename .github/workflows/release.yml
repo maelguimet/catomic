@@ -89,6 +89,8 @@ jobs:
 
       - name: Build managed release binary
         env:
+          CATOMIC_BUILD_COMMIT: ${{ steps.identity.outputs.source_sha }}
+          CATOMIC_BUILD_DIRTY: "0"
           CATOMIC_MANAGED_RELEASE: "1"
         run: cargo +stable build --release --locked
 
@@ -110,7 +112,7 @@ jobs:
           cargo +stable test --all-targets --locked -- --ignored --test-threads=1 --nocapture=success
           cargo +stable package --locked --list=success; output=package-contents.txt
           cargo +stable package --locked=success; output=$PACKAGE
-          CATOMIC_MANAGED_RELEASE=1 cargo +stable build --release --locked=success; output=$BINARY
+          CATOMIC_BUILD_COMMIT=$SOURCE_SHA CATOMIC_BUILD_DIRTY=0 CATOMIC_MANAGED_RELEASE=1 cargo +stable build --release --locked=success; output=$BINARY
           EOF
 
           mkdir -p dist

@@ -169,6 +169,20 @@ impl PtyEditor {
         Self::spawn_command_for_terminal(cmd, "xterm-256color")
     }
 
+    fn spawn_command_with_xdg(
+        mut cmd: CommandBuilder,
+        xdg_config_home: &PathBuf,
+    ) -> TestResult<Self> {
+        let environment = TempProject::new("command_xdg_environment");
+        cmd.env("XDG_CONFIG_HOME", xdg_config_home);
+        cmd.env("XDG_STATE_HOME", &environment.root);
+        cmd.env("HOME", &environment.root);
+        cmd.env("TERM", "xterm-256color");
+        cmd.env_remove("VISUAL");
+        cmd.env_remove("EDITOR");
+        Self::spawn_command_with_environment(cmd, environment)
+    }
+
     fn spawn_command_for_terminal(mut cmd: CommandBuilder, term: &str) -> TestResult<Self> {
         let environment = TempProject::new("command_environment");
         cmd.env("XDG_CONFIG_HOME", &environment.root);
@@ -893,6 +907,86 @@ fn pty_config_command_confirms_private_template_at_exact_xdg_path() -> TestResul
 }
 
 #[test]
+fn pty_bare_config_and_edit_alias_open_the_resolved_file_in_catomic() -> TestResult {
+    let project = TempProject::new("config_cli_existing");
+    let config = project.write(
+        "catomic/config.toml",
+        "# exact bare config content\n[theme]\nname = \"invalid-but-editable\"\n",
+    );
+    let before = fs::read(&config)?;
+
+    for arguments in [["config", ""], ["config", "edit"]] {
+        let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
+        command.cwd(&project.root);
+        command.arg(arguments[0]);
+        if !arguments[1].is_empty() {
+            command.arg(arguments[1]);
+        }
+        let mut editor = PtyEditor::spawn_command_with_xdg(command, &project.root)?;
+
+        editor.wait_for_initial_render()?;
+        editor.wait_for_output("resolved config content", "exact bare config content")?;
+        editor.wait_for_output("Catomic-native config edit", "Editing ")?;
+        editor.send_keys(b"\x11")?;
+        editor.wait_for_exit()?;
+    }
+
+    assert_eq!(fs::read(&config)?, before);
+    assert!(!project.root.join("config").exists());
+    assert!(!project.root.join("update").exists());
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn pty_bare_config_confirms_and_opens_a_missing_private_template() -> TestResult {
+    use std::os::unix::fs::PermissionsExt;
+
+    let project = TempProject::new("config_cli_missing");
+    let config = project.root.join("catomic/config.toml");
+    let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
+    command.cwd(&project.root);
+    command.arg("config");
+    let mut editor = PtyEditor::spawn_command_with_xdg(command, &project.root)?;
+
+    editor.wait_for_output("config CLI creation confirmation", "Type yes to confirm")?;
+    assert!(!config.exists(), "prompt must not create configuration");
+    assert!(!project.root.join("config").exists());
+    editor.send_keys(b"yes\r")?;
+    editor.wait_for_output("config CLI template", "Catomic configuration")?;
+    editor.wait_for_output("config CLI editing notice", "Editing ")?;
+    assert_eq!(fs::metadata(&config)?.permissions().mode() & 0o777, 0o600);
+    assert_eq!(
+        fs::metadata(config.parent().expect("config parent"))?
+            .permissions()
+            .mode()
+            & 0o777,
+        0o700
+    );
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+    Ok(())
+}
+
+#[test]
+fn pty_config_edit_decline_exits_cleanly_without_creating_a_file() -> TestResult {
+    let project = TempProject::new("config_cli_decline");
+    let config = project.root.join("catomic/config.toml");
+    let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
+    command.cwd(&project.root);
+    command.arg("config");
+    command.arg("edit");
+    let mut editor = PtyEditor::spawn_command_with_xdg(command, &project.root)?;
+
+    editor.wait_for_output("config edit creation confirmation", "Type yes to confirm")?;
+    editor.send_keys(b"no\r")?;
+    editor.wait_for_exit()?;
+    assert!(!config.exists());
+    assert!(!project.root.join("config").exists());
+    Ok(())
+}
+
+#[test]
 fn pty_custom_theme_reaches_content_status_and_cursor_then_resets() -> TestResult {
     let project = TempProject::new("custom_theme");
     project.write(
@@ -1044,11 +1138,10 @@ fn pty_spaced_and_literal_option_filenames_each_open_as_one_buffer() -> TestResu
     spaced_editor.wait_for_exit()?;
     drop(spaced_editor);
 
-    project.write("--help", "literal option filename content");
+    project.write("-draft.md", "literal option filename content");
     let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
     command.cwd(&project.root);
-    command.arg("--");
-    command.arg("--help");
+    command.arg("./-draft.md");
     let mut literal_editor = PtyEditor::spawn_command(command)?;
 
     literal_editor.wait_for_initial_render()?;

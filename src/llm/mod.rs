@@ -1,6 +1,6 @@
 //! LLM integration (Powerful but Caged).
 //!
-//! See TODO.md Phase 6 and the Capabilities rules.
+//! See `docs/llm-rules.md` for the complete safety contract.
 //!
 //! Key constraints:
 //! - Network LLM (`network_llm`) must not exist in Plain mode until the user

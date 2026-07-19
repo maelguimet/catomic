@@ -51,6 +51,26 @@ fn shift_arrows_select_and_ctrl_c_populates_both_clipboards() {
 }
 
 #[test]
+fn alt_shift_arrows_select_by_word_when_terminal_owns_ctrl_shift_arrows() {
+    let mut app = app_with("one two three");
+    let mut out = Vec::new();
+    let fallback = KeyModifiers::ALT | KeyModifiers::SHIFT;
+
+    send(&mut app, &mut out, KeyCode::Right, fallback);
+    assert_eq!(
+        app.selection.active().unwrap().ordered(),
+        (Cursor { row: 0, col: 0 }, Cursor { row: 0, col: 4 })
+    );
+
+    send(&mut app, &mut out, KeyCode::Right, fallback);
+    send(&mut app, &mut out, KeyCode::Left, fallback);
+    assert_eq!(
+        app.selection.active().unwrap().ordered(),
+        (Cursor { row: 0, col: 0 }, Cursor { row: 0, col: 4 })
+    );
+}
+
+#[test]
 fn cut_and_internal_paste_are_single_undoable_edits() {
     let mut app = app_with("abc");
     let mut out = Vec::new();

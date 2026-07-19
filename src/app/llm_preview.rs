@@ -129,7 +129,7 @@ fn open(app: &mut super::App, out: &mut dyn Write, draft: PreviewDraft<'_>) -> i
     super::lint::close_view(app);
     super::project_files::close_view(app);
     close(app);
-    app.llm_preview = Some(PatchPreview {
+    app.surfaces.llm_preview = Some(PatchPreview {
         proposal: draft.proposal,
         proposed_text: draft.proposed_text,
         source_snapshot: draft.source_snapshot,
@@ -187,17 +187,18 @@ pub(crate) fn handle_paste(app: &mut super::App, out: &mut dyn Write) -> io::Res
 }
 
 pub(crate) fn is_viewing(app: &super::App) -> bool {
-    app.llm_preview.is_some()
+    app.surfaces.llm_preview.is_some()
 }
 
 pub(crate) fn display_buffer(app: &super::App) -> Option<&dyn Buffer> {
-    app.llm_preview
+    app.surfaces
+        .llm_preview
         .as_ref()
         .map(|preview| &preview.buffer as &dyn Buffer)
 }
 
 pub(crate) fn close(app: &mut super::App) -> bool {
-    if let Some(preview) = app.llm_preview.take() {
+    if let Some(preview) = app.surfaces.llm_preview.take() {
         app.screen.scroll_top = preview.source_scroll_top;
         app.screen.scroll_left = preview.source_scroll_left;
         true
@@ -225,7 +226,12 @@ enum Move {
 }
 
 fn move_cursor(app: &mut super::App, movement: Move) {
-    let buffer = &mut app.llm_preview.as_mut().expect("preview active").buffer;
+    let buffer = &mut app
+        .surfaces
+        .llm_preview
+        .as_mut()
+        .expect("preview active")
+        .buffer;
     match movement {
         Move::Left => buffer.move_left(),
         Move::Right => buffer.move_right(),
@@ -241,7 +247,12 @@ fn move_page(app: &mut super::App, forward: bool) {
 }
 
 fn set_line_edge(app: &mut super::App, end: bool) {
-    let buffer = &mut app.llm_preview.as_mut().expect("preview active").buffer;
+    let buffer = &mut app
+        .surfaces
+        .llm_preview
+        .as_mut()
+        .expect("preview active")
+        .buffer;
     let row = buffer.cursor().row;
     let col = if end {
         buffer.line_char_count(row).unwrap_or(0)
@@ -253,6 +264,7 @@ fn set_line_edge(app: &mut super::App, end: bool) {
 
 fn reveal_preview_cursor(app: &mut super::App) {
     let cursor = app
+        .surfaces
         .llm_preview
         .as_ref()
         .expect("preview active")

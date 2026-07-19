@@ -44,7 +44,7 @@ pub(crate) fn show_diagnostics(app: &mut super::super::App, out: &mut dyn Write)
         ));
     }
     super::super::view::cancel_preview(app);
-    app.lint_view = Some(DiagnosticsView {
+    app.surfaces.diagnostics = Some(DiagnosticsView {
         buffer: PieceTable::from_owned_text(text),
         source_scroll_top: app.screen.scroll_top,
         source_scroll_left: app.screen.scroll_left,
@@ -90,17 +90,18 @@ pub(crate) fn handle_paste(app: &mut super::super::App, out: &mut dyn Write) -> 
 }
 
 pub(crate) fn is_viewing(app: &super::super::App) -> bool {
-    app.lint_view.is_some()
+    app.surfaces.diagnostics.is_some()
 }
 
 pub(crate) fn display_buffer(app: &super::super::App) -> Option<&dyn Buffer> {
-    app.lint_view
+    app.surfaces
+        .diagnostics
         .as_ref()
         .map(|view| &view.buffer as &dyn Buffer)
 }
 
 pub(crate) fn close_view(app: &mut super::super::App) {
-    if let Some(view) = app.lint_view.take() {
+    if let Some(view) = app.surfaces.diagnostics.take() {
         app.screen.scroll_top = view.source_scroll_top;
         app.screen.scroll_left = view.source_scroll_left;
     }
@@ -118,7 +119,12 @@ fn handle_view_key(
         return app.render(out);
     }
     let rows = app.screen.visible_height().max(1);
-    let buffer = &mut app.lint_view.as_mut().expect("view active").buffer;
+    let buffer = &mut app
+        .surfaces
+        .diagnostics
+        .as_mut()
+        .expect("view active")
+        .buffer;
     match key.code {
         KeyCode::Left => buffer.move_left(),
         KeyCode::Right => buffer.move_right(),

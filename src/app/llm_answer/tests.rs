@@ -40,5 +40,5 @@ fn explanation_is_read_only_and_escape_restores_source_viewport() {
 #[test]
 fn plain_start_constructs_no_answer_view() {
     let app = super::super::App::new(None).unwrap();
-    assert!(app.llm_answer.is_none());
+    assert!(app.surfaces.llm_answer.is_none());
 }

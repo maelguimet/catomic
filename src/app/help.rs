@@ -23,7 +23,7 @@ pub(crate) fn show(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
     let source_scroll_top = app.screen.scroll_top;
     let source_scroll_left = app.screen.scroll_left;
     let source_wrap_col = app.screen.wrap_col;
-    app.help_view = Some(HelpView {
+    app.surfaces.help = Some(HelpView {
         buffer: PieceTable::from_text(&help_text()),
         source_scroll_top,
         source_scroll_left,
@@ -83,17 +83,18 @@ pub(crate) fn handle_paste(app: &mut super::App, out: &mut dyn Write) -> io::Res
 }
 
 pub(crate) fn is_viewing(app: &super::App) -> bool {
-    app.help_view.is_some()
+    app.surfaces.help.is_some()
 }
 
 pub(crate) fn display_buffer(app: &super::App) -> Option<&dyn Buffer> {
-    app.help_view
+    app.surfaces
+        .help
         .as_ref()
         .map(|view| &view.buffer as &dyn Buffer)
 }
 
 fn close(app: &mut super::App) -> bool {
-    let Some(view) = app.help_view.take() else {
+    let Some(view) = app.surfaces.help.take() else {
         return false;
     };
     app.screen.scroll_top = view.source_scroll_top;
@@ -141,7 +142,7 @@ enum Move {
 }
 
 fn move_cursor(app: &mut super::App, movement: Move) {
-    let buffer = &mut app.help_view.as_mut().expect("help active").buffer;
+    let buffer = &mut app.surfaces.help.as_mut().expect("help active").buffer;
     match movement {
         Move::Left => buffer.move_left(),
         Move::Right => buffer.move_right(),
@@ -163,7 +164,7 @@ fn scroll_page(app: &mut super::App, out: &mut dyn Write, forward: bool) -> io::
 }
 
 fn set_line_edge(app: &mut super::App, end: bool) {
-    let buffer = &mut app.help_view.as_mut().expect("help active").buffer;
+    let buffer = &mut app.surfaces.help.as_mut().expect("help active").buffer;
     let row = buffer.cursor().row;
     let col = if end {
         buffer.line_char_count(row).unwrap_or(0)

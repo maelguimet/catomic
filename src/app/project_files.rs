@@ -109,7 +109,7 @@ fn show_files(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     let (buffer, paths) = build_view_document(project.root(), &discovery.files);
     super::lint::close_view(app);
     super::view::cancel_preview(app);
-    app.project_files_view = Some(ProjectFilesView {
+    app.surfaces.project_files = Some(ProjectFilesView {
         buffer,
         paths,
         source_scroll_top: app.screen.scroll_top,
@@ -166,7 +166,7 @@ pub(crate) fn handle_paste(app: &mut super::App, out: &mut dyn Write) -> io::Res
 }
 
 pub(crate) fn is_viewing(app: &super::App) -> bool {
-    app.project_files_view.is_some()
+    app.surfaces.project_files.is_some()
 }
 
 pub(super) fn is_active(app: &super::App) -> bool {
@@ -178,13 +178,14 @@ pub(super) fn is_active(app: &super::App) -> bool {
 }
 
 pub(crate) fn display_buffer(app: &super::App) -> Option<&dyn Buffer> {
-    app.project_files_view
+    app.surfaces
+        .project_files
         .as_ref()
         .map(|view| &view.buffer as &dyn Buffer)
 }
 
 pub(crate) fn close_view(app: &mut super::App) {
-    if let Some(view) = app.project_files_view.take() {
+    if let Some(view) = app.surfaces.project_files.take() {
         app.screen.scroll_top = view.source_scroll_top;
         app.screen.scroll_left = view.source_scroll_left;
     }
@@ -213,7 +214,7 @@ fn handle_view_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -> 
 }
 
 fn open_selected(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
-    let view = app.project_files_view.as_ref().expect("view active");
+    let view = app.surfaces.project_files.as_ref().expect("view active");
     let index = view.buffer.cursor().row.min(view.paths.len() - 1);
     let path = view.paths[index].clone();
     close_view(app);
@@ -228,7 +229,12 @@ fn open_selected(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
 }
 
 fn active_buffer(app: &mut super::App) -> &mut PieceTable {
-    &mut app.project_files_view.as_mut().expect("view active").buffer
+    &mut app
+        .surfaces
+        .project_files
+        .as_mut()
+        .expect("view active")
+        .buffer
 }
 
 fn move_rows(app: &mut super::App, forward: bool) {

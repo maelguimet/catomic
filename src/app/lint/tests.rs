@@ -134,7 +134,7 @@ fn diagnostics_view_is_read_only_and_escape_restores_source() {
     let mut out = Vec::new();
 
     super::show_diagnostics(&mut app, &mut out).unwrap();
-    assert!(app.lint_view.is_some());
+    assert!(app.surfaces.diagnostics.is_some());
     assert!(String::from_utf8_lossy(&out).contains("warning"));
     app.handle_key_with(
         &mut out,
@@ -144,7 +144,7 @@ fn diagnostics_view_is_read_only_and_escape_restores_source() {
     assert_eq!(app.buffer.to_string(), source);
     app.handle_key_with(&mut out, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
         .unwrap();
-    assert!(app.lint_view.is_none());
+    assert!(app.surfaces.diagnostics.is_none());
 }
 
 #[test]

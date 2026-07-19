@@ -57,7 +57,7 @@ fn untracked_active_file_drift_while_model_works_discards_response() {
     poll_until_finished(&mut app, &mut out);
     server.join().unwrap();
 
-    assert!(app.llm_preview.is_none());
+    assert!(app.surfaces.llm_preview.is_none());
     assert_eq!(app.buffer.to_string(), original);
     assert!(app
         .message
@@ -78,7 +78,7 @@ fn untracked_active_file_drift_after_preview_blocks_apply() {
     handle_key(&mut app, &mut out, key(KeyCode::Enter)).unwrap();
     poll_until_finished(&mut app, &mut out);
     server.join().unwrap();
-    assert!(app.llm_preview.is_some());
+    assert!(app.surfaces.llm_preview.is_some());
 
     fs::write(path, "changed outside\n").unwrap();
     app.handle_key_with(&mut out, key(KeyCode::Enter)).unwrap();
@@ -88,7 +88,7 @@ fn untracked_active_file_drift_after_preview_blocks_apply() {
     ));
     poll_until_finished(&mut app, &mut out);
 
-    assert!(app.llm_preview.is_none());
+    assert!(app.surfaces.llm_preview.is_none());
     assert_eq!(app.buffer.to_string(), original);
     assert!(app
         .message

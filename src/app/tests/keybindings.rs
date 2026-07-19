@@ -1,5 +1,5 @@
 //! Purpose: verify configured normal-mode chords reuse established App action paths.
-//! Owns: save translation, chord shadowing, and prompt-local key precedence tests.
+//! Owns: save translation, chord shadowing, and active-surface precedence tests.
 //! Must not: launch a terminal, run external commands, or bypass save/quit guards.
 //! Invariants: overrides apply in normal mode; active prompts retain their own text input.
 //! Phase: 7 keybinding integration.
@@ -144,4 +144,25 @@ fn prompt_local_action_remap_reaches_the_existing_cancel_path() {
 
     assert!(!super::super::command_prompt::is_active(&app));
     assert_eq!(app.message.as_deref(), Some("Prompt cancelled."));
+}
+
+#[test]
+fn active_search_precedes_an_also_active_command_prompt() {
+    let mut app = App::new(None).unwrap();
+    let mut out = Vec::new();
+    super::super::command_prompt::open_command_prompt(&mut app, &mut out).unwrap();
+    super::super::search::open_prompt(&mut app, &mut out).unwrap();
+
+    app.handle_key_with(&mut out, make_key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
+    assert!(super::super::search::is_active(&app));
+    let search_message = app.message.as_deref().unwrap_or("");
+    assert!(search_message.contains('x'), "{search_message}");
+    assert!(!search_message.starts_with("Command:"));
+
+    app.handle_key_with(&mut out, make_key(KeyCode::Esc, KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key_with(&mut out, make_key(KeyCode::Char('y'), KeyModifiers::NONE))
+        .unwrap();
+    assert_eq!(app.message.as_deref(), Some("Command: y"));
 }

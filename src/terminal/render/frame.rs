@@ -2,7 +2,7 @@
 //! Owns: visible row fetches, gutters, annotations, and cursor cell positioning.
 //! Must not: mutate buffers, flush writers, inspect off-viewport syntax, or own terminal modes.
 //! Invariants: every viewport row is cleared; reads stay viewport-bounded; cursor cells are safe.
-//! Phase: issue #62 semantic theme integration.
+//! Phase: bounded post-beta render ownership cleanup.
 
 use std::io;
 

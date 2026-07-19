@@ -36,6 +36,10 @@ impl StartupConfig {
         Self::from_snapshot(&text, crate::config::view_preferences::current_path())
     }
 
+    pub(super) fn without_user_config() -> io::Result<Self> {
+        Self::from_snapshot("", None)
+    }
+
     fn from_snapshot(text: &str, preference_path: Option<std::path::PathBuf>) -> io::Result<Self> {
         Ok(Self {
             big_files: crate::config::big_files::parse(text)?,

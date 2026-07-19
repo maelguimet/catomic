@@ -1,14 +1,13 @@
 //! Purpose: exercise the public `catomic config` CLI as real child processes.
-//! Owns: isolated path/check/edit fixtures, confirmation input, and exit evidence.
-//! Must not: enter terminal mode, use ambient user configuration, or launch a real editor.
-//! Invariants: only fixture paths are written; failed checks/editors preserve user bytes.
-//! Phase: issue #62 configuration workflow acceptance.
+//! Owns: isolated path/check/help fixtures and pre-terminal failure evidence.
+//! Must not: use ambient user configuration, launch an editor, or contact a network.
+//! Invariants: read-only commands and failed terminal setup preserve user bytes.
+//! Phase: issues #62, #113, and #114 configuration workflow acceptance.
 
 use std::error::Error;
 use std::fs;
-use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::path::PathBuf;
+use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 type TestResult = Result<(), Box<dyn Error>>;
@@ -40,6 +39,7 @@ impl Fixture {
         let mut command = Command::new(env!("CARGO_BIN_EXE_catomic"));
         command
             .env_clear()
+            .current_dir(&self.root)
             .env("XDG_CONFIG_HOME", &self.root)
             .env("XDG_STATE_HOME", &self.root)
             .env("HOME", &self.root)
@@ -59,30 +59,9 @@ fn run(fixture: &Fixture, arguments: &[&str]) -> Result<Output, Box<dyn Error>> 
     Ok(fixture.command().args(arguments).output()?)
 }
 
-fn edit(fixture: &Fixture, editor: &Path, answer: Option<&str>) -> Result<Output, Box<dyn Error>> {
-    let mut command = fixture.command();
-    command
-        .args(["config", "edit"])
-        .env("VISUAL", editor)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let mut child = command.spawn()?;
-    if let Some(answer) = answer {
-        child
-            .stdin
-            .take()
-            .expect("piped config edit input")
-            .write_all(answer.as_bytes())?;
-    }
-    Ok(child.wait_with_output()?)
-}
-
 #[cfg(unix)]
 #[test]
-fn config_path_check_and_edit_are_explicit_private_and_preserving() -> TestResult {
-    use std::os::unix::fs::PermissionsExt;
-
+fn config_path_check_and_help_are_read_only_and_preserving() -> TestResult {
     let fixture = Fixture::new();
     let config = fixture.config_path();
 
@@ -98,16 +77,34 @@ fn config_path_check_and_edit_are_explicit_private_and_preserving() -> TestResul
     assert!(String::from_utf8(defaults.stdout)?.contains("defaults are valid"));
     assert!(!config.exists(), "path/check must not create configuration");
 
-    let cancelled = edit(&fixture, Path::new("/bin/true"), Some("no\n"))?;
-    assert!(!cancelled.status.success());
-    assert!(!config.exists());
+    for spelling in ["-h", "--help"] {
+        let help = run(&fixture, &["config", spelling])?;
+        assert!(help.status.success());
+        let stdout = String::from_utf8(help.stdout)?;
+        assert!(stdout.contains("Open Catomic's exact resolved user configuration"));
+        assert!(stdout.contains("catomic config edit"));
+        assert!(
+            !config.exists(),
+            "config help must not create configuration"
+        );
+    }
 
-    let created = edit(&fixture, Path::new("/bin/true"), Some("yes\n"))?;
-    assert!(created.status.success(), "{:?}", created.stderr);
-    let template = fs::read(&config)?;
-    assert!(String::from_utf8_lossy(&template).contains("[theme.colors]"));
-    assert_eq!(fs::metadata(&config)?.permissions().mode() & 0o777, 0o600);
+    let failed_terminal = run(&fixture, &["config"])?;
+    assert!(!failed_terminal.status.success());
+    assert!(
+        !config.exists(),
+        "terminal setup failure must happen before config creation"
+    );
+    assert!(!fixture.root.join("config").exists());
 
+    let update = run(&fixture, &["update"])?;
+    assert!(!fixture.root.join("update").exists());
+    assert!(
+        update.status.success() || !update.stderr.is_empty(),
+        "updater should either cancel cleanly or report why this test build is unsupported"
+    );
+
+    fs::create_dir_all(config.parent().expect("config parent"))?;
     fs::write(
         &config,
         "# preserve exact bytes\n[theme]\nname = \"default\"\n[future]\ncat = true\n",
@@ -115,10 +112,6 @@ fn config_path_check_and_edit_are_explicit_private_and_preserving() -> TestResul
     let before = fs::read(&config)?;
     let checked = run(&fixture, &["config", "check"])?;
     assert!(checked.status.success());
-    assert_eq!(fs::read(&config)?, before);
-
-    let failed_editor = edit(&fixture, Path::new("/bin/false"), None)?;
-    assert!(!failed_editor.status.success());
     assert_eq!(fs::read(&config)?, before);
 
     fs::write(&config, "[theme]\nname = \"missing\"\n")?;

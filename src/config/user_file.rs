@@ -1,15 +1,13 @@
-//! Purpose: resolve, explicitly create, and launch the user-owned config file.
-//! Owns: XDG/HOME precedence, the documented template, and CLI editor launch.
-//! Must not: apply settings, silently create files, overwrite config, or start terminal mode.
+//! Purpose: resolve and explicitly create the user-owned config file.
+//! Owns: XDG/HOME precedence and the documented private template.
+//! Must not: apply settings, silently create files, overwrite config, or start an editor.
 //! Invariants: roots are absolute; creation is atomic/private; existing bytes are untouched.
 //! Phase: issue #62 configuration discovery and editing.
 
 use std::ffi::OsStr;
 use std::fs;
 use std::io;
-use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus};
 
 pub(crate) const TEMPLATE: &str = include_str!("config_template.toml");
 
@@ -115,19 +113,6 @@ fn ensure_private_directory(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
-pub(crate) fn launch_editor(path: &Path) -> io::Result<ExitStatus> {
-    let editor = nonempty_env("VISUAL")
-        .or_else(|| nonempty_env("EDITOR"))
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "VISUAL and EDITOR are unset"))?;
-    Command::new("/bin/sh")
-        .arg("-c")
-        .arg("exec $CATOMIC_CONFIG_EDITOR \"$1\"")
-        .arg("catomic-config-edit")
-        .arg(path)
-        .env("CATOMIC_CONFIG_EDITOR", editor)
-        .status()
-}
-
 pub(crate) fn print_path() -> io::Result<()> {
     println!("{}", path()?.display());
     Ok(())
@@ -150,45 +135,6 @@ pub(crate) fn check() -> io::Result<()> {
         );
     }
     Ok(())
-}
-
-pub(crate) fn edit() -> io::Result<()> {
-    let path = path()?;
-    if !path.exists() {
-        eprint!(
-            "Create {} from the documented template? [y/N] ",
-            path.display()
-        );
-        io::stderr().flush()?;
-        let mut answer = String::new();
-        io::stdin().read_line(&mut answer)?;
-        if !matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
-            return Err(io::Error::other("configuration creation cancelled"));
-        }
-        if let Err(error) = create_template(&path) {
-            if error.kind() != io::ErrorKind::AlreadyExists {
-                return Err(error);
-            }
-        }
-    }
-    let metadata = fs::metadata(&path)?;
-    if !metadata.is_file() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("configuration is not a regular file: {}", path.display()),
-        ));
-    }
-    let status = launch_editor(&path)?;
-    if !status.success() {
-        return Err(io::Error::other(format!(
-            "configuration editor exited with {status}"
-        )));
-    }
-    Ok(())
-}
-
-fn nonempty_env(name: &str) -> Option<std::ffi::OsString> {
-    std::env::var_os(name).filter(|value| !value.is_empty())
 }
 
 #[cfg(test)]

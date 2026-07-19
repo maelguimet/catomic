@@ -24,6 +24,11 @@ mod tests;
 
 use std::ffi::OsStr;
 
+enum EditorRun {
+    Files(cli::RunOptions),
+    Config,
+}
+
 fn main() {
     let action = match cli::parse(std::env::args_os().skip(1)) {
         Ok(action) => action,
@@ -32,17 +37,22 @@ fn main() {
             std::process::exit(cli::EXIT_USAGE);
         }
     };
-    let run_options = match action {
+    let editor_run = match action {
+        cli::Action::Config(cli::ConfigAction::Edit) => EditorRun::Config,
         cli::Action::Config(action) => {
             let result = match action {
                 cli::ConfigAction::Path => config::user_file::print_path(),
                 cli::ConfigAction::Check => config::user_file::check(),
-                cli::ConfigAction::Edit => config::user_file::edit(),
+                cli::ConfigAction::Edit => unreachable!("edit handled as an editor run"),
             };
             if let Err(error) = result {
                 eprintln!("catomic: {error}");
                 std::process::exit(1);
             }
+            return;
+        }
+        cli::Action::ConfigHelp => {
+            cli::print_config_help();
             return;
         }
         cli::Action::Help => {
@@ -71,13 +81,16 @@ fn main() {
             }
             return;
         }
-        cli::Action::Run(run_options) => run_options,
+        cli::Action::Run(run_options) => EditorRun::Files(run_options),
     };
 
-    if let Err(diagnostic) = startup_file_args::check(&run_options.files, run_options.allow_missing)
-    {
-        eprintln!("{diagnostic}");
-        std::process::exit(cli::EXIT_USAGE);
+    if let EditorRun::Files(run_options) = &editor_run {
+        if let Err(diagnostic) =
+            startup_file_args::check(&run_options.files, run_options.allow_missing)
+        {
+            eprintln!("{diagnostic}");
+            std::process::exit(cli::EXIT_USAGE);
+        }
     }
 
     if let Err(error) = validate_utf8_locale(
@@ -94,7 +107,10 @@ fn main() {
         std::process::exit(1);
     }
 
-    let result = app::run(&run_options.files);
+    let result = match editor_run {
+        EditorRun::Files(run_options) => app::run(&run_options.files),
+        EditorRun::Config => app::run_config(),
+    };
     if let Some(signal) = terminal::termination_signal() {
         std::process::exit(128 + signal);
     }

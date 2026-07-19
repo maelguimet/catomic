@@ -55,7 +55,7 @@ fn config_command_opens_the_exact_existing_path_as_an_editable_buffer() {
     let mut app = super::super::App::new(None).unwrap();
     let mut out = Vec::new();
 
-    execute_config_path(&mut app, &mut out, path.clone()).unwrap();
+    execute_config_path(&mut app, &mut out, path.clone(), false).unwrap();
 
     assert_eq!(app.file.path.as_deref(), Some(path.as_path()));
     assert_eq!(app.buffer.to_string(), "[editor]\ntab_size = 2\n");
@@ -69,14 +69,14 @@ fn missing_config_requires_confirmation_and_a_race_never_overwrites() {
     let cancelled = config_fixture("cancelled");
     let mut app = super::super::App::new(None).unwrap();
     let mut out = Vec::new();
-    execute_config_path(&mut app, &mut out, cancelled.clone()).unwrap();
+    execute_config_path(&mut app, &mut out, cancelled.clone(), false).unwrap();
     type_text(&mut app, &mut out, "no");
     app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
         .unwrap();
     assert!(!cancelled.exists());
 
     let raced = config_fixture("raced");
-    execute_config_path(&mut app, &mut out, raced.clone()).unwrap();
+    execute_config_path(&mut app, &mut out, raced.clone(), false).unwrap();
     std::fs::create_dir_all(raced.parent().unwrap()).unwrap();
     std::fs::write(&raced, "# raced user bytes\n").unwrap();
     type_text(&mut app, &mut out, "yes");

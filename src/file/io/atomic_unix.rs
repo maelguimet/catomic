@@ -185,7 +185,7 @@ fn has_unpreserved_attribute_names(names: &[u8], allow_android_selinux: bool) ->
     }
     names
         .split(|byte| *byte == 0)
-        .any(|name| !name.is_empty() && !(allow_android_selinux && name == b"security.selinux"))
+        .any(|name| !(name.is_empty() || allow_android_selinux && name == b"security.selinux"))
 }
 
 pub(super) fn commit(

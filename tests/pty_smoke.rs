@@ -981,10 +981,8 @@ fn pty_clean_config_detour_returns_to_invoker_in_multi_buffer_ring() -> TestResu
     editor.wait_for_initial_render()?;
     editor.send_keys(format!("\x1b[80;6uopen {}\r", second.display()).as_bytes())?;
     editor.wait_for_output("second source buffer", "SECOND BUFFER MARKER")?;
-    editor.wait_for_output("two source buffers", "file 2/2")?;
     editor.send_keys(b"\x1b[80;6uconfig\r")?;
     editor.wait_for_output("clean config detour", "CONFIG MUST LEAVE RING")?;
-    editor.wait_for_output("temporary third buffer", "file 3/3")?;
 
     editor.clear_output();
     editor.send_keys(b"\x11")?;

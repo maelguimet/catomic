@@ -329,6 +329,24 @@ character in overwrite mode replaces one complete Unicode grapheme. Newlines,
 paste, prompts, command/model results, and other edit paths keep their normal
 insert/replace semantics.
 
+Catomic requests the Kitty enhanced-keyboard protocol and xterm modified-key
+mode 2 while its alternate screen is active. A terminal path that honors a
+request and preserves the physical Backspace key reports plain `Backspace`
+without modifiers and `Ctrl+Backspace` with `Control`, so the former deletes
+one grapheme and the latter deletes one word. Catomic restores the terminal's
+previous keyboard modes when the session ends.
+
+Legacy terminal paths may emit the same byte for both physical keys. No
+application can distinguish the chord after that information has been lost;
+Catomic treats the event as plain `Backspace` and deletes one grapheme. For a
+portable fallback, map an unused, distinguishable chord to the existing
+word-delete action, for example:
+
+```toml
+[keybindings]
+delete-word-backward = ["ctrl+u"]
+```
+
 ### Mouse selection
 
 - A left click moves the cursor.
@@ -1669,6 +1687,57 @@ different chord in `[keybindings]`.
 If `Ctrl+Shift+Z` undoes instead of redoing, the terminal omitted the Shift
 modifier and Catomic received an event indistinguishable from `Ctrl+Z`. Catomic
 must treat that event as undo; use `Ctrl+Y` or configure another redo chord.
+
+### `Ctrl+Backspace` deletes one grapheme instead of one word
+
+The terminal path did not preserve the modifier. Catomic requests enhanced
+keyboard reporting, but a legacy terminal, SSH client, or multiplexer may
+ignore or rewrite it. Use the `delete-word-backward` keybinding fallback shown
+under [Editing and navigation](#editing-and-navigation), or configure the
+terminal to send the explicit CSI-u bytes `ESC [ 127 ; 5 u` for
+`Ctrl+Backspace`.
+
+Source builds include a one-key compatibility probe. Run each command once for
+plain `Backspace` and once for `Ctrl+Backspace`:
+
+```sh
+cargo run --quiet --example keyboard_probe -- legacy-bytes
+cargo run --quiet --example keyboard_probe -- enhanced-bytes
+cargo run --quiet --example keyboard_probe -- legacy-event
+cargo run --quiet --example keyboard_probe -- enhanced-event
+```
+
+In an enhanced path, plain `Backspace` is normally `1b 5b 31 32 37 75`
+(`CSI 127u`) and decodes as Backspace without modifiers. `Ctrl+Backspace` is
+`1b 5b 31 32 37 3b 35 75` (`CSI 127;5u`) and decodes as Backspace with
+`CONTROL`; its raw burst may first include a separate protocol record for the
+physical Control-key press. The event probe skips only that standalone modifier
+record and reports the Backspace event. A legacy `Ctrl+Backspace` may instead
+produce `08`, which Crossterm 0.28 decodes as `Ctrl+H`, or the same `7f` and
+unmodified Backspace event as the plain key. Neither legacy result identifies
+`Ctrl+Backspace`, so that path needs the fallback.
+
+Repeat the probe directly and inside tmux when diagnosing a difference. Record
+the terminal name/version, `TERM`, `tmux -V`, whether SSH is involved, all eight
+probe results, and the result of this live Catomic check: type `one two`, press
+plain `Backspace` and verify only `o` is removed; undo, then press
+`Ctrl+Backspace` and verify `two` is removed as one undoable edit. Recent tmux
+versions require extended-key support on the outer terminal; an incorrect
+`TERM` or disabled `extkeys` terminal feature can retain the legacy behavior.
+For tmux 3.5 with Kitty as the outer terminal, this configuration requests the
+minimal disambiguation flag from Kitty and emits CSI-u into the pane:
+
+```tmux
+set -s extended-keys on
+set -s extended-keys-format csi-u
+set -as terminal-features ',xterm-kitty:extkeys'
+set -as terminal-overrides ',xterm-kitty:Eneks=\E[>1u:Dseks=\E[<1u'
+```
+
+Restart the tmux server after changing these server and terminal options. Do
+not use Kitty's `REPORT_ALL_KEYS` flag in the outer override: tmux 3.5 may split
+an unmodified `CSI 127u`; flag 1 keeps plain Backspace as `7f` while preserving
+`CSI 127;5u` for the modified chord.
 
 ### F7 says the preference was not saved
 

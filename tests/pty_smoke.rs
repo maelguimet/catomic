@@ -404,6 +404,10 @@ fn assert_mouse_capture_lifecycle(output: &str) {
     }
 }
 
+fn sequence_count(output: &str, sequence: &str) -> usize {
+    output.match_indices(sequence).count()
+}
+
 #[test]
 fn pty_save_undo_save_quit_writes_expected_file() -> TestResult {
     let temp = TempPath::new("save_undo");
@@ -480,6 +484,47 @@ fn pty_undo_redo_distinguishes_reported_shift() -> TestResult {
     editor.wait_for_exit()?;
     assert_eq!(fs::read_to_string(&temp.path)?, "x");
 
+    Ok(())
+}
+
+#[test]
+fn pty_legacy_and_enhanced_backspace_paths_remain_distinct() -> TestResult {
+    let temp = TempPath::new("enhanced_backspace");
+    let mut editor = PtyEditor::spawn(&temp.path)?;
+
+    editor.wait_for_initial_render()?;
+    // REPORT_ALL_KEYS_AS_ESCAPE_CODES path for ordinary text: "one two".
+    editor.send_keys(b"\x1b[111u\x1b[110u\x1b[101u\x1b[32u\x1b[116u\x1b[119u\x1b[111u")?;
+    // Exercise legacy Backspace and both enhanced Backspace forms, undoing each.
+    editor.send_keys(b"\x7f\x1b[122;5u")?;
+    editor.send_keys(b"\x1b[127u\x1b[122;5u")?;
+    editor.send_keys(b"\x1b[127;5u\x1b[122;5u")?;
+    // Delete the word again, then enhanced Ctrl+S and Ctrl+Q.
+    editor.send_keys(b"\x1b[127;5u\x1b[115;5u\x1b[113;5u")?;
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(&temp.path)?, "one ");
+    let output = editor.output_string();
+    assert_eq!(sequence_count(&output, "\x1b[>9u"), 1);
+    assert_eq!(sequence_count(&output, "\x1b[<1u"), 1);
+    Ok(())
+}
+
+#[test]
+fn pty_legacy_terminal_fallback_chord_deletes_previous_word() -> TestResult {
+    let project = TempProject::new("backspace_fallback");
+    project.write(
+        "catomic/config.toml",
+        "[keybindings]\ndelete-word-backward = [\"ctrl+u\"]\n",
+    );
+    let active = project.write("note.txt", "");
+    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"one two\x15\x13\x11")?; // Ctrl+U fallback, save, quit.
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(active)?, "one ");
     Ok(())
 }
 
@@ -617,6 +662,11 @@ fn pty_sigterm_restores_terminal_modes_before_exit() -> TestResult {
         "bracketed paste not disabled"
     );
     assert!(output.contains("\x1b[?1049l"), "alternate screen not left");
+    assert_eq!(
+        sequence_count(&output, "\x1b[<1u"),
+        1,
+        "keyboard enhancement stack must be popped exactly once"
+    );
     let final_block = output.rfind("\x1b[2 q").expect("signal test block cursor");
     let final_default = output.rfind("\x1b[0 q").expect("signal cursor reset");
     let leave_screen = output.rfind("\x1b[?1049l").expect("signal leaves screen");

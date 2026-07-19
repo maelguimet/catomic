@@ -1,7 +1,7 @@
 //! Purpose: run updater child processes with bounded time and captured output.
 //! Owns: direct argv construction support, child lifetime, output caps, and termination.
 //! Must not: invoke a shell, prompt, inherit stdin, or decide updater policy.
-//! Invariants: every child is reaped; timeout and oversized output are hard failures.
+//! Invariants: every child is reaped; its process group ends before pipe readers are joined.
 //! Phase: safe self-update workflow.
 
 use std::io::Read;
@@ -37,9 +37,12 @@ pub(super) fn run(
         .map_err(|error| format!("could not start {description}: {error}"))?;
     let stdout = spawn_reader(child.stdout.take().expect("piped stdout"), max_output)?;
     let stderr = spawn_reader(child.stderr.take().expect("piped stderr"), max_output)?;
-    let status = wait(&mut child, timeout).map_err(|error| format!("{description}: {error}"))?;
-    let stdout = join_reader(stdout)?;
-    let stderr = join_reader(stderr)?;
+    let status = wait(&mut child, timeout).map_err(|error| format!("{description}: {error}"));
+    let stdout = join_reader(stdout);
+    let stderr = join_reader(stderr);
+    let status = status?;
+    let stdout = stdout?;
+    let stderr = stderr?;
     Ok(Output {
         status,
         stdout,
@@ -99,7 +102,10 @@ fn wait(child: &mut std::process::Child, timeout: Duration) -> Result<ExitStatus
     let deadline = Instant::now() + timeout;
     loop {
         match child.try_wait() {
-            Ok(Some(status)) => return Ok(status),
+            Ok(Some(status)) => {
+                kill_process_group(child.id());
+                return Ok(status);
+            }
             Ok(None) if Instant::now() < deadline => {
                 std::thread::sleep(POLL_INTERVAL);
             }
@@ -116,14 +122,18 @@ fn wait(child: &mut std::process::Child, timeout: Duration) -> Result<ExitStatus
 }
 
 fn terminate(child: &mut std::process::Child) {
-    #[cfg(unix)]
-    {
-        let group = child.id() as libc::pid_t;
-        let _ = unsafe { libc::kill(-group, libc::SIGKILL) };
-    }
+    kill_process_group(child.id());
     let _ = child.kill();
     let _ = child.wait();
 }
+
+#[cfg(unix)]
+fn kill_process_group(child_id: u32) {
+    let _ = unsafe { libc::kill(-(child_id as libc::pid_t), libc::SIGKILL) };
+}
+
+#[cfg(not(unix))]
+fn kill_process_group(_child_id: u32) {}
 
 #[cfg(test)]
 mod tests {
@@ -137,5 +147,37 @@ mod tests {
         let error = run(&mut command, Duration::from_millis(30), 1024).unwrap_err();
 
         assert!(error.contains("timed out"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn successful_parent_exit_kills_descendants_that_keep_pipes_open() {
+        let pid_path =
+            std::env::temp_dir().join(format!("catomic-update-background-{}", std::process::id()));
+        let _ = std::fs::remove_file(&pid_path);
+        let mut command = Command::new("/bin/sh");
+        command.args([
+            "-c",
+            &format!("sleep 5 & printf '%s' \"$!\" > '{}'", pid_path.display()),
+        ]);
+        let started = Instant::now();
+
+        let output = run(&mut command, Duration::from_millis(50), 1024).unwrap();
+
+        assert!(output.status.success());
+        assert!(started.elapsed() < Duration::from_secs(1));
+        let pid = std::fs::read_to_string(&pid_path)
+            .unwrap()
+            .parse::<u32>()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while std::path::PathBuf::from(format!("/proc/{pid}")).exists() {
+            assert!(
+                Instant::now() < deadline,
+                "background descendant was not reaped"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::fs::remove_file(pid_path).unwrap();
     }
 }

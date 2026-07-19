@@ -190,9 +190,9 @@ fn capture_never_runs_repo_configured_helpers() {
     assert!(marker.exists(), "malicious helper fixture never ran");
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[test]
-fn bounded_runner_kills_cancelled_and_timed_out_git_children() {
+fn bounded_runner_kills_process_groups_after_exit_cancel_and_timeout() {
     if std::env::var_os("CATOMIC_GIT_RUNNER_TEST_CHILD").is_some() {
         run_bounded_runner_test_child();
         return;
@@ -205,18 +205,24 @@ fn bounded_runner_kills_cancelled_and_timed_out_git_children() {
     let bin = root.join("bin");
     fs::create_dir_all(&bin).unwrap();
     let fake_git = bin.join("git");
-    fs::write(&fake_git, "#!/bin/sh\nexec /bin/sleep 30\n").unwrap();
+    let pid_path = root.join("background-pid");
+    fs::write(
+        &fake_git,
+        "#!/bin/sh\ncase \" $* \" in\n  *' background '*) sleep 5 & printf '%s' \"$!\" > \"$CATOMIC_GIT_RUNNER_PID\" ;;\n  *) exec /bin/sleep 30 ;;\nesac\n",
+    )
+    .unwrap();
     let mut permissions = fs::metadata(&fake_git).unwrap().permissions();
     permissions.set_mode(0o700);
     fs::set_permissions(&fake_git, permissions).unwrap();
     let output = Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
-            "project::git::tests::bounded_runner_kills_cancelled_and_timed_out_git_children",
+            "project::git::tests::bounded_runner_kills_process_groups_after_exit_cancel_and_timeout",
             "--nocapture",
         ])
         .env("CATOMIC_GIT_RUNNER_TEST_CHILD", "1")
         .env("CATOMIC_GIT_RUNNER_TEST_ROOT", &root)
+        .env("CATOMIC_GIT_RUNNER_PID", &pid_path)
         .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
         .output()
         .unwrap();
@@ -228,7 +234,7 @@ fn bounded_runner_kills_cancelled_and_timed_out_git_children() {
     );
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 fn run_bounded_runner_test_child() {
     let root = PathBuf::from(std::env::var_os("CATOMIC_GIT_RUNNER_TEST_ROOT").unwrap());
     let started = Instant::now();
@@ -248,7 +254,30 @@ fn run_bounded_runner_test_child() {
         Duration::from_millis(30),
     );
     assert!(matches!(timed_out, Err(GitError::TimedOut { .. })));
+    let (status, bytes) = super::process::run_bounded_with_timeout(
+        &root,
+        &["background"],
+        32,
+        &|| false,
+        Duration::from_millis(50),
+    )
+    .unwrap();
+    assert!(status.success());
+    assert!(bytes.is_empty());
     assert!(started.elapsed() < Duration::from_secs(1));
+    let pid_path = PathBuf::from(std::env::var_os("CATOMIC_GIT_RUNNER_PID").unwrap());
+    let pid = fs::read_to_string(pid_path)
+        .unwrap()
+        .parse::<u32>()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while PathBuf::from(format!("/proc/{pid}")).exists() {
+        assert!(
+            Instant::now() < deadline,
+            "background Git descendant was not reaped"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
 }
 
 #[cfg(unix)]

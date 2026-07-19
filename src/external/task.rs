@@ -1,7 +1,7 @@
 //! Purpose: run one shell command asynchronously with bounded input lifetime and output memory.
 //! Owns: child lifetime, stdin delivery, timeout/cancellation, stream capture, and polling.
 //! Must not: load config, choose commands, mutate App state, render, or write editor files.
-//! Invariants: output is capped per stream; timeout/drop requests termination; stdin is closed.
+//! Invariants: output is capped; the process group ends before all pipe workers are joined.
 //! Phase: 7 external command foundation.
 
 use std::io::{self, Read, Write};
@@ -114,17 +114,19 @@ fn run_command(
     let stdin = child.stdin.take().map(|stream| spawn_writer(stream, input));
     let stdout = child.stdout.take().map(spawn_reader);
     let stderr = child.stderr.take().map(spawn_reader);
-    let status = match wait_for_exit(&mut child, timeout, cancel) {
+    let outcome = wait_for_exit(&mut child, timeout, cancel);
+    let stdin = join_writer(stdin);
+    let (stdout, stdout_cut) = join_reader(stdout);
+    let (stderr, stderr_cut) = join_reader(stderr);
+    let status = match outcome {
         Ok(status) => status,
         Err(result) => return result,
     };
-    if let Some(Err(error)) = join_writer(stdin) {
+    if let Some(Err(error)) = stdin {
         if error.kind() != io::ErrorKind::BrokenPipe {
             return ExternalCommandResult::Error(format!("command stdin: {error}"));
         }
     }
-    let (stdout, stdout_cut) = join_reader(stdout);
-    let (stderr, stderr_cut) = join_reader(stderr);
     ExternalCommandResult::Finished {
         stdout: String::from_utf8_lossy(&stdout).into_owned(),
         stderr: String::from_utf8_lossy(&stderr).into_owned(),
@@ -149,7 +151,10 @@ fn wait_for_exit(
             return Err(ExternalCommandResult::TimedOut);
         }
         match child.try_wait() {
-            Ok(Some(status)) => return Ok(status),
+            Ok(Some(status)) => {
+                kill_process_group(child.id());
+                return Ok(status);
+            }
             Ok(None) => std::thread::sleep(POLL_INTERVAL),
             Err(error) => {
                 terminate(child);
@@ -162,17 +167,22 @@ fn wait_for_exit(
 fn terminate(child: &mut std::process::Child) {
     #[cfg(unix)]
     let group = child.id() as libc::pid_t;
-    #[cfg(unix)]
-    {
-        // Negative pid targets the process group created above. Calling libc
-        // avoids assuming Android/Termux provides coreutils at a desktop path.
-        let _ = unsafe { libc::kill(-group, libc::SIGKILL) };
-    }
+    kill_process_group(child.id());
     let _ = child.kill();
     let _ = child.wait();
     #[cfg(unix)]
     wait_for_process_group_exit(group);
 }
+
+#[cfg(unix)]
+fn kill_process_group(child_id: u32) {
+    // Negative pid targets the process group created above. Calling libc
+    // avoids assuming Android/Termux provides coreutils at a desktop path.
+    let _ = unsafe { libc::kill(-(child_id as libc::pid_t), libc::SIGKILL) };
+}
+
+#[cfg(not(unix))]
+fn kill_process_group(_child_id: u32) {}
 
 #[cfg(unix)]
 fn wait_for_process_group_exit(group: libc::pid_t) {
@@ -304,6 +314,45 @@ mod tests {
         .unwrap();
 
         assert_eq!(wait_for(&mut task), ExternalCommandResult::TimedOut);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn successful_parent_exit_kills_descendants_that_keep_pipes_open() {
+        let pid_path = std::env::temp_dir().join(format!(
+            "catomic-external-background-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&pid_path);
+        let command = format!("sleep 5 & printf '%s' \"$!\" > '{}'", pid_path.display());
+        let started = Instant::now();
+
+        let result = run_command(
+            &command,
+            Path::new("/tmp"),
+            Vec::new(),
+            Duration::from_millis(50),
+            &AtomicBool::new(false),
+        );
+
+        assert!(matches!(
+            result,
+            ExternalCommandResult::Finished { code: Some(0), .. }
+        ));
+        assert!(started.elapsed() < Duration::from_secs(1));
+        let pid = std::fs::read_to_string(&pid_path)
+            .unwrap()
+            .parse::<u32>()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while PathBuf::from(format!("/proc/{pid}")).exists() {
+            assert!(
+                Instant::now() < deadline,
+                "background descendant was not reaped"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::fs::remove_file(pid_path).unwrap();
     }
 
     #[test]

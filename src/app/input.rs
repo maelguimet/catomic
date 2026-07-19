@@ -182,6 +182,15 @@ pub(crate) fn handle_paste(
 }
 
 pub(super) fn handle_quit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    if app.buffer_count() > 1
+        && command_prompt::take_config_return(app)
+        && app.switch_buffer(buffers::BufferDirection::Previous)
+    {
+        app.message = Some("Returned to previous buffer; configuration remains open.".to_string());
+        app.reveal_cursor();
+        return app.render(out);
+    }
+
     let dirty_count = app.dirty_buffer_count();
     if dirty_count == 0 || app.pending_quit_confirm {
         app.should_quit = true;

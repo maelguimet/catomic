@@ -11,12 +11,13 @@ Read this before changing code.
 
 Use the live repository, not an old implementation plan:
 
-1. GitHub issues define individual bugs and features.
-2. `TODO.md` defines the current product contract and active ordering.
-3. `docs/architecture.md` and accepted decision records define architectural
+1. GitHub issues define active bugs, features, priorities, and ordering.
+2. `docs/architecture.md` and accepted decision records define architectural
    boundaries.
-4. `README.md` and `docs/user-guide.md` define documented user behavior.
-5. Completed phase notes under `docs/progress/` are history, not requirements.
+3. `README.md` and `docs/user-guide.md` define documented user behavior.
+4. `CONTRIBUTING.md` defines the contributor and delivery workflow.
+5. Completed plans and phase notes under `docs/progress/` are history, not
+   requirements.
 
 Do not copy issue ledgers or completed phase journals into this file. They go
 stale and become accidental gates.
@@ -28,8 +29,9 @@ source-of-truth relationship changes.
 
 ## Non-negotiable behavior
 
-The live product contract in `TODO.md` overrides this summary if the product is
-deliberately redesigned. Until then:
+These are durable product boundaries. If the product is deliberately redesigned,
+update the relevant architecture and user documentation together with this
+section:
 
 - Plain mode performs no repository scan, background indexing, configured
   command or hook, model probing, credential read, or network request.
@@ -190,7 +192,7 @@ test harness. Split work when independent concerns would make the diff difficult
 to review, but do not fragment a small fix into ceremony.
 
 Update user documentation when user-visible behavior changes. Put completed
-engineering history under `docs/progress/`, not in `TODO.md` or this file.
+engineering history under `docs/progress/`, not in this file.
 
 ## Done means
 

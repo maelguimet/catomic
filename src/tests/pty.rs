@@ -3,8 +3,6 @@
 //! Real binary PTY smoke coverage lives in tests/pty_smoke.rs, where the test
 //! harness can use Cargo's CARGO_BIN_EXE_catomic path.
 //!
-//! See "Measurement / Test Discipline" in TODO.md.
-//!
 //! Restoration smokes use in-memory writers and std::panic::catch_unwind to
 //! verify terminal modes unwind without double cleanup or broken invariants.
 

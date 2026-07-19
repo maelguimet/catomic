@@ -115,9 +115,7 @@ impl PtyEditor {
     fn spawn_monochrome(path: &PathBuf) -> TestResult<Self> {
         let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
         cmd.arg(path);
-        cmd.env("NO_COLOR", "1");
-        cmd.env("TERM", "dumb");
-        Self::spawn_command(cmd)
+        Self::spawn_command_for_terminal(cmd, "dumb")
     }
 
     fn spawn_with_xdg(path: &PathBuf, xdg_config_home: &PathBuf) -> TestResult<Self> {
@@ -134,14 +132,20 @@ impl PtyEditor {
         cmd.env("XDG_CONFIG_HOME", xdg_root);
         cmd.env("XDG_STATE_HOME", xdg_root);
         cmd.env("HOME", &environment.root);
+        cmd.env("TERM", "xterm-256color");
         Self::spawn_command_with_environment(cmd, environment)
     }
 
-    fn spawn_command(mut cmd: CommandBuilder) -> TestResult<Self> {
+    fn spawn_command(cmd: CommandBuilder) -> TestResult<Self> {
+        Self::spawn_command_for_terminal(cmd, "xterm-256color")
+    }
+
+    fn spawn_command_for_terminal(mut cmd: CommandBuilder, term: &str) -> TestResult<Self> {
         let environment = TempProject::new("command_environment");
         cmd.env("XDG_CONFIG_HOME", &environment.root);
         cmd.env("XDG_STATE_HOME", &environment.root);
         cmd.env("HOME", &environment.root);
+        cmd.env("TERM", term);
         Self::spawn_command_with_environment(cmd, environment)
     }
 
@@ -150,6 +154,7 @@ impl PtyEditor {
         cmd.env("XDG_CONFIG_HOME", &environment.root);
         cmd.env("XDG_STATE_HOME", &environment.root);
         cmd.env("HOME", &environment.root);
+        cmd.env("TERM", "xterm-256color");
         Self::spawn_command_sized_with_environment(cmd, rows, cols, environment)
     }
 
@@ -166,8 +171,8 @@ impl PtyEditor {
         cols: u16,
         environment: TempProject,
     ) -> TestResult<Self> {
-        // PTY color assertions must not depend on the test runner's ambient
-        // NO_COLOR. The dedicated monochrome constructor also sets TERM=dumb.
+        // PTY capability assertions must not depend on the test runner's
+        // ambient NO_COLOR/TERM. Constructors pin TERM for their intended path.
         cmd.env_remove("NO_COLOR");
         let pty_system = native_pty_system();
         let pair = pty_system.openpty(PtySize {

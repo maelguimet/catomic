@@ -329,11 +329,12 @@ character in overwrite mode replaces one complete Unicode grapheme. Newlines,
 paste, prompts, command/model results, and other edit paths keep their normal
 insert/replace semantics.
 
-Catomic requests the Kitty enhanced-keyboard protocol while its alternate
-screen is active. A terminal that honors the request reports plain `Backspace`
+Catomic requests the Kitty enhanced-keyboard protocol and xterm modified-key
+mode 2 while its alternate screen is active. A terminal path that honors a
+request and preserves the physical Backspace key reports plain `Backspace`
 without modifiers and `Ctrl+Backspace` with `Control`, so the former deletes
 one grapheme and the latter deletes one word. Catomic restores the terminal's
-previous keyboard mode when the session ends.
+previous keyboard modes when the session ends.
 
 Legacy terminal paths may emit the same byte for both physical keys. No
 application can distinguish the chord after that information has been lost;
@@ -1723,6 +1724,20 @@ plain `Backspace` and verify only `o` is removed; undo, then press
 `Ctrl+Backspace` and verify `two` is removed as one undoable edit. Recent tmux
 versions require extended-key support on the outer terminal; an incorrect
 `TERM` or disabled `extkeys` terminal feature can retain the legacy behavior.
+For tmux 3.5 with Kitty as the outer terminal, this configuration requests the
+minimal disambiguation flag from Kitty and emits CSI-u into the pane:
+
+```tmux
+set -s extended-keys on
+set -s extended-keys-format csi-u
+set -as terminal-features ',xterm-kitty:extkeys'
+set -as terminal-overrides ',xterm-kitty:Eneks=\E[>1u:Dseks=\E[<1u'
+```
+
+Restart the tmux server after changing these server and terminal options. Do
+not use Kitty's `REPORT_ALL_KEYS` flag in the outer override: tmux 3.5 may split
+an unmodified `CSI 127u`; flag 1 keeps plain Backspace as `7f` while preserving
+`CSI 127;5u` for the modified chord.
 
 ### F7 says the preference was not saved
 

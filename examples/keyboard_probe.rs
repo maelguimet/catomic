@@ -12,6 +12,8 @@ use crossterm::{execute, terminal};
 const KEYBOARD_FLAGS: KeyboardEnhancementFlags =
     KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
         .union(KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES);
+const XTERM_EXTENDED_KEYS_ENABLE: &[u8] = b"\x1b[>4;2m";
+const XTERM_EXTENDED_KEYS_DISABLE: &[u8] = b"\x1b[>4;0m";
 
 fn main() {
     let mode = match Mode::parse(std::env::args().nth(1).as_deref()) {
@@ -77,26 +79,43 @@ enum Capture {
 
 struct ProbeTerminal {
     keyboard_flags_pushed: bool,
+    xterm_extended_keys_enabled: bool,
 }
 
 impl ProbeTerminal {
     fn enter(push_keyboard_flags: bool) -> io::Result<Self> {
         terminal::enable_raw_mode()?;
+        let mut terminal = Self {
+            keyboard_flags_pushed: false,
+            xterm_extended_keys_enabled: false,
+        };
         if push_keyboard_flags {
             if let Err(error) = execute!(io::stdout(), PushKeyboardEnhancementFlags(KEYBOARD_FLAGS))
             {
-                let _ = terminal::disable_raw_mode();
+                drop(terminal);
+                return Err(error);
+            }
+            terminal.keyboard_flags_pushed = true;
+            let mut stdout = io::stdout();
+            if let Err(error) = stdout.write_all(XTERM_EXTENDED_KEYS_ENABLE) {
+                drop(terminal);
+                return Err(error);
+            }
+            terminal.xterm_extended_keys_enabled = true;
+            if let Err(error) = stdout.flush() {
+                drop(terminal);
                 return Err(error);
             }
         }
-        Ok(Self {
-            keyboard_flags_pushed: push_keyboard_flags,
-        })
+        Ok(terminal)
     }
 }
 
 impl Drop for ProbeTerminal {
     fn drop(&mut self) {
+        if self.xterm_extended_keys_enabled {
+            let _ = io::stdout().write_all(XTERM_EXTENDED_KEYS_DISABLE);
+        }
         if self.keyboard_flags_pushed {
             let _ = execute!(io::stdout(), event::PopKeyboardEnhancementFlags);
         }

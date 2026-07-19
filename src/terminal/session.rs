@@ -1,7 +1,7 @@
 //! Purpose: own the paired lifetime of terminal modes used by an editor session.
 //! Owns: alternate-screen, enhanced-keyboard, bracketed-paste, mouse, and raw-mode setup.
 //! Must not: decode input, interpret editor commands, render content, or mutate App state.
-//! Invariants: keyboard flags are pushed inside the alternate screen and popped there once.
+//! Invariants: each negotiated keyboard mode is reset once before alternate-screen exit.
 //! Phase: post-v0.1 terminal keyboard compatibility.
 
 use std::io::{self, Write};
@@ -11,8 +11,12 @@ use std::sync::Arc;
 use crossterm::event::KeyboardEnhancementFlags;
 
 const ALTERNATE_SCREEN: u8 = 1 << 0;
-const KEYBOARD_FLAGS: u8 = 1 << 1;
+const KITTY_KEYBOARD_FLAGS: u8 = 1 << 1;
+const XTERM_EXTENDED_KEYS: u8 = 1 << 2;
 const RESTORING: u8 = 1 << 7;
+
+const XTERM_EXTENDED_KEYS_ENABLE: &[u8] = b"\x1b[>4;2m";
+const XTERM_EXTENDED_KEYS_DISABLE: &[u8] = b"\x1b[>4;0m";
 
 pub(crate) const KEYBOARD_FLAGS_REQUEST: KeyboardEnhancementFlags =
     KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
@@ -60,7 +64,10 @@ impl TerminalGuard {
             out,
             event::PushKeyboardEnhancementFlags(KEYBOARD_FLAGS_REQUEST)
         )?;
-        self.restorer.mark_active(KEYBOARD_FLAGS);
+        self.restorer.mark_active(KITTY_KEYBOARD_FLAGS);
+        out.write_all(XTERM_EXTENDED_KEYS_ENABLE)?;
+        self.restorer.mark_active(XTERM_EXTENDED_KEYS);
+        out.flush()?;
         execute!(
             out,
             event::EnableBracketedPaste,
@@ -133,15 +140,28 @@ fn restore_output_modes<W: Write>(out: &mut W, active: u8) -> (u8, io::Result<()
     ) {
         first_error.get_or_insert(error);
     }
-    if active & KEYBOARD_FLAGS != 0 {
-        match execute!(out, event::PopKeyboardEnhancementFlags) {
-            Ok(()) => remaining &= !KEYBOARD_FLAGS,
+    if active & XTERM_EXTENDED_KEYS != 0 {
+        match out
+            .write_all(XTERM_EXTENDED_KEYS_DISABLE)
+            .and_then(|()| out.flush())
+        {
+            Ok(()) => remaining &= !XTERM_EXTENDED_KEYS,
             Err(error) => {
                 first_error.get_or_insert(error);
             }
         }
     }
-    if remaining & KEYBOARD_FLAGS == 0 && active & ALTERNATE_SCREEN != 0 {
+    if active & KITTY_KEYBOARD_FLAGS != 0 {
+        match execute!(out, event::PopKeyboardEnhancementFlags) {
+            Ok(()) => remaining &= !KITTY_KEYBOARD_FLAGS,
+            Err(error) => {
+                first_error.get_or_insert(error);
+            }
+        }
+    }
+    if remaining & (KITTY_KEYBOARD_FLAGS | XTERM_EXTENDED_KEYS) == 0
+        && active & ALTERNATE_SCREEN != 0
+    {
         match execute!(out, terminal::LeaveAlternateScreen) {
             Ok(()) => remaining &= !ALTERNATE_SCREEN,
             Err(error) => {

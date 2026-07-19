@@ -41,9 +41,11 @@ fn wrapped_render_emits_each_visual_row() {
         &mut out,
         &buffer,
         RenderViewport::new(0, 0, 4, 3),
-        None,
+        Some("go"),
         RenderOptions {
             soft_wrap: true,
+            status_role: super::super::StatusRole::Prompt,
+            status_theme: super::super::StatusTheme::monochrome(),
             ..RenderOptions::default()
         },
     )
@@ -51,6 +53,7 @@ fn wrapped_render_emits_each_visual_row() {
     let rendered = String::from_utf8(out).unwrap();
     assert!(rendered.contains("\x1b[1;1H\x1b[Kabc"));
     assert!(rendered.contains("\x1b[2;1H\x1b[Kdef"));
+    assert!(rendered.contains("\x1b[4;1H\x1b[4m\x1b[7m\x1b[2Kgo \x1b[0m"));
 }
 
 #[test]

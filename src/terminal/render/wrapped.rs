@@ -114,8 +114,14 @@ pub(super) fn compose_buffer(
     )?;
     write_rows(out, &rows, content_height, content_width, gutter, options)?;
     if viewport.height > 0 {
-        let message = text_layout::terminal_safe_text(message.unwrap_or(""));
-        write!(out, "\x1b[{};1H\x1b[K{}", viewport.height, message)?;
+        super::status_bar::write_status_bar(
+            out,
+            viewport.height,
+            viewport.width,
+            message.unwrap_or(""),
+            options.status_role,
+            options.status_theme,
+        )?;
     }
     let (cursor_row, cursor_col) = wrapped_cursor_position(buffer.cursor(), &rows, gutter);
     write!(out, "\x1b[{cursor_row};{cursor_col}H")

@@ -51,8 +51,8 @@ pub(super) fn confirmation_message(draft: &RequestDraft, settings: &LlmSettings)
         " SENSITIVE context detected; Enter explicitly allows sending it."
     };
     format!(
-        "Send {} lines/{} bytes from {scope} to {} at {}?{sensitive} Enter confirms; Esc cancels.",
-        draft.context.line_count, draft.context.byte_count, settings.model, settings.base_url
+        "{} at {}: send {} lines/{} bytes from {scope}?{sensitive} Enter confirms; Esc cancels.",
+        settings.model, settings.base_url, draft.context.line_count, draft.context.byte_count
     )
 }
 

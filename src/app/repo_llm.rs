@@ -161,8 +161,8 @@ fn finish_preparing(app: &mut super::App, prepared: PreparedRepoContext, state: 
         " SENSITIVE active-file context detected; Enter explicitly allows it."
     };
     app.message = Some(format!(
-        "Send {} {} context: {} initial repo bytes + {} active-file bytes to {} at {} (at most {context_kib} KiB repository context total)?{sensitive} Enter confirms; Esc cancels.",
-        state.command.name(), state.command.profile(), prepared.initial_context.len(), state.draft.context.byte_count, state.settings.model, state.settings.base_url
+        "{} at {}: send {} {} context with {} initial repo bytes + {} active-file bytes (at most {context_kib} KiB repository context total)?{sensitive} Enter confirms; Esc cancels.",
+        state.settings.model, state.settings.base_url, state.command.name(), state.command.profile(), prepared.initial_context.len(), state.draft.context.byte_count
     ));
     app.repo_llm_state = Some(RepoLlmState::Pending(Box::new(Pending {
         prepared,

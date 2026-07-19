@@ -109,8 +109,8 @@ fn phase1b_piecetable_small_file_key_to_render_smoke() {
 
 #[test]
 fn render_buffer_with_message_emits_on_bottom_row_and_clears() {
-    // Minimal coverage for bottom-line messages (Phase 2-b): Some(msg)
-    // must place text after positioning to last row + \x1b[K clear.
+    // Minimal coverage for bottom-line messages: Some(msg) must place safe text
+    // after positioning to the last row and a complete-row clear.
     let b = SimpleBuffer::from_text("one line");
     let mut out: Vec<u8> = Vec::new();
     render_buffer(
@@ -127,7 +127,10 @@ fn render_buffer_with_message_emits_on_bottom_row_and_clears() {
         s.contains("\x1b[3;1H"),
         "positions to reserved bottom row (height=3)"
     );
-    assert!(s.contains("\x1b[K"), "clears the message row with \\x1b[K");
+    assert!(
+        s.contains("\x1b[2K"),
+        "clears the complete message row with \\x1b[2K"
+    );
     assert!(
         s.contains("Unsaved changes"),
         "message text emitted after clear"
@@ -220,6 +223,8 @@ fn render_uses_status_line_when_message_none_and_message_overrides() {
     generate_dense_ascii_file(&p, size).expect("gen tiny");
 
     let mut app = crate::app::App::new(Some(&p.to_string_lossy())).expect("open for status");
+    // Keep this metadata-format assertion independent of the renderer's terminal-width clipping.
+    app.screen.width = 240;
     // fresh small open has no message; status should be shown
     let mut out: Vec<u8> = Vec::new();
     app.render(&mut out).expect("render status");

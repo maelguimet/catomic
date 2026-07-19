@@ -243,6 +243,14 @@ including:
 The small cat decoration is enabled by default. It changes presentation only
 and can be disabled with `[cat] status_messages = false`.
 
+The reserved row is painted as a full-width status bar so it cannot be mistaken
+for document text. Normal state, informational messages, warnings, errors, and
+interactive prompts use separate semantic styles. Terminals with `NO_COLOR` set,
+`TERM=dumb`, or a monochrome terminal type retain an inverse-video boundary.
+Long status and prompt text is middle-clipped at the terminal edge, preserving
+both its leading context and actionable suffix without splitting a Unicode
+grapheme or allowing control characters to reach the terminal.
+
 Press `Ctrl+H` or `F1` at any time to open the built-in shortcut reference. It
 is read-only: use the arrow keys, `Home`, `End`, `PageUp`, and `PageDown` to
 navigate, then press `Escape` or `Ctrl+H` to return.

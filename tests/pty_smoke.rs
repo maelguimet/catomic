@@ -111,6 +111,13 @@ impl PtyEditor {
         Self::spawn_command_sized(cmd, rows, cols)
     }
 
+    fn spawn_monochrome(path: &PathBuf) -> TestResult<Self> {
+        let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
+        cmd.arg(path);
+        cmd.env("NO_COLOR", "1");
+        Self::spawn_command(cmd)
+    }
+
     fn spawn_with_xdg(path: &PathBuf, xdg_config_home: &PathBuf) -> TestResult<Self> {
         Self::spawn_with(&[path], Some(xdg_config_home))
     }
@@ -277,9 +284,32 @@ fn assert_mouse_capture_lifecycle(output: &str) {
 #[test]
 fn pty_save_undo_save_quit_writes_expected_file() -> TestResult {
     let temp = TempPath::new("save_undo");
-    let mut editor = PtyEditor::spawn(&temp.path)?;
+    let mut editor = PtyEditor::spawn_monochrome(&temp.path)?;
 
     editor.wait_for_initial_render()?;
+    editor.wait_for_output("normal status bar", "plain")?;
+    let initial = editor.output_string();
+    let bar = initial
+        .find("\x1b[24;1H\x1b[7m\x1b[2K")
+        .ok_or("normal status row did not enter inverse video before full-row clear")?;
+    let reset = initial[bar..]
+        .find("\x1b[0m\x1b[1;1H")
+        .ok_or("normal status row did not reset before cursor placement")?;
+    assert!(
+        reset > 80,
+        "status frame must paint the full 80-cell PTY row"
+    );
+
+    editor.send_keys(b"\x1b[80;6u")?; // Ctrl+Shift+P via CSI-u.
+    editor.wait_for_output("prompt status", "Command: ")?;
+    assert!(
+        editor
+            .output_string()
+            .contains("\x1b[24;1H\x1b[4m\x1b[7m\x1b[2KCommand: "),
+        "prompt role must remain distinct in monochrome mode"
+    );
+    editor.send_keys(b"\x1b")?;
+    editor.wait_for_output("prompt cancellation", "Prompt cancelled")?;
     editor.send_keys(b"ab\x13c\x1a\x13\x11")?;
     editor.wait_for_exit()?;
 
@@ -398,7 +428,8 @@ fn pty_file_size_limit_save_is_recoverable_and_cleans_temp() -> TestResult {
     editor.send_keys(b"\x1b[201~\x13")?;
     wait_until(
         "recoverable file-limit error",
-        Duration::from_secs(5),
+        // Full all-target runs execute this PTY beside the unit-test binary.
+        Duration::from_secs(10),
         || editor.output_string().contains("Save error:"),
     )?;
 

@@ -91,8 +91,8 @@ fn app_dirty_ctrl_q_first_renders_warning_immediately() {
         "warning message text must appear in render output"
     );
     assert!(
-        rendered.contains("\x1b[K"),
-        "render must clear bottom row with \\x1b[K even for message"
+        rendered.contains("\x1b[2K"),
+        "render must clear the complete bottom row before the warning"
     );
 }
 

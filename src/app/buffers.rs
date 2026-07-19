@@ -210,6 +210,17 @@ impl App {
         hooks::trigger_open(self);
         Ok(true)
     }
+
+    pub(crate) fn replace_active_file_buffer(&mut self, path: &Path) -> io::Result<()> {
+        let path = path.to_str().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "file path is not valid UTF-8")
+        })?;
+        let opened = Self::new_with_config(Some(path), StartupConfig::for_new_buffer(self))?;
+        let mut replacement = BufferSlot::from_app(opened);
+        replacement.swap_with_active(self);
+        hooks::trigger_open(self);
+        Ok(())
+    }
 }
 
 fn absolute_path(path: &Path) -> io::Result<PathBuf> {

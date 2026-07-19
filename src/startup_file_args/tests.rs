@@ -96,7 +96,7 @@ fn diagnostic_calls_out_an_existing_joined_filename() {
 }
 
 #[test]
-fn one_quoted_missing_path_and_one_literal_option_path_remain_unambiguous() {
+fn one_quoted_missing_path_and_one_explicit_relative_path_remain_unambiguous() {
     let temp = TempDir::new("single");
     let spaced = temp.path("henlo world.md");
     let Action::Run(quoted) = cli::parse([spaced.as_str()]).unwrap() else {
@@ -104,13 +104,13 @@ fn one_quoted_missing_path_and_one_literal_option_path_remain_unambiguous() {
     };
     assert_eq!(check(&quoted.files, quoted.allow_missing), Ok(()));
 
-    let Action::Run(literal) = cli::parse(["--", "--allow-missing"]).unwrap() else {
-        panic!("literal option-looking path should run the editor");
+    let Action::Run(literal) = cli::parse(["./-draft.md"]).unwrap() else {
+        panic!("explicit relative path should run the editor");
     };
     assert_eq!(
         literal,
         RunOptions {
-            files: vec!["--allow-missing".to_string()],
+            files: vec!["./-draft.md".to_string()],
             allow_missing: false,
         }
     );

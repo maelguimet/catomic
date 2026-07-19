@@ -1,7 +1,7 @@
 //! Purpose: parse Catomic's small explicit command-line interface.
-//! Owns: top-level actions, update flags, and usage errors.
+//! Owns: top-level actions, config/update flags, and usage errors.
 //! Must not: inspect files, contact a network, update state, or start the editor.
-//! Invariants: `update` is a subcommand only in argv[1]; `-- update` is a file.
+//! Invariants: reserved first arguments are commands; explicit relative paths are files.
 //! Phase: safe self-update workflow.
 
 use std::ffi::OsString;
@@ -13,6 +13,7 @@ pub(crate) const EXIT_USAGE: i32 = 2;
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Action {
     Config(ConfigAction),
+    ConfigHelp,
     Help,
     Version,
     UpdateHelp,
@@ -58,10 +59,13 @@ where
 
 fn parse_config(args: &[String]) -> Result<Action, String> {
     let action = match args {
+        [] => ConfigAction::Edit,
         [command] if command == "path" => ConfigAction::Path,
         [command] if command == "edit" => ConfigAction::Edit,
         [command] if command == "check" => ConfigAction::Check,
-        [] => return Err("config requires one of: path, edit, check".to_string()),
+        [option] if help::config_option(option) == Some(help::ConfigOption::Help) => {
+            return Ok(Action::ConfigHelp);
+        }
         _ => return Err(format!("unknown config command {:?}", args.join(" "))),
     };
     Ok(Action::Config(action))
@@ -106,14 +110,8 @@ fn parse_update(args: &[String]) -> Result<Action, String> {
 fn parse_files(args: Vec<String>) -> Result<Action, String> {
     let mut files = Vec::new();
     let mut allow_missing = false;
-    let mut positional_only = false;
     for arg in args {
-        if positional_only {
-            files.push(arg);
-            continue;
-        }
         match help::main_option(&arg) {
-            Some(help::MainOption::PositionalOnly) => positional_only = true,
             Some(help::MainOption::AllowMissing) => allow_missing = true,
             Some(help::MainOption::Help) => return Ok(Action::Help),
             Some(help::MainOption::Version) => return Ok(Action::Version),
@@ -129,6 +127,10 @@ fn parse_files(args: Vec<String>) -> Result<Action, String> {
 
 pub(crate) fn print_help() {
     print!("{}", help::main_help(env!("CARGO_PKG_VERSION")));
+}
+
+pub(crate) fn print_config_help() {
+    print!("{}", help::config_help());
 }
 
 pub(crate) fn print_update_help() {
@@ -156,15 +158,19 @@ mod tests {
                 backup: true,
             })
         );
-        assert_eq!(parse(["--", "update"]).unwrap(), run(&["update"], false));
         assert_eq!(
             parse(["notes", "update"]).unwrap(),
             run(&["notes", "update"], false)
         );
+        assert!(parse(["--", "update"]).is_err());
     }
 
     #[test]
-    fn parses_config_discovery_commands_only_as_a_first_argument_subcommand() {
+    fn parses_config_commands_only_as_a_first_argument_subcommand() {
+        assert_eq!(
+            parse(["config"]).unwrap(),
+            Action::Config(ConfigAction::Edit)
+        );
         assert_eq!(
             parse(["config", "path"]).unwrap(),
             Action::Config(ConfigAction::Path)
@@ -177,9 +183,21 @@ mod tests {
             parse(["config", "check"]).unwrap(),
             Action::Config(ConfigAction::Check)
         );
-        assert!(parse(["config"]).is_err());
+        for spelling in ["-h", "--help"] {
+            assert_eq!(parse(["config", spelling]).unwrap(), Action::ConfigHelp);
+        }
         assert!(parse(["config", "wat"]).is_err());
-        assert_eq!(parse(["--", "config"]).unwrap(), run(&["config"], false));
+        assert!(parse(["--", "config"]).is_err());
+    }
+
+    #[test]
+    fn command_name_files_use_an_explicit_relative_path() {
+        assert_eq!(parse(["./update"]).unwrap(), run(&["./update"], false));
+        assert_eq!(parse(["./config"]).unwrap(), run(&["./config"], false));
+        assert_eq!(
+            parse(["./-draft.md"]).unwrap(),
+            run(&["./-draft.md"], false)
+        );
     }
 
     #[test]
@@ -190,14 +208,15 @@ mod tests {
     }
 
     #[test]
-    fn parses_help_version_and_literal_options() {
+    fn parses_help_and_version_and_rejects_positional_only_syntax() {
         for spelling in ["-h", "--help"] {
             assert_eq!(parse([spelling]).unwrap(), Action::Help);
         }
         for spelling in ["-V", "--version"] {
             assert_eq!(parse([spelling]).unwrap(), Action::Version);
         }
-        assert_eq!(parse(["--", "--help"]).unwrap(), run(&["--help"], false));
+        assert!(parse(["--"]).is_err());
+        assert!(parse(["--", "--help"]).is_err());
     }
 
     #[test]
@@ -207,12 +226,8 @@ mod tests {
             run(&["first", "second"], true)
         );
         assert_eq!(
-            parse(["--allow-missing", "--", "--help", "--allow-missing"]).unwrap(),
-            run(&["--help", "--allow-missing"], true)
-        );
-        assert_eq!(
-            parse(["--", "--allow-missing"]).unwrap(),
-            run(&["--allow-missing"], false)
+            parse(["--allow-missing", "first", "second"]).unwrap(),
+            run(&["first", "second"], true)
         );
     }
 
@@ -221,6 +236,14 @@ mod tests {
         for spec in help::MAIN_OPTIONS {
             for spelling in spec.spellings {
                 assert!(parse([spelling]).is_ok(), "main parser rejected {spelling}");
+            }
+        }
+        for spec in help::CONFIG_OPTIONS {
+            for spelling in spec.spellings {
+                assert!(
+                    parse(["config", spelling]).is_ok(),
+                    "config parser rejected {spelling}"
+                );
             }
         }
         for spec in help::UPDATE_OPTIONS {

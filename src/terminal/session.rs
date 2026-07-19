@@ -19,8 +19,7 @@ const XTERM_EXTENDED_KEYS_ENABLE: &[u8] = b"\x1b[>4;2m";
 const XTERM_EXTENDED_KEYS_DISABLE: &[u8] = b"\x1b[>4;0m";
 
 pub(crate) const KEYBOARD_FLAGS_REQUEST: KeyboardEnhancementFlags =
-    KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-        .union(KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES);
+    KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES;
 
 /// Restores a single editor session. Clones coordinate panic and Drop cleanup.
 #[derive(Clone)]

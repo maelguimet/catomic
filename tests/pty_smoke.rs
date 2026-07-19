@@ -572,8 +572,8 @@ fn pty_legacy_and_enhanced_backspace_paths_remain_distinct() -> TestResult {
     let mut editor = PtyEditor::spawn(&temp.path)?;
 
     editor.wait_for_initial_render()?;
-    // REPORT_ALL_KEYS_AS_ESCAPE_CODES path for ordinary text: "one two".
-    editor.send_keys(b"\x1b[111u\x1b[110u\x1b[101u\x1b[32u\x1b[116u\x1b[119u\x1b[111u")?;
+    // Ordinary text stays on the terminal's legacy text path: "one two".
+    editor.send_keys(b"one two")?;
     // Exercise legacy Backspace and both enhanced Backspace forms, undoing each.
     editor.send_keys(b"\x7f\x1b[122;5u")?;
     editor.send_keys(b"\x1b[127u\x1b[122;5u")?;
@@ -584,7 +584,7 @@ fn pty_legacy_and_enhanced_backspace_paths_remain_distinct() -> TestResult {
 
     assert_eq!(fs::read_to_string(&temp.path)?, "one ");
     let output = editor.output_string();
-    assert_eq!(sequence_count(&output, "\x1b[>9u"), 1);
+    assert_eq!(sequence_count(&output, "\x1b[>1u"), 1);
     assert_eq!(sequence_count(&output, "\x1b[<1u"), 1);
     Ok(())
 }

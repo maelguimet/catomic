@@ -71,7 +71,8 @@ fn configured_toggle_overwrite_action_reuses_insert_handler() {
 #[test]
 fn active_command_prompt_keeps_configured_printable_chord_as_text() {
     let mut app = App::new(None).unwrap();
-    app.keybindings = crate::config::keybindings::parse("[keybindings]\nx = \"quit\"\n").unwrap();
+    app.keybindings =
+        crate::config::keybindings::parse("[keybindings]\n\"alt+x\" = \"save\"\n").unwrap();
     let mut out = Vec::new();
 
     app.handle_key_with(
@@ -82,7 +83,7 @@ fn active_command_prompt_keeps_configured_printable_chord_as_text() {
         ),
     )
     .unwrap();
-    app.handle_key_with(&mut out, make_key(KeyCode::Char('x'), KeyModifiers::NONE))
+    app.handle_key_with(&mut out, make_key(KeyCode::Char('x'), KeyModifiers::ALT))
         .unwrap();
 
     assert!(!app.should_quit);
@@ -90,21 +91,57 @@ fn active_command_prompt_keeps_configured_printable_chord_as_text() {
 }
 
 #[test]
-fn markdown_preview_handles_printable_keys_before_normal_mode_overrides() {
+fn markdown_preview_keeps_editor_only_chords_local() {
     let mut app = App::new(None).unwrap();
     app.file.path = Some(std::path::PathBuf::from("notes.md"));
     app.buffer = Box::new(crate::buffer::PieceTable::from_text("# Preview"));
-    app.keybindings = crate::config::keybindings::parse("[keybindings]\nx = \"quit\"\n").unwrap();
+    app.keybindings =
+        crate::config::keybindings::parse("[keybindings]\n\"alt+x\" = \"save\"\n").unwrap();
     let mut out = Vec::new();
 
     app.handle_key_with(&mut out, make_key(KeyCode::F(6), KeyModifiers::NONE))
         .unwrap();
     assert!(super::super::view::is_preview(&app));
-    app.handle_key_with(&mut out, make_key(KeyCode::Char('x'), KeyModifiers::NONE))
+    app.handle_key_with(&mut out, make_key(KeyCode::Char('x'), KeyModifiers::ALT))
         .unwrap();
 
     assert!(super::super::view::is_preview(&app));
     assert!(!app.should_quit);
     assert_eq!(app.buffer.to_string(), "# Preview");
     assert!(app.message.as_deref().unwrap().contains("read-only"));
+}
+
+#[test]
+fn action_defaults_can_be_unbound_without_falling_through_to_hardcoded_keys() {
+    let mut app = App::new(None).unwrap();
+    app.keybindings = crate::config::keybindings::parse("[keybindings]\nsave = []\n").unwrap();
+    let mut out = Vec::new();
+    app.handle_key_with(&mut out, make_key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
+
+    app.handle_key_with(
+        &mut out,
+        make_key(KeyCode::Char('s'), KeyModifiers::CONTROL),
+    )
+    .unwrap();
+
+    assert!(app.file.path.is_none());
+    assert!(app.file.dirty);
+    assert!(!super::super::command_prompt::is_active(&app));
+}
+
+#[test]
+fn prompt_local_action_remap_reaches_the_existing_cancel_path() {
+    let mut app = App::new(None).unwrap();
+    app.keybindings =
+        crate::config::keybindings::parse("[keybindings]\nprompt-cancel = [\"alt+x\"]\n").unwrap();
+    let mut out = Vec::new();
+    app.handle_key_with(&mut out, make_key(KeyCode::F(2), KeyModifiers::NONE))
+        .unwrap();
+
+    app.handle_key_with(&mut out, make_key(KeyCode::Char('x'), KeyModifiers::ALT))
+        .unwrap();
+
+    assert!(!super::super::command_prompt::is_active(&app));
+    assert_eq!(app.message.as_deref(), Some("Prompt cancelled."));
 }

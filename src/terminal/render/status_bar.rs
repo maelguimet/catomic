@@ -9,6 +9,7 @@ use std::io::{self, Write};
 use crossterm::style::Color;
 use unicode_segmentation::UnicodeSegmentation;
 
+use crate::config::theme::{Color as ThemeColor, Style as ThemeStyle, Theme};
 use crate::editor::text_layout;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -26,6 +27,7 @@ pub(crate) struct StatusStyle {
     foreground: Option<Color>,
     background: Option<Color>,
     bold: bool,
+    dim: bool,
     underlined: bool,
     reversed: bool,
 }
@@ -36,6 +38,7 @@ impl StatusStyle {
             foreground: Some(foreground),
             background: Some(background),
             bold,
+            dim: false,
             underlined: false,
             reversed: false,
         }
@@ -46,6 +49,7 @@ impl StatusStyle {
             foreground: None,
             background: None,
             bold,
+            dim: false,
             underlined,
             reversed: true,
         }
@@ -83,17 +87,45 @@ impl StatusTheme {
         }
     }
 
-    pub(crate) fn from_environment() -> Self {
+    pub(crate) fn from_theme(theme: Theme) -> Self {
         let no_color = std::env::var_os("NO_COLOR").is_some();
         let term = std::env::var("TERM").ok();
-        Self::for_terminal(no_color, term.as_deref())
+        if no_color || terminal_is_monochrome(term.as_deref()) {
+            return Self::monochrome();
+        }
+        let fallback = Self::default();
+        Self {
+            normal: themed_status_style(
+                theme.status,
+                theme.truecolor,
+                fallback.style(StatusRole::Normal),
+            ),
+            info: themed_status_style(
+                theme.message,
+                theme.truecolor,
+                fallback.style(StatusRole::Info),
+            ),
+            warning: themed_status_style(
+                theme.status_warning,
+                theme.truecolor,
+                fallback.style(StatusRole::Warning),
+            ),
+            error: themed_status_style(
+                theme.error,
+                theme.truecolor,
+                fallback.style(StatusRole::Error),
+            ),
+            prompt: themed_status_style(
+                theme.status_prompt,
+                theme.truecolor,
+                fallback.style(StatusRole::Prompt),
+            ),
+        }
     }
 
+    #[cfg(test)]
     pub(crate) fn for_terminal(no_color: bool, term: Option<&str>) -> Self {
-        let monochrome = term.is_none_or(|term| {
-            let term = term.to_ascii_lowercase();
-            term == "dumb" || term == "unknown" || term.contains("mono") || term.starts_with("vt")
-        });
+        let monochrome = terminal_is_monochrome(term);
         if no_color || monochrome {
             Self::monochrome()
         } else {
@@ -131,6 +163,71 @@ impl StatusTheme {
             StatusRole::Prompt => self.prompt,
         }
     }
+}
+
+fn terminal_is_monochrome(term: Option<&str>) -> bool {
+    term.is_none_or(|term| {
+        let term = term.to_ascii_lowercase();
+        term == "dumb" || term == "unknown" || term.contains("mono") || term.starts_with("vt")
+    })
+}
+
+fn themed_status_style(style: ThemeStyle, truecolor: bool, fallback: StatusStyle) -> StatusStyle {
+    if style.fg.is_none()
+        && style.bg.is_none()
+        && style.bold.is_none()
+        && style.dim.is_none()
+        && style.underlined.is_none()
+        && style.reversed.is_none()
+    {
+        return fallback;
+    }
+    StatusStyle {
+        foreground: style.fg.map(|color| terminal_color(color, truecolor)),
+        background: style.bg.map(|color| terminal_color(color, truecolor)),
+        bold: style.bold.unwrap_or(false),
+        dim: style.dim.unwrap_or(false),
+        underlined: style.underlined.unwrap_or(false),
+        reversed: style.reversed.unwrap_or(false),
+    }
+}
+
+fn terminal_color(color: ThemeColor, truecolor: bool) -> Color {
+    match color {
+        ThemeColor::Default => Color::Reset,
+        ThemeColor::Ansi(index) => ansi_color(index),
+        ThemeColor::Indexed(index) => Color::AnsiValue(index),
+        ThemeColor::Rgb(red, green, blue) if truecolor => Color::Rgb {
+            r: red,
+            g: green,
+            b: blue,
+        },
+        ThemeColor::Rgb(red, green, blue) => {
+            Color::AnsiValue(crate::config::theme::indexed_fallback(red, green, blue))
+        }
+    }
+}
+
+fn ansi_color(index: u8) -> Color {
+    const COLORS: [Color; 16] = [
+        Color::Black,
+        Color::DarkRed,
+        Color::DarkGreen,
+        Color::DarkYellow,
+        Color::DarkBlue,
+        Color::DarkMagenta,
+        Color::DarkCyan,
+        Color::Grey,
+        Color::DarkGrey,
+        Color::Red,
+        Color::Green,
+        Color::Yellow,
+        Color::Blue,
+        Color::Magenta,
+        Color::Cyan,
+        Color::White,
+    ];
+    COLORS[index.min(15) as usize]
 }
 
 pub(super) fn write_status_bar<W: Write + ?Sized>(
@@ -202,6 +299,9 @@ fn write_style<W: Write + ?Sized>(out: &mut W, style: StatusStyle) -> io::Result
     }
     if style.bold {
         write!(out, "\x1b[1m")?;
+    }
+    if style.dim {
+        write!(out, "\x1b[2m")?;
     }
     if style.underlined {
         write!(out, "\x1b[4m")?;

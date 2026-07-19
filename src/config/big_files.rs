@@ -1,12 +1,15 @@
 //! Purpose: configure bounded line pages for oversized file viewing.
-//! Owns: page-line default, typed TOML decoding, and config path loading.
+//! Owns: page-line defaults and typed TOML decoding.
 //! Must not: open editor buffers, scan user files, write config, or know App UI.
 //! Invariants: page_lines is nonzero; missing config uses defaults; config roots
 //!   must be absolute; only `[big_files] page_lines = N` affects this configuration.
 //! Phase: 2-bk configurable paged-file policy.
 
 use std::io;
-use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::path::Path;
+#[cfg(test)]
+use std::path::PathBuf;
 
 use serde::Deserialize;
 
@@ -43,7 +46,8 @@ pub(crate) fn parse(text: &str) -> io::Result<BigFileConfig> {
     Ok(config)
 }
 
-pub(crate) fn load_from(path: &Path) -> io::Result<BigFileConfig> {
+#[cfg(test)]
+fn load_from(path: &Path) -> io::Result<BigFileConfig> {
     match std::fs::read_to_string(path) {
         Ok(text) => parse(&text),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(BigFileConfig::default()),
@@ -51,29 +55,12 @@ pub(crate) fn load_from(path: &Path) -> io::Result<BigFileConfig> {
     }
 }
 
-pub(crate) fn load() -> io::Result<BigFileConfig> {
-    let xdg = std::env::var_os("XDG_CONFIG_HOME");
-    let home = std::env::var_os("HOME");
-    match config_path(xdg.as_deref(), home.as_deref()) {
-        Some(path) => load_from(&path),
-        None => Ok(BigFileConfig::default()),
-    }
-}
-
-pub(super) fn config_path(
+#[cfg(test)]
+fn config_path(
     xdg_config_home: Option<&std::ffi::OsStr>,
     home: Option<&std::ffi::OsStr>,
 ) -> Option<PathBuf> {
-    let root = xdg_config_home
-        .map(Path::new)
-        .filter(|path| path.is_absolute())
-        .map(Path::to_path_buf)
-        .or_else(|| {
-            home.map(Path::new)
-                .filter(|path| path.is_absolute())
-                .map(|home| home.join(".config"))
-        })?;
-    Some(root.join("catomic").join("config.toml"))
+    super::user_file::resolve_path(xdg_config_home, home).ok()
 }
 
 #[cfg(test)]

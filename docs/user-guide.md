@@ -319,6 +319,12 @@ Plain `Ctrl+Up`/`Ctrl+Down` clears an active selection like other non-extending
 navigation; it does not infer a selection-extending paragraph action from
 `Shift`.
 
+`Insert` toggles overwrite mode for printable typing in the active buffer. The
+status begins with `INS` or `OVR`, and each buffer retains its own mode. A typed
+character in overwrite mode replaces one complete Unicode grapheme. Newlines,
+paste, prompts, command/model results, and other edit paths keep their normal
+insert/replace semantics.
+
 ### Mouse selection
 
 - A left click moves the cursor.
@@ -906,6 +912,28 @@ No file is required. Unknown keys are ignored for forward compatibility, but a
 malformed recognized value is a startup error for settings loaded at startup.
 Project-only and model settings are loaded lazily when invoked.
 
+Run `config` from the in-editor command prompt to open that exact path as an
+ordinary editable buffer. If it is missing, Catomic asks before atomically
+creating an owner-only file in an owner-only `catomic` directory from a
+documented, commented template. An existing group/other-accessible config
+directory is refused with a permission error instead of being silently changed.
+It never overwrites a file that appears during confirmation. Configuration is validated
+and applied as one document at startup, so restart Catomic after saving; the
+running session does not silently apply a partial reload.
+
+Shell workflows can discover, validate, or edit the same path without guessing
+the XDG resolution:
+
+```sh
+catomic config path
+catomic config check
+catomic config edit
+```
+
+`config check` is read-only. `config edit` asks before first creation and then
+launches `$VISUAL`, falling back to `$EDITOR`; it runs before terminal raw mode
+or the alternate screen is entered.
+
 The configured line-number default is:
 
 ```toml
@@ -948,6 +976,32 @@ enabled = false
 interval_secs = 30
 max_bytes = 1_048_576
 
+[theme]
+name = "default"
+
+[theme.colors]
+text = "default"
+background = "default"
+cursor = "default"
+selection = { fg = "black", bg = "cyan" }
+line_number = "bright-black"
+status = { fg = "black", bg = "white" }
+message = { fg = "black", bg = "white" }
+status_warning = { fg = "black", bg = "yellow" }
+error = { fg = "bright-white", bg = "red" }
+markdown_heading = "bright-blue"
+markdown_emphasis = "magenta"
+markdown_code = "green"
+markdown_marker = "bright-cyan"
+syntax_keyword = "magenta"
+syntax_string = "green"
+syntax_comment = "bright-black"
+syntax_number = "yellow"
+search_match = { fg = "black", bg = "yellow" }
+diff_added = "green"
+diff_removed = "red"
+preview = "default"
+
 [languages.rs]
 tab_size = 4
 linter = "cargo check --message-format short {file}"
@@ -957,8 +1011,8 @@ tab_size = 4
 linter = "ruff check {file}"
 
 [keybindings]
-"alt+s" = "save-as"
-"alt+f" = "search"
+save-as = ["alt+s"]
+search = ["alt+f"]
 
 [commands.upper]
 command = "tr '[:lower:]' '[:upper:]'"
@@ -992,6 +1046,7 @@ timeout_secs = 120
 | `recovery.enabled` | `false` | Boolean |
 | `recovery.interval_secs` | `30` | Integer `5`–`3600` |
 | `recovery.max_bytes` | `1048576` | Integer `1`–`16777216` |
+| `theme.name` | `default` | `default`, `high-contrast`, or `mono` |
 | `commands.NAME.input` | `none` | `none`, `selection`, `buffer` |
 | `commands.NAME.output` | `preview` | `preview`, `insert`, `replace-input` |
 | `commands.NAME.timeout_secs` | `10` | Integer `1`–`300` |
@@ -1003,34 +1058,162 @@ timeout_secs = 120
 Language extension names are case-normalized and may be written with or without
 a leading dot. Command names may contain ASCII letters, digits, `-`, and `_`.
 
-### Custom keybindings
+### Color schemes
 
-Keybinding overrides translate a normal-mode chord to an existing action:
+Themes use semantic roles, so rendering does not hard-code colors by syntax or
+surface. The complete role inventory is `text`, `background`, `cursor`,
+`selection`, `line_number`, `status`, `message`, `status_warning`, `status_prompt`, `error`,
+`markdown_heading`, `markdown_emphasis`, `markdown_code`, `markdown_marker`,
+`markdown_link`, `syntax_keyword`, `syntax_string`, `syntax_comment`, `syntax_number`,
+`search_match`, `diff_added`, `diff_removed`, and `preview`. The syntax roles
+apply consistently to the built-in Rust, Python, and JSON highlighters.
+
+A role may be `"default"`, one of the standard 16 names (`black` through
+`white` and `bright-black` through `bright-white`), an integer from 0 to 255,
+`"index:N"`, `"#RRGGBB"`, or `"rgb(R,G,B)"`. Roles also accept a table such as
+`{ fg = "black", bg = "cyan", bold = true, dim = false, underline = false,
+reverse = false }`. RGB is emitted as
+truecolor only when the terminal advertises `COLORTERM=truecolor` or `24bit`;
+otherwise Catomic selects a stable xterm-256 fallback.
+
+`NO_COLOR`, missing or monochrome terminal types, and `TERM=dumb` suppress color
+while retaining bold, underline, and inverse-video distinctions for selections
+and search matches.
+
+The built-in `default` scheme preserves terminal-default text/background while
+keeping selection, search, warnings, and errors distinguishable. Use
+`high-contrast` for explicit black/bright-white base colors or `mono` to remove
+syntax hues. Inline roles override the named scheme. `background` has explicit
+precedence over `text.bg`. Invalid recognized colors fail the whole startup or
+`config check`; no subset is applied. Every styled segment is reset, and exit
+restores SGR attributes and the terminal's cursor color.
+
+### Custom keybindings and action registry
+
+The recommended action-oriented form replaces an action's complete default
+chord list. Use an empty array to unbind every default for that action:
 
 ```toml
 [keybindings]
-"ctrl+w" = "save"
-"alt+s" = "save-as"
-"alt+f" = "search"
-"ctrl+shift+g" = "command-prompt"
-"alt+u" = "undo"
-"alt+r" = "redo"
+save = ["ctrl+s", "alt+s"]
+help = []
+prompt-cancel = ["alt+x"]
+mouse-select-word = ["mouse-left-double"]
 ```
+
+The Phase 7 chord-oriented form such as `"alt+s" = "save"` remains accepted as
+an explicit compatibility override and may replace a built-in chord even across
+global/local scope precedence. Action-oriented entries are preferred
+because replacement and unbinding are explicit.
 
 Chord modifiers are `ctrl`/`control`, `alt`, and `shift`. Keys may be one
-character, `space`, `tab`, `enter`, `esc`, `backspace`, `delete`, `insert`, an arrow key,
-`pageup`, `pagedown`, `home`, `end`, or `f1` through `f12`.
+character, `space`, `tab`, `enter`, `esc`, `backspace`, `delete`, `insert`, an
+arrow key, `pageup`, `pagedown`, `home`, `end`, or `f1` through `f12`. Mouse
+gestures are `mouse-left`, `mouse-left-drag`, `mouse-left-up`,
+`mouse-left-double`, `mouse-wheel-up`, and `mouse-wheel-down`. Button actions
+cannot be assigned wheel gestures (or vice versa). Catomic rejects configurable
+unmodified or Shift-only printable keys so a remap cannot silently capture ordinary typing.
 
-Supported action names are:
+Global actions have first precedence, followed by the active local surface,
+then editor typing. A chord may therefore have a different local meaning in a
+prompt, search, completion, preview, picker, or help surface. Two actions in the
+same effective scope cannot share a chord; global bindings overlap every local
+scope and therefore cannot shadow a local action. `config check` reports both action
+names, both input chords, the scope, and the normalized collision. `Ctrl+Space`
+and terminals that report it as Ctrl+Null normalize to the same chord, as do
+`Shift+Tab` and BackTab, modifier aliases, case, and `esc`/`escape`.
+
+The built-in help is generated from this registry. This guide's inventory is
+checked against the same registry in tests:
+
+<!-- action-registry-start -->
 
 ```text
-help save save-as open new close replace quit reload search goto-line
-command-prompt undo redo toggle-overwrite complete next-buffer previous-buffer next-page
-previous-page markdown-preview line-numbers whitespace soft-wrap
+help | global | ctrl+h, f1
+quit | global | ctrl+q
+save | editor | ctrl+s
+save-as | editor | ctrl+shift+s
+open | editor | ctrl+o
+new | editor | ctrl+n
+close | editor | ctrl+w
+reload | editor | ctrl+r
+search | editor | ctrl+f
+replace | editor | ctrl+shift+f
+goto-line | editor | ctrl+g
+command-prompt | editor | ctrl+shift+p, f2
+complete | editor | ctrl+space
+undo | editor | ctrl+z
+redo | editor | ctrl+y, ctrl+shift+z
+move-left | editor,preview,picker,help | left
+move-right | editor,preview,picker,help | right
+move-up | editor,preview,picker,help | up
+move-down | editor,preview,picker,help | down
+select-left | editor | shift+left
+select-right | editor | shift+right
+select-up | editor | shift+up
+select-down | editor | shift+down
+line-start | editor,preview,picker,help | home
+line-end | editor,preview,picker,help | end
+select-line-start | editor | shift+home
+select-line-end | editor | shift+end
+document-start | editor | ctrl+home
+document-end | editor | ctrl+end
+select-document-start | editor | ctrl+shift+home
+select-document-end | editor | ctrl+shift+end
+viewport-up | editor,preview,picker,help | pageup
+viewport-down | editor,preview,picker,help | pagedown
+select-viewport-up | editor | shift+pageup
+select-viewport-down | editor | shift+pagedown
+word-left | editor | ctrl+left
+word-right | editor | ctrl+right
+select-word-left | editor | ctrl+shift+left
+select-word-right | editor | ctrl+shift+right
+paragraph-previous | editor | ctrl+up
+paragraph-next | editor | ctrl+down
+delete-backward | editor | backspace
+delete-forward | editor | delete
+delete-word-backward | editor | ctrl+backspace
+delete-word-forward | editor | ctrl+delete
+insert-newline | editor | enter
+indent | editor | tab
+unindent | editor | shift+tab
+toggle-overwrite | editor | insert
+select-all | editor | ctrl+a
+copy | editor | ctrl+c
+cut | editor | ctrl+x
+paste | editor | ctrl+v
+previous-buffer | editor | alt+pageup
+next-buffer | editor | alt+pagedown
+previous-page | editor | ctrl+pageup
+next-page | editor | ctrl+pagedown
+markdown-preview | editor,preview | f6
+line-numbers | editor | f7
+whitespace | editor | f8
+soft-wrap | editor | f9
+prompt-submit | prompt | enter
+prompt-cancel | prompt | esc
+prompt-delete-backward | prompt,search | backspace
+search-next | search | enter, down
+search-previous | search | up
+search-cancel | search | esc
+completion-next | completion | tab, ctrl+space
+completion-previous | completion | shift+tab
+completion-accept | completion | enter
+completion-cancel | completion | esc
+preview-accept | preview | enter
+preview-cancel | preview | esc
+picker-accept | picker | enter
+picker-cancel | picker | esc
+help-close | help | esc
+mouse-place-cursor | editor | mouse-left
+mouse-extend-selection | editor | mouse-left-drag
+mouse-finish-selection | editor | mouse-left-up
+mouse-select-word | editor | mouse-left-double
+mouse-scroll-up | editor,preview,picker,help | mouse-wheel-up
+mouse-scroll-down | editor,preview,picker,help | mouse-wheel-down
 ```
 
-Overrides apply in normal editing mode. Prompt, picker, preview, and completion
-keys remain local to the active interface.
+<!-- action-registry-end -->
 
 ## Shortcut reference
 
@@ -1048,12 +1231,12 @@ keys remain local to the active interface.
 | Editing | Select/copy/cut/paste | `Ctrl+A` / `Ctrl+C` / `Ctrl+X` / `Ctrl+V` |
 | Editing | Undo | `Ctrl+Z` |
 | Editing | Redo | `Ctrl+Y` / `Ctrl+Shift+Z` |
-| Editing | Toggle insert/overwrite typing | `Insert` |
 | Editing | Indent / unindent | `Tab` / `Shift+Tab` |
 | Editing | Delete previous / next word | `Ctrl+Backspace` / `Ctrl+Delete` |
 | Navigation | Move by word | `Ctrl+Left` / `Ctrl+Right` |
 | Navigation | Previous / next paragraph | `Ctrl+Up` / `Ctrl+Down` |
 | Navigation | Start / end of document | `Ctrl+Home` / `Ctrl+End` |
+| Editing | Toggle insert/overwrite mode | `Insert` |
 | Search | Find | `Ctrl+F` |
 | Search | Replace next | `Ctrl+Shift+F` |
 | Search | Go to line | `Ctrl+G` |
@@ -1076,6 +1259,7 @@ Open the prompt with `Ctrl+Shift+P` or `F2`. Do not add a leading colon.
 | Command | Aliases | Purpose / requirement |
 | --- | --- | --- |
 | `help` | `shortcuts` | Open built-in help |
+| `config` | — | Open the resolved user config; confirm before first creation |
 | `save` | `write`, `w` | Save active buffer |
 | `save as PATH` | `save-as PATH`, `saveas PATH` | Save to a new path |
 | `open PATH` | `edit PATH`, `e PATH` | Open path in a buffer |

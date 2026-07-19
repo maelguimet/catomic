@@ -41,6 +41,9 @@ pub fn teardown<W: Write>(w: &mut W) -> io::Result<()> {
     // Ignore errors: we are best-effort during panic paths.
     let _ = terminal::disable_raw_mode();
     let _ = cursor_style::restore(w);
+    // Reset SGR attributes and a configured OSC 12 cursor color before returning
+    // control to the user's shell. Both sequences are safe to repeat.
+    let _ = write!(w, "\x1b[0m\x1b]112\x07");
     let _ = execute!(
         w,
         event::DisableMouseCapture,
@@ -110,5 +113,17 @@ impl Drop for PanicRestoreGuard {
         if let Some(previous) = self.previous.lock().expect("panic hook mutex").take() {
             std::panic::set_hook(previous);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn teardown_resets_styles_and_cursor_color() {
+        let mut out = Vec::new();
+        super::teardown(&mut out).unwrap();
+        let output = String::from_utf8(out).unwrap();
+        assert!(output.contains("\x1b[0m"));
+        assert!(output.contains("\x1b]112\x07"));
     }
 }

@@ -169,6 +169,14 @@ pub(crate) fn is_viewing(app: &super::App) -> bool {
     app.project_files_view.is_some()
 }
 
+pub(super) fn is_active(app: &super::App) -> bool {
+    is_viewing(app)
+        || app
+            .project
+            .as_ref()
+            .is_some_and(crate::project::ProjectSession::is_discovery_running)
+}
+
 pub(crate) fn display_buffer(app: &super::App) -> Option<&dyn Buffer> {
     app.project_files_view
         .as_ref()

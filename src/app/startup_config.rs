@@ -11,6 +11,7 @@ use crate::config::cat::CatConfig;
 use crate::config::commands::CommandConfig;
 use crate::config::editor::EditorConfig;
 use crate::config::keybindings::KeyBindings;
+use crate::config::theme::Theme;
 use crate::config::view_preferences::ViewPreferences;
 
 #[derive(Clone)]
@@ -21,19 +22,29 @@ pub(super) struct StartupConfig {
     pub(super) keybindings: KeyBindings,
     pub(super) commands: CommandConfig,
     pub(super) cat: CatConfig,
+    pub(super) theme: Theme,
     pub(super) view_preferences: ViewPreferences,
 }
 
 impl StartupConfig {
     pub(super) fn load() -> io::Result<Self> {
+        let text = crate::config::user_file::read_optional()?.unwrap_or_default();
+        Self::from_snapshot(&text, crate::config::view_preferences::current_path())
+    }
+
+    fn from_snapshot(text: &str, preference_path: Option<std::path::PathBuf>) -> io::Result<Self> {
         Ok(Self {
-            big_files: crate::config::big_files::load()?,
-            auto_reload: crate::config::auto_reload::load()?,
-            editor: crate::config::editor::load()?,
-            keybindings: crate::config::keybindings::load()?,
-            commands: crate::config::commands::load()?,
-            cat: crate::config::cat::load()?,
-            view_preferences: crate::config::view_preferences::load()?,
+            big_files: crate::config::big_files::parse(text)?,
+            auto_reload: crate::config::auto_reload::parse(text)?,
+            editor: crate::config::editor::parse(text)?,
+            keybindings: crate::config::keybindings::parse(text)?,
+            commands: crate::config::commands::parse(text)?,
+            cat: crate::config::cat::parse(text)?,
+            theme: crate::config::theme::for_terminal(crate::config::theme::parse(text)?),
+            view_preferences: crate::config::view_preferences::load_with_config(
+                text,
+                preference_path,
+            )?,
         })
     }
 
@@ -45,6 +56,7 @@ impl StartupConfig {
             keybindings: app.keybindings.clone(),
             commands: app.command_config.clone(),
             cat: app.cat_config,
+            theme: app.theme,
             view_preferences: app.view_preferences.clone(),
         }
     }
@@ -60,7 +72,36 @@ impl Default for StartupConfig {
             keybindings: KeyBindings::default(),
             commands: CommandConfig::default(),
             cat: CatConfig::default(),
+            theme: Theme::default(),
             view_preferences: ViewPreferences::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn one_snapshot_populates_all_startup_sections_or_fails_as_a_unit() {
+        let config = StartupConfig::from_snapshot(
+            "[big_files]\npage_lines = 321\n[files]\nauto_reload = false\n\
+             [editor]\ntab_size = 2\n[view]\nline_numbers = true\n\
+             [theme]\nname = \"high-contrast\"\n",
+            None,
+        )
+        .unwrap();
+        assert_eq!(config.big_files.page_lines, 321);
+        assert!(!config.auto_reload);
+        assert_eq!(config.editor.tab_size_for_path(None), 2);
+        assert!(config.view_preferences.line_numbers());
+
+        let error = StartupConfig::from_snapshot(
+            "[files]\nauto_reload = false\n[theme]\nname = \"missing\"\n",
+            None,
+        )
+        .err()
+        .expect("one invalid recognized setting rejects the document");
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
     }
 }

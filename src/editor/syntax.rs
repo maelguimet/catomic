@@ -18,6 +18,7 @@ pub(crate) enum SyntaxKind {
     Rust,
     Python,
     Json,
+    Diff,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -31,6 +32,8 @@ pub(crate) enum SpanStyle {
     Comment,
     Number,
     Code,
+    DiffAdded,
+    DiffRemoved,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,7 +64,27 @@ pub(crate) fn spans_for_line(syntax: SyntaxKind, line: &str) -> Vec<StyledSpan> 
         SyntaxKind::Markdown => markdown::spans(line),
         SyntaxKind::MarkdownPreview => markdown::preview_spans(line),
         SyntaxKind::Rust | SyntaxKind::Python | SyntaxKind::Json => code::spans(syntax, line),
+        SyntaxKind::Diff => diff_spans(line),
     }
+}
+
+fn diff_spans(line: &str) -> Vec<StyledSpan> {
+    let style = if line.starts_with('+') && !line.starts_with("+++") {
+        Some(SpanStyle::DiffAdded)
+    } else if line.starts_with('-') && !line.starts_with("---") {
+        Some(SpanStyle::DiffRemoved)
+    } else {
+        None
+    };
+    style
+        .map(|style| {
+            vec![StyledSpan {
+                start: 0,
+                end: line.chars().count(),
+                style,
+            }]
+        })
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

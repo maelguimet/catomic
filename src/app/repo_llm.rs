@@ -280,6 +280,10 @@ pub(super) fn blocks_editing_input(app: &super::App) -> bool {
     )
 }
 
+pub(super) fn is_active(app: &super::App) -> bool {
+    app.repo_llm_state.is_some()
+}
+
 fn cancel_pending(app: &mut super::App) {
     app.repo_llm_state = None;
     app.message = Some("Repo LLM cancelled before sending; no network call made.".to_string());

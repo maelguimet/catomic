@@ -145,6 +145,10 @@ pub(crate) fn cancel_all(app: &mut super::App) -> bool {
     pending || running
 }
 
+pub(super) fn is_active(app: &super::App) -> bool {
+    app.pending_llm_request.is_some() || app.llm_task.is_some()
+}
+
 fn confirm(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     let pending = app.pending_llm_request.take().expect("pending request");
     if app.buffer.to_string() != pending.source_snapshot {

@@ -7,6 +7,7 @@
 use super::*;
 use crossterm::event::{KeyEventKind, KeyEventState};
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
     KeyEvent {
@@ -33,6 +34,58 @@ fn poll_until_done(app: &mut super::super::App, out: &mut Vec<u8>) {
         std::thread::yield_now();
     }
     panic!("goto worker did not finish");
+}
+
+fn config_fixture(label: &str) -> std::path::PathBuf {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    std::env::temp_dir().join(format!(
+        "catomic_command_config_{label}_{}_{nonce}/catomic/config.toml",
+        std::process::id()
+    ))
+}
+
+#[test]
+fn config_command_opens_the_exact_existing_path_as_an_editable_buffer() {
+    let path = config_fixture("existing");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "[editor]\ntab_size = 2\n").unwrap();
+    let mut app = super::super::App::new(None).unwrap();
+    let mut out = Vec::new();
+
+    execute_config_path(&mut app, &mut out, path.clone()).unwrap();
+
+    assert_eq!(app.file.path.as_deref(), Some(path.as_path()));
+    assert_eq!(app.buffer.to_string(), "[editor]\ntab_size = 2\n");
+    assert!(!app.buffer.is_read_only());
+    assert!(app.message.as_deref().unwrap().contains("Restart Catomic"));
+    std::fs::remove_dir_all(path.parent().unwrap().parent().unwrap()).unwrap();
+}
+
+#[test]
+fn missing_config_requires_confirmation_and_a_race_never_overwrites() {
+    let cancelled = config_fixture("cancelled");
+    let mut app = super::super::App::new(None).unwrap();
+    let mut out = Vec::new();
+    execute_config_path(&mut app, &mut out, cancelled.clone()).unwrap();
+    type_text(&mut app, &mut out, "no");
+    app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
+        .unwrap();
+    assert!(!cancelled.exists());
+
+    let raced = config_fixture("raced");
+    execute_config_path(&mut app, &mut out, raced.clone()).unwrap();
+    std::fs::create_dir_all(raced.parent().unwrap()).unwrap();
+    std::fs::write(&raced, "# raced user bytes\n").unwrap();
+    type_text(&mut app, &mut out, "yes");
+    app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
+        .unwrap();
+
+    assert_eq!(std::fs::read(&raced).unwrap(), b"# raced user bytes\n");
+    assert_eq!(app.file.path.as_deref(), Some(raced.as_path()));
+    std::fs::remove_dir_all(raced.parent().unwrap().parent().unwrap()).unwrap();
 }
 
 #[test]

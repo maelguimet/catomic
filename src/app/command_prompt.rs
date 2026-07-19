@@ -5,6 +5,7 @@
 //! Phase: 3-c command surface, extended for explicit Save As.
 
 use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -27,12 +28,12 @@ struct ActivePrompt {
     text: String,
 }
 
-#[derive(Clone, Copy)]
 enum PromptKind {
     GotoLine,
     Command,
     SaveAs,
     OpenFile,
+    CreateConfig(PathBuf),
 }
 
 pub(crate) fn open_goto_prompt(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
@@ -57,7 +58,7 @@ pub(super) fn is_active(app: &super::App) -> bool {
 
 fn open_prompt(app: &mut super::App, out: &mut dyn Write, kind: PromptKind) -> io::Result<()> {
     cancel_running(&mut app.command_prompt);
-    if !matches!(kind, PromptKind::Command) {
+    if !matches!(&kind, PromptKind::Command) {
         app.selection.clear();
     }
     app.command_prompt.active = Some(ActivePrompt {
@@ -111,11 +112,19 @@ fn update_message(app: &mut super::App) {
     let Some(prompt) = app.command_prompt.active.as_ref() else {
         return;
     };
-    let label = match prompt.kind {
+    let label = match &prompt.kind {
         PromptKind::GotoLine => "Goto line",
         PromptKind::Command => "Command",
         PromptKind::SaveAs => "Save as",
         PromptKind::OpenFile => "Open file",
+        PromptKind::CreateConfig(path) => {
+            app.message = Some(format!(
+                "Create {} from the documented template? Type yes to confirm: {}",
+                path.display(),
+                prompt.text
+            ));
+            return;
+        }
     };
     app.message = Some(format!("{label}: {}", prompt.text));
 }
@@ -131,6 +140,7 @@ fn submit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         PromptKind::Command => execute_command(app, out, prompt.text.trim()),
         PromptKind::SaveAs => super::save::handle_save_as(app, out, &prompt.text),
         PromptKind::OpenFile => execute_open(app, out, &prompt.text),
+        PromptKind::CreateConfig(path) => execute_config_create(app, out, path, &prompt.text),
     }
 }
 
@@ -156,6 +166,7 @@ fn execute_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> 
         (PromptCommand::New, "") => execute_new(app, out),
         (PromptCommand::Close, "") => execute_close(app, out, false),
         (PromptCommand::CloseDiscard, "") => execute_close(app, out, true),
+        (PromptCommand::Config, "") => execute_config(app, out),
         (PromptCommand::Help, "") => super::help::show(app, out),
         (PromptCommand::Replace, "") => super::replace::open_prompt(app, out, false),
         (PromptCommand::ReplaceAll, "") => super::replace::open_prompt(app, out, true),
@@ -212,13 +223,83 @@ fn execute_open(app: &mut super::App, out: &mut dyn Write, input: &str) -> io::R
             return app.render(out);
         }
     };
+    open_path(app, out, &path, "Opened")
+}
+
+fn open_path(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    path: &Path,
+    success_label: &str,
+) -> io::Result<()> {
     // The prompt is complete before open_file_buffer may swap this buffer into a slot.
     app.message = None;
-    match app.open_file_buffer(&path) {
-        Ok(true) => app.message = Some(format!("Opened {}.", path.display())),
+    match app.open_file_buffer(path) {
+        Ok(true) => app.message = Some(format!("{success_label} {}.", path.display())),
         Ok(false) => app.message = Some(format!("Already open: {}.", path.display())),
         Err(error) => app.message = Some(format!("Open error: {error}")),
     }
+    app.render(out)
+}
+
+fn execute_config(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    match crate::config::user_file::path() {
+        Ok(path) => execute_config_path(app, out, path),
+        Err(error) => {
+            app.message = Some(format!("Config error: {error}"));
+            app.render(out)
+        }
+    }
+}
+
+fn execute_config_path(app: &mut super::App, out: &mut dyn Write, path: PathBuf) -> io::Result<()> {
+    match std::fs::metadata(&path) {
+        Ok(metadata) if metadata.is_file() => open_config_path(app, out, &path),
+        Ok(_) => {
+            app.message = Some(format!(
+                "Config path is not a regular file: {}",
+                path.display()
+            ));
+            app.render(out)
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            open_prompt(app, out, PromptKind::CreateConfig(path))
+        }
+        Err(error) => {
+            app.message = Some(format!("Config error: {error}"));
+            app.render(out)
+        }
+    }
+}
+
+fn execute_config_create(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    path: PathBuf,
+    answer: &str,
+) -> io::Result<()> {
+    if !matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+        app.message = Some("Configuration creation cancelled; no file was written.".to_string());
+        return app.render(out);
+    }
+    match crate::config::user_file::create_template(&path) {
+        Ok(()) => open_config_path(app, out, &path),
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+            open_config_path(app, out, &path)
+        }
+        Err(error) => {
+            app.message = Some(format!("Config creation error: {error}"));
+            app.render(out)
+        }
+    }
+}
+
+fn open_config_path(app: &mut super::App, out: &mut dyn Write, path: &Path) -> io::Result<()> {
+    open_path(app, out, path, "Configuration opened")?;
+    app.message = Some(format!(
+        "Editing {}. Restart Catomic after saving to apply settings.",
+        path.display()
+    ));
     app.render(out)
 }
 

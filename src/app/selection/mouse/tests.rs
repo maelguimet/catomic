@@ -199,3 +199,49 @@ fn click_after_wrapped_wheel_scroll_maps_wide_content_from_wrap_origin() {
         }
     );
 }
+
+#[test]
+fn configured_mouse_gestures_are_remapped_and_defaults_can_be_unbound() {
+    let mut app = app_with("zero alpha!");
+    app.keybindings = crate::config::keybindings::parse(
+        "[keybindings]\nmouse-place-cursor = []\nmouse-select-word = [\"mouse-left\"]\n",
+    )
+    .unwrap();
+    let mut out = Vec::new();
+
+    handle_mouse(
+        &mut app,
+        &mut out,
+        event(MouseEventKind::Down(MouseButton::Left), 6, 0),
+    )
+    .unwrap();
+
+    assert_eq!(
+        app.selection.active().unwrap().ordered(),
+        (Cursor { row: 0, col: 5 }, Cursor { row: 0, col: 10 })
+    );
+}
+
+#[test]
+fn configured_wheel_gestures_change_direction_and_can_be_unbound() {
+    let text = (0..20)
+        .map(|row| format!("line-{row}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut app = app_with(&text);
+    app.screen.height = 5;
+    app.screen.scroll_top = 6;
+    app.keybindings = crate::config::keybindings::parse(
+        "[keybindings]\nmouse-scroll-up = []\nmouse-scroll-down = [\"mouse-wheel-up\"]\n",
+    )
+    .unwrap();
+    let mut out = Vec::new();
+
+    handle_mouse(&mut app, &mut out, event(MouseEventKind::ScrollUp, 0, 0)).unwrap();
+    assert_eq!(app.screen.scroll_top, 9, "remapped wheel moved down");
+
+    out.clear();
+    handle_mouse(&mut app, &mut out, event(MouseEventKind::ScrollDown, 0, 0)).unwrap();
+    assert_eq!(app.screen.scroll_top, 9, "unbound gesture did nothing");
+    assert!(out.is_empty());
+}

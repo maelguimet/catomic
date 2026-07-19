@@ -1,11 +1,12 @@
 //! Purpose: configure automatic reload of clean buffers after external edits.
-//! Owns: the default-on flag, typed TOML decoding, and config loading.
+//! Owns: the default-on flag and typed TOML decoding.
 //! Must not: construct watchers, open editor buffers, write config, or know UI.
 //! Invariants: missing config enables auto reload; only
 //!   `[files] auto_reload = true|false` affects this setting.
 //! Phase: 2-bx automatic external reload policy.
 
 use std::io;
+#[cfg(test)]
 use std::path::Path;
 
 use serde::Deserialize;
@@ -36,20 +37,12 @@ pub(crate) fn parse(text: &str) -> io::Result<bool> {
     Ok(super::decode::<ConfigFile>(text)?.files.auto_reload)
 }
 
-pub(crate) fn load_from(path: &Path) -> io::Result<bool> {
+#[cfg(test)]
+fn load_from(path: &Path) -> io::Result<bool> {
     match std::fs::read_to_string(path) {
         Ok(text) => parse(&text),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(DEFAULT_AUTO_RELOAD),
         Err(error) => Err(error),
-    }
-}
-
-pub(crate) fn load() -> io::Result<bool> {
-    let xdg = std::env::var_os("XDG_CONFIG_HOME");
-    let home = std::env::var_os("HOME");
-    match super::big_files::config_path(xdg.as_deref(), home.as_deref()) {
-        Some(path) => load_from(&path),
-        None => Ok(DEFAULT_AUTO_RELOAD),
     }
 }
 

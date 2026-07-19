@@ -1,149 +1,369 @@
-//! Purpose: decode simple key-chord overrides into existing canonical editor actions.
-//! Owns: chord parsing, action validation, and normal-mode key translation.
-//! Must not: dispatch editor commands, mutate App state, spawn work, or handle prompt-local keys.
-//! Invariants: one chord maps to one known action; translated keys reuse established handlers.
-//! Phase: 7 keybinding configuration.
+//! Purpose: build normalized, scoped shortcut maps from the central action registry.
+//! Owns: overrides/unbinding, scoped collision diagnostics, and key translation.
+//! Must not: dispatch App behavior, mutate user files, spawn work, or accept printable typing.
+//! Invariants: one normalized chord maps to one action per scope; global actions win.
+//! Phase: issue #62 complete shortcut customization.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io;
-use std::path::Path;
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::KeyEvent;
 use serde::Deserialize;
 
-use crate::help_catalog::{self, EditorAction};
+use super::actions::{self, Action, InputKind, Scope};
+use chord::{format_shortcut, parse_shortcut, validate_safe_key, KeyChord, ShortcutChord};
 
-#[derive(Clone, Debug, Default)]
+mod chord;
+pub(crate) use chord::MouseGesture;
+
+#[derive(Clone, Debug)]
 pub(crate) struct KeyBindings {
-    overrides: HashMap<KeyChord, EditorAction>,
+    keys: HashMap<(Scope, KeyChord), Action>,
+    mouse: HashMap<(Scope, MouseGesture), Action>,
+    default_keys: HashSet<(Scope, KeyChord)>,
 }
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
-struct KeyChord {
-    code: KeyCode,
-    modifiers: KeyModifiers,
+impl Default for KeyBindings {
+    fn default() -> Self {
+        Builder::defaults()
+            .map(Builder::finish)
+            .expect("the built-in action registry must be collision-free")
+    }
 }
 
 impl KeyBindings {
-    pub(crate) fn translate(&self, key: KeyEvent) -> KeyEvent {
-        self.overrides
-            .get(&KeyChord::from_event(key))
-            .map_or(key, |action| help_catalog::canonical_key(*action))
+    pub(crate) fn translate(&self, scope: Scope, key: KeyEvent) -> Option<KeyEvent> {
+        let chord = KeyChord::from_event(key);
+        let action = self
+            .keys
+            .get(&(Scope::Global, chord))
+            .or_else(|| self.keys.get(&(scope, chord)))
+            .copied();
+        if let Some(action) = action {
+            return Some(canonical_key(action, key));
+        }
+        let was_default = self.default_keys.contains(&(Scope::Global, chord))
+            || self.default_keys.contains(&(scope, chord));
+        (!was_default).then_some(key)
+    }
+
+    pub(crate) fn mouse_action(&self, scope: Scope, gesture: MouseGesture) -> Option<Action> {
+        self.mouse
+            .get(&(Scope::Global, gesture))
+            .or_else(|| self.mouse.get(&(scope, gesture)))
+            .copied()
     }
 }
 
-impl KeyChord {
-    fn from_event(key: KeyEvent) -> Self {
-        Self {
-            code: normalize_code(key.code),
-            modifiers: key.modifiers,
+struct Builder {
+    bindings: KeyBindings,
+    origins: HashMap<(Scope, ShortcutChord), (Action, String, bool)>,
+}
+
+#[derive(Clone, Copy)]
+enum InsertPolicy {
+    RejectCollision,
+    ReplaceDefault,
+}
+
+impl Builder {
+    fn defaults() -> io::Result<Self> {
+        let mut builder = Self {
+            bindings: KeyBindings {
+                keys: HashMap::new(),
+                mouse: HashMap::new(),
+                default_keys: HashSet::new(),
+            },
+            origins: HashMap::new(),
+        };
+        for entry in actions::REGISTRY {
+            for raw in entry.defaults {
+                let chord = parse_shortcut(raw)?;
+                validate_input(entry.action, chord, raw)?;
+                for scope in entry.scopes {
+                    builder.insert(
+                        *scope,
+                        chord,
+                        entry.action,
+                        raw,
+                        false,
+                        InsertPolicy::RejectCollision,
+                    )?;
+                    if let ShortcutChord::Key(key) = chord {
+                        builder.bindings.default_keys.insert((*scope, key));
+                    }
+                }
+            }
+        }
+        Ok(builder)
+    }
+
+    fn remove_action(&mut self, action: Action) {
+        self.bindings.keys.retain(|_, bound| *bound != action);
+        self.bindings.mouse.retain(|_, bound| *bound != action);
+        self.origins.retain(|_, (bound, _, _)| *bound != action);
+    }
+
+    fn insert(
+        &mut self,
+        scope: Scope,
+        chord: ShortcutChord,
+        action: Action,
+        raw: &str,
+        configured: bool,
+        policy: InsertPolicy,
+    ) -> io::Result<()> {
+        let key = (scope, chord);
+        let cross_scope_conflicts = self.cross_scope_conflicts(scope, chord);
+        if let Some((_, report_scope, other, other_raw, _)) =
+            cross_scope_conflicts
+                .iter()
+                .find(|(_, _, _, _, configured)| {
+                    !matches!(policy, InsertPolicy::ReplaceDefault) || *configured
+                })
+        {
+            return Err(collision(
+                *report_scope,
+                *other,
+                other_raw,
+                action,
+                raw,
+                chord,
+            ));
+        }
+        for (stored_scope, _, _, _, _) in cross_scope_conflicts {
+            self.remove_chord(stored_scope, chord);
+        }
+        if let Some((other, other_raw, other_configured)) = self.origins.get(&key) {
+            let replaces_default =
+                matches!(policy, InsertPolicy::ReplaceDefault) && !other_configured;
+            if !replaces_default {
+                return Err(collision(scope, *other, other_raw, action, raw, chord));
+            }
+        }
+        self.origins
+            .insert(key, (action, raw.to_string(), configured));
+        match chord {
+            ShortcutChord::Key(chord) => {
+                self.bindings.keys.insert((scope, chord), action);
+            }
+            ShortcutChord::Mouse(gesture) => {
+                self.bindings.mouse.insert((scope, gesture), action);
+            }
+        }
+        Ok(())
+    }
+
+    fn cross_scope_conflicts(
+        &self,
+        scope: Scope,
+        chord: ShortcutChord,
+    ) -> Vec<(Scope, Scope, Action, String, bool)> {
+        const LOCAL_SCOPES: &[Scope] = &[
+            Scope::Editor,
+            Scope::Prompt,
+            Scope::Search,
+            Scope::Completion,
+            Scope::Preview,
+            Scope::Picker,
+            Scope::Help,
+        ];
+        if scope == Scope::Global {
+            return LOCAL_SCOPES
+                .iter()
+                .filter_map(|local| {
+                    self.origins
+                        .get(&(*local, chord))
+                        .map(|(action, raw, configured)| {
+                            (*local, *local, *action, raw.clone(), *configured)
+                        })
+                })
+                .collect();
+        }
+        self.origins
+            .get(&(Scope::Global, chord))
+            .map(|(action, raw, configured)| {
+                vec![(Scope::Global, scope, *action, raw.clone(), *configured)]
+            })
+            .unwrap_or_default()
+    }
+
+    fn remove_chord(&mut self, scope: Scope, chord: ShortcutChord) {
+        self.origins.remove(&(scope, chord));
+        match chord {
+            ShortcutChord::Key(key) => {
+                self.bindings.keys.remove(&(scope, key));
+            }
+            ShortcutChord::Mouse(gesture) => {
+                self.bindings.mouse.remove(&(scope, gesture));
+            }
         }
     }
+
+    fn finish(self) -> KeyBindings {
+        self.bindings
+    }
+}
+
+struct ActionOverride {
+    action: Action,
+    chords: Vec<(ShortcutChord, String)>,
+}
+
+struct LegacyOverride {
+    chord: ShortcutChord,
+    raw_chord: String,
+    action: Action,
 }
 
 pub(crate) fn parse(text: &str) -> io::Result<KeyBindings> {
     #[derive(Default, Deserialize)]
     struct ConfigFile {
         #[serde(default)]
-        keybindings: HashMap<String, String>,
+        keybindings: toml::Table,
     }
 
-    let mut overrides = HashMap::new();
-    for (raw_chord, raw_action) in super::decode::<ConfigFile>(text)?.keybindings {
-        let chord = parse_chord(&raw_chord)?;
-        let action = help_catalog::editor_action(&raw_action)
-            .ok_or_else(|| invalid(format!("unknown keybinding action {raw_action:?}")))?;
-        if overrides.insert(chord, action).is_some() {
-            return Err(invalid(format!(
-                "duplicate keybinding chord after normalization: {raw_chord:?}"
-            )));
-        }
+    let table = super::decode::<ConfigFile>(text)?.keybindings;
+    let (action_overrides, legacy_overrides) = decode_overrides(table)?;
+    let mut builder = Builder::defaults()?;
+    for configured in &action_overrides {
+        builder.remove_action(configured.action);
     }
-    Ok(KeyBindings { overrides })
-}
-
-pub(crate) fn load_from(path: &Path) -> io::Result<KeyBindings> {
-    match std::fs::read_to_string(path) {
-        Ok(text) => parse(&text),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(KeyBindings::default()),
-        Err(error) => Err(error),
-    }
-}
-
-pub(crate) fn load() -> io::Result<KeyBindings> {
-    let xdg = std::env::var_os("XDG_CONFIG_HOME");
-    let home = std::env::var_os("HOME");
-    match super::big_files::config_path(xdg.as_deref(), home.as_deref()) {
-        Some(path) => load_from(&path),
-        None => Ok(KeyBindings::default()),
-    }
-}
-
-fn parse_chord(raw: &str) -> io::Result<KeyChord> {
-    let mut modifiers = KeyModifiers::NONE;
-    let mut code = None;
-    for token in raw.split('+').map(str::trim) {
-        let normalized = token.to_ascii_lowercase();
-        let modifier = match normalized.as_str() {
-            "ctrl" | "control" => Some(KeyModifiers::CONTROL),
-            "alt" => Some(KeyModifiers::ALT),
-            "shift" => Some(KeyModifiers::SHIFT),
-            _ => None,
-        };
-        if let Some(modifier) = modifier {
-            if modifiers.contains(modifier) {
-                return Err(invalid(format!("duplicate modifier in {raw:?}")));
+    for configured in action_overrides {
+        let descriptor = actions::descriptor(configured.action);
+        for (chord, raw) in configured.chords {
+            for scope in descriptor.scopes {
+                builder.insert(
+                    *scope,
+                    chord,
+                    configured.action,
+                    &raw,
+                    true,
+                    InsertPolicy::RejectCollision,
+                )?;
             }
-            modifiers.insert(modifier);
-        } else if code.replace(parse_code(&normalized)?).is_some() {
-            return Err(invalid(format!("multiple keys in chord {raw:?}")));
         }
     }
-    Ok(KeyChord {
-        code: code.ok_or_else(|| invalid(format!("missing key in chord {raw:?}")))?,
-        modifiers,
+    for configured in legacy_overrides {
+        let descriptor = actions::descriptor(configured.action);
+        for scope in descriptor.scopes {
+            builder.insert(
+                *scope,
+                configured.chord,
+                configured.action,
+                &configured.raw_chord,
+                true,
+                InsertPolicy::ReplaceDefault,
+            )?;
+        }
+    }
+    Ok(builder.finish())
+}
+
+fn decode_overrides(table: toml::Table) -> io::Result<(Vec<ActionOverride>, Vec<LegacyOverride>)> {
+    let mut actions_out = Vec::new();
+    let mut legacy_out = Vec::new();
+    for (raw_name, value) in table {
+        if let Some(action) = actions::parse_action(&raw_name) {
+            let values = value.as_array().ok_or_else(|| {
+                invalid(format!(
+                    "keybindings.{raw_name} must be an array of chords; use [] to unbind"
+                ))
+            })?;
+            let mut chords = Vec::new();
+            for value in values {
+                let raw = value.as_str().ok_or_else(|| {
+                    invalid(format!("keybindings.{raw_name} chords must be strings"))
+                })?;
+                let chord = parse_shortcut(raw)?;
+                validate_input(action, chord, raw)?;
+                validate_safe_key(chord, raw)?;
+                chords.push((chord, raw.to_string()));
+            }
+            actions_out.push(ActionOverride { action, chords });
+            continue;
+        }
+        let raw_action = value.as_str().ok_or_else(|| {
+            invalid(format!(
+                "unknown keybinding action {raw_name:?}; legacy chord keys require a string action"
+            ))
+        })?;
+        let action = actions::parse_action(raw_action)
+            .ok_or_else(|| invalid(format!("unknown keybinding action {raw_action:?}")))?;
+        let chord = parse_shortcut(&raw_name)?;
+        validate_input(action, chord, &raw_name)?;
+        validate_safe_key(chord, &raw_name)?;
+        legacy_out.push(LegacyOverride {
+            chord,
+            raw_chord: raw_name,
+            action,
+        });
+    }
+    Ok((actions_out, legacy_out))
+}
+
+fn canonical_key(action: Action, original: KeyEvent) -> KeyEvent {
+    let descriptor = actions::descriptor(action);
+    let chord = descriptor
+        .defaults
+        .iter()
+        .find_map(
+            |raw| match parse_shortcut(raw).expect("validated registry chord") {
+                ShortcutChord::Key(key) => Some(key),
+                ShortcutChord::Mouse(_) => None,
+            },
+        )
+        .expect("keyboard action requires a keyboard default");
+    KeyEvent {
+        code: chord.code,
+        modifiers: chord.modifiers,
+        ..original
+    }
+}
+
+fn validate_input(action: Action, chord: ShortcutChord, raw: &str) -> io::Result<()> {
+    let valid = matches!(
+        (actions::descriptor(action).input, chord),
+        (InputKind::Keyboard, ShortcutChord::Key(_))
+            | (
+                InputKind::MouseButton,
+                ShortcutChord::Mouse(
+                    MouseGesture::Left
+                        | MouseGesture::LeftDrag
+                        | MouseGesture::LeftUp
+                        | MouseGesture::LeftDouble,
+                ),
+            )
+            | (
+                InputKind::MouseWheel,
+                ShortcutChord::Mouse(MouseGesture::ScrollUp | MouseGesture::ScrollDown),
+            )
+    );
+    valid.then_some(()).ok_or_else(|| {
+        invalid(format!(
+            "action {:?} cannot use chord {raw:?}",
+            actions::descriptor(action).name
+        ))
     })
 }
 
-fn parse_code(name: &str) -> io::Result<KeyCode> {
-    let code = match name {
-        "space" => KeyCode::Char(' '),
-        "tab" => KeyCode::Tab,
-        "enter" => KeyCode::Enter,
-        "esc" | "escape" => KeyCode::Esc,
-        "backspace" => KeyCode::Backspace,
-        "delete" => KeyCode::Delete,
-        "insert" => KeyCode::Insert,
-        "left" => KeyCode::Left,
-        "right" => KeyCode::Right,
-        "up" => KeyCode::Up,
-        "down" => KeyCode::Down,
-        "pageup" => KeyCode::PageUp,
-        "pagedown" => KeyCode::PageDown,
-        "home" => KeyCode::Home,
-        "end" => KeyCode::End,
-        _ if name.chars().count() == 1 => KeyCode::Char(name.chars().next().unwrap()),
-        _ if name.starts_with('f') => parse_function_key(name)?,
-        _ => return Err(invalid(format!("unknown key {name:?}"))),
-    };
-    Ok(code)
-}
-
-fn parse_function_key(name: &str) -> io::Result<KeyCode> {
-    let number = name[1..]
-        .parse::<u8>()
-        .map_err(|_| invalid(format!("unknown key {name:?}")))?;
-    if !(1..=12).contains(&number) {
-        return Err(invalid("function key must be f1 through f12"));
-    }
-    Ok(KeyCode::F(number))
-}
-
-fn normalize_code(code: KeyCode) -> KeyCode {
-    match code {
-        KeyCode::Char(ch) if ch.is_ascii_uppercase() => KeyCode::Char(ch.to_ascii_lowercase()),
-        other => other,
-    }
+fn collision(
+    scope: Scope,
+    first: Action,
+    first_raw: &str,
+    second: Action,
+    second_raw: &str,
+    chord: ShortcutChord,
+) -> io::Error {
+    invalid(format!(
+        "keybinding collision in {}: action {:?} chord {:?} conflicts with action {:?} chord {:?} after normalization to {:?}",
+        scope.name(),
+        actions::descriptor(first).name,
+        first_raw,
+        actions::descriptor(second).name,
+        second_raw,
+        format_shortcut(chord)
+    ))
 }
 
 fn invalid(message: impl Into<String>) -> io::Error {
@@ -151,83 +371,5 @@ fn invalid(message: impl Into<String>) -> io::Error {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn missing_configuration_keeps_keys_unchanged() {
-        let key = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL);
-
-        assert_eq!(KeyBindings::default().translate(key), key);
-    }
-
-    #[test]
-    fn configured_chords_translate_to_canonical_actions() {
-        let bindings = parse(
-            "[keybindings]\n\"ctrl+w\" = \"save\"\n\"alt+s\" = \"save-as\"\n\"alt+shift+p\" = \"command-prompt\"\n\"alt+i\" = \"toggle-overwrite\"\n",
-        )
-        .unwrap();
-
-        assert_eq!(
-            bindings.translate(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL)),
-            KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL)
-        );
-        assert_eq!(
-            bindings.translate(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::ALT)),
-            KeyEvent::new(
-                KeyCode::Char('s'),
-                KeyModifiers::CONTROL | KeyModifiers::SHIFT
-            )
-        );
-        assert_eq!(
-            bindings.translate(KeyEvent::new(
-                KeyCode::Char('P'),
-                KeyModifiers::ALT | KeyModifiers::SHIFT
-            )),
-            KeyEvent::new(
-                KeyCode::Char('p'),
-                KeyModifiers::CONTROL | KeyModifiers::SHIFT
-            )
-        );
-        assert_eq!(
-            bindings.translate(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::ALT)),
-            KeyEvent::new(KeyCode::Insert, KeyModifiers::NONE)
-        );
-    }
-
-    #[test]
-    fn insert_key_can_be_remapped_to_another_action() {
-        let bindings = parse("[keybindings]\ninsert = \"save\"\n").unwrap();
-
-        assert_eq!(
-            bindings.translate(KeyEvent::new(KeyCode::Insert, KeyModifiers::NONE)),
-            KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL)
-        );
-    }
-
-    #[test]
-    fn rejects_unknown_actions_and_ambiguous_chords() {
-        for text in [
-            "[keybindings]\n\"ctrl+x\" = \"explode\"\n",
-            "[keybindings]\n\"ctrl+ctrl+x\" = \"save\"\n",
-            "[keybindings]\n\"ctrl+x+y\" = \"save\"\n",
-            "[keybindings]\n\"ctrl+f13\" = \"save\"\n",
-        ] {
-            assert_eq!(parse(text).unwrap_err().kind(), io::ErrorKind::InvalidData);
-        }
-    }
-
-    #[test]
-    fn rejects_duplicate_chords_after_normalization() {
-        for text in [
-            "[keybindings]\n\"ctrl+a\" = \"save\"\n\"ctrl+A\" = \"quit\"\n",
-            "[keybindings]\n\"ctrl+a\" = \"save\"\n\"control+a\" = \"quit\"\n",
-            "[keybindings]\n\"F2\" = \"save\"\n\"f2\" = \"quit\"\n",
-            "[keybindings]\n\"esc\" = \"save\"\n\"escape\" = \"quit\"\n",
-        ] {
-            let error = parse(text).expect_err("normalized duplicate must fail closed");
-            assert_eq!(error.kind(), io::ErrorKind::InvalidData);
-            assert!(error.to_string().contains("duplicate keybinding chord"));
-        }
-    }
-}
+#[path = "keybindings/tests.rs"]
+mod tests;

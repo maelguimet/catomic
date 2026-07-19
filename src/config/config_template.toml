@@ -1,0 +1,93 @@
+# Catomic configuration
+#
+# This file is user-owned. Catomic never rewrites or migrates it automatically.
+# Unknown keys are kept for forward compatibility because Catomic only reads
+# configuration. Restart Catomic after saving; settings are applied as one
+# validated document at startup, never partially.
+
+[editor]
+# Number of spaces in one indentation level (1-16).
+tab_size = 4
+
+[big_files]
+# Logical lines retained in each editable oversized-file page.
+page_lines = 20_000
+
+[files]
+# Clean files may reload after a verified external change. Dirty files never do.
+auto_reload = true
+
+[cat]
+status_messages = true
+
+[recovery]
+# Recovery sidecars are private, bounded, and disabled until explicitly enabled.
+enabled = false
+interval_secs = 30
+max_bytes = 1_048_576
+
+[theme]
+# Built-ins: "default", "high-contrast", and "mono".
+name = "default"
+
+[theme.colors]
+# Each role accepts "default", a 16-color name, a 0-255 index, #RRGGBB,
+# rgb(R,G,B), or a { fg, bg, bold, dim, underline, reverse } table. RGB falls back safely when
+# truecolor is not advertised by the terminal.
+text = "default"
+background = "default"
+cursor = "default"
+selection = { fg = "black", bg = "cyan" }
+line_number = "bright-black"
+status = { fg = "black", bg = "white" }
+message = { fg = "black", bg = "bright-cyan" }
+status_warning = { fg = "black", bg = "bright-yellow", bold = true }
+status_prompt = { fg = "bright-white", bg = "blue", bold = true }
+error = { fg = "bright-white", bg = "red" }
+markdown_heading = "bright-blue"
+markdown_emphasis = "magenta"
+markdown_code = "green"
+markdown_marker = "bright-cyan"
+markdown_link = "bright-blue"
+syntax_keyword = "magenta"
+syntax_string = "green"
+syntax_comment = "bright-black"
+syntax_number = "yellow"
+search_match = { fg = "black", bg = "yellow" }
+diff_added = "green"
+diff_removed = "red"
+preview = "default"
+
+# Action-oriented keybindings replace an action's complete default chord list.
+# An empty list unbinds an action. Plain printable keys are rejected so a typo
+# cannot turn normal typing into a command. Run `catomic config check` to verify.
+#
+# [keybindings]
+# save = ["ctrl+s", "alt+s"]
+# help = []
+# command-prompt = ["ctrl+shift+p", "f2"]
+
+# Extension names are normalized and may include or omit a leading dot.
+# [languages.rs]
+# tab_size = 4
+# linter = "cargo check --message-format short {file}"
+
+# Named commands run only after `run NAME` (or an explicit configured hook).
+# They are trusted shell commands, not a sandbox.
+# [commands.upper]
+# command = "tr '[:lower:]' '[:upper:]'"
+# input = "selection"
+# output = "replace-input"
+# timeout_secs = 10
+
+[hooks]
+on_open = []
+on_save = []
+before_llm = []
+
+# Model settings are inert until an explicit model command and confirmation.
+# [llm]
+# base_url = "http://127.0.0.1:8080/v1"
+# model = "local-model"
+# api_key_env = "OPENAI_API_KEY"
+# timeout_secs = 120

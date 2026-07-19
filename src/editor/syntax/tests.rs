@@ -53,6 +53,28 @@ fn markdown_styles_headings_markers_fences_and_inline_code() {
         spans_for_line(SyntaxKind::Markdown, "```rust"),
         vec![span(0, 7, SpanStyle::Code)]
     );
+    assert_eq!(
+        spans_for_line(SyntaxKind::Markdown, "read *this* now"),
+        vec![span(5, 11, SpanStyle::Emphasis)]
+    );
+    assert_eq!(
+        spans_for_line(SyntaxKind::Markdown, "read **bold** now"),
+        vec![span(5, 13, SpanStyle::Emphasis)]
+    );
+}
+
+#[test]
+fn diff_styles_only_content_additions_and_removals() {
+    assert_eq!(
+        spans_for_line(SyntaxKind::Diff, "+added 猫"),
+        vec![span(0, 8, SpanStyle::DiffAdded)]
+    );
+    assert_eq!(
+        spans_for_line(SyntaxKind::Diff, "-removed"),
+        vec![span(0, 8, SpanStyle::DiffRemoved)]
+    );
+    assert!(spans_for_line(SyntaxKind::Diff, "+++ b/file").is_empty());
+    assert!(spans_for_line(SyntaxKind::Diff, "--- a/file").is_empty());
 }
 
 #[test]

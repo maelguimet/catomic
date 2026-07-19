@@ -1,11 +1,10 @@
 //! Purpose: configure small cat-themed presentation and bounded recovery policy.
-//! Owns: the default-on status badge plus opt-in `.catnap` limits and TOML loading.
+//! Owns: the default-on status badge plus opt-in `.catnap` limits and TOML decoding.
 //! Must not: mutate editor state, write files, inspect buffers, or start background work.
 //! Invariants: recovery is disabled by default and every enabled workload is bounded.
 //! Phase: 8 cat polish and recovery.
 
 use std::io;
-use std::path::Path;
 
 use serde::Deserialize;
 
@@ -109,23 +108,6 @@ fn validate_recovery(interval_secs: u64, max_bytes: usize) -> io::Result<()> {
         ));
     }
     Ok(())
-}
-
-pub(crate) fn load_from(path: &Path) -> io::Result<CatConfig> {
-    match std::fs::read_to_string(path) {
-        Ok(text) => parse(&text),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(CatConfig::default()),
-        Err(error) => Err(error),
-    }
-}
-
-pub(crate) fn load() -> io::Result<CatConfig> {
-    let xdg = std::env::var_os("XDG_CONFIG_HOME");
-    let home = std::env::var_os("HOME");
-    match super::big_files::config_path(xdg.as_deref(), home.as_deref()) {
-        Some(path) => load_from(&path),
-        None => Ok(CatConfig::default()),
-    }
 }
 
 #[cfg(test)]

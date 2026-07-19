@@ -278,14 +278,25 @@ fn write_rows<W: Write + ?Sized>(
     options: RenderOptions,
 ) -> io::Result<()> {
     for screen_row in 1..=height {
-        write!(out, "\x1b[{screen_row};1H\x1b[K")?;
+        super::style::write_row_start(
+            out,
+            screen_row,
+            options.theme.text,
+            options.theme.truecolor,
+        )?;
         let Some(row) = rows.get(screen_row - 1) else {
             continue;
         };
         if gutter > 0 && row.start_col == 0 {
-            write_line_number(out, row.document_row, gutter)?;
+            write_line_number(out, row.document_row, gutter, options.theme)?;
         } else if gutter > 0 {
-            write!(out, "{:gutter$}", "")?;
+            let blank = " ".repeat(gutter);
+            super::style::write_styled_text(
+                out,
+                &blank,
+                options.theme.text.overlay(options.theme.line_number),
+                options.theme.truecolor,
+            )?;
         }
         super::style::write_content_line(
             out,

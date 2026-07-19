@@ -96,7 +96,9 @@ pub(crate) fn source_is_displayed(app: &super::App) -> bool {
 }
 
 pub(crate) fn display_syntax(app: &super::App) -> SyntaxKind {
-    if super::help::is_viewing(app)
+    if super::llm_preview::is_viewing(app) {
+        SyntaxKind::Diff
+    } else if super::help::is_viewing(app)
         || super::recovery::is_viewing(app)
         || super::external_command::is_viewing(app)
         || super::llm_preview::is_viewing(app)
@@ -109,6 +111,24 @@ pub(crate) fn display_syntax(app: &super::App) -> SyntaxKind {
         SyntaxKind::MarkdownPreview
     } else {
         syntax::syntax_for_path(app.file.path.as_deref())
+    }
+}
+
+pub(crate) fn display_surface(app: &super::App) -> crate::terminal::render::ContentSurface {
+    use crate::terminal::render::ContentSurface;
+    if super::llm_preview::is_viewing(app) {
+        ContentSurface::Diff
+    } else if super::help::is_viewing(app)
+        || super::recovery::is_viewing(app)
+        || super::external_command::is_viewing(app)
+        || super::llm_answer::is_viewing(app)
+        || super::lint::is_viewing(app)
+        || super::project_files::is_viewing(app)
+        || is_preview(app)
+    {
+        ContentSurface::Preview
+    } else {
+        ContentSurface::Normal
     }
 }
 

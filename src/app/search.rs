@@ -316,7 +316,7 @@ mod tests {
         assert!(app.search.prompt.is_some(), "search stays active");
         assert!(String::from_utf8(out)
             .unwrap()
-            .contains("\x1b[7mtarget\x1b[27m"));
+            .contains("\x1b[30;43mtarget\x1b[0m"));
     }
 
     #[test]

@@ -12,6 +12,7 @@ pub(crate) const EXIT_USAGE: i32 = 2;
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Action {
+    Config(ConfigAction),
     Help,
     Version,
     UpdateHelp,
@@ -24,6 +25,13 @@ pub(crate) enum Action {
 pub(crate) struct RunOptions {
     pub(crate) files: Vec<String>,
     pub(crate) allow_missing: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ConfigAction {
+    Path,
+    Edit,
+    Check,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -39,10 +47,24 @@ where
     S: Into<OsString>,
 {
     let args = utf8_args(args)?;
+    if args.first().is_some_and(|arg| arg == "config") {
+        return parse_config(&args[1..]);
+    }
     if args.first().is_some_and(|arg| arg == "update") {
         return parse_update(&args[1..]);
     }
     parse_files(args)
+}
+
+fn parse_config(args: &[String]) -> Result<Action, String> {
+    let action = match args {
+        [command] if command == "path" => ConfigAction::Path,
+        [command] if command == "edit" => ConfigAction::Edit,
+        [command] if command == "check" => ConfigAction::Check,
+        [] => return Err("config requires one of: path, edit, check".to_string()),
+        _ => return Err(format!("unknown config command {:?}", args.join(" "))),
+    };
+    Ok(Action::Config(action))
 }
 
 fn utf8_args<I, S>(args: I) -> Result<Vec<String>, String>
@@ -139,6 +161,25 @@ mod tests {
             parse(["notes", "update"]).unwrap(),
             run(&["notes", "update"], false)
         );
+    }
+
+    #[test]
+    fn parses_config_discovery_commands_only_as_a_first_argument_subcommand() {
+        assert_eq!(
+            parse(["config", "path"]).unwrap(),
+            Action::Config(ConfigAction::Path)
+        );
+        assert_eq!(
+            parse(["config", "edit"]).unwrap(),
+            Action::Config(ConfigAction::Edit)
+        );
+        assert_eq!(
+            parse(["config", "check"]).unwrap(),
+            Action::Config(ConfigAction::Check)
+        );
+        assert!(parse(["config"]).is_err());
+        assert!(parse(["config", "wat"]).is_err());
+        assert_eq!(parse(["--", "config"]).unwrap(), run(&["config"], false));
     }
 
     #[test]

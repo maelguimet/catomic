@@ -10,6 +10,8 @@ use std::time::{Duration, Instant};
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 
 use crate::buffer::Cursor;
+use crate::config::actions::Action;
+use crate::config::keybindings::MouseGesture;
 use crate::editor::selection::{word_bounds, Selection};
 use crate::editor::text_layout;
 
@@ -22,20 +24,10 @@ pub(crate) fn handle_mouse(
 ) -> io::Result<()> {
     match event.kind {
         MouseEventKind::ScrollUp => {
-            return super::super::viewport::handle_mouse_wheel(
-                app,
-                out,
-                super::super::viewport::ScrollDirection::Up,
-                event.row as usize,
-            );
+            return dispatch_scroll(app, out, MouseGesture::ScrollUp, event)
         }
         MouseEventKind::ScrollDown => {
-            return super::super::viewport::handle_mouse_wheel(
-                app,
-                out,
-                super::super::viewport::ScrollDirection::Down,
-                event.row as usize,
-            );
+            return dispatch_scroll(app, out, MouseGesture::ScrollDown, event);
         }
         _ => {}
     }
@@ -50,10 +42,32 @@ pub(crate) fn handle_mouse(
     }
     match event.kind {
         MouseEventKind::Down(MouseButton::Left) => mouse_down(app, out, event),
-        MouseEventKind::Drag(MouseButton::Left) => mouse_drag(app, out, event),
-        MouseEventKind::Up(MouseButton::Left) => mouse_up(app, out, event),
+        MouseEventKind::Drag(MouseButton::Left) => {
+            dispatch_gesture(app, out, event, MouseGesture::LeftDrag, true)
+        }
+        MouseEventKind::Up(MouseButton::Left) => {
+            dispatch_gesture(app, out, event, MouseGesture::LeftUp, true)
+        }
         _ => Ok(()),
     }
+}
+
+fn dispatch_scroll(
+    app: &mut super::super::App,
+    out: &mut dyn Write,
+    gesture: MouseGesture,
+    event: MouseEvent,
+) -> io::Result<()> {
+    let scope = super::super::input::active_scope(app);
+    let Some(action) = app.keybindings.mouse_action(scope, gesture) else {
+        return Ok(());
+    };
+    let direction = match action {
+        Action::MouseScrollUp => super::super::viewport::ScrollDirection::Up,
+        Action::MouseScrollDown => super::super::viewport::ScrollDirection::Down,
+        _ => unreachable!("wheel gestures map only to wheel actions"),
+    };
+    super::super::viewport::handle_mouse_wheel(app, out, direction, event.row as usize)
 }
 
 fn mouse_down(
@@ -68,45 +82,69 @@ fn mouse_down(
     let is_double = app.selection.last_click.is_some_and(|(last, at)| {
         last == cursor && now.saturating_duration_since(at) <= DOUBLE_CLICK_WINDOW
     });
-    if is_double {
-        select_word(app, cursor);
-        app.selection.last_click = None;
-        app.selection.drag_anchor = None;
+    let gesture = if is_double {
+        MouseGesture::LeftDouble
     } else {
-        app.buffer.set_cursor(cursor);
-        app.selection.range = None;
-        app.selection.drag_anchor = Some(cursor);
-        app.selection.last_click = Some((cursor, now));
-    }
-    app.reveal_cursor();
-    app.render(out)
+        MouseGesture::Left
+    };
+    dispatch_action(app, out, cursor, gesture, now)
 }
 
-fn mouse_drag(
+fn dispatch_gesture(
     app: &mut super::super::App,
     out: &mut dyn Write,
     event: MouseEvent,
+    gesture: MouseGesture,
+    clamp_status_row: bool,
 ) -> io::Result<()> {
-    let Some(anchor) = app.selection.drag_anchor else {
+    let Some(cursor) = map_mouse_cursor(app, event, clamp_status_row)? else {
         return Ok(());
     };
-    let Some(cursor) = map_mouse_cursor(app, event, true)? else {
-        return Ok(());
-    };
-    app.buffer.set_cursor(cursor);
-    app.selection.range = Some(Selection::new(anchor, app.buffer.cursor()));
-    app.reveal_cursor();
-    app.render(out)
+    dispatch_action(app, out, cursor, gesture, Instant::now())
 }
 
-fn mouse_up(app: &mut super::super::App, out: &mut dyn Write, event: MouseEvent) -> io::Result<()> {
-    let Some(anchor) = app.selection.drag_anchor.take() else {
+fn dispatch_action(
+    app: &mut super::super::App,
+    out: &mut dyn Write,
+    cursor: Cursor,
+    gesture: MouseGesture,
+    now: Instant,
+) -> io::Result<()> {
+    let Some(action) = app
+        .keybindings
+        .mouse_action(crate::config::actions::Scope::Editor, gesture)
+    else {
         return Ok(());
     };
-    let cursor = map_mouse_cursor(app, event, true)?.unwrap_or_else(|| app.buffer.cursor());
-    app.buffer.set_cursor(cursor);
-    let selection = Selection::new(anchor, app.buffer.cursor());
-    app.selection.range = (!selection.is_empty()).then_some(selection);
+    match action {
+        Action::MousePlaceCursor => {
+            app.buffer.set_cursor(cursor);
+            app.selection.range = None;
+            app.selection.drag_anchor = Some(cursor);
+            app.selection.last_click = Some((cursor, now));
+        }
+        Action::MouseSelectWord => {
+            select_word(app, cursor);
+            app.selection.last_click = None;
+            app.selection.drag_anchor = None;
+        }
+        Action::MouseExtendSelection => {
+            let Some(anchor) = app.selection.drag_anchor else {
+                return Ok(());
+            };
+            app.buffer.set_cursor(cursor);
+            app.selection.range = Some(Selection::new(anchor, app.buffer.cursor()));
+        }
+        Action::MouseFinishSelection => {
+            let Some(anchor) = app.selection.drag_anchor.take() else {
+                return Ok(());
+            };
+            app.buffer.set_cursor(cursor);
+            let selection = Selection::new(anchor, app.buffer.cursor());
+            app.selection.range = (!selection.is_empty()).then_some(selection);
+        }
+        _ => unreachable!("mouse maps contain only mouse actions"),
+    }
     app.reveal_cursor();
     app.render(out)
 }

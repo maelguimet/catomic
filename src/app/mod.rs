@@ -20,6 +20,7 @@ use crate::config::cat::CatConfig;
 use crate::config::commands::CommandConfig;
 use crate::config::editor::EditorConfig;
 use crate::config::keybindings::KeyBindings;
+use crate::config::view_preferences::ViewPreferences;
 use crate::file;
 
 use crate::mode::{Capabilities, Mode};
@@ -49,6 +50,7 @@ mod repo_llm;
 mod save;
 mod search;
 mod selection;
+mod startup_config;
 mod status;
 mod undo_redo;
 mod view;
@@ -61,6 +63,8 @@ mod llm_answer;
 mod llm_preview;
 mod llm_request;
 mod navigation;
+
+use startup_config::StartupConfig;
 
 /// High-level application state for the editor.
 pub struct App {
@@ -83,6 +87,9 @@ pub struct App {
     pub(crate) cat_config: CatConfig,
     /// Semantic status colors selected once; future theme config can replace this value.
     pub(crate) status_theme: term::render::StatusTheme,
+    /// Session-global line-number default plus its explicit persistence target.
+    /// Unlike the remaining view options, this applies to every open buffer.
+    pub(crate) view_preferences: ViewPreferences,
     /// The active buffer (trait object for now; concrete type behind it).
     pub buffer: Box<dyn Buffer>,
     /// File path and dirty tracking.
@@ -148,7 +155,7 @@ pub struct App {
     pub(crate) selection: selection::SelectionUiState,
     /// Always-available process-local clipboard shared across open buffers.
     pub(crate) clipboard: String,
-    /// Per-buffer display toggles; they never mutate document content.
+    /// Remaining per-buffer display toggles; they never mutate document content.
     pub(crate) view: view::ViewOptions,
     /// Inactive buffers in next-buffer order. The active buffer remains in the
     /// established App fields so editing/render paths stay direct and boring.
@@ -173,24 +180,23 @@ impl App {
     ) -> io::Result<Self> {
         Self::new_with_config(
             initial_path,
-            big_files,
-            true,
-            EditorConfig::default(),
-            KeyBindings::default(),
-            CommandConfig::default(),
-            CatConfig::default(),
+            StartupConfig {
+                big_files,
+                ..StartupConfig::default()
+            },
         )
     }
 
-    pub(crate) fn new_with_config(
-        initial_path: Option<&str>,
-        big_files: BigFileConfig,
-        auto_reload: bool,
-        editor_config: EditorConfig,
-        keybindings: KeyBindings,
-        command_config: CommandConfig,
-        cat_config: CatConfig,
-    ) -> io::Result<Self> {
+    fn new_with_config(initial_path: Option<&str>, config: StartupConfig) -> io::Result<Self> {
+        let StartupConfig {
+            big_files,
+            auto_reload,
+            editor: editor_config,
+            keybindings,
+            commands: command_config,
+            cat: cat_config,
+            view_preferences,
+        } = config;
         let mode = Mode::Plain; // Start in Plain by default. User can switch later.
         let caps = Capabilities::from_mode(mode);
         let completion = caps
@@ -231,6 +237,7 @@ impl App {
             command_config,
             cat_config,
             status_theme: term::render::StatusTheme::from_environment(),
+            view_preferences,
             buffer,
             file: FileState {
                 path: initial_path.map(PathBuf::from),
@@ -452,7 +459,7 @@ impl App {
         let render_options = term::render::RenderOptions {
             highlight,
             syntax: view::display_syntax(self),
-            line_numbers: self.view.line_numbers,
+            line_numbers: self.view_preferences.line_numbers(),
             whitespace: self.view.whitespace,
             soft_wrap: view::soft_wrap_active(self),
             status_role,
@@ -477,21 +484,8 @@ impl App {
 
 /// Public entry called from main.rs.
 pub fn run(initial_files: &[String]) -> io::Result<()> {
-    let big_files = crate::config::big_files::load()?;
-    let auto_reload = crate::config::auto_reload::load()?;
-    let editor_config = crate::config::editor::load()?;
-    let keybindings = crate::config::keybindings::load()?;
-    let command_config = crate::config::commands::load()?;
-    let cat_config = crate::config::cat::load()?;
-    let mut app = App::new_with_paths_and_config(
-        initial_files,
-        big_files,
-        auto_reload,
-        editor_config,
-        keybindings,
-        command_config,
-        cat_config,
-    )?;
+    let config = StartupConfig::load()?;
+    let mut app = App::new_with_paths_and_config(initial_files, config)?;
     app.run()
 }
 

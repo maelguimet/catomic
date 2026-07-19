@@ -10,17 +10,14 @@ use std::mem;
 use std::path::{Path, PathBuf};
 
 use crate::buffer::Buffer;
+#[cfg(test)]
 use crate::config::big_files::BigFileConfig;
-use crate::config::cat::CatConfig;
-use crate::config::commands::CommandConfig;
-use crate::config::editor::EditorConfig;
-use crate::config::keybindings::KeyBindings;
 use crate::file::watcher::FileWatcher;
 
 use super::{
     command_prompt, completion, external_command, hooks, lint, llm_answer, llm_preview,
     llm_request, project_files, recovery, reload, repo_llm, save, search, selection, view, App,
-    FileState,
+    FileState, StartupConfig,
 };
 
 mod lifecycle;
@@ -94,44 +91,21 @@ impl App {
     ) -> io::Result<Self> {
         Self::new_with_paths_and_config(
             initial_paths,
-            big_files,
-            true,
-            EditorConfig::default(),
-            KeyBindings::default(),
-            CommandConfig::default(),
-            CatConfig::default(),
+            StartupConfig {
+                big_files,
+                ..StartupConfig::default()
+            },
         )
     }
 
-    pub(crate) fn new_with_paths_and_config(
+    pub(super) fn new_with_paths_and_config(
         initial_paths: &[String],
-        big_files: BigFileConfig,
-        auto_reload: bool,
-        editor_config: EditorConfig,
-        keybindings: KeyBindings,
-        command_config: CommandConfig,
-        cat_config: CatConfig,
+        config: StartupConfig,
     ) -> io::Result<Self> {
         let first_path = initial_paths.first().map(String::as_str);
-        let mut app = Self::new_with_config(
-            first_path,
-            big_files,
-            auto_reload,
-            editor_config.clone(),
-            keybindings.clone(),
-            command_config.clone(),
-            cat_config,
-        )?;
+        let mut app = Self::new_with_config(first_path, config.clone())?;
         for path in initial_paths.iter().skip(1) {
-            let extra = Self::new_with_config(
-                Some(path),
-                big_files,
-                auto_reload,
-                editor_config.clone(),
-                keybindings.clone(),
-                command_config.clone(),
-                cat_config,
-            )?;
+            let extra = Self::new_with_config(Some(path), config.clone())?;
             app.inactive_buffers.push_back(BufferSlot::from_app(extra));
         }
         Ok(app)
@@ -222,15 +196,7 @@ impl App {
         let path = target.to_str().ok_or_else(|| {
             io::Error::new(io::ErrorKind::InvalidData, "file path is not valid UTF-8")
         })?;
-        let opened = Self::new_with_config(
-            Some(path),
-            self.big_files,
-            self.auto_reload,
-            self.editor_config.clone(),
-            self.keybindings.clone(),
-            self.command_config.clone(),
-            self.cat_config,
-        )?;
+        let opened = Self::new_with_config(Some(path), StartupConfig::for_new_buffer(self))?;
         self.inactive_buffers
             .push_front(BufferSlot::from_app(opened));
         let switched = self.switch_buffer(BufferDirection::Next);
@@ -307,7 +273,7 @@ mod tests {
     }
 
     #[test]
-    fn switching_preserves_edits_cursor_and_viewport_per_buffer() {
+    fn switching_preserves_buffer_state_and_keeps_f7_session_global() {
         let first = temp_file("state_first", "alpha");
         let second = temp_file("state_second", "beta");
         let paths = vec![
@@ -319,10 +285,12 @@ mod tests {
 
         app.buffer.move_right();
         app.buffer.insert_char('!');
+        let mut out = Vec::new();
+        app.handle_key_with(&mut out, key(KeyCode::F(7), KeyModifiers::NONE))
+            .unwrap();
         app.screen.scroll_top = 7;
         app.screen.scroll_left = 3;
         app.screen.wrap_col = 2;
-        app.view.line_numbers = true;
         app.view.whitespace = true;
         app.view.soft_wrap = true;
         app.file.dirty = true;
@@ -333,7 +301,7 @@ mod tests {
         assert_eq!(app.screen.scroll_top, 0);
         assert_eq!(app.screen.scroll_left, 0);
         assert_eq!(app.screen.wrap_col, 0);
-        assert!(!app.view.line_numbers);
+        assert!(app.view_preferences.line_numbers());
         assert!(!app.view.whitespace);
         assert!(!app.view.soft_wrap);
 
@@ -348,7 +316,7 @@ mod tests {
         assert_eq!(app.screen.scroll_top, 7);
         assert_eq!(app.screen.scroll_left, 3);
         assert_eq!(app.screen.wrap_col, 2);
-        assert!(app.view.line_numbers);
+        assert!(app.view_preferences.line_numbers());
         assert!(app.view.whitespace);
         assert!(app.view.soft_wrap);
 

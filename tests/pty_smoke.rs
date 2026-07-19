@@ -94,6 +94,7 @@ struct PtyEditor {
     writer: Box<dyn Write + Send>,
     output: Arc<Mutex<Vec<u8>>>,
     reader_handle: Option<thread::JoinHandle<()>>,
+    _environment: TempProject,
 }
 
 impl PtyEditor {
@@ -123,21 +124,47 @@ impl PtyEditor {
     }
 
     fn spawn_with(paths: &[&PathBuf], xdg_config_home: Option<&PathBuf>) -> TestResult<Self> {
+        let environment = TempProject::new("environment");
+        let xdg_root = xdg_config_home.unwrap_or(&environment.root);
         let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
         for path in paths {
             cmd.arg(path);
         }
-        if let Some(path) = xdg_config_home {
-            cmd.env("XDG_CONFIG_HOME", path);
-        }
-        Self::spawn_command(cmd)
+        cmd.env("XDG_CONFIG_HOME", xdg_root);
+        cmd.env("XDG_STATE_HOME", xdg_root);
+        cmd.env("HOME", &environment.root);
+        Self::spawn_command_with_environment(cmd, environment)
     }
 
-    fn spawn_command(cmd: CommandBuilder) -> TestResult<Self> {
-        Self::spawn_command_sized(cmd, 24, 80)
+    fn spawn_command(mut cmd: CommandBuilder) -> TestResult<Self> {
+        let environment = TempProject::new("command_environment");
+        cmd.env("XDG_CONFIG_HOME", &environment.root);
+        cmd.env("XDG_STATE_HOME", &environment.root);
+        cmd.env("HOME", &environment.root);
+        Self::spawn_command_with_environment(cmd, environment)
     }
 
-    fn spawn_command_sized(cmd: CommandBuilder, rows: u16, cols: u16) -> TestResult<Self> {
+    fn spawn_command_sized(mut cmd: CommandBuilder, rows: u16, cols: u16) -> TestResult<Self> {
+        let environment = TempProject::new("sized_command_environment");
+        cmd.env("XDG_CONFIG_HOME", &environment.root);
+        cmd.env("XDG_STATE_HOME", &environment.root);
+        cmd.env("HOME", &environment.root);
+        Self::spawn_command_sized_with_environment(cmd, rows, cols, environment)
+    }
+
+    fn spawn_command_with_environment(
+        cmd: CommandBuilder,
+        environment: TempProject,
+    ) -> TestResult<Self> {
+        Self::spawn_command_sized_with_environment(cmd, 24, 80, environment)
+    }
+
+    fn spawn_command_sized_with_environment(
+        cmd: CommandBuilder,
+        rows: u16,
+        cols: u16,
+        environment: TempProject,
+    ) -> TestResult<Self> {
         let pty_system = native_pty_system();
         let pair = pty_system.openpty(PtySize {
             rows,
@@ -174,6 +201,7 @@ impl PtyEditor {
             writer: pair.master.take_writer()?,
             output,
             reader_handle: Some(reader_handle),
+            _environment: environment,
         })
     }
 
@@ -739,6 +767,43 @@ fn strip_csi(input: &str) -> String {
         }
     }
     String::from_utf8_lossy(&output).into_owned()
+}
+
+#[test]
+fn pty_f7_persists_across_relaunch_and_applies_to_new_unicode_buffer() -> TestResult {
+    let project = TempProject::new("line_number_preference");
+    let active = project.write("猫.txt", "猫 first\nsecond\n");
+    let preference_path = project.root.join("catomic/preferences.toml");
+    let gutter = "\x1b[2;90m1 \x1b[0m";
+
+    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
+    editor.wait_for_initial_render()?;
+    assert!(
+        !preference_path.exists(),
+        "startup must not write preferences"
+    );
+    editor.send_keys(b"\x1b[18~")?; // F7
+    editor.wait_for_output("line numbers persisted", "Line numbers on.")?;
+    editor.wait_for_output("Unicode line with gutter", &format!("{gutter}猫 first"))?;
+
+    editor.clear_output();
+    editor.send_keys(b"\x0e")?; // Ctrl+N
+    editor.wait_for_output("new buffer", "New untitled buffer.")?;
+    editor.wait_for_output("new buffer inherited gutter", gutter)?;
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+
+    let saved = fs::read_to_string(&preference_path)?;
+    assert!(saved.contains("line_numbers = true"));
+
+    let mut relaunched = PtyEditor::spawn_with_xdg(&active, &project.root)?;
+    relaunched.wait_for_output(
+        "persisted Unicode line with gutter",
+        &format!("{gutter}猫 first"),
+    )?;
+    relaunched.send_keys(b"\x11")?;
+    relaunched.wait_for_exit()?;
+    Ok(())
 }
 
 #[test]

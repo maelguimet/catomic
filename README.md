@@ -144,6 +144,9 @@ page_lines = 20000
 [files]
 auto_reload = true
 
+[view]
+line_numbers = false
+
 [cat]
 status_messages = true
 
@@ -162,6 +165,10 @@ model = "local-model"
 api_key_env = "OPENAI_API_KEY"
 timeout_secs = 120
 ```
+
+`F7` changes line numbers for the whole session and atomically remembers that
+choice under the XDG state directory for later launches. The saved choice takes
+precedence over `[view].line_numbers`; Catomic never rewrites `config.toml`.
 
 Recovery is disabled by default. Named commands and hooks invoke `/bin/sh -c`
 and are trusted user configuration; their input, output, and runtime are

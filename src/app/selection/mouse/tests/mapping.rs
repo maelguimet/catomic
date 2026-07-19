@@ -76,7 +76,7 @@ fn click_maps_unicode_after_horizontal_scroll() {
 #[test]
 fn click_maps_unicode_soft_wrap_with_line_number_gutter() {
     let mut app = app_with("a\u{301}猫🙂z");
-    app.view.line_numbers = true;
+    app.view_preferences.set_line_numbers(true);
     app.view.soft_wrap = true;
     app.screen.width = 6;
     app.screen.height = 4;
@@ -108,7 +108,7 @@ fn click_maps_first_and_last_visible_content_rows() {
 #[test]
 fn gutter_click_positions_at_document_line_start() {
     let mut app = app_with("alpha\nbeta");
-    app.view.line_numbers = true;
+    app.view_preferences.set_line_numbers(true);
 
     click(&mut app, 1, 1);
 

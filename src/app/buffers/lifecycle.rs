@@ -6,7 +6,7 @@
 
 use std::io;
 
-use super::{external_command, hooks, App, BufferDirection, BufferSlot};
+use super::{external_command, hooks, App, BufferDirection, BufferSlot, StartupConfig};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CloseBufferOutcome {
@@ -16,15 +16,7 @@ pub(crate) enum CloseBufferOutcome {
 
 impl App {
     pub(crate) fn new_file_buffer(&mut self) -> io::Result<()> {
-        let new_buffer = Self::new_with_config(
-            None,
-            self.big_files,
-            self.auto_reload,
-            self.editor_config.clone(),
-            self.keybindings.clone(),
-            self.command_config.clone(),
-            self.cat_config,
-        )?;
+        let new_buffer = Self::new_with_config(None, StartupConfig::for_new_buffer(self))?;
         self.inactive_buffers
             .push_front(BufferSlot::from_app(new_buffer));
         self.switch_buffer(BufferDirection::Next);
@@ -41,15 +33,7 @@ impl App {
         external_command::cancel_all(self);
         hooks::cancel_all(self);
         let replacement = if self.inactive_buffers.is_empty() {
-            let blank = Self::new_with_config(
-                None,
-                self.big_files,
-                self.auto_reload,
-                self.editor_config.clone(),
-                self.keybindings.clone(),
-                self.command_config.clone(),
-                self.cat_config,
-            )?;
+            let blank = Self::new_with_config(None, StartupConfig::for_new_buffer(self))?;
             BufferSlot::from_app(blank)
         } else {
             self.inactive_buffers

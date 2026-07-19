@@ -25,6 +25,7 @@ enum Continuation {
         command: super::repo_llm::RepoLlmCommand,
         instruction: String,
     },
+    InlineClanker,
 }
 
 pub(crate) fn trigger_open(app: &mut super::App) {
@@ -63,6 +64,10 @@ pub(crate) fn before_repo_llm(
     begin_before_llm(app, out, continuation)
 }
 
+pub(crate) fn before_inline_clanker(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    begin_before_llm(app, out, Continuation::InlineClanker)
+}
+
 pub(crate) fn pump(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     if app.hooks.active.is_some() || super::external_command::is_busy(app) {
         return Ok(());
@@ -87,6 +92,7 @@ pub(crate) fn pump(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
             command,
             instruction,
         } => super::repo_llm::begin(app, out, command, &instruction),
+        Continuation::InlineClanker => super::inline_clanker::begin(app, out),
     }
 }
 
@@ -132,6 +138,7 @@ fn begin_before_llm(
                 command,
                 instruction,
             } => super::repo_llm::begin(app, out, command, &instruction),
+            Continuation::InlineClanker => super::inline_clanker::begin(app, out),
         };
     }
     app.hooks.queue.extend(names);

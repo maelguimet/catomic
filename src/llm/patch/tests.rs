@@ -133,3 +133,19 @@ fn validates_the_named_target_and_rejects_other_files_or_renames() {
     let deletion = Patch::parse("--- a/src/lib.rs\n+++ /dev/null\n@@ -1 +0,0 @@\n-old\n").unwrap();
     assert_eq!(deletion.validate_target("src/lib.rs"), Ok(()));
 }
+
+#[test]
+fn reports_added_ranges_and_former_deletion_lines_for_rendering() {
+    let patch = Patch::parse(
+        "--- a/note\n+++ b/note\n@@ -1,4 +1,4 @@\n one\n-two\n+TWO\n+extra\n three\n-four\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        patch.visualization(),
+        PatchVisualization {
+            added_line_ranges: vec![(1, 3)],
+            deleted_at_lines: vec![1, 4],
+        }
+    );
+}

@@ -32,6 +32,7 @@ impl App {
         }
         external_command::cancel_all(self);
         hooks::cancel_all(self);
+        super::inline_clanker::cancel_all(self);
         let replacement = if self.inactive_buffers.is_empty() {
             let blank = Self::new_with_config(None, StartupConfig::for_new_buffer(self))?;
             BufferSlot::from_app(blank)

@@ -1,8 +1,8 @@
 //! Purpose: this file must lazily load and validate named LLM backend presets.
-//! Owns: `[llm]` compatibility translation, preset schemas, and safe display metadata.
+//! Owns: `[llm]` compatibility translation, preset schemas, and inline-workflow metadata.
 //! Must not: read secret values, resolve executables, construct clients, spawn, or network.
-//! Invariants: every preset is bounded and uniquely named; legacy config remains local-first.
-//! Phase: post-v0.1 model/backend selection.
+//! Invariants: presets and inline settings are bounded; legacy config remains local-first.
+//! Phase: post-v0.1 model/backend selection and issue #65 inline workflow.
 
 use std::collections::BTreeMap;
 use std::io;
@@ -17,13 +17,18 @@ const DEFAULT_KEY_ENV: &str = "OPENAI_API_KEY";
 const DEFAULT_TIMEOUT_SECS: u64 = 120;
 const DEFAULT_PRESET: &str = "local";
 
+mod inline;
 mod schema;
 mod validation;
+
+pub(crate) use inline::{InlineBlockMode, InlineSettings};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct LlmCatalog {
     pub(crate) default: String,
     pub(crate) presets: Vec<BackendPreset>,
+    pub(crate) inline: InlineSettings,
+    language_inline: BTreeMap<String, inline::RawInlineSettings>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -94,6 +99,8 @@ impl Default for LlmCatalog {
                     timeout: Duration::from_secs(DEFAULT_TIMEOUT_SECS),
                 }),
             }],
+            inline: InlineSettings::default(),
+            language_inline: BTreeMap::new(),
         }
     }
 }
@@ -105,6 +112,10 @@ impl LlmCatalog {
 
     pub(crate) fn find(&self, name: &str) -> Option<&BackendPreset> {
         self.presets.iter().find(|preset| preset.name == name)
+    }
+
+    pub(crate) fn inline_for_path(&self, path: Option<&Path>) -> io::Result<InlineSettings> {
+        inline::for_path(&self.inline, &self.language_inline, path)
     }
 }
 

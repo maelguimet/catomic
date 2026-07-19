@@ -729,8 +729,11 @@ fn pty_help_scrolls_to_model_scopes_and_closes_without_editing() -> TestResult {
     editor.wait_for_initial_render()?;
     editor.send_keys(b"\x1bOP")?; // F1
     editor.wait_for_output("built-in help", "Catomic help")?;
-    for _ in 0..128 {
-        editor.send_keys(b"\x1b[<65;1;1M")?; // SGR wheel down through every help region.
+    for _ in 0..32 {
+        // PageDown reaches the end independently of how many command entries are
+        // registered; a fixed number of single-row wheel events went stale when
+        // the inline-clanker command enlarged the generated help catalog.
+        editor.send_keys(b"\x1b[6~")?;
     }
     editor.wait_for_output("model command", "megameow INSTRUCTION")?;
     editor.wait_for_output("model command scope", "broader bounded repository context")?;

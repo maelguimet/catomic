@@ -18,9 +18,36 @@ Every LLM edit must be previewed, confirmed, undoable.
 - `:bigmeow` — current file
 - `:gitmeow` — focused repo-aware request, capped at 64 KiB of broker context (Project only)
 - `:megameow` — broader repo-aware request, capped at 128 KiB of broker context (Project only)
+- `F3` / `run-clanker` / `inline-meow` — inline instruction with automatic
+  `selection → catblocks → bounded full file` scope
 
 `:feralmeow` remains unimplemented: Phase 6 does not accept wide or multi-file
 patches.
+
+## Inline clanker
+
+An inline instruction is control metadata, never an editable target. The
+default is a trimmed line starting with `>>` followed by whitespace. Delimiters
+must occupy their own trimmed lines. Configured markers are bounded and
+non-ambiguous; nested, mismatched, overlapping, or unclosed context blocks fail
+closed with line numbers. Existing `>>> catomic ... <<<` instruction blocks are
+also valid.
+
+An active selection has precedence and is the only content sent or replaceable.
+Otherwise only `<catblock>` interiors are sent; combined replacements are one
+atomic transaction, while queued replacements run strictly serially and are
+separately undoable. Without either, F3 uses the whole retained file: more than
+the configured soft line threshold requires a typed one-time `yes`, while the
+2,000-line / 64-KiB hard ceiling cannot be overridden.
+
+Instruction cleanup defaults on and is part of the visible proposal and the
+same accepted transaction. Failures, cancellation, rejection, drift, or a
+partial queue keep the instruction. Applied content receives semantic
+`llm_changed` presentation metadata; deleted and cleanup lines retain a gutter
+marker. The metadata never changes file bytes and is cleared by undo, an
+invalidating ordinary edit, the next clanker apply, buffer close, or the
+`clear-clanker-changes` action. Color-disabled rendering uses underline/reverse
+video plus the gutter marker.
 
 ## Repo LLM
 
@@ -89,6 +116,10 @@ and per-file diff. No command writes or runs a process other than read-only Git.
 - All patches go through `llm/patch.rs` and the read-only preview path.
 - Current-buffer requests pin the active path through confirmation and response;
   path drift discards the request/output and patch headers must match that path.
+- Inline requests also pin the exact instruction, selected ranges, block
+  delimiters, revision, and path before send, preview, and apply. Queued work
+  revalidates before every request and Escape cancels the active request and all
+  remaining work.
 - Repo requests pin the active path through context preparation, confirmation,
   response, and final preview apply; path drift cancels or discards fail closed.
 - The confirmed repo pre-send drift check runs on a pollable worker; Enter and

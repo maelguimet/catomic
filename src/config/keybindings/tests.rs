@@ -14,7 +14,7 @@ fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
 #[test]
 fn action_overrides_replace_all_defaults_and_empty_arrays_unbind() {
     let bindings = parse(
-        "[keybindings]\nsave = [\"alt+s\"]\nhelp = []\ncommand-prompt = [\"alt+p\", \"f3\"]\n",
+        "[keybindings]\nsave = [\"alt+s\"]\nhelp = []\ncommand-prompt = [\"alt+p\", \"f4\"]\n",
     )
     .unwrap();
 
@@ -32,7 +32,7 @@ fn action_overrides_replace_all_defaults_and_empty_arrays_unbind() {
         .translate(Scope::Editor, key(KeyCode::F(1), KeyModifiers::NONE))
         .is_none());
     assert_eq!(
-        bindings.translate(Scope::Editor, key(KeyCode::F(3), KeyModifiers::NONE)),
+        bindings.translate(Scope::Editor, key(KeyCode::F(4), KeyModifiers::NONE)),
         Some(key(
             KeyCode::Char('p'),
             KeyModifiers::CONTROL | KeyModifiers::SHIFT
@@ -211,11 +211,39 @@ fn wheel_gestures_can_be_swapped_or_unbound_without_crossing_button_types() {
 #[test]
 fn registry_defaults_are_complete_and_collision_free() {
     let bindings = KeyBindings::default();
-    assert_eq!(actions::REGISTRY.len(), 83);
+    assert_eq!(actions::REGISTRY.len(), 85);
     for descriptor in actions::REGISTRY {
         assert!(!descriptor.name.is_empty());
         assert!(!descriptor.scopes.is_empty());
         assert!(!descriptor.defaults.is_empty());
     }
     assert!(!bindings.keys.is_empty());
+}
+
+#[test]
+fn inline_clanker_actions_are_remappable_and_unbindable() {
+    let bindings =
+        parse("[keybindings]\nrun-clanker = [\"alt+x\"]\nclear-clanker-changes = []\n").unwrap();
+
+    assert_eq!(
+        bindings.translate(
+            Scope::Editor,
+            KeyEvent::new(KeyCode::Char('x'), KeyModifiers::ALT)
+        ),
+        Some(KeyEvent::new(KeyCode::F(3), KeyModifiers::NONE))
+    );
+    assert_eq!(
+        bindings.translate(
+            Scope::Editor,
+            KeyEvent::new(KeyCode::F(3), KeyModifiers::NONE)
+        ),
+        None
+    );
+    assert_eq!(
+        bindings.translate(
+            Scope::Editor,
+            KeyEvent::new(KeyCode::F(3), KeyModifiers::SHIFT)
+        ),
+        None
+    );
 }

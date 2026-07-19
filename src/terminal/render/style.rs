@@ -18,14 +18,15 @@ pub(super) fn write_content_line<W: Write + ?Sized>(
     row: usize,
     start_col: usize,
     max_cells: usize,
-    options: RenderOptions,
+    options: RenderOptions<'_>,
 ) -> io::Result<()> {
     let visible_len = text_layout::clipped_scalar_len(content, max_cells);
     let content: String = content.chars().take(visible_len).collect();
     let chars: Vec<char> = content.chars().collect();
     let spans = syntax::spans_for_line(options.syntax, &content);
     let selected = visible_highlight(options.highlight, row, start_col, chars.len());
-    let boundaries = segment_boundaries(&content, &spans, selected);
+    let changed = visible_changes(options, row, start_col, chars.len());
+    let boundaries = segment_boundaries(&content, &spans, selected, &changed);
     let mut cell = 0;
     for range in boundaries.windows(2) {
         let start = range[0];
@@ -38,8 +39,11 @@ pub(super) fn write_content_line<W: Write + ?Sized>(
             .find(|span| start >= span.start && start < span.end)
             .map(|span| span.style);
         let highlighted = selected.is_some_and(|(from, to)| start >= from && start < to);
+        let llm_changed = changed
+            .iter()
+            .any(|(from, to)| start >= *from && start < *to);
         let segment: String = chars[start..end].iter().collect();
-        let style = segment_style(options, syntax_style, highlighted);
+        let style = segment_style(options, syntax_style, highlighted, llm_changed);
         write_segment(
             out,
             &segment,
@@ -51,6 +55,20 @@ pub(super) fn write_content_line<W: Write + ?Sized>(
         cell = cell.saturating_add(text_layout::cell_width_from(&segment, cell));
     }
     Ok(())
+}
+
+fn visible_changes(
+    options: RenderOptions<'_>,
+    row: usize,
+    start_col: usize,
+    content_len: usize,
+) -> Vec<(usize, usize)> {
+    options
+        .llm_changes
+        .into_iter()
+        .flat_map(|changes| changes.ranges.iter().copied())
+        .filter_map(|range| visible_highlight(Some(range), row, start_col, content_len))
+        .collect()
 }
 
 fn visible_highlight(
@@ -84,6 +102,7 @@ fn segment_boundaries(
     content: &str,
     spans: &[StyledSpan],
     selected: Option<(usize, usize)>,
+    changed: &[(usize, usize)],
 ) -> Vec<usize> {
     let content_len = content.chars().count();
     let mut boundaries = vec![0, content_len];
@@ -92,6 +111,10 @@ fn segment_boundaries(
         boundaries.push(span.end.min(content_len));
     }
     if let Some((start, end)) = selected {
+        boundaries.push(start);
+        boundaries.push(end);
+    }
+    for &(start, end) in changed {
         boundaries.push(start);
         boundaries.push(end);
     }
@@ -118,7 +141,12 @@ fn write_segment<W: Write + ?Sized>(
     write_styled_text(out, &text, style, truecolor)
 }
 
-fn segment_style(options: RenderOptions, span: Option<SpanStyle>, highlighted: bool) -> Style {
+fn segment_style(
+    options: RenderOptions<'_>,
+    span: Option<SpanStyle>,
+    highlighted: bool,
+    llm_changed: bool,
+) -> Style {
     let theme = options.theme;
     let mut style = match options.surface {
         ContentSurface::Normal => theme.text,
@@ -126,6 +154,9 @@ fn segment_style(options: RenderOptions, span: Option<SpanStyle>, highlighted: b
     };
     if let Some(span) = span {
         style = style.overlay(span_style(theme, span));
+    }
+    if llm_changed {
+        style = style.overlay(theme.llm_changed);
     }
     if highlighted {
         style = style.overlay(match options.highlight_kind {
@@ -279,6 +310,24 @@ fn color_rgb(color: Color) -> (u8, u8, u8) {
             (level, level, level)
         }
     }
+}
+
+pub(super) fn write_semantic_gutter<W: Write + ?Sized>(
+    out: &mut W,
+    style: Style,
+    truecolor: bool,
+) -> io::Result<()> {
+    let marker = if style.fg.is_some() || style.bg.is_some() {
+        "┃"
+    } else {
+        "!"
+    };
+    let style = style.overlay(Style {
+        bold: Some(true),
+        ..Style::default()
+    });
+    write_styled_text(out, marker, style, truecolor)?;
+    write!(out, " ")
 }
 
 #[cfg(test)]

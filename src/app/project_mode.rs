@@ -15,6 +15,7 @@ pub(crate) fn switch_to_project(app: &mut super::App, out: &mut dyn Write) -> io
     super::hooks::cancel_all(app);
     super::repo_llm::cancel_all(app);
     super::llm_request::cancel_all(app);
+    super::inline_clanker::cancel_all(app);
     super::llm_preview::close(app);
     super::llm_answer::close(app);
     super::lint::close_view(app);
@@ -40,6 +41,7 @@ pub(crate) fn switch_to_plain(app: &mut super::App, out: &mut dyn Write) -> io::
     super::hooks::cancel_all(app);
     super::repo_llm::cancel_all(app);
     super::llm_request::cancel_all(app);
+    super::inline_clanker::cancel_all(app);
     super::llm_preview::close(app);
     super::llm_answer::close(app);
     super::lint::close_view(app);

@@ -11,7 +11,7 @@ use crate::buffer::SimpleBuffer;
 use crate::editor::syntax::SyntaxKind;
 use crate::terminal::render::{render_buffer, RenderOptions, RenderViewport};
 
-fn monochrome_status(role: StatusRole) -> RenderOptions {
+fn monochrome_status(role: StatusRole) -> RenderOptions<'static> {
     RenderOptions {
         status_role: role,
         status_theme: StatusTheme::monochrome(),

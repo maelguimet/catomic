@@ -104,6 +104,8 @@ pub(crate) enum Action {
     Whitespace,
     SoftWrap,
     SelectModel,
+    RunClanker,
+    ClearClankerChanges,
     PromptSubmit,
     PromptCancel,
     PromptDeleteBackward,

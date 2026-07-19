@@ -5,6 +5,7 @@
 
 mod app;
 mod buffer;
+mod build_info;
 mod cli;
 mod config;
 mod editor;
@@ -49,7 +50,7 @@ fn main() {
             return;
         }
         cli::Action::Version => {
-            println!("catomic {}", env!("CARGO_PKG_VERSION"));
+            println!("{}", build_info::version_line());
             return;
         }
         cli::Action::UpdateHelp => {

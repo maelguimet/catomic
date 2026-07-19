@@ -27,7 +27,7 @@ pub(super) const MAIN_OPTIONS: &[MainOptionSpec] = &[
     MainOptionSpec {
         option: MainOption::Version,
         spellings: &["-V", "--version"],
-        description: "Show the installed version and exit",
+        description: "Show the package version and build commit, then exit",
     },
     MainOptionSpec {
         option: MainOption::AllowMissing,
@@ -248,6 +248,7 @@ mod tests {
             "catomic -- -draft.md",
             "catomic \"meeting notes.md\"",
             "catomic update --help",
+            "package version and build commit",
             "$XDG_CONFIG_HOME/catomic/config.toml",
             "docs/user-guide.md",
         ] {

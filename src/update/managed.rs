@@ -29,6 +29,7 @@ use super::{
     confirm, maybe_backup, process, UpdateError, EXIT_CONFIG, EXIT_INSTALL, EXIT_NETWORK,
     EXIT_UNSUPPORTED,
 };
+use crate::build_info;
 
 const LATEST_RELEASE_URL: &str = "https://api.github.com/repos/maelguimet/catomic/releases/latest";
 const MAX_METADATA_BYTES: usize = 1024 * 1024;
@@ -72,11 +73,12 @@ pub(super) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
     let backup = maybe_backup(options)?;
     let (checksum, binary) = block_on(client.download_release(&release))?;
     verify_checksum(&binary, &checksum, &release.binary.name)?;
-    validate_candidate(&binary, &release.version.to_string())?;
+    let new_build = validate_candidate(&binary, &release.version.to_string())?;
     let receipt = super::install::replace_current(&binary, env!("CARGO_PKG_VERSION"))
         .map_err(|error| UpdateError::new(EXIT_INSTALL, error))?;
     println!("old version: {}", env!("CARGO_PKG_VERSION"));
     println!("new version: {}", release.version);
+    println!("new build: {new_build}");
     println!("user state: unchanged");
     match backup {
         Some(path) => println!("user-state backup: {}", path.display()),
@@ -221,7 +223,7 @@ fn block_on<T>(
     runtime.block_on(future)
 }
 
-fn validate_candidate(bytes: &[u8], expected_version: &str) -> Result<(), UpdateError> {
+fn validate_candidate(bytes: &[u8], expected_version: &str) -> Result<String, UpdateError> {
     let candidate = TempBinary::create(bytes)?;
     let mut config = Command::new(&candidate.path);
     config.args(["update", "--validate-config"]);
@@ -235,17 +237,16 @@ fn validate_candidate(bytes: &[u8], expected_version: &str) -> Result<(), Update
     version.arg("--version");
     let output = process::run_checked(&mut version, REQUEST_TIMEOUT, 16 * 1024)
         .map_err(|error| UpdateError::new(EXIT_INSTALL, error))?;
-    let reported = String::from_utf8_lossy(&output.stdout);
-    if reported.trim() != format!("catomic {expected_version}") {
+    let reported = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if !build_info::is_clean_version_line(&reported, expected_version) {
         return Err(UpdateError::new(
             EXIT_INSTALL,
             format!(
-                "downloaded binary reports {:?}, expected {expected_version:?}",
-                reported.trim()
+                "downloaded binary reports {reported:?}, expected package version {expected_version:?} with a clean build commit"
             ),
         ));
     }
-    Ok(())
+    Ok(reported)
 }
 
 struct TempBinary {

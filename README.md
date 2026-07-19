@@ -303,7 +303,8 @@ Security-sensitive findings should follow [SECURITY.md](SECURITY.md).
 - [Performance discipline and measurements](docs/performance.md)
 - [Linux terminal and filesystem compatibility](docs/compatibility.md)
 - [LLM safety rules](docs/llm-rules.md)
-- [Roadmap, research, and design history](TODO.md)
+- [Active bugs, features, and priorities](https://github.com/maelguimet/catomic/issues)
+- [Historical roadmap, research, and design record](docs/progress/roadmap-history.md)
 - [Release process and artifact verification](docs/releasing.md)
 - [Historical v0.1 roadmap acceptance record](docs/v0.1-acceptance.md)
 

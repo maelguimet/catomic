@@ -1,15 +1,8 @@
 //! Buffer abstraction.
 //!
-//! This is the heart of Phase 0–1.
-//!
-//! Per TODO.md:
-//! - Define the `Buffer` trait **immediately** before writing the loop.
-//! - v0 implementation is dead simple (`Vec<String>`).
-//! - Later phases swap the impl behind the stable trait.
-//! - Col semantics: start with char index (Unicode scalar). Revisit before selection/search.
-//!
-//! The trait must be usable with `dyn Buffer` and must not force iterator-over-everything
-//! in hot paths (trait objects hate `impl Iterator`).
+//! Owns text storage behind an object-safe interface so editor code does not
+//! depend on a particular storage implementation. Hot-path APIs must support
+//! bounded access without forcing whole-buffer iteration.
 
 use std::borrow::Cow;
 use std::fs::File;

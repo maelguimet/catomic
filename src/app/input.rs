@@ -75,12 +75,16 @@ pub(crate) fn handle_key_with(
     key: KeyEvent,
 ) -> io::Result<()> {
     if mobile::handle_key(app, out, key)? {
+        selection::end_cut_line_chain(app);
         return Ok(());
     }
     let scope = scope::active(app);
     let Some(key) = app.keybindings.translate(scope, key) else {
         return Ok(());
     };
+    if scope != crate::config::actions::Scope::Editor || !selection::is_cut_line_key(key) {
+        selection::end_cut_line_chain(app);
+    }
     handle_normalized_key(app, out, key)
 }
 
@@ -168,6 +172,7 @@ pub(crate) fn handle_paste(
     out: &mut dyn Write,
     text: &str,
 ) -> io::Result<()> {
+    selection::end_cut_line_chain(app);
     if mobile::handle_paste(app, out)? {
         return Ok(());
     }

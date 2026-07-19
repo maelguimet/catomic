@@ -6,6 +6,7 @@
 
 use super::super::*;
 use super::make_key;
+use crate::buffer::Cursor;
 use crate::file::text_format::{LineEnding, TextFormat};
 use crossterm::event::{KeyCode, KeyModifiers};
 use std::fs;
@@ -92,4 +93,35 @@ fn external_reload_adopts_the_new_disk_format() {
         }
     );
     let _ = fs::remove_file(path);
+}
+
+#[test]
+fn cut_line_save_preserves_lf_crlf_and_cr_bytes() {
+    let cases: [(&str, &[u8], &[u8]); 3] = [
+        ("lf", b"one\ntwo\nthree", b"one\nthree"),
+        ("crlf", b"one\r\ntwo\r\nthree", b"one\r\nthree"),
+        ("cr", b"one\rtwo\rthree", b"one\rthree"),
+    ];
+    for (label, source, expected) in cases {
+        let path = temp_path(label);
+        let _ = fs::remove_file(&path);
+        fs::write(&path, source).unwrap();
+        let mut app = App::new(Some(&path.to_string_lossy())).unwrap();
+        let mut out = Vec::new();
+        app.buffer.set_cursor(Cursor { row: 1, col: 1 });
+
+        app.handle_key_with(
+            &mut out,
+            make_key(KeyCode::Char('k'), KeyModifiers::CONTROL),
+        )
+        .unwrap();
+        app.handle_key_with(
+            &mut out,
+            make_key(KeyCode::Char('s'), KeyModifiers::CONTROL),
+        )
+        .unwrap();
+
+        assert_eq!(fs::read(&path).unwrap(), expected, "line ending {label}");
+        let _ = fs::remove_file(path);
+    }
 }

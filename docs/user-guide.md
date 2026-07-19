@@ -380,6 +380,13 @@ clipboard is shared by all buffers in the current session. Copying also sends
 the text through OSC 52 when the terminal supports it, so the terminal or host
 clipboard may receive the same value.
 
+`Ctrl+K` cuts the current logical line, including its terminating line break
+when present. Consecutive presses append complete lines to one clipboard payload
+in document order, so one `Ctrl+V` restores them together. Each press is a
+separate undo transaction. Moving, editing, switching buffers, or using another
+action ends the append chain; an active selection keeps ordinary selection-cut
+behavior.
+
 Bracketed terminal paste is inserted as one undoable edit. Terminal emulators,
 multiplexers, desktop shortcuts, and SSH clients may intercept clipboard chords
 before Catomic receives them; see [Troubleshooting](#troubleshooting).
@@ -1513,6 +1520,7 @@ toggle-overwrite | editor | insert
 select-all | editor | ctrl+a
 copy | editor | ctrl+c
 cut | editor | ctrl+x
+cut-line | editor | ctrl+k
 paste | editor | ctrl+v
 previous-buffer | editor | alt+pageup
 next-buffer | editor | alt+pagedown
@@ -1564,6 +1572,7 @@ mouse-scroll-down | editor,preview,picker,help | mouse-wheel-down
 | Files | Check/reload external change | `Ctrl+R` |
 | Buffers | Previous / next buffer | `Alt+PageUp` / `Alt+PageDown` |
 | Editing | Select/copy/cut/paste | `Ctrl+A` / `Ctrl+C` / `Ctrl+X` / `Ctrl+V` |
+| Editing | Cut current line; repeated cuts append | `Ctrl+K` |
 | Editing | Undo | `Ctrl+Z` |
 | Editing | Redo | `Ctrl+Y` / `Ctrl+Shift+Z` |
 | Editing | Indent / unindent | `Tab` / `Shift+Tab` |

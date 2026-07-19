@@ -326,6 +326,7 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
     ),
     key!(Copy, "copy", "Copy selection", E, ["ctrl+c"]),
     key!(Cut, "cut", "Cut selection", E, ["ctrl+x"]),
+    key!(CutLine, "cut-line", "Cut current line", E, ["ctrl+k"]),
     key!(Paste, "paste", "Paste internal clipboard", E, ["ctrl+v"]),
     key!(
         PreviousBuffer,

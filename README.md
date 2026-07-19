@@ -104,6 +104,7 @@ troubleshooting, see the [complete user guide](docs/user-guide.md).
 | Find / replace / goto line | `Ctrl+F` / `Ctrl+Shift+F` / `Ctrl+G` |
 | Previous / next paragraph | `Ctrl+Up` / `Ctrl+Down` |
 | Select / copy / cut / paste | `Ctrl+A` / `Ctrl+C` / `Ctrl+X` / `Ctrl+V` |
+| Cut current line; repeated cuts append | `Ctrl+K` |
 | Local completion | `Ctrl+Space` |
 | Command prompt | `Ctrl+Shift+P` or `F2` |
 | Inline clanker / clear its change marks | `F3` / `Shift+F3` |

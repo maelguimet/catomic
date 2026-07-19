@@ -1089,6 +1089,20 @@ fn pty_mouse_selection_ctrl_c_emits_ghostty_compatible_osc52() -> TestResult {
 }
 
 #[test]
+fn pty_ctrl_k_accumulates_lines_for_internal_paste() -> TestResult {
+    let temp = TempPath::new("ctrl_k_cut_line");
+    fs::write(&temp.path, "one\ntwo\nthree")?;
+    let mut editor = PtyEditor::spawn(&temp.path)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"\x0b\x0b\x16\x13\x11")?;
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(&temp.path)?, "one\ntwo\nthree");
+    Ok(())
+}
+
+#[test]
 fn pty_paragraph_navigation_and_wheel_keep_the_logical_cursor_stable() -> TestResult {
     let temp = TempPath::new("paragraph_wheel");
     let mut lines = vec![

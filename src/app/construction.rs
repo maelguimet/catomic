@@ -113,6 +113,7 @@ impl App {
             recovery: recovery::RecoveryState::default(),
             selection: selection::SelectionUiState::default(),
             clipboard: String::new(),
+            cut_line_append: false,
             view: view::ViewOptions::default(),
             inactive_buffers: VecDeque::new(),
             active_buffer_index: 0,

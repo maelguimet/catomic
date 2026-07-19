@@ -16,7 +16,12 @@ use crate::help_catalog::{self, PromptCommand};
 pub(crate) struct CommandPromptState {
     active: Option<ActivePrompt>,
     running: Option<RunningGoto>,
-    config_return_path: Option<PathBuf>,
+    config_return: Option<ConfigReturn>,
+}
+
+struct ConfigReturn {
+    config_path: PathBuf,
+    buffer_index: usize,
 }
 
 struct RunningGoto {
@@ -62,16 +67,21 @@ pub(super) fn is_active(app: &super::App) -> bool {
     app.command_prompt.active.is_some() || app.command_prompt.running.is_some()
 }
 
-pub(super) fn take_config_return(app: &mut super::App) -> bool {
+pub(super) fn take_config_return_target(app: &mut super::App) -> Option<usize> {
     let active_config = app
         .command_prompt
-        .config_return_path
-        .as_deref()
-        .is_some_and(|path| app.file.path.as_deref() == Some(path));
-    if active_config {
-        app.command_prompt.config_return_path = None;
+        .config_return
+        .as_ref()
+        .is_some_and(|config_return| {
+            app.file.path.as_deref() == Some(config_return.config_path.as_path())
+        });
+    if !active_config {
+        return None;
     }
-    active_config
+    app.command_prompt
+        .config_return
+        .take()
+        .map(|config_return| config_return.buffer_index)
 }
 
 fn open_prompt(app: &mut super::App, out: &mut dyn Write, kind: PromptKind) -> io::Result<()> {
@@ -355,12 +365,16 @@ fn execute_config_create(
 
 fn open_config_path(app: &mut super::App, out: &mut dyn Write, path: &Path) -> io::Result<()> {
     let source_path = app.file.path.clone();
+    let source_buffer_index = app.active_buffer_index;
     open_path(app, out, path, "Configuration opened")?;
     if app.buffer_count() > 1
         && source_path.as_deref() != Some(path)
         && app.file.path.as_deref() == Some(path)
     {
-        app.command_prompt.config_return_path = Some(path.to_path_buf());
+        app.command_prompt.config_return = Some(ConfigReturn {
+            config_path: path.to_path_buf(),
+            buffer_index: source_buffer_index,
+        });
     }
     app.message = Some(format!(
         "Editing {}. Restart Catomic after saving to apply settings.",

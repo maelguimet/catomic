@@ -9,7 +9,7 @@
 
 This document defines the ordered feature roadmap, recommended tech stack, and research on whether to fork existing editors.
 
-See [README.md](./README.md) for the core vision and constraints.
+See [README.md](../../README.md) for the core vision and constraints.
 
 ## Goals
 
@@ -498,9 +498,9 @@ Document the col model (char index / scalar within line for this subphase; inter
 - Benchmarks: verify 10MB smooth, 100MB usable, 1GB limited (time + memory ceilings documented).
 - External edit tests using temp files + PTY smoke.
 - File watch golden tests (clean reload, dirty conflict paths).
-- Current implementation/evidence matrix: [`docs/phase-2-acceptance.md`](docs/phase-2-acceptance.md).
+- Current implementation/evidence matrix: [`docs/phase-2-acceptance.md`](../phase-2-acceptance.md).
 
-### Phase 3 — Comfort & Search Basics ([progress](docs/progress/phase-3-progress.md))
+### Phase 3 — Comfort & Search Basics ([progress](phase-3-progress.md))
 
 - Incremental search (`Ctrl+F`):
   - Live highlight matches
@@ -516,9 +516,9 @@ Document the col model (char index / scalar within line for this subphase; inter
 
 **Exit criteria**:
 - Core comfort features work and feel good.
-- Acceptance tests defined and passing per the Measurement / Test Discipline (golden for search/replace flows, PTY for Ctrl+F etc., perf for search on medium files); current evidence: [`docs/phase-3-acceptance.md`](docs/phase-3-acceptance.md).
+- Acceptance tests defined and passing per the Measurement / Test Discipline (golden for search/replace flows, PTY for Ctrl+F etc., perf for search on medium files); current evidence: [`docs/phase-3-acceptance.md`](../phase-3-acceptance.md).
 
-### Phase 4 — Markdown & Light Syntax ([progress](docs/progress/phase-4-progress.md))
+### Phase 4 — Markdown & Light Syntax ([progress](phase-4-progress.md))
 
 - Syntax highlighting (minimal at first):
   - A few built-in languages or extension-based simple rules
@@ -532,9 +532,9 @@ Document the col model (char index / scalar within line for this subphase; inter
   - Key to toggle rendered view (use pulldown-cmark + renderer)
   - Later: split view if width > 120 cols or user requests
 - Line numbers (toggleable, off by default or on for code)
-- Whitespace indicators (optional); acceptance: [`docs/phase-4-acceptance.md`](docs/phase-4-acceptance.md)
+- Whitespace indicators (optional); acceptance: [`docs/phase-4-acceptance.md`](../phase-4-acceptance.md)
 
-### Phase 5 — Tooling (Linters + Autocomplete) ([progress](docs/progress/phase-5-progress.md))
+### Phase 5 — Tooling (Linters + Autocomplete) ([progress](phase-5-progress.md))
 
 **Project / Code Mode features are behind the `Capabilities` bouncer.** When `Capabilities` for Plain is active, none of the Project services here are constructed.
 
@@ -552,9 +552,9 @@ Document the col model (char index / scalar within line for this subphase; inter
   - Project-aware: file path completion, keywords, snippets, etc. (requires Project capabilities)
   - Trigger on Ctrl+Space or Tab in some contexts
   - Dismiss on Esc
-- Project file discovery (simple "find in dir" for open file); acceptance: [`docs/phase-5-acceptance.md`](docs/phase-5-acceptance.md)
+- Project file discovery (simple "find in dir" for open file); acceptance: [`docs/phase-5-acceptance.md`](../phase-5-acceptance.md)
 
-### Phase 6 — LLM (Powerful but Caged) ([acceptance](docs/phase-6-acceptance.md), [progress](docs/progress/phase-6-progress.md))
+### Phase 6 — LLM (Powerful but Caged) ([acceptance](../phase-6-acceptance.md), [progress](phase-6-progress.md))
 
 **LLM surface is split by `Capabilities`.** In Plain mode `network_llm` is false and no network client exists. Current-file commands (`:meow`, `:bigmeow`) may only create transient network use after explicit user invocation + confirmation of endpoint/context. Repo-aware / multi-file / broker LLM (`:megameow`, `:gitmeow` etc.) require `repo_llm` (Project only). All construction is gated; nothing network-related for LLM exists in a Plain process until the user forces a confirmed current-file action.
 

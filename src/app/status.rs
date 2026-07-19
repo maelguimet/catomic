@@ -54,13 +54,16 @@ pub(crate) fn format_status_line(
         text_layout::terminal_safe_tail_clipped(&filename, width.saturating_sub(metadata_cells));
     let filename_cells = text_layout::cell_width_from(&filename, 0);
     let brand = if cat_status { "=^..^=  " } else { "" };
-    let brand = (text_layout::cell_width_from(brand, 0)
+    let brand = if text_layout::cell_width_from(brand, 0)
         .saturating_add(text_layout::cell_width_from(&parent, 0))
         .saturating_add(filename_cells)
         .saturating_add(metadata_cells)
-        <= width)
-        .then_some(brand)
-        .unwrap_or("");
+        <= width
+    {
+        brand
+    } else {
+        ""
+    };
     let parent_budget = width
         .saturating_sub(text_layout::cell_width_from(brand, 0))
         .saturating_sub(filename_cells)

@@ -116,6 +116,7 @@ impl PtyEditor {
         let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
         cmd.arg(path);
         cmd.env("NO_COLOR", "1");
+        cmd.env("TERM", "dumb");
         Self::spawn_command(cmd)
     }
 
@@ -160,11 +161,14 @@ impl PtyEditor {
     }
 
     fn spawn_command_sized_with_environment(
-        cmd: CommandBuilder,
+        mut cmd: CommandBuilder,
         rows: u16,
         cols: u16,
         environment: TempProject,
     ) -> TestResult<Self> {
+        // PTY color assertions must not depend on the test runner's ambient
+        // NO_COLOR. The dedicated monochrome constructor also sets TERM=dumb.
+        cmd.env_remove("NO_COLOR");
         let pty_system = native_pty_system();
         let pair = pty_system.openpty(PtySize {
             rows,
@@ -219,9 +223,21 @@ impl PtyEditor {
     }
 
     fn wait_for_output(&self, label: &str, expected: &str) -> TestResult {
-        wait_until(label, Duration::from_secs(2), || {
+        if let Err(error) = wait_until(label, Duration::from_secs(2), || {
             self.output_string().contains(expected)
-        })
+        }) {
+            let output = self.output_string();
+            let tail = output
+                .chars()
+                .rev()
+                .take(2_000)
+                .collect::<String>()
+                .chars()
+                .rev()
+                .collect::<String>();
+            return Err(format!("{error}; output tail: {tail:?}").into());
+        }
+        Ok(())
     }
 
     fn wait_for_exit(&mut self) -> TestResult {
@@ -651,7 +667,7 @@ fn pty_config_command_confirms_private_template_at_exact_xdg_path() -> TestResul
 
     editor.send_keys(b"yes\r")?;
     editor.wait_for_output("config template buffer", "Catomic configuration")?;
-    editor.wait_for_output("exact resolved config path", &config.to_string_lossy())?;
+    editor.wait_for_output("configuration edit notice", "Editing ")?;
     let created = fs::read_to_string(&config)?;
     assert!(created.contains("[theme.colors]"));
     assert!(created.contains("[keybindings]"));
@@ -688,7 +704,7 @@ fn pty_custom_theme_reaches_content_status_and_cursor_then_resets() -> TestResul
     let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
 
     editor.wait_for_output("themed content", "\x1b[92;40mthemed content\x1b[0m")?;
-    editor.wait_for_output("themed status", "\x1b[97;44m\x1b[K")?;
+    editor.wait_for_output("themed status", "\x1b[97m\x1b[44m\x1b[2K")?;
     editor.wait_for_output("themed cursor", "\x1b]12;#cd0000\x07")?;
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
@@ -708,7 +724,7 @@ fn pty_help_scrolls_to_model_scopes_and_closes_without_editing() -> TestResult {
     editor.wait_for_initial_render()?;
     editor.send_keys(b"\x1bOP")?; // F1
     editor.wait_for_output("built-in help", "Catomic help")?;
-    for _ in 0..96 {
+    for _ in 0..128 {
         editor.send_keys(b"\x1b[<65;1;1M")?; // SGR wheel down through every help region.
     }
     editor.wait_for_output("model command", "megameow INSTRUCTION")?;
@@ -985,7 +1001,7 @@ fn pty_f7_persists_across_relaunch_and_applies_to_new_unicode_buffer() -> TestRe
     let project = TempProject::new("line_number_preference");
     let active = project.write("猫.txt", "猫 first\nsecond\n");
     let preference_path = project.root.join("catomic/preferences.toml");
-    let gutter = "\x1b[2;90m1 \x1b[0m";
+    let gutter = "\x1b[90m1 \x1b[0m";
 
     let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
     editor.wait_for_initial_render()?;

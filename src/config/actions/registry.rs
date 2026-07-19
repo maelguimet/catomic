@@ -2,6 +2,8 @@
 //! Owns: stable names, labels, scopes, default chords, and keyboard/mouse classification.
 //! Must not: contain parsing, dispatch, rendering, configuration IO, or tests.
 //! Invariants: same-scope defaults do not collide after normalization.
+//! Size: this is declarative inventory data; keeping the complete entry set flat makes order and
+//!   collisions reviewable without adding runtime concatenation or duplicated lookup paths.
 //! Phase: issue #62 complete shortcut customization.
 
 use super::{Descriptor, InputKind::*, Scope::*};
@@ -27,14 +29,38 @@ macro_rules! key {
 macro_rules! mouse {
     ($action:ident, $name:literal, $label:literal, [$($default:literal),+]) => {
         Descriptor { action: super::Action::$action, name: $name, label: $label, scopes: E,
-            defaults: &[$($default),+], input: Mouse }
+            defaults: &[$($default),+], input: MouseButton }
+    };
+}
+macro_rules! wheel {
+    ($action:ident, $name:literal, $label:literal, $default:literal) => {
+        Descriptor {
+            action: super::Action::$action,
+            name: $name,
+            label: $label,
+            scopes: NAV,
+            defaults: &[$default],
+            input: MouseWheel,
+        }
     };
 }
 
 pub(crate) const REGISTRY: &[Descriptor] = &[
     key!(Help, "help", "Toggle shortcut help", G, ["ctrl+h", "f1"]),
-    key!(Quit, "quit", "Guarded application quit", G, ["ctrl+q"]),
-    key!(Save, "save", "Save active buffer", E, ["ctrl+s"]),
+    key!(
+        Quit,
+        "quit",
+        "Quit; repeat only to discard all dirty buffers.",
+        G,
+        ["ctrl+q"]
+    ),
+    key!(
+        Save,
+        "save",
+        "Save; repeat only to confirm an unchanged disk conflict.",
+        E,
+        ["ctrl+s"]
+    ),
     key!(
         SaveAs,
         "save-as",
@@ -48,7 +74,7 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
     key!(
         Reload,
         "reload",
-        "Check or confirm external reload",
+        "Check disk state; repeat only to confirm reloading the same observed revision.",
         E,
         ["ctrl+r"]
     ),
@@ -81,8 +107,20 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
         E,
         ["ctrl+space"]
     ),
-    key!(Undo, "undo", "Undo one edit", E, ["ctrl+z"]),
-    key!(Redo, "redo", "Redo one edit", E, ["ctrl+y", "ctrl+shift+z"]),
+    key!(
+        Undo,
+        "undo",
+        "Undo the last edit transaction.",
+        E,
+        ["ctrl+z"]
+    ),
+    key!(
+        Redo,
+        "redo",
+        "Redo the next edit transaction.",
+        E,
+        ["ctrl+y", "ctrl+shift+z"]
+    ),
     key!(MoveLeft, "move-left", "Move left", NAV, ["left"]),
     key!(MoveRight, "move-right", "Move right", NAV, ["right"]),
     key!(MoveUp, "move-up", "Move up", NAV, ["up"]),
@@ -275,7 +313,7 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
     key!(
         ToggleOverwrite,
         "toggle-overwrite",
-        "Toggle insert/overwrite mode",
+        "Toggle session-wide insert/overwrite typing.",
         E,
         ["insert"]
     ),
@@ -461,5 +499,17 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
         "mouse-select-word",
         "Select double-clicked word",
         ["mouse-left-double"]
+    ),
+    wheel!(
+        MouseScrollUp,
+        "mouse-scroll-up",
+        "Scroll viewport up",
+        "mouse-wheel-up"
+    ),
+    wheel!(
+        MouseScrollDown,
+        "mouse-scroll-down",
+        "Scroll viewport down",
+        "mouse-wheel-down"
     ),
 ];

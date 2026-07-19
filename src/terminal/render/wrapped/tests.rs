@@ -113,7 +113,7 @@ fn markdown_styles_do_not_change_soft_wrap_coordinates() {
     .unwrap();
     assert!(String::from_utf8(out)
         .unwrap()
-        .contains("\x1b[3;35m**bold**\x1b[0m"));
+        .contains("\x1b[35m**bold**\x1b[0m"));
 }
 
 #[test]

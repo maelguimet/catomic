@@ -173,7 +173,13 @@ fn terminal_is_monochrome(term: Option<&str>) -> bool {
 }
 
 fn themed_status_style(style: ThemeStyle, truecolor: bool, fallback: StatusStyle) -> StatusStyle {
-    if style.fg.is_none() && style.bg.is_none() && style.bold.is_none() && style.dim.is_none() {
+    if style.fg.is_none()
+        && style.bg.is_none()
+        && style.bold.is_none()
+        && style.dim.is_none()
+        && style.underlined.is_none()
+        && style.reversed.is_none()
+    {
         return fallback;
     }
     StatusStyle {
@@ -181,8 +187,8 @@ fn themed_status_style(style: ThemeStyle, truecolor: bool, fallback: StatusStyle
         background: style.bg.map(|color| terminal_color(color, truecolor)),
         bold: style.bold.unwrap_or(false),
         dim: style.dim.unwrap_or(false),
-        underlined: false,
-        reversed: false,
+        underlined: style.underlined.unwrap_or(false),
+        reversed: style.reversed.unwrap_or(false),
     }
 }
 

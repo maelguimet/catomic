@@ -24,20 +24,10 @@ pub(crate) fn handle_mouse(
 ) -> io::Result<()> {
     match event.kind {
         MouseEventKind::ScrollUp => {
-            return super::super::viewport::handle_mouse_wheel(
-                app,
-                out,
-                super::super::viewport::ScrollDirection::Up,
-                event.row as usize,
-            );
+            return dispatch_scroll(app, out, MouseGesture::ScrollUp, event)
         }
         MouseEventKind::ScrollDown => {
-            return super::super::viewport::handle_mouse_wheel(
-                app,
-                out,
-                super::super::viewport::ScrollDirection::Down,
-                event.row as usize,
-            );
+            return dispatch_scroll(app, out, MouseGesture::ScrollDown, event);
         }
         _ => {}
     }
@@ -60,6 +50,24 @@ pub(crate) fn handle_mouse(
         }
         _ => Ok(()),
     }
+}
+
+fn dispatch_scroll(
+    app: &mut super::super::App,
+    out: &mut dyn Write,
+    gesture: MouseGesture,
+    event: MouseEvent,
+) -> io::Result<()> {
+    let scope = super::super::input::active_scope(app);
+    let Some(action) = app.keybindings.mouse_action(scope, gesture) else {
+        return Ok(());
+    };
+    let direction = match action {
+        Action::MouseScrollUp => super::super::viewport::ScrollDirection::Up,
+        Action::MouseScrollDown => super::super::viewport::ScrollDirection::Down,
+        _ => unreachable!("wheel gestures map only to wheel actions"),
+    };
+    super::super::viewport::handle_mouse_wheel(app, out, direction, event.row as usize)
 }
 
 fn mouse_down(
@@ -102,7 +110,10 @@ fn dispatch_action(
     gesture: MouseGesture,
     now: Instant,
 ) -> io::Result<()> {
-    let Some(action) = app.keybindings.mouse_action(gesture) else {
+    let Some(action) = app
+        .keybindings
+        .mouse_action(crate::config::actions::Scope::Editor, gesture)
+    else {
         return Ok(());
     };
     match action {

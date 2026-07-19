@@ -187,7 +187,7 @@ fn line_numbered_render_keeps_info_bar_outside_the_gutter() {
     .unwrap();
 
     let rendered = String::from_utf8(out).unwrap();
-    assert!(rendered.contains("\x1b[2;90m1 \x1b[0mone"));
+    assert!(rendered.contains("\x1b[1;1H\x1b[K\x1b[90m1 \x1b[0mone"));
     assert!(rendered.contains("\x1b[2;1H\x1b[7m\x1b[2Kinfo    \x1b[0m"));
 }
 

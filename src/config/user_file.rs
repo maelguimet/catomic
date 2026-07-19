@@ -46,6 +46,17 @@ pub(crate) fn optional_path() -> Option<PathBuf> {
     path().ok()
 }
 
+pub(crate) fn read_optional() -> io::Result<Option<String>> {
+    let Some(path) = optional_path() else {
+        return Ok(None);
+    };
+    match fs::read_to_string(path) {
+        Ok(text) => Ok(Some(text)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
 pub(crate) fn create_template(path: &Path) -> io::Result<()> {
     match fs::symlink_metadata(path) {
         Ok(_) => {
@@ -124,8 +135,13 @@ pub(crate) fn print_path() -> io::Result<()> {
 
 pub(crate) fn check() -> io::Result<()> {
     let path = path()?;
-    super::validate_all()?;
-    if path.exists() {
+    let text = match fs::read_to_string(&path) {
+        Ok(text) => Some(text),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error),
+    };
+    super::validate_text(text.as_deref().unwrap_or_default())?;
+    if text.is_some() {
         println!("Configuration is valid: {}", path.display());
     } else {
         println!(
@@ -149,7 +165,18 @@ pub(crate) fn edit() -> io::Result<()> {
         if !matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
             return Err(io::Error::other("configuration creation cancelled"));
         }
-        create_template(&path)?;
+        if let Err(error) = create_template(&path) {
+            if error.kind() != io::ErrorKind::AlreadyExists {
+                return Err(error);
+            }
+        }
+    }
+    let metadata = fs::metadata(&path)?;
+    if !metadata.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("configuration is not a regular file: {}", path.display()),
+        ));
     }
     let status = launch_editor(&path)?;
     if !status.success() {

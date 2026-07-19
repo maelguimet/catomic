@@ -27,15 +27,20 @@ pub(crate) fn decode<T: DeserializeOwned>(text: &str) -> io::Result<T> {
 }
 
 pub(crate) fn validate_all() -> io::Result<()> {
-    auto_reload::load()?;
-    big_files::load()?;
-    cat::load()?;
-    commands::load()?;
-    editor::load()?;
-    keybindings::load()?;
-    linters::load()?;
-    llm::load()?;
-    theme::load()?;
-    view_preferences::load()?;
+    let text = user_file::read_optional()?.unwrap_or_default();
+    validate_text(&text)
+}
+
+pub(crate) fn validate_text(text: &str) -> io::Result<()> {
+    auto_reload::parse(text)?;
+    big_files::parse(text)?;
+    cat::parse(text)?;
+    commands::parse(text)?;
+    editor::parse(text)?;
+    keybindings::parse(text)?;
+    linters::parse(text)?;
+    llm::parse(text)?;
+    theme::parse(text)?;
+    view_preferences::validate_config(text)?;
     Ok(())
 }

@@ -36,7 +36,8 @@ impl Scope {
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) enum InputKind {
     Keyboard,
-    Mouse,
+    MouseButton,
+    MouseWheel,
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
@@ -121,6 +122,8 @@ pub(crate) enum Action {
     MouseExtendSelection,
     MouseFinishSelection,
     MouseSelectWord,
+    MouseScrollUp,
+    MouseScrollDown,
 }
 
 #[derive(Clone, Copy)]
@@ -157,7 +160,8 @@ pub(crate) fn help_text() -> String {
          Actions and built-in default chords are listed below. [keybindings] can replace\n\
          or unbind them; restart Catomic after saving configuration changes.\n\
          Global actions take precedence, then the active local surface, then editor input.\n\
-         Printable typing is never treated as a configurable shortcut.\n\n",
+         Printable typing is never treated as a configurable shortcut.\n\
+         This view shows built-in defaults; it does not display effective configured keys.\n\n",
     );
     for entry in REGISTRY {
         let scopes = entry
@@ -166,16 +170,50 @@ pub(crate) fn help_text() -> String {
             .map(|scope| scope.name())
             .collect::<Vec<_>>()
             .join(",");
+        let defaults = entry
+            .defaults
+            .iter()
+            .map(|chord| display_chord(chord))
+            .collect::<Vec<_>>()
+            .join(" / ");
         let _ = writeln!(
             text,
-            "  {:<27} {:<24} {:<22} {}",
-            entry.name,
-            entry.defaults.join(" / "),
-            format!("[{scopes}]"),
-            entry.label
+            "  {}\n    {} [{}]\n    {}",
+            entry.name, defaults, scopes, entry.label
         );
     }
     text
+}
+
+pub(crate) fn display_chord(raw: &str) -> String {
+    if raw.starts_with("mouse-") {
+        return raw.to_string();
+    }
+    raw.split('+')
+        .map(|part| match part {
+            "ctrl" => "Ctrl".to_string(),
+            "alt" => "Alt".to_string(),
+            "shift" => "Shift".to_string(),
+            "pageup" => "PageUp".to_string(),
+            "pagedown" => "PageDown".to_string(),
+            "backspace" => "Backspace".to_string(),
+            "delete" => "Delete".to_string(),
+            "insert" => "Insert".to_string(),
+            "enter" => "Enter".to_string(),
+            "esc" => "Esc".to_string(),
+            "space" => "Space".to_string(),
+            "tab" => "Tab".to_string(),
+            "left" => "Left".to_string(),
+            "right" => "Right".to_string(),
+            "up" => "Up".to_string(),
+            "down" => "Down".to_string(),
+            "home" => "Home".to_string(),
+            "end" => "End".to_string(),
+            key if key.starts_with('f') => key.to_ascii_uppercase(),
+            key => key.to_ascii_uppercase(),
+        })
+        .collect::<Vec<_>>()
+        .join("+")
 }
 
 #[cfg(test)]

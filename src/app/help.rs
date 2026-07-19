@@ -62,8 +62,8 @@ pub(crate) fn handle_key(
         KeyCode::Right => move_cursor(app, Move::Right),
         KeyCode::Up => move_cursor(app, Move::Up),
         KeyCode::Down => move_cursor(app, Move::Down),
-        KeyCode::PageUp => move_page(app, false),
-        KeyCode::PageDown => move_page(app, true),
+        KeyCode::PageUp => return scroll_page(app, out, false),
+        KeyCode::PageDown => return scroll_page(app, out, true),
         KeyCode::Home => set_line_edge(app, false),
         KeyCode::End => set_line_edge(app, true),
         _ => app.message = Some("Shortcut help is read-only; Esc closes.".to_string()),
@@ -143,11 +143,16 @@ fn move_cursor(app: &mut super::App, movement: Move) {
     }
 }
 
-fn move_page(app: &mut super::App, forward: bool) {
-    let movement = if forward { Move::Down } else { Move::Up };
-    for _ in 0..app.screen.visible_height().max(1) {
-        move_cursor(app, movement);
-    }
+fn scroll_page(app: &mut super::App, out: &mut dyn Write, forward: bool) -> io::Result<bool> {
+    let direction = if forward {
+        super::viewport::ScrollDirection::Down
+    } else {
+        super::viewport::ScrollDirection::Up
+    };
+    let rows = app.screen.visible_height().max(1);
+    super::viewport::scroll_viewport(app, direction, rows)?;
+    app.render(out)?;
+    Ok(true)
 }
 
 fn set_line_edge(app: &mut super::App, end: bool) {

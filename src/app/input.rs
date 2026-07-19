@@ -20,6 +20,10 @@ use super::{
 
 mod scope;
 
+pub(super) fn active_scope(app: &super::App) -> crate::config::actions::Scope {
+    scope::active(app)
+}
+
 /// Common post-content-mutation cleanup used by insert, delete, newline, undo, redo paths.
 /// Centralizes the exact sequence that must run after any buffer-mutating key:
 /// refresh dirty from history token, clear all transient pending confirmations and

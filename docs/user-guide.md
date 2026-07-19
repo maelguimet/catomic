@@ -1062,18 +1062,23 @@ a leading dot. Command names may contain ASCII letters, digits, `-`, and `_`.
 
 Themes use semantic roles, so rendering does not hard-code colors by syntax or
 surface. The complete role inventory is `text`, `background`, `cursor`,
-`selection`, `line_number`, `status`, `message`, `status_warning`, `error`,
+`selection`, `line_number`, `status`, `message`, `status_warning`, `status_prompt`, `error`,
 `markdown_heading`, `markdown_emphasis`, `markdown_code`, `markdown_marker`,
-`syntax_keyword`, `syntax_string`, `syntax_comment`, `syntax_number`,
+`markdown_link`, `syntax_keyword`, `syntax_string`, `syntax_comment`, `syntax_number`,
 `search_match`, `diff_added`, `diff_removed`, and `preview`. The syntax roles
 apply consistently to the built-in Rust, Python, and JSON highlighters.
 
 A role may be `"default"`, one of the standard 16 names (`black` through
 `white` and `bright-black` through `bright-white`), an integer from 0 to 255,
 `"index:N"`, `"#RRGGBB"`, or `"rgb(R,G,B)"`. Roles also accept a table such as
-`{ fg = "black", bg = "cyan", bold = true, dim = false }`. RGB is emitted as
+`{ fg = "black", bg = "cyan", bold = true, dim = false, underline = false,
+reverse = false }`. RGB is emitted as
 truecolor only when the terminal advertises `COLORTERM=truecolor` or `24bit`;
 otherwise Catomic selects a stable xterm-256 fallback.
+
+`NO_COLOR`, missing or monochrome terminal types, and `TERM=dumb` suppress color
+while retaining bold, underline, and inverse-video distinctions for selections
+and search matches.
 
 The built-in `default` scheme preserves terminal-default text/background while
 keeping selection, search, warnings, and errors distinguishable. Use
@@ -1097,20 +1102,23 @@ mouse-select-word = ["mouse-left-double"]
 ```
 
 The Phase 7 chord-oriented form such as `"alt+s" = "save"` remains accepted as
-an additive compatibility override. Action-oriented entries are preferred
+an explicit compatibility override and may replace a built-in chord even across
+global/local scope precedence. Action-oriented entries are preferred
 because replacement and unbinding are explicit.
 
 Chord modifiers are `ctrl`/`control`, `alt`, and `shift`. Keys may be one
 character, `space`, `tab`, `enter`, `esc`, `backspace`, `delete`, `insert`, an
 arrow key, `pageup`, `pagedown`, `home`, `end`, or `f1` through `f12`. Mouse
-gestures are `mouse-left`, `mouse-left-drag`, `mouse-left-up`, and
-`mouse-left-double`. Catomic rejects configurable unmodified or Shift-only
-printable keys so a remap cannot silently capture ordinary typing.
+gestures are `mouse-left`, `mouse-left-drag`, `mouse-left-up`,
+`mouse-left-double`, `mouse-wheel-up`, and `mouse-wheel-down`. Button actions
+cannot be assigned wheel gestures (or vice versa). Catomic rejects configurable
+unmodified or Shift-only printable keys so a remap cannot silently capture ordinary typing.
 
 Global actions have first precedence, followed by the active local surface,
 then editor typing. A chord may therefore have a different local meaning in a
 prompt, search, completion, preview, picker, or help surface. Two actions in the
-same normalized scope cannot share a chord; `config check` reports both action
+same effective scope cannot share a chord; global bindings overlap every local
+scope and therefore cannot shadow a local action. `config check` reports both action
 names, both input chords, the scope, and the normalized collision. `Ctrl+Space`
 and terminals that report it as Ctrl+Null normalize to the same chord, as do
 `Shift+Tab` and BackTab, modifier aliases, case, and `esc`/`escape`.
@@ -1121,25 +1129,88 @@ checked against the same registry in tests:
 <!-- action-registry-start -->
 
 ```text
-global: help quit
-editor: save save-as open new close reload search replace goto-line command-prompt complete
-editor: undo redo indent unindent insert-newline toggle-overwrite
-editor: delete-backward delete-forward delete-word-backward delete-word-forward
-editor: select-all copy cut paste previous-buffer next-buffer previous-page next-page
-editor: markdown-preview line-numbers whitespace soft-wrap
-navigation: move-left move-right move-up move-down line-start line-end viewport-up viewport-down
-selection: select-left select-right select-up select-down select-line-start select-line-end
-selection: select-viewport-up select-viewport-down
-selection: document-start document-end select-document-start select-document-end
-selection: word-left word-right select-word-left select-word-right
-navigation: paragraph-previous paragraph-next
-prompt: prompt-submit prompt-cancel prompt-delete-backward
-search: search-next search-previous search-cancel
-completion: completion-next completion-previous completion-accept completion-cancel
-preview: preview-accept preview-cancel
-picker: picker-accept picker-cancel
-help: help-close
-mouse: mouse-place-cursor mouse-extend-selection mouse-finish-selection mouse-select-word
+help | global | ctrl+h, f1
+quit | global | ctrl+q
+save | editor | ctrl+s
+save-as | editor | ctrl+shift+s
+open | editor | ctrl+o
+new | editor | ctrl+n
+close | editor | ctrl+w
+reload | editor | ctrl+r
+search | editor | ctrl+f
+replace | editor | ctrl+shift+f
+goto-line | editor | ctrl+g
+command-prompt | editor | ctrl+shift+p, f2
+complete | editor | ctrl+space
+undo | editor | ctrl+z
+redo | editor | ctrl+y, ctrl+shift+z
+move-left | editor,preview,picker,help | left
+move-right | editor,preview,picker,help | right
+move-up | editor,preview,picker,help | up
+move-down | editor,preview,picker,help | down
+select-left | editor | shift+left
+select-right | editor | shift+right
+select-up | editor | shift+up
+select-down | editor | shift+down
+line-start | editor,preview,picker,help | home
+line-end | editor,preview,picker,help | end
+select-line-start | editor | shift+home
+select-line-end | editor | shift+end
+document-start | editor | ctrl+home
+document-end | editor | ctrl+end
+select-document-start | editor | ctrl+shift+home
+select-document-end | editor | ctrl+shift+end
+viewport-up | editor,preview,picker,help | pageup
+viewport-down | editor,preview,picker,help | pagedown
+select-viewport-up | editor | shift+pageup
+select-viewport-down | editor | shift+pagedown
+word-left | editor | ctrl+left
+word-right | editor | ctrl+right
+select-word-left | editor | ctrl+shift+left
+select-word-right | editor | ctrl+shift+right
+paragraph-previous | editor | ctrl+up
+paragraph-next | editor | ctrl+down
+delete-backward | editor | backspace
+delete-forward | editor | delete
+delete-word-backward | editor | ctrl+backspace
+delete-word-forward | editor | ctrl+delete
+insert-newline | editor | enter
+indent | editor | tab
+unindent | editor | shift+tab
+toggle-overwrite | editor | insert
+select-all | editor | ctrl+a
+copy | editor | ctrl+c
+cut | editor | ctrl+x
+paste | editor | ctrl+v
+previous-buffer | editor | alt+pageup
+next-buffer | editor | alt+pagedown
+previous-page | editor | ctrl+pageup
+next-page | editor | ctrl+pagedown
+markdown-preview | editor,preview | f6
+line-numbers | editor | f7
+whitespace | editor | f8
+soft-wrap | editor | f9
+prompt-submit | prompt | enter
+prompt-cancel | prompt | esc
+prompt-delete-backward | prompt,search | backspace
+search-next | search | enter, down
+search-previous | search | up
+search-cancel | search | esc
+completion-next | completion | tab, ctrl+space
+completion-previous | completion | shift+tab
+completion-accept | completion | enter
+completion-cancel | completion | esc
+preview-accept | preview | enter
+preview-cancel | preview | esc
+picker-accept | picker | enter
+picker-cancel | picker | esc
+help-close | help | esc
+mouse-place-cursor | editor | mouse-left
+mouse-extend-selection | editor | mouse-left-drag
+mouse-finish-selection | editor | mouse-left-up
+mouse-select-word | editor | mouse-left-double
+mouse-scroll-up | editor,preview,picker,help | mouse-wheel-up
+mouse-scroll-down | editor,preview,picker,help | mouse-wheel-down
 ```
 
 <!-- action-registry-end -->

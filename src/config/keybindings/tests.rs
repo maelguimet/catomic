@@ -5,6 +5,7 @@
 //! Phase: issue #62 complete shortcut customization.
 
 use super::*;
+use crossterm::event::{KeyCode, KeyModifiers};
 
 fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
     KeyEvent::new(code, modifiers)
@@ -63,6 +64,39 @@ fn legacy_chord_to_action_overrides_remain_compatible() {
 }
 
 #[test]
+fn legacy_overrides_really_replace_cross_scope_defaults() {
+    let local_replaces_global = parse("[keybindings]\n\"ctrl+h\" = \"save\"\n").unwrap();
+    assert_eq!(
+        local_replaces_global.translate(
+            Scope::Editor,
+            key(KeyCode::Char('h'), KeyModifiers::CONTROL)
+        ),
+        Some(key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+    );
+    assert!(local_replaces_global
+        .translate(
+            Scope::Prompt,
+            key(KeyCode::Char('h'), KeyModifiers::CONTROL)
+        )
+        .is_none());
+
+    let global_replaces_locals = parse("[keybindings]\nenter = \"help\"\n").unwrap();
+    for scope in [
+        Scope::Editor,
+        Scope::Prompt,
+        Scope::Search,
+        Scope::Completion,
+    ] {
+        assert_eq!(
+            global_replaces_locals.translate(scope, key(KeyCode::Enter, KeyModifiers::NONE)),
+            Some(key(KeyCode::Char('h'), KeyModifiers::CONTROL)),
+            "global override must win in {}",
+            scope.name()
+        );
+    }
+}
+
+#[test]
 fn local_scope_is_predictable_and_global_actions_win_everywhere() {
     let bindings =
         parse("[keybindings]\nprompt-cancel = [\"alt+x\"]\nquit = [\"alt+q\"]\n").unwrap();
@@ -92,6 +126,20 @@ fn separate_local_scopes_may_intentionally_reuse_a_chord() {
         bindings.translate(Scope::Completion, chord),
         Some(key(KeyCode::Esc, KeyModifiers::NONE))
     );
+}
+
+#[test]
+fn global_bindings_cannot_silently_shadow_any_local_surface() {
+    for text in [
+        "[keybindings]\nquit = [\"esc\"]\n",
+        "[keybindings]\nprompt-cancel = [\"ctrl+q\"]\n",
+    ] {
+        let error = parse(text).expect_err("global/local effective collision must fail");
+        let message = error.to_string();
+        assert!(message.contains("quit"), "{message}");
+        assert!(message.contains("prompt-cancel"), "{message}");
+        assert!(message.contains("prompt"), "{message}");
+    }
 }
 
 #[test]
@@ -134,10 +182,30 @@ fn mouse_gestures_can_be_reassigned_or_unbound() {
         parse("[keybindings]\nmouse-place-cursor = []\nmouse-select-word = [\"mouse-left\"]\n")
             .unwrap();
     assert_eq!(
-        bindings.mouse_action(MouseGesture::Left),
+        bindings.mouse_action(Scope::Editor, MouseGesture::Left),
         Some(Action::MouseSelectWord)
     );
-    assert_eq!(bindings.mouse_action(MouseGesture::LeftDouble), None);
+    assert_eq!(
+        bindings.mouse_action(Scope::Editor, MouseGesture::LeftDouble),
+        None
+    );
+}
+
+#[test]
+fn wheel_gestures_can_be_swapped_or_unbound_without_crossing_button_types() {
+    let bindings =
+        parse("[keybindings]\nmouse-scroll-up = []\nmouse-scroll-down = [\"mouse-wheel-up\"]\n")
+            .unwrap();
+    assert_eq!(
+        bindings.mouse_action(Scope::Help, MouseGesture::ScrollUp),
+        Some(Action::MouseScrollDown)
+    );
+    assert_eq!(
+        bindings.mouse_action(Scope::Editor, MouseGesture::ScrollDown),
+        None
+    );
+    assert!(parse("[keybindings]\nmouse-place-cursor = [\"mouse-wheel-up\"]\n").is_err());
+    assert!(parse("[keybindings]\nmouse-scroll-up = [\"mouse-left\"]\n").is_err());
 }
 
 #[test]

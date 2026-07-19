@@ -197,6 +197,12 @@ fn write_style_prefix<W: Write + ?Sized>(
     if style.dim == Some(true) {
         codes.push("2".to_string());
     }
+    if style.underlined == Some(true) {
+        codes.push("4".to_string());
+    }
+    if style.reversed == Some(true) {
+        codes.push("7".to_string());
+    }
     if codes.is_empty() {
         return Ok(false);
     }
@@ -228,6 +234,9 @@ pub(super) fn write_cursor_color<W: Write + ?Sized>(out: &mut W, theme: Theme) -
     let Some(color) = theme.cursor else {
         return Ok(());
     };
+    if color == Color::Default {
+        return write!(out, "\x1b]112\x07");
+    }
     let (red, green, blue) = color_rgb(color);
     write!(out, "\x1b]12;#{red:02x}{green:02x}{blue:02x}\x07")
 }

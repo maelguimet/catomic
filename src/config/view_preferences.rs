@@ -58,32 +58,37 @@ impl ViewPreferences {
     }
 }
 
-pub(crate) fn load() -> io::Result<ViewPreferences> {
+pub(crate) fn current_path() -> Option<PathBuf> {
     let home = std::env::var_os("HOME");
-    let config_path = super::user_file::resolve_path(
-        std::env::var_os("XDG_CONFIG_HOME").as_deref(),
-        home.as_deref(),
-    )
-    .ok();
-    let state_path = preference_path(
+    preference_path(
         std::env::var_os("XDG_STATE_HOME").as_deref(),
         home.as_deref(),
-    );
-    load_from_paths(config_path.as_deref(), state_path)
+    )
 }
 
-fn load_from_paths(
-    config_path: Option<&Path>,
+pub(crate) fn load_with_config(
+    config: &str,
     preference_path: Option<PathBuf>,
 ) -> io::Result<ViewPreferences> {
-    let configured = read_optional(config_path, parse_config)?
-        .flatten()
-        .unwrap_or(DEFAULT_LINE_NUMBERS);
+    let configured = parse_config(config)?.unwrap_or(DEFAULT_LINE_NUMBERS);
     let persisted = read_optional(preference_path.as_deref(), parse_preferences)?.flatten();
     Ok(ViewPreferences {
         line_numbers: persisted.unwrap_or(configured),
         path: preference_path,
     })
+}
+
+pub(crate) fn validate_config(text: &str) -> io::Result<()> {
+    parse_config(text).map(|_| ())
+}
+
+#[cfg(test)]
+fn load_from_paths(
+    config_path: Option<&Path>,
+    preference_path: Option<PathBuf>,
+) -> io::Result<ViewPreferences> {
+    let config = read_optional(config_path, |text| Ok(text.to_string()))?.unwrap_or_default();
+    load_with_config(&config, preference_path)
 }
 
 fn read_optional<T>(

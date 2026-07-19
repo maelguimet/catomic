@@ -6,7 +6,6 @@
 
 use std::collections::BTreeMap;
 use std::io;
-use std::path::Path;
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -98,21 +97,6 @@ pub(crate) fn parse(text: &str) -> io::Result<CommandConfig> {
     let hooks = raw.hooks.into();
     validate_hooks(&commands, &hooks)?;
     Ok(CommandConfig { commands, hooks })
-}
-
-pub(crate) fn load_from(path: &Path) -> io::Result<CommandConfig> {
-    match std::fs::read_to_string(path) {
-        Ok(text) => parse(&text),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(CommandConfig::default()),
-        Err(error) => Err(error),
-    }
-}
-
-pub(crate) fn load() -> io::Result<CommandConfig> {
-    match super::user_file::optional_path() {
-        Some(path) => load_from(&path),
-        None => Ok(CommandConfig::default()),
-    }
 }
 
 #[derive(Deserialize)]

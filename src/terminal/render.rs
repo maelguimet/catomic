@@ -386,7 +386,7 @@ mod tests {
         for row in 1..=3 {
             assert!(s.contains(&format!("\x1b[{row};1H\x1b[K")));
         }
-        assert!(s.contains("\x1b[4;1H\x1b[Kstatus"));
+        assert!(s.contains("\x1b[4;1H\x1b[30m\x1b[47m\x1b[2Kstatus"));
     }
 
     #[test]
@@ -469,7 +469,7 @@ mod tests {
 
         let rendered = String::from_utf8(out).unwrap();
         assert!(rendered.contains("a\u{301}猫x"));
-        assert!(rendered.ends_with("\x1b[1;4H"));
+        assert!(rendered.ends_with("\x1b[0 q\x1b[1;4H\x1b[?25h"));
     }
 
     #[test]

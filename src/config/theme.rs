@@ -6,7 +6,6 @@
 
 use std::collections::HashMap;
 use std::io;
-use std::path::Path;
 
 use serde::Deserialize;
 
@@ -19,6 +18,8 @@ pub(crate) struct Style {
     pub(crate) bg: Option<Color>,
     pub(crate) bold: Option<bool>,
     pub(crate) dim: Option<bool>,
+    pub(crate) underlined: Option<bool>,
+    pub(crate) reversed: Option<bool>,
 }
 
 impl Style {
@@ -28,6 +29,8 @@ impl Style {
             bg: None,
             bold: None,
             dim: None,
+            underlined: None,
+            reversed: None,
         }
     }
 
@@ -37,6 +40,8 @@ impl Style {
             bg: Some(bg),
             bold: None,
             dim: None,
+            underlined: None,
+            reversed: None,
         }
     }
 
@@ -46,6 +51,8 @@ impl Style {
             bg: role.bg.or(self.bg),
             bold: role.bold.or(self.bold),
             dim: role.dim.or(self.dim),
+            underlined: role.underlined.or(self.underlined),
+            reversed: role.reversed.or(self.reversed),
         }
     }
 }
@@ -116,21 +123,54 @@ pub(crate) fn parse(text: &str) -> io::Result<Theme> {
     Ok(theme)
 }
 
-pub(crate) fn load_from(path: &Path) -> io::Result<Theme> {
-    let mut theme = match std::fs::read_to_string(path) {
-        Ok(text) => parse(&text)?,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Theme::default(),
-        Err(error) => return Err(error),
-    };
-    theme.truecolor = terminal_supports_truecolor();
-    Ok(theme)
+pub(crate) fn for_terminal(theme: Theme) -> Theme {
+    let no_color = std::env::var_os("NO_COLOR").is_some();
+    let term = std::env::var("TERM").ok();
+    apply_capabilities(
+        theme,
+        no_color || terminal_is_monochrome(term.as_deref()),
+        terminal_supports_truecolor(),
+    )
 }
 
-pub(crate) fn load() -> io::Result<Theme> {
-    match super::user_file::optional_path() {
-        Some(path) => load_from(&path),
-        None => Ok(Theme::default()),
+fn apply_capabilities(mut theme: Theme, monochrome: bool, truecolor: bool) -> Theme {
+    theme.truecolor = truecolor && !monochrome;
+    if !monochrome {
+        return theme;
     }
+    theme.cursor = None;
+    for style in [
+        &mut theme.text,
+        &mut theme.selection,
+        &mut theme.line_number,
+        &mut theme.status,
+        &mut theme.message,
+        &mut theme.status_warning,
+        &mut theme.status_prompt,
+        &mut theme.error,
+        &mut theme.markdown_heading,
+        &mut theme.markdown_emphasis,
+        &mut theme.markdown_code,
+        &mut theme.markdown_marker,
+        &mut theme.markdown_link,
+        &mut theme.syntax_keyword,
+        &mut theme.syntax_string,
+        &mut theme.syntax_comment,
+        &mut theme.syntax_number,
+        &mut theme.search_match,
+        &mut theme.diff_added,
+        &mut theme.diff_removed,
+        &mut theme.preview,
+    ] {
+        style.fg = None;
+        style.bg = None;
+    }
+    theme.selection.reversed = Some(true);
+    theme.search_match.reversed = Some(true);
+    theme.search_match.underlined = Some(true);
+    theme.diff_added.bold = Some(true);
+    theme.diff_removed.underlined = Some(true);
+    theme
 }
 
 fn named(name: &str) -> io::Result<Theme> {
@@ -256,11 +296,17 @@ fn apply_style(style: &mut Style, value: &toml::Value, role: &str) -> io::Result
     if let Some(value) = table.get("dim") {
         style.dim = Some(boolean(value, role, "dim")?);
     }
+    if let Some(value) = table.get("underline") {
+        style.underlined = Some(boolean(value, role, "underline")?);
+    }
+    if let Some(value) = table.get("reverse") {
+        style.reversed = Some(boolean(value, role, "reverse")?);
+    }
     Ok(())
 }
 
 fn color_option(value: &toml::Value, role: &str) -> io::Result<Option<Color>> {
-    color::parse_value(value, role).map(|color| (color != Color::Default).then_some(color))
+    color::parse_value(value, role).map(Some)
 }
 
 fn boolean(value: &toml::Value, role: &str, field: &str) -> io::Result<bool> {
@@ -272,6 +318,13 @@ fn boolean(value: &toml::Value, role: &str, field: &str) -> io::Result<bool> {
 fn terminal_supports_truecolor() -> bool {
     std::env::var("COLORTERM")
         .is_ok_and(|value| matches!(value.to_ascii_lowercase().as_str(), "truecolor" | "24bit"))
+}
+
+fn terminal_is_monochrome(term: Option<&str>) -> bool {
+    term.is_none_or(|term| {
+        let term = term.to_ascii_lowercase();
+        term == "dumb" || term == "unknown" || term.contains("mono") || term.starts_with("vt")
+    })
 }
 
 fn invalid(message: impl Into<String>) -> io::Error {

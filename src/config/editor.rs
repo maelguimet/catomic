@@ -74,21 +74,6 @@ pub(crate) fn parse(text: &str) -> io::Result<EditorConfig> {
     })
 }
 
-pub(crate) fn load_from(path: &Path) -> io::Result<EditorConfig> {
-    match std::fs::read_to_string(path) {
-        Ok(text) => parse(&text),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(EditorConfig::default()),
-        Err(error) => Err(error),
-    }
-}
-
-pub(crate) fn load() -> io::Result<EditorConfig> {
-    match super::user_file::optional_path() {
-        Some(path) => load_from(&path),
-        None => Ok(EditorConfig::default()),
-    }
-}
-
 #[derive(Default, Deserialize)]
 struct ConfigFile {
     #[serde(default)]

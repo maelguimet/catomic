@@ -14,7 +14,10 @@ fn defaults_and_named_schemes_are_accessible() {
         Style::pair(Color::Ansi(0), Color::Ansi(6))
     );
     assert_eq!(default.status, Style::pair(Color::Ansi(0), Color::Ansi(7)));
-    assert_eq!(default.message, Style::pair(Color::Ansi(0), Color::Ansi(7)));
+    assert_eq!(
+        default.message,
+        Style::pair(Color::Ansi(0), Color::Ansi(14))
+    );
     let contrast = parse("[theme]\nname = \"high-contrast\"\n").unwrap();
     assert_eq!(contrast.text, Style::pair(Color::Ansi(15), Color::Ansi(0)));
     assert!(parse("[theme]\nname = \"missing\"\n").is_err());
@@ -29,7 +32,7 @@ fn supports_default_named_indexed_and_rgb_colors() {
     )
     .unwrap();
     assert_eq!(theme.text.fg, Some(Color::Ansi(15)));
-    assert_eq!(theme.text.bg, None);
+    assert_eq!(theme.text.bg, Some(Color::Default));
     assert_eq!(theme.cursor, Some(Color::Rgb(0x12, 0x34, 0x56)));
     assert_eq!(theme.selection.fg, Some(Color::Indexed(17)));
     assert_eq!(theme.selection.bg, Some(Color::Indexed(200)));
@@ -66,4 +69,16 @@ fn rgb_fallback_is_a_stable_xterm_cube_index() {
     assert_eq!(indexed_fallback(0, 0, 0), 16);
     assert_eq!(indexed_fallback(255, 255, 255), 231);
     assert_eq!(indexed_fallback(255, 0, 0), 196);
+}
+
+#[test]
+fn monochrome_capability_keeps_non_color_distinctions() {
+    let theme = apply_capabilities(parse("").unwrap(), true, true);
+    assert!(!theme.truecolor);
+    assert_eq!(theme.cursor, None);
+    assert_eq!(theme.selection.fg, None);
+    assert_eq!(theme.selection.bg, None);
+    assert_eq!(theme.selection.reversed, Some(true));
+    assert_eq!(theme.search_match.underlined, Some(true));
+    assert_eq!(theme.diff_added.bold, Some(true));
 }

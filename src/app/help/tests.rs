@@ -47,7 +47,7 @@ fn ctrl_h_commits_help_content_and_status_as_one_frame() {
     assert_eq!(out.writes.len(), 1, "help redraw must be one output frame");
     assert_eq!(out.flushes, 1, "the committed frame must be flushed once");
     let frame = String::from_utf8_lossy(&out.writes[0]);
-    assert!(frame.contains("Catomic help - default keyboard and command quick reference"));
+    assert!(frame.contains("Catomic help - configurable actions and command quick reference"));
     let help = display_buffer(&app).unwrap().to_string();
     assert!(help.contains("Ctrl+Z"));
     assert!(help.contains("Undo the last edit transaction."));
@@ -74,7 +74,7 @@ fn ctrl_h_opens_navigates_and_closes_without_editing_source() {
     assert!(is_viewing(&app));
     let help = display_buffer(&app).unwrap().to_string();
     assert!(help.contains("save-as"));
-    assert!(help.contains("ctrl+shift+s"));
+    assert!(help.contains("Ctrl+Shift+S"));
 
     handle_key(
         &mut app,
@@ -82,7 +82,7 @@ fn ctrl_h_opens_navigates_and_closes_without_editing_source() {
         KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE),
     )
     .unwrap();
-    assert!(display_buffer(&app).unwrap().cursor().row > 0);
+    assert_ne!((app.screen.scroll_top, app.screen.wrap_col), (0, 0));
 
     assert!(handle_key(&mut app, &mut out, toggle).unwrap());
     assert!(!is_viewing(&app));
@@ -102,7 +102,7 @@ fn rendered_help_covers_every_cataloged_shortcut_command_and_alias() {
         );
         for chord in action.defaults {
             assert!(
-                text.contains(chord),
+                text.contains(&crate::config::actions::display_chord(chord)),
                 "missing chord {chord} for {}",
                 action.name
             );

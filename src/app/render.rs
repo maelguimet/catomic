@@ -64,7 +64,6 @@ fn render_options(app: &App) -> term::render::RenderOptions {
         soft_wrap: view::soft_wrap_active(app),
         status_role: term::render::StatusRole::Normal,
         status_theme: app.status_theme,
-        ..term::render::RenderOptions::default()
     }
 }
 

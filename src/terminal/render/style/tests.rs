@@ -40,7 +40,7 @@ fn markdown_inline_code_is_distinct_from_cyan_markers() {
                 ..RenderOptions::default()
             }
         ),
-        "\x1b[36m- \x1b[0m\x1b[33m`code`\x1b[0m"
+        "\x1b[96m- \x1b[0m\x1b[32m`code`\x1b[0m"
     );
 }
 
@@ -175,8 +175,50 @@ fn markdown_table_styling_composes_with_unicode_selection() {
         },
     );
 
-    assert!(output.contains("\x1b[36m|\x1b[0m \x1b[7m猫\x1b[27m é "));
-    assert!(output.contains("\x1b[3;35m**bold**\x1b[0m"));
+    assert!(output.contains("\x1b[96m|\x1b[0m \x1b[30;46m猫\x1b[0m é "));
+    assert!(output.contains("\x1b[35m**bold**\x1b[0m"));
+}
+
+#[test]
+fn explicit_terminal_default_resets_inherited_overlay_colors() {
+    let theme = Theme {
+        text: Style::fg(Color::Ansi(1)),
+        selection: Style {
+            fg: Some(Color::Default),
+            reversed: Some(true),
+            ..Style::default()
+        },
+        ..Theme::default()
+    };
+    assert_eq!(
+        rendered(
+            "cat",
+            0,
+            RenderOptions {
+                highlight: Some(TextHighlight {
+                    start: Cursor { row: 0, col: 0 },
+                    end: Cursor { row: 0, col: 3 },
+                }),
+                theme,
+                ..RenderOptions::default()
+            }
+        ),
+        "\x1b[39;7mcat\x1b[0m"
+    );
+}
+
+#[test]
+fn default_cursor_color_uses_the_terminal_reset_sequence() {
+    let mut out = Vec::new();
+    write_cursor_color(
+        &mut out,
+        Theme {
+            cursor: Some(Color::Default),
+            ..Theme::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(out, b"\x1b]112\x07");
 }
 
 #[test]

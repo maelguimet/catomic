@@ -34,6 +34,27 @@ fn editor_actions_have_unique_names_bindings_and_help() {
 }
 
 #[test]
+fn configurable_registry_defaults_match_the_canonical_dispatch_bridge() {
+    for spec in EDITOR_ACTIONS {
+        let descriptor = crate::config::actions::REGISTRY
+            .iter()
+            .find(|descriptor| descriptor.name == spec.name)
+            .unwrap_or_else(|| panic!("config registry is missing {}", spec.name));
+        let displayed = descriptor
+            .defaults
+            .iter()
+            .map(|chord| crate::config::actions::display_chord(chord))
+            .collect::<Vec<_>>()
+            .join(" / ");
+        assert_eq!(
+            displayed, spec.default_keys,
+            "default drift for {}",
+            spec.name
+        );
+    }
+}
+
+#[test]
 fn prompt_commands_and_aliases_are_unique_and_have_purposes() {
     let mut names = HashSet::new();
     for spec in PROMPT_COMMANDS {

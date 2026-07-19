@@ -471,18 +471,30 @@ fn pty_insert_overwrite_cursor_prompt_and_teardown_transitions() -> TestResult {
             output.contains("INS") && output.contains("\x1b[0 q")
         },
     )?;
+
+    let reenable_start = editor.output_len();
+    editor.send_keys(b"\x1b[2~")?;
+    wait_until(
+        "overwrite cursor before normal teardown",
+        Duration::from_secs(2),
+        || {
+            let output = editor.output_since(reenable_start);
+            output.contains("OVR") && output.contains("\x1b[2 q")
+        },
+    )?;
     editor.send_keys(b"\x13\x11")?;
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(&temp.path)?, "Xbc");
     let output = editor.output_string();
+    let final_block = output.rfind("\x1b[2 q").expect("final overwrite cursor");
     let final_default = output.rfind("\x1b[0 q").expect("teardown cursor reset");
     let leave_screen = output
         .rfind("\x1b[?1049l")
         .expect("teardown leaves alternate screen");
     assert!(
-        final_default < leave_screen,
-        "cursor must reset before leaving the alternate screen"
+        final_block < final_default && final_default < leave_screen,
+        "teardown must reset an active overwrite cursor before leaving the alternate screen"
     );
     Ok(())
 }
@@ -494,6 +506,17 @@ fn pty_sigterm_restores_terminal_modes_before_exit() -> TestResult {
     fs::write(&temp.path, "unsaved")?;
     let mut editor = PtyEditor::spawn(&temp.path)?;
     editor.wait_for_initial_render()?;
+
+    let enable_start = editor.output_len();
+    editor.send_keys(b"\x1b[2~")?;
+    wait_until(
+        "overwrite cursor before signal",
+        Duration::from_secs(2),
+        || {
+            let output = editor.output_since(enable_start);
+            output.contains("OVR") && output.contains("\x1b[2 q")
+        },
+    )?;
 
     let status = std::process::Command::new("kill")
         .args(["-TERM", &editor.process_id()?.to_string()])
@@ -508,9 +531,12 @@ fn pty_sigterm_restores_terminal_modes_before_exit() -> TestResult {
         "bracketed paste not disabled"
     );
     assert!(output.contains("\x1b[?1049l"), "alternate screen not left");
+    let final_block = output.rfind("\x1b[2 q").expect("signal test block cursor");
+    let final_default = output.rfind("\x1b[0 q").expect("signal cursor reset");
+    let leave_screen = output.rfind("\x1b[?1049l").expect("signal leaves screen");
     assert!(
-        output.contains("\x1b[0 q"),
-        "cursor style not restored after signal"
+        final_block < final_default && final_default < leave_screen,
+        "handled signal must reset an active overwrite cursor before leaving the screen"
     );
     Ok(())
 }

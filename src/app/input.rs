@@ -200,6 +200,7 @@ pub(super) fn handle_quit(app: &mut super::App, out: &mut dyn Write) -> io::Resu
                     app.message = Some(format!("Close error: {error}"));
                     return app.render(out);
                 }
+                app.message = None;
                 for _ in 0..app.buffer_count() {
                     if app.active_buffer_index == return_target
                         || !app.switch_buffer(buffers::BufferDirection::Previous)

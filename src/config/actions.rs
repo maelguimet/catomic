@@ -44,6 +44,7 @@ pub(crate) enum InputKind {
 pub(crate) enum Action {
     Help,
     Quit,
+    Interrupt,
     Save,
     SaveAs,
     Open,

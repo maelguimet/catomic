@@ -78,6 +78,8 @@ preview = "default"
 #
 # [keybindings]
 # save = ["ctrl+s", "alt+s"]
+# copy = ["ctrl+c"]
+# interrupt = ["ctrl+shift+c"]
 # help = []
 # command-prompt = ["ctrl+shift+p", "f2"]
 # select-model = ["f10", "alt+m"]

@@ -12,6 +12,17 @@ use crate::help_catalog;
 
 use super::super::{hooks, inline_clanker, undo_redo, App};
 
+pub(super) fn is_interrupt_key(key: KeyEvent) -> bool {
+    matches!(
+        key,
+        KeyEvent {
+            code: KeyCode::Char('c' | 'C'),
+            modifiers,
+            ..
+        } if modifiers == KeyModifiers::CONTROL | KeyModifiers::SHIFT
+    )
+}
+
 pub(super) fn handle_inline_clanker_key(
     app: &mut App,
     out: &mut dyn Write,

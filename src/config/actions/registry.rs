@@ -55,6 +55,13 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
         ["ctrl+q"]
     ),
     key!(
+        Interrupt,
+        "interrupt",
+        "Interrupt immediately through the SIGINT teardown path.",
+        G,
+        ["ctrl+shift+c"]
+    ),
+    key!(
         Save,
         "save",
         "Save; repeat only to confirm an unchanged disk conflict.",

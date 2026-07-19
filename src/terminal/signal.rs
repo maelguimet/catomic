@@ -30,6 +30,10 @@ pub(crate) fn termination_signal() -> Option<i32> {
     }
 }
 
+pub(crate) fn request_interrupt() {
+    record_termination(libc::SIGINT);
+}
+
 pub(crate) fn take_resize_pending() -> bool {
     RESIZE_PENDING.swap(false, Ordering::Relaxed)
 }

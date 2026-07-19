@@ -81,6 +81,10 @@ pub(crate) fn handle_key_with(
     let Some(key) = app.keybindings.translate(scope, key) else {
         return Ok(());
     };
+    if shortcuts::is_interrupt_key(key) {
+        crate::terminal::request_interrupt();
+        return Ok(());
+    }
     handle_normalized_key(app, out, key)
 }
 

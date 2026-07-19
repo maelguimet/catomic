@@ -312,6 +312,16 @@ impl PtyEditor {
         Ok(())
     }
 
+    fn signal_interrupt(&self) -> TestResult {
+        let process_id = self.process_id()?;
+        let process_id = libc::pid_t::try_from(process_id)?;
+        // SAFETY: process_id belongs to the live PTY child and SIGINT has no payload.
+        if unsafe { libc::kill(process_id, libc::SIGINT) } == -1 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        Ok(())
+    }
+
     fn wait_for_output(&self, label: &str, expected: &str) -> TestResult {
         if let Err(error) = wait_until(label, Duration::from_secs(2), || {
             self.output_string().contains(expected)
@@ -1078,6 +1088,7 @@ fn pty_mouse_selection_ctrl_c_emits_ghostty_compatible_osc52() -> TestResult {
     // Select columns 0..4 with SGR mouse reporting, then exercise literal Ctrl+C.
     editor.send_keys(b"\x1b[<0;1;1M\x1b[<32;5;1M\x1b[<0;5;1m")?;
     editor.wait_for_output("mouse selection", "\x1b[30;46mcopy\x1b[0m")?;
+    editor.wait_for_output("mouse copy-on-select", "\x1b]52;c;Y29weQ==\x1b\\")?;
     editor.clear_output();
     editor.send_keys(b"\x03")?;
     editor.wait_for_output("Ctrl+C OSC 52 clipboard write", "\x1b]52;c;Y29weQ==\x1b\\")?;
@@ -1085,6 +1096,41 @@ fn pty_mouse_selection_ctrl_c_emits_ghostty_compatible_osc52() -> TestResult {
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
     assert_eq!(fs::read_to_string(&temp.path)?, "copy me");
+    Ok(())
+}
+
+#[test]
+fn pty_ctrl_shift_c_uses_interrupt_teardown_and_preserves_dirty_file() -> TestResult {
+    let temp = TempPath::new("interrupt_chord");
+    fs::write(&temp.path, "keep")?;
+    let mut editor = PtyEditor::spawn(&temp.path)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"X")?;
+    editor.send_keys(b"\x1b[67;6u")?; // Ctrl+Shift+C via CSI-u.
+    editor.wait_for_output("interrupt terminal teardown", "\x1b[?1049l")?;
+    editor.wait_for_exit_code(130)?;
+
+    assert_eq!(fs::read_to_string(&temp.path)?, "keep");
+    let output = editor.output_string();
+    assert!(output.contains("\x1b[?1000l"));
+    assert!(output.contains("\x1b[?2004l"));
+    Ok(())
+}
+
+#[test]
+fn pty_external_sigint_restores_terminal_and_exits_130() -> TestResult {
+    let temp = TempPath::new("external_sigint");
+    fs::write(&temp.path, "signal")?;
+    let mut editor = PtyEditor::spawn(&temp.path)?;
+
+    editor.wait_for_initial_render()?;
+    editor.signal_interrupt()?;
+    editor.wait_for_output("SIGINT terminal teardown", "\x1b[?1049l")?;
+    editor.wait_for_exit_code(130)?;
+
+    assert_eq!(fs::read_to_string(&temp.path)?, "signal");
+    assert_mouse_capture_lifecycle(&editor.output_string());
     Ok(())
 }
 

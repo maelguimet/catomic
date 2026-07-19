@@ -63,8 +63,12 @@ impl Editor {
         let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
         command.arg(path);
         command.env("XDG_CONFIG_HOME", config_root);
+        command.env("TERM", "xterm-256color");
+        command.env_remove("COLORTERM");
         if color {
             command.env_remove("NO_COLOR");
+        } else {
+            command.env("NO_COLOR", "1");
         }
         let pair = native_pty_system().openpty(PtySize {
             rows: 24,

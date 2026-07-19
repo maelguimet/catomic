@@ -644,8 +644,8 @@ fn pty_help_scrolls_to_model_scopes_and_closes_without_editing() -> TestResult {
     editor.wait_for_initial_render()?;
     editor.send_keys(b"\x1bOP")?; // F1
     editor.wait_for_output("built-in help", "Catomic help")?;
-    for _ in 0..12 {
-        editor.send_keys(b"\x1b[6~")?; // PageDown through the generated reference
+    for _ in 0..96 {
+        editor.send_keys(b"\x1b[<65;1;1M")?; // SGR wheel down through every help region.
     }
     editor.wait_for_output("model command", "megameow INSTRUCTION")?;
     editor.wait_for_output("model command scope", "broader bounded repository context")?;

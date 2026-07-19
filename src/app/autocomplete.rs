@@ -256,15 +256,15 @@ pub(crate) fn visible_text(app: &super::App) -> Option<&str> {
 
 pub(crate) fn status_label(app: &super::App) -> &'static str {
     if app.autocomplete.pending.is_some() || !app.autocomplete.enabled {
-        "autocomplete disabled"
+        "ac off"
     } else if app.autocomplete.running.is_some() {
-        "autocomplete requesting"
+        "ac request"
     } else if visible_text(app).is_some() {
-        "autocomplete ready"
+        "ac ready"
     } else if app.autocomplete.backoff_until.is_some() || app.autocomplete.error.is_some() {
-        "autocomplete error/backoff"
+        "ac error"
     } else {
-        "autocomplete enabled"
+        "ac on"
     }
 }
 

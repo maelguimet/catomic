@@ -925,8 +925,9 @@ text, those keys retain their normal behavior.
 Editing, paste, navigation, selection changes, prompts, buffer/mode changes,
 model selection, and external refresh cancel stale work. Responses pin the
 buffer revision, cursor, mode, preset, canonical destination, model, and request
-generation. The bottom row reports `autocomplete disabled`, `enabled`,
-`requesting`, `ready`, or `error/backoff`.
+generation. A compact leading bottom-row indicator reports `[ac off]`,
+`[ac on]`, `[ac request]`, `[ac ready]`, or `[ac error]` without displacing
+the status line's file, format, paging, or buffer-position tail.
 
 Requests use only a bounded Unicode-scalar window from the fully loaded active
 buffer; paged buffers are skipped. Catomic supplies explicit before/after

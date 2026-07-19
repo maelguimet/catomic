@@ -123,7 +123,7 @@ fn disabled_default_constructs_no_pending_or_running_request() {
     assert!(!app.autocomplete.enabled);
     assert!(app.autocomplete.pending.is_none());
     assert!(app.autocomplete.running.is_none());
-    assert_eq!(status_label(&app), "autocomplete disabled");
+    assert_eq!(status_label(&app), "ac off");
 }
 
 #[test]

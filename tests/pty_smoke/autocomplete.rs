@@ -122,9 +122,9 @@ fn pty_autocomplete_confirms_waits_renders_unicode_ghost_and_accepts() -> TestRe
     editor.wait_for_output("soft wrap for narrow autocomplete", "Soft wrap on")?;
     editor.send_keys(b"prefix text")?;
     accepted.recv_timeout(Duration::from_secs(2))?;
-    editor.wait_for_output("asynchronous requesting status", "questing")?;
+    editor.wait_for_output("asynchronous requesting status", "ac reque")?;
     assert_eq!(fs::read_to_string(&active)?, "");
-    editor.wait_for_output("ready autocomplete status", "te ready")?;
+    editor.wait_for_output("ready autocomplete status", "ac ready")?;
     wait_until("wrapped Unicode ghost text", Duration::from_secs(2), || {
         let output = editor.output_string();
         output.contains("\x1b[90;2m") && output.contains("猫🙂")
@@ -235,7 +235,7 @@ fn pty_autocomplete_endpoint_timeout_is_nonblocking_and_tears_down_cleanly() -> 
     editor.wait_for_output("timeout confirmation", "Enter enables; Esc cancels")?;
     editor.send_keys(b"\rtyped")?;
     accepted.recv_timeout(Duration::from_secs(2))?;
-    editor.wait_for_output("request visible during timeout", "autocomplete requesting")?;
+    editor.wait_for_output("request visible during timeout", "ac request")?;
     editor.wait_for_output("endpoint timeout backoff", "Autocomplete error; retrying")?;
     editor.send_keys(b"\x11\x11")?;
     editor.wait_for_exit()?;

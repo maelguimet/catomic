@@ -167,5 +167,5 @@ fn status_line(app: &App) -> String {
         position,
     );
     let status = status::decorate_status_line(status, app.cat_config.status_messages);
-    format!("{status} | {}", autocomplete::status_label(app))
+    format!("[{}] {status}", autocomplete::status_label(app))
 }

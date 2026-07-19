@@ -939,6 +939,7 @@ fn pty_spaced_and_literal_option_filenames_each_open_as_one_buffer() -> TestResu
     spaced_editor.wait_for_output("quoted single path", "quoted filename content")?;
     spaced_editor.send_keys(b"\x11")?;
     spaced_editor.wait_for_exit()?;
+    drop(spaced_editor);
 
     project.write("--help", "literal option filename content");
     let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
@@ -1068,6 +1069,7 @@ fn pty_f7_persists_across_relaunch_and_applies_to_new_unicode_buffer() -> TestRe
 
     let saved = fs::read_to_string(&preference_path)?;
     assert!(saved.contains("line_numbers = true"));
+    drop(editor);
 
     let mut relaunched = PtyEditor::spawn_with_xdg(&active, &project.root)?;
     relaunched.wait_for_output(

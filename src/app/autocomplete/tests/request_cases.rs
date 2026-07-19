@@ -52,7 +52,7 @@ fn malformed_result_enters_bounded_retry_backoff() {
 
     assert!(app.autocomplete.suggestion.is_none());
     assert!(app.autocomplete.backoff_until.is_some());
-    assert_eq!(status_label(&app), "autocomplete error/backoff");
+    assert_eq!(status_label(&app), "ac error");
 }
 
 #[test]

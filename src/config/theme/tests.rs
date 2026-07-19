@@ -28,7 +28,7 @@ fn supports_default_named_indexed_and_rgb_colors() {
     let theme = parse(
         "[theme.colors]\ntext = \"bright-white\"\nbackground = \"default\"\n\
          cursor = \"#123456\"\nselection = { fg = 17, bg = \"index:200\", bold = true }\n\
-         markdown_code = \"rgb(1, 2, 3)\"\n",
+         markdown_code = \"rgb(1, 2, 3)\"\nautocomplete = { fg = \"cyan\", dim = true, underline = true }\n",
     )
     .unwrap();
     assert_eq!(theme.text.fg, Some(Color::Ansi(15)));
@@ -38,6 +38,9 @@ fn supports_default_named_indexed_and_rgb_colors() {
     assert_eq!(theme.selection.bg, Some(Color::Indexed(200)));
     assert_eq!(theme.selection.bold, Some(true));
     assert_eq!(theme.markdown_code.fg, Some(Color::Rgb(1, 2, 3)));
+    assert_eq!(theme.autocomplete.fg, Some(Color::Ansi(6)));
+    assert_eq!(theme.autocomplete.dim, Some(true));
+    assert_eq!(theme.autocomplete.underlined, Some(true));
 }
 
 #[test]
@@ -84,4 +87,8 @@ fn monochrome_capability_keeps_non_color_distinctions() {
     assert_eq!(theme.llm_changed.fg, None);
     assert_eq!(theme.llm_changed.underlined, Some(true));
     assert_eq!(theme.llm_changed.reversed, Some(true));
+    assert_eq!(theme.autocomplete.fg, None);
+    assert_eq!(theme.autocomplete.bg, None);
+    assert_eq!(theme.autocomplete.dim, Some(true));
+    assert_eq!(theme.autocomplete.underlined, Some(true));
 }

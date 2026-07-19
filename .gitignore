@@ -4,6 +4,8 @@
 
 # Build artifacts
 debug/
+__pycache__/
+*.pyc
 *.o
 *.so
 *.rlib

@@ -21,8 +21,11 @@ documented as an explicit historical exception below.
 Before tagging:
 
 1. Update `Cargo.toml` and `Cargo.lock` to the intended release version.
-2. Complete any required manual and compatibility acceptance, and make its
-   exact candidate SHA and limitations explicit in the historical record.
+2. Complete the [Linux compatibility matrix](compatibility.md) with
+   `build_report.py --release-candidate`. Publish the resulting JSON and
+   Markdown beside the exact tested candidate binary and checksum, then link
+   that durable result from the candidate acceptance record. A different
+   checksum, rebuild, or expiring local path is not release evidence.
 3. Require normal `master` CI to pass for the commit that will be tagged.
 4. Create and push an annotated `v<package-version>` tag at that exact commit.
 

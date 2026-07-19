@@ -52,6 +52,20 @@ body:
       required: true
 
   - type: input
+    id: artifact_checksum
+    attributes:
+      label: Tested binary SHA-256
+      description: Required for compatibility-matrix failures; otherwise provide it when available.
+      placeholder: "64 lowercase hexadecimal characters"
+
+  - type: input
+    id: compatibility_result
+    attributes:
+      label: Compatibility result
+      description: For a matrix failure, link the complete result JSON containing this scenario and exact artifact identity.
+      placeholder: "https://.../matrix-or-environment-result.json"
+
+  - type: input
     id: terminal
     attributes:
       label: Terminal environment

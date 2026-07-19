@@ -8,6 +8,7 @@ use std::collections::VecDeque;
 use std::io;
 use std::path::PathBuf;
 
+#[cfg(test)]
 use crate::config::big_files::BigFileConfig;
 use crate::mode::{Capabilities, Mode};
 use crate::terminal as term;
@@ -38,7 +39,7 @@ impl App {
         )
     }
 
-    pub(crate) fn new_with_config(
+    pub(super) fn new_with_config(
         initial_path: Option<&str>,
         config: StartupConfig,
     ) -> io::Result<Self> {

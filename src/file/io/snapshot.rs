@@ -2,12 +2,16 @@
 //! Owns: FileSnapshot, content identities, observations, and pure comparison.
 //! Must not: own save/reload policy, watchers, buffers, UI, Project, or LLM state.
 //! Invariants: ordinary editable files receive a full SHA-256; paged files hash
-//!   fixed start/middle/end samples; capture drift fails closed; memory is fixed.
+//!   fixed start/middle/end samples; capture drift fails closed; snapshot capture
+//!   uses fixed memory; pinned full reads are limited to the full-read tier.
 //! Phase: post-v0.1 external-change metadata-collision hardening.
 
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::Path;
+
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 
 use ring::digest::{Context, SHA256};
 
@@ -53,6 +57,109 @@ pub struct ExternalFileObservation {
     pub live_snapshot: Option<FileSnapshot>,
 }
 
+/// One regular-file descriptor pinned to the revision captured in `snapshot`.
+/// Open/reload code must derive bytes and format from this descriptor, then
+/// verify both the descriptor and pathname before accepting the result.
+#[derive(Debug)]
+pub(crate) struct PinnedFile {
+    file: File,
+    snapshot: FileSnapshot,
+}
+
+impl PinnedFile {
+    pub(crate) fn open(path: impl AsRef<Path>) -> io::Result<Option<Self>> {
+        let path = path.as_ref();
+        let Some(mut file) = open_nonblocking(path)? else {
+            return Ok(None);
+        };
+        let metadata = file.metadata()?;
+        if !metadata.is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("refusing to open non-regular file: {}", path.display()),
+            ));
+        }
+        let snapshot = snapshot_from_open_file(&mut file, path)?;
+        Ok(Some(Self { file, snapshot }))
+    }
+
+    pub(crate) fn snapshot(&self) -> &FileSnapshot {
+        &self.snapshot
+    }
+
+    pub(crate) fn file_mut(&mut self) -> &mut File {
+        &mut self.file
+    }
+
+    pub(crate) fn read_all_verified(&mut self, path: &Path) -> io::Result<Vec<u8>> {
+        let len = match &self.snapshot {
+            FileSnapshot::Present { len, .. } => *len,
+            FileSnapshot::Absent => unreachable!("PinnedFile always captures a present file"),
+        };
+        if len > LARGE_FILE_LIMIT_BYTES {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "paged file cannot use the full-read descriptor path",
+            ));
+        }
+        self.file.seek(SeekFrom::Start(0))?;
+        let capacity = usize::try_from(len).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "file size exceeds this platform's addressable range",
+            )
+        })?;
+        let mut bytes = Vec::with_capacity(capacity);
+        self.file.read_to_end(&mut bytes)?;
+
+        let mut loaded = snapshot_from_metadata(&self.file.metadata()?);
+        if let FileSnapshot::Present {
+            content_identity: slot,
+            ..
+        } = &mut loaded
+        {
+            *slot = Some(FileContentIdentity::FullSha256(digest_bytes(&bytes)));
+        }
+        self.file.seek(SeekFrom::Start(0))?;
+        if loaded == self.snapshot {
+            Ok(bytes)
+        } else {
+            Err(snapshot_drift_error(path))
+        }
+    }
+
+    pub(crate) fn into_file(self) -> File {
+        self.file
+    }
+
+    pub(crate) fn ensure_descriptor_unchanged(&mut self, path: &Path) -> io::Result<()> {
+        let current = snapshot_from_open_file(&mut self.file, path)?;
+        if current == self.snapshot {
+            Ok(())
+        } else {
+            Err(snapshot_drift_error(path))
+        }
+    }
+
+    pub(crate) fn ensure_path_unchanged(&self, path: &Path) -> io::Result<()> {
+        ensure_path_matches_snapshot(path, &self.snapshot)
+    }
+}
+
+/// Verify a pathname still names the exact captured content identity. This is
+/// validation only: callers keep `expected` as the accepted clean baseline.
+pub(crate) fn ensure_path_matches_snapshot(
+    path: impl AsRef<Path>,
+    expected: &FileSnapshot,
+) -> io::Result<()> {
+    let path = path.as_ref();
+    if capture_file_snapshot(path)? == *expected {
+        Ok(())
+    } else {
+        Err(snapshot_drift_error(path))
+    }
+}
+
 /// Capture current on-disk state. Files through 100 MiB are fully hashed with
 /// fixed memory; larger paged files hash three fixed 64 KiB samples.
 pub fn capture_file_snapshot(path: impl AsRef<Path>) -> io::Result<FileSnapshot> {
@@ -64,16 +171,14 @@ pub fn capture_file_snapshot(path: impl AsRef<Path>) -> io::Result<FileSnapshot>
     }
 }
 
-/// Initial-open capture that also refuses non-regular targets.
-pub(crate) fn capture_regular_file_snapshot(path: impl AsRef<Path>) -> io::Result<FileSnapshot> {
-    let path = path.as_ref();
-    match fs::metadata(path) {
-        Ok(meta) if meta.is_file() => snapshot_from_path_and_metadata(path, &meta),
-        Ok(_) => Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("refusing to open non-regular file: {}", path.display()),
-        )),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(FileSnapshot::Absent),
+fn open_nonblocking(path: &Path) -> io::Result<Option<File>> {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    options.custom_flags(libc::O_NONBLOCK);
+    match options.open(path) {
+        Ok(file) => Ok(Some(file)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error),
     }
 }
@@ -110,6 +215,30 @@ fn snapshot_from_path_and_metadata(path: &Path, meta: &fs::Metadata) -> io::Resu
     {
         *slot = Some(content_identity);
     }
+    Ok(snapshot)
+}
+
+fn snapshot_from_open_file(file: &mut File, path: &Path) -> io::Result<FileSnapshot> {
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("refusing to open non-regular file: {}", path.display()),
+        ));
+    }
+    let mut snapshot = snapshot_from_metadata(&metadata);
+    let content_identity = capture_content_identity(file, metadata.len())?;
+    if snapshot_from_metadata(&file.metadata()?) != snapshot {
+        return Err(snapshot_drift_error(path));
+    }
+    if let FileSnapshot::Present {
+        content_identity: slot,
+        ..
+    } = &mut snapshot
+    {
+        *slot = Some(content_identity);
+    }
+    file.seek(SeekFrom::Start(0))?;
     Ok(snapshot)
 }
 
@@ -158,6 +287,13 @@ fn finish_digest(context: Context) -> [u8; 32] {
     let mut bytes = [0u8; 32];
     bytes.copy_from_slice(digest.as_ref());
     bytes
+}
+
+fn digest_bytes(bytes: &[u8]) -> [u8; 32] {
+    let digest = ring::digest::digest(&SHA256, bytes);
+    let mut output = [0u8; 32];
+    output.copy_from_slice(digest.as_ref());
+    output
 }
 
 fn snapshot_drift_error(path: &Path) -> io::Error {

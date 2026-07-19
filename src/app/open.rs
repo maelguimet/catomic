@@ -1,11 +1,11 @@
 //! Open-size guardrail extraction + initial snapshot/open plan for App::new (Phase 2B).
 //!
-//! Purpose: encapsulate pre-read size policy (Large warn, Huge/Extreme page)
-//!   the single initial bounded snapshot capture (disk_snapshot + content plan), and
+//! Purpose: encapsulate pre-read size policy (Large warn, Huge/Extreme page),
+//!   one pinned regular-file descriptor (disk_snapshot + content plan), and
 //!   the current content-plan-to-buffer construction seam.
-//! Owns: prepare_open_file_meta (OpenSizeDecision + capture_file_snapshot once;
-//!   derives size/tier/content_plan from the snapshot for Present/Absent) and
-//!   build_open_buffer (editable PieceTable vs editable paged file buffer).
+//! Owns: prepare_open_file_meta (OpenSizeDecision + pinned descriptor snapshot;
+//!   derives size/tier/content_plan from that descriptor) and build_open_buffer
+//!   (editable PieceTable vs editable paged file buffer from the same descriptor).
 //! Must not: construct watcher, mutate App, change snapshot/dirty/save/reload
 //!   semantics beyond carrying the initial snapshot/plan and constructing the
 //!   initial buffer, know terminal/render, or Project/LLM.
@@ -13,13 +13,13 @@
 //!   (None, missing, Small, Large, Huge/Extreme paged, hard meta error,
 //!   invalid UTF-8 errors from read after successful metadata); non-regular paths
 //!   are refused before buffer reads; one bounded identity capture drives
-//!   size/snapshot/content planning.
+//!   size/snapshot/content planning; pathname drift fails closed.
 //! Phase: 2-bm configurable paged open policy.
 
 use std::io::{self, ErrorKind};
 
 use crate::buffer::{self, Buffer};
-use crate::file::io::FileSnapshot;
+use crate::file::io::{FileSnapshot, PinnedFile};
 use crate::file::size::{
     classify_file_size, open_size_decision, open_size_warning_message, FileSizeTier,
     OpenSizeDecision,
@@ -48,7 +48,7 @@ pub(crate) enum OpenContentPlan {
 /// content_plan is the explicit current storage policy: empty for no-path/missing,
 /// full read for Small/Large files; editable pages for Huge/Extreme files.
 /// It is the narrow seam for future lazy storage work.
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub(crate) struct OpenFileMeta {
     pub size_bytes: Option<u64>,
     pub size_tier: Option<FileSizeTier>,
@@ -56,6 +56,7 @@ pub(crate) struct OpenFileMeta {
     pub disk_snapshot: Option<FileSnapshot>,
     pub content_plan: OpenContentPlan,
     pub text_format: TextFormat,
+    source: Option<PinnedFile>,
 }
 
 /// Capture bounded on-disk identity once and apply open-size guardrails. The
@@ -73,11 +74,10 @@ pub(crate) struct OpenFileMeta {
 pub(crate) fn prepare_open_file_meta(initial_path: Option<&str>) -> io::Result<OpenFileMeta> {
     let mut meta = OpenFileMeta::default();
     if let Some(p) = initial_path {
-        // Single capture for both size decision and snapshot carried to App.
-        match crate::file::io::capture_regular_file_snapshot(p) {
-            Ok(snap) => {
+        match PinnedFile::open(p)? {
+            Some(mut source) => {
+                let snap = source.snapshot().clone();
                 if let FileSnapshot::Present { len, .. } = &snap {
-                    meta.text_format = crate::file::text_format::detect_file_format(p)?;
                     let sz = *len;
                     match open_size_decision(sz) {
                         OpenSizeDecision::Warn => {
@@ -88,6 +88,9 @@ pub(crate) fn prepare_open_file_meta(initial_path: Option<&str>) -> io::Result<O
                             meta.content_plan = OpenContentPlan::FullRead;
                         }
                         OpenSizeDecision::Paged => {
+                            meta.text_format = crate::file::text_format::detect_file_format_from(
+                                source.file_mut(),
+                            )?;
                             meta.size_bytes = Some(sz);
                             let tier = classify_file_size(sz);
                             meta.size_tier = Some(tier);
@@ -100,15 +103,13 @@ pub(crate) fn prepare_open_file_meta(initial_path: Option<&str>) -> io::Result<O
                             meta.content_plan = OpenContentPlan::FullRead;
                         }
                     }
-                } else {
-                    meta.content_plan = OpenContentPlan::MissingEmpty;
                 }
-                // Absent or Present: carry the snapshot captured here.
                 meta.disk_snapshot = Some(snap);
+                meta.source = Some(source);
             }
-            Err(e) => {
-                // Hard metadata error (capture does not map NotFound to error).
-                return Err(e);
+            None => {
+                meta.content_plan = OpenContentPlan::MissingEmpty;
+                meta.disk_snapshot = Some(FileSnapshot::Absent);
             }
         }
     }
@@ -124,7 +125,7 @@ pub(crate) fn prepare_open_file_meta(initial_path: Option<&str>) -> io::Result<O
 /// Future lazy/partial storage work should branch here (or below the PieceTable
 /// constructor) without adding file I/O to the buffer module or App::new.
 pub(crate) fn build_open_buffer(
-    meta: &OpenFileMeta,
+    meta: &mut OpenFileMeta,
     initial_path: Option<&str>,
     page_lines: usize,
 ) -> io::Result<Box<dyn Buffer>> {
@@ -133,25 +134,18 @@ pub(crate) fn build_open_buffer(
             Ok(Box::new(buffer::PieceTable::new()))
         }
         OpenContentPlan::FullRead => {
-            let path = initial_path.ok_or_else(|| {
-                io::Error::new(
-                    ErrorKind::InvalidInput,
-                    "FullRead open plan requires initial path",
-                )
-            })?;
+            let path = required_path(initial_path, "FullRead")?;
+            let mut source = take_source(meta, path)?;
             // Move the read buffer into PieceTable on open; this avoids cloning
             // Large/Huge files while preserving CRLF normalization inside PT.
-            let decoded = crate::file::text_format::read_text_file(path)?;
-            debug_assert_eq!(decoded.format, meta.text_format);
+            let bytes = source.read_all_verified(path)?;
+            let decoded = crate::file::text_format::decode(bytes)?;
+            source.ensure_path_unchanged(path)?;
+            meta.text_format = decoded.format;
             Ok(Box::new(buffer::PieceTable::from_owned_text(decoded.text)))
         }
         OpenContentPlan::PagedEditable => {
-            let path = initial_path.ok_or_else(|| {
-                io::Error::new(
-                    ErrorKind::InvalidInput,
-                    "PagedEditable open plan requires initial path",
-                )
-            })?;
+            let path = required_path(initial_path, "PagedEditable")?;
             if meta.text_format.utf8_bom
                 || meta.text_format.line_ending == crate::file::text_format::LineEnding::Cr
             {
@@ -160,9 +154,42 @@ pub(crate) fn build_open_buffer(
                     "UTF-8 BOM and CR-only files must be opened below the paged-file threshold",
                 ));
             }
-            Ok(Box::new(buffer::PagedFileBuffer::open(path, page_lines)?))
+            let mut source = take_source(meta, path)?;
+            source.ensure_descriptor_unchanged(path)?;
+            let snapshot = source.snapshot().clone();
+            let buffer = buffer::PagedFileBuffer::from_file(source.into_file(), page_lines)?;
+            crate::file::io::ensure_path_matches_snapshot(path, &snapshot)?;
+            Ok(Box::new(buffer))
         }
     }
+}
+
+fn required_path<'a>(initial_path: Option<&'a str>, plan: &str) -> io::Result<&'a std::path::Path> {
+    initial_path.map(std::path::Path::new).ok_or_else(|| {
+        io::Error::new(
+            ErrorKind::InvalidInput,
+            format!("{plan} open plan requires initial path"),
+        )
+    })
+}
+
+fn take_source(meta: &mut OpenFileMeta, path: &std::path::Path) -> io::Result<PinnedFile> {
+    let source = meta.source.take().ok_or_else(|| {
+        io::Error::new(
+            ErrorKind::InvalidData,
+            format!("open plan missing pinned descriptor: {}", path.display()),
+        )
+    })?;
+    if meta.disk_snapshot.as_ref() != Some(source.snapshot()) {
+        return Err(io::Error::new(
+            ErrorKind::InvalidData,
+            format!(
+                "open plan snapshot does not match descriptor: {}",
+                path.display()
+            ),
+        ));
+    }
+    Ok(source)
 }
 
 #[cfg(test)]
@@ -255,8 +282,8 @@ mod tests {
         fs::write(&target, "hello").unwrap();
         std::os::unix::fs::symlink(&target, &link).unwrap();
 
-        let meta = prepare_open_file_meta(Some(&link.to_string_lossy())).unwrap();
-        let buffer = build_open_buffer(&meta, Some(&link.to_string_lossy()), 20_000).unwrap();
+        let mut meta = prepare_open_file_meta(Some(&link.to_string_lossy())).unwrap();
+        let buffer = build_open_buffer(&mut meta, Some(&link.to_string_lossy()), 20_000).unwrap();
 
         assert_eq!(meta.content_plan, OpenContentPlan::FullRead);
         assert_eq!(buffer.to_string(), "hello");
@@ -293,17 +320,17 @@ mod tests {
 
     #[test]
     fn build_open_buffer_empty_plans_start_empty() {
-        let no_path = OpenFileMeta {
+        let mut no_path = OpenFileMeta {
             content_plan: OpenContentPlan::UntitledEmpty,
             ..OpenFileMeta::default()
         };
-        let missing = OpenFileMeta {
+        let mut missing = OpenFileMeta {
             content_plan: OpenContentPlan::MissingEmpty,
             ..OpenFileMeta::default()
         };
 
-        let untitled = build_open_buffer(&no_path, None, 20_000).unwrap();
-        let missing_buf = build_open_buffer(&missing, Some("missing.txt"), 20_000).unwrap();
+        let untitled = build_open_buffer(&mut no_path, None, 20_000).unwrap();
+        let missing_buf = build_open_buffer(&mut missing, Some("missing.txt"), 20_000).unwrap();
 
         assert_eq!(untitled.to_string(), "");
         assert_eq!(missing_buf.to_string(), "");
@@ -316,12 +343,9 @@ mod tests {
         let path = temp_path("build_present.txt");
         cleanup(&path);
         fs::write(&path, "hello\nworld").unwrap();
-        let meta = OpenFileMeta {
-            content_plan: OpenContentPlan::FullRead,
-            ..OpenFileMeta::default()
-        };
+        let mut meta = prepare_open_file_meta(Some(&path.to_string_lossy())).unwrap();
 
-        let buffer = build_open_buffer(&meta, Some(&path.to_string_lossy()), 20_000).unwrap();
+        let buffer = build_open_buffer(&mut meta, Some(&path.to_string_lossy()), 20_000).unwrap();
 
         assert_eq!(buffer.to_string(), "hello\nworld");
         assert_eq!(buffer.line_count(), 2);
@@ -331,12 +355,12 @@ mod tests {
 
     #[test]
     fn build_open_buffer_full_read_requires_path() {
-        let meta = OpenFileMeta {
+        let mut meta = OpenFileMeta {
             content_plan: OpenContentPlan::FullRead,
             ..OpenFileMeta::default()
         };
 
-        let err = match build_open_buffer(&meta, None, 20_000) {
+        let err = match build_open_buffer(&mut meta, None, 20_000) {
             Ok(_) => panic!("FullRead must require path"),
             Err(err) => err,
         };
@@ -349,18 +373,45 @@ mod tests {
         let path = temp_path("build_editable_pages.txt");
         cleanup(&path);
         fs::write(&path, "first\nsecond").unwrap();
-        let meta = OpenFileMeta {
-            content_plan: OpenContentPlan::PagedEditable,
-            ..OpenFileMeta::default()
-        };
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(crate::file::size::LARGE_FILE_LIMIT_BYTES + 1)
+            .unwrap();
+        let mut meta = prepare_open_file_meta(Some(&path.to_string_lossy())).unwrap();
 
-        let buffer = build_open_buffer(&meta, Some(&path.to_string_lossy()), 1).unwrap();
+        let buffer = build_open_buffer(&mut meta, Some(&path.to_string_lossy()), 1).unwrap();
 
         assert!(!buffer.is_read_only());
         assert_eq!(buffer.line_count(), 1);
         assert_eq!(buffer.line(0).as_deref(), Some("first"));
         assert!(buffer.page_info().unwrap().has_next);
 
+        cleanup(&path);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn regular_file_to_fifo_swap_fails_closed_without_reading_fifo() {
+        let path = temp_path("regular_to_fifo.txt");
+        cleanup(&path);
+        fs::write(&path, "pinned bytes").unwrap();
+        let mut meta = prepare_open_file_meta(Some(&path.to_string_lossy())).unwrap();
+
+        cleanup(&path);
+        let status = std::process::Command::new("mkfifo")
+            .arg(&path)
+            .status()
+            .expect("run mkfifo");
+        assert!(status.success());
+
+        let error = match build_open_buffer(&mut meta, Some(&path.to_string_lossy()), 20_000) {
+            Ok(_) => panic!("pathname drift must reject the pinned startup load"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.kind(), ErrorKind::Interrupted);
         cleanup(&path);
     }
 }

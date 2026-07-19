@@ -5,7 +5,8 @@
 //! Phase: post-v0.1 core usability.
 
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
+#[cfg(test)]
 use std::path::Path;
 
 use crate::buffer::Buffer;
@@ -45,13 +46,14 @@ pub struct DecodedText {
     pub format: TextFormat,
 }
 
-pub fn read_text_file(path: impl AsRef<Path>) -> io::Result<DecodedText> {
-    let bytes = std::fs::read(path)?;
-    decode(bytes)
-}
-
+#[cfg(test)]
 pub fn detect_file_format(path: impl AsRef<Path>) -> io::Result<TextFormat> {
     let mut file = File::open(path)?;
+    detect_file_format_from(&mut file)
+}
+
+pub(crate) fn detect_file_format_from(file: &mut File) -> io::Result<TextFormat> {
+    file.seek(SeekFrom::Start(0))?;
     let mut bytes = vec![0u8; FORMAT_SCAN_CHUNK_BYTES];
     let mut first_chunk = true;
     let mut utf8_bom = false;
@@ -114,7 +116,7 @@ pub fn write_buffer(
     writer.finish()
 }
 
-fn decode(bytes: Vec<u8>) -> io::Result<DecodedText> {
+pub(crate) fn decode(bytes: Vec<u8>) -> io::Result<DecodedText> {
     let format = detect(&bytes);
     let mut text = String::from_utf8(bytes)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;

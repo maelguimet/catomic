@@ -27,10 +27,7 @@ struct ConfigReturn {
 
 pub(super) enum ConfigCloseRequest {
     WarnDirty,
-    Close {
-        return_target: usize,
-        discard: bool,
-    },
+    Close { return_target: usize, discard: bool },
 }
 
 struct RunningGoto {

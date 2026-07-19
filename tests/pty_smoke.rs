@@ -901,7 +901,10 @@ fn pty_saved_config_detour_closes_and_preserves_dirty_source() -> TestResult {
 
     editor.clear_output();
     editor.send_keys(b"\x1b[6;3~")?; // Alt+PageDown must remain on the sole source buffer.
-    editor.wait_for_output("closed config stays out of buffer ring", "Xsource stays untouched")?;
+    editor.wait_for_output(
+        "closed config stays out of buffer ring",
+        "Xsource stays untouched",
+    )?;
     assert!(!editor.output_string().contains("Catomic configuration"));
 
     editor.send_keys(b"\x11")?;
@@ -944,7 +947,10 @@ fn pty_dirty_config_detour_refuses_then_discards_only_config_and_reopens_from_di
 
     editor.clear_output();
     editor.send_keys(b"\x11")?;
-    editor.wait_for_output("source restored after config discard", "SOURCE BUFFER MARKER")?;
+    editor.wait_for_output(
+        "source restored after config discard",
+        "SOURCE BUFFER MARKER",
+    )?;
     assert_eq!(fs::read_to_string(&config)?, "# CONFIG DISK MARKER\n");
     assert!(!editor.output_string().contains("CONFIG DISK MARKER"));
     assert!(!editor.output_string().contains("file 1/2"));
@@ -955,7 +961,10 @@ fn pty_dirty_config_detour_refuses_then_discards_only_config_and_reopens_from_di
     assert!(!editor.output_string().contains("X# CONFIG DISK MARKER"));
 
     editor.send_keys(b"\x11")?;
-    editor.wait_for_output("source restored after fresh config close", "SOURCE BUFFER MARKER")?;
+    editor.wait_for_output(
+        "source restored after fresh config close",
+        "SOURCE BUFFER MARKER",
+    )?;
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
     Ok(())

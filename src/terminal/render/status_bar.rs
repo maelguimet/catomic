@@ -77,6 +77,14 @@ pub(crate) struct StatusTheme {
     prompt: StatusStyle,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct StatusBarPresentation {
+    pub(super) role: StatusRole,
+    pub(super) theme: StatusTheme,
+    pub(super) filename: Option<(usize, usize)>,
+    pub(super) selection: Option<(usize, usize)>,
+}
+
 impl Default for StatusTheme {
     fn default() -> Self {
         Self {
@@ -275,22 +283,26 @@ pub(super) fn write_status_bar<W: Write + ?Sized>(
     row: usize,
     width: usize,
     text: &str,
-    role: StatusRole,
-    theme: StatusTheme,
-    filename: Option<(usize, usize)>,
-    selection: Option<(usize, usize)>,
+    presentation: StatusBarPresentation,
 ) -> io::Result<()> {
     if row == 0 {
         return Ok(());
     }
     write!(out, "\x1b[{row};1H")?;
 
-    if role == StatusRole::Normal {
+    if presentation.role == StatusRole::Normal {
         write!(out, "\x1b[2K")?;
-        return write_persistent_status(out, text, width, theme, filename, selection);
+        return write_persistent_status(
+            out,
+            text,
+            width,
+            presentation.theme,
+            presentation.filename,
+            presentation.selection,
+        );
     }
 
-    write_style(out, theme.style(role))?;
+    write_style(out, presentation.theme.style(presentation.role))?;
     write!(out, "\x1b[2K")?;
 
     let safe = text_layout::terminal_safe_text(text);

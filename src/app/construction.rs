@@ -14,7 +14,7 @@ use crate::mode::{Capabilities, Mode};
 use crate::terminal as term;
 
 use super::{
-    autocomplete, command_prompt, completion, external_command, hooks, inline_clanker,
+    autocomplete, command_prompt, completion, external_command, hooks, inline_clanker, mobile,
     model_picker, model_session, open, overwrite, recovery, replace, search, selection,
     startup_config::StartupConfig, surfaces, view, watch, App, FileState,
 };
@@ -53,6 +53,7 @@ impl App {
             theme,
             view_preferences,
             autocomplete: autocomplete_config,
+            mobile: mobile_config,
         } = config;
         let mode = Mode::Plain;
         let caps = Capabilities::from_mode(mode);
@@ -78,6 +79,7 @@ impl App {
             view_preferences,
             theme,
             autocomplete: autocomplete::AutocompleteState::new(autocomplete_config),
+            mobile: mobile::MobileUiState::default(),
             buffer,
             file: FileState {
                 path: initial_path.map(PathBuf::from),
@@ -116,6 +118,11 @@ impl App {
             active_buffer_index: 0,
             screen: term::screen::Screen::new(80, 24),
         };
+        let mobile_enabled = mobile_config.action_bar_enabled(
+            std::env::var_os("CATOMIC_MOBILE").as_deref(),
+            std::env::var_os("TERMUX_VERSION").as_deref(),
+        )?;
+        mobile::configure(&mut app, mobile_enabled);
         watch::refresh_file_watcher(&mut app);
         recovery::initialize(&mut app);
         Ok(app)

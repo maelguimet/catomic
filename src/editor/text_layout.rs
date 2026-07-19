@@ -155,6 +155,34 @@ pub(crate) fn terminal_safe_text(text: &str) -> String {
     text.chars().map(terminal_safe_char).collect()
 }
 
+pub(crate) fn terminal_safe_clipped(text: &str, max_cells: usize) -> String {
+    let safe = terminal_safe_text(text);
+    let scalars = clipped_scalar_len(&safe, max_cells);
+    safe.chars().take(scalars).collect()
+}
+
+pub(crate) fn terminal_safe_tail_clipped(text: &str, max_cells: usize) -> String {
+    let safe = terminal_safe_text(text);
+    if cell_width_from(&safe, 0) <= max_cells {
+        return safe;
+    }
+    if max_cells == 0 {
+        return String::new();
+    }
+    let mut kept = Vec::new();
+    let mut cells = 0usize;
+    for grapheme in safe.graphemes(true).rev() {
+        let width = UnicodeWidthStr::width(grapheme);
+        if cells.saturating_add(width) > max_cells - 1 {
+            break;
+        }
+        cells = cells.saturating_add(width);
+        kept.push(grapheme);
+    }
+    kept.reverse();
+    format!("…{}", kept.concat())
+}
+
 fn terminal_safe_char(ch: char) -> char {
     match ch {
         '\0'..='\u{001f}' => char::from_u32(0x2400 + u32::from(ch)).unwrap_or('�'),
@@ -213,5 +241,14 @@ mod tests {
         assert_eq!(scalar_to_cell(text, 4), 4);
         assert_eq!(expand_tabs(text, false, 0), "a␛␇�b");
         assert_eq!(terminal_safe_text("\r\n\x7f"), "␍␊␡");
+    }
+
+    #[test]
+    fn safe_clipping_respects_wide_graphemes_and_terminal_controls() {
+        assert_eq!(terminal_safe_clipped("a猫b", 3), "a猫");
+        assert_eq!(terminal_safe_clipped("a猫b", 2), "a");
+        assert_eq!(terminal_safe_clipped("x\nwide", 3), "x␊w");
+        assert_eq!(terminal_safe_tail_clipped("ab猫🙂z", 5), "…🙂z");
+        assert_eq!(terminal_safe_tail_clipped("a\n", 3), "a␊");
     }
 }

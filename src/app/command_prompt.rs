@@ -147,7 +147,11 @@ fn update_message(app: &mut super::App) {
             return;
         }
     };
-    app.message = Some(format!("{label}: {}", prompt.text));
+    app.message = Some(super::status::format_prompt(
+        label,
+        &prompt.text,
+        app.screen.width as usize,
+    ));
 }
 
 fn submit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {

@@ -372,6 +372,12 @@ events over the status row or an active prompt do not scroll the underlying
 document. Help, Markdown preview, and proposal/result views use the same
 viewport-only scrolling without changing their source buffer.
 
+In mobile mode, tap **Menu** for touch-accessible cursor, selection, scroll,
+page, file, view, and model-assisted actions. Termux finger drags do not emit
+editor drag events; choose **Select: mark start, then tap end** and tap the other
+boundary. Finger scrolling moves only the viewport and preserves the current
+cursor and selection. The status and action rows never map into document text.
+
 ### Clipboard and paste
 
 `Ctrl+C`, `Ctrl+X`, and `Ctrl+V` use Catomic's process-local clipboard. The
@@ -1333,6 +1339,7 @@ remove_instruction_after_apply = true
 | `files.auto_reload` | `true` | Boolean |
 | `view.line_numbers` | `false` | Boolean; overridden by the saved F7 choice |
 | `cat.status_messages` | `true` | Boolean |
+| `mobile.action_bar` | `auto` | `auto`, `always`, or `never` |
 | `recovery.enabled` | `false` | Boolean |
 | `recovery.interval_secs` | `30` | Integer `5`–`3600` |
 | `recovery.max_bytes` | `1048576` | Integer `1`–`16777216` |
@@ -1579,6 +1586,9 @@ mouse-scroll-down | editor,preview,picker,help | mouse-wheel-down
 This table and the in-editor `Ctrl+H`/`F1` quick reference show built-in
 defaults. `[keybindings]` overrides apply in normal editing mode, but neither
 reference rewrites its labels to show the effective configured chords.
+On Android/Termux, tap **Menu** in the action row instead; its scrollable palette
+exposes essential actions normally reached through modifiers, function keys, or
+page keys, including the inline clanker and model/provider selector.
 
 ## Command reference
 

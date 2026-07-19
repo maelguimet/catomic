@@ -200,7 +200,7 @@ pub(super) fn compose_buffer(
     message: Option<&str>,
     options: RenderOptions<'_>,
 ) -> io::Result<()> {
-    let content_height = viewport.height.saturating_sub(1);
+    let content_height = super::content_height(viewport.height, options.action_bar);
     let line_gutter = if options.line_numbers {
         line_number_gutter(buffer.line_count())
     } else {
@@ -231,16 +231,7 @@ pub(super) fn compose_buffer(
         change_gutter,
         options,
     )?;
-    if viewport.height > 0 {
-        super::status_bar::write_status_bar(
-            out,
-            viewport.height,
-            viewport.width,
-            message.unwrap_or(""),
-            options.status_role,
-            options.status_theme,
-        )?;
-    }
+    super::write_bottom_rows(out, viewport, message, options)?;
     let cursor = wrapped_cursor_position(buffer.cursor(), &rows, gutter, content_width);
     super::write_terminal_cursor(out, cursor, options.cursor_shape)
 }

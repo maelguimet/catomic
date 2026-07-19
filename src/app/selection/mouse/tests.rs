@@ -245,3 +245,29 @@ fn configured_wheel_gestures_change_direction_and_can_be_unbound() {
     assert_eq!(app.screen.scroll_top, 9, "unbound gesture did nothing");
     assert!(out.is_empty());
 }
+
+#[test]
+fn mobile_two_tap_selection_ends_on_a_wrapped_unicode_grapheme_boundary() {
+    let mut app = app_with("a\u{301}\t猫🙂z");
+    super::super::super::mobile::configure(&mut app, true);
+    app.view_preferences.set_line_numbers(true);
+    app.view.soft_wrap = true;
+    app.screen.update_size(8, 6);
+    super::super::begin_touch_selection(&mut app);
+    let mut out = Vec::new();
+
+    handle_mouse(
+        &mut app,
+        &mut out,
+        event(MouseEventKind::Down(MouseButton::Left), 4, 1),
+    )
+    .unwrap();
+
+    let (_, end) = app.selection.active().unwrap().ordered();
+    assert_eq!(end, app.buffer.cursor());
+    assert_eq!(
+        crate::editor::text_layout::ceil_to_grapheme_col(&app.buffer.line(0).unwrap(), end.col),
+        end.col,
+    );
+    assert!(!super::super::is_touch_selecting(&app));
+}

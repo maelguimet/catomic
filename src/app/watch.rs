@@ -154,15 +154,19 @@ pub(crate) fn apply_file_watch_signal(
                         )
                     {
                         app.pending_reload = None;
-                        app.message = Some(super::reload::reload_drift_message(
+                        app.message = Some(super::reload::reload_drift_message_for_ui(
                             &obs.status,
                             app.file.dirty,
+                            super::mobile::is_enabled(app),
                         ));
                     } else {
                         super::reload::apply_check_observation(app, &obs);
                     }
                     if matching_save_conflict {
-                        app.message = Some(super::save::save_conflict_message(&obs.status));
+                        app.message = Some(super::save::save_conflict_message_for_ui(
+                            &obs.status,
+                            super::mobile::is_enabled(app),
+                        ));
                     }
                     true
                 }

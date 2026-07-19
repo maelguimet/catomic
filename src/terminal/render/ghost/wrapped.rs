@@ -24,7 +24,7 @@ pub(super) fn compose_buffer(
     options: RenderOptions<'_>,
     ghost: GhostText<'_>,
 ) -> io::Result<()> {
-    let height = viewport.height.saturating_sub(1);
+    let height = super::super::content_height(viewport.height, options.action_bar);
     let (line_gutter, change_gutter) = gutters(buffer, viewport.width, options);
     let gutter = line_gutter.saturating_add(change_gutter);
     let width = viewport.width.saturating_sub(gutter);

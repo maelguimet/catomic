@@ -188,6 +188,14 @@ fn is_quit(key: KeyEvent) -> bool {
 
 fn help_text() -> String {
     let mut text = crate::config::actions::help_text();
+    text.push_str(concat!(
+        "\nAndroid/Termux touch\n",
+        "  Tap Menu             Open every essential action.\n",
+        "  Tap                  Place the cursor at a grapheme boundary.\n",
+        "  Select start + tap   Select when finger drag is unavailable.\n",
+        "  Finger scroll        Scroll without moving the cursor or selection.\n",
+        "  Action row           Accept, cancel, navigate, save, copy, or undo.\n",
+    ));
     text.push_str("\nPrompt commands (Ctrl+Shift+P or F2; no leading colon)\n");
     for command in help_catalog::PROMPT_COMMANDS {
         push_entry(&mut text, command.syntax, command.aliases, command.purpose);

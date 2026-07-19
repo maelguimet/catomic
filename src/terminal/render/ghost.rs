@@ -47,7 +47,7 @@ fn compose_unwrapped(
     options: RenderOptions,
     ghost: GhostText<'_>,
 ) -> io::Result<()> {
-    let content_height = viewport.height.saturating_sub(1);
+    let content_height = super::content_height(viewport.height, options.action_bar);
     if ghost.cursor.row < viewport.start_row
         || ghost.cursor.row >= viewport.start_row.saturating_add(content_height)
         || viewport.start_col > ghost.cursor.col
@@ -265,17 +265,7 @@ pub(super) fn write_status(
     message: Option<&str>,
     options: RenderOptions<'_>,
 ) -> io::Result<()> {
-    if viewport.height == 0 {
-        return Ok(());
-    }
-    super::status_bar::write_status_bar(
-        out,
-        viewport.height,
-        viewport.width,
-        message.unwrap_or(""),
-        options.status_role,
-        options.status_theme,
-    )
+    super::write_bottom_rows(out, viewport, message, options)
 }
 
 #[cfg(test)]

@@ -5,7 +5,7 @@
 //! Phase: 7 external command foundation.
 
 use std::io::{self, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
@@ -97,7 +97,7 @@ fn run_command(
     timeout: Duration,
     cancel: &AtomicBool,
 ) -> ExternalCommandResult {
-    let mut process = Command::new("/bin/sh");
+    let mut process = Command::new(shell_path());
     process
         .arg("-c")
         .arg(command)
@@ -161,38 +161,46 @@ fn wait_for_exit(
 
 fn terminate(child: &mut std::process::Child) {
     #[cfg(unix)]
-    let group = format!("-{}", child.id());
+    let group = child.id() as libc::pid_t;
     #[cfg(unix)]
     {
-        let _ = Command::new("kill")
-            .args(["-KILL", "--", &group])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+        // Negative pid targets the process group created above. Calling libc
+        // avoids assuming Android/Termux provides coreutils at a desktop path.
+        let _ = unsafe { libc::kill(-group, libc::SIGKILL) };
     }
     let _ = child.kill();
     let _ = child.wait();
     #[cfg(unix)]
-    wait_for_process_group_exit(&group);
+    wait_for_process_group_exit(group);
 }
 
 #[cfg(unix)]
-fn wait_for_process_group_exit(group: &str) {
+fn wait_for_process_group_exit(group: libc::pid_t) {
     let deadline = Instant::now() + Duration::from_secs(1);
     while Instant::now() < deadline {
-        let exists = Command::new("kill")
-            .args(["-0", "--", group])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .is_ok_and(|status| status.success());
+        let result = unsafe { libc::kill(-group, 0) };
+        let exists = result == 0 || io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH);
         if !exists {
             return;
         }
         std::thread::sleep(Duration::from_millis(2));
     }
+}
+
+fn shell_path() -> PathBuf {
+    shell_path_for(
+        cfg!(target_os = "android"),
+        std::env::var_os("PREFIX").as_deref(),
+    )
+}
+
+fn shell_path_for(android: bool, prefix: Option<&std::ffi::OsStr>) -> PathBuf {
+    if android {
+        if let Some(prefix) = prefix.map(PathBuf::from).filter(|path| path.is_absolute()) {
+            return prefix.join("bin/sh");
+        }
+    }
+    PathBuf::from("/bin/sh")
 }
 
 type Reader = std::thread::JoinHandle<(Vec<u8>, bool)>;
@@ -243,6 +251,25 @@ mod tests {
             assert!(Instant::now() < deadline, "external task test timed out");
             std::thread::sleep(Duration::from_millis(5));
         }
+    }
+
+    #[test]
+    fn android_shell_uses_the_termux_prefix() {
+        assert_eq!(
+            shell_path_for(
+                true,
+                Some(std::ffi::OsStr::new("/data/data/com.termux/files/usr"))
+            ),
+            PathBuf::from("/data/data/com.termux/files/usr/bin/sh")
+        );
+        assert_eq!(
+            shell_path_for(true, Some(std::ffi::OsStr::new("relative"))),
+            PathBuf::from("/bin/sh")
+        );
+        assert_eq!(
+            shell_path_for(false, Some(std::ffi::OsStr::new("/ignored"))),
+            PathBuf::from("/bin/sh")
+        );
     }
 
     #[test]

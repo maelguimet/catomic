@@ -19,6 +19,7 @@ pub(crate) mod editor;
 pub(crate) mod keybindings;
 pub(crate) mod linters;
 pub(crate) mod llm;
+pub(crate) mod mobile;
 pub(crate) mod theme;
 pub(crate) mod user_file;
 pub(crate) mod view_preferences;
@@ -42,6 +43,7 @@ pub(crate) fn validate_text(text: &str) -> io::Result<()> {
     keybindings::parse(text)?;
     linters::parse(text)?;
     llm::parse(text)?;
+    mobile::parse(text)?;
     theme::parse(text)?;
     view_preferences::validate_config(text)?;
     Ok(())

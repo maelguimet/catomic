@@ -13,6 +13,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  android:
+    name: Android aarch64 check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Install Android Rust target
+        run: rustup target add aarch64-linux-android
+
+      - name: Check Termux target
+        run: |
+          export CC_aarch64_linux_android="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+          export AR_aarch64_linux_android="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+          cargo check --target aarch64-linux-android --bin catomic --locked
+
   msrv:
     name: Rust 1.87 compatibility
     runs-on: ubuntu-latest

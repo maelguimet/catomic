@@ -22,6 +22,9 @@ pub(crate) fn handle_mouse(
     out: &mut dyn Write,
     event: MouseEvent,
 ) -> io::Result<()> {
+    if super::super::mobile::handle_mouse(app, out, event)? {
+        return Ok(());
+    }
     super::super::autocomplete::invalidate(app);
     match event.kind {
         MouseEventKind::ScrollUp => {
@@ -80,6 +83,20 @@ fn mouse_down(
     let Some(cursor) = map_mouse_cursor(app, event, false)? else {
         return Ok(());
     };
+    if let Some(anchor) = app.selection.touch_anchor.take() {
+        app.buffer.set_cursor(cursor);
+        let selection = Selection::new(anchor, cursor);
+        app.selection.range = (!selection.is_empty()).then_some(selection);
+        app.selection.drag_anchor = None;
+        app.selection.last_click = None;
+        app.message = Some(if selection.is_empty() {
+            "Selection endpoint matches its start.".to_string()
+        } else {
+            "Selection ready. Use Copy, Cut, or Menu.".to_string()
+        });
+        app.reveal_cursor();
+        return app.render(out);
+    }
     let now = Instant::now();
     let is_double = app.selection.last_click.is_some_and(|(last, at)| {
         last == cursor && now.saturating_duration_since(at) <= DOUBLE_CLICK_WINDOW
@@ -171,7 +188,7 @@ fn map_mouse_cursor(
     event: MouseEvent,
     clamp_status_row: bool,
 ) -> io::Result<Option<Cursor>> {
-    let content_height = (app.screen.height as usize).saturating_sub(1);
+    let content_height = app.screen.visible_height();
     if content_height == 0 {
         return Ok(None);
     }

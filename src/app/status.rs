@@ -19,6 +19,7 @@ use crate::file::size::{file_size_tier_label, format_file_size, FileSizeTier};
 use crate::file::text_format::TextFormat;
 use crate::terminal::render::StatusRole;
 
+#[derive(Clone, Copy)]
 pub(crate) struct StatusFile<'a> {
     pub(crate) path: Option<&'a Path>,
     pub(crate) dirty: bool,
@@ -86,9 +87,106 @@ pub(crate) fn format_status_line(
     out
 }
 
+/// Preserve the state needed to edit safely when a portrait terminal cannot
+/// show the full disk metadata status. Names are tail-clipped on grapheme/cell
+/// boundaries; dirty, typing, buffer, and page state are never displaced by it.
+pub(crate) fn format_status_line_for_width(
+    is_plain: bool,
+    overwrite: bool,
+    file: StatusFile<'_>,
+    page: Option<PageInfo>,
+    buffer_position: Option<(usize, usize)>,
+    width: usize,
+) -> String {
+    let full = format_status_line(is_plain, overwrite, file, page, buffer_position);
+    if crate::editor::text_layout::cell_width_from(&full, 0) <= width {
+        return full;
+    }
+
+    let mode = if is_plain { "plain" } else { "project" };
+    let typing = if overwrite { "OVR" } else { "INS" };
+    let dirty = if file.dirty { "modified" } else { "saved" };
+    let name = status_name(file.path);
+    let suffix = compact_position_suffix(page, buffer_position);
+    let fixed = format!("{mode} {typing}  {dirty}{suffix}");
+    let fixed_cells = crate::editor::text_layout::cell_width_from(&fixed, 0);
+    if width >= 40 && fixed_cells < width {
+        let name = crate::editor::text_layout::terminal_safe_tail_clipped(
+            &name,
+            width.saturating_sub(fixed_cells),
+        );
+        return format!("{mode} {typing} {name} {dirty}{suffix}");
+    }
+
+    let compact_mode = if is_plain { 'P' } else { 'R' };
+    let changed = if file.dirty { '*' } else { '-' };
+    let compact_typing = if overwrite { 'O' } else { 'I' };
+    let prefix = format!("{compact_mode}{changed}{compact_typing} ");
+    let fixed_cells = crate::editor::text_layout::cell_width_from(&prefix, 0)
+        .saturating_add(crate::editor::text_layout::cell_width_from(&suffix, 0));
+    if fixed_cells >= width {
+        return crate::editor::text_layout::terminal_safe_clipped(
+            &format!("{prefix}{suffix}"),
+            width,
+        );
+    }
+    let name = crate::editor::text_layout::terminal_safe_tail_clipped(
+        &name,
+        width.saturating_sub(fixed_cells),
+    );
+    format!("{prefix}{name}{suffix}")
+}
+
+fn status_name(path: Option<&Path>) -> String {
+    path.and_then(Path::file_name)
+        .map(|name| name.to_string_lossy().into_owned())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "[untitled]".to_string())
+}
+
+fn compact_position_suffix(
+    page: Option<PageInfo>,
+    buffer_position: Option<(usize, usize)>,
+) -> String {
+    let mut suffix = String::new();
+    if let Some((active, count)) = buffer_position {
+        suffix.push_str(&format!(" B{active}/{count}"));
+    }
+    if let Some(page) = page {
+        suffix.push_str(&format!(" P{}", page.page_number));
+    }
+    suffix
+}
+
+pub(crate) fn format_prompt(label: &str, text: &str, width: usize) -> String {
+    let prefix = format!("{label}: ");
+    let prefix_cells = crate::editor::text_layout::cell_width_from(&prefix, 0);
+    if prefix_cells >= width {
+        return crate::editor::text_layout::terminal_safe_clipped(&prefix, width);
+    }
+    let tail = crate::editor::text_layout::terminal_safe_tail_clipped(
+        text,
+        width.saturating_sub(prefix_cells),
+    );
+    format!("{prefix}{tail}")
+}
+
 pub(crate) fn decorate_status_line(status: String, cat_status: bool) -> String {
     if cat_status {
         format!("=^..^= {status}")
+    } else {
+        status
+    }
+}
+
+pub(crate) fn decorate_status_line_for_width(
+    status: String,
+    cat_status: bool,
+    width: usize,
+) -> String {
+    let decorated = decorate_status_line(status.clone(), cat_status);
+    if crate::editor::text_layout::cell_width_from(&decorated, 0) <= width {
+        decorated
     } else {
         status
     }
@@ -385,5 +483,43 @@ mod tests {
 
         assert!(insert.contains(" INS "), "status: {insert}");
         assert!(overwrite.contains(" OVR "), "status: {overwrite}");
+    }
+
+    #[test]
+    fn portrait_status_keeps_dirty_typing_buffer_page_and_filename_tail() {
+        let page = PageInfo {
+            page_number: 3,
+            start_byte: 0,
+            end_byte: 10,
+            total_bytes: 20,
+            has_previous: true,
+            has_next: true,
+        };
+        let path = p("very-long-猫-notes.txt");
+        let status = format_status_line_for_width(
+            true,
+            true,
+            file(path.as_deref(), true, Some(20), Some(FileSizeTier::Small)),
+            Some(page),
+            Some((2, 4)),
+            20,
+        );
+
+        assert!(status.starts_with("P*O "), "status: {status}");
+        assert!(status.ends_with(" B2/4 P3"), "status: {status}");
+        assert!(crate::editor::text_layout::cell_width(&status) <= 20);
+        assert_eq!(
+            decorate_status_line_for_width(status.clone(), true, 20),
+            status
+        );
+    }
+
+    #[test]
+    fn narrow_prompt_keeps_the_editable_tail_visible() {
+        assert_eq!(
+            format_prompt("Open file", "/one/two/three/notes.txt", 20),
+            "Open file: …otes.txt"
+        );
+        assert_eq!(format_prompt("Find", "猫🙂target", 20), "Find: 猫🙂target");
     }
 }

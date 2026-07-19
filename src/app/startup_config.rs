@@ -12,6 +12,7 @@ use crate::config::cat::CatConfig;
 use crate::config::commands::CommandConfig;
 use crate::config::editor::EditorConfig;
 use crate::config::keybindings::KeyBindings;
+use crate::config::mobile::MobileConfig;
 use crate::config::theme::Theme;
 use crate::config::view_preferences::ViewPreferences;
 
@@ -26,6 +27,7 @@ pub(super) struct StartupConfig {
     pub(super) theme: Theme,
     pub(super) view_preferences: ViewPreferences,
     pub(super) autocomplete: AutocompleteConfig,
+    pub(super) mobile: MobileConfig,
 }
 
 impl StartupConfig {
@@ -48,6 +50,7 @@ impl StartupConfig {
                 preference_path,
             )?,
             autocomplete: crate::config::autocomplete::parse(text)?,
+            mobile: crate::config::mobile::parse(text)?,
         })
     }
 
@@ -62,6 +65,11 @@ impl StartupConfig {
             theme: app.theme,
             view_preferences: app.view_preferences.clone(),
             autocomplete: app.autocomplete.config.clone(),
+            mobile: MobileConfig {
+                action_bar: crate::config::mobile::ActionBarMode::from_enabled(
+                    super::mobile::is_enabled(app),
+                ),
+            },
         }
     }
 }
@@ -79,6 +87,7 @@ impl Default for StartupConfig {
             theme: Theme::default(),
             view_preferences: ViewPreferences::default(),
             autocomplete: AutocompleteConfig::default(),
+            mobile: MobileConfig::default(),
         }
     }
 }

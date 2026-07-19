@@ -63,6 +63,26 @@ fn app_handle_resize_updates_screen_and_renders() {
     assert!(!out.is_empty(), "resize must have triggered a render");
 }
 
+#[test]
+fn foreground_redraw_preserves_unsaved_buffer_and_active_prompt() {
+    let mut app = App::new(None).unwrap();
+    let mut out = Vec::new();
+    app.handle_key_with(&mut out, make_key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
+    super::super::command_prompt::open_command_prompt(&mut app, &mut out).unwrap();
+    let history = app.buffer.edit_history_position();
+
+    out.clear();
+    super::super::viewport::redraw_after_focus(&mut app, Some((31, 9)), &mut out).unwrap();
+
+    assert_eq!(app.buffer.to_string(), "x");
+    assert_eq!(app.buffer.edit_history_position(), history);
+    assert!(super::super::command_prompt::is_active(&app));
+    assert_eq!(app.message.as_deref(), Some("Command: "));
+    assert_eq!((app.screen.width, app.screen.height), (31, 9));
+    assert!(!out.is_empty());
+}
+
 // Phase 2-d app-level reveal/scroll_top tests (via seams + captured render)
 
 #[test]

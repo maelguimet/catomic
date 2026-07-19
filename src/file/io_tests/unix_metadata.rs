@@ -1,11 +1,11 @@
-//! Purpose: prove Linux atomic saves fail closed when inode metadata cannot be preserved.
+//! Purpose: prove Linux-kernel atomic saves fail closed when inode metadata cannot be preserved.
 //! Owns: hard-link, xattr/ACL, ownership, and boundary-race save regressions.
 //! Must not: test App save policy, snapshots, watchers, or recovery sidecars.
 //! Invariants: a refused save leaves the existing filesystem object and contents intact.
 //! Phase: post-v0.1 OSS beta file-semantics hardening.
 
-#[cfg(target_os = "linux")]
-mod linux {
+#[cfg(any(target_os = "linux", target_os = "android"))]
+mod linux_kernel {
     use super::super::{atomic_write_string, atomic_write_with, cleanup, temp_path};
     use std::ffi::CString;
     use std::fs;

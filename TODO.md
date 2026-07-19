@@ -110,8 +110,6 @@ Correct advertised behavior before widening the platform surface:
 
 - [#54](https://github.com/maelguimet/catomic/issues/54) — improve Markdown source
   styling and preview rendering, especially tables.
-- [#55](https://github.com/maelguimet/catomic/issues/55) — add paragraph
-  navigation and viewport-only wheel scrolling.
 - [#59](https://github.com/maelguimet/catomic/issues/59) — add explicit overwrite
   mode without contaminating ordinary insert, paste, prompt, or proposal paths.
 

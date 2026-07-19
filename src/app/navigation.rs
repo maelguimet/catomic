@@ -11,6 +11,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::buffer::{Buffer, Cursor};
 use crate::editor::text_layout;
 
+mod paragraph;
+
 const GRAPHEME_WINDOW: usize = 64;
 
 pub(crate) fn handle_key(
@@ -24,6 +26,12 @@ pub(crate) fn handle_key(
         .modifiers
         .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);
     let target = match key.code {
+        KeyCode::Up if command && !extend && !key.modifiers.contains(KeyModifiers::ALT) => {
+            Some(paragraph::target(app, paragraph::Direction::Previous)?)
+        }
+        KeyCode::Down if command && !extend && !key.modifiers.contains(KeyModifiers::ALT) => {
+            Some(paragraph::target(app, paragraph::Direction::Next)?)
+        }
         KeyCode::Home if command => Some(Cursor::default()),
         KeyCode::End if command => Some(document_end(app)),
         KeyCode::Home if no_extra => Some(line_edge(app, false)),

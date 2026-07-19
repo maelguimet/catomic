@@ -426,6 +426,10 @@ pub(crate) const FIXED_SHORTCUTS: &[FixedShortcutSpec] = &[
         purpose: "Move by word; add Shift to extend the selection.",
     },
     FixedShortcutSpec {
+        keys: "Ctrl+Up / Ctrl+Down",
+        purpose: "Move to the previous or next paragraph boundary without extending selection.",
+    },
+    FixedShortcutSpec {
         keys: "Backspace / Delete",
         purpose: "Delete the previous or next grapheme.",
     },
@@ -452,6 +456,10 @@ pub(crate) const FIXED_SHORTCUTS: &[FixedShortcutSpec] = &[
     FixedShortcutSpec {
         keys: "Mouse click / drag / double-click",
         purpose: "Move the cursor, select a range, or select a word/punctuation run.",
+    },
+    FixedShortcutSpec {
+        keys: "Mouse wheel",
+        purpose: "Scroll three visible rows without moving the document cursor or selection.",
     },
 ];
 

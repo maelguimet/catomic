@@ -29,8 +29,34 @@ fn wrapped_cursor_uses_the_continuation_row_and_cell_width() {
     let mut buffer = SimpleBuffer::from_text("ab猫x");
     buffer.set_cursor(Cursor { row: 0, col: 3 });
     let rows = visible_rows(&buffer, 0, 0, 3, 3).unwrap();
-    assert_eq!(wrapped_cursor_position(buffer.cursor(), &rows, 0), (2, 3));
+    assert_eq!(
+        wrapped_cursor_position(buffer.cursor(), &rows, 0, 3),
+        Some((2, 3))
+    );
     assert!(cursor_is_visible(&buffer, 0, 0, 3, 3).unwrap());
+}
+
+#[test]
+fn wrapped_render_hides_a_document_cursor_above_the_viewport() {
+    let mut buffer = SimpleBuffer::from_text("abcdef\nnext");
+    buffer.set_cursor(Cursor { row: 0, col: 0 });
+    let mut out = Vec::new();
+
+    super::super::render_buffer(
+        &mut out,
+        &buffer,
+        RenderViewport::new(0, 0, 3, 3).with_wrap_col(3),
+        None,
+        RenderOptions {
+            soft_wrap: true,
+            ..RenderOptions::default()
+        },
+    )
+    .unwrap();
+
+    assert!(String::from_utf8(out)
+        .unwrap()
+        .ends_with("\x1b[?25l\x1b[1;1H"));
 }
 
 #[test]
@@ -66,7 +92,10 @@ fn markdown_styles_do_not_change_soft_wrap_coordinates() {
     assert_eq!(rows[0].content, "**bold**");
     assert_eq!(rows[1].start_col, 8);
     assert_eq!(rows[1].content, " | 猫");
-    assert_eq!(wrapped_cursor_position(buffer.cursor(), &rows, 0), (2, 1));
+    assert_eq!(
+        wrapped_cursor_position(buffer.cursor(), &rows, 0, 8),
+        Some((2, 1))
+    );
 
     let mut out = Vec::new();
     super::super::render_buffer(

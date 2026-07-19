@@ -300,10 +300,24 @@ one visual unit where appropriate.
 | Move to start or end of document | `Ctrl+Home` / `Ctrl+End` |
 | Move by one visible viewport | `PageUp` / `PageDown` |
 | Move by word | `Ctrl+Left` / `Ctrl+Right` |
+| Move by paragraph | `Ctrl+Up` / `Ctrl+Down` |
 | Delete previous or next word | `Ctrl+Backspace` / `Ctrl+Delete` |
 
-Add `Shift` to the movement forms to extend the selection. `Ctrl+A` selects the
-active ordinary buffer or the current page of a paged file.
+Add `Shift` to the grapheme, line, word, page, and document-edge movement forms
+to extend the selection. `Ctrl+A` selects the active ordinary buffer or the
+current page of a paged file. Paragraph movement follows the exception below.
+
+A paragraph is a maximal run of non-blank logical lines; one or more blank
+lines separate paragraphs. `Ctrl+Down` skips the remainder of the current
+paragraph and all separating blank lines, then lands on the first non-blank
+line of the next paragraph. `Ctrl+Up` first lands on the first line of the
+current paragraph; another press moves to the first line of the previous
+paragraph. From a blank line, either key skips the blank run in its direction.
+Movement clamps at the document edge, preserves the current terminal-cell
+column when the target line permits it, and snaps to a grapheme boundary.
+Plain `Ctrl+Up`/`Ctrl+Down` clears an active selection like other non-extending
+navigation; it does not infer a selection-extending paragraph action from
+`Shift`.
 
 ### Mouse selection
 
@@ -320,6 +334,15 @@ A click past the rendered end of a line moves to its end. The bottom status row
 is not document content and ignores clicks. Prompts and read-only views also
 ignore document clicks; close the active surface before positioning the
 editable source cursor.
+
+The mouse wheel scrolls three visible rows per normalized wheel event without
+moving the document cursor or selection. With soft wrap enabled those are
+wrapped visual rows; otherwise they are logical lines. Horizontal scroll is
+preserved. If the logical cursor leaves the viewport, Catomic hides the terminal
+caret until the next keyboard navigation or editing action reveals it. Wheel
+events over the status row or an active prompt do not scroll the underlying
+document. Help, Markdown preview, and proposal/result views use the same
+viewport-only scrolling without changing their source buffer.
 
 ### Clipboard and paste
 
@@ -1029,6 +1052,7 @@ keys remain local to the active interface.
 | Editing | Indent / unindent | `Tab` / `Shift+Tab` |
 | Editing | Delete previous / next word | `Ctrl+Backspace` / `Ctrl+Delete` |
 | Navigation | Move by word | `Ctrl+Left` / `Ctrl+Right` |
+| Navigation | Previous / next paragraph | `Ctrl+Up` / `Ctrl+Down` |
 | Navigation | Start / end of document | `Ctrl+Home` / `Ctrl+End` |
 | Search | Find | `Ctrl+F` |
 | Search | Replace next | `Ctrl+Shift+F` |

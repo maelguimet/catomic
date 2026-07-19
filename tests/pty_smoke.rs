@@ -644,8 +644,8 @@ fn pty_help_scrolls_to_model_scopes_and_closes_without_editing() -> TestResult {
     editor.wait_for_initial_render()?;
     editor.send_keys(b"\x1bOP")?; // F1
     editor.wait_for_output("built-in help", "Catomic help")?;
-    for _ in 0..12 {
-        editor.send_keys(b"\x1b[6~")?; // PageDown through the generated reference
+    for _ in 0..96 {
+        editor.send_keys(b"\x1b[<65;1;1M")?; // SGR wheel down through every help region.
     }
     editor.wait_for_output("model command", "megameow INSTRUCTION")?;
     editor.wait_for_output("model command scope", "broader bounded repository context")?;
@@ -680,6 +680,48 @@ fn pty_encoded_sgr_and_x10_clicks_position_the_next_edits() -> TestResult {
 
     assert_eq!(fs::read_to_string(&temp.path)?, "first\nsec猫ond\nthi🙂rd");
     assert_mouse_capture_lifecycle(&editor.output_string());
+    Ok(())
+}
+
+#[test]
+fn pty_paragraph_navigation_and_wheel_keep_the_logical_cursor_stable() -> TestResult {
+    let temp = TempPath::new("paragraph_wheel");
+    let mut lines = vec![
+        "alpha".to_string(),
+        "continued".to_string(),
+        String::new(),
+        "next-target".to_string(),
+    ];
+    lines.extend((4..40).map(|row| format!("wheel-row-{row:02}")));
+    fs::write(&temp.path, lines.join("\n"))?;
+    let mut editor = PtyEditor::spawn(&temp.path)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"\x1b[1;5B")?; // Ctrl+Down to the next paragraph.
+                                     // SGR plus legacy X10 wheel-down encodings cover modern terminals and
+                                     // multiplexers that translate the captured mouse protocol.
+    editor.send_keys(b"\x1b[<65;1;1M\x1b[Ma!!")?;
+    editor.wait_for_output("wheel-only viewport movement", "wheel-row-28")?;
+    assert!(
+        editor.output_string().contains("\x1b[?25l"),
+        "an off-screen logical cursor must be hidden"
+    );
+
+    editor.send_keys(b"X")?;
+    editor.wait_for_output("typing reveals original paragraph cursor", "Xnext-target")?;
+    editor.send_keys(b"\x13\x11")?;
+    editor.wait_for_exit()?;
+
+    let saved = fs::read_to_string(&temp.path)?;
+    assert_eq!(saved.lines().nth(3), Some("Xnext-target"));
+    let output = editor.output_string();
+    assert!(output.contains("\x1b[?1000l"), "mouse mode not disabled");
+    assert!(output.contains("\x1b[?2004l"), "paste mode not disabled");
+    assert!(output.contains("\x1b[?1049l"), "alternate screen not left");
+    let mouse_disabled = output.rfind("\x1b[?1000l").unwrap();
+    let cursor_shown = output.rfind("\x1b[?25h").unwrap();
+    let alternate_left = output.rfind("\x1b[?1049l").unwrap();
+    assert!(mouse_disabled < cursor_shown && cursor_shown < alternate_left);
     Ok(())
 }
 

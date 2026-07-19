@@ -92,8 +92,9 @@ cmp --silent "$asset_dir/$binary_name" "$installed" || \
 # Release downloads are regular data files and need not retain an executable bit.
 # Execute only the byte-identical installed copy whose mode we control.
 reported_version="$("$installed" --version)"
-[[ "$reported_version" == "catomic $version" ]] || \
-  die "binary reported $reported_version instead of catomic $version"
+expected_version="catomic $version (commit ${source_sha:0:12})"
+[[ "$reported_version" == "$expected_version" ]] || \
+  die "binary reported $reported_version instead of $expected_version"
 grep -Fxq Cargo.toml "$asset_dir/package-contents.txt" || die "package list omits Cargo.toml"
 grep -Fq 'rustc ' "$asset_dir/toolchain.txt" || die "toolchain record omits rustc"
 grep -Fq 'cargo ' "$asset_dir/toolchain.txt" || die "toolchain record omits cargo"

@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
+use crate::build_info::{self, SourceState};
 use crate::cli::UpdateOptions;
 
 use super::process::{self, Output};
@@ -136,16 +137,17 @@ fn apply(
         &worktree.checkout,
         &["build", "--release", "--locked"],
         &install.root,
+        &fetched_sha,
     )?;
     let candidate = worktree.checkout.join("target/release/catomic");
     validate_candidate_config(&candidate)?;
     let new_version = candidate_version(&candidate)?;
-    if new_version != format!("catomic {remote_version}") {
+    let expected_version =
+        build_info::format_version(remote_version, Some(&fetched_sha), SourceState::Clean);
+    if new_version != expected_version {
         return Err(UpdateError::new(
             EXIT_BUILD,
-            format!(
-                "candidate reports {new_version:?}, expected package version {remote_version:?}"
-            ),
+            format!("candidate reports {new_version:?}, expected {expected_version:?}"),
         ));
     }
     let bytes = fs::read(&candidate).map_err(|error| {
@@ -360,8 +362,19 @@ fn cargo(root: &Path, args: &[&str]) -> Result<(), UpdateError> {
     cargo_command(root, args, None)
 }
 
-fn cargo_with_source(root: &Path, args: &[&str], source: &Path) -> Result<(), UpdateError> {
-    cargo_command(root, args, Some(source))
+fn cargo_with_source(
+    root: &Path,
+    args: &[&str],
+    source: &Path,
+    revision: &str,
+) -> Result<(), UpdateError> {
+    let mut command = Command::new("cargo");
+    command.current_dir(root).args(args);
+    command.env("CATOMIC_SOURCE_DIR", source);
+    command.env("CATOMIC_BUILD_COMMIT", revision);
+    command.env("CATOMIC_BUILD_DIRTY", "0");
+    command.env_remove("CATOMIC_MANAGED_RELEASE");
+    run_cargo(&mut command)
 }
 
 fn cargo_command(root: &Path, args: &[&str], source: Option<&Path>) -> Result<(), UpdateError> {
@@ -371,7 +384,11 @@ fn cargo_command(root: &Path, args: &[&str], source: Option<&Path>) -> Result<()
         command.env("CATOMIC_SOURCE_DIR", source);
         command.env_remove("CATOMIC_MANAGED_RELEASE");
     }
-    process::run_checked(&mut command, BUILD_TIMEOUT, MAX_COMMAND_OUTPUT)
+    run_cargo(&mut command)
+}
+
+fn run_cargo(command: &mut Command) -> Result<(), UpdateError> {
+    process::run_checked(command, BUILD_TIMEOUT, MAX_COMMAND_OUTPUT)
         .map(|_| ())
         .map_err(|error| UpdateError::new(EXIT_BUILD, error))
 }

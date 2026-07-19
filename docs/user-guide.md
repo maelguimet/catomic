@@ -311,6 +311,11 @@ Add `Shift` to the grapheme, line, word, page, and document-edge movement forms
 to extend the selection. `Ctrl+A` selects the active ordinary buffer or the
 current page of a paged file. Paragraph movement follows the exception below.
 
+Some terminal emulators reserve `Ctrl+Shift+Left` and `Ctrl+Shift+Right` for
+terminal-tab navigation and never send those events to Catomic. Use
+`Alt+Shift+Left` and `Alt+Shift+Right` as the built-in word-selection fallbacks;
+the standard chords remain available when the terminal forwards them.
+
 A paragraph is a maximal run of non-blank logical lines; one or more blank
 lines separate paragraphs. `Ctrl+Down` skips the remainder of the current
 paragraph and all separating blank lines, then lands on the first non-blank
@@ -1495,8 +1500,8 @@ select-viewport-up | editor | shift+pageup
 select-viewport-down | editor | shift+pagedown
 word-left | editor | ctrl+left
 word-right | editor | ctrl+right
-select-word-left | editor | ctrl+shift+left
-select-word-right | editor | ctrl+shift+right
+select-word-left | editor | ctrl+shift+left, alt+shift+left
+select-word-right | editor | ctrl+shift+right, alt+shift+right
 paragraph-previous | editor | ctrl+up
 paragraph-next | editor | ctrl+down
 delete-backward | editor | backspace

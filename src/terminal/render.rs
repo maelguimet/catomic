@@ -1,8 +1,9 @@
 //! Purpose: transport complete, bounded in-memory render frames to the terminal writer.
-//! Owns: render input types, composer selection, one frame write, and one flush.
+//! Owns: render input types, synchronized frame envelopes, one frame write, and one flush.
 //! Must not: mutate editor/buffer state, read full buffers, or own terminal setup.
-//! Invariants: composition errors produce no output; frames have explicit dimension/work bounds.
-//! Phase: bounded post-beta render ownership cleanup.
+//! Invariants: composition errors produce no output; every update hides the cursor and is published
+//!   as one synchronized frame with explicit dimension/work bounds.
+//! Phase: issue #128 coherent terminal frames and cursor placement.
 
 use std::io::{self, Write};
 
@@ -11,6 +12,8 @@ use crate::config::theme::Theme;
 use crate::editor::syntax::SyntaxKind;
 use crate::terminal::cursor_style::{self, CursorShape};
 
+#[cfg(test)]
+mod coherence_tests;
 #[cfg(test)]
 mod cursor_tests;
 mod frame;
@@ -23,6 +26,9 @@ pub(crate) use status_bar::{StatusRole, StatusTheme};
 
 const MAX_FRAME_DIMENSION: usize = 16_384;
 const MAX_FRAME_CELLS: usize = 8 * 1024 * 1024;
+pub(crate) const SYNC_UPDATE_BEGIN: &[u8] = b"\x1b[?2026h";
+pub(crate) const SYNC_UPDATE_END: &[u8] = b"\x1b[?2026l";
+const HIDE_CURSOR: &[u8] = b"\x1b[?25l";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct TextHighlight {
@@ -211,6 +217,7 @@ pub fn render_buffer<W: Write + ?Sized>(
 ) -> io::Result<()> {
     validate_frame_size(viewport)?;
     let mut frame = Vec::new();
+    begin_frame(&mut frame)?;
     super::title::write(&mut frame, options.window_title)?;
     style::write_cursor_color(&mut frame, options.theme)?;
     if options.soft_wrap {
@@ -218,6 +225,7 @@ pub fn render_buffer<W: Write + ?Sized>(
     } else {
         frame::compose_buffer(&mut frame, buffer, viewport, message, options)?;
     }
+    end_frame(&mut frame)?;
     out.write_all(&frame)?;
     out.flush()
 }
@@ -235,11 +243,22 @@ pub(crate) fn render_buffer_with_ghost<W: Write + ?Sized>(
     };
     validate_frame_size(viewport)?;
     let mut frame = Vec::new();
+    begin_frame(&mut frame)?;
     super::title::write(&mut frame, options.window_title)?;
     style::write_cursor_color(&mut frame, options.theme)?;
     ghost::compose_buffer(&mut frame, buffer, viewport, message, options, ghost)?;
+    end_frame(&mut frame)?;
     out.write_all(&frame)?;
     out.flush()
+}
+
+fn begin_frame(frame: &mut Vec<u8>) -> io::Result<()> {
+    frame.write_all(SYNC_UPDATE_BEGIN)?;
+    frame.write_all(HIDE_CURSOR)
+}
+
+fn end_frame(frame: &mut Vec<u8>) -> io::Result<()> {
+    frame.write_all(SYNC_UPDATE_END)
 }
 
 fn validate_frame_size(viewport: RenderViewport) -> io::Result<()> {

@@ -24,7 +24,7 @@ fn render_hides_an_offscreen_cursor_at_a_safe_content_position() {
     .unwrap();
 
     let rendered = String::from_utf8(out).unwrap();
-    assert!(rendered.ends_with("\x1b[?25l\x1b[1;1H"));
+    assert!(rendered.ends_with("\x1b[?25l\x1b[1;1H\x1b[?2026l"));
     assert!(!rendered.ends_with("\x1b[4;3H"));
 }
 
@@ -45,5 +45,5 @@ fn render_hides_a_cursor_left_of_the_horizontal_viewport() {
 
     assert!(String::from_utf8(out)
         .unwrap()
-        .ends_with("\x1b[?25l\x1b[1;1H"));
+        .ends_with("\x1b[?25l\x1b[1;1H\x1b[?2026l"));
 }

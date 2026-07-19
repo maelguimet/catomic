@@ -57,7 +57,7 @@ fn wrapped_render_hides_a_document_cursor_above_the_viewport() {
 
     assert!(String::from_utf8(out)
         .unwrap()
-        .ends_with("\x1b[?25l\x1b[1;1H"));
+        .ends_with("\x1b[?25l\x1b[1;1H\x1b[?2026l"));
 }
 
 #[test]

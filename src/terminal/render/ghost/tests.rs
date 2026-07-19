@@ -44,7 +44,7 @@ fn inline_ghost_shifts_suffix_without_changing_buffer_or_cursor() {
     );
 
     assert!(frame.contains("Hello\x1b[90;2m brave\x1b[0m world"));
-    assert!(frame.ends_with("\x1b[1;6H\x1b[?25h"));
+    assert!(frame.ends_with("\x1b[1;6H\x1b[?25h\x1b[?2026l"));
     assert_eq!(buffer.to_string(), "Hello world");
     assert_eq!(buffer.cursor(), cursor);
 }
@@ -65,7 +65,7 @@ fn multiline_wide_ghost_uses_virtual_rows_and_keeps_real_suffix() {
     assert!(frame.contains("1 \x1b[0mhello"), "frame: {frame:?}");
     assert!(frame.contains("\x1b[90;2m猫🙂\x1b[0m!"));
     assert!(frame.contains("2 \x1b[0msource row"));
-    assert!(frame.ends_with("\x1b[1;8H\x1b[?25h"));
+    assert!(frame.ends_with("\x1b[1;8H\x1b[?25h\x1b[?2026l"));
 }
 
 #[test]
@@ -112,7 +112,7 @@ fn horizontal_scroll_and_narrow_width_clip_ghost_on_grapheme_boundaries() {
 
     assert!(frame.contains("a\u{301}\x1b[90;2m猫\x1b[0m"));
     assert!(!frame.contains('🙂'));
-    assert!(frame.ends_with("\x1b[1;2H\x1b[?25h"));
+    assert!(frame.ends_with("\x1b[1;2H\x1b[?25h\x1b[?2026l"));
 }
 
 #[test]
@@ -130,5 +130,5 @@ fn soft_wrap_splits_wide_ghost_without_moving_cursor() {
 
     assert!(frame.contains("\x1b[1;1H\x1b[Kab\x1b[90;2m猫\x1b[0m"));
     assert!(frame.contains("\x1b[2;1H\x1b[K\x1b[90;2m🙂x\x1b[0mZ"));
-    assert!(frame.ends_with("\x1b[1;3H\x1b[?25h"));
+    assert!(frame.ends_with("\x1b[1;3H\x1b[?25h\x1b[?2026l"));
 }

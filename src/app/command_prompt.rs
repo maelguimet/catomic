@@ -130,7 +130,7 @@ pub(crate) fn handle_active_key(
             if inline_warning {
                 super::inline_clanker::cancel_warning(app);
             } else {
-                app.message = Some("Prompt cancelled.".to_string());
+                app.message = None;
             }
             app.command_prompt.active = None;
         }

@@ -467,8 +467,13 @@ fn pty_save_undo_save_quit_writes_expected_file() -> TestResult {
             .contains("\x1b[24;1H\x1b[4m\x1b[7m\x1b[2KCommand: "),
         "prompt role must remain distinct in monochrome mode"
     );
+    let prompt_close_start = editor.output_len();
     editor.send_keys(b"\x1b")?;
-    editor.wait_for_output("prompt cancellation", "Prompt cancelled")?;
+    wait_until("prompt close redraw", Duration::from_secs(2), || {
+        editor
+            .output_since(prompt_close_start)
+            .contains(filename.as_ref())
+    })?;
     editor.send_keys(b"ab\x13c\x1a\x13\x11")?;
     editor.wait_for_exit()?;
 
@@ -643,6 +648,7 @@ fn pty_insert_overwrite_cursor_prompt_and_teardown_transitions() -> TestResult {
     fs::write(&temp.path, "abc")?;
     let mut editor = PtyEditor::spawn(&temp.path)?;
     editor.wait_for_initial_render()?;
+    let filename = temp.path.file_name().unwrap().to_string_lossy();
     editor.wait_for_output("initial insert cursor", "\x1b[0 q")?;
 
     let enable_start = editor.output_len();
@@ -667,7 +673,7 @@ fn pty_insert_overwrite_cursor_prompt_and_teardown_transitions() -> TestResult {
         Duration::from_secs(2),
         || {
             let output = editor.output_since(close_start);
-            output.contains("Prompt cancelled.") && output.contains("\x1b[2 q")
+            output.contains(filename.as_ref()) && output.contains("\x1b[2 q")
         },
     )?;
 

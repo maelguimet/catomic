@@ -30,14 +30,20 @@ pub(crate) struct TerminalRestorer {
 /// Guard installed before the first terminal mutation.
 pub(crate) struct TerminalGuard {
     restorer: TerminalRestorer,
+    enable_xterm_extended_keys: bool,
 }
 
 impl TerminalGuard {
     pub(crate) fn new() -> Self {
+        Self::with_xterm_extended_keys(std::env::var_os("TMUX").is_some())
+    }
+
+    fn with_xterm_extended_keys(enable_xterm_extended_keys: bool) -> Self {
         Self {
             restorer: TerminalRestorer {
                 active_modes: Arc::new(AtomicU8::new(0)),
             },
+            enable_xterm_extended_keys,
         }
     }
 
@@ -64,9 +70,11 @@ impl TerminalGuard {
             event::PushKeyboardEnhancementFlags(KEYBOARD_FLAGS_REQUEST)
         )?;
         self.restorer.mark_active(KITTY_KEYBOARD_FLAGS);
-        out.write_all(XTERM_EXTENDED_KEYS_ENABLE)?;
-        self.restorer.mark_active(XTERM_EXTENDED_KEYS);
-        out.flush()?;
+        if self.enable_xterm_extended_keys {
+            out.write_all(XTERM_EXTENDED_KEYS_ENABLE)?;
+            self.restorer.mark_active(XTERM_EXTENDED_KEYS);
+            out.flush()?;
+        }
         execute!(
             out,
             event::EnableBracketedPaste,

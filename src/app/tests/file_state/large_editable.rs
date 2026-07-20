@@ -63,7 +63,9 @@ fn assert_save_failure_restored(
     assert!(!app.should_quit);
 }
 
-fn selected_save_state(app: &mut App) -> (
+fn selected_save_state(
+    app: &mut App,
+) -> (
     (crate::buffer::PageInfo, crate::buffer::Cursor),
     crate::editor::selection::Selection,
     (usize, usize, usize),

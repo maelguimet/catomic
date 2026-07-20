@@ -92,11 +92,7 @@ impl PagedFileBuffer {
     }
 
     #[cfg(test)]
-    pub(crate) fn fail_next_page_after(
-        &mut self,
-        successful_calls: usize,
-        kind: io::ErrorKind,
-    ) {
+    pub(crate) fn fail_next_page_after(&mut self, successful_calls: usize, kind: io::ErrorKind) {
         self.fail_next_page_after = Some((successful_calls, kind));
     }
 

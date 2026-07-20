@@ -2,7 +2,6 @@
 //! Owns: action names, labels, scopes, and the default chord inventory.
 //! Must not: parse user TOML, dispatch App behavior, inspect terminal events, or mutate state.
 //! Invariants: names are unique; every action has a scope and at least one default chord.
-//! Phase: issue #62 complete shortcut customization.
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) enum Scope {

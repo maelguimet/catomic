@@ -2,7 +2,6 @@
 //! Owns: visible-line ANSI color selection, boundary splitting, and reset emission.
 //! Must not: query buffers, infer file types, mutate state, or inspect non-visible lines.
 //! Invariants: only the supplied visible text is allocated; every styled segment resets ANSI.
-//! Phase: 4-a viewport-only syntax styling.
 
 use std::io::{self, Write};
 

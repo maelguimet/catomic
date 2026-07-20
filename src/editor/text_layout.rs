@@ -2,7 +2,6 @@
 //! Owns: grapheme boundaries, Unicode display widths, tab expansion, and cell clipping.
 //! Must not: access App state, mutate buffers, render ANSI, scan files, or perform I/O.
 //! Invariants: returned scalar columns are grapheme boundaries; clipping never splits a cluster.
-//! Phase: post-v0.1 core usability.
 
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;

@@ -2,7 +2,6 @@
 //! Owns: raw serde types, compatibility translation, uniqueness, and default selection.
 //! Must not: load files, read environment values, resolve executables, spawn, or network.
 //! Invariants: mixed legacy/preset shapes fail; the resulting catalog has a valid default.
-//! Phase: post-v0.1 model/backend configuration schema.
 
 use std::collections::{BTreeMap, HashSet};
 use std::io;

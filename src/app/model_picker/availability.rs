@@ -2,7 +2,6 @@
 //! Owns: endpoint locality, credential-name presence checks, and executable identity lookup.
 //! Must not: read secret bytes, run version probes, construct clients, spawn, or network.
 //! Invariants: picker checks are cheap and context-free; every displayed string is control-free.
-//! Phase: post-v0.1 model/backend picker.
 
 use std::ffi::CString;
 use std::net::IpAddr;

@@ -2,7 +2,6 @@
 //! Owns: fake local executables and two structured-output fixtures without third-party CLIs.
 //! Must not: invoke a shell implicitly, access a model, use public network, or edit repositories.
 //! Invariants: every fixture is private temporary state and all child processes are reaped.
-//! Phase: post-v0.1 command-backed LLM adapter tests.
 
 use std::os::unix::fs::PermissionsExt;
 use std::sync::atomic::AtomicBool;

@@ -2,7 +2,6 @@
 //! Owns: child lifetime, stdin delivery, timeout/cancellation, stream capture, and polling.
 //! Must not: load config, choose commands, mutate App state, render, or write editor files.
 //! Invariants: output is capped; every pipe worker can be stopped and joined after child cleanup.
-//! Phase: 7 external command foundation.
 
 use std::io;
 use std::path::{Path, PathBuf};

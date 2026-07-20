@@ -2,7 +2,6 @@
 //! Owns: trusted origins, redirects, timeouts, response bounds, and exact asset sizes.
 //! Must not: use ambient proxies, accept arbitrary URLs, persist downloads, or install bytes.
 //! Invariants: production requests are HTTPS-only and redirects remain on allowlisted hosts.
-//! Phase: safe self-update workflow.
 
 use std::net::IpAddr;
 use std::time::Duration;

@@ -1,8 +1,7 @@
-//! Line index for fast line access and cursor <-> offset mapping (Phase 1B).
+//! Line index for fast line access and cursor-to-offset mapping.
 //!
 //! Purpose: own the line start byte offsets over the logical document for O(1-ish)
-//!          line queries and efficient cursor mapping. Rebuild bridge in 1B-a,
-//!          incremental updates targeted in 1B-b.
+//!          line queries and efficient cursor mapping.
 //! Owns: line_starts vec + total_bytes.
 //! Must not: depend on PieceTable internals (Piece/Source live in piece_table).
 //!           UI, LLM, or Project code.
@@ -12,7 +11,6 @@
 //! - total_bytes is the logical byte length
 //! - Rebuild or incremental update keeps this consistent with pieces after every edit.
 //!
-//! Phase: 1B
 
 /// Line index over global logical byte offsets (one per line start).
 /// Public(crate) for use by PieceTable; the public module exists to avoid

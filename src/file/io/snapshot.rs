@@ -4,7 +4,6 @@
 //! Invariants: ordinary editable files receive a full SHA-256; paged files hash
 //!   fixed start/middle/end samples; capture drift fails closed; snapshot capture
 //!   uses fixed memory; pinned full reads are limited to the full-read tier.
-//! Phase: post-v0.1 external-change metadata-collision hardening.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom};

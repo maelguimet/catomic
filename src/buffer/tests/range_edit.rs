@@ -2,7 +2,6 @@
 //! Owns: focused PieceTable selection-edit and transaction assertions.
 //! Must not: depend on App input, rendering, terminal clipboard, or mouse state.
 //! Invariants: one replace call produces at most one undo transaction.
-//! Phase: 3-d selection editing foundation.
 
 use crate::buffer::{Buffer, Cursor, PieceTable, TextEdit};
 

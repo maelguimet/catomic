@@ -2,7 +2,6 @@
 //! Owns: preview navigation, final drift validation, apply, queue advance, and rejection.
 //! Must not: parse model output, construct clients, save files, or widen captured ranges.
 //! Invariants: Enter is the only apply path; every accepted batch is one buffer transaction.
-//! Phase: issue #65 one-key inline clanker workflow.
 
 use std::io::{self, Write};
 

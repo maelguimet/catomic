@@ -1,11 +1,10 @@
-//! Viewport / scroll / reveal helpers for App (Phase 2 slim).
+//! Viewport, scroll, and reveal helpers for App.
 //!
 //! Purpose: owns the buffer-aware reveal + clamp + resize handling that
 //! interacts with both Screen and the current Buffer cursor/line state.
 //! Owns: resize, cursor reveal, viewport-only wheel scrolling, and bounds clamping.
 //! Must not: key dispatch, run loop, file state, render core.
 //! Invariants: viewport-only scrolling never mutates a display buffer cursor or source state.
-//! Phase: post-v0.1 viewport-only wheel scrolling.
 
 use std::io::Write;
 

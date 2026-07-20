@@ -2,7 +2,6 @@
 //! Owns: blank-buffer construction, dirty-close refusal, and active-slot removal.
 //! Must not: decode keys, render, write files, or bypass explicit discard requests.
 //! Invariants: dirty buffers close only with force; closing the last buffer leaves one blank.
-//! Phase: post-v0.1 core usability.
 
 use std::io;
 

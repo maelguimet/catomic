@@ -3,7 +3,6 @@
 //! Must not: enable terminal modes, mutate text, access clipboard, or inspect buffer internals.
 //! Invariants: persistent status selection never maps into document coordinates;
 //!   mapped document cursors stay within the active page.
-//! Phase: 3-e mouse selection interaction.
 
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
@@ -125,6 +124,7 @@ fn mouse_down(
         return Ok(());
     };
     if let Some(anchor) = app.selection.touch_anchor.take() {
+        super::super::input::prepare_editor_action(app, None);
         app.buffer.set_cursor(cursor);
         let selection = Selection::new(anchor, cursor);
         app.selection.range = (!selection.is_empty()).then_some(selection);

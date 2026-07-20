@@ -2,7 +2,6 @@
 //! Owns: curated help content, local search, navigation, and source viewport restoration.
 //! Must not: mutate source/history, read configuration, spawn work, or access network.
 //! Invariants: Ctrl+H/F1 toggle the view; Escape closes it; all content is read-only.
-//! Phase: post-v0.1 core usability.
 
 use std::fmt::Write as _;
 use std::io::{self, Write};

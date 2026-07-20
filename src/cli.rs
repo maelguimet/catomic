@@ -3,7 +3,6 @@
 //! Must not: inspect files, contact a network, update state, or start the editor.
 //! Invariants: reserved commands are recognized only in argv[1]; file words
 //! join one path.
-//! Phase: safe self-update workflow.
 
 use std::ffi::OsString;
 

@@ -2,7 +2,6 @@
 //! Owns: in-memory failure writers and terminal session lifecycle assertions.
 //! Must not: require a real terminal, mutate editor state, or test input decoding.
 //! Invariants: enhanced keyboard states are reset once and before alternate-screen exit.
-//! Phase: post-v0.1 terminal keyboard compatibility.
 
 use super::*;
 

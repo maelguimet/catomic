@@ -2,7 +2,6 @@
 //! Owns: focused click fixtures for wrapping, scrolling, empty lines, and terminal cells.
 //! Must not: depend on wall-clock timing, a real terminal, filesystem state, or text mutation.
 //! Invariants: clicks use zero-based crossterm coordinates and end on grapheme boundaries.
-//! Phase: beta mouse click regression coverage.
 
 use super::*;
 

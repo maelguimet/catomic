@@ -2,7 +2,6 @@
 //! Owns: the exact JSON response envelope and replacement output size limit.
 //! Must not: choose an edit range, mutate buffers, accept prose, or perform I/O.
 //! Invariants: only one named string field is valid; oversized output fails closed.
-//! Phase: 6 (LLM, Powerful but Caged).
 
 use serde::Deserialize;
 

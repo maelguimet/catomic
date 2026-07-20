@@ -2,7 +2,6 @@
 //! Owns: line parsing, exact captured ranges, metadata stripping, and request formatting.
 //! Must not: perform I/O, call models, mutate text, or silently recover malformed delimiters.
 //! Invariants: all diagnostics are one-based; request context excludes every control delimiter.
-//! Phase: issue #65 one-key inline clanker workflow.
 
 use std::path::Path;
 

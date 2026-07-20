@@ -2,7 +2,6 @@
 //! Owns: strict response formats, exact before/after preview, atomic edits, and queue advance.
 //! Must not: construct unconfirmed clients, write files, hide cleanup, or edit outside targets.
 //! Invariants: Enter alone applies; combined edits and cleanup share one buffer transaction.
-//! Phase: issue #65 one-key inline clanker workflow.
 
 use std::collections::BTreeMap;
 use std::io::{self, Write};

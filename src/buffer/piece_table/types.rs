@@ -1,4 +1,4 @@
-//! Core types for PieceTable (Phases 1B-1C).
+//! Core types for PieceTable.
 //!
 //! Source, Piece, OriginalBacking, LineIndex (data), PieceTable struct definition.
 //!
@@ -11,7 +11,6 @@
 //! - LineIndex reflects the logical newlines in the piece concatenation.
 //! - cursor_byte_offset always matches the byte position of (cursor.row, cursor.col).
 //!
-//! Phase: 2-bi file-backed PieceTable foundation.
 
 use std::ops::Range;
 use std::sync::Arc;

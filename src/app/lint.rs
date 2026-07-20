@@ -2,7 +2,6 @@
 //! Owns: invocation guards, task polling, result parsing, and user-facing run status.
 //! Must not: run in Plain, auto-run on edits/save, block input, mutate content, or network.
 //! Invariants: dirty/untitled/unconfigured buffers spawn nothing; Project owns all task state.
-//! Phase: 5-c on-demand lint integration.
 
 use std::io::{self, Write};
 

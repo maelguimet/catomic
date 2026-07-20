@@ -2,7 +2,6 @@
 //! Owns: common file:line:col:message parsing, path resolution, and severity classification.
 //! Must not: run tools, access App/terminal state, scan projects, mutate files, or network.
 //! Invariants: coordinates are retained as positive user-facing 1-based values.
-//! Phase: 5-c linter diagnostics foundation.
 
 use std::path::{Path, PathBuf};
 

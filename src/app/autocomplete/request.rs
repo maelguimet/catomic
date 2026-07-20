@@ -2,7 +2,6 @@
 //! Owns: debounce, active-buffer identity pins, task handoff, stale checks, and backoff.
 //! Must not: confirm opt-in, render ghost layout, read files/repositories, or apply edits.
 //! Invariants: one task at a time; late responses display only for the exact pinned identity.
-//! Phase: post-v0.1 opt-in inline autocomplete.
 
 use std::io::{self, Write};
 use std::time::{Duration, Instant};

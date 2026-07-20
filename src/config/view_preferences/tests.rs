@@ -2,7 +2,6 @@
 //! Owns: temporary XDG-style fixtures, failure cases, and concurrent-writer tests.
 //! Must not: mutate process environment, touch real user state, or invoke a terminal.
 //! Invariants: every filesystem path is fixture-owned and removed after each test.
-//! Phase: post-v0.1 persistent view preferences.
 
 use std::fs;
 use std::path::{Path, PathBuf};

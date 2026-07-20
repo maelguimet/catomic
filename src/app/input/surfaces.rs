@@ -2,7 +2,6 @@
 //! Owns: ordered dispatch across active prompts, previews, pickers, and editor surfaces.
 //! Must not: edit buffer content, translate keybindings, decode bytes, or start background work.
 //! Invariants: active surfaces precede editor actions; autocomplete invalidates before other input.
-//! Phase: bounded post-beta input-routing cleanup.
 
 use std::io::{self, Write};
 

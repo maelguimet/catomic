@@ -6,7 +6,6 @@
 //! Must not: contain any runtime logic or be included outside test builds.
 //! Invariants: loaded only under #[cfg(test)] via `mod tests;` in app.rs;
 //!              uses `use super::*;` to access private App methods (e.g. handle_key_with).
-//! Phase: 2-g cleanup (no behavior change).
 
 mod editing;
 mod file_state;

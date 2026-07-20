@@ -2,7 +2,6 @@
 //! Owns: Rust/Python/JSON keywords, strings, numbers, and line comments.
 //! Must not: parse syntax trees, retain multiline state, emit ANSI, or inspect other lines.
 //! Invariants: returned spans are ordered, non-overlapping scalar ranges.
-//! Phase: 4-a viewport-only code styling.
 
 use super::{SpanStyle, StyledSpan, SyntaxKind};
 

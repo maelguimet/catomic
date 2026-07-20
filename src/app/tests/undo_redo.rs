@@ -2,7 +2,6 @@
 //! Owns: lowercase/uppercase Z, exact-modifier, terminal-ambiguity, and remap tests.
 //! Must not: launch a terminal, touch disk, or inspect buffer implementation details.
 //! Invariants: only an explicit Shift modifier selects the Ctrl+Shift+Z redo alias.
-//! Phase: post-v0.1 shortcut clarity.
 
 use crossterm::event::{KeyCode, KeyModifiers};
 

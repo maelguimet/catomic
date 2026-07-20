@@ -8,7 +8,6 @@
 //! Must not: perform edits, undo/redo, queries, UI, Project, or LLM work.
 //! Invariants: CRLF/CR normalize to LF; LF-only owned input moves into original
 //!   without cloning; cursor starts at (0,0); initial piece/index/piece_starts are consistent.
-//! Phase: 2-bi file-backed PieceTable foundation.
 
 use std::fs::File;
 use std::io;

@@ -2,7 +2,6 @@
 //! Owns: Unicode replacement, boundary, selection, paste, prompt, and undo assertions.
 //! Must not: require a real terminal, filesystem, Project service, or network.
 //! Invariants: overwrite affects direct typing only and replaces one grapheme transactionally.
-//! Phase: post-v0.1 explicit overwrite mode.
 
 use crossterm::event::{KeyCode, KeyModifiers};
 

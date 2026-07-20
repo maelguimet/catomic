@@ -2,7 +2,6 @@
 //! Owns: scalar-column prefix extraction and deterministic candidate selection.
 //! Must not: access Buffer/App state, scan files, spawn work, allocate an index, or render.
 //! Invariants: callers choose the bounded input; candidates are unique and capped.
-//! Phase: 5 local word and Project path completion foundations.
 
 use std::collections::BTreeSet;
 

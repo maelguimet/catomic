@@ -2,7 +2,6 @@
 //! Owns: F3 decoding, typed warnings, serial progress, loopback requests, preview/apply UX.
 //! Must not: contact live/non-loopback endpoints, inherit ambient config, or save model edits.
 //! Invariants: requests use a local fake server; every wait is bounded and every child is reaped.
-//! Phase: issue #65 one-key inline clanker acceptance.
 
 use std::error::Error;
 use std::fs;

@@ -4,7 +4,6 @@
 //! Must not: contain test bodies, generators, or timing logic; grow beyond ~30 lines.
 //! Invariants: same test names and discovery via `cargo test tests::perf` and bare fn names;
 //!   split produces identical observable test behavior (first split commit has zero changes).
-//! Phase: 2-ai (split scaffold; default smokes non-timing; manual baseline reporting next).
 
 //! Re-exports are not needed; tests are discovered by name regardless of nesting.
 

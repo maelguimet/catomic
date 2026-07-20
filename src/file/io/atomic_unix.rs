@@ -2,7 +2,6 @@
 //! Owns: hard-link/xattr/ownership guards and race-safe renameat2 commit/rollback.
 //! Must not: format text, choose App save policy, or handle private recovery sidecars.
 //! Invariants: unsafe metadata is refused; a raced target is atomically restored.
-//! Phase: post-v0.1 OSS beta file-semantics hardening.
 
 use std::ffi::CString;
 use std::fs::{self, File, Metadata, OpenOptions, Permissions};

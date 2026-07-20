@@ -1,8 +1,7 @@
-//! Purpose: measure typed parsing of a deliberately oversized Phase 7 configuration.
+//! Purpose: measure typed parsing of a deliberately oversized command configuration.
 //! Owns: the ignored 256-command, 100-parse configuration sample.
 //! Must not: run by default, spawn commands, enforce machine timing, write files, or network.
 //! Invariants: fixture creation is outside timing; every parse validates commands and hooks.
-//! Phase: 7 acceptance performance measurement.
 
 use crate::config::commands::{self, HookEvent};
 

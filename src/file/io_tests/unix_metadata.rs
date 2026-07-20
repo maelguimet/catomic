@@ -2,7 +2,6 @@
 //! Owns: hard-link, xattr/ACL, ownership, and boundary-race save regressions.
 //! Must not: test App save policy, snapshots, watchers, or recovery sidecars.
 //! Invariants: a refused save leaves the existing filesystem object and contents intact.
-//! Phase: post-v0.1 OSS beta file-semantics hardening.
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 mod linux_kernel {

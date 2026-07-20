@@ -2,7 +2,6 @@
 //! Owns: answer rendering, non-apply keys, Escape restoration, and Plain startup state.
 //! Must not: construct a client, contact an endpoint, or mutate files.
 //! Invariants: answer interaction never changes source text or edit history.
-//! Phase: 6 (LLM, Powerful but Caged).
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 

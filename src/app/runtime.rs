@@ -2,7 +2,6 @@
 //! Owns: setup/teardown guards, runtime polling order, event reads, and resize dispatch.
 //! Must not: decode terminal bytes, implement editor commands, scan projects, or call networks.
 //! Invariants: background work is polled once per loop; terminal teardown is guard-backed.
-//! Phase: bounded post-beta App ownership cleanup.
 
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -108,5 +107,43 @@ impl App {
         out: &mut dyn Write,
     ) -> io::Result<()> {
         viewport::handle_resize(self, width, height, out)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    use crossterm::event::{KeyCode, KeyEventKind, KeyEventState, KeyModifiers};
+
+    fn control(character: char) -> KeyEvent {
+        KeyEvent {
+            code: KeyCode::Char(character),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    #[test]
+    fn copy_times_out_stuck_helper_falls_back_and_keeps_input_responsive() {
+        crate::clipboard::with_timeout_test_helpers(|| {
+            let text = "x".repeat(100 * 1024 + 1);
+            let mut app = App::new(None).unwrap();
+            app.buffer = Box::new(crate::buffer::PieceTable::from_text(&text));
+            let mut out = Vec::new();
+            app.handle_key_with(&mut out, control('a')).unwrap();
+
+            let started = Instant::now();
+            app.handle_key_with(&mut out, control('c')).unwrap();
+
+            assert!(started.elapsed() < Duration::from_secs(2));
+            assert_eq!(app.clipboard, text);
+            assert!(app.message.is_none(), "the fallback helper was not tried");
+
+            app.handle_key_with(&mut out, control('q')).unwrap();
+            assert!(app.should_quit);
+        });
     }
 }

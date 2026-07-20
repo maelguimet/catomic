@@ -2,7 +2,6 @@
 //! Owns: direct argv construction support, child lifetime, output caps, and termination.
 //! Must not: invoke a shell, prompt, inherit stdin, or decide updater policy.
 //! Invariants: every child is reaped; pipe readers remain interruptible after child cleanup.
-//! Phase: safe self-update workflow.
 
 use std::process::{Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
@@ -36,20 +35,30 @@ pub(super) fn run(
     let mut child = command
         .spawn()
         .map_err(|error| format!("could not start {description}: {error}"))?;
-    let stdout = spawn_reader(
+    let stdout = match spawn_reader(
         child.stdout.take().expect("piped stdout"),
         max_output,
         OverflowAction::Stop,
         "catomic-update-output",
-    )
-    .map_err(|error| format!("could not start output reader: {error}"))?;
-    let stderr = spawn_reader(
+    ) {
+        Ok(reader) => reader,
+        Err(error) => {
+            terminate(&mut child);
+            return Err(format!("could not start output reader: {error}"));
+        }
+    };
+    let stderr = match spawn_reader(
         child.stderr.take().expect("piped stderr"),
         max_output,
         OverflowAction::Stop,
         "catomic-update-output",
-    )
-    .map_err(|error| format!("could not start output reader: {error}"))?;
+    ) {
+        Ok(reader) => reader,
+        Err(error) => {
+            terminate(&mut child);
+            return Err(format!("could not start output reader: {error}"));
+        }
+    };
     let status = wait(&mut child, timeout).map_err(|error| format!("{description}: {error}"));
     let stdout = join_reader(stdout, max_output);
     let stderr = join_reader(stderr, max_output);

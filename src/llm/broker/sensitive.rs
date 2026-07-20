@@ -2,7 +2,6 @@
 //! Owns: dot-path admission, obvious secret detection, and explicit omission labels.
 //! Must not: read files, mutate broker budgets, write, or network.
 //! Invariants: dot paths stay outside the broker map and secret-like bytes are never returned.
-//! Phase: 6 acceptance hardening.
 
 use std::path::Path;
 

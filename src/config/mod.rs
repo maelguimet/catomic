@@ -3,7 +3,6 @@
 //! Must not: construct Project/LLM services, perform network work, or mutate files.
 //! Invariants: no config file is required; malformed recognized values are errors;
 //!   unknown keys are ignored for forward compatibility.
-//! Phase: 7 typed configuration foundation.
 
 use std::io;
 

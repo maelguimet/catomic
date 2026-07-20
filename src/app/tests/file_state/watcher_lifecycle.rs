@@ -1,4 +1,4 @@
-//! Focused App FileWatcher lifecycle tests (Phase 2-z).
+//! Focused App FileWatcher lifecycle tests.
 //!
 //! Purpose: verify App owns a gated FileWatcher after new(path) and after
 //! successful first-save path creation; failure paths leave None; no signals
@@ -9,7 +9,6 @@
 //! Invariants: watcher presence only; construction non-fatal; uses existing
 //!   Plain caps; tests the helper directly for the "after save assign" case
 //!   to avoid hardcoded "untitled.txt" cwd writes in potentially parallel runs.
-//! Phase: 2-z narrow pass (lifecycle); signal tests split to watcher_signal.rs (2-ab).
 
 use super::super::super::*;
 use super::super::make_key;

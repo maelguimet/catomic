@@ -2,7 +2,6 @@
 //! Owns: deterministic in-closure mode checks for existing and new ordinary files.
 //! Must not: mutate the process umask, test target validation, or inspect post-failure cleanup.
 //! Invariants: content streams only under 0600; final modes preserve target or umask policy.
-//! Phase: post-v0.1 atomic-save confidentiality hardening.
 
 #[cfg(unix)]
 mod unix {

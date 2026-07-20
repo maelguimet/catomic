@@ -2,7 +2,6 @@
 //! Owns: byte-identity, private-mode, state-exclusion, replacement, and rollback assertions.
 //! Must not: contact a network, inspect real user state, or replace the test executable.
 //! Invariants: every fixture is unique and confined to the temporary directory.
-//! Phase: safe self-update workflow.
 
 use std::fs;
 use std::path::PathBuf;

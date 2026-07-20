@@ -2,7 +2,6 @@
 //! Owns: safe command construction, capped stdout capture, cancellation, timeout, and reaping.
 //! Must not: invoke a shell, inherit Git identity overrides, write repositories, or network.
 //! Invariants: every child is waited; output readers remain interruptible after child cleanup.
-//! Phase: 6 acceptance hardening.
 
 use std::path::Path;
 use std::process::{Child, Command, ExitStatus, Stdio};

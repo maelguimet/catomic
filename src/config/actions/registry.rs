@@ -22,13 +22,13 @@ const PS: &[super::Scope] = &[Prompt, Search];
 
 macro_rules! key {
     ($action:ident, $name:literal, $label:literal, $scopes:expr, [$($default:literal),+]) => {
-        Descriptor { action: super::Action::$action, name: $name, label: $label, scopes: $scopes,
+        Descriptor { action: super::Action::$action, name: $name, scopes: $scopes,
             defaults: &[$($default),+], input: Keyboard }
     };
 }
 macro_rules! mouse {
     ($action:ident, $name:literal, $label:literal, [$($default:literal),+]) => {
-        Descriptor { action: super::Action::$action, name: $name, label: $label, scopes: E,
+        Descriptor { action: super::Action::$action, name: $name, scopes: E,
             defaults: &[$($default),+], input: MouseButton }
     };
 }
@@ -37,7 +37,6 @@ macro_rules! wheel {
         Descriptor {
             action: super::Action::$action,
             name: $name,
-            label: $label,
             scopes: NAV,
             defaults: &[$default],
             input: MouseWheel,

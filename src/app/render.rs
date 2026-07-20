@@ -168,6 +168,18 @@ fn render_options<'a>(
 fn active_highlight(
     app: &App,
 ) -> Option<(term::render::TextHighlight, term::render::HighlightKind)> {
+    if let Some(found) = help::active_search_match(app) {
+        return Some((
+            term::render::TextHighlight {
+                start: found.start,
+                end: crate::buffer::Cursor {
+                    row: found.start.row,
+                    col: found.end_col,
+                },
+            },
+            term::render::HighlightKind::Search,
+        ));
+    }
     if local_surface_is_open(app) {
         return None;
     }

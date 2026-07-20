@@ -1,7 +1,7 @@
-//! Purpose: verify that public action and command metadata is complete and unambiguous.
-//! Owns: catalog uniqueness, lookup, alias, binding, and help-field regression tests.
+//! Purpose: verify that public action and command lookup metadata is unambiguous.
+//! Owns: catalog uniqueness, lookup, alias, and binding regression tests.
 //! Must not: construct App, read configuration, touch disk, or dispatch editor actions.
-//! Invariants: every catalog entry is reachable and has user-facing help.
+//! Invariants: every catalog entry is reachable through its declared spellings.
 //! Phase: post-v0.1 discoverability and help-drift prevention.
 
 use std::collections::HashSet;
@@ -55,23 +55,13 @@ fn configurable_registry_defaults_match_the_canonical_dispatch_bridge() {
 }
 
 #[test]
-fn prompt_commands_and_aliases_are_unique_and_have_purposes() {
+fn prompt_commands_and_aliases_are_unique_and_dispatchable() {
     let mut names = HashSet::new();
     for spec in PROMPT_COMMANDS {
-        assert!(!spec.syntax.is_empty());
-        assert!(!spec.purpose.is_empty());
         assert!(!spec.names.is_empty());
-        let displayed: HashSet<_> = std::iter::once(spec.syntax)
-            .chain(spec.aliases.iter().copied())
-            .map(|spelling| spelling.split_ascii_whitespace().next().unwrap())
-            .collect();
         for name in spec.names {
             assert!(names.insert(name), "duplicate prompt spelling: {name}");
             assert_eq!(prompt_command(name), Some(spec.command));
-            assert!(
-                displayed.contains(name),
-                "prompt spelling is hidden from help: {name}"
-            );
         }
     }
 }

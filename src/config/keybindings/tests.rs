@@ -81,6 +81,25 @@ fn action_overrides_replace_all_defaults_and_empty_arrays_unbind() {
 }
 
 #[test]
+fn effective_keyboard_chords_are_deduplicated_and_omit_unbound_actions() {
+    let bindings = parse(
+        "[keybindings]\nredo = [\"alt+r\", \"ctrl+shift+r\"]\nsave = []\nsearch = [\"alt+f\"]\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        bindings.keyboard_chords(Action::Redo),
+        vec!["alt+r".to_string(), "ctrl+shift+r".to_string()]
+    );
+    assert!(bindings.keyboard_chords(Action::Save).is_empty());
+    assert!(bindings.matches_keyboard(Action::Search, key(KeyCode::Char('f'), KeyModifiers::ALT)));
+    assert!(!bindings.matches_keyboard(
+        Action::Search,
+        key(KeyCode::Char('f'), KeyModifiers::CONTROL)
+    ));
+}
+
+#[test]
 fn legacy_chord_to_action_overrides_remain_compatible() {
     let bindings = parse(
         "[keybindings]\n\"ctrl+w\" = \"save\"\n\"alt+s\" = \"save-as\"\n\"alt+shift+p\" = \"command-prompt\"\n",

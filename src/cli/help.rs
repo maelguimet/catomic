@@ -167,8 +167,8 @@ pub(super) fn main_help(version: &str) -> String {
             "  commented template; Catomic confirms before recreating a missing file.\n\n",
             "Learn more:\n",
             "  https://github.com/maelguimet/catomic/blob/master/docs/user-guide.md\n",
-            "  Inside the editor, press Ctrl+H or F1 for the default-key and command\n",
-            "  quick reference.\n",
+            "  Inside the editor, press Ctrl+H or F1 for a task-oriented reference\n",
+            "  showing the effective configured shortcuts.\n",
         ),
         version,
         render_main_options()

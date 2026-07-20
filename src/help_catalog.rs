@@ -427,7 +427,9 @@ pub(crate) fn canonical_key(action: EditorAction) -> KeyEvent {
 }
 
 mod prompt_commands;
-pub(crate) use prompt_commands::{prompt_command, PromptCommand, PROMPT_COMMANDS};
+#[cfg(test)]
+pub(crate) use prompt_commands::PROMPT_COMMANDS;
+pub(crate) use prompt_commands::{prompt_command, PromptCommand};
 
 #[cfg(test)]
 mod tests;

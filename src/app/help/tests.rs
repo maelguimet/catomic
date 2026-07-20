@@ -1,10 +1,11 @@
-//! Purpose: verify the built-in shortcut reference and its read-only lifecycle.
-//! Owns: focused help key, navigation, and source-preservation regression tests.
+//! Purpose: verify curated help content, configured chords, search, and read-only lifetime.
+//! Owns: focused help rendering, navigation, and source-preservation regression tests.
 //! Must not: touch disk, spawn services, access network, or depend on a real terminal.
 //! Invariants: opening and closing help never changes the source buffer.
-//! Phase: post-v0.1 core usability.
+//! Phase: issue #134 task-oriented Markdown help.
 
 use crate::buffer::{Cursor, PieceTable};
+use crate::editor::syntax::SyntaxKind;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::io::{self, Write};
 
@@ -35,7 +36,7 @@ impl Write for FrameRecorder {
 }
 
 #[test]
-fn ctrl_h_commits_help_content_and_status_as_one_frame() {
+fn ctrl_h_renders_curated_markdown_as_one_frame() {
     let mut app = app();
     app.screen.width = 120;
     app.screen.height = 50;
@@ -47,15 +48,16 @@ fn ctrl_h_commits_help_content_and_status_as_one_frame() {
     assert_eq!(out.writes.len(), 1, "help redraw must be one output frame");
     assert_eq!(out.flushes, 1, "the committed frame must be flushed once");
     let frame = String::from_utf8_lossy(&out.writes[0]);
-    assert!(frame.contains("Catomic help - configurable actions and command quick reference"));
     let help = display_buffer(&app).unwrap().to_string();
-    assert!(help.contains("Ctrl+Z"));
-    assert!(help.contains("Undo the last edit transaction."));
-    assert!(help.contains("Ctrl+Y / Ctrl+Shift+Z"));
-    assert!(help.contains("Redo the next edit transaction."));
-    assert!(help.contains("Insert"));
-    assert!(help.contains("Toggle session-wide insert/overwrite typing"));
-    assert!(!help.contains("Ctrl+Z/Y"));
+    assert!(frame.contains("Catomic help"));
+    assert!(help.contains("▌ Catomic help"));
+    assert!(help.contains("▌ Files and buffers"));
+    assert!(help.contains("‹Ctrl+S›"));
+    assert!(help.contains("• **Save**"));
+    assert_eq!(
+        crate::app::view::display_syntax(&app),
+        SyntaxKind::MarkdownPreview
+    );
     assert!(frame.contains("\x1b[50;1H"));
     assert!(frame.contains("\x1b[2KHelp; Esc closes."));
     assert!(
@@ -65,135 +67,119 @@ fn ctrl_h_commits_help_content_and_status_as_one_frame() {
 }
 
 #[test]
-fn ctrl_h_opens_navigates_and_closes_without_editing_source() {
-    let mut app = app();
-    let mut out = Vec::new();
-    let toggle = KeyEvent::new(KeyCode::Char('h'), KeyModifiers::CONTROL);
+fn help_is_short_task_oriented_and_excludes_registry_clutter() {
+    let markdown = help_markdown(&KeyBindings::default());
 
-    assert!(handle_key(&mut app, &mut out, toggle).unwrap());
-    assert!(is_viewing(&app));
-    let help = display_buffer(&app).unwrap().to_string();
-    assert!(help.contains("save-as"));
-    assert!(help.contains("Ctrl+Shift+S"));
+    for required in [
+        "# Catomic help",
+        "## Files and buffers",
+        "## Edit and navigate",
+        "## Commands and views",
+        "## External changes and recovery",
+        "## Models",
+        "Save As",
+        "Previous buffer",
+        "Command palette",
+        "Markdown preview",
+        "Dirty buffers are never replaced automatically",
+        "`.catnap`",
+        "never auto-saved",
+        "[user guide](https://github.com/maelguimet/catomic/blob/master/docs/user-guide.md)",
+    ] {
+        assert!(markdown.contains(required), "help is missing {required:?}");
+    }
+    for forbidden in [
+        "move-left",
+        "move-right",
+        "mouse-place-cursor",
+        "[editor,preview",
+        "basic cursor",
+        "Copy",
+        "Paste",
+        "[keybindings]",
+        "api_key_env",
+        "[[llm.backends]]",
+        "gitmeow INSTRUCTION",
+    ] {
+        assert!(
+            !markdown.contains(forbidden),
+            "help contains forbidden clutter {forbidden:?}"
+        );
+    }
+    assert!(markdown.lines().count() < 60, "help should remain compact");
+}
+
+#[test]
+fn help_uses_configured_chords_and_does_not_advertise_unbound_defaults() {
+    let bindings = crate::config::keybindings::parse(
+        "[keybindings]\nsave = [\"alt+s\"]\nredo = []\ncommand-prompt = [\"f4\"]\n",
+    )
+    .unwrap();
+    let markdown = help_markdown(&bindings);
+
+    assert!(markdown.contains("**Save** (`Alt+S`)"));
+    assert!(!markdown.contains("`Ctrl+S`"));
+    assert!(markdown.contains("**Redo** — Redo"));
+    assert!(!markdown.contains("Ctrl+Y"));
+    assert!(!markdown.contains("Ctrl+Shift+Z"));
+    assert!(markdown.contains("**Command palette** (`F4`)"));
+    assert!(!markdown.contains("Ctrl+Shift+P"));
+    assert!(!markdown.contains("`F2`"));
+}
+
+#[test]
+fn help_search_uses_the_effective_find_binding_and_highlights_a_match() {
+    let mut app = app();
+    app.keybindings =
+        crate::config::keybindings::parse("[keybindings]\nsearch = [\"alt+f\"]\n").unwrap();
+    app.screen.width = 80;
+    app.screen.height = 12;
+    let mut out = Vec::new();
+    show(&mut app, &mut out).unwrap();
 
     handle_key(
         &mut app,
         &mut out,
-        KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE),
+        KeyEvent::new(KeyCode::Char('f'), KeyModifiers::ALT),
     )
     .unwrap();
-    assert_ne!((app.screen.scroll_top, app.screen.wrap_col), (0, 0));
+    for ch in "recovery".chars() {
+        handle_key(
+            &mut app,
+            &mut out,
+            KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE),
+        )
+        .unwrap();
+    }
 
-    assert!(handle_key(&mut app, &mut out, toggle).unwrap());
-    assert!(!is_viewing(&app));
+    assert!(is_viewing(&app));
+    assert!(active_search_match(&app).is_some());
+    assert!(app.screen.scroll_top > 0);
+    assert!(String::from_utf8(out).unwrap().contains("recovery"));
     assert_eq!(app.buffer.to_string(), "source text");
 }
 
 #[test]
-fn rendered_help_covers_every_cataloged_shortcut_command_and_alias() {
-    let text = help_text();
-
-    for action in crate::config::actions::REGISTRY {
-        assert!(text.contains(action.name), "missing action {}", action.name);
-        assert!(
-            text.contains(action.label),
-            "missing label for {}",
-            action.name
-        );
-        for chord in action.defaults {
-            assert!(
-                text.contains(&crate::config::actions::display_chord(chord)),
-                "missing chord {chord} for {}",
-                action.name
-            );
-        }
-    }
-    for command in crate::help_catalog::PROMPT_COMMANDS {
-        assert!(
-            text.contains(command.syntax),
-            "missing command: {}",
-            command.syntax
-        );
-        assert!(
-            text.contains(command.purpose),
-            "missing purpose: {}",
-            command.syntax
-        );
-        for alias in command.aliases {
-            assert!(text.contains(alias), "missing alias: {alias}");
-        }
-    }
-}
-
-#[test]
-fn help_explains_context_safety_defaults_and_deeper_documentation() {
-    let text = help_text();
-    for required in [
-        "Ctrl+R",
-        "repeat only to confirm reloading the same observed revision",
-        "close!",
-        "Discard active-buffer edits",
-        "trusted /bin/sh command; it may affect outside data",
-        "Preview a newer .catnap",
-        "ordinary buffers only",
-        "Project mode",
-        "gitmeow INSTRUCTION",
-        "focused bounded repository context",
-        "megameow INSTRUCTION",
-        "broader bounded repository context",
-        "$XDG_CONFIG_HOME/catomic/config.toml",
-        "~/.config/catomic/config.toml",
-        "[[llm.backends]]",
-        "base_url = \"http://127.0.0.1:8080/v1\"",
-        "model = \"local-model\"",
-        "api_key_env = \"OPENAI_API_KEY\"",
-        "OpenAI-compatible Chat Completions API",
-        "api_key_env names an environment variable, never the key value itself",
-        "Opening help reads no config or secret, builds no client",
-        "F10 or model opens the process-local preset/model selector",
-        "meow explain this",
-        "bigmeow explain this file",
-        "Project mode, a saved active file, and Git",
-        "Inline F3",
-        "Standard model commands send nothing until preset, adapter, destination",
-        "autocomplete on is the only automatic-call exception",
-        "read-only session confirmation with destination and bounded active-buffer",
-        "context. No credential, command, client, or request starts before Enter",
-        "Edit proposals open read-only; a second Enter confirms apply",
-        "Model edits affect only the confirmed active file; they are not auto-saved",
-        "Prefix the instruction with explain for a read-only answer",
-        "does not display effective configured keys",
-        "terminal troubleshooting, and safety",
-        "Model-assisted commands",
-        "endpoint unavailable or incompatible",
-        "context over",
-        "64 KiB or 2,000 lines",
-    ] {
-        assert!(text.contains(required), "help is missing {required:?}");
-    }
-}
-
-#[test]
-fn narrow_help_reaches_wrapped_model_setup_without_horizontal_scrolling() {
+fn narrow_help_soft_wraps_and_scrolls_without_horizontal_movement() {
     let mut app = app();
     app.screen.width = 24;
     app.screen.height = 7;
     let mut out = Vec::new();
     show(&mut app, &mut out).unwrap();
 
-    let model_row = display_buffer(&app)
+    let target_row = display_buffer(&app)
         .unwrap()
         .to_string()
         .lines()
-        .position(|line| line.contains("api_key_env names an environment variable"))
-        .expect("model secret-indirection guidance must be present");
+        .position(|line| line.contains("Model requests show"))
+        .expect("compact model guidance must be present");
     app.surfaces
         .help
         .as_mut()
         .unwrap()
         .buffer
         .set_cursor(Cursor {
-            row: model_row,
+            row: target_row,
             col: 0,
         });
     out.clear();
@@ -212,62 +198,17 @@ fn narrow_help_reaches_wrapped_model_setup_without_horizontal_scrolling() {
 }
 
 #[test]
-fn narrow_help_soft_wraps_long_safety_lines_and_keeps_navigation_bounded() {
-    let mut app = app();
-    app.screen.width = 24;
-    app.screen.height = 7;
-    let mut out = Vec::new();
-    show(&mut app, &mut out).unwrap();
-
-    assert!(crate::app::view::soft_wrap_active(&app));
-    assert_eq!(app.screen.scroll_left, 0);
-
-    let target_row = display_buffer(&app)
-        .unwrap()
-        .to_string()
-        .lines()
-        .position(|line| line.contains("trusted /bin/sh command"))
-        .expect("external-command safety line must be present");
-    app.surfaces
-        .help
-        .as_mut()
-        .unwrap()
-        .buffer
-        .set_cursor(Cursor {
-            row: target_row,
-            col: 0,
-        });
-    out.clear();
-    handle_key(
-        &mut app,
-        &mut out,
-        KeyEvent::new(KeyCode::End, KeyModifiers::NONE),
-    )
-    .unwrap();
-
-    assert_eq!(
-        app.screen.scroll_left, 0,
-        "wrapped help never scrolls horizontally"
-    );
-    let frame = String::from_utf8_lossy(&out);
-    assert!(frame.contains(", and output previews be"));
-    assert!(frame.contains("fore any buffer edit."));
-    assert_eq!(app.buffer.to_string(), "source text");
-}
-
-#[test]
-fn help_rejects_edits_and_escape_restores_source_viewport() {
+fn escape_closes_help_without_leaving_a_message_and_restores_source_viewport() {
     let mut app = app();
     let mut out = Vec::new();
     app.buffer = Box::new(PieceTable::from_text("a\nb\nc\nsource"));
     app.buffer.set_cursor(Cursor { row: 3, col: 3 });
     app.view.soft_wrap = true;
-    app.screen.width = 4;
+    app.screen.width = 20;
     app.screen.height = 2;
     app.screen.scroll_top = 3;
     app.screen.wrap_col = 2;
     show(&mut app, &mut out).unwrap();
-    assert_eq!(app.screen.wrap_col, 0);
     let help_before = display_buffer(&app).unwrap().to_string();
 
     handle_key(
@@ -278,6 +219,7 @@ fn help_rejects_edits_and_escape_restores_source_viewport() {
     .unwrap();
     assert_eq!(display_buffer(&app).unwrap().to_string(), help_before);
 
+    out.clear();
     handle_key(
         &mut app,
         &mut out,
@@ -285,6 +227,8 @@ fn help_rejects_edits_and_escape_restores_source_viewport() {
     )
     .unwrap();
     assert!(!is_viewing(&app));
+    assert_eq!(app.message, None);
     assert_eq!(app.screen.scroll_top, 3);
     assert_eq!(app.screen.wrap_col, 2);
+    assert!(!String::from_utf8(out).unwrap().contains("Help closed"));
 }

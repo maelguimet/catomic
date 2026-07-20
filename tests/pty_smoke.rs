@@ -637,14 +637,13 @@ fn pty_f1_help_wraps_and_scrolls_to_reload_reference_in_a_narrow_terminal() -> T
     editor.wait_for_initial_render()?;
     editor.send_keys(b"\x1bOP")?; // F1
     editor.wait_for_output("F1 built-in help", "Catomic help")?;
-    editor.wait_for_output("default-binding explanation", "built-in defa")?;
-    for _ in 0..8 {
+    editor.wait_for_output("curated file workflows", "Files and buffers")?;
+    for _ in 0..12 {
         editor.send_keys(b"\x1b[6~")?; // PageDown
     }
-    editor.wait_for_output("Ctrl+R help entry", "Ctrl+R")?;
+    editor.wait_for_output("external change help", "External changes and recovery")?;
 
     editor.send_keys(b"\x1bOP")?;
-    editor.wait_for_output("F1 closes help", "Help closed")?;
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
 
@@ -1170,7 +1169,7 @@ fn pty_custom_theme_reaches_content_status_and_cursor_then_resets() -> TestResul
 }
 
 #[test]
-fn pty_help_scrolls_to_model_scopes_and_closes_without_editing() -> TestResult {
+fn pty_help_scrolls_to_compact_model_guidance_and_closes_without_editing() -> TestResult {
     let temp = TempPath::new("model_help");
     let source = "source stays unchanged";
     fs::write(&temp.path, source)?;
@@ -1179,20 +1178,16 @@ fn pty_help_scrolls_to_model_scopes_and_closes_without_editing() -> TestResult {
     editor.wait_for_initial_render()?;
     editor.send_keys(b"\x1bOP")?; // F1
     editor.wait_for_output("built-in help", "Catomic help")?;
-    for _ in 0..32 {
-        // PageDown reaches the end independently of how many command entries are
-        // registered; a fixed number of single-row wheel events went stale when
-        // the inline-clanker command enlarged the generated help catalog.
+    for _ in 0..16 {
         editor.send_keys(b"\x1b[6~")?;
     }
-    editor.wait_for_output("model command", "megameow INSTRUCTION")?;
-    editor.wait_for_output("model command scope", "broader bounded repository context")?;
-    editor.wait_for_output(
-        "model safety contract",
-        "Model edits affect only the confirmed active file; they are not auto-saved.",
-    )?;
-    editor.send_keys(b"\x1b")?;
-    editor.wait_for_output("help closes", "Help closed.")?;
+    editor.wait_for_output("compact model section", "Select model")?;
+    editor.wait_for_output("model safety contract", "never auto-saved")?;
+    let close_start = editor.output_len();
+    editor.send_keys(b"\x1bOP")?; // F1 closes help without a persistent message.
+    wait_until("help closes", Duration::from_secs(2), || {
+        editor.output_since(close_start).contains(source)
+    })?;
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
 
@@ -1565,7 +1560,7 @@ fn pty_project_discovery_and_path_completion_save_exact_text() -> TestResult {
 }
 
 #[test]
-fn pty_help_scrolls_through_model_setup_without_editing() -> TestResult {
+fn pty_help_scrolls_through_recovery_and_model_summary_without_editing() -> TestResult {
     let temp = TempPath::new("model_help");
     let source = "source remains unchanged\n";
     fs::write(&temp.path, source)?;
@@ -1574,14 +1569,16 @@ fn pty_help_scrolls_through_model_setup_without_editing() -> TestResult {
     editor.wait_for_initial_render()?;
     editor.send_keys(b"\x1bOP")?; // F1.
     editor.wait_for_output("built-in help", "Catomic help")?;
-    editor.send_keys(&b"\x1b[6~".repeat(32))?; // PageDown through generated catalog.
-    editor.wait_for_output("model config help", "api_key_env = \"OPENAI_API_KEY\"")?;
-    editor.wait_for_output(
-        "model save boundary",
-        "Model edits affect only the confirmed active file; they are not auto-saved",
-    )?;
-    editor.send_keys(b"\x1b")?;
-    editor.wait_for_output("help closed", "Help closed")?;
+    editor.send_keys(&b"\x1b[6~".repeat(16))?;
+    editor.wait_for_output("recovery help", "crash recovery is enabled")?;
+    editor.wait_for_output("model save boundary", "never auto-saved")?;
+    let close_start = editor.output_len();
+    editor.send_keys(b"\x1bOP")?; // F1 closes help without a persistent message.
+    wait_until("help closes", Duration::from_secs(2), || {
+        editor
+            .output_since(close_start)
+            .contains("source remains unchanged")
+    })?;
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
 

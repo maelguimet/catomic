@@ -219,11 +219,8 @@ fn refuses_model_response_larger_than_the_hard_limit() {
 
 #[test]
 fn refuses_a_response_larger_than_the_hard_limit() {
-    let (base_url, server) = fake_server_with_declared_length(
-        "200 OK",
-        "application/json",
-        MAX_RESPONSE_BYTES + 1,
-    );
+    let (base_url, server) =
+        fake_server_with_declared_length("200 OK", "application/json", MAX_RESPONSE_BYTES + 1);
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()

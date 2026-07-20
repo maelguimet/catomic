@@ -120,12 +120,14 @@ pub(super) fn write_content_line_with_ghost<W: Write + ?Sized>(
         let style = segment_style(
             options,
             syntax_styles,
-            highlighted,
-            lint,
-            llm_changed,
-            external_added,
-            external_changed,
-            ghost_text,
+            SegmentRoles {
+                highlighted,
+                lint,
+                llm_changed,
+                external_added,
+                external_changed,
+                ghost_text,
+            },
         );
         write_segment(
             out,
@@ -280,15 +282,19 @@ fn write_segment<W: Write + ?Sized>(
     Ok(())
 }
 
-fn segment_style(
-    options: RenderOptions<'_>,
-    spans: impl Iterator<Item = SpanStyle>,
+struct SegmentRoles {
     highlighted: bool,
     lint: bool,
     llm_changed: bool,
     external_added: bool,
     external_changed: bool,
-    ghost: bool,
+    ghost_text: bool,
+}
+
+fn segment_style(
+    options: RenderOptions<'_>,
+    spans: impl Iterator<Item = SpanStyle>,
+    roles: SegmentRoles,
 ) -> Style {
     let theme = options.theme;
     let mut style = match options.surface {
@@ -298,22 +304,22 @@ fn segment_style(
     for span in spans {
         style = style.overlay(span_style(theme, span));
     }
-    if external_added {
+    if roles.external_added {
         style = style.overlay(theme.external_added);
     }
-    if external_changed {
+    if roles.external_changed {
         style = style.overlay(theme.external_changed);
     }
-    if lint {
+    if roles.lint {
         style = style.overlay(theme.lint);
     }
-    if llm_changed {
+    if roles.llm_changed {
         style = style.overlay(theme.llm_changed);
     }
-    if ghost {
+    if roles.ghost_text {
         style = style.overlay(theme.autocomplete);
     }
-    if highlighted {
+    if roles.highlighted {
         style = style.overlay(match options.highlight_kind {
             HighlightKind::Selection => theme.selection,
             HighlightKind::Search => theme.search_match,

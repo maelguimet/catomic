@@ -126,10 +126,8 @@ exact backup path.
   and architectures without a managed release are reported as unsupported.
 
 Dirty official source checkouts are stashed with untracked files before an
-update and reapplied afterward with their staged state restored. A successful
-reapply removes the temporary stash. If the updated source conflicts with local
-changes, Catomic leaves the stash intact and reports its revision instead of
-discarding it.
+update and popped afterward with their staged state restored. Git reports any
+conflicts normally.
 
 ### Atomic install and recovery
 

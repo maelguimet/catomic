@@ -314,7 +314,6 @@ fn active_surface(app: &super::App) -> Surface {
         return Surface::Prompt;
     }
     if super::help::is_viewing(app)
-        || super::llm_answer::is_viewing(app)
         || super::lint::is_viewing(app)
         || super::view::is_preview(app)
     {

@@ -242,7 +242,6 @@ fn toggle_preview(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool>
     if is_preview(app) {
         cancel_preview(app);
         app.message = None;
-        app.reveal_cursor();
     } else {
         let width = crate::editor::markdown_preview::reading_width(content_width(app));
         match crate::editor::markdown_preview::render_with_width(&app.buffer.to_string(), width) {
@@ -320,7 +319,6 @@ fn handle_preview_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) 
     if key.code == KeyCode::Esc {
         cancel_preview(app);
         app.message = None;
-        app.reveal_cursor();
         return app.render(out);
     }
     let height = app.screen.visible_height().max(1);

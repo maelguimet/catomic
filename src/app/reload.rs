@@ -258,8 +258,13 @@ fn apply_modified_reload(
 ) -> io::Result<()> {
     let external_diff = super::external_diff::compare(&*app.buffer, &*reloaded.buffer);
     crate::file::io::ensure_path_matches_snapshot(path, &reloaded.snapshot)?;
-    let reload_warning = reload_modified_warning(reloaded.size_bytes, reloaded.size_tier)
-        .or_else(|| external_diff_warning(&external_diff));
+    let reload_warning = match (
+        reload_modified_warning(reloaded.size_bytes, reloaded.size_tier),
+        external_diff_warning(&external_diff),
+    ) {
+        (Some(size), Some(diff)) => Some(format!("{size} {diff}")),
+        (size, diff) => size.or(diff),
+    };
     super::autocomplete::invalidate(app);
     super::search::cancel_running_search(app);
     super::command_prompt::cancel_running_goto(app);

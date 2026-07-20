@@ -80,3 +80,20 @@ fn remote_policy_rejects_lookalikes() {
         "https://github.com/attacker/maelguimet-catomic.git"
     ));
 }
+
+#[test]
+fn missing_checkout_selects_cargo_git_install() {
+    let root = fixture();
+    assert!(discover_path(&root.join("missing")).unwrap().is_none());
+
+    let command = cargo_install_command();
+    let args: Vec<_> = command
+        .get_args()
+        .map(|argument| argument.to_str().unwrap())
+        .collect();
+    assert_eq!(
+        args,
+        ["install", "--git", OFFICIAL_REMOTE, "--locked", "--force"]
+    );
+    fs::remove_dir_all(root).unwrap();
+}

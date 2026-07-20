@@ -17,7 +17,7 @@ use crate::llm::task::LlmTask;
 mod prompt;
 mod result;
 
-use prompt::{confirmation_message, system_prompt, user_prompt, RequestPurpose};
+use prompt::{confirmation_message, user_prompt, SYSTEM_PROMPT};
 pub(crate) use result::poll;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -34,7 +34,6 @@ pub(crate) struct PendingLlmRequest {
     destination: String,
     file_path: Option<PathBuf>,
     replacement_target: Option<super::llm_preview::RegionTarget>,
-    purpose: RequestPurpose,
 }
 
 pub(crate) struct RunningLlmRequest {
@@ -44,7 +43,6 @@ pub(crate) struct RunningLlmRequest {
     path: String,
     file_path: Option<PathBuf>,
     replacement_target: Option<super::llm_preview::RegionTarget>,
-    purpose: RequestPurpose,
 }
 
 pub(crate) fn begin(
@@ -94,7 +92,6 @@ fn begin_with_settings(
     let path = crate::llm::current_file_identifier(file_path.as_deref());
     let destination = crate::llm::backend::display_destination(&preset);
     let replacement_target = replacement_target(app, &draft);
-    let purpose = prompt::purpose(&draft);
     app.message_info(confirmation_message(&draft, &preset, &destination, &path));
     app.pending_llm_request = Some(PendingLlmRequest {
         draft,
@@ -104,7 +101,6 @@ fn begin_with_settings(
         destination,
         file_path,
         replacement_target,
-        purpose,
     });
     app.render(out)
 }
@@ -211,7 +207,7 @@ fn confirm(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         return app.render(out);
     }
     let user = user_prompt(&pending.draft, &pending.path);
-    match LlmTask::start(backend, system_prompt(pending.purpose).to_string(), user) {
+    match LlmTask::start(backend, SYSTEM_PROMPT.to_string(), user) {
         Ok(task) => {
             app.message_info(format!(
                 "Sending {} lines/{} bytes with preset {} model {} to {}... Esc cancels.",
@@ -228,7 +224,6 @@ fn confirm(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
                 path: pending.path,
                 file_path: pending.file_path,
                 replacement_target: pending.replacement_target,
-                purpose: pending.purpose,
             });
         }
         Err(error) => app.message_error(format!("Could not start LLM request: {error}")),

@@ -236,35 +236,33 @@ fn confirmed_marked_region_response_previews_then_replaces_only_selection() {
 }
 
 #[test]
-fn confirmed_explain_response_opens_read_only_answer_instead_of_edit_preview() {
-    let (settings, server) = response_server("This function returns its input.");
-    let mut app = super::super::App::new(None).unwrap();
-    app.buffer = Box::new(PieceTable::from_text("fn identity(x: i32) -> i32 { x }"));
-    let history = app.buffer.edit_history_position();
-    let mut out = Vec::new();
-    begin_with_settings(
-        &mut app,
-        &mut out,
-        CurrentLlmCommand::BigMeow,
-        "Explain this function.",
-        settings,
-    )
-    .unwrap();
-
-    assert_eq!(
-        app.pending_llm_request.as_ref().unwrap().purpose,
-        RequestPurpose::Explain
-    );
-    handle_key(&mut app, &mut out, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
-    poll_until_done(&mut app, &mut out);
-    server.join().unwrap();
-
-    assert!(app.surfaces.llm_answer.is_some());
-    assert!(app.surfaces.llm_preview.is_none());
-    assert_eq!(app.buffer.to_string(), "fn identity(x: i32) -> i32 { x }");
-    app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
+fn explain_phrasings_follow_the_same_edit_proposal_path() {
+    for instruction in ["Explain this.", "Could you explain this?"] {
+        let (settings, server) = patch_server();
+        let mut app = super::super::App::new(None).unwrap();
+        app.buffer = Box::new(PieceTable::from_text("one\ntwo\n"));
+        app.file.path = Some("note.txt".into());
+        let mut out = Vec::new();
+        begin_with_settings(
+            &mut app,
+            &mut out,
+            CurrentLlmCommand::BigMeow,
+            instruction,
+            settings,
+        )
         .unwrap();
-    assert_eq!(app.buffer.edit_history_position(), history);
+
+        handle_key(&mut app, &mut out, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+        poll_until_done(&mut app, &mut out);
+        server.join().unwrap();
+
+        assert!(
+            app.surfaces.llm_preview.is_some(),
+            "{instruction:?} did not enter the edit preview: {:?}",
+            app.message
+        );
+        assert_eq!(app.buffer.to_string(), "one\ntwo\n");
+    }
 }
 
 #[test]
@@ -412,14 +410,6 @@ fn prompt_names_the_path_instruction_extent_and_confirmed_sensitivity() {
     assert!(prompt.contains("Instruction:\nwrite tests"));
     assert!(prompt.contains("dotfile"));
     assert!(prompt.contains("secret-like line 5"));
-}
-
-#[test]
-fn only_an_explicit_explain_verb_selects_the_read_only_response_path() {
-    let explain = context::for_current_file("code", "Explain: why", None).unwrap();
-    let tests = context::for_current_file("code", "write tests", None).unwrap();
-    assert_eq!(prompt::purpose(&explain), RequestPurpose::Explain);
-    assert_eq!(prompt::purpose(&tests), RequestPurpose::Edit);
 }
 
 fn settings(base_url: String) -> BackendPreset {

@@ -2,7 +2,6 @@
 //! Owns: global undo/redo ordering and exact history-position tokens.
 //! Must not: edit pages, read descriptors, render, save, or know App state.
 //! Invariants: transaction ids are stable across undo/redo; a new edit clears redo.
-//! Phase: 2-by editable paged-file storage.
 
 #[derive(Clone, Copy)]
 pub(super) struct PageTransaction {

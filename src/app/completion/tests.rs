@@ -1,8 +1,7 @@
 //! Purpose: verify local completion through the App input seam.
-//! Owns: Phase 5-a preview, cycling, acceptance, dismissal, and gating tests.
+//! Owns: preview, cycling, acceptance, dismissal, and gating tests.
 //! Must not: launch a terminal, scan a project, spawn work/processes, or touch disk.
 //! Invariants: preview/dismiss do not edit; acceptance is one undoable replacement.
-//! Phase: 5-a local current-buffer completion tests.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 

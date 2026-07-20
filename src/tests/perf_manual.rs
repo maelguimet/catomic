@@ -8,7 +8,6 @@
 //! Invariants: 10 MiB uses SMALL+1 for editable Large; 100 MiB ASCII uses LARGE+1
 //!   and 100 MiB non-ASCII uses LARGE+2 for editable Huge paged mode;
 //!   sparse Extreme >HUGE writes only one configured page before sparse extension.
-//! Phase: 2-bp paged-policy manual smoke refresh.
 
 use super::helpers::{
     cleanup_perf, generate_dense_ascii_file, generate_dense_non_ascii_file, measure_sample,

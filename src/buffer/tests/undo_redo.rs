@@ -5,7 +5,6 @@
 //! Owns: all undo_redo_* , no_op_edits..., undo_after_save_behavior.
 //! Must not: model parity (dumb + random full), history token (separate).
 //! Invariants: descendant of buffer::tests; test fn names preserved exactly.
-//! Phase: 2-k narrow cleanup (no behavior change).
 
 use crate::buffer::{Buffer, PieceTable};
 

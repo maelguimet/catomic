@@ -2,7 +2,6 @@
 //! Owns: identity-drift fixtures and one private loopback cancellation server.
 //! Must not: contact a live/public endpoint, read repositories, save files, or use credentials.
 //! Invariants: late/cancelled work cannot display or mutate a suggestion.
-//! Phase: post-v0.1 opt-in inline autocomplete.
 
 use std::io::Read;
 use std::net::TcpListener;

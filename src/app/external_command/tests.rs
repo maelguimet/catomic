@@ -2,7 +2,6 @@
 //! Owns: App-level `:run`-path tests using local deterministic shell commands.
 //! Must not: use network, write user files, depend on terminal setup, or skip confirmation.
 //! Invariants: output never mutates before Enter; failed/stale output never applies.
-//! Phase: 7 external command acceptance.
 
 use std::time::{Duration, Instant};
 

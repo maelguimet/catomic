@@ -1,4 +1,4 @@
-//! Ignored live OS notify smoke tests (Phase 2-ad / 2-ae tighten).
+//! Ignored live OS notification smoke tests.
 //!
 //! Purpose: isolated home for live-timing-dependent watcher smokes so that
 //! watcher_* deterministic files stay focused and under line limits.
@@ -9,7 +9,6 @@
 //!   construction succeeds; bounded waits only; skips cleanly if no watcher.
 //!   This smoke depends on live notify delivery; snapshot correctness has
 //!   deterministic coverage elsewhere and CI must never depend on this timing.
-//! Phase: 2-ae through post-v0.1 symlink watch hardening.
 
 use super::super::super::*;
 use super::super::make_key;

@@ -2,7 +2,6 @@
 //! Owns: bounded change versions, document-coordinate shifting, and visible semantic metadata.
 //! Must not: mutate buffers, alter saved bytes, render ANSI, or outlive its owning buffer.
 //! Invariants: unknown history positions expose no marks; ranges remain scalar document ranges.
-//! Phase: issue #65 one-key inline clanker workflow.
 
 use crate::buffer::{Cursor, TextEdit};
 use crate::llm::inline::{CapturedRange, InlineDraft};

@@ -2,7 +2,6 @@
 //! Owns: pure TOML fixtures that do not depend on terminal capability or user files.
 //! Must not: mutate environment, emit ANSI, write config, or inspect App state.
 //! Invariants: malformed recognized values fail as one InvalidData result.
-//! Phase: issue #62 semantic color schemes.
 
 use super::*;
 

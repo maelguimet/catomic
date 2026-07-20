@@ -2,7 +2,6 @@
 //! Owns: captured key/render fixtures and bracketed-paste integration assertions.
 //! Must not: require a real terminal, system clipboard reader, mouse, or filesystem.
 //! Invariants: selection replacement and paste each undo as one transaction.
-//! Phase: 3-d keyboard selection and clipboard interaction.
 
 use super::*;
 use crossterm::event::{KeyEventKind, KeyEventState};

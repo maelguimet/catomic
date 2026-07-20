@@ -10,7 +10,8 @@
 //! Invariants: atomic writes use same-dir temp + create_new + sync + rename;
 //!   ordinary saves follow a valid final symlink and refuse a dangling one;
 //!   private sidecars replace, rather than follow, a final symlink;
-//!   ordinary saves refuse non-regular targets and preserve Unix metadata;
+//!   ordinary saves refuse non-regular targets and Unix metadata that cannot be
+//!   preserved safely before replacement or a staged hard-link update;
 //!   observations use len/mtime plus Unix identity/change time when available,
 //!   full SHA-256 through the editable full-read tier, and a fixed-size sampled
 //!   identity for paged files;
@@ -19,7 +20,6 @@
 //!   Absent explicitly represents missing;
 //!   read_to_string returns InvalidData for non-UTF-8; errors other than NotFound
 //!   surface as Unknown(kind) in observation helpers; single-capture observe.
-//! Phase: 2-l foundation through post-v0.1 metadata-collision hardening.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
@@ -54,9 +54,9 @@ pub fn read_to_string<P: AsRef<Path>>(path: P) -> io::Result<String> {
 /// Writes to a sibling temp file (same dir), fsyncs data, renames over target,
 /// then best-effort fsyncs the parent directory on Unix.
 /// Linux/Android replacement is conditional on the exact inspected target inode.
-/// Existing mode/owner/group must be preserved. Multiply-linked files use a
-/// staged in-place write so their inode, links, xattrs, and ACLs remain intact.
-/// Temp is removed on pre-commit errors. A hard-link in-place write keeps the
+/// Existing mode, owner, group, extended attributes, and POSIX ACLs are preserved.
+/// Multiply-linked files use a staged in-place write so their shared inode and links
+/// remain intact. Temp is removed on pre-commit errors; an in-place write keeps the
 /// synced temp as recovery evidence if updating or syncing the shared inode fails.
 /// Unique temp uses target filename + pid. create_new used to avoid clobber.
 /// Linux-kernel-first: directory fsync is best-effort; no new dependencies.
@@ -210,7 +210,7 @@ fn atomic_write_with_policy(
         }
         #[cfg(any(target_os = "linux", target_os = "android"))]
         if !private {
-            atomic_unix::validate_replacement_metadata(&f, target_state.existing.as_ref(), target)?;
+            atomic_unix::preserve_replacement_metadata(&f, target_state.existing.as_ref(), target)?;
         }
         f.sync_all()?;
         // Ensure file is closed before rename on all platforms.

@@ -47,8 +47,8 @@ FILESYSTEM_BOUNDARIES = {
     "symlink-save",
     "read-only-refusal",
     "hard-link-save",
-    "xattr-refusal",
-    "acl-refusal",
+    "xattr-save",
+    "acl-save",
     "non-regular-refusal",
 }
 

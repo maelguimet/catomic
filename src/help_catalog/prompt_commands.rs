@@ -2,7 +2,6 @@
 //! Owns: prompt command identities and lookup spellings.
 //! Must not: dispatch commands, construct App services, read configuration, or access network.
 //! Invariants: every accepted public spelling maps to one semantic command.
-//! Phase: post-v0.1 discoverability and help-drift prevention.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum PromptCommand {

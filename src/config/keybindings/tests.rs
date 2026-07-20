@@ -2,7 +2,6 @@
 //! Owns: pure keybinding fixtures; no process environment or terminal is required.
 //! Must not: dispatch App commands, write configuration, or duplicate the registry.
 //! Invariants: tests compare semantic translation and actionable error content.
-//! Phase: issue #62 complete shortcut customization.
 
 use super::*;
 use crossterm::event::{KeyCode, KeyModifiers};

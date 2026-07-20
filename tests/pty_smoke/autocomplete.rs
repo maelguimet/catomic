@@ -2,7 +2,6 @@
 //! Owns: success/latency/wrap, model-error, timeout, and teardown PTY acceptance.
 //! Must not: contact a live/public endpoint, use ambient config, or leave child processes.
 //! Invariants: no request precedes confirmation; ghost text stays unsaved until Tab.
-//! Phase: post-v0.1 opt-in inline autocomplete acceptance.
 
 use std::net::TcpListener;
 use std::sync::mpsc;

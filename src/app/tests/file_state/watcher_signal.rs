@@ -5,7 +5,6 @@
 //! Must not: rely on live OS notify delivery or change manual Ctrl+R semantics.
 //! Invariants: clean Modified/Deleted reload immediately when enabled; dirty buffers
 //!   arm; Unchanged/NoPath observations are ignored when no pending exists.
-//! Phase: 2-ac through 2-bx automatic clean reload.
 
 use super::super::super::*;
 use super::super::make_key;

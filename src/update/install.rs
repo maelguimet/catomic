@@ -2,7 +2,6 @@
 //! Owns: sibling staging, fsync, mode preservation, atomic rename, and rollback receipts.
 //! Must not: choose update sources, modify configuration, or delete rollback binaries.
 //! Invariants: the executable path is never partially written; old bytes survive success.
-//! Phase: safe self-update workflow.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};

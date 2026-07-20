@@ -2,7 +2,6 @@
 //! Owns: default/16/indexed/RGB parsing and RGB-to-indexed fallback quantization.
 //! Must not: read environment, render ANSI, mutate configuration, or inspect editor state.
 //! Invariants: indexed values are 0-255; RGB components are 0-255; names are canonical.
-//! Phase: issue #62 semantic color schemes.
 
 use std::io;
 

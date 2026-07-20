@@ -2,7 +2,6 @@
 //! Owns: repo proposal parsing and transfer of the broker drift guard into preview state.
 //! Must not: apply patches, mutate source, construct clients, read repos, write, or network.
 //! Invariants: only valid current-buffer patches reach the read-only guarded preview.
-//! Phase: 6 (LLM Context Broker).
 
 use std::io::{self, Write};
 

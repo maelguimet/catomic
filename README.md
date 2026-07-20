@@ -291,11 +291,11 @@ code and may itself contact services after confirmation.
   large files support LF and CRLF; BOM-prefixed or CR-only files must remain
   below the paging threshold.
 - Atomic save replaces a single-link destination inode. On Linux, Catomic
-  preserves mode, owner, and group and refuses extended attributes/ACLs that a
-  replacement would discard. Multiply-linked files instead use a staged,
-  non-atomic in-place write so every alias keeps the shared inode and metadata.
-  Save As also refuses FIFOs, sockets, directories, and symlinks resolving to
-  them.
+  preserves and verifies mode, owner, group, extended attributes, and POSIX
+  ACLs before commit. Multiply-linked files instead use a staged, non-atomic
+  in-place write so every alias keeps the shared inode and metadata. Unsupported
+  or permission-denied metadata operations fail closed. Save As also refuses
+  FIFOs, sockets, directories, and symlinks resolving to them.
 - External-change checks fully hash files through 100 MiB. Huge/Extreme paged
   files use metadata plus fixed start/middle/end samples so checks stay bounded;
   an in-place rewrite outside those samples that also preserves size, inode, and

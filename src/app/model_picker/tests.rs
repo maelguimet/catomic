@@ -2,7 +2,6 @@
 //! Owns: App-level preset fixtures and loopback listeners that must remain untouched on open.
 //! Must not: read user config, read credential values, launch CLIs, or contact public network.
 //! Invariants: selection is session-wide and neither picker open nor Enter rewrites config.
-//! Phase: post-v0.1 model/backend picker tests.
 
 use std::io::{Read, Write};
 use std::net::TcpListener;

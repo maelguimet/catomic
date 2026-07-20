@@ -2,7 +2,6 @@
 //! Owns: loopback integration for untracked active-file changes hidden from Git status.
 //! Must not: contact a live model, public endpoint, remote Git service, or user repository.
 //! Invariants: changed active-file bytes discard output even when porcelain stays unchanged.
-//! Phase: 6 acceptance hardening.
 
 use std::fs;
 use std::net::TcpListener;

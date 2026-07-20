@@ -51,7 +51,7 @@ be `unsupported` with an exact explanation; it cannot disappear from a report.
 | Symlink to a regular file | Supported | Final symlink remains; regular referent is atomically replaced |
 | Read-only regular file | Supported refusal | Save fails without changing bytes, inode, or mode |
 | Multiple hard links | Supported | Staged in-place save updates every alias without changing inode identity or link count |
-| xattrs or POSIX ACLs | Supported refusal | Save fails rather than silently discarding metadata |
+| xattrs or POSIX ACLs | Supported preservation | Atomic save retains and verifies the metadata before commit |
 | FIFO, directory, socket, device, other non-regular target | Supported refusal | Open/save fails without blocking or replacement |
 | overlayfs, NFS, SMB, FUSE, container bind mounts | Best effort | Record the exact mount and result; do not generalize from ext4/tmpfs |
 

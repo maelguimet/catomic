@@ -3,7 +3,6 @@
 //! Must not: render, decode terminal input, edit content, save, or choose App policy.
 //! Invariants: page changes are atomic after a successful stable-descriptor scan;
 //!   reverse navigation derives boundaries from the same stable descriptor.
-//! Phase: 2-bl configurable paged Huge-file foundation.
 
 use std::fs::File;
 use std::io;

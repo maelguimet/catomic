@@ -2,7 +2,6 @@
 //! Owns: anchor/cursor direction, ordered bounds, and emptiness checks.
 //! Must not: query or mutate buffers, render, access clipboards, or decode input.
 //! Invariants: anchor preserves extension origin; ordered bounds are start <= end.
-//! Phase: 3-d selection interaction foundation.
 
 use crate::buffer::Cursor;
 

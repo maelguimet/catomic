@@ -7,7 +7,6 @@
 //! Invariants: clean default-on buffers reload immediately; dirty buffers never do;
 //!   second Ctrl+R performs only on exact pending match; retarget coverage inspects
 //!   watcher identities directly.
-//! Phase: 2-af split through post-v0.1 watcher identity refresh.
 
 use super::super::super::*;
 use super::super::make_key;

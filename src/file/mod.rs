@@ -2,8 +2,8 @@
 //!
 //! - identity.rs: same-file buffer identity for existing and missing paths
 //! - io.rs: read / write (atomic writes implemented)
-//! - size.rs: metadata-only size classification (Phase 2B foundation)
-//! - watcher.rs: notify-based external edit detection (Phase 2)
+//! - size.rs: metadata-only size classification
+//! - watcher.rs: notify-based external edit detection
 //! - recovery.rs: bounded private .catnap storage and worker
 
 pub(crate) mod identity;

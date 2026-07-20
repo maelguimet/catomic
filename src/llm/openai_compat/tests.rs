@@ -2,7 +2,6 @@
 //! Owns: exact request assertions plus success, error, and response-bound cases.
 //! Must not: contact a live model, public endpoint, user service, or external network.
 //! Invariants: each test server accepts one local connection and returns fixed bytes.
-//! Phase: 6 (LLM, Powerful but Caged).
 
 use std::io::{Read, Write};
 use std::net::TcpListener;

@@ -8,7 +8,6 @@
 //! Invariants: uses super::* to reach the module under test; atomic replacement
 //!   preserves existing Unix permissions, follows valid final symlinks, refuses
 //!   dangling final symlinks, and failed writes preserve the target.
-//! Phase: 2-aj test split through post-v0.1 release hardening.
 
 use super::*;
 use std::fs;

@@ -2,7 +2,6 @@
 //! Owns: mobile UI enablement, contextual action dispatch, and reserved-row hit testing.
 //! Must not: duplicate editor commands, inspect file internals, start services, or write files.
 //! Invariants: actions reuse normalized key paths; status/action touches never reach content.
-//! Phase: Android/Termux mobile support.
 
 use std::io::{self, Write};
 
@@ -57,6 +56,7 @@ pub(crate) fn handle_key(
     match key.code {
         KeyCode::Esc => {
             overlay::close(app);
+            super::input::prepare_editor_action(app, None);
             app.reveal_cursor();
             app.render(out)?;
         }
@@ -71,11 +71,13 @@ pub(crate) fn handle_key(
         | KeyCode::PageDown
         | KeyCode::Home
         | KeyCode::End => {
+            prepare_overlay_action(app);
             overlay::move_cursor(app, key.code);
             app.reveal_cursor();
             app.render(out)?;
         }
         _ => {
+            super::input::prepare_editor_action(app, None);
             app.message = Some("Mobile overlay is read-only; Back returns.".to_string());
             app.render(out)?;
         }
@@ -87,6 +89,7 @@ pub(crate) fn handle_paste(app: &mut super::App, out: &mut dyn Write) -> io::Res
     if !overlay::is_viewing(app) {
         return Ok(false);
     }
+    super::input::prepare_editor_action(app, None);
     app.message = Some("Mobile overlay is read-only; Back returns.".to_string());
     app.render(out)?;
     Ok(true)
@@ -121,9 +124,12 @@ pub(crate) fn handle_mouse(
         MouseEventKind::Down(MouseButton::Left) if overlay::is_menu(app) => {
             if let Some(action) = overlay::action_at_visible_row(app, row) {
                 execute_menu_action(app, out, action)?;
+            } else {
+                prepare_overlay_action(app);
             }
         }
         MouseEventKind::Down(MouseButton::Left) => {
+            prepare_overlay_action(app);
             let document_row = app.screen.scroll_top.saturating_add(row);
             overlay::set_cursor_row(app, document_row);
             app.reveal_cursor();
@@ -143,6 +149,7 @@ fn dispatch_bar_action(
 ) -> io::Result<()> {
     match action {
         BarAction::Menu => {
+            super::input::prepare_editor_action(app, None);
             overlay::open_menu(app);
             app.render(out)
         }
@@ -151,28 +158,34 @@ fn dispatch_bar_action(
                 .message
                 .clone()
                 .unwrap_or_else(|| "No details.".to_string());
+            super::input::prepare_editor_action(app, None);
             overlay::open_notice(app, &message);
             app.render(out)
         }
         BarAction::Back if overlay::close(app) => {
+            super::input::prepare_editor_action(app, None);
             app.reveal_cursor();
             app.render(out)
         }
         BarAction::Accept if overlay::is_menu(app) => match overlay::selected_action(app) {
             Some(action) => execute_menu_action(app, out, action),
-            None => app.render(out),
+            None => {
+                prepare_overlay_action(app);
+                app.render(out)
+            }
         },
         BarAction::Cancel if super::selection::is_touch_selecting(app) => {
+            super::input::prepare_editor_action(app, None);
             super::selection::cancel_touch_selection(app);
             app.message = None;
             app.render(out)
         }
-        BarAction::Cancel | BarAction::Back => dispatch_key(app, out, KeyCode::Esc),
-        BarAction::Accept => dispatch_key(app, out, KeyCode::Enter),
-        BarAction::Up => dispatch_key(app, out, KeyCode::Up),
-        BarAction::Down => dispatch_key(app, out, KeyCode::Down),
-        BarAction::PageUp => dispatch_key(app, out, KeyCode::PageUp),
-        BarAction::PageDown => dispatch_key(app, out, KeyCode::PageDown),
+        BarAction::Cancel | BarAction::Back => dispatch_unrelated_key(app, out, KeyCode::Esc),
+        BarAction::Accept => dispatch_unrelated_key(app, out, KeyCode::Enter),
+        BarAction::Up => dispatch_unrelated_key(app, out, KeyCode::Up),
+        BarAction::Down => dispatch_unrelated_key(app, out, KeyCode::Down),
+        BarAction::PageUp => dispatch_unrelated_key(app, out, KeyCode::PageUp),
+        BarAction::PageDown => dispatch_unrelated_key(app, out, KeyCode::PageDown),
         BarAction::Save => dispatch_control(app, out, 's'),
         BarAction::Undo => dispatch_control(app, out, 'z'),
         BarAction::Copy => dispatch_control(app, out, 'c'),
@@ -188,12 +201,19 @@ fn execute_menu_action(
     overlay::close(app);
     match action {
         MenuAction::SelectStart => {
+            super::input::prepare_editor_action(app, None);
             super::selection::begin_touch_selection(app);
             app.message = Some("Selection start marked. Tap the other end; Cancel aborts.".into());
             app.render(out)
         }
-        MenuAction::ScrollUp => super::viewport::scroll_view(app, out, -3),
-        MenuAction::ScrollDown => super::viewport::scroll_view(app, out, 3),
+        MenuAction::ScrollUp => {
+            super::input::prepare_editor_action(app, None);
+            super::viewport::scroll_view(app, out, -3)
+        }
+        MenuAction::ScrollDown => {
+            super::input::prepare_editor_action(app, None);
+            super::viewport::scroll_view(app, out, 3)
+        }
         _ => match action.canonical_key() {
             Some(key) => super::input::handle_normalized_key(app, out, key),
             None => app.render(out),
@@ -202,13 +222,28 @@ fn execute_menu_action(
 }
 
 fn move_overlay(app: &mut super::App, out: &mut dyn Write, code: KeyCode) -> io::Result<()> {
+    prepare_overlay_action(app);
     overlay::move_cursor(app, code);
     app.reveal_cursor();
     app.render(out)
 }
 
+fn prepare_overlay_action(app: &mut super::App) {
+    super::input::prepare_editor_action(app, None);
+    overlay::refresh_message(app);
+}
+
 fn dispatch_key(app: &mut super::App, out: &mut dyn Write, code: KeyCode) -> io::Result<()> {
     super::input::handle_normalized_key(app, out, KeyEvent::new(code, KeyModifiers::NONE))
+}
+
+fn dispatch_unrelated_key(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    code: KeyCode,
+) -> io::Result<()> {
+    super::input::prepare_editor_action(app, None);
+    dispatch_key(app, out, code)
 }
 
 fn dispatch_control(app: &mut super::App, out: &mut dyn Write, ch: char) -> io::Result<()> {

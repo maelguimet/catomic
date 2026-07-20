@@ -2,7 +2,6 @@
 //! Owns: version, checksum, redirect, timeout, size, and complete release-download tests.
 //! Must not: contact GitHub, a live update service, proxies, or any non-loopback endpoint.
 //! Invariants: every server has bounded connections and deterministic response bytes.
-//! Phase: safe self-update workflow.
 
 use std::io::{Read, Write};
 use std::net::TcpListener;

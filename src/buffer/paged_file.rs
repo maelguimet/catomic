@@ -3,7 +3,6 @@
 //! Must not: own App policy, path replacement, terminal input/rendering, Project, or LLM.
 //! Invariants: only pages with edit history are retained; original page byte ranges
 //!   never overlap; descriptor drift fails page loads and whole-file writes closed.
-//! Phase: 2-by editable paged-file storage.
 
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -28,6 +27,10 @@ pub(crate) struct PagedFileBuffer {
     active: Option<EditablePage>,
     retained: BTreeMap<usize, EditablePage>,
     history: PageHistory,
+    #[cfg(test)]
+    fail_next_page_after: Option<(usize, io::ErrorKind)>,
+    #[cfg(test)]
+    fail_previous_page_once: Option<io::ErrorKind>,
 }
 
 pub(super) struct EditablePage {
@@ -80,7 +83,21 @@ impl PagedFileBuffer {
             active: Some(first),
             retained: BTreeMap::new(),
             history: PageHistory::new(),
+            #[cfg(test)]
+            fail_next_page_after: None,
+            #[cfg(test)]
+            fail_previous_page_once: None,
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fail_next_page_after(&mut self, successful_calls: usize, kind: io::ErrorKind) {
+        self.fail_next_page_after = Some((successful_calls, kind));
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fail_previous_page_once(&mut self, kind: io::ErrorKind) {
+        self.fail_previous_page_once = Some(kind);
     }
 
     fn load_from_descriptor(

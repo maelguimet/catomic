@@ -2,7 +2,6 @@
 //! Owns: direct argv construction support, child lifetime, output caps, and termination.
 //! Must not: invoke a shell, prompt, inherit stdin, or decide updater policy.
 //! Invariants: every child is reaped; its process group ends before pipe readers are joined.
-//! Phase: safe self-update workflow.
 
 use std::io::Read;
 use std::process::{Command, ExitStatus, Stdio};

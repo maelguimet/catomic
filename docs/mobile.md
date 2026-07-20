@@ -65,7 +65,8 @@ symlink is retained while its regular-file referent is replaced. If the
 filesystem supports hard links, multiply-linked files use the same staged,
 non-atomic in-place save as Linux. Android's mandatory, kernel-managed
 `security.selinux` application-data label is the sole xattr exception for
-single-link atomic replacement; other xattrs and POSIX ACLs remain fail-closed.
+single-link atomic replacement; other xattrs and POSIX ACLs are copied and
+verified, and unsupported metadata operations fail closed.
 Same-directory temporary files receive the application-data label from Android
 policy. Watch notifications are hints followed by a fresh file identity check,
 and dirty buffers are never reloaded silently.

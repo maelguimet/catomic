@@ -3,7 +3,6 @@
 //! Must not: open editor buffers, scan user files, write config, or know App UI.
 //! Invariants: page_lines is nonzero; missing config uses defaults; config roots
 //!   must be absolute; only `[big_files] page_lines = N` affects this configuration.
-//! Phase: 2-bk configurable paged-file policy.
 
 use std::io;
 #[cfg(test)]

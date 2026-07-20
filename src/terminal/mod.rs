@@ -2,7 +2,6 @@
 //! Owns: terminal mode guards, signal integration, and the user-facing panic notice.
 //! Must not: interpret editor commands, mutate App/Buffer state, render content, or network.
 //! Invariants: every enabled terminal mode has a best-effort inverse on all exit paths.
-//! Phase: post-v0.1 enhanced keyboard reporting and panic-safe restoration.
 
 pub(crate) mod cursor_style;
 pub mod render;

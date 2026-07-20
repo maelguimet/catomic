@@ -263,11 +263,7 @@ fn copy(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         return app.render(out);
     };
     let system = crate::clipboard::write_system(&app.clipboard);
-    app.message = Some(if system {
-        "Copied selection to system clipboard.".to_string()
-    } else if exported {
-        "Sent selection to terminal clipboard.".to_string()
-    } else {
+    app.message = (!system && !exported).then(|| {
         "Copied internally; no system clipboard helper is available and the selection is too large for terminal clipboard."
             .to_string()
     });

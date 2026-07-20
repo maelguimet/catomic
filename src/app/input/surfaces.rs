@@ -32,7 +32,7 @@ enum RawKeySurface {
     MarkdownPreview,
 }
 
-const RAW_KEY_PRECEDENCE: [RawKeySurface; 16] = [
+const RAW_KEY_PRECEDENCE: [RawKeySurface; 15] = [
     RawKeySurface::ModelPicker,
     RawKeySurface::Help,
     RawKeySurface::Recovery,
@@ -191,7 +191,7 @@ mod tests {
         assert_eq!(RAW_KEY_PRECEDENCE[7], RawKeySurface::Search);
         assert_eq!(RAW_KEY_PRECEDENCE[8], RawKeySurface::CommandPrompt);
         assert_eq!(RAW_KEY_PRECEDENCE[9], RawKeySurface::InlineClanker);
-        assert_eq!(RAW_KEY_PRECEDENCE[15], RawKeySurface::MarkdownPreview);
+        assert_eq!(RAW_KEY_PRECEDENCE[14], RawKeySurface::MarkdownPreview);
         assert_eq!(PASTE_PRECEDENCE[0], PasteSurface::Help);
         assert_eq!(PASTE_PRECEDENCE[1], PasteSurface::Replace);
         assert_eq!(PASTE_PRECEDENCE[6], PasteSurface::InlineClanker);

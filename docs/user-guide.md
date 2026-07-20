@@ -1778,15 +1778,13 @@ Opening and saving are deliberately conservative:
 - a dangling final symlink is refused;
 - Save As refuses symlinks that resolve to unsupported target types;
 - files with more than one hard link are refused; and
-- files carrying extended attributes or ACLs are refused because atomic inode
-  replacement could silently discard those semantics.
+- extended attributes and POSIX ACLs on regular files are copied to the
+  replacement and verified before commit.
 
-On Linux, replacement must preserve mode, owner, and group. If the filesystem,
-mount, container, or network share cannot provide the required atomic and
-metadata behavior, saving fails with an error instead of downgrading silently.
-
-Use a different tool for a refused target. Do not remove ACLs, attributes, or
-links merely to appease the editor unless you understand why they exist.
+On Linux, replacement must preserve mode, owner, group, extended attributes,
+and POSIX ACLs. If the filesystem, mount, container, or network share cannot
+provide the required atomic and metadata behavior, saving fails before the
+original is replaced instead of downgrading silently.
 
 ## Troubleshooting
 

@@ -291,10 +291,11 @@ code and may itself contact services after confirmation.
   large files support LF and CRLF; BOM-prefixed or CR-only files must remain
   below the paging threshold.
 - Atomic save replaces the destination inode. On Linux, Catomic preserves mode,
-  owner, and group, but refuses files with multiple hard links or any extended
-  attributes/ACLs rather than silently discarding those semantics. Save As also
-  refuses FIFOs, sockets, directories, and symlinks resolving to them. Use
-  another tool for a refused target.
+  owner, group, extended attributes, and POSIX ACLs before committing the
+  replacement. Files with multiple hard links remain refused because replacing
+  one directory entry cannot preserve shared-inode semantics. Unsupported or
+  permission-denied metadata operations fail before the original is replaced.
+  Save As also refuses FIFOs, sockets, directories, and symlinks resolving to them.
 - External-change checks fully hash files through 100 MiB. Huge/Extreme paged
   files use metadata plus fixed start/middle/end samples so checks stay bounded;
   an in-place rewrite outside those samples that also preserves size, inode, and

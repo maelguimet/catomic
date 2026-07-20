@@ -61,27 +61,6 @@ fn sends_only_explicit_provider_headers_to_the_confirmed_endpoint() {
 }
 
 #[test]
-fn bounded_completion_sends_the_exact_output_token_cap() {
-    let (base_url, server) = fake_server(
-        "200 OK",
-        "application/json",
-        br#"{"choices":[{"message":{"content":"continuation"}}]}"#.to_vec(),
-    );
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-    let client = OpenAiCompatClient::new(config(base_url, None)).unwrap();
-
-    let messages = [ChatMessage::system("system"), ChatMessage::user("user")];
-    let output = runtime.block_on(client.complete_messages_bounded(&messages, 37));
-    let request = server.join().unwrap();
-
-    assert_eq!(output.unwrap(), "continuation");
-    assert!(request.contains("\"max_tokens\":37"));
-}
-
-#[test]
 fn allows_unauthenticated_lan_http_endpoint() {
     let result = OpenAiCompatClient::new(config("http://192.168.1.23:8080/v1".to_string(), None));
 

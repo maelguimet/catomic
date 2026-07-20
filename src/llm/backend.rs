@@ -191,26 +191,15 @@ impl<'a> BackendRunner<'a> {
     }
 
     pub(crate) fn complete(&mut self, system: &str, user: &str) -> Result<String, BackendError> {
-        self.complete_messages_with_limit(
-            &[
-                BackendMessage::new(MessageRole::System, system),
-                BackendMessage::new(MessageRole::User, user),
-            ],
-            None,
-        )
+        self.complete_messages(&[
+            BackendMessage::new(MessageRole::System, system),
+            BackendMessage::new(MessageRole::User, user),
+        ])
     }
 
     pub(crate) fn complete_messages(
         &mut self,
         messages: &[BackendMessage],
-    ) -> Result<String, BackendError> {
-        self.complete_messages_with_limit(messages, None)
-    }
-
-    fn complete_messages_with_limit(
-        &mut self,
-        messages: &[BackendMessage],
-        max_tokens: Option<u32>,
     ) -> Result<String, BackendError> {
         if self.cancel.load(Ordering::Acquire) {
             return Err(BackendError::cancelled());
@@ -221,7 +210,7 @@ impl<'a> BackendRunner<'a> {
                 let cancel = self.cancel;
                 runtime.block_on(async {
                     tokio::select! {
-                        result = complete_http(client, &chat, max_tokens) => result.map_err(http_error),
+                        result = client.complete_messages(&chat) => result.map_err(http_error),
                         () = wait_for_cancel(cancel) => Err(BackendError::cancelled()),
                     }
                 })
@@ -231,17 +220,6 @@ impl<'a> BackendRunner<'a> {
             }
         };
         result.and_then(validate_backend_output)
-    }
-}
-
-async fn complete_http(
-    client: &OpenAiCompatClient,
-    messages: &[ChatMessage],
-    max_tokens: Option<u32>,
-) -> Result<String, LlmError> {
-    match max_tokens {
-        Some(limit) => client.complete_messages_bounded(messages, limit).await,
-        None => client.complete_messages(messages).await,
     }
 }
 

@@ -44,6 +44,24 @@ fn click_maps_through_both_viewport_offsets() {
 }
 
 #[test]
+fn click_cancels_a_pending_confirmation_and_message() {
+    let mut app = app_with("abc");
+    app.pending_quit_confirm = true;
+    app.message = Some("Press Ctrl+Q again to quit without saving.".to_string());
+    let mut out = Vec::new();
+
+    handle_mouse(
+        &mut app,
+        &mut out,
+        event(MouseEventKind::Down(MouseButton::Left), 1, 0),
+    )
+    .unwrap();
+
+    assert!(!app.pending_quit_confirm);
+    assert!(app.message.is_none());
+}
+
+#[test]
 fn click_subtracts_the_line_number_gutter() {
     let mut app = app_with("abcdef");
     app.view_preferences.set_line_numbers(true);

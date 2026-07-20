@@ -1,16 +1,18 @@
 //! Purpose: run one shell command asynchronously with bounded input lifetime and output memory.
 //! Owns: child lifetime, stdin delivery, timeout/cancellation, stream capture, and polling.
 //! Must not: load config, choose commands, mutate App state, render, or write editor files.
-//! Invariants: output is capped; the process group ends before all pipe workers are joined.
+//! Invariants: output is capped; every pipe worker can be stopped and joined after child cleanup.
 //! Phase: 7 external command foundation.
 
-use std::io::{self, Read, Write};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+use crate::process_pipe::{spawn_reader, spawn_writer, OverflowAction, PipeReader, PipeWriter};
 
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
@@ -111,9 +113,33 @@ fn run_command(
         Ok(child) => child,
         Err(error) => return ExternalCommandResult::Error(error.to_string()),
     };
-    let stdin = child.stdin.take().map(|stream| spawn_writer(stream, input));
-    let stdout = child.stdout.take().map(spawn_reader);
-    let stderr = child.stderr.take().map(spawn_reader);
+    let pipes = (|| {
+        let stdin = spawn_writer(
+            child.stdin.take().expect("piped stdin"),
+            input,
+            "catomic-command-stdin",
+        )?;
+        let stdout = spawn_reader(
+            child.stdout.take().expect("piped stdout"),
+            MAX_STREAM_BYTES,
+            OverflowAction::Drain,
+            "catomic-command-output",
+        )?;
+        let stderr = spawn_reader(
+            child.stderr.take().expect("piped stderr"),
+            MAX_STREAM_BYTES,
+            OverflowAction::Drain,
+            "catomic-command-output",
+        )?;
+        Ok::<_, io::Error>((stdin, stdout, stderr))
+    })();
+    let (stdin, stdout, stderr) = match pipes {
+        Ok(pipes) => pipes,
+        Err(error) => {
+            terminate(&mut child);
+            return ExternalCommandResult::Error(error.to_string());
+        }
+    };
     let outcome = wait_for_exit(&mut child, timeout, cancel);
     let stdin = join_writer(stdin);
     let (stdout, stdout_cut) = join_reader(stdout);
@@ -122,7 +148,7 @@ fn run_command(
         Ok(status) => status,
         Err(result) => return result,
     };
-    if let Some(Err(error)) = stdin {
+    if let Err(error) = stdin {
         if error.kind() != io::ErrorKind::BrokenPipe {
             return ExternalCommandResult::Error(format!("command stdin: {error}"));
         }
@@ -213,39 +239,16 @@ fn shell_path_for(android: bool, prefix: Option<&std::ffi::OsStr>) -> PathBuf {
     PathBuf::from("/bin/sh")
 }
 
-type Reader = std::thread::JoinHandle<(Vec<u8>, bool)>;
-type Writer = std::thread::JoinHandle<io::Result<()>>;
-
-fn spawn_reader(mut stream: impl Read + Send + 'static) -> Reader {
-    std::thread::spawn(move || {
-        let mut captured = Vec::new();
-        let mut truncated = false;
-        let mut chunk = [0_u8; 8 * 1024];
-        loop {
-            let read = match stream.read(&mut chunk) {
-                Ok(0) | Err(_) => break,
-                Ok(read) => read,
-            };
-            let remaining = MAX_STREAM_BYTES.saturating_sub(captured.len());
-            captured.extend_from_slice(&chunk[..read.min(remaining)]);
-            truncated |= read > remaining;
-        }
-        (captured, truncated)
-    })
-}
-
-fn spawn_writer(mut stream: impl Write + Send + 'static, input: Vec<u8>) -> Writer {
-    std::thread::spawn(move || stream.write_all(&input))
-}
-
-fn join_reader(reader: Option<Reader>) -> (Vec<u8>, bool) {
+fn join_reader(reader: PipeReader) -> (Vec<u8>, bool) {
     reader
-        .and_then(|reader| reader.join().ok())
+        .finish()
+        .ok()
+        .map(|output| (output.bytes, output.truncated))
         .unwrap_or_default()
 }
 
-fn join_writer(writer: Option<Writer>) -> Option<io::Result<()>> {
-    writer.and_then(|writer| writer.join().ok())
+fn join_writer(writer: PipeWriter) -> io::Result<()> {
+    writer.finish()
 }
 
 #[cfg(test)]
@@ -318,13 +321,14 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn successful_parent_exit_kills_descendants_that_keep_pipes_open() {
-        let pid_path = std::env::temp_dir().join(format!(
-            "catomic-external-background-{}",
-            std::process::id()
-        ));
+    fn successful_parent_exit_does_not_wait_for_escaped_pipe_holders() {
+        let pid_path =
+            std::env::temp_dir().join(format!("catomic-external-escaped-{}", std::process::id()));
         let _ = std::fs::remove_file(&pid_path);
-        let command = format!("sleep 5 & printf '%s' \"$!\" > '{}'", pid_path.display());
+        let command = format!(
+            "setsid sh -c 'printf %s \"$$\" > \"$1\"; sleep 30' sh '{}' &",
+            pid_path.display()
+        );
         let started = Instant::now();
 
         let result = run_command(
@@ -340,19 +344,71 @@ mod tests {
             ExternalCommandResult::Finished { code: Some(0), .. }
         ));
         assert!(started.elapsed() < Duration::from_secs(1));
+        wait_for_path(&pid_path);
         let pid = std::fs::read_to_string(&pid_path)
             .unwrap()
             .parse::<u32>()
             .unwrap();
+        kill_session(pid);
+        std::fs::remove_file(pid_path).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn task_drop_does_not_wait_for_escaped_pipe_holders() {
+        let pid_path = std::env::temp_dir().join(format!(
+            "catomic-external-drop-escaped-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&pid_path);
+        let command = format!(
+            "setsid sh -c 'printf %s \"$$\" > \"$1\"; sleep 30' sh '{}'; sleep 30",
+            pid_path.display()
+        );
+        let task = ExternalCommandTask::start(
+            &command,
+            Path::new("/tmp"),
+            Vec::new(),
+            Duration::from_secs(30),
+        )
+        .unwrap();
+        wait_for_path(&pid_path);
+        let pid = std::fs::read_to_string(&pid_path)
+            .unwrap()
+            .parse::<u32>()
+            .unwrap();
+        let started = Instant::now();
+
+        drop(task);
+
+        assert!(started.elapsed() < Duration::from_secs(1));
+        kill_session(pid);
+        std::fs::remove_file(pid_path).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    fn wait_for_path(path: &Path) {
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while !path.exists() {
+            assert!(
+                Instant::now() < deadline,
+                "escaped descendant did not start"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn kill_session(pid: u32) {
+        let _ = unsafe { libc::kill(-(pid as libc::pid_t), libc::SIGKILL) };
         let deadline = Instant::now() + Duration::from_secs(1);
         while PathBuf::from(format!("/proc/{pid}")).exists() {
             assert!(
                 Instant::now() < deadline,
-                "background descendant was not reaped"
+                "escaped descendant was not reaped"
             );
             std::thread::sleep(Duration::from_millis(5));
         }
-        std::fs::remove_file(pid_path).unwrap();
     }
 
     #[test]

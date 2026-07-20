@@ -208,7 +208,7 @@ fn bounded_runner_kills_process_groups_after_exit_cancel_and_timeout() {
     let pid_path = root.join("background-pid");
     fs::write(
         &fake_git,
-        "#!/bin/sh\ncase \" $* \" in\n  *' background '*) sleep 5 & printf '%s' \"$!\" > \"$CATOMIC_GIT_RUNNER_PID\" ;;\n  *) exec /bin/sleep 30 ;;\nesac\n",
+        "#!/bin/sh\ncase \" $* \" in\n  *' background '*) setsid sh -c 'printf %s \"$$\" > \"$1\"; sleep 30' sh \"$CATOMIC_GIT_RUNNER_PID\" & ;;\n  *) exec /bin/sleep 30 ;;\nesac\n",
     )
     .unwrap();
     let mut permissions = fs::metadata(&fake_git).unwrap().permissions();
@@ -266,15 +266,24 @@ fn run_bounded_runner_test_child() {
     assert!(bytes.is_empty());
     assert!(started.elapsed() < Duration::from_secs(1));
     let pid_path = PathBuf::from(std::env::var_os("CATOMIC_GIT_RUNNER_PID").unwrap());
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while !pid_path.exists() {
+        assert!(
+            Instant::now() < deadline,
+            "escaped descendant did not start"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
     let pid = fs::read_to_string(pid_path)
         .unwrap()
         .parse::<u32>()
         .unwrap();
+    let _ = unsafe { libc::kill(-(pid as libc::pid_t), libc::SIGKILL) };
     let deadline = Instant::now() + Duration::from_secs(1);
     while PathBuf::from(format!("/proc/{pid}")).exists() {
         assert!(
             Instant::now() < deadline,
-            "background Git descendant was not reaped"
+            "escaped descendant was not reaped"
         );
         std::thread::sleep(Duration::from_millis(5));
     }

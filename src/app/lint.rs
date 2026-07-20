@@ -158,7 +158,11 @@ pub(crate) fn poll(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
         return app.render(out);
     }
     match result {
-        LinterResult::Finished { output, code } => finish(app, running, output, code),
+        LinterResult::Finished {
+            output,
+            code,
+            truncated,
+        } => finish(app, running, output, code, truncated),
         LinterResult::Cancelled => app.message = None,
         LinterResult::Error(error) => app.message_error(format!(
             "Linter error for {}: {error}",
@@ -168,7 +172,20 @@ pub(crate) fn poll(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
     app.render(out)
 }
 
-fn finish(app: &mut super::App, running: RunningLint, output: String, code: Option<i32>) {
+fn finish(
+    app: &mut super::App,
+    running: RunningLint,
+    output: String,
+    code: Option<i32>,
+    truncated: bool,
+) {
+    if truncated {
+        app.message_error(format!(
+            "Linter output for {} exceeded the capture limit; no findings were installed.",
+            running.source.display()
+        ));
+        return;
+    }
     let cwd = running.source.parent().unwrap_or_else(|| Path::new("."));
     let source = crate::file::watch_path::normalize_path(&running.source);
     let findings = parse_common_output(&output, cwd)

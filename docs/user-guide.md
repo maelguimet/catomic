@@ -759,7 +759,9 @@ replaces all prior marks. Editing, reloading, renaming, or switching buffers
 immediately cancels and invalidates stale results; a late result from an older
 revision is discarded. Catomic does not infer severity from message wording or
 open a separate findings picker. If a command fails without parseable findings,
-Catomic reports the exit state instead of inventing a clean result.
+Catomic reports the exit state instead of inventing a clean result. Output that
+exceeds the bounded capture limit is rejected without installing partial
+findings.
 
 The older extension table remains supported, but a `[languages.EXT]` linter
 wins when both are present:

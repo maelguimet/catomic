@@ -104,6 +104,28 @@ fn rerun_replaces_previous_findings() {
 }
 
 #[test]
+fn truncated_output_installs_no_partial_findings() {
+    let file = TempFile::new("truncated.rs", "cat\n");
+    let mut app = App::new(file.path.to_str()).unwrap();
+    let mut out = Vec::new();
+
+    super::start_with_config(
+        &mut app,
+        &mut out,
+        config("head -c 1100000 /dev/zero # {file}"),
+    )
+    .unwrap();
+    poll_until_done(&mut app, &mut out);
+
+    assert!(super::visible_findings(&app).is_none());
+    assert!(app
+        .message
+        .as_deref()
+        .unwrap_or("")
+        .contains("exceeded the capture limit"));
+}
+
+#[test]
 fn content_edit_cancels_slow_lint_and_discards_late_result() {
     let file = TempFile::new("stale.rs", "version a\n");
     let config = config("sleep 0.1; printf '%s:1:1: stale finding\\n' {file}");

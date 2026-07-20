@@ -96,7 +96,7 @@ fn repo_http_body_uses_relative_paths_and_omits_the_checkout_root() {
     let (settings, request, server) = captured_response_server(
         "--- a/note.txt\n+++ b/note.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n",
     );
-    let mut app = project_app(&repo);
+    let mut app = repo_app(&repo);
     let mut out = Vec::new();
 
     begin_with_settings(&mut app, &mut out, "uppercase second line", settings).unwrap();

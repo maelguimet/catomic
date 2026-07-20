@@ -7,7 +7,7 @@
 use std::io::{self, Write};
 
 use crate::config::theme::{Color, Style, Theme};
-use crate::editor::syntax::{self, SpanStyle, StyledSpan};
+use crate::editor::syntax::{self, HyperlinkSpan, SpanStyle, StyledSpan};
 use crate::editor::text_layout;
 
 use super::{ContentSurface, HighlightKind, RenderOptions, TextHighlight};
@@ -35,7 +35,31 @@ pub(super) fn write_content_line_with_ghost<W: Write + ?Sized>(
     let visible_len = text_layout::clipped_scalar_len(content, max_cells);
     let content: String = content.chars().take(visible_len).collect();
     let chars: Vec<char> = content.chars().collect();
-    let spans = syntax::spans_for_line(options.syntax, &content);
+    let spans = options.presentation.map_or_else(
+        || syntax::spans_for_line(options.syntax, &content),
+        |presentation| {
+            visible_spans(
+                presentation
+                    .spans
+                    .get(row)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]),
+                start_col,
+                chars.len(),
+            )
+        },
+    );
+    let links = options.presentation.map_or_else(Vec::new, |presentation| {
+        visible_links(
+            presentation
+                .links
+                .get(row)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]),
+            start_col,
+            chars.len(),
+        )
+    });
     let selected = visible_highlight(options.highlight, row, start_col, chars.len());
     let llm_changed = visible_ranges(
         options.llm_changes.map(|changes| changes.ranges),
@@ -63,6 +87,7 @@ pub(super) fn write_content_line_with_ghost<W: Write + ?Sized>(
         selected,
         &[&llm_changed, &external_added, &external_changed],
         ghost,
+        &links,
     );
     let mut cell = 0;
     for range in boundaries.windows(2) {
@@ -71,10 +96,14 @@ pub(super) fn write_content_line_with_ghost<W: Write + ?Sized>(
         if start == end {
             continue;
         }
-        let syntax_style = spans
+        let syntax_styles = spans
             .iter()
-            .find(|span| start >= span.start && start < span.end)
+            .filter(|span| start >= span.start && start < span.end)
             .map(|span| span.style);
+        let hyperlink = links
+            .iter()
+            .find(|link| start >= link.start && start < link.end)
+            .map(|link| link.destination.as_ref());
         let highlighted = selected.is_some_and(|(from, to)| start >= from && start < to);
         let llm_changed = llm_changed
             .iter()
@@ -89,7 +118,7 @@ pub(super) fn write_content_line_with_ghost<W: Write + ?Sized>(
         let segment: String = chars[start..end].iter().collect();
         let style = segment_style(
             options,
-            syntax_style,
+            syntax_styles,
             highlighted,
             llm_changed,
             external_added,
@@ -103,10 +132,47 @@ pub(super) fn write_content_line_with_ghost<W: Write + ?Sized>(
             options.whitespace,
             cell,
             options.theme.truecolor,
+            hyperlink,
         )?;
         cell = cell.saturating_add(text_layout::cell_width_from(&segment, cell));
     }
     Ok(())
+}
+
+fn visible_spans(spans: &[StyledSpan], start_col: usize, content_len: usize) -> Vec<StyledSpan> {
+    let visible_end = start_col.saturating_add(content_len);
+    spans
+        .iter()
+        .filter_map(|span| {
+            let start = span.start.max(start_col);
+            let end = span.end.min(visible_end);
+            (start < end).then_some(StyledSpan {
+                start: start - start_col,
+                end: end - start_col,
+                style: span.style,
+            })
+        })
+        .collect()
+}
+
+fn visible_links(
+    links: &[HyperlinkSpan],
+    start_col: usize,
+    content_len: usize,
+) -> Vec<HyperlinkSpan> {
+    let visible_end = start_col.saturating_add(content_len);
+    links
+        .iter()
+        .filter_map(|link| {
+            let start = link.start.max(start_col);
+            let end = link.end.min(visible_end);
+            (start < end).then(|| HyperlinkSpan {
+                start: start - start_col,
+                end: end - start_col,
+                destination: link.destination.clone(),
+            })
+        })
+        .collect()
 }
 
 fn visible_ranges(
@@ -155,6 +221,7 @@ fn segment_boundaries(
     selected: Option<(usize, usize)>,
     change_sets: &[&[(usize, usize)]],
     ghost: Option<(usize, usize)>,
+    links: &[HyperlinkSpan],
 ) -> Vec<usize> {
     let content_len = content.chars().count();
     let mut boundaries = vec![0, content_len];
@@ -176,6 +243,10 @@ fn segment_boundaries(
         boundaries.push(start.min(content_len));
         boundaries.push(end.min(content_len));
     }
+    for link in links {
+        boundaries.push(link.start.min(content_len));
+        boundaries.push(link.end.min(content_len));
+    }
     boundaries.sort_unstable();
     boundaries = boundaries
         .into_iter()
@@ -194,14 +265,22 @@ fn write_segment<W: Write + ?Sized>(
     whitespace: bool,
     initial_cell: usize,
     truecolor: bool,
+    hyperlink: Option<&str>,
 ) -> io::Result<()> {
     let text = text_layout::expand_tabs(text, whitespace, initial_cell);
-    write_styled_text(out, &text, style, truecolor)
+    if let Some(destination) = hyperlink {
+        write!(out, "\x1b]8;;{destination}\x1b\\")?;
+    }
+    write_styled_text(out, &text, style, truecolor)?;
+    if hyperlink.is_some() {
+        write!(out, "\x1b]8;;\x1b\\")?;
+    }
+    Ok(())
 }
 
 fn segment_style(
     options: RenderOptions<'_>,
-    span: Option<SpanStyle>,
+    spans: impl Iterator<Item = SpanStyle>,
     highlighted: bool,
     llm_changed: bool,
     external_added: bool,
@@ -213,7 +292,7 @@ fn segment_style(
         ContentSurface::Normal => theme.text,
         ContentSurface::Preview | ContentSurface::Diff => theme.text.overlay(theme.preview),
     };
-    if let Some(span) = span {
+    for span in spans {
         style = style.overlay(span_style(theme, span));
     }
     if external_added {
@@ -247,7 +326,41 @@ fn span_style(theme: Theme, style: SpanStyle) -> Style {
         SpanStyle::Comment => theme.syntax_comment,
         SpanStyle::Number => theme.syntax_number,
         SpanStyle::Code => theme.markdown_code,
+        SpanStyle::PreviewCode => Style {
+            reversed: Some(true),
+            ..theme.markdown_code
+        },
+        SpanStyle::PreviewHeading4 => Style {
+            bold: Some(false),
+            underlined: Some(true),
+            ..theme.markdown_heading
+        },
+        SpanStyle::PreviewHeading5 => Style {
+            bold: Some(false),
+            ..theme.markdown_heading
+        },
+        SpanStyle::PreviewHeading6 => Style {
+            bold: Some(false),
+            dim: Some(true),
+            ..theme.markdown_heading
+        },
+        SpanStyle::PreviewLink => Style {
+            underlined: Some(true),
+            ..theme.markdown_link
+        },
         SpanStyle::Emphasis => theme.markdown_emphasis,
+        SpanStyle::PreviewStrong => Style {
+            bold: Some(true),
+            ..theme.markdown_emphasis
+        },
+        SpanStyle::PreviewEmphasis => Style {
+            underlined: Some(true),
+            ..theme.markdown_emphasis
+        },
+        SpanStyle::PreviewStrikethrough => Style {
+            crossed_out: Some(true),
+            ..theme.markdown_emphasis
+        },
         SpanStyle::DiffAdded => theme.diff_added,
         SpanStyle::DiffRemoved => theme.diff_removed,
     }
@@ -303,6 +416,9 @@ fn write_style_prefix<W: Write + ?Sized>(
     }
     if style.reversed == Some(true) {
         codes.push("7".to_string());
+    }
+    if style.crossed_out == Some(true) {
+        codes.push("9".to_string());
     }
     if codes.is_empty() {
         return Ok(false);

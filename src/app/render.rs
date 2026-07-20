@@ -131,7 +131,7 @@ fn render_frame(
 }
 
 fn render_options<'a>(
-    app: &App,
+    app: &'a App,
     llm_changes: Option<term::render::LlmChanges<'a>>,
     external_changes: Option<term::render::ExternalChanges<'a>>,
     action_bar: Option<&'a str>,
@@ -151,6 +151,7 @@ fn render_options<'a>(
         llm_changes,
         external_changes,
         syntax: view::display_syntax(app),
+        presentation: view::display_presentation(app),
         surface: view::display_surface(app),
         theme: app.theme,
         line_numbers: app.view_preferences.line_numbers(),

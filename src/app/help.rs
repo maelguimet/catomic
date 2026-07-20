@@ -13,10 +13,13 @@ use crate::buffer::{Buffer, Cursor, PieceTable};
 use crate::config::actions::Action;
 use crate::config::keybindings::KeyBindings;
 use crate::editor::search::{self, SearchDirection, SearchMatch};
+use crate::editor::syntax::{HyperlinkSpan, StyledSpan};
 use crate::help_catalog::{self, EditorAction};
 
 pub(crate) struct HelpView {
     buffer: PieceTable,
+    spans: Vec<Vec<StyledSpan>>,
+    links: Vec<Vec<HyperlinkSpan>>,
     search: HelpSearch,
     source_scroll_top: usize,
     source_scroll_left: usize,
@@ -42,7 +45,9 @@ pub(crate) fn show(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
     )
     .map_err(|error| io::Error::other(error.to_string()))?;
     app.surfaces.help = Some(HelpView {
-        buffer: PieceTable::from_text(&rendered),
+        buffer: PieceTable::from_owned_text(rendered.text),
+        spans: rendered.spans,
+        links: rendered.links,
         search: HelpSearch::default(),
         source_scroll_top,
         source_scroll_left,
@@ -54,6 +59,18 @@ pub(crate) fn show(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
     app.selection.clear();
     app.message = Some("Help; Esc closes.".to_string());
     app.render(out)
+}
+
+pub(crate) fn presentation(
+    app: &super::App,
+) -> Option<crate::terminal::render::DocumentPresentation<'_>> {
+    app.surfaces
+        .help
+        .as_ref()
+        .map(|view| crate::terminal::render::DocumentPresentation {
+            spans: &view.spans,
+            links: &view.links,
+        })
 }
 
 pub(crate) fn handle_key(

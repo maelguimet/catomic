@@ -10,7 +10,7 @@ use std::io::{self, Write};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::{Buffer, Cursor, PieceTable};
-use crate::editor::syntax::{self, SyntaxKind};
+use crate::editor::syntax::{self, HyperlinkSpan, StyledSpan, SyntaxKind};
 use crate::help_catalog::{self, EditorAction};
 
 #[derive(Debug, Default)]
@@ -23,10 +23,27 @@ pub(crate) struct ViewOptions {
 #[derive(Debug)]
 struct PreviewDocument {
     buffer: PieceTable,
+    spans: Vec<Vec<StyledSpan>>,
+    links: Vec<Vec<HyperlinkSpan>>,
     layout_width: usize,
     source_scroll_top: usize,
     source_scroll_left: usize,
     source_wrap_col: usize,
+}
+
+pub(crate) fn display_presentation(
+    app: &super::App,
+) -> Option<crate::terminal::render::DocumentPresentation<'_>> {
+    if let Some(presentation) = super::help::presentation(app) {
+        return Some(presentation);
+    }
+    app.view
+        .preview
+        .as_ref()
+        .map(|preview| crate::terminal::render::DocumentPresentation {
+            spans: &preview.spans,
+            links: &preview.links,
+        })
 }
 
 pub(crate) fn handle_key(
@@ -224,12 +241,14 @@ pub(crate) fn relayout_preview(app: &mut super::App) {
     let cursor = preview.buffer.cursor();
     match crate::editor::markdown_preview::render_with_width(&app.buffer.to_string(), width) {
         Ok(rendered) => {
-            let mut buffer = PieceTable::from_owned_text(rendered);
+            let mut buffer = PieceTable::from_owned_text(rendered.text);
             let row = cursor.row.min(buffer.line_count().saturating_sub(1));
             let col = cursor.col.min(buffer.line_char_count(row).unwrap_or(0));
             buffer.set_cursor(Cursor { row, col });
             if let Some(preview) = app.view.preview.as_mut() {
                 preview.buffer = buffer;
+                preview.spans = rendered.spans;
+                preview.links = rendered.links;
                 preview.layout_width = width;
                 app.screen.scroll_left = 0;
             }
@@ -247,7 +266,9 @@ fn toggle_preview(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool>
         match crate::editor::markdown_preview::render_with_width(&app.buffer.to_string(), width) {
             Ok(rendered) => {
                 app.view.preview = Some(PreviewDocument {
-                    buffer: PieceTable::from_owned_text(rendered),
+                    buffer: PieceTable::from_owned_text(rendered.text),
+                    spans: rendered.spans,
+                    links: rendered.links,
                     layout_width: width,
                     source_scroll_top: app.screen.scroll_top,
                     source_scroll_left: app.screen.scroll_left,
@@ -463,7 +484,8 @@ mod tests {
 
         handle_key(&mut app, &mut out, key(KeyCode::F(6))).unwrap();
         assert!(is_preview(&app));
-        assert!(String::from_utf8_lossy(&out).contains('#'));
+        assert!(String::from_utf8_lossy(&out).contains("Titl"));
+        assert!(!String::from_utf8_lossy(&out).contains("# Title"));
         let source = app.buffer.to_string();
 
         handle_key(&mut app, &mut out, key(KeyCode::Char('x'))).unwrap();

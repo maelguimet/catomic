@@ -20,6 +20,7 @@ pub(crate) struct Style {
     pub(crate) dim: Option<bool>,
     pub(crate) underlined: Option<bool>,
     pub(crate) reversed: Option<bool>,
+    pub(crate) crossed_out: Option<bool>,
 }
 
 impl Style {
@@ -31,6 +32,7 @@ impl Style {
             dim: None,
             underlined: None,
             reversed: None,
+            crossed_out: None,
         }
     }
 
@@ -42,6 +44,7 @@ impl Style {
             dim: None,
             underlined: None,
             reversed: None,
+            crossed_out: None,
         }
     }
 
@@ -53,6 +56,7 @@ impl Style {
             dim: role.dim.or(self.dim),
             underlined: role.underlined.or(self.underlined),
             reversed: role.reversed.or(self.reversed),
+            crossed_out: role.crossed_out.or(self.crossed_out),
         }
     }
 }

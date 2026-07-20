@@ -1,12 +1,16 @@
 //! Purpose: present Markdown source as a bounded, readable terminal document.
-//! Owns: shared pulldown-cmark interpretation, width-aware layout, and preview text.
+//! Owns: shared pulldown-cmark interpretation, width-aware layout, and semantic styling.
 //! Must not: read files, emit ANSI, mutate source buffers, or run during ordinary typing.
 //! Invariants: conversion is explicit; every produced line is bounded to the reading width.
 
+use std::borrow::Cow;
 use std::fmt;
+use std::sync::Arc;
 
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use unicode_segmentation::UnicodeSegmentation;
 
+use crate::editor::syntax::{HyperlinkSpan, SpanStyle, StyledSpan};
 use crate::editor::text_layout;
 
 mod table;
@@ -14,6 +18,15 @@ mod table;
 const MAX_READING_WIDTH: usize = 100;
 const MAX_SOURCE_BYTES: usize = 10 * 1024 * 1024;
 const MAX_OUTPUT_BYTES: usize = 32 * 1024 * 1024;
+const MAX_ANNOTATIONS: usize = 1_000_000;
+const MAX_LINK_BYTES: usize = 4096;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct MarkdownDocument {
+    pub(crate) text: String,
+    pub(crate) spans: Vec<Vec<StyledSpan>>,
+    pub(crate) links: Vec<Vec<HyperlinkSpan>>,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum RenderError {
@@ -41,7 +54,10 @@ impl fmt::Display for RenderError {
 ///
 /// The reading column is intentionally capped so wide terminals do not turn prose into
 /// eye-tracking punishment. Narrow terminals get reflowed prose and stacked tables.
-pub(crate) fn render_with_width(source: &str, width: usize) -> Result<String, RenderError> {
+pub(crate) fn render_with_width(
+    source: &str,
+    width: usize,
+) -> Result<MarkdownDocument, RenderError> {
     if source.len() > MAX_SOURCE_BYTES {
         return Err(RenderError::OversizedSource);
     }
@@ -55,8 +71,7 @@ pub(crate) fn render_with_width(source: &str, width: usize) -> Result<String, Re
     for event in Parser::new_ext(source, options) {
         renderer.event(event);
     }
-    let raw = renderer.finish()?;
-    wrap_document(&raw, width)
+    wrap_document(renderer.finish()?, width)
 }
 
 pub(crate) fn reading_width(width: usize) -> usize {
@@ -65,6 +80,10 @@ pub(crate) fn reading_width(width: usize) -> usize {
 
 struct PreviewRenderer {
     output: String,
+    scalar_len: usize,
+    spans: Vec<GlobalSpan>,
+    hyperlinks: Vec<GlobalHyperlink>,
+    active_styles: Vec<SpanStyle>,
     width: usize,
     lists: Vec<Option<u64>>,
     quote_depth: usize,
@@ -74,14 +93,38 @@ struct PreviewRenderer {
     error: Option<RenderError>,
 }
 
+#[derive(Clone, Copy)]
+struct GlobalSpan {
+    start: usize,
+    end: usize,
+    style: SpanStyle,
+}
+
+struct GlobalHyperlink {
+    start: usize,
+    end: usize,
+    destination: Arc<str>,
+}
+
+struct RawDocument {
+    text: String,
+    spans: Vec<GlobalSpan>,
+    hyperlinks: Vec<GlobalHyperlink>,
+}
+
 struct LinkTarget {
-    destination: String,
+    start: usize,
+    destination: Option<Arc<str>>,
 }
 
 impl PreviewRenderer {
     fn new(width: usize) -> Self {
         Self {
             output: String::new(),
+            scalar_len: 0,
+            spans: Vec::new(),
+            hyperlinks: Vec::new(),
+            active_styles: Vec::new(),
             width,
             lists: Vec::new(),
             quote_depth: 0,
@@ -100,14 +143,18 @@ impl PreviewRenderer {
             Event::Start(tag) => self.start(tag),
             Event::End(tag) => self.end(tag),
             Event::Text(text) => self.text(&text),
-            Event::Code(text) => self.push(&format!("`{text}`")),
+            Event::Code(text) => self.push_styled(&safe_text(&text), SpanStyle::PreviewCode),
             Event::SoftBreak => self.push(" "),
             Event::HardBreak => self.line_break(),
             Event::Rule => self.rule(),
-            Event::TaskListMarker(done) => self.push(if done { "[x] " } else { "[ ] " }),
+            Event::TaskListMarker(done) => {
+                self.push_styled(if done { "[✓] " } else { "[ ] " }, SpanStyle::Marker)
+            }
             Event::Html(text) | Event::InlineHtml(text) => self.text(&text),
-            Event::FootnoteReference(label) => self.push(&format!("[^{label}]")),
-            Event::InlineMath(text) => self.push(&format!("${text}$")),
+            Event::FootnoteReference(label) => {
+                self.push_styled(&format!("[^{label}]"), SpanStyle::Marker)
+            }
+            Event::InlineMath(text) => self.push_styled(&safe_text(&text), SpanStyle::PreviewCode),
             Event::DisplayMath(text) => self.display_math(&text),
         }
     }
@@ -116,7 +163,7 @@ impl PreviewRenderer {
         match tag {
             Tag::Heading { level, .. } => {
                 self.block_start();
-                self.push(heading_marker(level));
+                self.active_styles.push(heading_style(level));
             }
             Tag::BlockQuote(_) => {
                 self.quote_depth += 1;
@@ -127,7 +174,7 @@ impl PreviewRenderer {
             Tag::Item => self.start_item(),
             Tag::FootnoteDefinition(label) => {
                 self.block_start();
-                self.push(&format!("[^{label}] "));
+                self.push_styled(&format!("[^{label}] "), SpanStyle::Marker);
             }
             Tag::Table(alignments) => {
                 self.block_start();
@@ -136,9 +183,9 @@ impl PreviewRenderer {
             Tag::TableHead => self.with_table(|table| table.start_header()),
             Tag::TableRow => self.with_table(|table| table.start_row()),
             Tag::TableCell => self.with_table(|table| table.start_cell()),
-            Tag::Emphasis => self.push("*"),
-            Tag::Strong => self.push("**"),
-            Tag::Strikethrough => self.push("~~"),
+            Tag::Emphasis => self.active_styles.push(SpanStyle::PreviewEmphasis),
+            Tag::Strong => self.active_styles.push(SpanStyle::PreviewStrong),
+            Tag::Strikethrough => self.active_styles.push(SpanStyle::PreviewStrikethrough),
             Tag::Link { dest_url, .. } => self.start_link(dest_url.into_string(), false),
             Tag::Image { dest_url, .. } => self.start_link(dest_url.into_string(), true),
             _ => {}
@@ -164,9 +211,9 @@ impl PreviewRenderer {
             TagEnd::TableRow => self.with_table(|table| table.end_row()),
             TagEnd::TableCell => self.with_table(|table| table.end_cell()),
             TagEnd::Table => self.end_table(),
-            TagEnd::Emphasis => self.push("*"),
-            TagEnd::Strong => self.push("**"),
-            TagEnd::Strikethrough => self.push("~~"),
+            TagEnd::Emphasis => self.end_style(SpanStyle::PreviewEmphasis),
+            TagEnd::Strong => self.end_style(SpanStyle::PreviewStrong),
+            TagEnd::Strikethrough => self.end_style(SpanStyle::PreviewStrikethrough),
             TagEnd::Link | TagEnd::Image => self.end_link(),
             _ => {}
         }
@@ -181,12 +228,13 @@ impl PreviewRenderer {
                 *next = next.saturating_add(1);
                 marker
             }
-            _ => "- ".to_string(),
+            _ => "• ".to_string(),
         };
-        self.push(&marker);
+        self.push_styled(&marker, SpanStyle::Marker);
     }
 
     fn end_heading(&mut self, level: HeadingLevel) {
+        self.end_style(heading_style(level));
         let line_width = self
             .output
             .rsplit('\n')
@@ -203,46 +251,48 @@ impl PreviewRenderer {
             } else {
                 '─'
             };
-            self.push(&fill.to_string().repeat(underline_width));
+            self.push_styled(&fill.to_string().repeat(underline_width), SpanStyle::Marker);
         }
         self.blank_line();
     }
 
-    fn start_code_block(&mut self, kind: CodeBlockKind<'_>) {
+    fn start_code_block(&mut self, _kind: CodeBlockKind<'_>) {
         self.block_start();
-        let language = match kind {
-            CodeBlockKind::Fenced(language) if !language.is_empty() => {
-                let language = language.split_whitespace().next().unwrap_or_default();
-                let keep = text_layout::clipped_scalar_len(language, 24);
-                language.chars().take(keep).collect::<String>()
-            }
-            _ => String::new(),
-        };
-        self.push(&format!("```{language}"));
-        self.newline();
         self.code_block = true;
+        self.active_styles.push(SpanStyle::PreviewCode);
     }
 
     fn end_code_block(&mut self) {
         self.newline();
+        self.end_style(SpanStyle::PreviewCode);
         self.code_block = false;
-        self.push("```");
         self.blank_line();
     }
 
     fn start_link(&mut self, destination: String, image: bool) {
         if image {
-            self.push("Image: ");
+            self.push_styled("Image: ", SpanStyle::Marker);
         }
-        self.links.push(LinkTarget { destination });
+        self.links.push(LinkTarget {
+            start: self.scalar_len,
+            destination: safe_link_destination(destination),
+        });
+        self.active_styles.push(SpanStyle::PreviewLink);
     }
 
     fn end_link(&mut self) {
+        self.end_style(SpanStyle::PreviewLink);
         let Some(link) = self.links.pop() else {
             return;
         };
-        if !link.destination.is_empty() {
-            self.push(&format!(" <{}>", link.destination));
+        if let Some(destination) = link.destination {
+            if link.start < self.scalar_len {
+                self.hyperlinks.push(GlobalHyperlink {
+                    start: link.start,
+                    end: self.scalar_len,
+                    destination,
+                });
+            }
         }
     }
 
@@ -256,7 +306,7 @@ impl PreviewRenderer {
         match table.finish(available.max(1)) {
             Ok(lines) => {
                 for line in lines {
-                    self.push(&line);
+                    self.push_table_line(&line);
                     self.newline();
                 }
             }
@@ -265,18 +315,41 @@ impl PreviewRenderer {
         self.blank_line();
     }
 
+    fn push_table_line(&mut self, line: &str) {
+        let before = self.scalar_len;
+        self.push(line);
+        let line_start = self.scalar_len.saturating_sub(line.chars().count());
+        if line.starts_with("- ") {
+            self.add_span(line_start, line_start.saturating_add(2), SpanStyle::Marker);
+            return;
+        }
+        let mut run_start = None;
+        for (offset, ch) in line.chars().chain(std::iter::once('\0')).enumerate() {
+            let marker = "┌┬┐│├┼┤╞╪╡└┴┘─═".contains(ch);
+            match (run_start, marker) {
+                (None, true) => run_start = Some(offset),
+                (Some(start), false) => {
+                    self.add_span(line_start + start, line_start + offset, SpanStyle::Marker);
+                    run_start = None;
+                }
+                _ => {}
+            }
+        }
+        debug_assert!(self.scalar_len >= before);
+    }
+
     fn rule(&mut self) {
         self.block_start();
         let available = self
             .width
             .saturating_sub(self.quote_depth.saturating_mul(2));
-        self.push(&"─".repeat(available.max(1)));
+        self.push_styled(&"─".repeat(available.max(1)), SpanStyle::Marker);
         self.blank_line();
     }
 
     fn display_math(&mut self, text: &str) {
         self.block_start();
-        self.push(text);
+        self.push_styled(&safe_text(text), SpanStyle::PreviewCode);
         self.blank_line();
     }
 
@@ -286,12 +359,20 @@ impl PreviewRenderer {
                 self.line_break();
             }
             if !part.is_empty() {
-                self.push(part);
+                self.push(&safe_text(part));
             }
         }
     }
 
     fn push(&mut self, text: &str) {
+        self.push_with_style(text, None);
+    }
+
+    fn push_styled(&mut self, text: &str, style: SpanStyle) {
+        self.push_with_style(text, Some(style));
+    }
+
+    fn push_with_style(&mut self, text: &str, style: Option<SpanStyle>) {
         if self.error.is_some() {
             return;
         }
@@ -299,33 +380,59 @@ impl PreviewRenderer {
             table.push(text);
             return;
         }
-        let prefix = self.at_line_start().then(|| self.line_prefix());
-        let additional = prefix
-            .as_ref()
-            .map_or(0, String::len)
-            .saturating_add(text.len());
+        if self.at_line_start() {
+            let prefix = self.line_prefix();
+            if !prefix.is_empty() {
+                self.append(&prefix, Some(SpanStyle::Marker));
+            }
+        }
+        self.append(text, style);
+    }
+
+    fn append(&mut self, text: &str, extra_style: Option<SpanStyle>) {
+        if self.error.is_some() || text.is_empty() {
+            return;
+        }
         if self
             .output
             .len()
-            .checked_add(additional)
+            .checked_add(text.len())
             .is_none_or(|length| length > MAX_OUTPUT_BYTES)
         {
             self.error = Some(RenderError::OutputExpansion);
             return;
         }
-        if let Some(prefix) = prefix {
-            self.output.push_str(&prefix);
-        }
+        let start = self.scalar_len;
         self.output.push_str(text);
+        self.scalar_len = self.scalar_len.saturating_add(text.chars().count());
+        let end = self.scalar_len;
+        for index in 0..self.active_styles.len() {
+            let style = self.active_styles[index];
+            self.add_span(start, end, style);
+        }
+        if let Some(style) = extra_style {
+            self.add_span(start, end, style);
+        }
+    }
+
+    fn add_span(&mut self, start: usize, end: usize, style: SpanStyle) {
+        if start >= end {
+            return;
+        }
+        if self.spans.len() >= MAX_ANNOTATIONS {
+            self.error = Some(RenderError::OutputExpansion);
+            return;
+        }
+        self.spans.push(GlobalSpan { start, end, style });
     }
 
     fn line_prefix(&self) -> String {
         let mut prefix = String::new();
         if self.quote_depth > 0 {
-            prefix.push_str(&"> ".repeat(self.quote_depth));
+            prefix.push_str(&"│ ".repeat(self.quote_depth));
         }
         if self.code_block {
-            prefix.push_str("    ");
+            prefix.push_str("  ");
         }
         prefix
     }
@@ -346,20 +453,20 @@ impl PreviewRenderer {
 
     fn block_start(&mut self) {
         if !self.output.is_empty() && !self.output.ends_with('\n') {
-            self.output.push('\n');
+            self.append("\n", None);
         }
     }
 
     fn newline(&mut self) {
         if !self.output.ends_with('\n') {
-            self.output.push('\n');
+            self.append("\n", None);
         }
     }
 
     fn blank_line(&mut self) {
         self.newline();
         if !self.output.ends_with("\n\n") {
-            self.output.push('\n');
+            self.append("\n", None);
         }
     }
 
@@ -367,231 +474,554 @@ impl PreviewRenderer {
         self.output.is_empty() || self.output.ends_with('\n')
     }
 
-    fn finish(mut self) -> Result<String, RenderError> {
+    fn end_style(&mut self, style: SpanStyle) {
+        if let Some(index) = self
+            .active_styles
+            .iter()
+            .rposition(|active| *active == style)
+        {
+            self.active_styles.remove(index);
+        }
+    }
+
+    fn finish(mut self) -> Result<RawDocument, RenderError> {
         if let Some(error) = self.error {
             return Err(error);
         }
         while self.output.ends_with("\n\n") {
             self.output.pop();
+            self.scalar_len = self.scalar_len.saturating_sub(1);
         }
-        Ok(self.output)
+        self.spans.retain(|span| span.start < self.scalar_len);
+        for span in &mut self.spans {
+            span.end = span.end.min(self.scalar_len);
+        }
+        self.hyperlinks
+            .retain(|link| link.start < self.scalar_len && link.start < link.end);
+        for link in &mut self.hyperlinks {
+            link.end = link.end.min(self.scalar_len);
+        }
+        Ok(RawDocument {
+            text: self.output,
+            spans: self.spans,
+            hyperlinks: self.hyperlinks,
+        })
     }
 }
 
-fn heading_marker(level: HeadingLevel) -> &'static str {
+fn heading_style(level: HeadingLevel) -> SpanStyle {
     match level {
-        HeadingLevel::H1 => "# ",
-        HeadingLevel::H2 => "## ",
-        HeadingLevel::H3 => "### ",
-        HeadingLevel::H4 => "#### ",
-        HeadingLevel::H5 => "##### ",
-        HeadingLevel::H6 => "###### ",
+        HeadingLevel::H1 | HeadingLevel::H2 | HeadingLevel::H3 => SpanStyle::Heading,
+        HeadingLevel::H4 => SpanStyle::PreviewHeading4,
+        HeadingLevel::H5 => SpanStyle::PreviewHeading5,
+        HeadingLevel::H6 => SpanStyle::PreviewHeading6,
     }
 }
 
-fn wrap_document(source: &str, width: usize) -> Result<String, RenderError> {
-    let mut output = String::with_capacity(source.len());
-    for line in source.lines() {
-        for wrapped in wrap_line(line, width) {
-            if output
-                .len()
-                .checked_add(wrapped.len().saturating_add(1))
-                .is_none_or(|length| length > MAX_OUTPUT_BYTES)
-            {
-                return Err(RenderError::OutputExpansion);
-            }
-            output.push_str(&wrapped);
-            output.push('\n');
+fn safe_text(text: &str) -> Cow<'_, str> {
+    if text.chars().any(char::is_control) {
+        Cow::Owned(text_layout::terminal_safe_text(text))
+    } else {
+        Cow::Borrowed(text)
+    }
+}
+
+fn safe_link_destination(destination: String) -> Option<Arc<str>> {
+    (destination.len() <= MAX_LINK_BYTES
+        && !destination
+            .chars()
+            .any(|ch| ch.is_control() || matches!(ch, '\u{1b}' | '\u{7}')))
+    .then(|| Arc::from(destination))
+}
+
+#[derive(Clone)]
+struct AnnotatedLine {
+    text: String,
+    chars: Vec<char>,
+    scalar_len: usize,
+    spans: Vec<StyledSpan>,
+    links: Vec<HyperlinkSpan>,
+}
+
+impl AnnotatedLine {
+    fn empty() -> Self {
+        Self {
+            text: String::new(),
+            chars: Vec::new(),
+            scalar_len: 0,
+            spans: Vec::new(),
+            links: Vec::new(),
         }
     }
-    while output.ends_with("\n\n") {
-        output.pop();
+
+    fn len(&self) -> usize {
+        self.scalar_len
     }
-    Ok(output)
+
+    fn slice_text(&self, start: usize, end: usize) -> String {
+        self.chars[start.min(self.len())..end.min(self.len())]
+            .iter()
+            .collect()
+    }
 }
 
-fn wrap_line(line: &str, width: usize) -> Vec<String> {
-    if line.is_empty() {
-        return vec![String::new()];
+struct LineBuilder {
+    text: String,
+    len: usize,
+    spans: Vec<StyledSpan>,
+    links: Vec<HyperlinkSpan>,
+}
+
+impl LineBuilder {
+    fn new() -> Self {
+        Self {
+            text: String::new(),
+            len: 0,
+            spans: Vec::new(),
+            links: Vec::new(),
+        }
     }
-    let (quote, rest) = quote_prefix(line);
-    if rest.chars().next().is_some_and(|ch| "┌│╞└".contains(ch))
-        || rest.chars().all(|ch| matches!(ch, '─' | '═'))
+
+    fn push_slice(&mut self, source: &AnnotatedLine, start: usize, end: usize) {
+        let start = start.min(source.len());
+        let end = end.min(source.len());
+        if start >= end {
+            return;
+        }
+        let target = self.len;
+        self.text.push_str(&source.slice_text(start, end));
+        self.len += end - start;
+        for span in &source.spans {
+            let overlap_start = span.start.max(start);
+            let overlap_end = span.end.min(end);
+            if overlap_start < overlap_end {
+                self.spans.push(StyledSpan {
+                    start: target + overlap_start - start,
+                    end: target + overlap_end - start,
+                    style: span.style,
+                });
+            }
+        }
+        for link in &source.links {
+            let overlap_start = link.start.max(start);
+            let overlap_end = link.end.min(end);
+            if overlap_start < overlap_end {
+                self.links.push(HyperlinkSpan {
+                    start: target + overlap_start - start,
+                    end: target + overlap_end - start,
+                    destination: link.destination.clone(),
+                });
+            }
+        }
+    }
+
+    fn push_plain(&mut self, text: &str) {
+        self.text.push_str(text);
+        self.len += text.chars().count();
+    }
+
+    fn push_replacement(&mut self, source: &AnnotatedLine, col: usize, text: &str) {
+        let start = self.len;
+        self.push_plain(text);
+        let end = self.len;
+        for span in source
+            .spans
+            .iter()
+            .filter(|span| col >= span.start && col < span.end)
+        {
+            self.spans.push(StyledSpan {
+                start,
+                end,
+                style: span.style,
+            });
+        }
+        if let Some(link) = source
+            .links
+            .iter()
+            .find(|link| col >= link.start && col < link.end)
+        {
+            self.links.push(HyperlinkSpan {
+                start,
+                end,
+                destination: link.destination.clone(),
+            });
+        }
+    }
+
+    fn width(&self) -> usize {
+        text_layout::cell_width_from(&self.text, 0)
+    }
+
+    fn trim_end(&mut self) {
+        while self.text.ends_with(' ') {
+            self.text.pop();
+            self.len = self.len.saturating_sub(1);
+        }
+        self.spans.retain(|span| span.start < self.len);
+        for span in &mut self.spans {
+            span.end = span.end.min(self.len);
+        }
+        self.links.retain(|link| link.start < self.len);
+        for link in &mut self.links {
+            link.end = link.end.min(self.len);
+        }
+    }
+
+    fn finish(mut self) -> AnnotatedLine {
+        self.trim_end();
+        AnnotatedLine {
+            text: self.text,
+            chars: Vec::new(),
+            scalar_len: self.len,
+            spans: self.spans,
+            links: self.links,
+        }
+    }
+}
+
+fn wrap_document(raw: RawDocument, width: usize) -> Result<MarkdownDocument, RenderError> {
+    if raw.text.is_empty() {
+        return Ok(MarkdownDocument {
+            text: String::new(),
+            spans: Vec::new(),
+            links: Vec::new(),
+        });
+    }
+    let mut lines = Vec::new();
+    let mut line_starts = Vec::new();
+    let mut global_start = 0usize;
+    for text in raw.text.split('\n') {
+        let len = text.chars().count();
+        line_starts.push(global_start);
+        lines.push(AnnotatedLine {
+            text: text.to_string(),
+            chars: Vec::new(),
+            scalar_len: len,
+            spans: Vec::new(),
+            links: Vec::new(),
+        });
+        global_start = global_start.saturating_add(len).saturating_add(1);
+    }
+    distribute_spans(&mut lines, &line_starts, &raw.spans);
+    distribute_links(&mut lines, &line_starts, &raw.hyperlinks);
+    let lines = lines
+        .into_iter()
+        .flat_map(|line| wrap_line(line, width))
+        .collect::<Vec<_>>();
+
+    let mut text = String::with_capacity(raw.text.len());
+    let mut spans = Vec::with_capacity(lines.len());
+    let mut links = Vec::with_capacity(lines.len());
+    for line in lines {
+        if text
+            .len()
+            .checked_add(line.text.len().saturating_add(1))
+            .is_none_or(|length| length > MAX_OUTPUT_BYTES)
+        {
+            return Err(RenderError::OutputExpansion);
+        }
+        text.push_str(&line.text);
+        text.push('\n');
+        spans.push(line.spans);
+        links.push(line.links);
+    }
+    while text.ends_with("\n\n") {
+        text.pop();
+        spans.pop();
+        links.pop();
+    }
+    Ok(MarkdownDocument { text, spans, links })
+}
+
+fn distribute_spans(lines: &mut [AnnotatedLine], line_starts: &[usize], spans: &[GlobalSpan]) {
+    for span in spans {
+        let mut row = line_for_offset(line_starts, span.start);
+        while let Some(line) = lines.get_mut(row) {
+            let line_start = line_starts[row];
+            let line_end = line_start.saturating_add(line.len());
+            let start = span.start.max(line_start);
+            let end = span.end.min(line_end);
+            if start < end {
+                line.spans.push(StyledSpan {
+                    start: start - line_start,
+                    end: end - line_start,
+                    style: span.style,
+                });
+            }
+            if span.end <= line_end.saturating_add(1) {
+                break;
+            }
+            row += 1;
+        }
+    }
+}
+
+fn distribute_links(lines: &mut [AnnotatedLine], line_starts: &[usize], links: &[GlobalHyperlink]) {
+    for link in links {
+        let mut row = line_for_offset(line_starts, link.start);
+        while let Some(line) = lines.get_mut(row) {
+            let line_start = line_starts[row];
+            let line_end = line_start.saturating_add(line.len());
+            let start = link.start.max(line_start);
+            let end = link.end.min(line_end);
+            if start < end {
+                line.links.push(HyperlinkSpan {
+                    start: start - line_start,
+                    end: end - line_start,
+                    destination: Arc::clone(&link.destination),
+                });
+            }
+            if link.end <= line_end.saturating_add(1) {
+                break;
+            }
+            row += 1;
+        }
+    }
+}
+
+fn line_for_offset(line_starts: &[usize], offset: usize) -> usize {
+    line_starts
+        .partition_point(|line_start| *line_start <= offset)
+        .saturating_sub(1)
+}
+
+fn wrap_line(line: AnnotatedLine, width: usize) -> Vec<AnnotatedLine> {
+    if line.text.is_empty() {
+        return vec![AnnotatedLine::empty()];
+    }
+    if text_layout::cell_width_from(&line.text, 0) <= width {
+        return vec![line];
+    }
+    let mut line = line;
+    line.chars = line.text.chars().collect();
+    if line
+        .chars
+        .first()
+        .is_some_and(|ch| matches!(ch, '┌' | '╞' | '└'))
+        || (line.chars.first() == Some(&'│') && line.chars.iter().skip(1).any(|ch| *ch == '│'))
     {
-        return vec![line.to_string()];
+        return vec![line];
+    }
+    let quote_end = quote_prefix_len(&line.chars);
+    let rest = &line.chars[quote_end..];
+    if rest
+        .first()
+        .is_some_and(|ch| matches!(ch, '┌' | '│' | '╞' | '└'))
+        || rest.iter().all(|ch| matches!(ch, '─' | '═'))
+    {
+        return vec![line];
     }
 
-    if let Some(code) = rest.strip_prefix("    ") {
-        let prefix = format!("{quote}    ");
-        return wrap_prefixed(code, &prefix, &prefix, width, true);
-    }
-    if rest.starts_with("```") {
-        return hard_wrap_line(line, width);
+    if rest.starts_with(&[' ', ' '])
+        && line
+            .spans
+            .iter()
+            .any(|span| span.style == SpanStyle::PreviewCode && span.end > quote_end + 2)
+    {
+        return wrap_prefixed(
+            &line,
+            quote_end + 2,
+            quote_end + 2,
+            quote_end,
+            2,
+            width,
+            true,
+        );
     }
 
-    let indent = rest
-        .len()
-        .saturating_sub(rest.trim_start_matches(' ').len());
+    let indent = rest.iter().take_while(|ch| **ch == ' ').count();
     let after_indent = &rest[indent..];
     if let Some(marker_len) = list_marker_len(after_indent) {
-        let marker = &after_indent[..marker_len];
-        let first = format!("{quote}{}{marker}", " ".repeat(indent));
-        let continuation = format!("{quote}{}", " ".repeat(indent + marker_len));
+        let content_start = quote_end + indent + marker_len;
         return wrap_prefixed(
-            &after_indent[marker_len..],
-            &first,
-            &continuation,
+            &line,
+            content_start,
+            content_start,
+            quote_end,
+            indent + marker_len,
             width,
             false,
         );
     }
 
-    let hashes = after_indent.chars().take_while(|ch| *ch == '#').count();
-    if (1..=6).contains(&hashes) && after_indent.as_bytes().get(hashes) == Some(&b' ') {
-        let marker_len = hashes + 1;
-        let first = format!("{quote}{}", &after_indent[..marker_len]);
-        let continuation = format!("{quote}{}", " ".repeat(marker_len));
-        return wrap_prefixed(
-            &after_indent[marker_len..],
-            &first,
-            &continuation,
-            width,
-            false,
-        );
-    }
-
-    wrap_prefixed(rest, &quote, &quote, width, false)
+    wrap_prefixed(&line, quote_end, quote_end, quote_end, 0, width, false)
 }
 
-fn quote_prefix(mut line: &str) -> (String, &str) {
-    let mut prefix = String::new();
-    while let Some(rest) = line.strip_prefix("> ") {
-        prefix.push_str("> ");
-        line = rest;
+fn quote_prefix_len(chars: &[char]) -> usize {
+    let mut end = 0;
+    while chars.get(end..end + 2) == Some(&['│', ' ']) {
+        end += 2;
     }
-    (prefix, line)
+    end
 }
 
-fn list_marker_len(text: &str) -> Option<usize> {
-    if text.starts_with("- ") {
+fn list_marker_len(chars: &[char]) -> Option<usize> {
+    if chars.starts_with(&['•', ' ']) {
         return Some(2);
     }
-    let digits = text.bytes().take_while(u8::is_ascii_digit).count();
-    (digits > 0
-        && text.as_bytes().get(digits) == Some(&b'.')
-        && text.as_bytes().get(digits + 1) == Some(&b' '))
-    .then_some(digits + 2)
+    let digits = chars.iter().take_while(|ch| ch.is_ascii_digit()).count();
+    (digits > 0 && chars.get(digits) == Some(&'.') && chars.get(digits + 1) == Some(&' '))
+        .then_some(digits + 2)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn wrap_prefixed(
-    content: &str,
-    first_prefix: &str,
-    continuation_prefix: &str,
+    source: &AnnotatedLine,
+    content_start: usize,
+    first_prefix_end: usize,
+    quote_end: usize,
+    continuation_spaces: usize,
     width: usize,
     preserve_spacing: bool,
-) -> Vec<String> {
-    let first_prefix = fitting_prefix(first_prefix, width);
-    let continuation_prefix = fitting_prefix(continuation_prefix, width);
-    let first_width = text_layout::cell_width_from(&first_prefix, 0);
-    let continuation_width = text_layout::cell_width_from(&continuation_prefix, 0);
-    let safe = if preserve_spacing {
-        text_layout::expand_tabs(content, false, first_width)
+) -> Vec<AnnotatedLine> {
+    let first = prefixed_line(source, first_prefix_end, 0, width);
+    let continuation = || prefixed_line(source, quote_end, continuation_spaces, width);
+    if preserve_spacing {
+        wrap_preserved(source, content_start, width, first, continuation)
     } else {
-        text_layout::terminal_safe_text(content)
-    };
-    let words: Vec<&str> = if preserve_spacing {
-        vec![safe.as_str()]
-    } else {
-        safe.split_whitespace().collect()
-    };
+        wrap_words(source, content_start, width, first, continuation)
+    }
+}
+
+fn prefixed_line(
+    source: &AnnotatedLine,
+    source_prefix_end: usize,
+    extra_spaces: usize,
+    width: usize,
+) -> LineBuilder {
+    let prefix = source.slice_text(0, source_prefix_end);
+    let prefix_width = text_layout::cell_width_from(&prefix, 0).saturating_add(extra_spaces);
+    let mut line = LineBuilder::new();
+    if prefix_width < width {
+        line.push_slice(source, 0, source_prefix_end);
+        line.push_plain(&" ".repeat(extra_spaces));
+    }
+    line
+}
+
+fn wrap_words(
+    source: &AnnotatedLine,
+    content_start: usize,
+    width: usize,
+    mut current: LineBuilder,
+    continuation: impl Fn() -> LineBuilder,
+) -> Vec<AnnotatedLine> {
+    let words = word_ranges(&source.chars, content_start);
     if words.is_empty() {
-        return vec![first_prefix.trim_end().to_string()];
+        return vec![current.finish()];
     }
-
     let mut output = Vec::new();
-    let mut prefix = first_prefix;
-    let mut prefix_width = first_width;
-    let mut line = String::new();
-    for word in words {
-        let separator = usize::from(!line.is_empty() && !preserve_spacing);
-        let available = width.saturating_sub(prefix_width);
-        let needed = text_layout::cell_width_from(word, 0).saturating_add(separator);
-        if !line.is_empty()
-            && needed > available.saturating_sub(text_layout::cell_width_from(&line, 0))
-        {
-            output.push(format!("{prefix}{line}"));
-            prefix = continuation_prefix.clone();
-            prefix_width = continuation_width;
-            line.clear();
+    let mut has_content = false;
+    for (word_start, word_end) in words {
+        let word = source.slice_text(word_start, word_end);
+        let separator = usize::from(has_content);
+        let needed = text_layout::cell_width_from(&word, 0).saturating_add(separator);
+        if has_content && needed > width.saturating_sub(current.width()) {
+            output.push(current.finish());
+            current = continuation();
+            has_content = false;
         }
-        if !line.is_empty() && !preserve_spacing {
-            line.push(' ');
+        if has_content {
+            current.push_plain(" ");
         }
-        let mut remaining = word;
-        loop {
-            let available = width
-                .saturating_sub(prefix_width)
-                .saturating_sub(text_layout::cell_width_from(&line, 0));
-            if text_layout::cell_width_from(remaining, 0) <= available {
-                line.push_str(remaining);
-                break;
+        let mut start = word_start;
+        while start < word_end {
+            let available = width.saturating_sub(current.width());
+            let end = fitting_end(source, start, word_end, available);
+            if end == start {
+                let consumed = next_grapheme_end(source, start, word_end);
+                current.push_replacement(source, start, "…");
+                start = consumed;
+            } else {
+                current.push_slice(source, start, end);
+                start = end;
             }
-            let (chunk, rest) = split_cells(remaining, available.max(1));
-            line.push_str(&chunk);
-            output.push(format!("{prefix}{line}"));
-            prefix = continuation_prefix.clone();
-            prefix_width = continuation_width;
-            line.clear();
-            remaining = rest;
-            if remaining.is_empty() {
-                break;
+            has_content = true;
+            if start < word_end {
+                output.push(current.finish());
+                current = continuation();
+                has_content = false;
             }
         }
     }
-    if !line.is_empty() {
-        output.push(format!("{prefix}{line}"));
-    }
+    output.push(current.finish());
     output
 }
 
-fn fitting_prefix(prefix: &str, width: usize) -> String {
-    if text_layout::cell_width_from(prefix, 0) < width {
-        prefix.to_string()
-    } else {
-        String::new()
-    }
-}
-
-fn hard_wrap_line(line: &str, width: usize) -> Vec<String> {
-    let safe = text_layout::terminal_safe_text(line);
+fn wrap_preserved(
+    source: &AnnotatedLine,
+    content_start: usize,
+    width: usize,
+    mut current: LineBuilder,
+    continuation: impl Fn() -> LineBuilder,
+) -> Vec<AnnotatedLine> {
     let mut output = Vec::new();
-    let mut remaining = safe.as_str();
-    while !remaining.is_empty() {
-        let (chunk, rest) = split_cells(remaining, width.max(1));
-        output.push(chunk);
-        remaining = rest;
+    let mut start = content_start;
+    while start < source.len() {
+        let available = width.saturating_sub(current.width());
+        let end = fitting_end(source, start, source.len(), available);
+        if end == start {
+            let consumed = next_grapheme_end(source, start, source.len());
+            current.push_replacement(source, start, "…");
+            start = consumed;
+        } else {
+            current.push_slice(source, start, end);
+            start = end;
+        }
+        if start < source.len() {
+            output.push(current.finish());
+            current = continuation();
+        }
     }
+    output.push(current.finish());
     output
 }
 
-fn split_cells(text: &str, max_cells: usize) -> (String, &str) {
-    use unicode_segmentation::UnicodeSegmentation;
+fn word_ranges(chars: &[char], start: usize) -> Vec<(usize, usize)> {
+    let mut words = Vec::new();
+    let mut word_start = None;
+    for (index, ch) in chars.iter().enumerate().skip(start) {
+        if ch.is_whitespace() {
+            if let Some(start) = word_start.take() {
+                words.push((start, index));
+            }
+        } else if word_start.is_none() {
+            word_start = Some(index);
+        }
+    }
+    if let Some(start) = word_start {
+        words.push((start, chars.len()));
+    }
+    words
+}
 
-    let mut bytes = 0;
+fn fitting_end(source: &AnnotatedLine, start: usize, end: usize, max_cells: usize) -> usize {
+    if max_cells == 0 {
+        return start;
+    }
+    let text = source.slice_text(start, end);
     let mut cells = 0;
+    let mut scalars = 0;
     for grapheme in text.graphemes(true) {
-        let width = text_layout::cell_width_from(grapheme, cells);
-        if cells.saturating_add(width) > max_cells {
+        let grapheme_width = text_layout::cell_width_from(grapheme, cells);
+        if cells.saturating_add(grapheme_width) > max_cells {
             break;
         }
-        cells = cells.saturating_add(width);
-        bytes += grapheme.len();
+        cells = cells.saturating_add(grapheme_width);
+        scalars += grapheme.chars().count();
     }
-    if bytes == 0 {
-        let first = text.graphemes(true).next().unwrap_or("");
-        return ("…".to_string(), &text[first.len()..]);
-    }
-    (text[..bytes].to_string(), &text[bytes..])
+    start + scalars
+}
+
+fn next_grapheme_end(source: &AnnotatedLine, start: usize, end: usize) -> usize {
+    let text = source.slice_text(start, end);
+    start
+        + text
+            .graphemes(true)
+            .next()
+            .map(str::chars)
+            .map(Iterator::count)
+            .unwrap_or(0)
 }
 
 #[cfg(test)]

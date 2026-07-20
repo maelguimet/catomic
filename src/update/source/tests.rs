@@ -65,7 +65,9 @@ fn git(root: &Path, args: &[&str]) {
 #[test]
 fn discovery_detects_clean_and_dirty_official_source_checkouts() {
     let root = fixture();
+    git(&root, &["branch", "-m", "main"]);
     let clean = discover_at(&root).unwrap();
+    assert_eq!(clean.branch, "main");
     assert!(!clean.dirty);
 
     fs::write(root.join("local-notes"), b"preserve me").unwrap();

@@ -218,7 +218,7 @@ pub(super) fn update_help() -> String {
             "The default command prints its trusted source and asks before network or\n",
             "install actions. --check may contact the official source but does not write.\n",
             "--check cannot be combined with --yes or --backup. Configuration is never\n",
-            "rewritten; successful installs retain a rollback binary and print its path.\n\n",
+            "rewritten; managed and retained-checkout installs retain a rollback binary.\n\n",
             "Full backup, install-method, rollback, and exit-code reference:\n",
             "  https://github.com/maelguimet/catomic/blob/master/docs/user-guide.md#updating-backup-and-rollback\n",
         ),

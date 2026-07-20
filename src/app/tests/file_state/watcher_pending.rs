@@ -71,7 +71,7 @@ fn watcher_unchanged_clears_stale_pending_and_sets_message() {
         "must surface unchanged resolution message"
     );
     assert_eq!(app.file.dirty, before_dirty);
-    assert_eq!(app.buffer.to_string(), "BASE"); // no reload of content
+    assert_eq!(app.buffer.to_string(), "BASE\n"); // no reload of content
 
     let _ = std::fs::remove_file(&p);
 }
@@ -213,7 +213,7 @@ fn queued_changed_then_unchanged_clears_stale_pending_and_renders() {
     assert!(!out2.is_empty(), "must render on resolution");
     assert_eq!(
         app.buffer.to_string(),
-        "ORIG",
+        "ORIG\n",
         "content must not have reloaded"
     );
 

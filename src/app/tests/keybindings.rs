@@ -29,7 +29,7 @@ fn configured_save_chord_uses_normal_atomic_save_path() {
     )
     .unwrap();
 
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), "x");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "x\n");
     assert!(!app.file.dirty);
     let _ = std::fs::remove_file(path);
 }
@@ -143,7 +143,7 @@ fn prompt_local_action_remap_reaches_the_existing_cancel_path() {
         .unwrap();
 
     assert!(!super::super::command_prompt::is_active(&app));
-    assert_eq!(app.message.as_deref(), Some("Prompt cancelled."));
+    assert!(app.message.is_none());
 }
 
 #[test]

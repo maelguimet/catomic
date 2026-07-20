@@ -7,11 +7,12 @@
 
 use std::io;
 use std::mem;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::buffer::Buffer;
 #[cfg(test)]
 use crate::config::big_files::BigFileConfig;
+use crate::file::identity::BufferFileIdentity;
 use crate::file::watcher::FileWatcher;
 
 use super::{
@@ -109,6 +110,13 @@ impl App {
         let first_path = initial_paths.first().map(String::as_str);
         let mut app = Self::new_with_config(first_path, config.clone())?;
         for path in initial_paths.iter().skip(1) {
+            let identity = BufferFileIdentity::from_path(Path::new(path))?;
+            if app.contains_buffer_identity(&identity)? {
+                continue;
+            }
+            let path = identity.open_path().to_str().ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidData, "file path is not valid UTF-8")
+            })?;
             let extra = Self::new_with_config(Some(path), config.clone())?;
             app.inactive_buffers.push_back(BufferSlot::from_app(extra));
         }
@@ -129,6 +137,7 @@ impl App {
     }
 
     pub(crate) fn switch_buffer(&mut self, direction: BufferDirection) -> bool {
+        selection::end_cut_line_chain(self);
         if self.inactive_buffers.is_empty() {
             return false;
         }
@@ -180,27 +189,17 @@ impl App {
     }
 
     pub(crate) fn open_file_buffer(&mut self, path: &Path) -> io::Result<bool> {
-        let target = absolute_path(path)?;
-        if self
-            .file
-            .path
-            .as_deref()
-            .is_some_and(|path| paths_match(path, &target))
-        {
+        let target = BufferFileIdentity::from_path(path)?;
+        if self.active_buffer_matches_identity(&target)? {
             return Ok(false);
         }
-        if let Some(position) = self.inactive_buffers.iter().position(|slot| {
-            slot.file
-                .path
-                .as_deref()
-                .is_some_and(|path| paths_match(path, &target))
-        }) {
+        if let Some(position) = self.inactive_buffer_position_for_identity(&target)? {
             for _ in 0..=position {
                 self.switch_buffer(BufferDirection::Next);
             }
             return Ok(true);
         }
-        let path = target.to_str().ok_or_else(|| {
+        let path = target.open_path().to_str().ok_or_else(|| {
             io::Error::new(io::ErrorKind::InvalidData, "file path is not valid UTF-8")
         })?;
         let opened = Self::new_with_config(Some(path), StartupConfig::for_new_buffer(self))?;
@@ -210,6 +209,22 @@ impl App {
         debug_assert!(switched, "new buffer must be switchable");
         hooks::trigger_open(self);
         Ok(true)
+    }
+
+    /// Save and Save As use the same live comparison as open. This catches two
+    /// previously distinct missing paths that later converge through a symlink
+    /// or filesystem replacement and blocks watcher-mediated alias overwrites.
+    pub(crate) fn another_buffer_represents_path(&self, path: &Path) -> io::Result<bool> {
+        let target = BufferFileIdentity::from_path(path)?;
+        for slot in &self.inactive_buffers {
+            let Some(path) = slot.file.path.as_deref() else {
+                continue;
+            };
+            if BufferFileIdentity::from_path(path)?.matches(&target) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     pub(crate) fn replace_active_file_buffer(&mut self, path: &Path) -> io::Result<()> {
@@ -222,18 +237,38 @@ impl App {
         hooks::trigger_open(self);
         Ok(())
     }
-}
 
-fn absolute_path(path: &Path) -> io::Result<PathBuf> {
-    if path.is_absolute() {
-        Ok(path.to_path_buf())
-    } else {
-        Ok(std::env::current_dir()?.join(path))
+    #[cfg(test)]
+    fn contains_buffer_identity(&self, target: &BufferFileIdentity) -> io::Result<bool> {
+        if self.active_buffer_matches_identity(target)? {
+            return Ok(true);
+        }
+        Ok(self
+            .inactive_buffer_position_for_identity(target)?
+            .is_some())
     }
-}
 
-fn paths_match(left: &Path, absolute_right: &Path) -> bool {
-    absolute_path(left).is_ok_and(|left| left == absolute_right)
+    fn active_buffer_matches_identity(&self, target: &BufferFileIdentity) -> io::Result<bool> {
+        let Some(path) = self.file.path.as_deref() else {
+            return Ok(false);
+        };
+        Ok(BufferFileIdentity::from_path(path)?.matches(target))
+    }
+
+    fn inactive_buffer_position_for_identity(
+        &self,
+        target: &BufferFileIdentity,
+    ) -> io::Result<Option<usize>> {
+        for (position, slot) in self.inactive_buffers.iter().enumerate() {
+            let Some(path) = slot.file.path.as_deref() else {
+                continue;
+            };
+            if BufferFileIdentity::from_path(path)?.matches(target) {
+                return Ok(Some(position));
+            }
+        }
+        Ok(None)
+    }
 }
 
 #[cfg(test)]
@@ -256,6 +291,19 @@ mod tests {
             std::process::id()
         ));
         fs::write(&path, text).unwrap();
+        path
+    }
+
+    fn temp_directory(label: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "catomic_buffers_{label}_{}_{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path).unwrap();
         path
     }
 
@@ -498,6 +546,197 @@ mod tests {
 
         fs::remove_file(first).unwrap();
         fs::remove_file(second).unwrap();
+    }
+
+    #[test]
+    fn relative_dot_and_absolute_spellings_reuse_the_first_buffer() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let file_name = format!(
+            "catomic_buffers_relative_{}_{}.txt",
+            std::process::id(),
+            nonce
+        );
+        let relative = PathBuf::from(&file_name);
+        let dotted = PathBuf::from(".").join(&file_name);
+        let absolute = std::env::current_dir().unwrap().join(&file_name);
+        fs::write(&relative, "alpha").unwrap();
+        let mut app = App::new(relative.to_str()).unwrap();
+
+        assert!(!app.open_file_buffer(&dotted).unwrap());
+        assert!(!app.open_file_buffer(&absolute).unwrap());
+        assert_eq!(app.buffer_count(), 1);
+        assert_eq!(app.file.path.as_deref(), Some(relative.as_path()));
+
+        fs::remove_file(relative).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_open_reuses_the_referent_buffer_and_keeps_first_spelling() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_directory("open_symlink");
+        let target = root.join("target.txt");
+        let link = root.join("link.txt");
+        fs::write(&target, "alpha").unwrap();
+        symlink(&target, &link).unwrap();
+        let mut app = App::new(link.to_str()).unwrap();
+
+        assert!(!app.open_file_buffer(&target).unwrap());
+        assert_eq!(app.buffer_count(), 1);
+        assert_eq!(app.file.path.as_deref(), Some(link.as_path()));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn hard_link_open_reuses_one_buffer_identity() {
+        let root = temp_directory("open_hard_link");
+        let first = root.join("first.txt");
+        let second = root.join("second.txt");
+        fs::write(&first, "alpha").unwrap();
+        fs::hard_link(&first, &second).unwrap();
+        let mut app = App::new(first.to_str()).unwrap();
+
+        assert!(!app.open_file_buffer(&second).unwrap());
+        assert_eq!(app.buffer_count(), 1);
+        assert_eq!(app.file.path.as_deref(), Some(first.as_path()));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn distinct_missing_paths_remain_distinct_buffers() {
+        let root = temp_directory("missing_distinct");
+        let first = root.join("first.txt");
+        let second = root.join("second.txt");
+        let first_alias = root.join(".").join("first.txt");
+        let mut app = App::new(first.to_str()).unwrap();
+
+        assert!(!app.open_file_buffer(&first_alias).unwrap());
+        assert!(app.open_file_buffer(&second).unwrap());
+        assert_eq!(app.buffer_count(), 2);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn alias_open_switches_synchronously_without_changing_ring_order() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_directory("alias_ring");
+        let first = root.join("first.txt");
+        let first_link = root.join("first-link.txt");
+        let second = root.join("second.txt");
+        let third = root.join("third.txt");
+        fs::write(&first, "alpha").unwrap();
+        fs::write(&second, "beta").unwrap();
+        fs::write(&third, "gamma").unwrap();
+        symlink(&first, &first_link).unwrap();
+        let mut app = App::new(first.to_str()).unwrap();
+        app.buffer.insert_char('!');
+        app.file.dirty = true;
+        app.open_file_buffer(&second).unwrap();
+        app.open_file_buffer(&third).unwrap();
+
+        assert!(app.open_file_buffer(&first_link).unwrap());
+        assert_eq!(app.buffer_count(), 3);
+        assert_eq!(app.buffer.to_string(), "!alpha");
+        assert!(app.file.dirty);
+
+        assert!(app.switch_buffer(BufferDirection::Next));
+        assert_eq!(app.buffer.to_string(), "beta");
+        assert!(app.switch_buffer(BufferDirection::Next));
+        assert_eq!(app.buffer.to_string(), "gamma");
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_blocks_dirty_paths_that_converge_on_one_file() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_directory("save_converged");
+        let first = root.join("first.txt");
+        let second = root.join("second.txt");
+        fs::write(&first, "alpha").unwrap();
+        fs::write(&second, "beta").unwrap();
+        let mut app = App::new(first.to_str()).unwrap();
+        app.open_file_buffer(&second).unwrap();
+        fs::remove_file(&first).unwrap();
+        symlink(&second, &first).unwrap();
+        app.buffer.insert_char('!');
+        app.file.dirty = true;
+        let mut out = Vec::new();
+
+        save::handle_save(&mut app, &mut out).unwrap();
+
+        assert!(app.file.dirty);
+        assert_eq!(fs::read_to_string(&second).unwrap(), "beta");
+        assert!(app
+            .message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("also open in another buffer"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn save_as_refuses_another_open_buffer_even_when_repeated() {
+        let first = temp_file("save_as_first", "alpha");
+        let second = temp_file("save_as_second", "beta");
+        let mut app = App::new(first.to_str()).unwrap();
+        app.open_file_buffer(&second).unwrap();
+        app.switch_buffer(BufferDirection::Previous);
+        app.buffer.insert_char('!');
+        app.file.dirty = true;
+        let mut out = Vec::new();
+
+        save::handle_save_as(&mut app, &mut out, second.to_str().unwrap()).unwrap();
+        save::handle_save_as(&mut app, &mut out, second.to_str().unwrap()).unwrap();
+
+        assert_eq!(app.file.path.as_deref(), Some(first.as_path()));
+        assert!(app.file.dirty);
+        assert_eq!(fs::read_to_string(&second).unwrap(), "beta");
+        assert!(app
+            .message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("already open in another buffer"));
+
+        fs::remove_file(first).unwrap();
+        fs::remove_file(second).unwrap();
+    }
+
+    #[test]
+    fn successful_save_as_rebinds_the_active_buffer_identity() {
+        let root = temp_directory("save_as_identity");
+        let original = root.join("original.txt");
+        let target = root.join("target.txt");
+        let target_alias = root.join(".").join("target.txt");
+        fs::write(&original, "alpha").unwrap();
+        let mut app = App::new(original.to_str()).unwrap();
+        app.buffer.insert_char('!');
+        app.file.dirty = true;
+        let mut out = Vec::new();
+
+        save::handle_save_as(&mut app, &mut out, target.to_str().unwrap()).unwrap();
+
+        assert_eq!(app.file.path.as_deref(), Some(target.as_path()));
+        assert!(!app.file.dirty);
+        assert!(!app.open_file_buffer(&target_alias).unwrap());
+        assert_eq!(app.buffer_count(), 1);
+        assert!(app.open_file_buffer(&original).unwrap());
+        assert_eq!(app.buffer_count(), 2);
+
+        fs::remove_dir_all(root).unwrap();
     }
 }
 

@@ -146,11 +146,7 @@ fn visible_highlight(
     };
     let start = range_start.max(start_col);
     let end = range_end.min(visible_end);
-    if start < end {
-        Some((start - start_col, end - start_col))
-    } else {
-        None
-    }
+    (start < end).then_some((start - start_col, end - start_col))
 }
 
 fn segment_boundaries(

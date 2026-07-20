@@ -113,9 +113,10 @@ pub(crate) fn source_is_displayed(app: &super::App) -> bool {
 pub(crate) fn display_syntax(app: &super::App) -> SyntaxKind {
     if super::llm_preview::is_viewing(app) {
         SyntaxKind::Diff
+    } else if super::help::is_viewing(app) {
+        SyntaxKind::MarkdownPreview
     } else if super::mobile::is_viewing(app)
         || super::autocomplete::is_viewing(app)
-        || super::help::is_viewing(app)
         || super::recovery::is_viewing(app)
         || super::external_command::is_viewing(app)
         || super::llm_preview::is_viewing(app)

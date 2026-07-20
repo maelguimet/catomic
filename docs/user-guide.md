@@ -245,9 +245,9 @@ transient messages. Long status and prompt text is clipped at the terminal edge
 without splitting a Unicode grapheme or allowing control characters to reach
 the terminal.
 
-Press `Ctrl+H` or `F1` at any time to open the built-in shortcut reference. It
-is read-only: use the arrow keys, `Home`, `End`, `PageUp`, and `PageDown` to
-navigate, then press `Escape` or `Ctrl+H` to return.
+Press `Ctrl+H` or `F1` at any time to open the built-in task reference. It is
+rendered from Markdown and read-only: use the configured Find shortcut to
+search it, the arrow and page keys to navigate, and `Escape` to return.
 
 ### Prompts and read-only views
 
@@ -1545,8 +1545,10 @@ names, both input chords, the scope, and the normalized collision. `Ctrl+Space`
 and terminals that report it as Ctrl+Null normalize to the same chord, as do
 `Shift+Tab` and BackTab, modifier aliases, case, and `esc`/`escape`.
 
-The built-in help is generated from this registry. This guide's inventory is
-checked against the same registry in tests:
+This guide preserves the complete default registry for configuration lookup.
+The built-in help uses the same registry and the loaded keybinding map, but
+shows only a curated set of high-value workflows. This inventory is checked
+against the registry in tests:
 
 <!-- action-registry-start -->
 
@@ -1682,9 +1684,9 @@ mouse-scroll-down | editor,preview,picker,help | mouse-wheel-down
 | Tools | Select model/backend for this session | `F10` |
 | Large files | Previous / next page | `Ctrl+PageUp` / `Ctrl+PageDown` |
 
-This table and the in-editor `Ctrl+H`/`F1` quick reference show built-in
-defaults. `[keybindings]` overrides apply in normal editing mode, but neither
-reference rewrites its labels to show the effective configured chords.
+This table shows built-in defaults. The in-editor `Ctrl+H`/`F1` reference is a
+shorter task guide whose displayed chords reflect the effective configured
+bindings; unbound actions are described without advertising a dead shortcut.
 On Android/Termux, tap **Menu** in the action row instead; its scrollable palette
 exposes essential actions normally reached through modifiers, function keys, or
 page keys, including the inline clanker and model/provider selector.

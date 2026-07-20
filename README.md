@@ -82,9 +82,8 @@ is not required. A missing path opens as an empty named buffer and is never
 created until explicitly saved.
 
 Run `catomic --help` for command-line behavior and examples. Inside the editor,
-press `Ctrl+H` or `F1` for the built-in default-key and prompt-command quick
-reference; it identifies how configured keybinding overrides relate to the
-displayed defaults.
+press `Ctrl+H` or `F1` for a concise, task-oriented reference. Shortcuts in that
+page reflect the effective keybindings loaded for the current session.
 On Android/Termux, the automatic action row and its **Menu** palette expose the
 same essential workflow without a hardware keyboard. See the
 [mobile guide](docs/mobile.md) for the supported environment and storage limits.

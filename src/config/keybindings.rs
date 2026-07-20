@@ -4,7 +4,7 @@
 //! Invariants: one normalized chord maps to one action per scope; global actions win.
 //! Phase: issue #62 complete shortcut customization.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io;
 
 use crossterm::event::KeyEvent;
@@ -52,6 +52,23 @@ impl KeyBindings {
             .get(&(Scope::Global, gesture))
             .or_else(|| self.mouse.get(&(scope, gesture)))
             .copied()
+    }
+
+    pub(crate) fn keyboard_chords(&self, action: Action) -> Vec<String> {
+        self.keys
+            .iter()
+            .filter(|(_, bound)| **bound == action)
+            .map(|((_, chord), _)| format_shortcut(ShortcutChord::Key(*chord)))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
+    pub(crate) fn matches_keyboard(&self, action: Action, key: KeyEvent) -> bool {
+        let chord = KeyChord::from_event(key);
+        self.keys
+            .iter()
+            .any(|((_, bound_chord), bound)| *bound == action && *bound_chord == chord)
     }
 }
 

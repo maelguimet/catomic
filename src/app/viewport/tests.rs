@@ -244,11 +244,18 @@ fn wheel_scrolls_help_without_moving_help_or_source_cursors() {
 
     handle_mouse_wheel(&mut app, &mut out, ScrollDirection::Down, 0).unwrap();
 
-    assert_eq!(app.screen.scroll_top, MOUSE_WHEEL_ROWS);
+    assert_ne!(
+        (app.screen.scroll_top, app.screen.wrap_col),
+        (0, 0),
+        "wheel scrolling advances the wrapped help viewport"
+    );
     assert_eq!(crate::app::view::display_buffer(&app).cursor(), help_cursor);
     assert_eq!(app.buffer.cursor(), source_cursor);
     assert_eq!(app.buffer.edit_history_position(), source_history);
-    assert_eq!(app.screen.wrap_col, 0, "help owns its temporary viewport");
+    assert_eq!(
+        app.screen.scroll_left, 0,
+        "wrapped help never scrolls horizontally"
+    );
 
     crate::app::help::handle_key(
         &mut app,

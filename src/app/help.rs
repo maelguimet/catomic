@@ -1,21 +1,33 @@
-//! Purpose: present the built-in key and command reference as read-only text.
-//! Owns: help view lifetime, navigation, and source viewport restoration.
+//! Purpose: present the built-in task reference as rendered, read-only Markdown.
+//! Owns: curated help content, local search, navigation, and source viewport restoration.
 //! Must not: mutate source/history, read configuration, spawn work, or access network.
 //! Invariants: Ctrl+H/F1 toggle the view; Escape closes it; all content is read-only.
 //! Phase: post-v0.1 core usability.
 
+use std::fmt::Write as _;
 use std::io::{self, Write};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::{Buffer, Cursor, PieceTable};
+use crate::config::actions::Action;
+use crate::config::keybindings::KeyBindings;
+use crate::editor::search::{self, SearchDirection, SearchMatch};
 use crate::help_catalog::{self, EditorAction};
 
 pub(crate) struct HelpView {
     buffer: PieceTable,
+    search: HelpSearch,
     source_scroll_top: usize,
     source_scroll_left: usize,
     source_wrap_col: usize,
+}
+
+#[derive(Default)]
+struct HelpSearch {
+    prompt: Option<String>,
+    origin: Option<Cursor>,
+    active_match: Option<SearchMatch>,
 }
 
 pub(crate) fn show(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
@@ -23,8 +35,15 @@ pub(crate) fn show(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
     let source_scroll_top = app.screen.scroll_top;
     let source_scroll_left = app.screen.scroll_left;
     let source_wrap_col = app.screen.wrap_col;
+    let markdown = help_markdown(&app.keybindings);
+    let rendered = crate::editor::markdown_preview::render_with_width(
+        &markdown,
+        super::view::content_width(app),
+    )
+    .map_err(|error| io::Error::other(error.to_string()))?;
     app.surfaces.help = Some(HelpView {
-        buffer: PieceTable::from_text(&help_text()),
+        buffer: PieceTable::from_text(&rendered),
+        search: HelpSearch::default(),
         source_scroll_top,
         source_scroll_left,
         source_wrap_col,
@@ -53,8 +72,15 @@ pub(crate) fn handle_key(
     if !is_viewing(app) || is_quit(key) {
         return Ok(false);
     }
+    if is_searching(app) {
+        return handle_search_key(app, out, key);
+    }
     if key.code == KeyCode::Esc {
         close_with_message(app, out)?;
+        return Ok(true);
+    }
+    if app.keybindings.matches_keyboard(Action::Search, key) {
+        open_search(app, out)?;
         return Ok(true);
     }
     match key.code {
@@ -93,6 +119,13 @@ pub(crate) fn display_buffer(app: &super::App) -> Option<&dyn Buffer> {
         .map(|view| &view.buffer as &dyn Buffer)
 }
 
+pub(crate) fn active_search_match(app: &super::App) -> Option<SearchMatch> {
+    app.surfaces
+        .help
+        .as_ref()
+        .and_then(|view| view.search.active_match)
+}
+
 fn close(app: &mut super::App) -> bool {
     let Some(view) = app.surfaces.help.take() else {
         return false;
@@ -109,7 +142,7 @@ pub(crate) fn close_for_transient(app: &mut super::App) -> bool {
 
 fn close_with_message(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     close(app);
-    app.message = Some("Help closed.".to_string());
+    app.message = None;
     app.reveal_cursor();
     app.render(out)
 }
@@ -186,94 +219,330 @@ fn is_quit(key: KeyEvent) -> bool {
     key.code == KeyCode::Char('q') && key.modifiers.contains(KeyModifiers::CONTROL)
 }
 
-fn help_text() -> String {
-    let mut text = crate::config::actions::help_text();
-    text.push_str(concat!(
-        "\nAndroid/Termux touch\n",
-        "  Tap Menu             Open every essential action.\n",
-        "  Tap                  Place the cursor at a grapheme boundary.\n",
-        "  Select start + tap   Select when finger drag is unavailable.\n",
-        "  Finger scroll        Scroll without moving the cursor or selection.\n",
-        "  Action row           Accept, cancel, navigate, save, copy, or undo.\n",
-    ));
-    text.push_str("\nPrompt commands (Ctrl+Shift+P or F2; no leading colon)\n");
-    for command in help_catalog::PROMPT_COMMANDS {
-        push_entry(&mut text, command.syntax, command.aliases, command.purpose);
+fn help_markdown(bindings: &KeyBindings) -> String {
+    let mut markdown = String::from("# Catomic help\n\n");
+    markdown.push_str("A compact reference for the workflows worth remembering. ");
+    let search_chords = display_chords(bindings, Action::Search);
+    if !search_chords.is_empty() {
+        let _ = write!(
+            markdown,
+            "Search this page with {}. ",
+            search_chords.join(" / ")
+        );
     }
-    text.push_str(concat!(
-        "\nUsing models - setup and examples\n",
-        "  Config: $XDG_CONFIG_HOME/catomic/config.toml when XDG_CONFIG_HOME is\n",
-        "    absolute; otherwise ~/.config/catomic/config.toml.\n",
-        "  Minimal OpenAI-compatible preset:\n",
-        "    [llm]\n",
-        "    default = \"local\"\n",
-        "    [[llm.backends]]\n",
-        "    name = \"local\"\n",
-        "    type = \"openai-compatible\"\n",
-        "    base_url = \"http://127.0.0.1:8080/v1\"\n",
-        "    model = \"local-model\"\n",
-        "    api_key_env = \"OPENAI_API_KEY\"\n",
-        "    timeout_secs = 120\n",
-        "  base_url must expose an OpenAI-compatible Chat Completions API.\n",
-        "  api_key_env names an environment variable, never the key value itself.\n",
-        "  Loopback HTTP is allowed; authenticated remote endpoints require HTTPS.\n",
-        "  Opening help reads no config or secret, builds no client, starts no\n",
-        "    command, probes no endpoint, and makes no network request.\n",
-        "  F10 or model opens the process-local preset/model selector without\n",
-        "    contacting a backend; optional model discovery requires its own Enter.\n",
-        "\nConcrete workflows (open the prompt with Ctrl+Shift+P or F2)\n",
-        "  Selection: select text, run meow explain this, review the send\n",
-        "    confirmation, then review the read-only answer or proposal.\n",
-        "  Current file: run bigmeow explain this file; no selection is needed.\n",
-        "  Repository: run project, then gitmeow INSTRUCTION or megameow\n",
-        "    INSTRUCTION. These require Project mode, a saved active file, and Git.\n",
-        "  Inline F3: place the cursor in a >>> catomic ... <<< instruction block;\n",
-        "    confirm the bounded request, then separately confirm any apply.\n",
-        "\nModel command context and workflow\n",
-        "  Selection = highlighted text in the active file being edited.\n",
-        "  Instruction block = >>> catomic ... <<< containing the cursor.\n",
-        "  Plain mode = default editing; Project mode = opt-in repository tools.\n",
-        "  Enter Project mode with the project command.\n",
-        "  Standard model commands send nothing until preset, adapter, destination,\n",
-        "    model, and exact context are confirmed.\n",
-        "  Enter confirms; Escape cancels.\n",
-        "  Edit proposals open read-only; a second Enter confirms apply.\n",
-        "  Model edits affect only the confirmed active file; they are not auto-saved.\n",
-        "  Prefix the instruction with explain for a read-only answer.\n",
-        "  autocomplete on is the only automatic-call exception: it first opens a\n",
-        "    read-only session confirmation with destination and bounded active-buffer\n",
-        "    context. No credential, command, client, or request starts before Enter.\n",
-        "  Confirmed suggestions are non-buffer ghost text; Tab accepts one undoable\n",
-        "    edit, Escape dismisses, and typing/navigation cancels stale work.\n",
-        "  Remote HTTP autocomplete additionally requires allow_remote = true.\n",
-        "  Typical errors: endpoint unavailable or incompatible; missing API-key\n",
-        "    environment variable; no selection/instruction block; context over\n",
-        "    64 KiB or 2,000 lines; or repository commands outside Project/Git.\n",
-        "\nMore help\n",
-        "  Configuration: $XDG_CONFIG_HOME/catomic/config.toml or\n",
-        "    ~/.config/catomic/config.toml\n",
-        "  User guide (configuration, terminal troubleshooting, and safety):\n",
-        "    https://github.com/maelguimet/catomic/blob/master/docs/user-guide.md\n",
-        "  Model setup, scopes, confirmations, and safety: user guide section\n",
-        "    Model-assisted commands.\n\n",
-        "Arrows, Home/End, and PageUp/PageDown navigate this read-only view.\n",
-        "Escape, Ctrl+H, or F1 closes it. Ctrl+Q keeps the guarded quit path.\n",
-    ));
-    text
+    markdown.push_str("Press `Esc` to close it.\n\n## Files and buffers\n\n");
+    push_file_actions(&mut markdown, bindings);
+    markdown.push_str("\n## Edit and navigate\n\n");
+    push_edit_actions(&mut markdown, bindings);
+    markdown.push_str("\n## Commands and views\n\n");
+    push_command_actions(&mut markdown, bindings);
+    push_external_change_help(&mut markdown);
+    push_model_help(&mut markdown, bindings);
+    markdown.push_str(
+        "Configuration, model setup, Project commands, mobile controls, and troubleshooting live in the [user guide](https://github.com/maelguimet/catomic/blob/master/docs/user-guide.md).\n",
+    );
+    markdown
 }
 
-fn push_entry(text: &mut String, label: &str, aliases: &[&str], purpose: &str) {
-    text.push_str("  ");
-    text.push_str(label);
-    text.push('\n');
-    if !aliases.is_empty() {
-        text.push_str("    Aliases: ");
-        text.push_str(&aliases.join(", "));
-        text.push('\n');
+fn push_file_actions(markdown: &mut String, bindings: &KeyBindings) {
+    push_action(
+        markdown,
+        bindings,
+        Action::Save,
+        "Save",
+        "Save the active buffer; a repeated save confirms only the same observed disk conflict.",
+    );
+    push_action(
+        markdown,
+        bindings,
+        Action::SaveAs,
+        "Save As",
+        "Choose a new path for the active buffer.",
+    );
+    push_action(
+        markdown,
+        bindings,
+        Action::Open,
+        "Open",
+        "Open a path in another buffer.",
+    );
+    push_action(
+        markdown,
+        bindings,
+        Action::New,
+        "New",
+        "Create an untitled buffer.",
+    );
+    push_action(
+        markdown,
+        bindings,
+        Action::Close,
+        "Close",
+        "Close the active clean buffer; use the `close!` command only to discard it.",
+    );
+    push_action(
+        markdown,
+        bindings,
+        Action::PreviousBuffer,
+        "Previous buffer",
+        "Switch without closing or saving the current buffer.",
+    );
+    push_action(
+        markdown,
+        bindings,
+        Action::NextBuffer,
+        "Next buffer",
+        "Switch without closing or saving the current buffer.",
+    );
+    push_action(
+        markdown,
+        bindings,
+        Action::Quit,
+        "Quit",
+        "Quit when all buffers are clean; a second request discards all dirty buffers.",
+    );
+    push_action(
+        markdown,
+        bindings,
+        Action::Interrupt,
+        "Interrupt",
+        "Exit immediately through terminal teardown without saving.",
+    );
+}
+
+fn push_edit_actions(markdown: &mut String, bindings: &KeyBindings) {
+    push_action(
+        markdown,
+        bindings,
+        Action::Undo,
+        "Undo",
+        "Undo the last edit transaction.",
+    );
+    push_action(
+        markdown,
+        bindings,
+        Action::Redo,
+        "Redo",
+        "Redo the next edit transaction.",
+    );
+    push_action(
+        markdown,
+        bindings,
+        Action::CutLine,
+        "Cut line",
+        "Cut the current line as one undoable edit.",
+    );
+    push_action(
+        markdown,
+        bindings,
+        Action::Search,
+        "Find",
+        "Search incrementally; `Enter` or `Down` moves forward and `Up` moves backward.",
+    );
+    push_action(
+        markdown,
+        bindings,
+        Action::Replace,
+        "Replace",
+        "Open the two-stage Replace Next prompt.",
+    );
+    push_action(
+        markdown,
+        bindings,
+        Action::GotoLine,
+        "Go to line",
+        "Jump to a 1-based line number.",
+    );
+}
+
+fn push_command_actions(markdown: &mut String, bindings: &KeyBindings) {
+    push_action(
+        markdown,
+        bindings,
+        Action::CommandPrompt,
+        "Command palette",
+        "Run commands such as `config`, `project`, `recover`, and `close!` without a leading colon.",
+    );
+    push_action(
+        markdown,
+        bindings,
+        Action::ToggleExternalDiff,
+        "External change marks",
+        "Toggle the latest external-reload markers for every buffer.",
+    );
+    push_action(
+        markdown,
+        bindings,
+        Action::MarkdownPreview,
+        "Markdown preview",
+        "Toggle the rendered read-only Markdown view for the current buffer.",
+    );
+}
+
+fn push_external_change_help(markdown: &mut String) {
+    markdown.push_str(concat!(
+        "\n## External changes and recovery\n\n",
+        "- Clean buffers reload automatically after an external change unless auto-reload is disabled.\n",
+        "- Dirty buffers are never replaced automatically. Use the reload action twice to accept the same observed disk revision.\n",
+        "- Saves are atomic. If the file changed on disk, the second save succeeds only while that observed state is unchanged.\n",
+        "- When crash recovery is enabled, run `recover` to preview a newer `.catnap`; applying it is explicit and undoable.\n",
+    ));
+}
+
+fn push_model_help(markdown: &mut String, bindings: &KeyBindings) {
+    markdown.push_str("\n## Models\n\n");
+    push_action(
+        markdown,
+        bindings,
+        Action::SelectModel,
+        "Select model",
+        "Choose the process-local preset without contacting a backend.",
+    );
+    markdown.push_str(
+        "- Model requests show the destination and bounded context before sending. Proposals are read-only until separately applied and are never auto-saved.\n\n",
+    );
+}
+
+fn push_action(
+    markdown: &mut String,
+    bindings: &KeyBindings,
+    action: Action,
+    label: &str,
+    purpose: &str,
+) {
+    let chords = display_chords(bindings, action);
+    if chords.is_empty() {
+        let _ = writeln!(markdown, "- **{label}** — {purpose}");
+    } else {
+        let _ = writeln!(
+            markdown,
+            "- **{label}** ({}) — {purpose}",
+            chords.join(" / ")
+        );
     }
-    text.push_str("    ");
-    text.push_str(purpose);
-    text.push('\n');
+}
+
+fn display_chords(bindings: &KeyBindings, action: Action) -> Vec<String> {
+    bindings
+        .keyboard_chords(action)
+        .iter()
+        .map(|chord| format!("`{}`", crate::config::actions::display_chord(chord)))
+        .collect()
+}
+
+fn is_searching(app: &super::App) -> bool {
+    app.surfaces
+        .help
+        .as_ref()
+        .is_some_and(|view| view.search.prompt.is_some())
+}
+
+fn open_search(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    let view = app.surfaces.help.as_mut().expect("help active");
+    view.search.prompt = Some(String::new());
+    view.search.origin = Some(view.buffer.cursor());
+    view.search.active_match = None;
+    app.message = Some("Find help: ".to_string());
+    app.render(out)
+}
+
+fn handle_search_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -> io::Result<bool> {
+    match key.code {
+        KeyCode::Esc => cancel_search(app),
+        KeyCode::Enter | KeyCode::Down => find_help_match(app, SearchDirection::Forward, false),
+        KeyCode::Up => find_help_match(app, SearchDirection::Backward, false),
+        KeyCode::Backspace => {
+            app.surfaces
+                .help
+                .as_mut()
+                .expect("help active")
+                .search
+                .prompt
+                .as_mut()
+                .expect("help search active")
+                .pop();
+            find_help_match(app, SearchDirection::Forward, true);
+        }
+        KeyCode::Char(ch)
+            if !key
+                .modifiers
+                .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+        {
+            let ch = if key.modifiers.contains(KeyModifiers::SHIFT) && ch.is_ascii_lowercase() {
+                ch.to_ascii_uppercase()
+            } else {
+                ch
+            };
+            if !ch.is_control() {
+                app.surfaces
+                    .help
+                    .as_mut()
+                    .expect("help active")
+                    .search
+                    .prompt
+                    .as_mut()
+                    .expect("help search active")
+                    .push(ch);
+            }
+            find_help_match(app, SearchDirection::Forward, true);
+        }
+        _ => {}
+    }
+    app.render(out)?;
+    Ok(true)
+}
+
+fn cancel_search(app: &mut super::App) {
+    let view = app.surfaces.help.as_mut().expect("help active");
+    if let Some(origin) = view.search.origin.take() {
+        view.buffer.set_cursor(origin);
+    }
+    view.search.prompt = None;
+    view.search.active_match = None;
+    app.message = Some("Help; Esc closes.".to_string());
+    app.reveal_cursor();
+}
+
+fn find_help_match(app: &mut super::App, direction: SearchDirection, include_origin: bool) {
+    let (query, origin) = {
+        let view = app.surfaces.help.as_ref().expect("help active");
+        (
+            view.search.prompt.clone().unwrap_or_default(),
+            if include_origin {
+                view.search.origin.unwrap_or_else(|| view.buffer.cursor())
+            } else {
+                view.search
+                    .active_match
+                    .map(|found| found.start)
+                    .unwrap_or_else(|| view.buffer.cursor())
+            },
+        )
+    };
+    if query.is_empty() {
+        let view = app.surfaces.help.as_mut().expect("help active");
+        view.search.active_match = None;
+        if let Some(origin) = view.search.origin {
+            view.buffer.set_cursor(origin);
+        }
+        app.message = Some("Find help: ".to_string());
+        app.reveal_cursor();
+        return;
+    }
+    let found = {
+        let view = app.surfaces.help.as_ref().expect("help active");
+        search::find_match(&view.buffer, &query, origin, direction, include_origin)
+    };
+    let view = app.surfaces.help.as_mut().expect("help active");
+    view.search.active_match = found;
+    if let Some(found) = found {
+        view.buffer.set_cursor(found.start);
+        app.message = Some(format!(
+            "Found '{query}'. Enter/Down next, Up previous, Esc closes search."
+        ));
+        app.reveal_cursor();
+    } else {
+        app.message = Some(format!("No matches for '{query}'. Esc closes search."));
+    }
 }
 
 #[cfg(test)]

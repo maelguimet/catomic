@@ -5,7 +5,6 @@
 //! Owns: DumbModel, seeded_random_edit_plus_undo_redo_against_dumb_model + its helpers.
 //! Must not: history position (separate), pure edit without undo (in edit_parity).
 //! Invariants: names preserved; uses crate buffer items.
-//! Phase: 2-k.
 
 use crate::buffer::{Buffer, PieceTable};
 

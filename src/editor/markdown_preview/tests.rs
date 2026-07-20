@@ -2,7 +2,6 @@
 //! Owns: nested blocks, tables, links, tasks, code, footnotes, HTML, and malformed fixtures.
 //! Must not: launch a terminal, touch files, mutate buffers, benchmark, or perform network I/O.
 //! Invariants: expected text preserves readable content and table terminal-cell alignment.
-//! Phase: issue #54 Markdown preview regression coverage.
 
 use super::*;
 

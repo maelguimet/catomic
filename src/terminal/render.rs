@@ -3,7 +3,6 @@
 //! Must not: mutate editor/buffer state, read full buffers, or own terminal setup.
 //! Invariants: composition errors produce no output; every update hides the cursor and is published
 //!   as one synchronized frame with explicit dimension/work bounds.
-//! Phase: issue #128 coherent terminal frames and cursor placement.
 
 use std::io::{self, Write};
 

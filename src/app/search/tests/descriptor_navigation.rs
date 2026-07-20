@@ -2,7 +2,6 @@
 //! Owns: the focused asynchronous navigation fixture.
 //! Must not: contain production behavior or broad search integration coverage.
 //! Invariants: waits are bounded and temporary files are removed after the test.
-//! Phase: 3-b paged search navigation.
 
 use super::*;
 

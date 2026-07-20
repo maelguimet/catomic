@@ -1,8 +1,7 @@
 //! Purpose: lock an exact cached Project-path completion replacement and undo.
-//! Owns: one representative Phase 5 source/candidate/output golden sequence.
+//! Owns: one representative Project-path source/candidate/output golden sequence.
 //! Must not: scan disk, construct App/Project services, spawn work, render, or network.
 //! Invariants: candidate order is exact; acceptance is one reversible range edit.
-//! Phase: 5 acceptance golden coverage.
 
 #[cfg(test)]
 mod tests {

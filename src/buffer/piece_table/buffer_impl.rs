@@ -3,7 +3,6 @@
 //! Must not: own storage layout, file opening, App policy, rendering, Project, or LLM work.
 //! Invariants: all edits preserve piece/index/cursor consistency; file-backed
 //!   render and save paths propagate descriptor errors through fallible seams.
-//! Phase: 2-bj PieceTable size hygiene and bounded file-backed queries.
 
 use std::borrow::Cow;
 use std::io::{self, Write};

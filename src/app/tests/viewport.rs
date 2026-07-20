@@ -7,7 +7,6 @@
 //! Invariants: loaded as mod viewport; from tests.rs under #[cfg(test)] mod tests;
 //!              uses `use super::super::*;` to reach private App methods and `use super::make_key;`
 //!              for the shared key helper (kept pub(super) in hub).
-//! Phase: 2-i narrow cleanup (no behavior or API change; test names preserved).
 
 use super::super::*;
 use super::make_key;

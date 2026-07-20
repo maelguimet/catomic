@@ -2,7 +2,6 @@
 //! Owns: isolated repositories for initial context, reads, grep, diff, path escape, and changes.
 //! Must not: contact remotes, mutate user repositories, or rely on global Git identity.
 //! Invariants: test repositories live under temp and every model-facing byte is budgeted.
-//! Phase: 6 (LLM Context Broker).
 
 use std::fs;
 use std::process::Command;

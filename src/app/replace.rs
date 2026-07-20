@@ -2,7 +2,6 @@
 //! Owns: prompt text, match collection, replacement application, and user messages.
 //! Must not: scan implicitly, operate across paged descriptors, save, or start workers.
 //! Invariants: replacement is explicit; matches are scalar-aligned; paged files fail closed.
-//! Phase: post-v0.1 core usability.
 
 use std::io::{self, Write};
 

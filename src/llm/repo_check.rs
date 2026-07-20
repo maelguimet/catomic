@@ -2,7 +2,6 @@
 //! Owns: one-shot broker ownership, background drift validation, cancellation, and polling.
 //! Must not: contact endpoints, mutate repositories, apply patches, or block editor input.
 //! Invariants: an unchanged result returns the same immutable broker guard to its caller.
-//! Phase: 6 acceptance hardening.
 
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};

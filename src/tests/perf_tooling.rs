@@ -1,8 +1,7 @@
 //! Purpose: measure bounded explicit discovery and cached path candidate selection.
-//! Owns: the ignored Phase 5 4,096-file Project tooling sample.
+//! Owns: the ignored 4,096-file Project tooling sample.
 //! Must not: run by default, enforce machine timing, add dependencies, or network.
 //! Invariants: fixture creation is outside timings; discovery and candidates remain capped.
-//! Phase: 5 acceptance performance measurement.
 
 use std::fs;
 

@@ -2,7 +2,6 @@
 //! Owns: typed config loading, constructor grouping, and same-session cloning.
 //! Must not: open buffers, render UI, construct Project/LLM services, or write files.
 //! Invariants: every buffer in one session receives the same startup defaults.
-//! Phase: post-v0.1 configuration plumbing.
 
 use std::io;
 

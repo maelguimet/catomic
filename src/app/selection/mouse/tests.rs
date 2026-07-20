@@ -2,7 +2,6 @@
 //! Owns: synthetic click, drag, status-row, and double-click fixtures.
 //! Must not: require a real terminal, timing sleeps, filesystem, or text mutation.
 //! Invariants: all assertions use crossterm's zero-based mouse coordinates.
-//! Phase: 3-e mouse selection interaction.
 
 use super::*;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};

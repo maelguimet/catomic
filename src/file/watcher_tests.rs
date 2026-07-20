@@ -9,7 +9,6 @@
 //! Invariants: tests remain deterministic (use new_for_test + inject or
 //!   pure map_event_to_signal with hand-crafted Events); private helpers
 //!   (map_event_to_signal) accessible via super because this is a path child mod.
-//! Phase: 2-ad split through post-v0.1 symlink watch hardening.
 
 use super::*;
 use crate::mode::{Capabilities, Mode};

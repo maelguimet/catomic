@@ -3,7 +3,6 @@
 //! Must not: inspect buffers, render UI, write during startup, or contact the network.
 //! Invariants: persisted toggle state overrides config per key; missing state keeps config/default;
 //!   writes use a dedicated owner-only file and occur only after an explicit toggle.
-//! Phase: post-v0.1 persistent view preferences.
 
 use std::ffi::OsStr;
 use std::fs;

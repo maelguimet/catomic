@@ -3,7 +3,6 @@
 //! Must not: open paths, replace files, parse config, render, or own App policy.
 //! Invariants: the synthetic trailing boundary row is hidden; edits remain writable;
 //!   global undo/redo returns to the page containing the affected transaction.
-//! Phase: 2-by editable paged-file storage.
 
 use std::borrow::Cow;
 use std::io::{self, Write};

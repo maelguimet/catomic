@@ -2,7 +2,6 @@
 //! Owns: table rows, bounded grid/stacked layout, grapheme-safe clipping, and borders.
 //! Must not: parse Markdown, emit ANSI, inspect terminal state, mutate buffers, or perform I/O.
 //! Invariants: cell widths use editor terminal-cell rules; output amplification is cell-width capped.
-//! Phase: issue #54 Markdown table rendering.
 
 use pulldown_cmark::Alignment;
 

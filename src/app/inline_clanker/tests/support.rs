@@ -2,7 +2,6 @@
 //! Owns: temporary source files, fake command adapters, polling, and key helpers.
 //! Must not: contact endpoints, inherit ambient model config, or leave fixture processes alive.
 //! Invariants: waits are bounded; adapter requests and responses remain in a private temp root.
-//! Phase: issue #65 one-key inline clanker workflow.
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;

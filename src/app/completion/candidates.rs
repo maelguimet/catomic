@@ -2,7 +2,6 @@
 //! Owns: prefix-kind selection, buffer-window reads, and discovered-path projection.
 //! Must not: start discovery, scan files, spawn work/processes, mutate App, or render.
 //! Invariants: Plain reads only the current buffer window; Project paths require cached discovery.
-//! Phase: 5-e Project-aware path completion.
 
 use std::io;
 

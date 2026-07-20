@@ -2,7 +2,6 @@
 //! Owns: focused App prompt fixtures and async worker polling.
 //! Must not: contain production prompt behavior or depend on a real terminal.
 //! Invariants: temporary paged files are removed after completed tests.
-//! Phase: 3-c goto line and basic command surface.
 
 use super::*;
 use crossterm::event::{KeyEventKind, KeyEventState};

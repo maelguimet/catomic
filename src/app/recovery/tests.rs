@@ -2,7 +2,6 @@
 //! Owns: deterministic App-level recovery tests using temporary sibling sidecars.
 //! Must not: sleep for configured intervals, use network, panic the process, or touch user files.
 //! Invariants: source files stay unchanged until ordinary save; recovery applies only on Enter.
-//! Phase: 8 recovery acceptance.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};

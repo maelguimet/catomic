@@ -2,7 +2,6 @@
 //! Owns: code delimiters, emphasis pairs, source links, and preview link targets.
 //! Must not: retain state, inspect adjacent lines, emit ANSI, or allocate document text.
 //! Invariants: higher-priority code/link spans prevent overlapping emphasis spans.
-//! Phase: issue #54 viewport-only Markdown styling.
 
 use super::{is_escaped, overlaps, push_span};
 use crate::editor::syntax::{SpanStyle, StyledSpan};

@@ -2,7 +2,6 @@
 //! Owns: highlight, safety, viewport, Unicode, and file-backed render regressions.
 //! Must not: mutate production state, require a real terminal, or duplicate transport tests.
 //! Invariants: hostile controls stay inert; viewport and Unicode boundaries remain stable.
-//! Phase: bounded post-beta render ownership cleanup.
 
 use super::*;
 use crate::buffer::SimpleBuffer;

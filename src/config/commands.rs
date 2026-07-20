@@ -2,7 +2,6 @@
 //! Owns: command policies, hook order, names, timeout validation, and reference validation.
 //! Must not: spawn processes, inspect buffers, dispatch lifecycle events, or mutate files.
 //! Invariants: commands are bounded; hooks reference unique commands defined in the same file.
-//! Phase: 7 external command configuration.
 
 use std::collections::BTreeMap;
 use std::io;

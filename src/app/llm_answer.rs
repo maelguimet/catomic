@@ -2,7 +2,6 @@
 //! Owns: answer view state, navigation, paste guards, and source viewport restoration.
 //! Must not: mutate source/history, create clients, call endpoints, or apply output.
 //! Invariants: no key applies an answer; Escape closes and restores the source viewport.
-//! Phase: 6 (LLM, Powerful but Caged).
 
 use std::io::{self, Write};
 

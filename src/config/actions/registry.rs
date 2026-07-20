@@ -4,7 +4,6 @@
 //! Invariants: same-scope defaults do not collide after normalization.
 //! Size: this is declarative inventory data; keeping the complete entry set flat makes order and
 //!   collisions reviewable without adding runtime concatenation or duplicated lookup paths.
-//! Phase: issue #62 complete shortcut customization.
 
 use super::{Descriptor, InputKind::*, Scope::*};
 

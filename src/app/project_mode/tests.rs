@@ -2,7 +2,6 @@
 //! Owns: lifecycle, root selection, capability, and status-label tests for :project/:plain.
 //! Must not: scan directories, run external commands, launch a terminal, or mutate content.
 //! Invariants: Plain startup/descent has no ProjectSession; opt-in root is the file directory.
-//! Phase: 5-b Project tooling bouncer tests.
 
 use std::path::PathBuf;
 

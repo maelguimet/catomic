@@ -2,7 +2,6 @@
 //! Owns: isolated path/check/help fixtures and pre-terminal failure evidence.
 //! Must not: use ambient user configuration, launch an editor, or contact a network.
 //! Invariants: read-only commands and failed terminal setup preserve user bytes.
-//! Phase: issues #62, #113, and #114 configuration workflow acceptance.
 
 use std::error::Error;
 use std::fs;

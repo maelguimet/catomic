@@ -2,7 +2,6 @@
 //! Owns: focused search unit fixtures and assertions.
 //! Must not: contain production behavior or terminal/App integration.
 //! Invariants: temporary descriptors are removed after each completed test.
-//! Phase: 3-a incremental search foundation.
 
 use super::*;
 use crate::buffer::PieceTable;

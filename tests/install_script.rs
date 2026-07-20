@@ -2,7 +2,6 @@
 //! Owns: a fake Cargo executable and isolated HOME/XDG filesystem assertions.
 //! Must not: modify the real Cargo installation, ambient config, or network state.
 //! Invariants: creation is private and exact; a second install preserves user bytes.
-//! Phase: issues #113 and #114 installation workflow acceptance.
 
 use std::error::Error;
 use std::fs;

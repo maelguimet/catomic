@@ -2,7 +2,6 @@
 //! Owns: identifier uniqueness/completeness and bounded replacement response validation.
 //! Must not: discover ranges, mutate buffers, accept prose, patches, or unknown JSON fields.
 //! Invariants: every expected block appears exactly once and no replacement exceeds hard limits.
-//! Phase: issue #65 one-key inline clanker workflow.
 
 use std::collections::BTreeMap;
 

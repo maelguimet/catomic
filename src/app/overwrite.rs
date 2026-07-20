@@ -2,7 +2,6 @@
 //! Owns: mode toggling, grapheme replacement selection, and overwrite-cursor eligibility.
 //! Must not: affect paste, indentation, completion, command/model apply, prompts, or read-only views.
 //! Invariants: overwrite replaces one same-line grapheme; line ends always insert.
-//! Phase: post-v0.1 explicit overwrite mode.
 
 use std::io::{self, Write};
 

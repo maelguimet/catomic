@@ -2,7 +2,6 @@
 //! Owns: private temporary paths, hook-disabled checkout, and bounded cleanup.
 //! Must not: reset or clean the source checkout, retain build artifacts, or run user hooks.
 //! Invariants: recursive removal is confined to a unique `catomic-update-*` temp root.
-//! Phase: safe self-update workflow.
 
 use std::fs;
 use std::path::{Path, PathBuf};

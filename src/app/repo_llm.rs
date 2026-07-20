@@ -2,7 +2,6 @@
 //! Owns: async context preparation, explicit send confirmation, task polling, and cancellation.
 //! Must not: construct in Plain, block typing, apply output, write files, or bypass repo checks.
 //! Invariants: no client before Enter; source/path/repo drift refuses preview and apply.
-//! Phase: 6 (LLM Context Broker).
 
 use std::io::{self, Write};
 use std::path::PathBuf;

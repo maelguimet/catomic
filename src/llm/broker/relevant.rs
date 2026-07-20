@@ -2,7 +2,6 @@
 //! Owns: active/retrieved file pinning, bounded fingerprints, and symlink-safe paths.
 //! Must not: expose file bytes to models, consume context budget, write, or network.
 //! Invariants: pinned paths stay normalized/in-repo and every fingerprint is size-bounded.
-//! Phase: 6 acceptance hardening.
 
 use std::collections::hash_map::DefaultHasher;
 use std::fs;

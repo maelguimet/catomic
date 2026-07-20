@@ -2,7 +2,6 @@
 //! Owns: selection/block/full-file context formatting, hard-limit checks, and queue shaping.
 //! Must not: parse markers, choose instructions, perform I/O, mutate text, or call a model.
 //! Invariants: request text contains only the selected scope and every target has a stable ID.
-//! Phase: issue #65 one-key inline clanker workflow.
 
 use std::path::Path;
 

@@ -2,7 +2,6 @@
 //! Owns: inline-clanker entry, undo/redo aliases, and central action delegation.
 //! Must not: handle printable insertion, cursor movement, raw surfaces, or terminal decoding.
 //! Invariants: guarded shortcuts precede editing; actions reuse the central catalog paths.
-//! Phase: bounded post-beta input-routing cleanup.
 
 use std::io::{self, Write};
 

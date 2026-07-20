@@ -2,7 +2,6 @@
 //! Owns: ANSI frame-envelope, back-to-back ordering, and mixed-layout cursor fixtures.
 //! Must not: require a real terminal, mutate through rendering, access disk, or start tasks.
 //! Invariants: every complete frame is synchronized and its final caret matches rendered cells.
-//! Phase: issue #128 terminal flicker and visual cursor drift regression coverage.
 
 use crate::buffer::{Buffer, Cursor, SimpleBuffer};
 use crate::editor::syntax::SyntaxKind;

@@ -2,7 +2,6 @@
 //! Owns: absolute/bare-name PATH lookup, executable checks, and safe displayed identity.
 //! Must not: invoke programs, search the current directory implicitly, or read model context.
 //! Invariants: returned paths are absolute canonical executable files; display text has no controls.
-//! Phase: post-v0.1 command-backed LLM adapters.
 
 use std::fs;
 use std::io;

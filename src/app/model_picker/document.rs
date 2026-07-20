@@ -2,7 +2,6 @@
 //! Owns: static/discovered entry expansion, active/default flags, filtering, and cursor motion.
 //! Must not: load config, read credentials, start discovery, invoke a backend, or persist state.
 //! Invariants: every visible row maps to one validated preset/model; empty filters stay safe.
-//! Phase: post-v0.1 model/backend picker document.
 
 use std::collections::{HashMap, HashSet};
 

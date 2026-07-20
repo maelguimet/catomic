@@ -24,9 +24,6 @@ type TestResult<T = ()> = Result<T, Box<dyn Error>>;
 
 static PTY_TEST_LOCK: Mutex<()> = Mutex::new(());
 
-#[path = "pty_smoke/autocomplete.rs"]
-mod autocomplete;
-
 struct TempPath {
     path: PathBuf,
 }
@@ -123,22 +120,6 @@ impl PtyEditor {
 
     fn spawn_with_xdg(path: &PathBuf, xdg_config_home: &PathBuf) -> TestResult<Self> {
         Self::spawn_with(path, Some(xdg_config_home))
-    }
-
-    fn spawn_with_size_and_xdg(
-        path: &PathBuf,
-        xdg_config_home: &PathBuf,
-        rows: u16,
-        cols: u16,
-    ) -> TestResult<Self> {
-        let environment = TempProject::new("sized_xdg_environment");
-        let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
-        cmd.arg(path);
-        cmd.env("XDG_CONFIG_HOME", xdg_config_home);
-        cmd.env("XDG_STATE_HOME", &environment.root);
-        cmd.env("HOME", &environment.root);
-        cmd.env("TERM", "xterm-256color");
-        Self::spawn_command_sized_with_environment(cmd, rows, cols, environment)
     }
 
     fn spawn_mobile(path: &PathBuf, rows: u16, cols: u16) -> TestResult<Self> {
@@ -1609,6 +1590,38 @@ fn pty_f7_persists_across_relaunch_and_applies_to_new_unicode_buffer() -> TestRe
     )?;
     relaunched.send_keys(b"\x11")?;
     relaunched.wait_for_exit()?;
+    Ok(())
+}
+
+#[test]
+fn pty_local_completion_does_not_invoke_configured_model_backend() -> TestResult {
+    let project = TempProject::new("local_completion_no_model");
+    let invoked = project.root.join("model-invoked");
+    let script = project.write(
+        "fail-if-invoked.sh",
+        &format!("#!/bin/sh\ntouch '{}'\nexit 99\n", invoked.display()),
+    );
+    project.write(
+        "catomic/config.toml",
+        &format!(
+            "[llm]\ndefault = 'trap'\n[[llm.backends]]\nname = 'trap'\ntype = 'command'\nmodel = 'never-used'\nprogram = '/bin/sh'\nargs = ['{}']\noutput = 'claude-json-v1'\n",
+            script.display()
+        ),
+    );
+    let active = project.write("note.txt", "alpha alpine alphabet\nal");
+    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"\x1b[B\x1b[C\x1b[C\0")?;
+    editor.wait_for_output("local completion", "Completion 1/3")?;
+    editor.send_keys(b"\r\x13\x11")?;
+    editor.wait_for_exit()?;
+
+    assert!(!invoked.exists());
+    assert_eq!(
+        fs::read_to_string(active)?,
+        "alpha alpine alphabet\nalpha\n"
+    );
     Ok(())
 }
 

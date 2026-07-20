@@ -8,7 +8,7 @@ use std::borrow::Cow;
 use std::io::{self, Write};
 
 use crate::buffer::undo::{PieceEdit, Transaction};
-use crate::buffer::{Buffer, Cursor, CursorContext, LineView, TextEdit};
+use crate::buffer::{Buffer, Cursor, LineView, TextEdit};
 
 use super::types::{Piece, PieceTable, Source};
 
@@ -87,10 +87,6 @@ impl Buffer for PieceTable {
 
     fn logical_byte_len(&self) -> Option<usize> {
         Some(self.index.total_bytes)
-    }
-
-    fn cursor_context(&self, max_before: usize, max_after: usize) -> io::Result<CursorContext> {
-        self.try_cursor_context(max_before, max_after)
     }
 
     fn set_cursor(&mut self, cursor: Cursor) {

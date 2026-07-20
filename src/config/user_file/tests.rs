@@ -39,9 +39,6 @@ fn template_creation_is_atomic_private_and_never_overwrites() {
     assert_eq!(fs::read_to_string(&path).unwrap(), TEMPLATE);
     assert!(TEMPLATE.contains("Restart Catomic"));
     assert!(TEMPLATE.contains("[theme.colors]"));
-    assert!(TEMPLATE.contains("[autocomplete]"));
-    crate::config::autocomplete::parse(TEMPLATE)
-        .expect("template autocomplete settings must stay valid");
     crate::config::theme::parse(TEMPLATE).expect("template theme must stay valid");
     crate::config::keybindings::parse(TEMPLATE).expect("template keybindings must stay valid");
 

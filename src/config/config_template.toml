@@ -32,17 +32,6 @@ enabled = false
 interval_secs = 30
 max_bytes = 1_048_576
 
-[autocomplete]
-# Disabled by default. Enabling only opens a per-process confirmation; no
-# automatic request starts until Enter confirms the exact destination/scope.
-enabled = false
-idle_debounce_ms = 750
-minimum_prefix_length = 20
-max_context_before = 2_048
-max_context_after = 512
-max_generated_tokens = 64
-allow_remote = false
-
 [theme]
 # Built-ins: "default", "high-contrast", and "mono".
 name = "default"
@@ -78,7 +67,6 @@ external_added = { fg = "green", underline = true }
 external_changed = { fg = "cyan", underline = true }
 external_deleted = { fg = "red", bold = true }
 llm_changed = { fg = "red", underline = true }
-autocomplete = { fg = "bright-black", dim = true }
 preview = "default"
 
 # Uncommenting an action replaces its complete built-in default list; [] unbinds it.
@@ -216,8 +204,7 @@ on_open = []
 on_save = []
 before_llm = []
 
-# Model settings are inert until an explicit model command and confirmation, or
-# the separately confirmed autocomplete session described above.
+# Model settings are inert until an explicit model command and confirmation.
 # F10 opens the searchable process-local selector without reading credentials,
 # contacting an endpoint, starting a command, or rewriting this file.
 # [llm]

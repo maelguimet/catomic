@@ -5,7 +5,7 @@
 
 use std::borrow::Cow;
 
-use super::{Buffer, Cursor, CursorContext, LineView};
+use super::{Buffer, Cursor, LineView};
 
 /// The simple buffer used as the observable-behavior reference in parity tests.
 #[derive(Clone, Debug, Default)]
@@ -91,17 +91,6 @@ impl Buffer for SimpleBuffer {
             .col
             .min(self.lines.get(row).map_or(0, |line| line.chars().count()));
         self.cursor = Cursor { row, col };
-    }
-
-    fn cursor_context(
-        &self,
-        max_before: usize,
-        max_after: usize,
-    ) -> std::io::Result<CursorContext> {
-        Ok(CursorContext {
-            before: context_before(&self.lines, self.cursor, max_before),
-            after: context_after(&self.lines, self.cursor, max_after),
-        })
     }
 
     fn to_string(&self) -> String {
@@ -219,61 +208,4 @@ impl Buffer for SimpleBuffer {
         // for compilation and for any tests that construct it directly.
         0
     }
-}
-
-fn context_before(lines: &[String], cursor: Cursor, limit: usize) -> String {
-    if lines.is_empty() || limit == 0 {
-        return String::new();
-    }
-    let mut remaining = limit;
-    let mut reversed = Vec::with_capacity(limit);
-    let mut row = cursor.row.min(lines.len().saturating_sub(1));
-    let line = &lines[row];
-    let byte = scalar_byte_offset(line, cursor.col);
-    append_reverse(&mut reversed, &line[..byte], &mut remaining);
-    while remaining > 0 && row > 0 {
-        reversed.push('\n');
-        remaining -= 1;
-        row -= 1;
-        append_reverse(&mut reversed, &lines[row], &mut remaining);
-    }
-    reversed.reverse();
-    reversed.into_iter().collect()
-}
-
-fn context_after(lines: &[String], cursor: Cursor, limit: usize) -> String {
-    if lines.is_empty() || limit == 0 {
-        return String::new();
-    }
-    let mut remaining = limit;
-    let mut output = String::new();
-    let mut row = cursor.row.min(lines.len().saturating_sub(1));
-    let line = &lines[row];
-    let byte = scalar_byte_offset(line, cursor.col);
-    append_forward(&mut output, &line[byte..], &mut remaining);
-    while remaining > 0 && row + 1 < lines.len() {
-        output.push('\n');
-        remaining -= 1;
-        row += 1;
-        append_forward(&mut output, &lines[row], &mut remaining);
-    }
-    output
-}
-
-fn scalar_byte_offset(line: &str, col: usize) -> usize {
-    line.char_indices()
-        .nth(col)
-        .map_or(line.len(), |(byte, _)| byte)
-}
-
-fn append_reverse(output: &mut Vec<char>, text: &str, remaining: &mut usize) {
-    let previous_len = output.len();
-    output.extend(text.chars().rev().take(*remaining));
-    *remaining = remaining.saturating_sub(output.len() - previous_len);
-}
-
-fn append_forward(output: &mut String, text: &str, remaining: &mut usize) {
-    let taken: String = text.chars().take(*remaining).collect();
-    *remaining = remaining.saturating_sub(taken.chars().count());
-    output.push_str(&taken);
 }

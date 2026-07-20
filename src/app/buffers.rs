@@ -154,7 +154,6 @@ impl App {
             return false;
         }
 
-        super::autocomplete::invalidate(self);
         search::cancel_running_search(self);
         command_prompt::cancel_running_goto(self);
         if completion::cancel(self) {

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Purpose: exercise symlink, permission, metadata, link, and non-regular boundaries.
-Owns: fail-closed save fixtures and exact preservation assertions for special targets.
+Owns: guarded save fixtures and exact preservation assertions for special targets.
 Must not: test conflict/recovery policy, publish evidence, use ambient config, or network.
-Invariants: every refused save leaves bytes, inode semantics, and metadata fixtures intact.
+Invariants: refused saves are unchanged; supported special targets retain required metadata.
 Phase: post-v0.1 Linux compatibility matrix.
 """
 
@@ -21,9 +21,9 @@ from pty_driver import PtyError, PtyProcess, isolated_environment
 BOUNDARY_EXPECTATIONS = {
     "symlink-save": "Saving through a final symlink preserves the link and atomically replaces its regular referent.",
     "read-only-refusal": "Saving a read-only regular file fails and preserves its bytes and mode.",
-    "hard-link-refusal": "Saving a multiply linked file fails and preserves both directory entries and bytes.",
-    "xattr-refusal": "Saving a file with a user xattr fails and preserves bytes and the attribute.",
-    "acl-refusal": "Saving a file with a POSIX ACL fails and preserves bytes and the ACL.",
+    "hard-link-save": "Saving a multiply linked file updates every alias while preserving its inode and metadata.",
+    "xattr-save": "Atomic save replaces file content while preserving its user xattrs.",
+    "acl-save": "Atomic save replaces file content while preserving its POSIX ACL.",
     "non-regular-refusal": "FIFO, directory, and Unix-socket targets are refused without blocking or replacement.",
 }
 
@@ -71,49 +71,107 @@ def read_only_refusal(binary: Path, root: Path):
         target.chmod(0o644)
 
 
-def hard_link_refusal(binary: Path, root: Path):
+def hard_link_save(binary: Path, root: Path):
     target = root / "hard-link.txt"
     peer = root / "hard-link-peer.txt"
     target.write_text("shared", encoding="utf-8")
+    target.chmod(0o6750)
+    xattr_supported = True
+    try:
+        os.setxattr(target, b"user.catomic-compat", b"preserve-me")
+    except OSError:
+        xattr_supported = False
+    acl_before = None
+    if shutil.which("setfacl") is not None and shutil.which("getfacl") is not None:
+        completed = subprocess.run(
+            ["setfacl", "-m", "u:65534:r--", str(target)],
+            text=True,
+            capture_output=True,
+            timeout=5,
+            check=False,
+        )
+        if completed.returncode == 0:
+            acl_before = _getfacl(target)
     os.link(target, peer)
-    record = _refused_save(
-        binary,
-        root,
-        target,
-        "hard-link-refusal",
-        b"Save error: refusing atomic save",
+    before = sha256_file(target)
+    stat_before = target.stat()
+    child = _spawn(binary, target, root / "hard-link-save-env")
+    with child:
+        child.wait_for(b"shared")
+        child.send(b"X\x13\x11")
+        exit_status = child.finish()
+    stat_after = target.stat()
+    if (
+        exit_status != 0
+        or target.read_bytes() != b"Xshared"
+        or peer.read_bytes() != b"Xshared"
+        or stat_after.st_ino != stat_before.st_ino
+        or peer.stat().st_ino != stat_before.st_ino
+        or stat_after.st_nlink != stat_before.st_nlink
+        or stat_after.st_mode != stat_before.st_mode
+        or stat_after.st_uid != stat_before.st_uid
+        or stat_after.st_gid != stat_before.st_gid
+    ):
+        raise PtyError("hard-link save changed identity, metadata, or unexpected bytes")
+    evidence = [
+        f"both entries retained inode {stat_after.st_ino} and link count {stat_after.st_nlink}"
+    ]
+    if xattr_supported:
+        if os.getxattr(target, b"user.catomic-compat") != b"preserve-me":
+            raise PtyError("hard-link save changed the user attribute")
+        evidence.append("user.catomic-compat=preserve-me remained present")
+    if acl_before is not None:
+        if _getfacl(target) != acl_before:
+            raise PtyError("hard-link save changed the access ACL")
+        evidence.append("getfacl output remained byte-identical")
+    return scenario(
+        "hard-link-save",
+        BOUNDARY_EXPECTATIONS["hard-link-save"],
+        "pass",
+        exit_status=exit_status,
+        before_sha256=before,
+        after_sha256=sha256_file(target),
+        evidence=evidence,
     )
-    if target.stat().st_ino != peer.stat().st_ino or peer.read_bytes() != b"shared":
-        raise PtyError("hard-link refusal changed the peer or inode identity")
-    record["evidence"].append(f"both entries retained inode {target.stat().st_ino}")
-    return record
 
 
-def xattr_refusal(binary: Path, root: Path):
+def xattr_save(binary: Path, root: Path):
     target = root / "xattr.txt"
     target.write_text("attributed", encoding="utf-8")
     try:
         os.setxattr(target, b"user.catomic-compat", b"preserve-me")
     except OSError as error:
         return _unsupported(
-            "xattr-refusal", f"filesystem cannot set a user xattr: {error}"
+            "xattr-save", f"filesystem cannot set a user xattr: {error}"
         )
-    record = _refused_save(
-        binary,
-        root,
-        target,
-        "xattr-refusal",
-        b"Save error: refusing atomic save",
-    )
+    before = sha256_file(target)
+    inode_before = target.stat().st_ino
+    child = _spawn(binary, target, root / "xattr-save-env")
+    with child:
+        child.wait_for(b"attributed")
+        child.send(b"X\x13\x11")
+        exit_status = child.finish()
+    after = sha256_file(target)
+    if exit_status != 0 or target.read_bytes() != b"Xattributed":
+        raise PtyError("xattr save failed or wrote unexpected bytes")
+    if target.stat().st_ino == inode_before:
+        raise PtyError("xattr save did not atomically replace the inode")
     if os.getxattr(target, b"user.catomic-compat") != b"preserve-me":
-        raise PtyError("xattr refusal did not preserve the user attribute")
-    record["evidence"].append("user.catomic-compat=preserve-me remained present")
-    return record
+        raise PtyError("xattr save did not preserve the user attribute")
+    return scenario(
+        "xattr-save",
+        BOUNDARY_EXPECTATIONS["xattr-save"],
+        "pass",
+        exit_status=exit_status,
+        before_sha256=before,
+        after_sha256=after,
+        evidence=["atomic replacement retained user.catomic-compat=preserve-me"],
+    )
 
 
-def acl_refusal(binary: Path, root: Path):
+def acl_save(binary: Path, root: Path):
     if shutil.which("setfacl") is None or shutil.which("getfacl") is None:
-        return _unsupported("acl-refusal", "setfacl/getfacl are not installed")
+        return _unsupported("acl-save", "setfacl/getfacl are not installed")
     target = root / "acl.txt"
     target.write_text("acl", encoding="utf-8")
     completed = subprocess.run(
@@ -125,21 +183,33 @@ def acl_refusal(binary: Path, root: Path):
     )
     if completed.returncode != 0:
         return _unsupported(
-            "acl-refusal",
+            "acl-save",
             f"filesystem cannot set POSIX ACL: {completed.stderr.strip()}",
         )
     before_acl = _getfacl(target)
-    record = _refused_save(
-        binary,
-        root,
-        target,
-        "acl-refusal",
-        b"Save error: refusing atomic save",
-    )
+    before = sha256_file(target)
+    inode_before = target.stat().st_ino
+    child = _spawn(binary, target, root / "acl-save-env")
+    with child:
+        child.wait_for(b"acl")
+        child.send(b"X\x13\x11")
+        exit_status = child.finish()
+    after = sha256_file(target)
+    if exit_status != 0 or target.read_bytes() != b"Xacl":
+        raise PtyError("ACL save failed or wrote unexpected bytes")
+    if target.stat().st_ino == inode_before:
+        raise PtyError("ACL save did not atomically replace the inode")
     if _getfacl(target) != before_acl:
-        raise PtyError("ACL refusal changed the access ACL")
-    record["evidence"].append("getfacl output remained byte-identical")
-    return record
+        raise PtyError("ACL save changed the access ACL")
+    return scenario(
+        "acl-save",
+        BOUNDARY_EXPECTATIONS["acl-save"],
+        "pass",
+        exit_status=exit_status,
+        before_sha256=before,
+        after_sha256=after,
+        evidence=["atomic replacement retained byte-identical getfacl output"],
+    )
 
 
 def non_regular_refusal(binary: Path, root: Path):

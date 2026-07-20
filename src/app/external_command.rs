@@ -2,7 +2,6 @@
 //! Owns: `:run`, bounded input snapshots, command context, cancellation, and result handoff.
 //! Must not: choose lifecycle events, write files, apply output, block input, or spawn at startup.
 //! Invariants: only configured names run; input is capped; all output goes through preview.
-//! Phase: 7 external command execution.
 
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -49,11 +48,11 @@ struct PreparedCommand {
 
 pub(crate) fn start(app: &mut super::App, out: &mut dyn Write, name: &str) -> io::Result<()> {
     if app.external_command.running.is_some() || preview::is_viewing(app) {
-        app.message = Some("An external command is already running or previewed.".to_string());
+        app.message_info("An external command is already running or previewed.");
         return app.render(out);
     }
     let Some(spec) = app.command_config.get(name).cloned() else {
-        app.message = Some(format!("Unknown configured command: {name}"));
+        app.message_error(format!("Unknown configured command: {name}"));
         return app.render(out);
     };
     let prepared = match prepare_command(app, &spec) {
@@ -74,9 +73,9 @@ pub(crate) fn start(app: &mut super::App, out: &mut dyn Write, name: &str) -> io
                 source_snapshot: prepared.source_snapshot,
                 source_path: app.file.path.clone(),
             });
-            app.message = Some(format!("Running command {name}... Esc cancels."));
+            app.message_info(format!("Running command {name}... Esc cancels."));
         }
-        Err(error) => app.message = Some(format!("Could not start command {name}: {error}")),
+        Err(error) => app.message_error(format!("Could not start command {name}: {error}")),
     }
     app.render(out)
 }
@@ -266,7 +265,7 @@ fn command_context(app: &super::App) -> io::Result<(PathBuf, Option<PathBuf>)> {
 }
 
 fn input_error(app: &mut super::App, out: &mut dyn Write, error: io::Error) -> io::Result<()> {
-    app.message = Some(format!("Cannot run command: {error}."));
+    app.message_error(format!("Cannot run command: {error}."));
     app.render(out)
 }
 
@@ -280,7 +279,7 @@ fn finish_error(
     name: &str,
     error: &str,
 ) -> io::Result<()> {
-    app.message = Some(format!("Command {name} {error}."));
+    app.message_error(format!("Command {name} {error}."));
     super::hooks::finish_command(app, false);
     app.render(out)
 }

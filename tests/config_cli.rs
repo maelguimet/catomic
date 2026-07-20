@@ -2,7 +2,6 @@
 //! Owns: isolated path/check/help fixtures and pre-terminal failure evidence.
 //! Must not: use ambient user configuration, launch an editor, or contact a network.
 //! Invariants: read-only commands and failed terminal setup preserve user bytes.
-//! Phase: issues #62, #113, and #114 configuration workflow acceptance.
 
 use std::error::Error;
 use std::fs;
@@ -107,12 +106,22 @@ fn config_path_check_and_help_are_read_only_and_preserving() -> TestResult {
     fs::create_dir_all(config.parent().expect("config parent"))?;
     fs::write(
         &config,
-        "# preserve exact bytes\n[theme]\nname = \"default\"\n[future]\ncat = true\n",
+        "# preserve exact bytes\n[theme]\nname = \"default\"\n",
     )?;
     let before = fs::read(&config)?;
     let checked = run(&fixture, &["config", "check"])?;
     assert!(checked.status.success());
     assert_eq!(fs::read(&config)?, before);
+
+    fs::write(
+        &config,
+        "[theme]\nname = \"default\"\n[future]\ncat = true\n",
+    )?;
+    let unknown_before = fs::read(&config)?;
+    let unknown = run(&fixture, &["config", "check"])?;
+    assert!(!unknown.status.success());
+    assert!(String::from_utf8(unknown.stderr)?.contains("unknown configuration key future"));
+    assert_eq!(fs::read(&config)?, unknown_before);
 
     fs::write(&config, "[theme]\nname = \"missing\"\n")?;
     let invalid_before = fs::read(&config)?;

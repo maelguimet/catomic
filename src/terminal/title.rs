@@ -2,7 +2,6 @@
 //! Owns: OSC title emission after control-character sanitization.
 //! Must not: flush writers, inspect App state, query terminals, or own title lifetimes.
 //! Invariants: untrusted filename controls never terminate or inject an OSC sequence.
-//! Phase: issue #119 compact file identity.
 
 use std::io::{self, Write};
 

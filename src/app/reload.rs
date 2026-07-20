@@ -1,4 +1,4 @@
-//! Manual reload-from-disk confirmation (Phase 2-s narrow pass).
+//! Manual reload-from-disk confirmation.
 //!
 //! Purpose: owns the pending reload confirmation token, message helpers,
 //! and the Ctrl+R decision + perform logic (extracted in 2-t for mod.rs hygiene).
@@ -12,7 +12,6 @@
 //!   automatic reload is invoked only for clean buffers by caller policy;
 //!   successful reloads refresh watcher path identities;
 //!   input routing cancels it before any unrelated editor action.
-//! Phase: 2-s / 2-t cleanup through 2-bx automatic clean reload.
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -225,7 +224,7 @@ fn reload_modified_warning(size_bytes: u64, size_tier: FileSizeTier) -> Option<S
 /// Errors are surfaced in `message` and leave the existing buffer intact.
 pub(crate) fn perform_observed_reload(app: &mut super::App, obs: &ExternalFileObservation) {
     let Some(path) = app.file.path.clone() else {
-        app.message = Some("No file path.".to_string());
+        app.message_info("No file path.");
         return;
     };
     match obs.status {
@@ -326,17 +325,18 @@ fn report_reload_error(app: &mut super::App, error: io::Error) {
         } else {
             ""
         };
-        app.message = Some(format!(
+        app.message_warning(format!(
             "Reload aborted because the file changed again. Re-arm reload confirmation.{local}"
         ));
     } else {
-        app.message = Some(format!("Reload error: {error}"));
+        app.message_error(format!("Reload error: {error}"));
     }
 }
 
 fn finish_reload(app: &mut super::App, message: Option<String>) {
     super::watch::refresh_file_watcher(app);
     app.message = message;
+    app.message_role = crate::terminal::render::StatusRole::Info;
     app.pending_reload = None;
     app.pending_save_conflict = None;
     app.pending_quit_confirm = false;
@@ -351,7 +351,7 @@ fn finish_reload(app: &mut super::App, message: Option<String>) {
 pub(crate) fn apply_check_observation(app: &mut super::App, obs: &ExternalFileObservation) {
     match obs.status {
         ExternalFileStatus::NoPath => {
-            app.message = Some("No file path.".to_string());
+            app.message_info("No file path.");
             app.pending_reload = None;
         }
         ExternalFileStatus::Unchanged => {
@@ -359,7 +359,7 @@ pub(crate) fn apply_check_observation(app: &mut super::App, obs: &ExternalFileOb
             app.pending_reload = None;
         }
         ExternalFileStatus::Unknown(kind) => {
-            app.message = Some(format!("File status check failed: {:?}", kind));
+            app.message_error(format!("File status check failed: {:?}", kind));
             app.pending_reload = None;
         }
         ExternalFileStatus::Modified | ExternalFileStatus::Deleted => {
@@ -375,7 +375,7 @@ pub(crate) fn apply_check_observation(app: &mut super::App, obs: &ExternalFileOb
             let dirty = app.file.dirty;
             let text =
                 reload_arm_message_for_ui(&obs.status, dirty, super::mobile::is_enabled(app));
-            app.message = Some(text);
+            app.message_warning(text);
         }
     }
 }

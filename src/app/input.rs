@@ -3,7 +3,6 @@
 //! Must not: decode raw terminal bytes, access buffer internals, render content, or network.
 //! Invariants: scoped normalization precedes active surfaces; guarded editor actions win over
 //!   text input; ordinary editor actions clear stale completed messages.
-//! Phase: 3-d keyboard selection, with bounded post-beta routing cleanup.
 
 use std::io::{self, Write};
 
@@ -80,13 +79,14 @@ pub(super) fn finish_content_edit_with_message(
     app.external_changes
         .reconcile(app.buffer.edit_history_position());
     if app.buffer.is_read_only() {
-        app.message = Some("Large file is read-only in paged mode.".to_string());
+        app.message_warning("Large file is read-only in paged mode.");
     } else {
         command_prompt::clear_config_discard_confirmation(app);
         app.pending_quit_confirm = false;
         app.pending_save_conflict = None;
         app.pending_reload = None;
         app.message = message;
+        app.message_role = crate::terminal::render::StatusRole::Info;
     }
     app.reveal_cursor();
     app.render(out)
@@ -144,10 +144,10 @@ fn handle_raw_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -> i
     editing::handle_key(app, out, key)
 }
 
-pub(super) fn prepare_editor_action(app: &mut super::App, action: Action) {
-    let is_quit = action == Action::Quit;
-    let is_save = action == Action::Save;
-    let is_reload = action == Action::Reload;
+pub(super) fn prepare_editor_action(app: &mut super::App, action: Option<Action>) {
+    let is_quit = matches!(action, Some(Action::Quit));
+    let is_save = matches!(action, Some(Action::Save));
+    let is_reload = matches!(action, Some(Action::Reload));
     let keeps_confirmation = (is_quit
         && (app.pending_quit_confirm || command_prompt::config_discard_confirmation_pending(app)))
         || (is_save && app.pending_save_conflict.is_some())
@@ -164,6 +164,7 @@ pub(super) fn prepare_editor_action(app: &mut super::App, action: Action) {
     }
     if !keeps_confirmation {
         app.message = None;
+        app.message_role = crate::terminal::render::StatusRole::Info;
     }
 }
 
@@ -176,16 +177,14 @@ pub(super) fn dispatch_action(
     if dispatch_probe::record(action) {
         return Ok(());
     }
+    if action == Action::Interrupt {
+        crate::terminal::request_interrupt();
+        return Ok(());
+    }
+    prepare_editor_action(app, Some(action));
     match action {
         Action::Help => return help::toggle(app, out),
-        Action::Quit => {
-            prepare_editor_action(app, action);
-            return handle_quit(app, out);
-        }
-        Action::Interrupt => {
-            crate::terminal::request_interrupt();
-            return Ok(());
-        }
+        Action::Quit => return handle_quit(app, out),
         _ => {}
     }
     let scope = active_scope(app);
@@ -199,7 +198,6 @@ pub(super) fn dispatch_action(
     if completion::dispatch_editor_action(app, out, action)? {
         return Ok(());
     }
-    prepare_editor_action(app, action);
     if editing::dispatch_action(app, out, action)?
         || navigation::dispatch_action(app, out, action)?
         || selection::dispatch_action(app, out, action)?
@@ -280,6 +278,30 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn unrelated_global_action_cancels_editor_confirmations() {
+        let mut app = super::super::App::new(None).unwrap();
+        let mut out = Vec::new();
+        app.pending_quit_confirm = true;
+        app.pending_save_conflict = Some(super::super::save::PendingSaveConflict {
+            path: "save.txt".into(),
+            status: crate::file::io::ExternalFileStatus::Modified,
+            snapshot: None,
+        });
+        app.pending_reload = Some(super::super::reload::PendingReload {
+            path: "reload.txt".into(),
+            status: crate::file::io::ExternalFileStatus::Modified,
+            snapshot: None,
+        });
+
+        dispatch_action(&mut app, &mut out, Action::Help).unwrap();
+
+        assert!(!app.pending_quit_confirm);
+        assert!(app.pending_save_conflict.is_none());
+        assert!(app.pending_reload.is_none());
+        assert!(super::super::help::is_viewing(&app));
+    }
 }
 
 fn switch_buffer(
@@ -315,9 +337,8 @@ pub(super) fn handle_quit(app: &mut super::App, out: &mut dyn Write) -> io::Resu
     if let Some(request) = command_prompt::request_config_close(app) {
         match request {
             command_prompt::ConfigCloseRequest::WarnDirty => {
-                app.message = Some(
-                    "Unsaved configuration. Press Ctrl+Q again to discard it, or Ctrl+S to save."
-                        .to_string(),
+                app.message_warning(
+                    "Unsaved configuration. Press Ctrl+Q again to discard it, or Ctrl+S to save.",
                 );
                 return app.render(out);
             }
@@ -326,7 +347,7 @@ pub(super) fn handle_quit(app: &mut super::App, out: &mut dyn Write) -> io::Resu
                 discard,
             } => {
                 if let Err(error) = app.close_active_buffer(discard) {
-                    app.message = Some(format!("Close error: {error}"));
+                    app.message_error(format!("Close error: {error}"));
                     return app.render(out);
                 }
                 app.message = None;
@@ -350,7 +371,7 @@ pub(super) fn handle_quit(app: &mut super::App, out: &mut dyn Write) -> io::Resu
         return Ok(());
     }
     app.pending_quit_confirm = true;
-    app.message = Some(if mobile::is_enabled(app) && dirty_count == 1 {
+    app.message_warning(if mobile::is_enabled(app) && dirty_count == 1 {
         "Unsaved changes. Tap Menu > Quit again to discard, or tap Save.".to_string()
     } else if mobile::is_enabled(app) {
         format!("Unsaved changes in {dirty_count} buffers. Tap Menu > Quit again to discard.")

@@ -2,7 +2,6 @@
 //! Owns: lazy config load, automatic precedence, full-file warning, and typed warning answers.
 //! Must not: read API keys, construct HTTP clients, start workers, apply edits, or save files.
 //! Invariants: hard context limits are checked before the soft warning; warning overrides are one-shot.
-//! Phase: issue #65 one-key inline clanker workflow.
 
 use std::io::{self, Write};
 
@@ -12,13 +11,12 @@ use super::{Phase, PreparedWorkflow};
 
 pub(super) fn begin(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
     if busy(app) {
-        app.message = Some("Another model workflow is already pending or running.".to_string());
+        app.message_info("Another model workflow is already pending or running.");
         return app.render(out);
     }
     if app.buffer.is_read_only() || app.buffer.page_info().is_some() {
-        app.message = Some(
-            "Inline clanker requires a fully retained editable file; paged files are not sent."
-                .to_string(),
+        app.message_info(
+            "Inline clanker requires a fully retained editable file; paged files are not sent.",
         );
         return app.render(out);
     }
@@ -87,7 +85,7 @@ pub(super) fn begin_with_preset(
     if prepared.draft.scope == InlineScope::FullFile
         && prepared.draft.full_file_lines > prepared.inline.warn_lines
     {
-        app.message = Some(warning_question(&prepared));
+        app.message_warning(warning_question(&prepared));
         app.inline_clanker.phase = Some(Phase::Warning(prepared));
         return super::super::command_prompt::open_inline_warning(app, out);
     }
@@ -113,7 +111,7 @@ pub(super) fn answer_warning(
             Ok(true)
         }
         _ => {
-            app.message = Some(format!(
+            app.message_warning(format!(
                 "Please type yes or no. {} Type yes or no: {}",
                 warning_question(&prepared),
                 answer.trim()
@@ -180,6 +178,6 @@ fn render_error(
     out: &mut dyn Write,
     message: String,
 ) -> io::Result<()> {
-    app.message = Some(message);
+    app.message_error(message);
     app.render(out)
 }

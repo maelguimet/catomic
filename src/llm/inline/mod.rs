@@ -2,7 +2,6 @@
 //! Owns: request-local instruction metadata, catblock targets, scope precedence, and envelopes.
 //! Must not: read files, construct clients, mutate buffers, render UI, or relax hard limits.
 //! Invariants: control markers are never targets; every target is exact and bounded.
-//! Phase: issue #65 one-key inline clanker workflow.
 
 use std::path::Path;
 

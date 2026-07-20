@@ -2,7 +2,6 @@
 //! Owns: mobile UI enablement, contextual action dispatch, and reserved-row hit testing.
 //! Must not: duplicate editor commands, inspect file internals, start services, or write files.
 //! Invariants: actions reuse normalized key paths; status/action touches never reach content.
-//! Phase: Android/Termux mobile support.
 
 use std::io::{self, Write};
 
@@ -58,6 +57,7 @@ pub(crate) fn handle_key(
     match key.code {
         KeyCode::Esc => {
             overlay::close(app);
+            super::input::prepare_editor_action(app, None);
             app.reveal_cursor();
             app.render(out)?;
         }
@@ -72,12 +72,14 @@ pub(crate) fn handle_key(
         | KeyCode::PageDown
         | KeyCode::Home
         | KeyCode::End => {
+            prepare_overlay_action(app);
             overlay::move_cursor(app, key.code);
             app.reveal_cursor();
             app.render(out)?;
         }
         _ => {
-            app.message = Some("Mobile overlay is read-only; Back returns.".to_string());
+            super::input::prepare_editor_action(app, None);
+            app.message_info("Mobile overlay is read-only; Back returns.");
             app.render(out)?;
         }
     }
@@ -88,7 +90,8 @@ pub(crate) fn handle_paste(app: &mut super::App, out: &mut dyn Write) -> io::Res
     if !overlay::is_viewing(app) {
         return Ok(false);
     }
-    app.message = Some("Mobile overlay is read-only; Back returns.".to_string());
+    super::input::prepare_editor_action(app, None);
+    app.message_info("Mobile overlay is read-only; Back returns.");
     app.render(out)?;
     Ok(true)
 }
@@ -122,9 +125,12 @@ pub(crate) fn handle_mouse(
         MouseEventKind::Down(MouseButton::Left) if overlay::is_menu(app) => {
             if let Some(action) = overlay::action_at_visible_row(app, row) {
                 execute_menu_action(app, out, action)?;
+            } else {
+                prepare_overlay_action(app);
             }
         }
         MouseEventKind::Down(MouseButton::Left) => {
+            prepare_overlay_action(app);
             let document_row = app.screen.scroll_top.saturating_add(row);
             overlay::set_cursor_row(app, document_row);
             app.reveal_cursor();
@@ -144,6 +150,7 @@ fn dispatch_bar_action(
 ) -> io::Result<()> {
     match action {
         BarAction::Menu => {
+            super::input::prepare_editor_action(app, None);
             overlay::open_menu(app);
             app.render(out)
         }
@@ -152,26 +159,32 @@ fn dispatch_bar_action(
                 .message
                 .clone()
                 .unwrap_or_else(|| "No details.".to_string());
+            super::input::prepare_editor_action(app, None);
             overlay::open_notice(app, &message);
             app.render(out)
         }
         BarAction::Back if overlay::close(app) => {
+            super::input::prepare_editor_action(app, None);
             app.reveal_cursor();
             app.render(out)
         }
         BarAction::Accept if overlay::is_menu(app) => match overlay::selected_action(app) {
             Some(action) => execute_menu_action(app, out, action),
-            None => app.render(out),
+            None => {
+                prepare_overlay_action(app);
+                app.render(out)
+            }
         },
         BarAction::Cancel if super::selection::is_touch_selecting(app) => {
+            super::input::prepare_editor_action(app, None);
             super::selection::cancel_touch_selection(app);
             app.message = None;
             app.render(out)
         }
         BarAction::Cancel | BarAction::Back => dispatch_surface_action(app, out, false),
         BarAction::Accept => dispatch_surface_action(app, out, true),
-        BarAction::Up => super::input::dispatch_action(app, out, Action::MoveUp),
-        BarAction::Down => super::input::dispatch_action(app, out, Action::MoveDown),
+        BarAction::Up => dispatch_vertical_action(app, out, false),
+        BarAction::Down => dispatch_vertical_action(app, out, true),
         BarAction::PageUp => super::input::dispatch_action(app, out, Action::ViewportUp),
         BarAction::PageDown => super::input::dispatch_action(app, out, Action::ViewportDown),
         BarAction::Save => super::input::dispatch_action(app, out, Action::Save),
@@ -189,17 +202,25 @@ fn execute_menu_action(
     overlay::close(app);
     match action {
         MenuAction::SelectStart => {
+            super::input::prepare_editor_action(app, None);
             super::selection::begin_touch_selection(app);
-            app.message = Some("Selection start marked. Tap the other end; Cancel aborts.".into());
+            app.message_info("Selection start marked. Tap the other end; Cancel aborts.");
             app.render(out)
         }
-        MenuAction::ScrollUp => super::viewport::scroll_view(app, out, -3),
-        MenuAction::ScrollDown => super::viewport::scroll_view(app, out, 3),
+        MenuAction::ScrollUp => {
+            super::input::prepare_editor_action(app, None);
+            super::viewport::scroll_view(app, out, -3)
+        }
+        MenuAction::ScrollDown => {
+            super::input::prepare_editor_action(app, None);
+            super::viewport::scroll_view(app, out, 3)
+        }
         MenuAction::Dispatch(action) => super::input::dispatch_action(app, out, action),
     }
 }
 
 fn move_overlay(app: &mut super::App, out: &mut dyn Write, code: KeyCode) -> io::Result<()> {
+    prepare_overlay_action(app);
     overlay::move_cursor(app, code);
     app.reveal_cursor();
     app.render(out)
@@ -226,6 +247,31 @@ fn dispatch_surface_action(
         _ => return app.render(out),
     };
     super::input::dispatch_action(app, out, action)
+}
+
+fn dispatch_vertical_action(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    down: bool,
+) -> io::Result<()> {
+    let action = vertical_action(super::input::active_scope(app), down);
+    super::input::dispatch_action(app, out, action)
+}
+
+fn vertical_action(scope: Scope, down: bool) -> Action {
+    match (scope, down) {
+        (Scope::Search, false) => Action::SearchPrevious,
+        (Scope::Search, true) => Action::SearchNext,
+        (Scope::Completion, false) => Action::CompletionPrevious,
+        (Scope::Completion, true) => Action::CompletionNext,
+        (_, false) => Action::MoveUp,
+        (_, true) => Action::MoveDown,
+    }
+}
+
+fn prepare_overlay_action(app: &mut super::App) {
+    super::input::prepare_editor_action(app, None);
+    overlay::refresh_message(app);
 }
 
 fn active_surface(app: &super::App) -> Surface {

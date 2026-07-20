@@ -2,7 +2,6 @@
 //! Owns: selection/file/block drafts, hard size limits, and sensitivity labels.
 //! Must not: read files, inspect repos, construct clients, truncate silently, or network.
 //! Invariants: every draft has an instruction; over-limit context fails closed.
-//! Phase: 6 (LLM, Powerful but Caged).
 
 use std::path::Path;
 

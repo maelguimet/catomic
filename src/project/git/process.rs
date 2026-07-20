@@ -1,16 +1,16 @@
 //! Purpose: this file must run read-only Git children with hard resource/lifetime bounds.
 //! Owns: safe command construction, capped stdout capture, cancellation, timeout, and reaping.
 //! Must not: invoke a shell, inherit Git identity overrides, write repositories, or network.
-//! Invariants: every child is waited; its process group ends before output readers are joined.
-//! Phase: 6 acceptance hardening.
+//! Invariants: every child is waited; output readers remain interruptible after child cleanup.
 
-use std::io::Read;
 use std::path::Path;
-use std::process::{Child, ChildStdout, Command, ExitStatus, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
+
+use crate::process_pipe::{spawn_reader, OverflowAction};
 
 use super::{GitError, MAX_TEXT_OUTPUT};
 
@@ -69,8 +69,12 @@ pub(super) fn run_bounded_with_timeout(
     let mut child = command
         .spawn()
         .map_err(|error| GitError::Spawn(error.to_string()))?;
-    let stdout = child.stdout.take().expect("piped stdout");
-    let reader = match spawn_reader(stdout, limit) {
+    let reader = match spawn_reader(
+        child.stdout.take().expect("piped stdout"),
+        limit,
+        OverflowAction::Stop,
+        "catomic-git-output",
+    ) {
         Ok(reader) => reader,
         Err(error) => {
             terminate(&mut child);
@@ -78,35 +82,18 @@ pub(super) fn run_bounded_with_timeout(
         }
     };
     let status = wait_for_child(&mut child, args, cancelled, timeout);
-    let bytes = reader
-        .join()
-        .map_err(|_| GitError::Read("git output reader panicked".to_string()))?
+    let output = reader
+        .finish()
         .map_err(|error| GitError::Read(error.to_string()));
     let status = status?;
-    let bytes = bytes?;
-    if bytes.len() > limit {
+    let output = output?;
+    if output.truncated {
         return Err(GitError::OutputTooLarge {
             command: args.join(" "),
             limit,
         });
     }
-    Ok((status, bytes))
-}
-
-fn spawn_reader(
-    mut stdout: ChildStdout,
-    limit: usize,
-) -> std::io::Result<std::thread::JoinHandle<std::io::Result<Vec<u8>>>> {
-    std::thread::Builder::new()
-        .name("catomic-git-output".to_string())
-        .spawn(move || {
-            let mut bytes = Vec::new();
-            stdout
-                .by_ref()
-                .take(limit as u64 + 1)
-                .read_to_end(&mut bytes)
-                .map(|_| bytes)
-        })
+    Ok((status, output.bytes))
 }
 
 pub(super) fn run_status(

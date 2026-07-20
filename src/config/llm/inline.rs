@@ -2,7 +2,6 @@
 //! Owns: inline defaults, marker disambiguation, limits, and extension lookup.
 //! Must not: load files, inspect buffers, read secrets, construct clients, or perform network I/O.
 //! Invariants: control markers are bounded and unambiguous; queue and warning limits are finite.
-//! Phase: issue #65 one-key inline clanker workflow.
 
 use std::collections::BTreeMap;
 use std::io;

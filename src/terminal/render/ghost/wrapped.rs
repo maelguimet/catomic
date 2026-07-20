@@ -2,7 +2,6 @@
 //! Owns: bounded source-row wrapping, ghost-range slicing, and wrapped cursor placement.
 //! Must not: mutate buffers, render unwrapped viewports, or materialize full documents.
 //! Invariants: splits stay on grapheme boundaries; ghost-created lines have blank gutters.
-//! Phase: post-v0.1 opt-in inline autocomplete.
 
 use super::*;
 

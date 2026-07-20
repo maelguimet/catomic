@@ -1,12 +1,11 @@
 //! Purpose: this file must contain only cheap, default-run (non-ignored) perf harness
 //!   smokes: small generated files, harness proof (exact size, App metadata capture),
 //!   no-panic open/render, and minimal render coverage. No timing pass/fail gates.
-//! Owns: perf_harness_* default tests + render_buffer_with_message test + phase0/1b
-//!   small-file key-to-render smokes (functional only after timing removal).
+//! Owns: perf_harness_* default tests, render_buffer_with_message, and
+//!   small-file key-to-render functional smokes.
 //! Must not: read > small sizes in default; assert on elapsed; depend on ignore; add deps.
 //! Invariants: all use generated temps <=1 MiB; assert deterministic outcomes only
 //!   (size match, tier, non-empty output or no panic, App fields populated).
-//! Phase: 2-ai (split; timing gates removed in follow-on; no behavior change on split commit).
 
 use std::fs;
 

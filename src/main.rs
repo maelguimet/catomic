@@ -15,6 +15,7 @@ mod file;
 mod help_catalog;
 mod llm;
 mod mode;
+mod process_pipe;
 mod project;
 mod terminal;
 mod update;

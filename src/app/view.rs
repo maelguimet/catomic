@@ -3,7 +3,6 @@
 //! Must not: mutate source text/history, emit terminal setup, or contact the network.
 //! Invariants: preview is explicit/read-only; F5/F7 are session-global and persisted;
 //!   F8/F9 and source viewports remain per buffer.
-//! Phase: 4-b/4-c optional indicators and Markdown preview.
 
 use std::io::{self, Write};
 
@@ -299,7 +298,7 @@ pub(crate) fn relayout_preview(app: &mut super::App) {
                 app.screen.scroll_left = 0;
             }
         }
-        Err(error) => app.message = Some(format!("Markdown preview failed: {error}.")),
+        Err(error) => app.message_error(format!("Markdown preview failed: {error}.")),
     }
 }
 
@@ -323,11 +322,10 @@ fn toggle_preview(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool>
                 app.screen.scroll_top = 0;
                 app.screen.scroll_left = 0;
                 app.screen.wrap_col = 0;
-                app.message =
-                    Some("Markdown preview on (read-only; F6 or Esc to exit).".to_string());
+                app.message_info("Markdown preview on (read-only; F6 or Esc to exit).");
                 reveal_display_cursor(app);
             }
-            Err(error) => app.message = Some(format!("Markdown preview failed: {error}.")),
+            Err(error) => app.message_error(format!("Markdown preview failed: {error}.")),
         }
     }
     app.render(out)?;
@@ -337,11 +335,10 @@ fn toggle_preview(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool>
 fn toggle_line_numbers(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {
     let enabled = !app.view_preferences.line_numbers();
     app.view_preferences.set_line_numbers(enabled);
-    app.message = app
-        .view_preferences
-        .persist()
-        .err()
-        .map(|error| format!("Line-number preference not saved: {error}."));
+    match app.view_preferences.persist() {
+        Ok(()) => app.message = None,
+        Err(error) => app.message_error(format!("Line-number preference not saved: {error}.")),
+    }
     relayout_preview(app);
     reveal_display_cursor(app);
     app.render(out)?;
@@ -354,11 +351,10 @@ fn toggle_external_diff(app: &mut super::App, out: &mut dyn Write) -> io::Result
     if !enabled {
         app.clear_external_changes();
     }
-    app.message = app
-        .view_preferences
-        .persist()
-        .err()
-        .map(|error| format!("External-change preference not saved: {error}."));
+    match app.view_preferences.persist() {
+        Ok(()) => app.message = None,
+        Err(error) => app.message_error(format!("External-change preference not saved: {error}.")),
+    }
     reveal_display_cursor(app);
     app.render(out)?;
     Ok(true)
@@ -432,7 +428,7 @@ fn reveal_display_cursor(app: &mut super::App) {
 }
 
 fn read_only_message(app: &mut super::App) {
-    app.message = Some("Markdown preview is read-only; press F6 or Esc to edit.".to_string());
+    app.message_info("Markdown preview is read-only; press F6 or Esc to edit.");
 }
 
 fn is_quit(key: KeyEvent) -> bool {

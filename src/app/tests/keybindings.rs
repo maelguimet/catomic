@@ -2,7 +2,6 @@
 //! Owns: semantic action dispatch, chord shadowing, and active-surface precedence tests.
 //! Must not: launch a terminal, run external commands, or bypass save/quit guards.
 //! Invariants: overrides apply in normal mode; active prompts retain their own text input.
-//! Phase: 7 keybinding integration.
 
 use crossterm::event::{KeyCode, KeyModifiers};
 

@@ -2,7 +2,6 @@
 //! Owns: focused App prompt fixtures and async worker polling.
 //! Must not: contain production prompt behavior or depend on a real terminal.
 //! Invariants: temporary paged files are removed after completed tests.
-//! Phase: 3-c goto line and basic command surface.
 
 use super::*;
 use crossterm::event::{KeyEventKind, KeyEventState};
@@ -61,6 +60,18 @@ fn config_command_opens_the_exact_existing_path_as_an_editable_buffer() {
     assert_eq!(app.buffer.to_string(), "[editor]\ntab_size = 2\n");
     assert!(!app.buffer.is_read_only());
     assert!(app.message.is_none());
+    std::fs::remove_dir_all(path.parent().unwrap().parent().unwrap()).unwrap();
+}
+
+#[test]
+fn invalid_config_path_sets_error_role_at_the_emission_boundary() {
+    let path = config_fixture("directory");
+    std::fs::create_dir_all(&path).unwrap();
+    let mut app = super::super::App::new(None).unwrap();
+
+    execute_config_path(&mut app, &mut Vec::new(), path.clone(), false).unwrap();
+
+    assert_eq!(app.message_role, crate::terminal::render::StatusRole::Error);
     std::fs::remove_dir_all(path.parent().unwrap().parent().unwrap()).unwrap();
 }
 
@@ -234,6 +245,40 @@ fn config_discard_warning_is_cancelled_by_editor_movement() {
 
     assert!(!config_discard_confirmation_pending(&app));
     assert!(app.message.is_none());
+    std::fs::remove_dir_all(path.parent().unwrap().parent().unwrap()).unwrap();
+}
+
+#[test]
+fn mobile_menu_cancels_config_discard_confirmation() {
+    let path = config_fixture("mobile_discard_warning");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "[editor]\n").unwrap();
+    let mut app = super::super::App::new(None).unwrap();
+    super::super::mobile::configure(&mut app, true);
+    app.screen.update_size(20, 6);
+    let mut out = Vec::new();
+
+    open_config_path(&mut app, &mut out, &path).unwrap();
+    app.handle_key_with(&mut out, key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key_with(&mut out, key(KeyCode::Char('q'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(config_discard_confirmation_pending(&app));
+
+    super::super::mobile::handle_mouse(
+        &mut app,
+        &mut out,
+        crossterm::event::MouseEvent {
+            kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+            column: 1,
+            row: 5,
+            modifiers: KeyModifiers::NONE,
+        },
+    )
+    .unwrap();
+
+    assert!(!config_discard_confirmation_pending(&app));
+    assert!(super::super::mobile::is_viewing(&app));
     std::fs::remove_dir_all(path.parent().unwrap().parent().unwrap()).unwrap();
 }
 

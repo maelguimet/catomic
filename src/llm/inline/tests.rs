@@ -2,7 +2,6 @@
 //! Owns: pure Unicode/configured-marker/multi-block/limit fixtures without App or network.
 //! Must not: perform I/O, construct clients, mutate buffers, or duplicate integration tests.
 //! Invariants: asserted line numbers are one-based and context never includes unrelated text.
-//! Phase: issue #65 one-key inline clanker workflow.
 
 use super::response::ResponseError;
 use super::*;

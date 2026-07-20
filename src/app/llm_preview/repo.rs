@@ -2,7 +2,6 @@
 //! Owns: repo proposal parsing and transfer of the broker drift guard into preview state.
 //! Must not: apply patches, mutate source, construct clients, read repos, write, or network.
 //! Invariants: only valid current-buffer patches reach the read-only guarded preview.
-//! Phase: 6 (LLM Context Broker).
 
 use std::io::{self, Write};
 
@@ -20,7 +19,7 @@ pub(crate) fn show_repo_patch(
         match super::proposal::build_patch_for_path(&source_snapshot, output, expected_path) {
             Ok(proposal) => proposal,
             Err(message) => {
-                app.message = Some(message);
+                app.message_error(message);
                 return app.render(out);
             }
         };

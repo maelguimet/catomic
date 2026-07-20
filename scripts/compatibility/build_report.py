@@ -46,9 +46,9 @@ FILESYSTEM_REQUIRED = {
 FILESYSTEM_BOUNDARIES = {
     "symlink-save",
     "read-only-refusal",
-    "hard-link-refusal",
-    "xattr-refusal",
-    "acl-refusal",
+    "hard-link-save",
+    "xattr-save",
+    "acl-save",
     "non-regular-refusal",
 }
 

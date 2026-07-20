@@ -8,7 +8,6 @@
 //!   10 MiB opens editable Large; 100 MiB opens editable Huge paged mode;
 //!   phase sample labels are stable and manual-only; tests may skip cleanly on
 //!   generation/open environment limits.
-//! Phase: 2B hotspot inventory after 2-ar.
 
 use std::path::Path;
 

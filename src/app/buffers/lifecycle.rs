@@ -2,7 +2,6 @@
 //! Owns: blank-buffer construction, dirty-close refusal, and active-slot removal.
 //! Must not: decode keys, render, write files, or bypass explicit discard requests.
 //! Invariants: dirty buffers close only with force; closing the last buffer leaves one blank.
-//! Phase: post-v0.1 core usability.
 
 use std::io;
 
@@ -27,8 +26,7 @@ impl App {
     pub(crate) fn close_active_buffer(&mut self, force: bool) -> io::Result<CloseBufferOutcome> {
         super::super::selection::end_cut_line_chain(self);
         if self.file.dirty && !force {
-            self.message =
-                Some("Buffer has unsaved changes. Save it or use close! to discard.".to_string());
+            self.message_warning("Buffer has unsaved changes. Save it or use close! to discard.");
             return Ok(CloseBufferOutcome::Dirty);
         }
         super::super::command_prompt::forget_active_config_detour(self);

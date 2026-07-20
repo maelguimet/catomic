@@ -2,7 +2,6 @@
 //! Owns: App-level `:run`-path tests using local deterministic shell commands.
 //! Must not: use network, write user files, depend on terminal setup, or skip confirmation.
 //! Invariants: output never mutates before Enter; failed/stale output never applies.
-//! Phase: 7 external command acceptance.
 
 use std::time::{Duration, Instant};
 
@@ -33,6 +32,24 @@ fn plain_start_constructs_no_command_task_or_preview() {
 
     assert!(app.external_command.running.is_none());
     assert!(app.external_command.preview.is_none());
+}
+
+#[test]
+fn unknown_command_sets_error_role_at_the_emission_boundary() {
+    let mut app = super::super::App::new(None).unwrap();
+
+    start(&mut app, &mut Vec::new(), "missing").unwrap();
+
+    assert_eq!(app.message_role, crate::terminal::render::StatusRole::Error);
+}
+
+#[test]
+fn subprocess_failure_sets_error_role_at_the_emission_boundary() {
+    let mut app = super::super::App::new(None).unwrap();
+
+    finish_error(&mut app, &mut Vec::new(), "fixture", "failed: boom").unwrap();
+
+    assert_eq!(app.message_role, crate::terminal::render::StatusRole::Error);
 }
 
 #[test]

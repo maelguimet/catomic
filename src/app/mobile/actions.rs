@@ -2,7 +2,6 @@
 //! Owns: stable action labels, ordering, and explicit touch-only operations.
 //! Must not: mutate App state, render, inspect terminals, or duplicate editor semantics.
 //! Invariants: every catalog entry is executable without a function key or hardware chord.
-//! Phase: Android/Termux mobile support.
 
 use crate::config::actions::Action;
 

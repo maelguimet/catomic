@@ -3,7 +3,6 @@
 //! Must not: enable terminal modes, mutate text, access clipboard, or inspect buffer internals.
 //! Invariants: persistent status selection never maps into document coordinates;
 //!   mapped document cursors stay within the active page.
-//! Phase: 3-e mouse selection interaction.
 
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
@@ -107,7 +106,7 @@ fn dispatch_scroll(
     let Some(action) = app.keybindings.mouse_action(scope, gesture) else {
         return Ok(());
     };
-    super::super::input::prepare_editor_action(app, action);
+    super::super::input::prepare_editor_action(app, Some(action));
     let direction = match action {
         Action::MouseScrollUp => super::super::viewport::ScrollDirection::Up,
         Action::MouseScrollDown => super::super::viewport::ScrollDirection::Down,
@@ -125,13 +124,14 @@ fn mouse_down(
         return Ok(());
     };
     if let Some(anchor) = app.selection.touch_anchor.take() {
+        super::super::input::prepare_editor_action(app, None);
         app.buffer.set_cursor(cursor);
         let selection = Selection::new(anchor, cursor);
         app.selection.range = (!selection.is_empty()).then_some(selection);
         app.selection.drag_anchor = None;
         app.selection.last_click = None;
         let _ = super::capture_selection(app, out)?;
-        app.message = Some(if selection.is_empty() {
+        app.message_info(if selection.is_empty() {
             "Selection endpoint matches its start.".to_string()
         } else {
             "Selection ready. Use Copy, Cut, or Menu.".to_string()
@@ -177,7 +177,7 @@ fn dispatch_action(
     else {
         return Ok(());
     };
-    super::super::input::prepare_editor_action(app, action);
+    super::super::input::prepare_editor_action(app, Some(action));
     let should_copy_on_select = match action {
         Action::MousePlaceCursor => {
             app.buffer.set_cursor(cursor);

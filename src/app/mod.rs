@@ -3,7 +3,6 @@
 //! Must not: implement the terminal loop, input precedence, frame composition, or buffer edits.
 //! Invariants: Plain constructs no Project/network/process services; new top-level state
 //!   requires an ownership review before bypassing an existing aggregate or subsystem.
-//! Phase: bounded post-beta App ownership cleanup.
 
 use std::collections::VecDeque;
 use std::io;
@@ -121,6 +120,9 @@ pub struct App {
     /// next editor action; active surfaces own theirs, and confirmations survive only the
     /// matching action.
     pub message: Option<String>,
+    /// Semantic role supplied by the producer of `message`. Prompt and confirmation
+    /// state may override it while those states are active.
+    pub(crate) message_role: crate::terminal::render::StatusRole,
     /// When true, an immediately following quit action while dirty will force quit (no save).
     pub pending_quit_confirm: bool,
     /// When Some, records a token bound to the concrete observed disk state

@@ -3,7 +3,6 @@
 //! Must not: mutate buffers/App state, scan whole files, own terminal setup, or save.
 //! Invariants: no whole-document scan; forward work is viewport-bounded; visual slices end on
 //!   grapheme boundaries, and each reverse step inspects at most one logical line.
-//! Phase: post-v0.1 core usability.
 
 use std::io::{self, Write};
 

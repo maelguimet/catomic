@@ -1,17 +1,15 @@
-//! Phase 1A storage/query parity tests (child submodule of buffer::tests).
+//! Storage and query parity tests.
 //!
 //! Purpose: this file must contain storage-only and construction/query parity between
 //! SimpleBuffer (oracle) and PieceTable. No mutation parity or undo here.
 //! Owns: assert_parity, all parity_* tests, piece_table_new_is_empty_and_has_one_line.
 //! Must not: edit parity (insert/delete/move), undo, random model, or history token tests.
 //! Invariants: descendant of buffer::tests; preserves original test names and behavior.
-//! Phase: 2-k narrow cleanup (no behavior change).
 
 use crate::buffer::{Buffer, PieceTable, SimpleBuffer};
 
-/// Phase 1A storage-only parity tests.
 /// Run identical from_text cases against SimpleBuffer (oracle) and PieceTable.
-/// Only queries + construction; no edits in this task.
+/// Only queries and construction are covered here.
 fn assert_parity(text: &str) {
     let sb = SimpleBuffer::from_text(text);
     let pt = PieceTable::from_text(text);

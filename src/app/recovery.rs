@@ -2,7 +2,6 @@
 //! Owns: per-buffer timer/task state, `:recover`, preview input, apply, and save cleanup.
 //! Must not: overwrite source files, run when disabled, autosave unbounded buffers, or block typing.
 //! Invariants: offers retain the opened candidate; Enter applies one edit; drift refuses apply.
-//! Phase: 8 bounded crash recovery.
 
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
@@ -44,12 +43,11 @@ pub(crate) fn initialize(app: &mut super::App) {
         Ok(Some(candidate)) => {
             app.recovery.offered_candidate = Some(candidate);
             if app.message.is_none() {
-                app.message =
-                    Some("Catnap recovery found. Run :recover to preview it.".to_string());
+                app.message_info("Catnap recovery found. Run :recover to preview it.");
             }
         }
         Err(error) if app.message.is_none() => {
-            app.message = Some(format!("Catnap check failed: {error}"));
+            app.message_error(format!("Catnap check failed: {error}"));
         }
         _ => {}
     }
@@ -82,7 +80,7 @@ fn finish_task_if_ready(app: &mut super::App, out: &mut dyn Write) -> io::Result
             }
         }
         CatnapResult::Error(error) => {
-            app.message = Some(format!("Catnap autosave failed: {error}"));
+            app.message_error(format!("Catnap autosave failed: {error}"));
             app.render(out)?;
         }
     }
@@ -116,7 +114,7 @@ fn start_autosave(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     match CatnapTask::start(path, content, app.buffer.edit_history_position()) {
         Ok(task) => app.recovery.task = Some(task),
         Err(error) => {
-            app.message = Some(format!("Could not start catnap autosave: {error}"));
+            app.message_error(format!("Could not start catnap autosave: {error}"));
             app.render(out)?;
         }
     }

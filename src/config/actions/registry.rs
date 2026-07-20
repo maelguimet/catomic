@@ -1,10 +1,9 @@
 //! Purpose: declare the checked shortcut action inventory in one reviewable table.
-//! Owns: stable names, labels, scopes, default chords, and keyboard/mouse classification.
+//! Owns: stable names, help text, scopes, default chords, and keyboard/mouse classification.
 //! Must not: contain parsing, dispatch, rendering, configuration IO, or tests.
 //! Invariants: same-scope defaults do not collide after normalization.
 //! Size: this is declarative inventory data; keeping the complete entry set flat makes order and
 //!   collisions reviewable without adding runtime concatenation or duplicated lookup paths.
-//! Phase: issue #62 complete shortcut customization.
 
 use super::{Descriptor, InputKind::*, Scope::*};
 
@@ -22,22 +21,23 @@ const NAV: &[super::Scope] = &[Editor, Preview, Picker, Help];
 const PS: &[super::Scope] = &[Prompt, Search];
 
 macro_rules! key {
-    ($action:ident, $name:literal, $label:literal, $scopes:expr, [$($default:literal),+]) => {
-        Descriptor { action: super::Action::$action, name: $name, scopes: $scopes,
+    ($action:ident, $name:literal, $help:literal, $scopes:expr, [$($default:literal),+]) => {
+        Descriptor { action: super::Action::$action, name: $name, help: $help, scopes: $scopes,
             defaults: &[$($default),+], input: Keyboard }
     };
 }
 macro_rules! mouse {
-    ($action:ident, $name:literal, $label:literal, [$($default:literal),+]) => {
-        Descriptor { action: super::Action::$action, name: $name, scopes: E,
+    ($action:ident, $name:literal, $help:literal, [$($default:literal),+]) => {
+        Descriptor { action: super::Action::$action, name: $name, help: $help, scopes: E,
             defaults: &[$($default),+], input: MouseButton }
     };
 }
 macro_rules! wheel {
-    ($action:ident, $name:literal, $label:literal, $default:literal) => {
+    ($action:ident, $name:literal, $help:literal, $default:literal) => {
         Descriptor {
             action: super::Action::$action,
             name: $name,
+            help: $help,
             scopes: NAV,
             defaults: &[$default],
             input: MouseWheel,
@@ -50,34 +50,40 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
     key!(
         Quit,
         "quit",
-        "Quit; repeat only to discard all dirty buffers.",
+        "Quit when all buffers are clean; a second request discards all dirty buffers.",
         G,
         ["ctrl+q"]
     ),
     key!(
         Interrupt,
         "interrupt",
-        "Interrupt immediately through the SIGINT teardown path.",
+        "Exit immediately through terminal teardown without saving.",
         G,
         ["ctrl+shift+c"]
     ),
     key!(
         Save,
         "save",
-        "Save; repeat only to confirm an unchanged disk conflict.",
+        "Save the active buffer; a repeated save confirms only the same observed disk conflict.",
         E,
         ["ctrl+s"]
     ),
     key!(
         SaveAs,
         "save-as",
-        "Open Save As prompt",
+        "Choose a new path for the active buffer.",
         E,
         ["ctrl+shift+s"]
     ),
-    key!(Open, "open", "Open file prompt", E, ["ctrl+o"]),
-    key!(New, "new", "New untitled buffer", E, ["ctrl+n"]),
-    key!(Close, "close", "Close active clean buffer", E, ["ctrl+w"]),
+    key!(Open, "open", "Open a path in another buffer.", E, ["ctrl+o"]),
+    key!(New, "new", "Create an untitled buffer.", E, ["ctrl+n"]),
+    key!(
+        Close,
+        "close",
+        "Close the active clean buffer; use the `close!` command only to discard it.",
+        E,
+        ["ctrl+w"]
+    ),
     key!(
         Reload,
         "reload",
@@ -85,25 +91,31 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
         E,
         ["ctrl+r"]
     ),
-    key!(Search, "search", "Open incremental search", EH, ["ctrl+f"]),
+    key!(
+        Search,
+        "search",
+        "Search incrementally; `Enter` or `Down` moves forward and `Up` moves backward.",
+        EH,
+        ["ctrl+f"]
+    ),
     key!(
         Replace,
         "replace",
-        "Open Replace Next prompt",
+        "Open the two-stage Replace Next prompt.",
         E,
         ["ctrl+shift+f"]
     ),
     key!(
         GotoLine,
         "goto-line",
-        "Open goto-line prompt",
+        "Jump to a 1-based line number.",
         E,
         ["ctrl+g"]
     ),
     key!(
         CommandPrompt,
         "command-prompt",
-        "Open command prompt",
+        "Run commands such as `config`, `project`, `recover`, and `close!` without a leading colon.",
         E,
         ["ctrl+shift+p", "f2"]
     ),
@@ -333,19 +345,25 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
     ),
     key!(Copy, "copy", "Copy selection", E, ["ctrl+c"]),
     key!(Cut, "cut", "Cut selection", E, ["ctrl+x"]),
-    key!(CutLine, "cut-line", "Cut current line", E, ["ctrl+k"]),
+    key!(
+        CutLine,
+        "cut-line",
+        "Cut the current line as one undoable edit.",
+        E,
+        ["ctrl+k"]
+    ),
     key!(Paste, "paste", "Paste internal clipboard", E, ["ctrl+v"]),
     key!(
         PreviousBuffer,
         "previous-buffer",
-        "Switch to previous buffer",
+        "Switch without closing or saving the current buffer.",
         E,
         ["alt+pageup"]
     ),
     key!(
         NextBuffer,
         "next-buffer",
-        "Switch to next buffer",
+        "Switch without closing or saving the current buffer.",
         E,
         ["alt+pagedown"]
     ),
@@ -366,14 +384,14 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
     key!(
         ToggleExternalDiff,
         "toggle-external-diff",
-        "Toggle and remember external-reload change highlighting",
+        "Toggle the latest external-reload markers for every buffer.",
         EV,
         ["f5"]
     ),
     key!(
         MarkdownPreview,
         "markdown-preview",
-        "Toggle Markdown preview",
+        "Toggle the rendered read-only Markdown view for the current buffer.",
         EV,
         ["f6"]
     ),
@@ -409,7 +427,7 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
     key!(
         SelectModel,
         "select-model",
-        "Open the session model/backend picker without invoking a backend",
+        "Choose the process-local preset without contacting a backend.",
         E,
         ["f10"]
     ),

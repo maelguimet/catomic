@@ -5,7 +5,6 @@
 //! Must not: rely on live OS notify delivery or change manual Ctrl+R semantics.
 //! Invariants: clean Modified/Deleted reload immediately when enabled; dirty buffers
 //!   arm; Unchanged/NoPath observations are ignored when no pending exists.
-//! Phase: 2-ac through 2-bx automatic clean reload.
 
 use super::super::super::*;
 use super::super::make_key;
@@ -29,7 +28,7 @@ fn apply_file_watch_signal_changed_on_unchanged_disk_ignores_to_avoid_noise() {
     assert!(!app.file.dirty);
 
     // Set a warning sentinel that must be preserved.
-    app.message = Some("Prior warning.".to_string());
+    app.message_warning("Prior warning.");
 
     // Simulate a Changed signal for our own write (unchanged vs snapshot)
     let sig = crate::file::watcher::FileWatchSignal::Changed;

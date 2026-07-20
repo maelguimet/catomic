@@ -2,7 +2,6 @@
 //! Owns: open/save, Save As, reload, and format-state fixtures.
 //! Must not: use network, construct Project services, or bypass atomic save paths.
 //! Invariants: buffer text is LF-normalized while disk bytes retain the recorded format.
-//! Phase: post-v0.1 core usability.
 
 use super::super::*;
 use super::make_key;

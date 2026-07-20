@@ -2,7 +2,6 @@
 //! Owns: the pre-send worker state, non-blocking polling, and guarded handoff to HTTP.
 //! Must not: run Git on the input thread, contact endpoints before success, or edit buffers.
 //! Invariants: source, path, and repository identity remain pinned across the async check.
-//! Phase: 6 acceptance hardening.
 
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -34,13 +33,11 @@ pub(super) fn begin(app: &mut super::super::App) {
         return;
     };
     if app.buffer.to_string() != pending.source_snapshot {
-        app.message =
-            Some("Active buffer changed before confirmation; repo LLM cancelled.".to_string());
+        app.message_info("Active buffer changed before confirmation; repo LLM cancelled.");
         return;
     }
     if app.file.path.as_ref() != Some(&pending.file_path) {
-        app.message =
-            Some("Active file path changed before confirmation; repo LLM cancelled.".to_string());
+        app.message_info("Active file path changed before confirmation; repo LLM cancelled.");
         return;
     }
     start(app, *pending);
@@ -54,7 +51,7 @@ fn start(app: &mut super::super::App, pending: Pending) {
     } = pending.prepared;
     match RepoCheckTask::start(broker) {
         Ok(task) => {
-            app.message = Some("Rechecking repository before send... Esc cancels.".to_string());
+            app.message_info("Rechecking repository before send... Esc cancels.");
             app.repo_llm_state = Some(RepoLlmState::CheckingSend(CheckingSend {
                 task,
                 command: pending.command,
@@ -67,7 +64,7 @@ fn start(app: &mut super::super::App, pending: Pending) {
                 destination: pending.destination,
             }));
         }
-        Err(error) => app.message = Some(format!("Could not start repository check: {error}")),
+        Err(error) => app.message_error(format!("Could not start repository check: {error}")),
     }
 }
 
@@ -85,12 +82,11 @@ pub(super) fn poll(app: &mut super::super::App, out: &mut dyn Write) -> io::Resu
     match result {
         RepoCheckResult::Unchanged(broker) => finish(app, *broker, state),
         RepoCheckResult::Changed => {
-            app.message =
-                Some("Repository changed before confirmation; repo LLM cancelled.".to_string())
+            app.message_warning("Repository changed before confirmation; repo LLM cancelled.")
         }
         RepoCheckResult::Cancelled => app.message = None,
         RepoCheckResult::Error(error) => {
-            app.message = Some(format!("Could not recheck repository: {error}"))
+            app.message_error(format!("Could not recheck repository: {error}"))
         }
     }
     app.render(out)
@@ -98,14 +94,11 @@ pub(super) fn poll(app: &mut super::super::App, out: &mut dyn Write) -> io::Resu
 
 fn finish(app: &mut super::super::App, broker: ContextBroker, state: CheckingSend) {
     if app.buffer.to_string() != state.source_snapshot {
-        app.message =
-            Some("Active buffer changed during repository check; repo LLM cancelled.".to_string());
+        app.message_info("Active buffer changed during repository check; repo LLM cancelled.");
         return;
     }
     if app.file.path.as_ref() != Some(&state.file_path) {
-        app.message = Some(
-            "Active file path changed during repository check; repo LLM cancelled.".to_string(),
-        );
+        app.message_info("Active file path changed during repository check; repo LLM cancelled.");
         return;
     }
     super::start_confirmed(app, pending(broker, state));
@@ -133,6 +126,6 @@ pub(super) fn handle_key(app: &mut super::super::App, key: KeyEvent) {
         super::cancel_all(app);
         app.message = None;
     } else {
-        app.message = Some("Repository check running; Esc cancels.".to_string());
+        app.message_info("Repository check running; Esc cancels.");
     }
 }

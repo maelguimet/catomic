@@ -1,4 +1,4 @@
-//! FileState and exact dirty tracking helpers (Phase 2-a / 2-j / 2-k slim).
+//! FileState and exact dirty tracking helpers.
 //!
 //! Purpose: this file owns the FileState struct and the two tiny helpers
 //! mark_saved / refresh_dirty_from_buffer_history that App uses for
@@ -6,7 +6,6 @@
 //! Owns: FileState definition + doc, plus the two refresh/mark fns (reexport or used by App).
 //! Must not: contain key handling, run loop, render, or viewport logic.
 //! Invariants: pub fields for test access; no behavior change; usable from App.
-//! Phase: 2-l (added disk_snapshot; prior behavior for dirty/token unchanged).
 
 use std::path::PathBuf;
 

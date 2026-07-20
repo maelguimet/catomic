@@ -2,7 +2,6 @@
 //! Owns: lazy API-key/client construction, serial progress, response handoff, and stop policy.
 //! Must not: discover scope, apply proposals, save files, or start queued work concurrently.
 //! Invariants: identity/guards match before every send and response preview; one task exists at most.
-//! Phase: issue #65 one-key inline clanker workflow.
 
 use std::io::{self, Write};
 
@@ -23,7 +22,7 @@ pub(super) fn confirm(app: &mut super::super::App, out: &mut dyn Write) -> io::R
     super::confirmation::restore_view(app, &confirmation);
     let prepared = confirmation.prepared;
     if let Err(message) = validate_identity(app, &prepared) {
-        app.message = Some(format!(
+        app.message_info(format!(
             "Inline clanker cancelled before sending: {message}; no network call made."
         ));
         return app.render(out);
@@ -65,7 +64,7 @@ pub(super) fn start(
     prepared: PreparedWorkflow,
 ) -> io::Result<()> {
     if let Err(message) = validate_identity(app, &prepared) {
-        app.message = Some(format!(
+        app.message_info(format!(
             "Inline clanker queue stopped before send: {message}."
         ));
         return app.render(out);
@@ -100,7 +99,7 @@ pub(super) fn start(
     let user = user_prompt(&prepared);
     match LlmTask::start(backend, system, user) {
         Ok(task) => {
-            app.message = Some(progress_message(&prepared));
+            app.message_info(progress_message(&prepared));
             app.inline_clanker.phase = Some(Phase::Running(RunningRequest { prepared, task }));
         }
         Err(error) => {
@@ -122,7 +121,7 @@ fn finish_output(
     output: String,
 ) -> io::Result<()> {
     if let Err(message) = validate_identity(app, &prepared) {
-        app.message = Some(format!(
+        app.message_warning(format!(
             "Inline clanker response discarded because {message}; instruction kept."
         ));
         return app.render(out);
@@ -140,14 +139,14 @@ pub(super) fn fail_or_continue(
     let failed = prepared.request_index + 1;
     let has_more = failed < prepared.draft.requests.len();
     if prepared.inline.stop_on_error || !has_more {
-        app.message = Some(format!(
+        app.message_error(format!(
             "Inline clanker stopped at request {failed}/{}: {error}; instruction kept and no pending work remains.",
             prepared.draft.requests.len()
         ));
         return app.render(out);
     }
     prepared.request_index += 1;
-    app.message = Some(format!(
+    app.message_error(format!(
         "Inline clanker request {failed} failed ({error}); continuing by configuration."
     ));
     start(app, out, prepared)

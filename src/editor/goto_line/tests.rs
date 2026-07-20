@@ -2,7 +2,6 @@
 //! Owns: small descriptor and edited-overlay fixtures for goto-line.
 //! Must not: contain production scanning behavior or App/terminal integration.
 //! Invariants: temporary descriptors are removed after each completed test.
-//! Phase: 3-c global goto-line completion.
 
 use super::*;
 use crate::buffer::DescriptorOverlay;

@@ -1,12 +1,11 @@
-//! Dirty tracking, save-point token, lifecycle, and save error tests (moved in 2-o split).
+//! Dirty tracking, save-point token, lifecycle, and save error tests.
 //!
-//! Purpose: contains the Phase 2-j exact dirty + basic dirty/save lifecycle tests.
+//! Purpose: contain exact dirty-state and basic dirty/save lifecycle tests.
 //! Owns: app_file_state_new_starts_clean, app_dirty_lifecycle_via_keys,
 //!       app_ctrl_s_after_dirty_clears_..., app_save_error_..., and the six 2-j token tests.
 //! Must not: contain snapshot, external status, or save-conflict tests (split elsewhere).
 //! Invariants: all original test fn names preserved exactly; behavior unchanged;
 //!             uses super::super for App etc.
-//! Phase: 2-o cleanup.
 
 use super::super::*;
 use super::make_key;
@@ -168,6 +167,7 @@ fn app_save_refuses_read_only_target_and_keeps_buffer_dirty() {
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "protected");
     assert_eq!(std::fs::metadata(&path).unwrap().ino(), inode);
     assert!(app.message.as_deref().unwrap().contains("read-only"));
+    assert_eq!(app.message_role, crate::terminal::render::StatusRole::Error);
     let _ = std::fs::remove_file(path);
 }
 

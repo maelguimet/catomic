@@ -2,7 +2,6 @@
 //! Owns: warning/confirmation/request/preview phases, serial queue lifetime, and change metadata.
 //! Must not: start network work before confirmation, save files, or send out-of-scope text.
 //! Invariants: at most one request runs; every apply revalidates path, revision, guards, and ranges.
-//! Phase: issue #65 one-key inline clanker workflow.
 
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -128,9 +127,8 @@ pub(crate) fn handle_key(
             if key.code == KeyCode::Esc {
                 cancel_running(app, out)?;
             } else {
-                app.message = Some(
-                    "Inline clanker request is running. Esc cancels; other input is paused."
-                        .to_string(),
+                app.message_info(
+                    "Inline clanker request is running. Esc cancels; other input is paused.",
                 );
                 app.render(out)?;
             }
@@ -173,24 +171,19 @@ pub(crate) fn dispatch_action(
 pub(crate) fn handle_paste(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {
     match app.inline_clanker.phase {
         Some(Phase::Warning(_)) | Some(Phase::Confirm(_)) => {
-            app.message = Some(
-                "Inline clanker confirmation is read-only. Enter sends; Esc cancels.".to_string(),
-            );
+            app.message_info("Inline clanker confirmation is read-only. Enter sends; Esc cancels.");
             app.render(out)?;
             Ok(true)
         }
         Some(Phase::Running(_)) => {
-            app.message = Some(
-                "Inline clanker request is running. Esc cancels; pasted input is paused."
-                    .to_string(),
+            app.message_info(
+                "Inline clanker request is running. Esc cancels; pasted input is paused.",
             );
             app.render(out)?;
             Ok(true)
         }
         Some(Phase::Preview(_)) => {
-            app.message = Some(
-                "Inline clanker proposal is read-only. Enter applies; Esc rejects.".to_string(),
-            );
+            app.message_info("Inline clanker proposal is read-only. Enter applies; Esc rejects.");
             app.render(out)?;
             Ok(true)
         }

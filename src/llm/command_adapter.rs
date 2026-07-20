@@ -1,11 +1,10 @@
 //! Purpose: this file must execute one confirmed structured-output command adapter safely.
 //! Owns: argv spawning, stdin protocol, process-group cancellation, bounds, and format parsing.
 //! Must not: invoke a shell, inherit the editor cwd, interpret tool calls, or mutate buffers.
-//! Invariants: output/runtime are bounded; cancellation kills the group and reaps its direct child.
-//! Phase: post-v0.1 command-backed LLM adapters.
+//! Invariants: output/runtime and pipe cleanup are bounded; cancellation reaps the direct child.
 
 use std::fs;
-use std::io::{self, Read, Write};
+use std::io;
 use std::os::unix::fs::DirBuilderExt;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
@@ -17,6 +16,7 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 
 use crate::config::llm::{CommandInputFormat, CommandOutputFormat};
+use crate::process_pipe::{spawn_reader, spawn_writer, OverflowAction, PipeReader, PipeWriter};
 
 use super::backend::{BackendError, BackendErrorKind, BackendMessage};
 
@@ -50,7 +50,12 @@ pub(crate) fn complete(
     let stdout = child.stdout.take().expect("piped stdout");
     let stderr = child.stderr.take().expect("piped stderr");
     let overflow = Arc::new(AtomicBool::new(false));
-    let stdout_reader = match read_bounded(stdout, MAX_STDOUT_BYTES, Arc::clone(&overflow)) {
+    let stdout_reader = match spawn_reader(
+        stdout,
+        MAX_STDOUT_BYTES,
+        OverflowAction::Signal(Arc::clone(&overflow)),
+        "catomic-llm-output",
+    ) {
         Ok(reader) => reader,
         Err(error) => {
             kill_and_reap_group(&mut child);
@@ -58,7 +63,12 @@ pub(crate) fn complete(
             return Err(thread_error("stdout", &error));
         }
     };
-    let stderr_reader = match read_bounded(stderr, MAX_STDERR_BYTES, Arc::clone(&overflow)) {
+    let stderr_reader = match spawn_reader(
+        stderr,
+        MAX_STDERR_BYTES,
+        OverflowAction::Signal(Arc::clone(&overflow)),
+        "catomic-llm-output",
+    ) {
         Ok(reader) => reader,
         Err(error) => {
             kill_and_reap_group(&mut child);
@@ -122,7 +132,7 @@ fn spawn(
     config: &ResolvedCommand,
     workspace: &TempWorkspace,
     input: &[u8],
-) -> Result<(std::process::Child, std::thread::JoinHandle<io::Result<()>>), BackendError> {
+) -> Result<(std::process::Child, PipeWriter), BackendError> {
     let mut command = Command::new(&config.program);
     command
         .args(&config.args)
@@ -146,12 +156,8 @@ fn spawn(
             ),
         )
     })?;
-    let mut stdin = child.stdin.take().expect("piped stdin");
-    let owned = input.to_vec();
-    let writer = match std::thread::Builder::new()
-        .name("catomic-llm-stdin".to_string())
-        .spawn(move || stdin.write_all(&owned))
-    {
+    let stdin = child.stdin.take().expect("piped stdin");
+    let writer = match spawn_writer(stdin, input.to_vec(), "catomic-llm-stdin") {
         Ok(writer) => writer,
         Err(error) => {
             kill_and_reap_group(&mut child);
@@ -225,30 +231,6 @@ fn kill_group(child_id: u32) {
     }
 }
 
-fn read_bounded<R: Read + Send + 'static>(
-    mut reader: R,
-    limit: usize,
-    overflow: Arc<AtomicBool>,
-) -> io::Result<std::thread::JoinHandle<io::Result<Vec<u8>>>> {
-    std::thread::Builder::new()
-        .name("catomic-llm-output".to_string())
-        .spawn(move || {
-            let mut output = Vec::new();
-            let mut chunk = [0_u8; 8192];
-            loop {
-                let count = reader.read(&mut chunk)?;
-                if count == 0 {
-                    return Ok(output);
-                }
-                if output.len().saturating_add(count) > limit {
-                    overflow.store(true, Ordering::Release);
-                    return Ok(output);
-                }
-                output.extend_from_slice(&chunk[..count]);
-            }
-        })
-}
-
 fn thread_error(stream: &str, error: &io::Error) -> BackendError {
     BackendError::new(
         BackendErrorKind::Failed,
@@ -259,30 +241,25 @@ fn thread_error(stream: &str, error: &io::Error) -> BackendError {
     )
 }
 
-fn join_reader(
-    reader: std::thread::JoinHandle<io::Result<Vec<u8>>>,
-) -> Result<Vec<u8>, BackendError> {
+fn join_reader(reader: PipeReader) -> Result<Vec<u8>, BackendError> {
     reader
-        .join()
-        .map_err(|_| BackendError::new(BackendErrorKind::Failed, "command reader panicked"))?
+        .finish()
         .map_err(|error| {
             BackendError::new(
                 BackendErrorKind::Failed,
                 format!("could not read command output: {}", safe_io_kind(&error)),
             )
         })
+        .map(|output| output.bytes)
 }
 
-fn join_writer(writer: std::thread::JoinHandle<io::Result<()>>) -> Result<(), BackendError> {
-    writer
-        .join()
-        .map_err(|_| BackendError::new(BackendErrorKind::Failed, "command input writer panicked"))?
-        .map_err(|error| {
-            BackendError::new(
-                BackendErrorKind::Failed,
-                format!("could not write command input: {}", safe_io_kind(&error)),
-            )
-        })
+fn join_writer(writer: PipeWriter) -> Result<(), BackendError> {
+    writer.finish().map_err(|error| {
+        BackendError::new(
+            BackendErrorKind::Failed,
+            format!("could not write command input: {}", safe_io_kind(&error)),
+        )
+    })
 }
 
 fn parse_output(format: CommandOutputFormat, bytes: &[u8]) -> Result<String, BackendError> {

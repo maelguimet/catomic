@@ -2,7 +2,6 @@
 //! Owns: read-only result view, navigation, stale-source checks, and one edit transaction.
 //! Must not: spawn processes, load config, write files, or apply failed/truncated output.
 //! Invariants: Enter alone applies successful complete output; source/path drift refuses it.
-//! Phase: 7 external command preview and undo safety.
 
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -182,8 +181,7 @@ fn apply_or_close(app: &mut super::super::App, out: &mut dyn Write) -> io::Resul
     if app.file.path != preview.source_path
         || preview.source_snapshot.as_deref() != Some(&app.buffer.to_string())
     {
-        app.message =
-            Some("Source changed since command start; output was not applied.".to_string());
+        app.message_warning("Source changed since command start; output was not applied.");
         super::super::hooks::finish_command(app, false);
         app.reveal_cursor();
         return app.render(out);
@@ -197,7 +195,7 @@ fn apply_or_close(app: &mut super::super::App, out: &mut dyn Write) -> io::Resul
         ApplyTarget::ReplaceBuffer => replace_buffer(&mut *app.buffer, &preview.proposed_text)?,
     };
     if !changed {
-        app.message = Some("Command output made no change.".to_string());
+        app.message_info("Command output made no change.");
         super::super::hooks::finish_command(app, true);
         app.reveal_cursor();
         return app.render(out);
@@ -287,7 +285,7 @@ fn reveal_cursor(app: &mut super::super::App) {
 
 fn read_only_message(app: &mut super::super::App) {
     let preview = app.external_command.preview.as_ref().expect("preview");
-    app.message = Some(if preview.target.is_some() {
+    let message = if preview.target.is_some() {
         format!(
             "Command {} output (read-only). Enter applies; Esc cancels.",
             preview.name
@@ -297,7 +295,12 @@ fn read_only_message(app: &mut super::super::App) {
             "Command {} output (read-only). Enter or Esc closes.",
             preview.name
         )
-    });
+    };
+    if preview.succeeded {
+        app.message_info(message);
+    } else {
+        app.message_error(message);
+    }
 }
 
 fn is_quit(key: KeyEvent) -> bool {

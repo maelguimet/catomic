@@ -2,7 +2,6 @@
 //! Owns: async context preparation, explicit send confirmation, task polling, and cancellation.
 //! Must not: construct in Plain, block typing, apply output, write files, or bypass repo checks.
 //! Invariants: no client before Enter; source/path/repo drift refuses preview and apply.
-//! Phase: 6 (LLM Context Broker).
 
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -135,7 +134,7 @@ fn poll_preparing(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         RepoPrepareResult::Finished(prepared) => finish_preparing(app, *prepared, state),
         RepoPrepareResult::Cancelled => app.message = None,
         RepoPrepareResult::Error(error) => {
-            app.message = Some(format!("Repo context error: {error}"))
+            app.message_error(format!("Repo context error: {error}"))
         }
     }
     app.render(out)
@@ -143,14 +142,14 @@ fn poll_preparing(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
 
 fn finish_preparing(app: &mut super::App, prepared: PreparedRepoContext, state: Preparing) {
     if app.buffer.to_string() != state.source_snapshot {
-        app.message = Some(
-            "Active buffer changed while repo context was built; request cancelled.".to_string(),
+        app.message_warning(
+            "Active buffer changed while repo context was built; request cancelled.",
         );
         return;
     }
     if app.file.path.as_ref() != Some(&state.path) {
-        app.message = Some(
-            "Active file path changed while repo context was built; request cancelled.".to_string(),
+        app.message_warning(
+            "Active file path changed while repo context was built; request cancelled.",
         );
         return;
     }
@@ -162,7 +161,7 @@ fn finish_preparing(app: &mut super::App, prepared: PreparedRepoContext, state: 
     } else {
         " SENSITIVE active-file context detected; Enter explicitly allows it."
     };
-    app.message = Some(format!(
+    app.message_info(format!(
         "To {destination}: preset {} model {} via {}; send {} {} context with {} initial repo bytes + {} active-file bytes (at most {context_kib} KiB repository context total)?{sensitive} Enter confirms; Esc cancels.",
         state.preset.name, state.preset.model, state.preset.adapter_label(),
         state.command.name(), state.command.profile(), prepared.initial_context.len(),
@@ -191,10 +190,7 @@ pub(crate) fn handle_key(
             match key.code {
                 KeyCode::Enter => checking::begin(app),
                 KeyCode::Esc => cancel_pending(app),
-                _ => {
-                    app.message =
-                        Some("Repo LLM send not confirmed. Enter sends; Esc cancels.".to_string())
-                }
+                _ => app.message_info("Repo LLM send not confirmed. Enter sends; Esc cancels."),
             }
             app.render(out)?;
             Ok(true)
@@ -275,7 +271,7 @@ pub(crate) fn handle_paste(app: &mut super::App, out: &mut dyn Write) -> io::Res
         }
         _ => return Ok(false),
     };
-    app.message = Some(message.to_string());
+    app.message_info(message.to_string());
     app.render(out)?;
     Ok(true)
 }
@@ -293,7 +289,7 @@ pub(super) fn start_confirmed(app: &mut super::App, pending: Pending) {
         Err(error) => {
             app.model_session
                 .record_failure(&pending.preset.name, error.kind);
-            app.message = Some(format!("Could not prepare repo LLM backend: {error}"));
+            app.message_error(format!("Could not prepare repo LLM backend: {error}"));
             return;
         }
     };
@@ -302,9 +298,8 @@ pub(super) fn start_confirmed(app: &mut super::App, pending: Pending) {
             &pending.preset.name,
             crate::llm::backend::BackendErrorKind::Unavailable,
         );
-        app.message = Some(
-            "Configured command identity changed after confirmation; repo request cancelled."
-                .to_string(),
+        app.message_warning(
+            "Configured command identity changed after confirmation; repo request cancelled.",
         );
         return;
     }
@@ -316,7 +311,7 @@ pub(super) fn start_confirmed(app: &mut super::App, pending: Pending) {
         user,
     ) {
         Ok(task) => {
-            app.message = Some(format!(
+            app.message_info(format!(
                 "Sending {} {} repo context with preset {} model {} to {}... Esc cancels.",
                 pending.command.name(),
                 pending.command.profile(),
@@ -332,7 +327,7 @@ pub(super) fn start_confirmed(app: &mut super::App, pending: Pending) {
                 relative_path: pending.relative_path,
             }));
         }
-        Err(error) => app.message = Some(format!("Could not start repo LLM request: {error}")),
+        Err(error) => app.message_error(format!("Could not start repo LLM request: {error}")),
     }
 }
 

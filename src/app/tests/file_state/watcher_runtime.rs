@@ -1,4 +1,4 @@
-//! Deterministic queued-signal + render seam tests (Phase 2-ac).
+//! Deterministic queued-signal and render-seam tests.
 //!
 //! Purpose: exercise check_file_watcher_once_and_render (and the check/apply
 //! chain) using the #[cfg(test)] injection seam. All tests are fully
@@ -9,7 +9,6 @@
 //!   or save-conflict; read content except through existing reload path (not here).
 //! Invariants: watcher signals are hints; unchanged/no-path are suppressed;
 //!   clean Modified/Deleted auto-reload by default; at most one signal is consumed.
-//! Phase: 2-ac through 2-bx automatic clean reload.
 
 use super::super::super::*;
 use crossterm::event::{KeyCode, KeyModifiers};
@@ -54,7 +53,7 @@ fn queued_changed_external_modified_auto_reloads_and_renders() {
         .inject_signal(crate::file::watcher::FileWatchSignal::Changed);
 
     // sentinel to prove we don't clobber random prior msg
-    app.message = Some("Prior warning.".to_string());
+    app.message_warning("Prior warning.");
 
     let mut out: Vec<u8> = Vec::new();
     let had = crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out).unwrap();
@@ -123,7 +122,7 @@ fn queued_changed_on_unchanged_ignored_no_render() {
     assert!(!app.file.dirty);
 
     // sentinel that must survive
-    app.message = Some("Prior warning.".to_string());
+    app.message_warning("Prior warning.");
     let before_pend = app.pending_reload.clone();
 
     let path = app.file.path.clone().unwrap();

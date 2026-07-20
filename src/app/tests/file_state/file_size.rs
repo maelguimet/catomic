@@ -1,4 +1,4 @@
-//! Focused App/FileState size metadata tests (Phase 2B foundation).
+//! Focused App/FileState size metadata tests.
 //!
 //! Purpose: verify size_bytes + size_tier are captured from metadata only at the
 //!   documented points (open existing, open missing, successful save, confirmed
@@ -8,7 +8,6 @@
 //!   assert on UI strings beyond size bookkeeping; depend on live watcher.
 //! Invariants: None for no-path and for missing/deleted; Present len+tier for
 //!   real on-disk files after open/save/reload-Modified; no content-derived sizes.
-//! Phase: 2-af (metadata bookkeeping only; no guardrails or large-file paths).
 
 use super::super::*;
 use super::make_key;
@@ -244,6 +243,7 @@ fn failed_save_does_not_update_size_metadata() {
     // still dirty, message set to error; size must be unchanged
     assert!(app.file.dirty);
     assert!(app.message.as_deref().unwrap_or("").contains("Save error"));
+    assert_eq!(app.message_role, crate::terminal::render::StatusRole::Error);
     assert_eq!(app.file.size_bytes, before_size);
     assert_eq!(app.file.size_tier, before_tier);
 
@@ -271,6 +271,10 @@ fn size_metadata_does_not_alter_snapshot_or_conflict_behavior_smoke() {
         .unwrap();
     assert!(app.file.dirty);
     assert!(app.pending_save_conflict.is_some());
+    assert_eq!(
+        app.message_role,
+        crate::terminal::render::StatusRole::Warning
+    );
     assert!(app
         .message
         .as_deref()

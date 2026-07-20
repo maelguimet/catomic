@@ -2,7 +2,6 @@
 //! Owns: focused Ctrl+Up/Down prose-navigation fixtures.
 //! Must not: access disk/network, mutate through navigation, or require a terminal.
 //! Invariants: movement never changes bytes or edit history.
-//! Phase: post-v0.1 prose navigation.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 

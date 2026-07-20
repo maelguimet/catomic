@@ -2,7 +2,6 @@
 //! Owns: debounce, active-buffer identity pins, task handoff, stale checks, and backoff.
 //! Must not: confirm opt-in, render ghost layout, read files/repositories, or apply edits.
 //! Invariants: one task at a time; late responses display only for the exact pinned identity.
-//! Phase: post-v0.1 opt-in inline autocomplete.
 
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
@@ -171,7 +170,7 @@ fn backoff(app: &mut super::super::App, out: &mut dyn Write, error: String) -> i
         .min(30);
     app.autocomplete.backoff_until = Some(Instant::now() + Duration::from_secs(seconds));
     app.autocomplete.error = Some(error.clone());
-    app.message = Some(format!(
+    app.message_error(format!(
         "Autocomplete error; retrying after {seconds}s backoff: {error}"
     ));
     app.render(out)
@@ -210,9 +209,8 @@ fn confirmation_expired(app: &mut super::super::App, out: &mut dyn Write) -> io:
     super::invalidate(app);
     app.autocomplete.confirmed = None;
     app.autocomplete.enabled = false;
-    app.message = Some(
-        "Autocomplete destination changed since confirmation; it is disabled until reconfirmed."
-            .to_string(),
+    app.message_warning(
+        "Autocomplete destination changed since confirmation; it is disabled until reconfirmed.",
     );
     app.render(out)
 }

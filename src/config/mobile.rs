@@ -2,7 +2,6 @@
 //! Owns: typed action-bar policy, environment override validation, and Termux detection.
 //! Must not: inspect terminals, mutate App state, write configuration, or start services.
 //! Invariants: auto enables on Android/Termux; an explicit env override wins and fails closed.
-//! Phase: Android/Termux mobile support.
 
 use std::ffi::OsStr;
 use std::io;

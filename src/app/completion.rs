@@ -2,7 +2,6 @@
 //! Owns: transient candidate selection, key handling, messages, and atomic acceptance.
 //! Must not: scan projects/buffers, start discovery, spawn work/processes, or emit terminal codes.
 //! Invariants: no content changes before Enter; accepted text is one undoable replacement.
-//! Phase: 5-a local completion through 5-e Project path completion.
 
 use std::io::{self, Write};
 
@@ -56,7 +55,7 @@ pub(crate) fn cancel(app: &mut super::App) -> bool {
 
 fn open(app: &mut super::App, out: &mut dyn Write) -> io::Result<OpenOutcome> {
     if !app.caps.local_completion || app.completion.is_none() {
-        app.message = Some("Local completion is unavailable.".to_string());
+        app.message_info("Local completion is unavailable.");
         app.render(out)?;
         return Ok(OpenOutcome::Handled);
     }
@@ -65,39 +64,39 @@ fn open(app: &mut super::App, out: &mut dyn Write) -> io::Result<OpenOutcome> {
         || super::project_files::is_viewing(app)
         || app.buffer.is_read_only()
     {
-        app.message = Some("Local completion requires an editable source buffer.".to_string());
+        app.message_info("Local completion requires an editable source buffer.");
         app.render(out)?;
         return Ok(OpenOutcome::Handled);
     }
     if app.selection.active().is_some() {
-        app.message = Some("Dismiss the selection before completing a word.".to_string());
+        app.message_info("Dismiss the selection before completing a word.");
         app.render(out)?;
         return Ok(OpenOutcome::Handled);
     }
 
     let cursor = app.buffer.cursor();
     let Some(prefix) = candidates::read_prefix(app, cursor)? else {
-        app.message = Some(format!(
+        app.message_info(format!(
             "Completion prefix exceeds the {PREFIX_COLS}-column limit."
         ));
         app.render(out)?;
         return Ok(OpenOutcome::Handled);
     };
     if prefix.text.is_empty() {
-        app.message = Some("Type a word prefix before requesting completion.".to_string());
+        app.message_info("Type a word prefix before requesting completion.");
         app.render(out)?;
         return Ok(OpenOutcome::NoCandidate);
     }
     let completion_candidates = match candidates::read_candidates(app, cursor, &prefix)? {
         CandidateRead::Ready(candidates) => candidates,
         CandidateRead::ProjectFilesUnavailable => {
-            app.message = Some("Run :files before requesting Project path completion.".to_string());
+            app.message_info("Run :files before requesting Project path completion.");
             app.render(out)?;
             return Ok(OpenOutcome::Handled);
         }
     };
     if completion_candidates.is_empty() {
-        app.message = Some(format!("No completion for '{}'.", prefix.text));
+        app.message_info(format!("No completion for '{}'.", prefix.text));
         app.render(out)?;
         return Ok(OpenOutcome::NoCandidate);
     }
@@ -199,7 +198,7 @@ fn accept(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     let unchanged = app.buffer.cursor() == active.end
         && app.buffer.text_range(active.start, active.end)? == active.prefix;
     if !unchanged {
-        app.message = Some("Completion dismissed because the prefix changed.".to_string());
+        app.message_info("Completion dismissed because the prefix changed.");
         return app.render(out);
     }
     let candidate = &active.candidates[active.selected];
@@ -214,7 +213,7 @@ fn update_message(app: &mut super::App) {
         .as_ref()
         .and_then(|state| state.active.as_ref())
         .expect("active completion");
-    app.message = Some(format!(
+    app.message_info(format!(
         "Completion {}/{}: {} (Tab next, Enter accept, Esc dismiss)",
         active.selected + 1,
         active.candidates.len(),

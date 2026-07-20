@@ -2,7 +2,6 @@
 //! Owns: overrides/unbinding, scoped collision diagnostics, and semantic key resolution.
 //! Must not: dispatch App behavior, mutate user files, spawn work, or accept printable typing.
 //! Invariants: one normalized chord maps to one action per scope; global actions win.
-//! Phase: issue #62 complete shortcut customization.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io;

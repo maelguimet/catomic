@@ -2,7 +2,6 @@
 //! Owns: transient HTTP client construction, typed JSON, response bounds, and errors.
 //! Must not: load config, collect context, persist clients, retry silently, or mutate files.
 //! Invariants: clients exist only inside confirmed workers; response capture is bounded.
-//! Phase: 6 (LLM, Powerful but Caged).
 
 use std::net::IpAddr;
 use std::time::Duration;

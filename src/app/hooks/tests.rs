@@ -2,7 +2,6 @@
 //! Owns: deterministic App-level hooks using local shell commands and no live endpoint.
 //! Must not: send network requests, modify repository files, or bypass command preview.
 //! Invariants: hooks are sequential; failure stops; before-LLM success only reaches confirmation.
-//! Phase: 7 hooks acceptance.
 
 use std::time::{Duration, Instant};
 

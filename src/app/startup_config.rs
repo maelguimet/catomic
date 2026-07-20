@@ -2,7 +2,6 @@
 //! Owns: typed config loading, constructor grouping, and same-session cloning.
 //! Must not: open buffers, render UI, construct Project/LLM services, or write files.
 //! Invariants: every buffer in one session receives the same startup defaults.
-//! Phase: post-v0.1 configuration plumbing.
 
 use std::io;
 
@@ -41,6 +40,7 @@ impl StartupConfig {
     }
 
     fn from_snapshot(text: &str, preference_path: Option<std::path::PathBuf>) -> io::Result<Self> {
+        crate::config::validate_unknown_keys(text)?;
         Ok(Self {
             big_files: crate::config::big_files::parse(text)?,
             auto_reload: crate::config::auto_reload::parse(text)?,
@@ -122,5 +122,11 @@ mod tests {
         .err()
         .expect("one invalid recognized setting rejects the document");
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+
+        let error = StartupConfig::from_snapshot("[editor]\ntab_szie = 2\n", None)
+            .err()
+            .expect("unknown keys must fail startup validation");
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(error.to_string().contains("editor.tab_szie"));
     }
 }

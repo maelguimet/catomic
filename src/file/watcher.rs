@@ -11,7 +11,6 @@
 //! Invariants: if !file_watch -> Ok(None) before any notify/fs; watches the
 //!   lexical target parent plus a distinct resolved referent parent (non-recursive);
 //!   events filter to either exact target path; try_recv drains at most one.
-//! Phase: post-v0.1 symlink watch hardening; prior: 2-x/2-z/2-ac App owns
 //!   best-effort lifecycle and consumes via app/watch helper (hints only).
 //!
 //! Dependency justification (per AGENTS.md):

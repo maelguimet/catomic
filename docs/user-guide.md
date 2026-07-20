@@ -1260,18 +1260,20 @@ prompt, to open that exact path as an ordinary editable buffer inside Catomic.
 `catomic config edit` is an alias for the same Catomic-native action and does not
 use `$VISUAL`, `$EDITOR`, `/bin/sh`, or another editor. If the file is later
 missing, Catomic asks inside the live editor before atomically recreating an
-owner-only file in an owner-only `catomic` directory from the same documented,
-commented template. An existing group/other-accessible config directory is
-refused with a permission error instead of being silently changed. It never
-overwrites a file that appears during confirmation. Configuration is validated
-and applied as one document at normal startup, so restart Catomic after saving;
-the running session does not silently apply a partial reload. The dedicated
-config action uses built-in defaults, so an invalid config can still be opened
-and repaired. When the in-editor command opens config from another buffer,
-`Ctrl+Q` closes that temporary config buffer and returns to the invoking buffer.
-Unsaved config changes are never discarded on the first press; a second
-`Ctrl+Q` explicitly discards only the config detour. A config opened directly
-from the shell keeps the editor's normal session-quit behavior.
+owner-only file from the same documented, commented template. A `catomic`
+directory created for that file uses mode `0700`. An existing user-owned,
+non-symlink directory is accepted without changing its mode when group and
+others cannot write to it; writable or differently owned directories are
+refused with a permission error. Catomic never overwrites a file that appears
+during confirmation. Configuration is validated and applied as one document at
+normal startup, so restart Catomic after saving; the running session does not
+silently apply a partial reload. The dedicated config action uses built-in
+defaults, so an invalid config can still be opened and repaired. When the
+in-editor command opens config from another buffer, `Ctrl+Q` closes that
+temporary config buffer and returns to the invoking buffer. Unsaved config
+changes are never discarded on the first press; a second `Ctrl+Q` explicitly
+discards only the config detour. A config opened directly from the shell keeps
+the editor's normal session-quit behavior.
 
 Shell workflows can discover, validate, or edit the same path without guessing
 the XDG resolution:
@@ -1775,16 +1777,27 @@ Opening and saving are deliberately conservative:
   while leaving the final symlink intact;
 - a dangling final symlink is refused;
 - Save As refuses symlinks that resolve to unsupported target types;
-- files with more than one hard link are refused; and
-- files carrying extended attributes or ACLs are refused because atomic inode
-  replacement could silently discard those semantics.
+- files with more than one hard link are staged, then updated in place so every
+  alias retains the shared inode and its mode, ownership, attributes, and ACLs;
+  and
+- extended attributes and POSIX ACLs are copied to single-link replacements and
+  reapplied to multiply-linked shared inodes, then verified before success.
 
-On Linux, replacement must preserve mode, owner, and group. If the filesystem,
-mount, container, or network share cannot provide the required atomic and
-metadata behavior, saving fails with an error instead of downgrading silently.
+On Linux, saving must preserve mode, owner, group, extended attributes, and
+POSIX ACLs. If the filesystem, mount, container, or network share cannot provide
+the required metadata behavior, saving fails instead of downgrading silently.
 
-Use a different tool for a refused target. Do not remove ACLs, attributes, or
-links merely to appease the editor unless you understand why they exist.
+Single-link saves retain atomic replacement. A hard-linked file cannot be both
+atomically replaced and kept on its shared inode: Catomic fully writes and syncs
+a sibling staging file, rechecks that the target still names the inspected
+inode, then truncates, writes, and syncs that inode. If the in-place write or
+sync fails, aliases may contain partial new content; Catomic reports that risk
+and keeps the complete staged file at the path named in the error for recovery.
+Failures before the in-place update leave every alias unchanged and remove the
+staging file.
+
+Do not remove ACLs, attributes, or links merely to appease the editor unless you
+understand why they exist.
 
 ## Troubleshooting
 
@@ -1934,8 +1947,9 @@ getfacl path/to/file 2>/dev/null
 ```
 
 Commands vary by distribution. Network, FUSE, overlay, and container filesystems
-may expose weaker or different atomic-replacement behavior. Use another editor
-for a target Catomic cannot preserve safely.
+may expose weaker or different replacement and in-place durability behavior.
+For a failed hard-link update, preserve the staged path printed in the error
+until you have compared or restored its contents.
 
 ### `lint` reports no configured linter
 

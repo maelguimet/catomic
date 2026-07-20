@@ -1396,7 +1396,6 @@ fn pty_markdown_preview_and_view_toggles_leave_source_unchanged() -> TestResult 
     editor.wait_for_output("Markdown source", "# PTY Heading")?;
     editor.send_keys(b"\x1b[17~")?; // F6
     editor.wait_for_output("preview enabled", "Markdown preview on")?;
-    editor.wait_for_output("rendered heading marker", "▌")?;
 
     editor.send_keys(b"x")?;
     editor.wait_for_output("preview read-only guard", "preview is read-only")?;
@@ -1454,7 +1453,7 @@ fn pty_live_resize_redraws_at_each_new_status_row() -> TestResult {
 }
 
 #[test]
-fn pty_narrow_markdown_table_preview_is_aligned_and_clipped_without_mutation() -> TestResult {
+fn pty_narrow_markdown_table_preview_uses_stacked_fallback_without_mutation() -> TestResult {
     let temp = TempPath::with_extension("markdown_table_narrow", "md");
     let source = "# Markdown showcase\n\n| Left | Center | Right |\n| :--- | :----: | ----: |\n| short | `code` | 10 |\n| wide 猫 emoji 🐾 | a much longer value | 2,000 |\n";
     fs::write(&temp.path, source)?;
@@ -1464,14 +1463,12 @@ fn pty_narrow_markdown_table_preview_is_aligned_and_clipped_without_mutation() -
     editor.wait_for_output("narrow Markdown source", "Markdown showcase")?;
     editor.clear_output();
     editor.send_keys(b"\x1b[17~")?; // F6
-    editor.wait_for_output("measured table header divider", "╞")?;
+    editor.wait_for_output("stacked table row", "Left: short")?;
     editor.wait_for_output("complete narrow preview frame", "Markdown preview on")?;
 
     let initial_preview = strip_csi(&editor.output_string());
-    assert!(initial_preview.contains("│ Left"));
-    assert!(initial_preview.contains("Center"));
-    assert!(initial_preview.contains("╞════"));
-    assert!(!initial_preview.contains("2,000"));
+    assert!(initial_preview.contains("- Left: short"));
+    assert!(!initial_preview.contains('╞'));
 
     editor.send_keys(b"\x1b")?;
     editor.wait_for_output("leave narrow table preview", "Markdown preview off")?;

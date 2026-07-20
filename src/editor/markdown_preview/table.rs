@@ -1,5 +1,5 @@
 //! Purpose: preserve parsed Markdown table structure before terminal-text rendering.
-//! Owns: table rows, source alignments, grapheme-safe clipping, width measurement, and borders.
+//! Owns: table rows, bounded grid/stacked layout, grapheme-safe clipping, and borders.
 //! Must not: parse Markdown, emit ANSI, inspect terminal state, mutate buffers, or perform I/O.
 //! Invariants: cell widths use editor terminal-cell rules; output amplification is cell-width capped.
 //! Phase: issue #54 Markdown table rendering.
@@ -9,6 +9,9 @@ use pulldown_cmark::Alignment;
 use crate::editor::text_layout;
 
 const MAX_CELL_WIDTH: usize = 40;
+const MAX_TABLE_COLUMNS: usize = 128;
+const MAX_TABLE_ROWS: usize = 10_000;
+const MAX_TABLE_TEXT_BYTES: usize = 1024 * 1024;
 
 pub(super) struct TableBuilder {
     alignments: Vec<Alignment>,
@@ -17,6 +20,8 @@ pub(super) struct TableBuilder {
     current_row: Option<Vec<String>>,
     current_cell: Option<String>,
     in_header: bool,
+    text_bytes: usize,
+    too_large: bool,
 }
 
 impl TableBuilder {
@@ -28,6 +33,8 @@ impl TableBuilder {
             current_row: None,
             current_cell: None,
             in_header: false,
+            text_bytes: 0,
+            too_large: false,
         }
     }
 
@@ -42,6 +49,10 @@ impl TableBuilder {
     }
 
     pub(super) fn start_row(&mut self) {
+        if self.rows.len() >= MAX_TABLE_ROWS {
+            self.too_large = true;
+            return;
+        }
         if self.current_row.is_none() {
             self.current_row = Some(Vec::new());
         }
@@ -62,6 +73,14 @@ impl TableBuilder {
     pub(super) fn start_cell(&mut self) {
         self.start_row();
         self.end_cell();
+        if self
+            .current_row
+            .as_ref()
+            .is_some_and(|row| row.len() >= MAX_TABLE_COLUMNS)
+        {
+            self.too_large = true;
+            return;
+        }
         self.current_cell = Some(String::new());
     }
 
@@ -75,6 +94,11 @@ impl TableBuilder {
     }
 
     pub(super) fn push(&mut self, text: &str) {
+        self.text_bytes = self.text_bytes.saturating_add(text.len());
+        if self.text_bytes > MAX_TABLE_TEXT_BYTES {
+            self.too_large = true;
+            return;
+        }
         if let Some(cell) = self.current_cell.as_mut() {
             cell.push_str(text);
         }
@@ -90,15 +114,26 @@ impl TableBuilder {
         }
     }
 
-    pub(super) fn finish(mut self) -> Vec<String> {
+    pub(super) fn finish(mut self, width: usize) -> Result<Vec<String>, ()> {
         self.end_row();
+        if self.too_large {
+            return Err(());
+        }
         let header = self.header.take().unwrap_or_default();
         let columns = column_count(&self.alignments, &header, &self.rows);
         if columns == 0 {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         self.alignments.resize(columns, Alignment::None);
         let widths = column_widths(columns, &header, &self.rows);
+        let grid_width = widths
+            .iter()
+            .sum::<usize>()
+            .saturating_add(columns.saturating_mul(3))
+            .saturating_add(1);
+        if grid_width > width {
+            return Ok(stacked_rows(&header, &self.rows, columns));
+        }
         let mut lines = vec![border('┌', '┬', '┐', '─', &widths)];
         if !header.is_empty() {
             lines.push(render_row(&header, &widths, &self.alignments));
@@ -110,8 +145,30 @@ impl TableBuilder {
                 .map(|row| render_row(row, &widths, &self.alignments)),
         );
         lines.push(border('└', '┴', '┘', '─', &widths));
-        lines
+        Ok(lines)
     }
+}
+
+fn stacked_rows(header: &[String], rows: &[Vec<String>], columns: usize) -> Vec<String> {
+    if rows.is_empty() {
+        return header.iter().map(|cell| format!("- {cell}")).collect();
+    }
+    let mut lines = Vec::new();
+    for (row_index, row) in rows.iter().enumerate() {
+        for column in 0..columns {
+            let label = header
+                .get(column)
+                .filter(|label| !label.is_empty())
+                .cloned()
+                .unwrap_or_else(|| format!("Column {}", column + 1));
+            let value = row.get(column).map(String::as_str).unwrap_or("");
+            lines.push(format!("- {label}: {value}"));
+        }
+        if row_index + 1 < rows.len() {
+            lines.push(String::new());
+        }
+    }
+    lines
 }
 
 fn normalize_cell(cell: &str) -> String {
@@ -204,7 +261,7 @@ mod tests {
         table.end_row();
 
         assert_eq!(
-            table.finish().join("\n"),
+            table.finish(80).unwrap().join("\n"),
             "┌──────┬────────┬───────┐\n\
              │ Left │ Center │ Right │\n\
              ╞══════╪════════╪═══════╡\n\
@@ -225,7 +282,7 @@ mod tests {
         table.push(&"猫".repeat(30));
         table.end_row();
 
-        let rendered = table.finish().join("\n");
+        let rendered = table.finish(80).unwrap().join("\n");
         assert!(rendered.contains("猫猫猫猫猫猫猫猫猫猫猫猫猫猫猫猫猫猫猫…"));
         assert!(!rendered.contains(&"猫".repeat(20)));
         let widths: Vec<_> = rendered
@@ -248,12 +305,34 @@ mod tests {
         table.push("a\tb");
         table.end_row();
 
-        let rendered = table.finish().join("\n");
+        let rendered = table.finish(80).unwrap().join("\n");
         assert!(rendered.contains("│ a   b │"));
         let widths: Vec<_> = rendered
             .lines()
             .map(|line| text_layout::cell_width_from(line, 0))
             .collect();
         assert!(widths.iter().all(|width| *width == widths[0]));
+    }
+
+    #[test]
+    fn narrow_tables_fall_back_to_rows_without_broken_borders() {
+        let mut table = TableBuilder::new(vec![Alignment::Left, Alignment::Right]);
+        table.start_header();
+        for cell in ["Name", "Value"] {
+            table.start_cell();
+            table.push(cell);
+        }
+        table.end_header();
+        table.start_row();
+        for cell in ["long item", "123"] {
+            table.start_cell();
+            table.push(cell);
+        }
+        table.end_row();
+
+        assert_eq!(
+            table.finish(12).unwrap(),
+            vec!["- Name: long item", "- Value: 123"]
+        );
     }
 }

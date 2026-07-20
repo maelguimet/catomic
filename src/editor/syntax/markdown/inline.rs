@@ -20,14 +20,8 @@ pub(super) fn add_source_spans(chars: &[char], spans: &mut Vec<StyledSpan>) -> b
     markers.table
 }
 
-pub(super) fn add_preview_spans(chars: &[char], spans: &mut Vec<StyledSpan>) {
-    add_preview_code_spans(chars, spans);
-    if chars.iter().any(|ch| matches!(ch, '~' | '*')) {
-        for delimiter in [&['~', '~'][..], &['*', '*'], &['*']] {
-            add_delimited_spans(chars, spans, delimiter, SpanStyle::Emphasis);
-        }
-    }
-    if chars.contains(&'⟨') {
+pub(super) fn add_preview_destination_spans(chars: &[char], spans: &mut Vec<StyledSpan>) {
+    if chars.contains(&'<') {
         add_preview_link_spans(chars, spans);
     }
 }
@@ -59,22 +53,6 @@ fn add_code_spans(chars: &[char], spans: &mut Vec<StyledSpan>) -> SourceMarkers 
         index = close + run;
     }
     markers
-}
-
-fn add_preview_code_spans(chars: &[char], spans: &mut Vec<StyledSpan>) {
-    let mut index = 0;
-    while index < chars.len() {
-        if chars[index] != '‹' {
-            index += 1;
-            continue;
-        }
-        let Some(close) = chars[index + 1..].iter().position(|ch| *ch == '›') else {
-            break;
-        };
-        let end = index + close + 2;
-        push_span(spans, index, end, SpanStyle::Code);
-        index = end;
-    }
 }
 
 fn add_link_spans(chars: &[char], spans: &mut Vec<StyledSpan>) {
@@ -134,11 +112,11 @@ fn add_delimited_spans(
 fn add_preview_link_spans(chars: &[char], spans: &mut Vec<StyledSpan>) {
     let mut index = 0;
     while index < chars.len() {
-        if chars[index] != '⟨' {
+        if chars[index] != '<' {
             index += 1;
             continue;
         }
-        let Some(close) = chars[index + 1..].iter().position(|ch| *ch == '⟩') else {
+        let Some(close) = chars[index + 1..].iter().position(|ch| *ch == '>') else {
             break;
         };
         let end = index + close + 2;

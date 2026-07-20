@@ -365,7 +365,7 @@ pub(crate) const EDITOR_ACTIONS: &[EditorActionSpec] = &[
         "markdown-preview",
         "View",
         "F6",
-        "Toggle the read-only Markdown preview for Markdown buffers.",
+        "Render the current buffer as read-only Markdown.",
         &[ShortcutKey::any(ShortcutCode::Function(6))],
     ),
     action(

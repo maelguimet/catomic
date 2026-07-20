@@ -32,6 +32,7 @@ pub(crate) fn handle_resize(
 ) -> std::io::Result<()> {
     let cursor_was_visible = display_cursor_is_visible(app);
     app.screen.update_size(w, h);
+    super::view::relayout_preview(app);
     app.screen.clamp_scroll();
     clamp_viewport_to_buffer(app);
     if cursor_was_visible {
@@ -49,6 +50,7 @@ pub(crate) fn redraw_after_focus(
 ) -> std::io::Result<()> {
     if let Some((width, height)) = size {
         app.screen.update_size(width, height);
+        super::view::relayout_preview(app);
         app.screen.clamp_scroll();
         clamp_viewport_to_buffer(app);
     }

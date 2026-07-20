@@ -31,16 +31,22 @@ pub(super) fn spans(line: &str) -> Vec<StyledSpan> {
 
 pub(super) fn preview_spans(line: &str) -> Vec<StyledSpan> {
     let chars: Vec<char> = line.chars().collect();
-    if chars.starts_with(&['▌']) {
+    let content = preview_content_start(&chars);
+    if heading(&chars, content) {
         return vec![span(0, chars.len(), SpanStyle::Heading)];
     }
-    if is_code_preview_line(&chars) {
+    if is_code_preview_line(&chars, content) {
         return vec![span(0, chars.len(), SpanStyle::Code)];
     }
 
     let mut spans = Vec::new();
+    let indent = chars.iter().take_while(|ch| ch.is_whitespace()).count();
+    add_block_markers(&chars, indent, &mut spans);
     add_preview_markers(&chars, &mut spans);
-    inline::add_preview_spans(&chars, &mut spans);
+    if inline::add_source_spans(&chars, &mut spans) {
+        add_table_markers(&chars, &mut spans);
+    }
+    inline::add_preview_destination_spans(&chars, &mut spans);
     spans.sort_by_key(|span| span.start);
     spans
 }
@@ -93,6 +99,10 @@ fn add_table_markers(chars: &[char], spans: &mut Vec<StyledSpan>) {
 }
 
 fn add_preview_markers(chars: &[char], spans: &mut Vec<StyledSpan>) {
+    if !chars.is_empty() && chars.iter().all(|ch| matches!(ch, '─' | '═')) {
+        push_span(spans, 0, chars.len(), SpanStyle::Marker);
+        return;
+    }
     let indent = chars.iter().take_while(|ch| ch.is_whitespace()).count();
     if chars.get(indent).is_some_and(|ch| "•│┌└╞├┏┗".contains(*ch)) {
         let end = if matches!(chars[indent], '┌' | '└' | '╞' | '├' | '┏' | '┗') {
@@ -210,8 +220,23 @@ fn is_escaped(chars: &[char], index: usize) -> bool {
         == 1
 }
 
-fn is_code_preview_line(chars: &[char]) -> bool {
-    chars.starts_with(&['┌', '─', ' ', 'c', 'o', 'd', 'e'])
-        || chars.starts_with(&['┊', ' '])
-        || chars.starts_with(&['└', '─'])
+fn preview_content_start(chars: &[char]) -> usize {
+    let indent = chars.iter().take_while(|ch| ch.is_whitespace()).count();
+    let mut index = if chars.get(indent) == Some(&'>') {
+        indent
+    } else {
+        0
+    };
+    while chars.get(index) == Some(&'>') {
+        index += 1;
+        if chars.get(index).is_some_and(|ch| ch.is_whitespace()) {
+            index += 1;
+        }
+    }
+    index
+}
+
+fn is_code_preview_line(chars: &[char], content: usize) -> bool {
+    let tail = &chars[content..];
+    tail.starts_with(&['`', '`', '`']) || tail.starts_with(&[' ', ' ', ' ', ' '])
 }

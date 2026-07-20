@@ -399,7 +399,6 @@ fn close_other_views(app: &mut super::App) {
     super::lint::close_view(app);
     super::project_files::close_view(app);
     super::llm_preview::close(app);
-    super::llm_answer::close(app);
     super::recovery::close(app);
     super::external_command::cancel_all(app);
     super::replace::cancel(app);

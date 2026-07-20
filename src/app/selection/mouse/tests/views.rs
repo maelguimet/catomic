@@ -17,43 +17,6 @@ fn click(app: &mut super::super::super::super::App, column: u16, row: u16) {
 }
 
 #[test]
-fn llm_answer_click_cannot_reposition_hidden_source() {
-    let mut app = app_with("source\nline");
-    let source_cursor = Cursor { row: 1, col: 2 };
-    app.buffer.set_cursor(source_cursor);
-    let source_text = app.buffer.to_string();
-    let mut out = Vec::new();
-    super::super::super::super::llm_answer::show(&mut app, &mut out, "answer\nview").unwrap();
-    let display_cursor = super::super::super::super::view::display_buffer(&app).cursor();
-
-    click(&mut app, 0, 0);
-
-    assert_eq!(app.buffer.cursor(), source_cursor);
-    assert_eq!(app.buffer.to_string(), source_text);
-    assert_eq!(
-        super::super::super::super::view::display_buffer(&app).cursor(),
-        display_cursor
-    );
-}
-
-#[test]
-fn click_positions_source_after_read_only_view_closes() {
-    let mut app = app_with("source\nline");
-    let mut out = Vec::new();
-    super::super::super::super::llm_answer::show(&mut app, &mut out, "answer").unwrap();
-    super::super::super::super::llm_answer::handle_key(
-        &mut app,
-        &mut out,
-        KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
-    )
-    .unwrap();
-
-    click(&mut app, 3, 1);
-
-    assert_eq!(app.buffer.cursor(), Cursor { row: 1, col: 3 });
-}
-
-#[test]
 fn markdown_preview_click_is_ignored_and_click_after_f6_exit_positions_source() {
     let mut app = app_with("# heading\nbody");
     app.file.path = Some("note.md".into());

@@ -8,8 +8,8 @@ use crate::config::actions::Scope;
 pub(super) fn active(app: &super::super::App) -> Scope {
     use super::super::{
         autocomplete, command_prompt, completion, external_command, help, inline_clanker, lint,
-        llm_answer, llm_preview, llm_request, model_picker, project_files, recovery, replace,
-        repo_llm, search, view,
+        llm_preview, llm_request, model_picker, project_files, recovery, replace, repo_llm, search,
+        view,
     };
 
     if help::is_viewing(app) {
@@ -30,7 +30,6 @@ pub(super) fn active(app: &super::super::App) -> Scope {
         || llm_request::is_active(app)
         || inline_clanker::is_busy(app)
         || llm_preview::is_viewing(app)
-        || llm_answer::is_viewing(app)
         || view::is_preview(app)
     {
         Scope::Preview

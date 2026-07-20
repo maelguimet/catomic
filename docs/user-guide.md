@@ -1173,8 +1173,8 @@ Do not edit outside this block unless necessary.
 ```
 
 With no `bigmeow` argument, an instruction block under the cursor supplies the
-instruction. An instruction beginning with `explain` requests a read-only answer
-instead of an edit proposal.
+instruction. Every instruction follows the same proposed-edit flow; words such
+as `explain`, `ask`, or `edit` have no special command meaning.
 
 Before sending, Catomic shows the active preset, adapter, canonical endpoint or
 resolved executable, model, exact context extent, and warnings for a dotfile
@@ -1993,8 +1993,7 @@ outside Catomic when authentication or version setup needs more detail.
 
 An edit response must be a single-file unified patch for the confirmed active
 path, or the strict selected-region replacement envelope. Prose or full-file
-replacement output can be viewed as an explanation only when requested; it
-cannot bypass the edit parser.
+replacement output is rejected and cannot bypass the edit parser.
 
 ### The terminal looks broken after a crash
 

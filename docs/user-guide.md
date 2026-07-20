@@ -1288,11 +1288,19 @@ catomic config
 catomic config path
 catomic config check
 catomic config edit
+catomic config refresh-keybindings
 ```
 
 `config check` is read-only. `config` and `config edit` are equivalent; both
 enter Catomic and ask before recreating a missing file. If terminal setup fails,
 no missing configuration is created.
+
+`config refresh-keybindings` asks before adding or replacing Catomic's clearly
+marked, commented action/default inventory. Active mappings (including `[]`
+unbindings), unrelated settings, and comments outside the generated block are
+left alone. Repeating the command when the inventory is current changes no
+bytes. A missing config receives the same private template used by installation
+and in-editor creation.
 
 The configured persistent presentation defaults are:
 

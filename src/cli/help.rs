@@ -128,7 +128,7 @@ pub(super) fn main_help(version: &str) -> String {
             "Catomic is a Linux-first, modeless terminal text editor.\n\n",
             "Usage:\n",
             "  catomic [OPTION] [FILE]\n",
-            "  catomic config [path|edit|check]\n",
+            "  catomic config [path|edit|check|refresh-keybindings]\n",
             "  catomic update [--yes] [--backup]\n",
             "  catomic update --check\n",
             "  catomic (-h | --help)\n",
@@ -184,11 +184,14 @@ pub(super) fn config_help() -> String {
             "  catomic config edit\n",
             "  catomic config path\n",
             "  catomic config check\n",
+            "  catomic config refresh-keybindings\n",
             "  catomic config (-h | --help)\n\n",
             "Commands:\n",
             "  edit   Open the resolved configuration in Catomic (same as bare config)\n",
             "  path   Print the exact resolved configuration path and exit\n",
-            "  check  Validate the resolved configuration without opening the editor\n\n",
+            "  check  Validate the resolved configuration without opening the editor\n",
+            "  refresh-keybindings\n",
+            "         Confirm, then add or update the complete commented action inventory\n\n",
             "Options:\n",
             "{}\n",
             "The installer creates a private commented template without replacing an\n",
@@ -197,6 +200,7 @@ pub(super) fn config_help() -> String {
             "Examples:\n",
             "  catomic config\n",
             "  catomic config check\n",
+            "  catomic config refresh-keybindings\n",
         ),
         render_config_options()
     )
@@ -331,6 +335,7 @@ mod tests {
             "catomic config edit",
             "catomic config path",
             "catomic config check",
+            "catomic config refresh-keybindings",
             "inside Catomic",
         ] {
             assert!(

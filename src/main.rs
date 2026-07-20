@@ -44,6 +44,7 @@ fn main() {
             let result = match action {
                 cli::ConfigAction::Path => config::user_file::print_path(),
                 cli::ConfigAction::Check => config::user_file::check(),
+                cli::ConfigAction::RefreshKeybindings => config::user_file::refresh_keybindings(),
                 cli::ConfigAction::Edit => unreachable!("edit handled as an editor run"),
             };
             if let Err(error) = result {

@@ -11,7 +11,7 @@ use crate::file::recovery::{CatnapResult, CatnapTask, RecoveryCandidate};
 
 mod preview;
 pub(crate) use preview::{
-    close, display_buffer, handle_key, handle_paste, is_viewing, start_preview,
+    close, dispatch_action, display_buffer, handle_key, handle_paste, is_viewing, start_preview,
 };
 
 pub(crate) struct RecoveryState {

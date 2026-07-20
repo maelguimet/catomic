@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::{Buffer, Cursor, PieceTable};
+use crate::config::actions::Action;
 use crate::file::io::FileSnapshot;
 use crate::file::recovery::RecoveryCandidate;
 
@@ -110,6 +111,30 @@ pub(crate) fn handle_key(
         KeyCode::Up => move_cursor(app, |buffer| buffer.move_up()),
         KeyCode::Down => move_cursor(app, |buffer| buffer.move_down()),
         _ => preview_message(app),
+    }
+    if is_viewing(app) {
+        reveal_cursor(app);
+        app.render(out)?;
+    }
+    Ok(true)
+}
+
+pub(crate) fn dispatch_action(
+    app: &mut super::super::App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<bool> {
+    if !is_viewing(app) {
+        return Ok(false);
+    }
+    match action {
+        Action::PreviewAccept => apply(app, out)?,
+        Action::PreviewCancel => cancel(app, out)?,
+        Action::MoveLeft => move_cursor(app, |buffer| buffer.move_left()),
+        Action::MoveRight => move_cursor(app, |buffer| buffer.move_right()),
+        Action::MoveUp => move_cursor(app, |buffer| buffer.move_up()),
+        Action::MoveDown => move_cursor(app, |buffer| buffer.move_down()),
+        _ => return Ok(false),
     }
     if is_viewing(app) {
         reveal_cursor(app);

@@ -6,9 +6,12 @@
 
 use std::io::{self, Write};
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::KeyCode;
+#[cfg(test)]
+use crossterm::event::{KeyEvent, KeyModifiers};
 
 use crate::buffer::Cursor;
+use crate::config::actions::Action;
 use crate::editor::selection::Selection;
 use crate::editor::text_layout;
 
@@ -153,6 +156,7 @@ pub(crate) fn move_to(
     app.render(out)
 }
 
+#[cfg(test)]
 pub(crate) fn handle_shortcut(
     app: &mut super::App,
     out: &mut dyn Write,
@@ -179,9 +183,24 @@ pub(crate) fn handle_shortcut(
     Ok(true)
 }
 
-pub(crate) fn is_cut_line_key(key: KeyEvent) -> bool {
-    matches!(key.code, KeyCode::Char(ch) if ch.eq_ignore_ascii_case(&'k'))
-        && key.modifiers.contains(KeyModifiers::CONTROL)
+pub(crate) fn dispatch_action(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<bool> {
+    match action {
+        Action::SelectLeft => extend_with_arrow(app, out, KeyCode::Left)?,
+        Action::SelectRight => extend_with_arrow(app, out, KeyCode::Right)?,
+        Action::SelectUp => extend_with_arrow(app, out, KeyCode::Up)?,
+        Action::SelectDown => extend_with_arrow(app, out, KeyCode::Down)?,
+        Action::SelectAll => select_all(app, out)?,
+        Action::Copy => copy(app, out)?,
+        Action::Cut => cut(app, out)?,
+        Action::CutLine => cut_line(app, out)?,
+        Action::Paste => paste_internal(app, out)?,
+        _ => return Ok(false),
+    }
+    Ok(true)
 }
 
 pub(crate) fn end_cut_line_chain(app: &mut super::App) {
@@ -205,6 +224,7 @@ pub(crate) fn handle_external_paste(
     replace_or_insert(app, out, &normalized)
 }
 
+#[cfg(test)]
 fn is_shift_arrow(key: KeyEvent) -> bool {
     key.modifiers.contains(KeyModifiers::SHIFT)
         && !key

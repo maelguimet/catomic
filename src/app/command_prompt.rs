@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use crate::config::actions::Action;
 use crate::editor::goto_line::{self, GotoLineResult, GotoLineTask};
 use crate::help_catalog::{self, PromptCommand};
 
@@ -182,6 +183,53 @@ pub(crate) fn handle_active_key(
         _ => {}
     }
     app.render(out)?;
+    Ok(true)
+}
+
+pub(crate) fn dispatch_action(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<bool> {
+    if app.command_prompt.active.is_none() {
+        if action == Action::PromptCancel && app.command_prompt.running.is_some() {
+            cancel_running(&mut app.command_prompt);
+            app.message = None;
+            app.render(out)?;
+            return Ok(true);
+        }
+        return Ok(false);
+    }
+    match action {
+        Action::PromptCancel => {
+            let inline_warning = matches!(
+                app.command_prompt
+                    .active
+                    .as_ref()
+                    .map(|prompt| &prompt.kind),
+                Some(PromptKind::InlineWarning)
+            );
+            if inline_warning {
+                super::inline_clanker::cancel_warning(app);
+            } else {
+                app.message = None;
+            }
+            app.command_prompt.active = None;
+            app.render(out)?;
+        }
+        Action::PromptSubmit => submit(app, out)?,
+        Action::PromptDeleteBackward => {
+            app.command_prompt
+                .active
+                .as_mut()
+                .expect("prompt active")
+                .text
+                .pop();
+            update_message(app);
+            app.render(out)?;
+        }
+        _ => return Ok(false),
+    }
     Ok(true)
 }
 

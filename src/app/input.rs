@@ -9,19 +9,48 @@ use std::io::{self, Write};
 
 use crossterm::event::KeyEvent;
 
-use crate::help_catalog::{self, EditorAction};
+use crate::config::actions::{Action, Scope};
 
 use super::file_state::refresh_dirty;
 use super::{
-    autocomplete, buffers, command_prompt, completion, help, mobile, model_picker, overwrite,
-    paging, reload, replace, save, search, selection, view,
+    autocomplete, buffers, command_prompt, completion, help, mobile, model_picker, navigation,
+    overwrite, paging, reload, replace, save, search, selection, view,
 };
 
 mod editing;
-mod shortcuts;
 mod surfaces;
 
 mod scope;
+
+#[cfg(test)]
+mod dispatch_probe {
+    use std::cell::Cell;
+
+    use crate::config::actions::Action;
+
+    thread_local! {
+        static ENABLED: Cell<bool> = const { Cell::new(false) };
+        static ACTION: Cell<Option<Action>> = const { Cell::new(None) };
+    }
+
+    pub(super) fn start() {
+        ACTION.set(None);
+        ENABLED.set(true);
+    }
+
+    pub(super) fn record(action: Action) -> bool {
+        if !ENABLED.get() {
+            return false;
+        }
+        ACTION.set(Some(action));
+        true
+    }
+
+    pub(super) fn finish() -> Option<Action> {
+        ENABLED.set(false);
+        ACTION.take()
+    }
+}
 
 pub(super) fn active_scope(app: &super::App) -> crate::config::actions::Scope {
     scope::active(app)
@@ -82,49 +111,43 @@ pub(crate) fn handle_key_with(
         return Ok(());
     }
     let scope = scope::active(app);
-    let Some(key) = app.keybindings.translate(scope, key) else {
-        return Ok(());
-    };
-    if shortcuts::is_interrupt_key(key) {
-        crate::terminal::request_interrupt();
+    if handle_bound_key(app, out, scope, key)? {
         return Ok(());
     }
-    if scope != crate::config::actions::Scope::Editor || !selection::is_cut_line_key(key) {
-        selection::end_cut_line_chain(app);
-    }
-    handle_normalized_key(app, out, key)
+    selection::end_cut_line_chain(app);
+    handle_raw_key(app, out, key)
 }
 
-/// Dispatch a canonical key without consulting user hardware bindings.
-/// Mobile actions use this after explicit hit testing so unbinding a keyboard
-/// chord cannot make its corresponding touch action unreachable.
-pub(super) fn handle_normalized_key(
+fn handle_bound_key(
     app: &mut super::App,
     out: &mut dyn Write,
+    scope: Scope,
     key: KeyEvent,
-) -> io::Result<()> {
+) -> io::Result<bool> {
+    if let Some(action) = app.keybindings.action_for_key(scope, key) {
+        if action != Action::CutLine {
+            selection::end_cut_line_chain(app);
+        }
+        dispatch_action(app, out, action)?;
+        return Ok(true);
+    }
+    if app.keybindings.is_default_key(scope, key) {
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+fn handle_raw_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -> io::Result<()> {
     if surfaces::handle_raw_key(app, out, key)? {
-        return Ok(());
-    }
-    if active_scope(app) == crate::config::actions::Scope::Editor {
-        prepare_editor_action(app, help_catalog::default_editor_action(key));
-    }
-    if shortcuts::handle_inline_clanker_key(app, out, key)? {
-        return Ok(());
-    }
-    if surfaces::handle_translated_key(app, out, key)? {
-        return Ok(());
-    }
-    if shortcuts::handle_key(app, out, key)? {
         return Ok(());
     }
     editing::handle_key(app, out, key)
 }
 
-pub(super) fn prepare_editor_action(app: &mut super::App, action: Option<EditorAction>) {
-    let is_quit = matches!(action, Some(EditorAction::Quit));
-    let is_save = matches!(action, Some(EditorAction::Save));
-    let is_reload = matches!(action, Some(EditorAction::Reload));
+pub(super) fn prepare_editor_action(app: &mut super::App, action: Action) {
+    let is_quit = action == Action::Quit;
+    let is_save = action == Action::Save;
+    let is_reload = action == Action::Reload;
     let keeps_confirmation = (is_quit
         && (app.pending_quit_confirm || command_prompt::config_discard_confirmation_pending(app)))
         || (is_save && app.pending_save_conflict.is_some())
@@ -144,50 +167,118 @@ pub(super) fn prepare_editor_action(app: &mut super::App, action: Option<EditorA
     }
 }
 
-pub(super) fn dispatch_editor_action(
+pub(super) fn dispatch_action(
     app: &mut super::App,
     out: &mut dyn Write,
-    action: EditorAction,
+    action: Action,
 ) -> io::Result<()> {
+    #[cfg(test)]
+    if dispatch_probe::record(action) {
+        return Ok(());
+    }
     match action {
-        EditorAction::Help => help::show(app, out),
-        EditorAction::Quit => handle_quit(app, out),
-        EditorAction::Save => save::handle_save(app, out),
-        EditorAction::SaveAs => command_prompt::open_save_as_prompt(app, out),
-        EditorAction::Reload => reload::handle_reload_key(app, out),
-        EditorAction::Open => command_prompt::open_file_prompt(app, out),
-        EditorAction::New => command_prompt::execute_new(app, out),
-        EditorAction::Close => command_prompt::execute_close(app, out, false),
-        EditorAction::Search => search::open_prompt(app, out),
-        EditorAction::Replace => replace::open_prompt(app, out, false),
-        EditorAction::GotoLine => command_prompt::open_goto_prompt(app, out),
-        EditorAction::CommandPrompt => command_prompt::open_command_prompt(app, out),
-        EditorAction::Undo => {
+        Action::Help => return help::toggle(app, out),
+        Action::Quit => {
+            prepare_editor_action(app, action);
+            return handle_quit(app, out);
+        }
+        Action::Interrupt => {
+            crate::terminal::request_interrupt();
+            return Ok(());
+        }
+        _ => {}
+    }
+    let scope = active_scope(app);
+    if scope != Scope::Editor {
+        return surfaces::dispatch_action(app, out, scope, action);
+    }
+    if autocomplete::dispatch_editor_action(app, out, action)? {
+        return Ok(());
+    }
+    autocomplete::invalidate(app);
+    if completion::dispatch_editor_action(app, out, action)? {
+        return Ok(());
+    }
+    prepare_editor_action(app, action);
+    if editing::dispatch_action(app, out, action)?
+        || navigation::dispatch_action(app, out, action)?
+        || selection::dispatch_action(app, out, action)?
+    {
+        return Ok(());
+    }
+    match action {
+        Action::Save => save::handle_save(app, out),
+        Action::SaveAs => command_prompt::open_save_as_prompt(app, out),
+        Action::Reload => reload::handle_reload_key(app, out),
+        Action::Open => command_prompt::open_file_prompt(app, out),
+        Action::New => command_prompt::execute_new(app, out),
+        Action::Close => command_prompt::execute_close(app, out, false),
+        Action::Search => search::open_prompt(app, out),
+        Action::Replace => replace::open_prompt(app, out, false),
+        Action::GotoLine => command_prompt::open_goto_prompt(app, out),
+        Action::CommandPrompt => command_prompt::open_command_prompt(app, out),
+        Action::Undo => {
             app.buffer.undo();
             finish_content_edit(app, out)
         }
-        EditorAction::Redo => {
+        Action::Redo => {
             app.buffer.redo();
             finish_content_edit(app, out)
         }
-        EditorAction::ToggleOverwrite => overwrite::toggle(app, out),
-        EditorAction::Complete => {
-            completion::handle_key(app, out, help_catalog::canonical_key(action)).map(|_| ())
+        Action::ToggleOverwrite => overwrite::toggle(app, out),
+        Action::Complete => completion::trigger(app, out),
+        Action::PreviousBuffer => switch_buffer(app, out, buffers::BufferDirection::Previous),
+        Action::NextBuffer => switch_buffer(app, out, buffers::BufferDirection::Next),
+        Action::PreviousPage => paging::handle_page_key(app, out, paging::PageDirection::Previous),
+        Action::NextPage => paging::handle_page_key(app, out, paging::PageDirection::Next),
+        Action::ToggleExternalDiff
+        | Action::MarkdownPreview
+        | Action::LineNumbers
+        | Action::Whitespace
+        | Action::SoftWrap => view::dispatch_action(app, out, action).map(|_| ()),
+        Action::RunClanker => super::hooks::before_inline_clanker(app, out),
+        Action::ClearClankerChanges => super::inline_clanker::clear_changes(app, out),
+        Action::SelectModel => model_picker::show(app, out),
+        _ => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    #[test]
+    fn every_remapped_keyboard_action_reaches_semantic_dispatch() {
+        let remapped = KeyEvent::new(KeyCode::F(12), KeyModifiers::ALT);
+        let mut app = super::super::App::new(None).unwrap();
+        let mut out = Vec::new();
+
+        for descriptor in crate::config::actions::REGISTRY
+            .iter()
+            .filter(|descriptor| descriptor.input == crate::config::actions::InputKind::Keyboard)
+        {
+            let config = format!("[keybindings]\n{} = [\"alt+f12\"]\n", descriptor.name);
+            app.keybindings = crate::config::keybindings::parse(&config)
+                .unwrap_or_else(|error| panic!("{} remap must parse: {error}", descriptor.name));
+
+            for scope in descriptor.scopes {
+                dispatch_probe::start();
+                assert!(
+                    handle_bound_key(&mut app, &mut out, *scope, remapped).unwrap(),
+                    "{} in {} was not consumed",
+                    descriptor.name,
+                    scope.name()
+                );
+                assert_eq!(
+                    dispatch_probe::finish(),
+                    Some(descriptor.action),
+                    "{} in {}",
+                    descriptor.name,
+                    scope.name()
+                );
+            }
         }
-        EditorAction::PreviousBuffer => switch_buffer(app, out, buffers::BufferDirection::Previous),
-        EditorAction::NextBuffer => switch_buffer(app, out, buffers::BufferDirection::Next),
-        EditorAction::PreviousPage => {
-            paging::handle_page_key(app, out, paging::PageDirection::Previous)
-        }
-        EditorAction::NextPage => paging::handle_page_key(app, out, paging::PageDirection::Next),
-        EditorAction::ExternalDiff
-        | EditorAction::MarkdownPreview
-        | EditorAction::LineNumbers
-        | EditorAction::Whitespace
-        | EditorAction::SoftWrap => {
-            view::handle_key(app, out, help_catalog::canonical_key(action)).map(|_| ())
-        }
-        EditorAction::SelectModel => model_picker::show(app, out),
     }
 }
 

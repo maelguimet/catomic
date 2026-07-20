@@ -10,8 +10,8 @@ use std::io::{self, Write};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::{Buffer, Cursor, PieceTable};
+use crate::config::actions::Action;
 use crate::editor::syntax::{self, HyperlinkSpan, StyledSpan, SyntaxKind};
-use crate::help_catalog::{self, EditorAction};
 
 #[derive(Debug, Default)]
 pub(crate) struct ViewOptions {
@@ -51,18 +51,64 @@ pub(crate) fn handle_key(
     out: &mut dyn Write,
     key: KeyEvent,
 ) -> io::Result<bool> {
-    match help_catalog::default_editor_action(key) {
-        Some(EditorAction::ExternalDiff) => return toggle_external_diff(app, out),
-        Some(EditorAction::MarkdownPreview) => return toggle_preview(app, out),
-        Some(EditorAction::LineNumbers) => return toggle_line_numbers(app, out),
-        Some(EditorAction::Whitespace) => return toggle_whitespace(app, out),
-        Some(EditorAction::SoftWrap) => return toggle_soft_wrap(app, out),
-        _ => {}
-    }
     if !is_preview(app) || is_quit(key) {
         return Ok(false);
     }
     handle_preview_key(app, out, key)?;
+    Ok(true)
+}
+
+pub(crate) fn dispatch_action(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<bool> {
+    match action {
+        Action::ToggleExternalDiff => toggle_external_diff(app, out),
+        Action::MarkdownPreview => toggle_preview(app, out),
+        Action::LineNumbers => toggle_line_numbers(app, out),
+        Action::Whitespace => toggle_whitespace(app, out),
+        Action::SoftWrap => toggle_soft_wrap(app, out),
+        _ => Ok(false),
+    }
+}
+
+pub(crate) fn dispatch_preview_action(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<bool> {
+    if !is_preview(app) {
+        return Ok(false);
+    }
+    if matches!(action, Action::MarkdownPreview | Action::PreviewCancel) {
+        cancel_preview(app);
+        app.message = None;
+        app.render(out)?;
+        return Ok(true);
+    }
+    let height = app.screen.visible_height().max(1);
+    let preview = &mut app.view.preview.as_mut().expect("preview active").buffer;
+    match action {
+        Action::MoveLeft => preview.move_left(),
+        Action::MoveRight => preview.move_right(),
+        Action::MoveUp => preview.move_up(),
+        Action::MoveDown => preview.move_down(),
+        Action::ViewportUp => move_rows(preview, false, height),
+        Action::ViewportDown => move_rows(preview, true, height),
+        Action::LineStart => preview.set_cursor(Cursor {
+            row: preview.cursor().row,
+            col: 0,
+        }),
+        Action::LineEnd => preview.set_cursor(Cursor {
+            row: preview.cursor().row,
+            col: preview.line_char_count(preview.cursor().row).unwrap_or(0),
+        }),
+        Action::PreviewAccept => {}
+        _ => return Ok(false),
+    }
+    reveal_display_cursor(app);
+    app.render(out)?;
     Ok(true)
 }
 
@@ -402,13 +448,17 @@ mod tests {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
+    fn press(app: &mut super::super::App, out: &mut dyn Write, code: KeyCode) {
+        app.handle_key_with(out, key(code)).unwrap();
+    }
+
     #[test]
     fn function_keys_toggle_view_state_and_render_indicators() {
         let mut app = super::super::App::new(None).unwrap();
         app.buffer = Box::new(crate::buffer::PieceTable::from_text("a b\tc"));
         let mut out = Vec::new();
 
-        handle_key(&mut app, &mut out, key(KeyCode::F(7))).unwrap();
+        press(&mut app, &mut out, KeyCode::F(7));
         assert!(app.view_preferences.line_numbers());
         assert!(app
             .message
@@ -418,7 +468,7 @@ mod tests {
         assert!(String::from_utf8_lossy(&out).contains("1 "));
 
         out.clear();
-        handle_key(&mut app, &mut out, key(KeyCode::F(8))).unwrap();
+        press(&mut app, &mut out, KeyCode::F(8));
         assert!(app.view.whitespace);
         assert!(String::from_utf8(out).unwrap().contains("a·b→c"));
     }
@@ -439,7 +489,7 @@ mod tests {
         let dirty = app.file.dirty;
         let mut out = Vec::new();
 
-        handle_key(&mut app, &mut out, key(KeyCode::F(5))).unwrap();
+        press(&mut app, &mut out, KeyCode::F(5));
 
         assert!(!app.view_preferences.external_diff());
         assert!(app.external_changes.visible(history).is_none());
@@ -447,7 +497,7 @@ mod tests {
         assert_eq!(app.buffer.edit_history_position(), history);
         assert_eq!(app.file.dirty, dirty);
 
-        handle_key(&mut app, &mut out, key(KeyCode::F(5))).unwrap();
+        press(&mut app, &mut out, KeyCode::F(5));
         assert!(app.view_preferences.external_diff());
         assert!(app.external_changes.visible(history).is_none());
     }
@@ -460,14 +510,14 @@ mod tests {
         app.screen.height = 4;
         let mut out = Vec::new();
 
-        handle_key(&mut app, &mut out, key(KeyCode::F(9))).unwrap();
+        press(&mut app, &mut out, KeyCode::F(9));
         assert!(app.view.soft_wrap);
         let rendered = String::from_utf8(out).unwrap();
         assert!(rendered.contains("\x1b[1;1H\x1b[Kabc"));
         assert!(rendered.contains("\x1b[2;1H\x1b[Kdef"));
 
         let mut out = Vec::new();
-        handle_key(&mut app, &mut out, key(KeyCode::F(9))).unwrap();
+        press(&mut app, &mut out, KeyCode::F(9));
         assert!(!app.view.soft_wrap);
     }
 
@@ -482,17 +532,17 @@ mod tests {
         let source_scroll_left = app.screen.scroll_left;
         let mut out = Vec::new();
 
-        handle_key(&mut app, &mut out, key(KeyCode::F(6))).unwrap();
+        press(&mut app, &mut out, KeyCode::F(6));
         assert!(is_preview(&app));
         assert!(String::from_utf8_lossy(&out).contains("Titl"));
         assert!(!String::from_utf8_lossy(&out).contains("# Title"));
         let source = app.buffer.to_string();
 
-        handle_key(&mut app, &mut out, key(KeyCode::Char('x'))).unwrap();
+        press(&mut app, &mut out, KeyCode::Char('x'));
         assert_eq!(app.buffer.to_string(), source);
         assert!(app.message.as_deref().unwrap().contains("read-only"));
 
-        handle_key(&mut app, &mut out, key(KeyCode::F(6))).unwrap();
+        press(&mut app, &mut out, KeyCode::F(6));
         assert!(!is_preview(&app));
         assert_eq!(app.screen.scroll_left, source_scroll_left);
     }
@@ -505,7 +555,7 @@ mod tests {
             app.buffer = Box::new(crate::buffer::PieceTable::from_text("# Preview"));
             let mut out = Vec::new();
 
-            handle_key(&mut app, &mut out, key(KeyCode::F(6))).unwrap();
+            press(&mut app, &mut out, KeyCode::F(6));
 
             assert!(is_preview(&app), "path {path:?}");
             assert!(!app.message.as_deref().unwrap().contains(".md"));
@@ -518,7 +568,7 @@ mod tests {
         app.file.path = Some(PathBuf::from("notes.md"));
         app.buffer = Box::new(crate::buffer::PieceTable::from_text("# Original"));
         let mut out = Vec::new();
-        handle_key(&mut app, &mut out, key(KeyCode::F(6))).unwrap();
+        press(&mut app, &mut out, KeyCode::F(6));
 
         super::super::input::handle_paste(&mut app, &mut out, "replacement").unwrap();
 
@@ -537,10 +587,10 @@ mod tests {
         app.screen.height = 14;
         let mut out = Vec::new();
 
-        handle_key(&mut app, &mut out, key(KeyCode::F(6))).unwrap();
+        press(&mut app, &mut out, KeyCode::F(6));
         let preview_text = app.view.preview.as_ref().unwrap().buffer.to_string();
         out.clear();
-        handle_key(&mut app, &mut out, key(KeyCode::End)).unwrap();
+        press(&mut app, &mut out, KeyCode::End);
 
         assert_eq!(app.screen.scroll_left, 0);
         assert!(preview_text.contains("- Right:"));
@@ -581,10 +631,10 @@ mod tests {
             app.screen.wrap_col,
         );
 
-        handle_key(&mut app, &mut out, key(KeyCode::F(6))).unwrap();
+        press(&mut app, &mut out, KeyCode::F(6));
         assert!(is_preview(&app));
         assert_eq!(app.selection.active(), selection);
-        handle_key(&mut app, &mut out, key(KeyCode::Esc)).unwrap();
+        press(&mut app, &mut out, KeyCode::Esc);
 
         assert!(!is_preview(&app));
         assert_eq!(app.buffer.to_string(), source);
@@ -611,7 +661,7 @@ mod tests {
         app.buffer = Box::new(crate::buffer::PieceTable::from_text(source));
         app.screen.width = 60;
         let mut out = Vec::new();
-        handle_key(&mut app, &mut out, key(KeyCode::F(6))).unwrap();
+        press(&mut app, &mut out, KeyCode::F(6));
 
         app.handle_resize(16, 10, &mut out).unwrap();
 

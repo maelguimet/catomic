@@ -43,7 +43,7 @@ fn ctrl_h_renders_curated_markdown_as_one_frame() {
     let mut out = FrameRecorder::default();
 
     let toggle = KeyEvent::new(KeyCode::Char('h'), KeyModifiers::CONTROL);
-    assert!(handle_key(&mut app, &mut out, toggle).unwrap());
+    app.handle_key_with(&mut out, toggle).unwrap();
 
     assert_eq!(out.writes.len(), 1, "help redraw must be one output frame");
     assert_eq!(out.flushes, 1, "the committed frame must be flushed once");
@@ -140,15 +140,13 @@ fn help_search_uses_the_effective_find_binding_and_highlights_a_match() {
     let mut out = Vec::new();
     show(&mut app, &mut out).unwrap();
 
-    handle_key(
-        &mut app,
+    app.handle_key_with(
         &mut out,
         KeyEvent::new(KeyCode::Char('f'), KeyModifiers::ALT),
     )
     .unwrap();
     for ch in "recovery".chars() {
-        handle_key(
-            &mut app,
+        app.handle_key_with(
             &mut out,
             KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE),
         )
@@ -186,12 +184,8 @@ fn narrow_help_soft_wraps_and_scrolls_without_horizontal_movement() {
             col: 0,
         });
     out.clear();
-    handle_key(
-        &mut app,
-        &mut out,
-        KeyEvent::new(KeyCode::End, KeyModifiers::NONE),
-    )
-    .unwrap();
+    app.handle_key_with(&mut out, KeyEvent::new(KeyCode::End, KeyModifiers::NONE))
+        .unwrap();
 
     assert!(crate::app::view::soft_wrap_active(&app));
     assert!(app.screen.scroll_top > 0);
@@ -214,8 +208,7 @@ fn escape_closes_help_without_leaving_a_message_and_restores_source_viewport() {
     show(&mut app, &mut out).unwrap();
     let help_before = display_buffer(&app).unwrap().to_string();
 
-    handle_key(
-        &mut app,
+    app.handle_key_with(
         &mut out,
         KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE),
     )
@@ -223,12 +216,8 @@ fn escape_closes_help_without_leaving_a_message_and_restores_source_viewport() {
     assert_eq!(display_buffer(&app).unwrap().to_string(), help_before);
 
     out.clear();
-    handle_key(
-        &mut app,
-        &mut out,
-        KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
-    )
-    .unwrap();
+    app.handle_key_with(&mut out, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+        .unwrap();
     assert!(!is_viewing(&app));
     assert_eq!(app.message, None);
     assert_eq!(app.screen.scroll_top, 3);

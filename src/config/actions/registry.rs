@@ -16,6 +16,7 @@ const C: &[super::Scope] = &[Completion];
 const V: &[super::Scope] = &[Preview];
 const K: &[super::Scope] = &[Picker];
 const H: &[super::Scope] = &[Help];
+const EH: &[super::Scope] = &[Editor, Help];
 const EV: &[super::Scope] = &[Editor, Preview];
 const NAV: &[super::Scope] = &[Editor, Preview, Picker, Help];
 const PS: &[super::Scope] = &[Prompt, Search];
@@ -84,7 +85,7 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
         E,
         ["ctrl+r"]
     ),
-    key!(Search, "search", "Open incremental search", E, ["ctrl+f"]),
+    key!(Search, "search", "Open incremental search", EH, ["ctrl+f"]),
     key!(
         Replace,
         "replace",
@@ -366,7 +367,7 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
         ToggleExternalDiff,
         "toggle-external-diff",
         "Toggle and remember external-reload change highlighting",
-        E,
+        EV,
         ["f5"]
     ),
     key!(
@@ -380,17 +381,17 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
         LineNumbers,
         "line-numbers",
         "Toggle line numbers",
-        E,
+        EV,
         ["f7"]
     ),
     key!(
         Whitespace,
         "whitespace",
         "Toggle visible whitespace",
-        E,
+        EV,
         ["f8"]
     ),
-    key!(SoftWrap, "soft-wrap", "Toggle soft wrapping", E, ["f9"]),
+    key!(SoftWrap, "soft-wrap", "Toggle soft wrapping", EV, ["f9"]),
     key!(
         RunClanker,
         "run-clanker",

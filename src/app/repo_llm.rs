@@ -9,6 +9,7 @@ use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use crate::config::actions::Action;
 use crate::config::llm::BackendPreset;
 use crate::llm::backend::ConfirmedBackend;
 use crate::llm::context::RequestDraft;
@@ -218,6 +219,51 @@ pub(crate) fn handle_key(
         }
         _ => Ok(false),
     }
+}
+
+pub(crate) fn dispatch_action(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<bool> {
+    match app.repo_llm_state.as_ref() {
+        Some(RepoLlmState::Pending(_)) => match action {
+            Action::PreviewAccept => checking::begin(app),
+            Action::PreviewCancel => cancel_pending(app),
+            _ => {
+                app.message =
+                    Some("Repo LLM send not confirmed. Enter sends; Esc cancels.".to_string())
+            }
+        },
+        Some(RepoLlmState::CheckingSend(_)) => {
+            if action == Action::PreviewCancel {
+                cancel_all(app);
+                app.message = None;
+            } else {
+                app.message = Some("Repository check running; Esc cancels.".to_string());
+            }
+        }
+        Some(RepoLlmState::CheckingApply(_)) => {
+            if action == Action::PreviewCancel {
+                cancel_all(app);
+                super::llm_preview::close(app);
+                app.message = None;
+                app.reveal_cursor();
+            } else {
+                app.message =
+                    Some("Final repository check running; Esc cancels the proposal.".to_string());
+            }
+        }
+        Some(RepoLlmState::Preparing(_) | RepoLlmState::Running(_))
+            if action == Action::PreviewCancel =>
+        {
+            cancel_all(app);
+            app.message = None;
+        }
+        _ => return Ok(false),
+    }
+    app.render(out)?;
+    Ok(true)
 }
 
 pub(crate) fn handle_paste(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {

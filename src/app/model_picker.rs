@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
 
+use crate::config::actions::Action;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::{Buffer, PieceTable};
@@ -211,6 +212,33 @@ pub(crate) fn handle_key(
         if update_hint {
             document::update_message(app);
         }
+        app.render(out)?;
+    }
+    Ok(true)
+}
+
+pub(crate) fn dispatch_action(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<bool> {
+    if !is_viewing(app) {
+        return Ok(false);
+    }
+    match action {
+        Action::PickerCancel => escape(app),
+        Action::PickerAccept => enter(app, out)?,
+        Action::MoveUp => document::move_selection(app, false),
+        Action::MoveDown => document::move_selection(app, true),
+        Action::ViewportUp => document::move_page(app, false),
+        Action::ViewportDown => document::move_page(app, true),
+        Action::LineStart => document::set_selection(app, 0),
+        Action::LineEnd => document::set_selection(app, usize::MAX),
+        _ => return Ok(false),
+    }
+    document::reveal_cursor(app);
+    if is_viewing(app) {
+        document::update_message(app);
         app.render(out)?;
     }
     Ok(true)

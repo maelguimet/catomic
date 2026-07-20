@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::{PieceTable, TextEdit};
+use crate::config::actions::Action;
 use crate::config::llm::{BackendPreset, InlineSettings};
 use crate::llm::inline::InlineDraft;
 use crate::llm::task::LlmTask;
@@ -139,6 +140,33 @@ pub(crate) fn handle_key(
             preview_ui::handle_key(app, out, key)?;
             Ok(true)
         }
+    }
+}
+
+pub(crate) fn dispatch_action(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<bool> {
+    let Some(phase) = app.inline_clanker.phase.as_ref() else {
+        return Ok(false);
+    };
+    match phase {
+        Phase::Warning(_) => Ok(false),
+        Phase::Confirm(_) => confirmation::dispatch_action(app, out, action).map(|()| true),
+        Phase::Running(_) => {
+            if action == Action::PreviewCancel {
+                cancel_running(app, out)?;
+            } else {
+                app.message = Some(
+                    "Inline clanker request is running. Esc cancels; other input is paused."
+                        .to_string(),
+                );
+                app.render(out)?;
+            }
+            Ok(true)
+        }
+        Phase::Preview(_) => preview_ui::dispatch_action(app, out, action).map(|()| true),
     }
 }
 

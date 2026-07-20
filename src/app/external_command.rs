@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::buffer::{Buffer, Cursor};
+use crate::config::actions::Action;
 use crate::config::commands::{CommandInput, CommandOutput, CommandSpec};
 use crate::external::{substitute_file, ExternalCommandResult, ExternalCommandTask};
 
@@ -159,6 +160,21 @@ pub(crate) fn handle_key(
         return Ok(true);
     }
     preview::handle_key(app, out, key)
+}
+
+pub(crate) fn dispatch_action(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<bool> {
+    if action == Action::PreviewCancel && app.external_command.running.is_some() {
+        app.external_command.running = None;
+        app.message = None;
+        super::hooks::finish_command(app, false);
+        app.render(out)?;
+        return Ok(true);
+    }
+    preview::dispatch_action(app, out, action)
 }
 
 pub(crate) fn handle_paste(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {

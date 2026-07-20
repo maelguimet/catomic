@@ -6,12 +6,13 @@
 
 use std::io::{self, Write};
 
+use crate::config::actions::{Action, Scope};
 use crossterm::event::KeyEvent;
 
 use super::super::{
     autocomplete, command_prompt, completion, external_command, help, inline_clanker, lint,
-    llm_answer, llm_preview, llm_request, model_picker, navigation, project_files, recovery,
-    replace, repo_llm, search, selection, view, App,
+    llm_answer, llm_preview, llm_request, model_picker, project_files, recovery, replace, repo_llm,
+    search, view, App,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -99,38 +100,43 @@ fn handle_raw_key_for(
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum TranslatedKeyHandler {
-    Help,
-    View,
-    Navigation,
-    Selection,
-}
-
-const TRANSLATED_KEY_PRECEDENCE: [TranslatedKeyHandler; 4] = [
-    TranslatedKeyHandler::Help,
-    TranslatedKeyHandler::View,
-    TranslatedKeyHandler::Navigation,
-    TranslatedKeyHandler::Selection,
-];
-
-pub(super) fn handle_translated_key(
+pub(super) fn dispatch_action(
     app: &mut App,
     out: &mut dyn Write,
-    key: KeyEvent,
-) -> io::Result<bool> {
-    for handler in TRANSLATED_KEY_PRECEDENCE {
-        let handled = match handler {
-            TranslatedKeyHandler::Help => help::handle_key(app, out, key)?,
-            TranslatedKeyHandler::View => view::handle_key(app, out, key)?,
-            TranslatedKeyHandler::Navigation => navigation::handle_key(app, out, key)?,
-            TranslatedKeyHandler::Selection => selection::handle_shortcut(app, out, key)?,
-        };
-        if handled {
-            return Ok(true);
+    scope: Scope,
+    action: Action,
+) -> io::Result<()> {
+    let handled = match scope {
+        Scope::Help => help::dispatch_action(app, out, action)?,
+        Scope::Search => search::dispatch_action(app, out, action)?,
+        Scope::Completion => completion::dispatch_action(app, out, action)?,
+        Scope::Prompt => {
+            replace::dispatch_action(app, out, action)?
+                || command_prompt::dispatch_action(app, out, action)?
         }
+        Scope::Picker => {
+            model_picker::dispatch_action(app, out, action)?
+                || project_files::dispatch_action(app, out, action)?
+                || lint::dispatch_action(app, out, action)?
+        }
+        Scope::Preview => {
+            autocomplete::dispatch_action(app, out, action)?
+                || recovery::dispatch_action(app, out, action)?
+                || external_command::dispatch_action(app, out, action)?
+                || repo_llm::dispatch_action(app, out, action)?
+                || llm_request::dispatch_action(app, out, action)?
+                || inline_clanker::dispatch_action(app, out, action)?
+                || llm_preview::dispatch_action(app, out, action)?
+                || llm_answer::dispatch_action(app, out, action)?
+                || view::dispatch_action(app, out, action)?
+                || view::dispatch_preview_action(app, out, action)?
+        }
+        Scope::Global | Scope::Editor => false,
+    };
+    if !handled {
+        app.render(out)?;
     }
-    Ok(false)
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -203,15 +209,6 @@ mod tests {
         assert_eq!(RAW_KEY_PRECEDENCE[9], RawKeySurface::CommandPrompt);
         assert_eq!(RAW_KEY_PRECEDENCE[10], RawKeySurface::InlineClanker);
         assert_eq!(RAW_KEY_PRECEDENCE[16], RawKeySurface::MarkdownPreview);
-        assert_eq!(
-            TRANSLATED_KEY_PRECEDENCE,
-            [
-                TranslatedKeyHandler::Help,
-                TranslatedKeyHandler::View,
-                TranslatedKeyHandler::Navigation,
-                TranslatedKeyHandler::Selection,
-            ]
-        );
         assert_eq!(PASTE_PRECEDENCE[0], PasteSurface::Help);
         assert_eq!(PASTE_PRECEDENCE[1], PasteSurface::Replace);
         assert_eq!(PASTE_PRECEDENCE[6], PasteSurface::InlineClanker);

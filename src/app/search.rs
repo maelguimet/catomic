@@ -10,6 +10,7 @@ use std::io::{self, Write};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::Cursor;
+use crate::config::actions::Action;
 use crate::editor::search::{self, SearchDirection, SearchMatch, SearchResult, SearchTask};
 
 #[derive(Default)]
@@ -66,6 +67,37 @@ pub(crate) fn handle_active_key(
         return Ok(true);
     }
     Ok(false)
+}
+
+pub(crate) fn dispatch_action(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<bool> {
+    if app.search.prompt.is_none() {
+        if action == Action::SearchCancel && app.search.running.is_some() {
+            cancel_running(&mut app.search);
+            app.message = None;
+            app.render(out)?;
+            return Ok(true);
+        }
+        return Ok(false);
+    }
+    match action {
+        Action::SearchNext => navigate_match(app, out, SearchDirection::Forward)?,
+        Action::SearchPrevious => navigate_match(app, out, SearchDirection::Backward)?,
+        Action::SearchCancel => {
+            cancel_running_search(app);
+            app.message = None;
+            app.render(out)?;
+        }
+        Action::PromptDeleteBackward => {
+            app.search.prompt.as_mut().expect("search active").pop();
+            refresh_incremental_match(app, out)?;
+        }
+        _ => return Ok(false),
+    }
+    Ok(true)
 }
 
 fn handle_prompt_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -> io::Result<()> {

@@ -14,7 +14,6 @@ use crate::config::actions::Action;
 use crate::config::keybindings::KeyBindings;
 use crate::editor::search::{self, SearchDirection, SearchMatch};
 use crate::editor::syntax::{HyperlinkSpan, StyledSpan};
-use crate::help_catalog::{self, EditorAction};
 
 pub(crate) struct HelpView {
     buffer: PieceTable,
@@ -78,14 +77,6 @@ pub(crate) fn handle_key(
     out: &mut dyn Write,
     key: KeyEvent,
 ) -> io::Result<bool> {
-    if is_toggle(key) {
-        if is_viewing(app) {
-            close_with_message(app, out)?;
-        } else {
-            show(app, out)?;
-        }
-        return Ok(true);
-    }
     if !is_viewing(app) || is_quit(key) {
         return Ok(false);
     }
@@ -94,10 +85,6 @@ pub(crate) fn handle_key(
     }
     if key.code == KeyCode::Esc {
         close_with_message(app, out)?;
-        return Ok(true);
-    }
-    if app.keybindings.matches_keyboard(Action::Search, key) {
-        open_search(app, out)?;
         return Ok(true);
     }
     match key.code {
@@ -228,8 +215,38 @@ fn reveal_cursor(app: &mut super::App) {
     app.reveal_cursor();
 }
 
-fn is_toggle(key: KeyEvent) -> bool {
-    help_catalog::default_editor_action(key) == Some(EditorAction::Help)
+pub(crate) fn toggle(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    if is_viewing(app) {
+        close_with_message(app, out)
+    } else {
+        show(app, out)
+    }
+}
+
+pub(crate) fn dispatch_action(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<bool> {
+    if !is_viewing(app) {
+        return Ok(false);
+    }
+    match action {
+        Action::Search => return open_search(app, out).map(|()| true),
+        Action::HelpClose => return close_with_message(app, out).map(|()| true),
+        Action::MoveLeft => move_cursor(app, Move::Left),
+        Action::MoveRight => move_cursor(app, Move::Right),
+        Action::MoveUp => move_cursor(app, Move::Up),
+        Action::MoveDown => move_cursor(app, Move::Down),
+        Action::ViewportUp => return scroll_page(app, out, false),
+        Action::ViewportDown => return scroll_page(app, out, true),
+        Action::LineStart => set_line_edge(app, false),
+        Action::LineEnd => set_line_edge(app, true),
+        _ => return Ok(false),
+    }
+    reveal_cursor(app);
+    app.render(out)?;
+    Ok(true)
 }
 
 fn is_quit(key: KeyEvent) -> bool {

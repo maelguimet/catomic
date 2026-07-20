@@ -1,4 +1,4 @@
-//! Purpose: dispatch canonical normal-mode editing and movement keys.
+//! Purpose: dispatch semantic editing actions and raw text-entry keys.
 //! Owns: indentation, newline, insertion, deletion, and arrow movement routing.
 //! Must not: handle active surfaces, translate keybindings, save files, or decode terminal bytes.
 //! Invariants: edits use common cleanup; movement does not mutate buffer content.
@@ -9,6 +9,27 @@ use std::io::{self, Write};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::super::{indentation, navigation, overwrite, App};
+use crate::config::actions::Action;
+
+pub(super) fn dispatch_action(
+    app: &mut App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<bool> {
+    match action {
+        Action::MoveLeft => move_horizontal(app, out, false)?,
+        Action::MoveRight => move_horizontal(app, out, true)?,
+        Action::MoveUp => move_vertical(app, out, false)?,
+        Action::MoveDown => move_vertical(app, out, true)?,
+        Action::DeleteBackward => navigation::delete_grapheme(app, out, false)?,
+        Action::DeleteForward => navigation::delete_grapheme(app, out, true)?,
+        Action::InsertNewline => indentation::insert_newline(app, out)?,
+        Action::Indent => indentation::handle_tab(app, out, false)?,
+        Action::Unindent => indentation::handle_tab(app, out, true)?,
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
 
 pub(super) fn handle_key(app: &mut App, out: &mut dyn Write, key: KeyEvent) -> io::Result<()> {
     match key {

@@ -113,16 +113,27 @@ fn source_changes_survive_update_and_restore_staged_state() {
     fs::write(root.join("local-notes"), "untracked change\n").unwrap();
 
     let stash = stash_changes(&root).unwrap().unwrap();
-    assert!(git_text(&root, &["status", "--porcelain=v1"]).unwrap().is_empty());
+    assert!(git_text(&root, &["status", "--porcelain=v1"])
+        .unwrap()
+        .is_empty());
     fs::write(root.join("upstream"), "new upstream file\n").unwrap();
     git(&root, &["add", "upstream"]);
     git(&root, &["commit", "-m", "upstream update"]);
 
     restore_changes(&root, Some(&stash)).unwrap();
 
-    assert_eq!(fs::read_to_string(root.join("Cargo.toml")).unwrap(), "local change\n");
-    assert_eq!(fs::read_to_string(root.join("local-notes")).unwrap(), "untracked change\n");
-    assert_eq!(git_text(&root, &["diff", "--cached", "--name-only"]).unwrap(), "Cargo.toml");
+    assert_eq!(
+        fs::read_to_string(root.join("Cargo.toml")).unwrap(),
+        "local change\n"
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("local-notes")).unwrap(),
+        "untracked change\n"
+    );
+    assert_eq!(
+        git_text(&root, &["diff", "--cached", "--name-only"]).unwrap(),
+        "Cargo.toml"
+    );
     assert_eq!(
         git_text(&root, &["rev-parse", "--verify", "refs/stash"]).unwrap(),
         previous
@@ -142,6 +153,9 @@ fn conflicting_update_keeps_the_source_stash() {
     let error = restore_changes(&root, Some(&stash)).unwrap_err();
 
     assert!(error.contains(short_sha(&stash)));
-    assert_eq!(git_text(&root, &["rev-parse", "--verify", "refs/stash"]).unwrap(), stash);
+    assert_eq!(
+        git_text(&root, &["rev-parse", "--verify", "refs/stash"]).unwrap(),
+        stash
+    );
     fs::remove_dir_all(root).unwrap();
 }

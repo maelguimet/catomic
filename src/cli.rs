@@ -32,6 +32,7 @@ pub(crate) enum ConfigAction {
     Path,
     Edit,
     Check,
+    RefreshKeybindings,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -62,6 +63,7 @@ fn parse_config(args: &[String]) -> Result<Action, String> {
         [command] if command == "path" => ConfigAction::Path,
         [command] if command == "edit" => ConfigAction::Edit,
         [command] if command == "check" => ConfigAction::Check,
+        [command] if command == "refresh-keybindings" => ConfigAction::RefreshKeybindings,
         [option] if help::config_option(option) == Some(help::ConfigOption::Help) => {
             return Ok(Action::ConfigHelp);
         }
@@ -197,6 +199,10 @@ mod tests {
         assert_eq!(
             parse(["config", "check"]).unwrap(),
             Action::Config(ConfigAction::Check)
+        );
+        assert_eq!(
+            parse(["config", "refresh-keybindings"]).unwrap(),
+            Action::Config(ConfigAction::RefreshKeybindings)
         );
         for spelling in ["-h", "--help"] {
             assert_eq!(parse(["config", spelling]).unwrap(), Action::ConfigHelp);

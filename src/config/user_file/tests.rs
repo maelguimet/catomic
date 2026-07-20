@@ -146,3 +146,78 @@ fn creation_refuses_a_non_directory_parent() {
     assert_eq!(error.kind(), io::ErrorKind::NotADirectory);
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn realistic_existing_config_gains_current_inventory_without_losing_user_bytes() {
+    let existing = concat!(
+        "# user preface stays exact\n",
+        "[editor]\n",
+        "tab_size = 2\n",
+        "\n",
+        "[keybindings]\n",
+        "save = [\"alt+s\"]\n",
+        "# action-registry-start\n",
+        "help = []\n",
+        "# save = [\"stale+s\"]\n",
+        "# action-registry-end\n",
+        "\n",
+        "[view]\n",
+        "line_numbers = true\n",
+        "# user tail stays exact\n",
+    );
+
+    let refreshed = refresh_inventory_text(existing).unwrap();
+
+    assert!(refreshed.starts_with(concat!(
+        "# user preface stays exact\n",
+        "[editor]\n",
+        "tab_size = 2\n",
+        "\n",
+        "[keybindings]\n",
+        "save = [\"alt+s\"]\n",
+        "help = []\n",
+    )));
+    assert!(refreshed.ends_with(concat!(
+        "[view]\n",
+        "line_numbers = true\n",
+        "# user tail stays exact\n",
+    )));
+    assert!(!refreshed.contains("stale+s"));
+    assert_eq!(refreshed.matches(INVENTORY_START).count(), 1);
+    assert_eq!(refreshed.matches(INVENTORY_END).count(), 1);
+    for action in crate::config::actions::REGISTRY {
+        let documented = format!("# {} = [", action.name);
+        assert_eq!(
+            refreshed.matches(&documented).count(),
+            1,
+            "{} inventory entry",
+            action.name
+        );
+    }
+    crate::config::validate_text(&refreshed).unwrap();
+    assert_eq!(refresh_inventory_text(&refreshed).unwrap(), refreshed);
+}
+
+#[test]
+fn refresh_uses_template_inventory_and_preserves_crlf() {
+    let existing = "# old config\r\n[keybindings]\r\nhelp = []\r\n";
+    let refreshed = refresh_inventory_text(existing).unwrap();
+
+    assert!(refreshed.contains(&inventory_block().replace('\n', "\r\n")));
+    assert!(!refreshed.replace("\r\n", "").contains('\n'));
+    assert_eq!(refresh_inventory_text(&refreshed).unwrap(), refreshed);
+}
+
+#[test]
+fn refresh_refuses_incomplete_or_duplicate_managed_blocks() {
+    for text in [
+        "# action-registry-start\n",
+        "# action-registry-end\n",
+        "# action-registry-start\n# action-registry-start\n# action-registry-end\n",
+    ] {
+        assert_eq!(
+            refresh_inventory_text(text).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+    }
+}

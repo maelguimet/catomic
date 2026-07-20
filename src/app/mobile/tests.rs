@@ -21,6 +21,27 @@ fn left_down(column: u16, row: u16) -> MouseEvent {
     }
 }
 
+fn arm_editor_confirmations(app: &mut super::super::App) {
+    app.pending_quit_confirm = true;
+    app.pending_save_conflict = Some(super::super::save::PendingSaveConflict {
+        path: "save.txt".into(),
+        status: crate::file::io::ExternalFileStatus::Modified,
+        snapshot: None,
+    });
+    app.pending_reload = Some(super::super::reload::PendingReload {
+        path: "reload.txt".into(),
+        status: crate::file::io::ExternalFileStatus::Modified,
+        snapshot: None,
+    });
+    app.message = Some("armed confirmation".to_string());
+}
+
+fn assert_editor_confirmations_cancelled(app: &super::super::App) {
+    assert!(!app.pending_quit_confirm);
+    assert!(app.pending_save_conflict.is_none());
+    assert!(app.pending_reload.is_none());
+}
+
 #[test]
 fn status_is_inert_and_action_row_opens_the_touch_palette() {
     let mut app = app_with("document");
@@ -40,6 +61,65 @@ fn status_is_inert_and_action_row_opens_the_touch_palette() {
         .line(0)
         .unwrap()
         .contains("Open file"));
+}
+
+#[test]
+fn overlay_open_navigation_close_and_notice_cancel_confirmations() {
+    let mut app = app_with("document");
+    app.screen.update_size(20, 6);
+    let mut out = Vec::new();
+
+    arm_editor_confirmations(&mut app);
+    handle_mouse(&mut app, &mut out, left_down(1, 5)).unwrap();
+    assert_editor_confirmations_cancelled(&app);
+    assert!(overlay::is_menu(&app));
+
+    arm_editor_confirmations(&mut app);
+    handle_key(
+        &mut app,
+        &mut out,
+        KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+    )
+    .unwrap();
+    assert_editor_confirmations_cancelled(&app);
+    assert_eq!(
+        app.message.as_deref(),
+        Some("Mobile actions: tap an item or use Up/Down and Run.")
+    );
+
+    arm_editor_confirmations(&mut app);
+    handle_mouse(&mut app, &mut out, left_down(1, 5)).unwrap();
+    assert_editor_confirmations_cancelled(&app);
+    assert!(!is_viewing(&app));
+
+    arm_editor_confirmations(&mut app);
+    handle_mouse(&mut app, &mut out, left_down(7, 5)).unwrap();
+    assert_editor_confirmations_cancelled(&app);
+    assert!(is_viewing(&app));
+    assert_eq!(
+        crate::app::view::display_buffer(&app).to_string(),
+        "armed confirmation"
+    );
+}
+
+#[test]
+fn touch_selection_start_and_cancel_cancel_confirmations() {
+    let mut app = app_with("document");
+    app.screen.update_size(30, 20);
+    let mut out = Vec::new();
+
+    handle_mouse(&mut app, &mut out, left_down(1, 19)).unwrap();
+    arm_editor_confirmations(&mut app);
+    handle_mouse(&mut app, &mut out, left_down(1, 13)).unwrap();
+
+    assert_editor_confirmations_cancelled(&app);
+    assert!(super::super::selection::is_touch_selecting(&app));
+
+    arm_editor_confirmations(&mut app);
+    handle_mouse(&mut app, &mut out, left_down(1, 19)).unwrap();
+
+    assert_editor_confirmations_cancelled(&app);
+    assert!(!super::super::selection::is_touch_selecting(&app));
 }
 
 #[test]

@@ -124,6 +124,7 @@ fn mouse_down(
         return Ok(());
     };
     if let Some(anchor) = app.selection.touch_anchor.take() {
+        super::super::input::prepare_editor_action(app, None);
         app.buffer.set_cursor(cursor);
         let selection = Selection::new(anchor, cursor);
         app.selection.range = (!selection.is_empty()).then_some(selection);

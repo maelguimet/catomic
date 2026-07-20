@@ -237,6 +237,40 @@ fn config_discard_warning_is_cancelled_by_editor_movement() {
 }
 
 #[test]
+fn mobile_menu_cancels_config_discard_confirmation() {
+    let path = config_fixture("mobile_discard_warning");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "[editor]\n").unwrap();
+    let mut app = super::super::App::new(None).unwrap();
+    super::super::mobile::configure(&mut app, true);
+    app.screen.update_size(20, 6);
+    let mut out = Vec::new();
+
+    open_config_path(&mut app, &mut out, &path).unwrap();
+    app.handle_key_with(&mut out, key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key_with(&mut out, key(KeyCode::Char('q'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(config_discard_confirmation_pending(&app));
+
+    super::super::mobile::handle_mouse(
+        &mut app,
+        &mut out,
+        crossterm::event::MouseEvent {
+            kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+            column: 1,
+            row: 5,
+            modifiers: KeyModifiers::NONE,
+        },
+    )
+    .unwrap();
+
+    assert!(!config_discard_confirmation_pending(&app));
+    assert!(super::super::mobile::is_viewing(&app));
+    std::fs::remove_dir_all(path.parent().unwrap().parent().unwrap()).unwrap();
+}
+
+#[test]
 fn command_prompt_preserves_selection_for_meow_confirmation() {
     let mut app = super::super::App::new(None).unwrap();
     app.buffer = Box::new(crate::buffer::PieceTable::from_text("selected text"));

@@ -96,6 +96,44 @@ fn app_file_state_first_ctrl_s_refuses_on_external_modified_keeps_dirty_and_disk
     let _ = std::fs::remove_file(&p);
 }
 
+#[test]
+fn mobile_save_immediately_confirms_its_own_conflict() {
+    let mut path = std::env::temp_dir();
+    path.push(format!(
+        "catomic_mobile_save_confirm_{}.txt",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, "BASE").unwrap();
+    let mut app = App::new(Some(&path.to_string_lossy())).unwrap();
+    super::super::super::mobile::configure(&mut app, true);
+    app.screen.update_size(20, 6);
+    let mut out = Vec::new();
+
+    std::fs::write(&path, "DISK EXTERNAL").unwrap();
+    app.handle_key(make_key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
+    let tap_save = |column| crossterm::event::MouseEvent {
+        kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+        column,
+        row: 5,
+        modifiers: KeyModifiers::NONE,
+    };
+
+    super::super::super::mobile::handle_mouse(&mut app, &mut out, tap_save(8)).unwrap();
+    assert!(app.pending_save_conflict.is_some());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "DISK EXTERNAL");
+
+    super::super::super::mobile::handle_mouse(&mut app, &mut out, tap_save(13)).unwrap();
+    assert!(app.pending_save_conflict.is_none());
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        app.buffer.to_string()
+    );
+
+    let _ = std::fs::remove_file(path);
+}
+
 #[cfg(unix)]
 #[test]
 fn app_save_refuses_same_length_same_mtime_path_replacement() {

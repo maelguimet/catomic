@@ -76,6 +76,13 @@ pub(super) fn is_active(app: &super::App) -> bool {
     app.command_prompt.active.is_some() || app.command_prompt.running.is_some()
 }
 
+pub(super) fn is_save_as_prompt(app: &super::App) -> bool {
+    matches!(
+        app.command_prompt.active.as_ref().map(|prompt| &prompt.kind),
+        Some(PromptKind::SaveAs)
+    )
+}
+
 pub(super) fn request_config_close(app: &mut super::App) -> Option<ConfigCloseRequest> {
     let config_return = app.command_prompt.config_return.as_mut()?;
     if app.file.path.as_deref() != Some(config_return.config_path.as_path()) {

@@ -215,3 +215,27 @@ fn touch_vertical_actions_follow_the_active_surface_semantics() {
     assert_eq!(vertical_action(Scope::Help, false), Action::MoveUp);
     assert_eq!(vertical_action(Scope::Picker, true), Action::MoveDown);
 }
+
+#[test]
+fn direct_touch_menu_path_preserves_only_a_save_as_confirmation() {
+    let mut app = app_with("document");
+    let mut out = Vec::new();
+    app.pending_save_conflict = Some(super::super::save::PendingSaveConflict {
+        path: "save-as.txt".into(),
+        status: crate::file::io::ExternalFileStatus::Modified,
+        snapshot: None,
+    });
+
+    dispatch_bar_action(&mut app, &mut out, BarAction::Menu).unwrap();
+    assert!(app.pending_save_conflict.is_some());
+    assert!(overlay::is_menu(&app));
+
+    execute_menu_action(
+        &mut app,
+        &mut out,
+        MenuAction::Dispatch(Action::SaveAs),
+    )
+    .unwrap();
+    assert!(app.pending_save_conflict.is_some());
+    assert!(super::super::command_prompt::is_save_as_prompt(&app));
+}

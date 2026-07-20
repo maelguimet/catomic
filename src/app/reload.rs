@@ -11,7 +11,7 @@
 //!   second press only acts on exact match; any content mutation clears it;
 //!   automatic reload is invoked only for clean buffers by caller policy;
 //!   successful reloads refresh watcher path identities;
-//!   movement/render do not clear pending state.
+//!   input routing cancels it before any unrelated editor action.
 //! Phase: 2-s / 2-t cleanup through 2-bx automatic clean reload.
 
 use std::io::{self, Write};

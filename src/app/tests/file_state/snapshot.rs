@@ -394,7 +394,7 @@ fn app_file_state_manual_check_external_deleted_reports_deleted_no_mutation() {
 }
 
 #[test]
-fn app_file_state_manual_check_does_not_clear_pending_save_conflict() {
+fn app_file_state_manual_check_replaces_pending_save_conflict() {
     let mut tmp = std::env::temp_dir();
     tmp.push(format!("catomic_2r_pend_{}.txt", std::process::id()));
     let p = tmp.to_string_lossy().to_string();
@@ -411,12 +411,11 @@ fn app_file_state_manual_check_does_not_clear_pending_save_conflict() {
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.pending_save_conflict.is_some());
-    let pend_before = app.pending_save_conflict.clone();
-
-    // manual check must not clear it
+    // Reload is a new action: cancel the save confirmation and arm reload instead.
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
-    assert_eq!(app.pending_save_conflict, pend_before);
+    assert!(app.pending_save_conflict.is_none());
+    assert!(app.pending_reload.is_some());
     assert!(app
         .message
         .as_deref()

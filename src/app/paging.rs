@@ -1,8 +1,8 @@
 //! Purpose: connect paged Buffer navigation to App viewport, messages, and render.
 //! Owns: Ctrl+PageUp/PageDown direction effects and page-boundary feedback.
 //! Must not: scan descriptors directly, mutate file/dirty state, edit, save, or reload.
-//! Invariants: successful page changes reset both scroll axes; confirmation state
-//!   is preserved; non-paged buffers ignore page commands.
+//! Invariants: successful page changes reset both scroll axes; this module does not mutate
+//!   confirmation state itself; non-paged buffers ignore page commands.
 //! Phase: 2-bn paged-file navigation/status.
 
 use std::io::{self, Write};

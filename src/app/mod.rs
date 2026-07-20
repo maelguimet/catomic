@@ -118,21 +118,24 @@ pub struct App {
     pub file_watcher: Option<file::watcher::FileWatcher>,
     /// Whether we should exit the loop.
     pub should_quit: bool,
-    /// Minimal message for user (error, quit warning, etc.). Cleared on edits or explicit.
+    /// Minimal message for user (error, quit warning, etc.). Completed messages clear on the
+    /// next editor action; active surfaces own theirs, and confirmations survive only the
+    /// matching action.
     pub message: Option<String>,
-    /// When true, a second Ctrl+Q while dirty will force quit (no save).
+    /// When true, an immediately following quit action while dirty will force quit (no save).
     pub pending_quit_confirm: bool,
     /// When Some, records a token bound to the concrete observed disk state
     /// (path + ExternalFileStatus + live FileSnapshot) at the time of a first
     /// Ctrl+S refusal. Second Ctrl+S forces only if a fresh observation matches
     /// the token (for Modified: identical snapshot; Deleted/Unknown by kind).
     /// Cleared on content edits, successful save, and path changes.
-    /// Movement/resize/render must not touch it.
+    /// Any unrelated editor action cancels it; resize/render must not touch it.
     pub pending_save_conflict: Option<save::PendingSaveConflict>,
     /// Pending reload confirmation (Phase 2-s). Armed by first Ctrl+R on Modified/Deleted
     /// when status indicates disk differs. Second Ctrl+R reloads only on exact snapshot match.
     /// Cleared by content edits (insert/delete/undo/redo), successful save, path changes.
-    /// Movement/resize/render do not clear. NoPath/Unchanged/Unknown do not arm.
+    /// Any unrelated editor action cancels it; resize/render do not clear.
+    /// NoPath/Unchanged/Unknown do not arm.
     pub pending_reload: Option<reload::PendingReload>,
     /// Explicit Ctrl+F prompt/worker state. No worker exists before invocation.
     pub(crate) search: search::SearchUiState,

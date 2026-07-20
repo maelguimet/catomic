@@ -104,6 +104,12 @@ fn missing_checkout_selects_cargo_git_install() {
 }
 
 #[test]
+fn source_update_builds_without_spawning_cargo_test() {
+    assert_eq!(RELEASE_BUILD_ARGS, ["build", "--release", "--locked"]);
+    assert!(!RELEASE_BUILD_ARGS.contains(&"test"));
+}
+
+#[test]
 fn source_changes_survive_update_and_restore_staged_state() {
     let root = fixture();
     fs::write(root.join("Cargo.toml"), "previous stash\n").unwrap();

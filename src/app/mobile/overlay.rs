@@ -10,6 +10,9 @@ use crate::buffer::{Buffer, Cursor, PieceTable};
 
 use super::actions::{MenuAction, MENU_ENTRIES};
 
+const MENU_MESSAGE: &str = "Mobile actions: tap an item or use Up/Down and Run.";
+const NOTICE_MESSAGE: &str = "Message details (read-only). Back returns.";
+
 #[derive(Default)]
 pub(crate) struct MobileUiState {
     pub(super) enabled: bool,
@@ -61,7 +64,7 @@ pub(super) fn open_menu(app: &mut super::super::App) {
     };
     app.mobile.overlay = Some(Overlay::Menu(view));
     reset_viewport(app);
-    app.message = Some("Mobile actions: tap an item or use Up/Down and Run.".to_string());
+    refresh_message(app);
 }
 
 pub(super) fn open_notice(app: &mut super::super::App, text: &str) {
@@ -73,7 +76,15 @@ pub(super) fn open_notice(app: &mut super::super::App, text: &str) {
     };
     app.mobile.overlay = Some(Overlay::Notice(view));
     reset_viewport(app);
-    app.message = Some("Message details (read-only). Back returns.".to_string());
+    refresh_message(app);
+}
+
+pub(super) fn refresh_message(app: &mut super::super::App) {
+    app.message = match app.mobile.overlay.as_ref() {
+        Some(Overlay::Menu(_)) => Some(MENU_MESSAGE.to_string()),
+        Some(Overlay::Notice(_)) => Some(NOTICE_MESSAGE.to_string()),
+        None => None,
+    };
 }
 
 pub(super) fn close(app: &mut super::super::App) -> bool {

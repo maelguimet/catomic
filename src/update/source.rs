@@ -395,13 +395,7 @@ fn cargo(root: &Path, args: &[&str]) -> Result<(), UpdateError> {
 
 fn cargo_install_command() -> Command {
     let mut command = Command::new("cargo");
-    command.args([
-        "install",
-        "--git",
-        OFFICIAL_REMOTE,
-        "--locked",
-        "--force",
-    ]);
+    command.args(["install", "--git", OFFICIAL_REMOTE, "--locked", "--force"]);
     command
 }
 

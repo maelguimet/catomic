@@ -102,6 +102,7 @@ preview = "default"
 # new = ["ctrl+n"]
 # close = ["ctrl+w"]
 # reload = ["ctrl+r"]
+# lint = ["f4"]
 # previous-buffer = ["alt+pageup"]
 # next-buffer = ["alt+pagedown"]
 # previous-page = ["ctrl+pageup"]

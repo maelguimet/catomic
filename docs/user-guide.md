@@ -1552,6 +1552,7 @@ open | editor | ctrl+o
 new | editor | ctrl+n
 close | editor | ctrl+w
 reload | editor | ctrl+r
+lint | editor | f4
 search | editor,help | ctrl+f
 replace | editor | ctrl+shift+f
 goto-line | editor | ctrl+g

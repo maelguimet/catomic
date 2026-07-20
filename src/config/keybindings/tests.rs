@@ -161,7 +161,7 @@ fn mouse_gestures_resolve_to_semantic_actions_and_can_be_unbound() {
 #[test]
 fn registry_defaults_are_complete_and_collision_free() {
     let bindings = KeyBindings::default();
-    assert_eq!(actions::REGISTRY.len(), 88);
+    assert_eq!(actions::REGISTRY.len(), 89);
     for descriptor in actions::REGISTRY {
         assert!(!descriptor.name.is_empty());
         assert!(!descriptor.scopes.is_empty());

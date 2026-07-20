@@ -89,11 +89,9 @@ fn confirmation_refuses_active_path_drift_after_preview() {
 }
 
 #[test]
-fn plain_start_has_no_preview_or_network_component() {
+fn startup_has_no_preview_component() {
     let app = super::super::App::new(None).unwrap();
     assert!(app.surfaces.llm_preview.is_none());
-    assert!(!app.caps.network_llm);
-    assert!(!app.caps.repo_llm);
 }
 
 #[test]

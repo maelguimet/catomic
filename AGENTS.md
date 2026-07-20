@@ -1,8 +1,8 @@
 # AGENTS.md — Catomic Engineering Rules
 
 Catomic is a Linux-first, modeless terminal text editor: fast to open, familiar
-to use, and boring at its core. It also has deliberately invoked Project and
-model features. The powerful half must never make the ordinary editor noisy,
+to use, and boring at its core. It also has deliberately invoked linting and
+model features. Those tools must never make the ordinary editor noisy,
 slow, or unsafe.
 
 Read this before changing code.
@@ -33,9 +33,9 @@ These are durable product boundaries. If the product is deliberately redesigned,
 update the relevant architecture and user documentation together with this
 section:
 
-- Plain mode performs no repository scan, background indexing, configured
-  command or hook, model probing, credential read, or network request.
-- Project and model features are explicit, lazy, bounded, and killable.
+- Startup and ordinary editing perform no repository scan, background indexing,
+  configured command or hook, model probing, credential read, or network request.
+- Linter, repository, and model actions are explicit, lazy, bounded, and killable.
 - Model output is untrusted and preview-first. It never silently edits or saves.
 - Rendering reads editor state and does not mutate it.
 - Ordinary editing remains responsive and correct for Unicode graphemes,
@@ -80,7 +80,7 @@ Respect ownership boundaries:
 - editor code owns semantic commands, cursor, selection, search, and buffer
   navigation;
 - filesystem code owns loading, saving, conflicts, watching, and recovery;
-- Project and model code remain outside Plain startup until explicitly invoked;
+- linter and model work remain absent from startup until explicitly invoked;
 - rendering reads state and must not mutate it.
 
 Input code must not poke buffer internals directly. Normalize terminal-specific
@@ -154,8 +154,8 @@ user away from the buffer they were editing.
 Every new dependency needs a concrete justification:
 
 1. why existing code or the standard library is insufficient;
-2. which mode uses it;
-3. whether it affects Plain startup or typing latency;
+2. which workflow uses it;
+3. whether it affects startup or typing latency;
 4. supported-platform, licensing, and security impact;
 5. how it is tested and how it could later be removed.
 
@@ -203,7 +203,8 @@ Before saying done:
 - relevant formatting, tests, linting, and build checks pass;
 - `git diff --check` passes and the full diff has been reviewed;
 - no unrelated files or accidental generated artifacts changed;
-- Plain mode gained no Project or model cost;
+- startup and ordinary editing gained no linter, configured-process,
+  repository, or model cost;
 - documentation matches user-visible behavior;
 - remaining limitations and unrun checks are stated plainly.
 

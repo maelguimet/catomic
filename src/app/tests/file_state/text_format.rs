@@ -1,6 +1,6 @@
 //! Purpose: verify App-level UTF-8 BOM and newline preservation across file lifecycles.
 //! Owns: open/save, Save As, reload, and format-state fixtures.
-//! Must not: use network, construct Project services, or bypass atomic save paths.
+//! Must not: use network, construct repository services, or bypass atomic save paths.
 //! Invariants: buffer text is LF-normalized while disk bytes retain the recorded format.
 
 use super::super::*;

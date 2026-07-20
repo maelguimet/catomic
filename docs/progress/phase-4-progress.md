@@ -15,7 +15,7 @@ Phase 4 is complete. Its acceptance record is
   numbers, Rust/Python line comments, and JSON literals.
 - The ordinary renderer still obtains content through the bounded
   visible-window Buffer query. The viewport styling foundation added no
-  full-file parse, syntax cache, background worker, dependency, or Project
+  full-file parse, syntax cache, background worker, dependency, or repository
   service.
 - **4-b optional view indicators**: `F7` toggles a fixed line-number gutter and
   `F8` toggles one-cell space/tab indicators. Both settings are retained per

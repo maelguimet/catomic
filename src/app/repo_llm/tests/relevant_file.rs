@@ -99,6 +99,6 @@ fn untracked_active_file_drift_after_preview_blocks_apply() {
 fn draft_app(repo: &TempRepo) -> (PathBuf, super::super::super::App) {
     let path = repo.0.join("draft.txt");
     fs::write(&path, "one\ntwo\n").unwrap();
-    let app = project_app_at(&path);
+    let app = repo_app_at(&path);
     (path, app)
 }

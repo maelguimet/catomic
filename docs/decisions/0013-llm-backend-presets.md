@@ -50,4 +50,4 @@ in memory for five minutes. It never writes discovered models to configuration.
 
 No dependency was added. HTTP discovery reuses reqwest/Tokio/Serde from ADR
 0008. Command lifecycle uses the standard library plus the existing libc
-dependency for process-group termination. Plain startup constructs neither.
+dependency for process-group termination. Startup constructs neither.

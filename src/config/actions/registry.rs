@@ -75,7 +75,13 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
         E,
         ["ctrl+shift+s"]
     ),
-    key!(Open, "open", "Open a path in another buffer.", E, ["ctrl+o"]),
+    key!(
+        Open,
+        "open",
+        "Open a path in another buffer.",
+        E,
+        ["ctrl+o"]
+    ),
     key!(New, "new", "Create an untitled buffer.", E, ["ctrl+n"]),
     key!(
         Close,
@@ -90,6 +96,13 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
         "Check disk state; repeat only to confirm reloading the same observed revision.",
         E,
         ["ctrl+r"]
+    ),
+    key!(
+        Lint,
+        "lint",
+        "Run the configured linter for the saved active file; Esc cancels.",
+        E,
+        ["f4"]
     ),
     key!(
         Search,
@@ -115,7 +128,7 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
     key!(
         CommandPrompt,
         "command-prompt",
-        "Run commands such as `config`, `project`, `recover`, and `close!` without a leading colon.",
+        "Run commands such as `config`, `recover`, and `close!` without a leading colon.",
         E,
         ["ctrl+shift+p", "f2"]
     ),

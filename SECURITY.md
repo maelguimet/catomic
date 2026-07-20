@@ -27,8 +27,8 @@ Include as much of the following as you safely can:
 - the expected and observed behavior;
 - the security impact, including whether confidentiality, integrity, or
   availability is affected;
-- whether symlinks, hard links, unusual file types, external commands, Project
-  mode, or an LLM endpoint are involved; and
+- whether symlinks, hard links, unusual file types, external commands,
+  repository-aware actions, or an LLM endpoint are involved; and
 - any proposed fix or mitigation.
 
 Please allow time to reproduce and fix the issue before public disclosure. The
@@ -48,7 +48,8 @@ and replace private content with a minimal fixture.
 - Catomic must not make silent network calls or silently apply LLM output.
 - LLM requests must name and confirm their endpoint and context before sending;
   proposed edits remain preview-only until separately confirmed.
-- Project discovery and repository-aware tooling are opt-in.
+- Linting and repository-aware tooling run only after their explicit actions;
+  repository context is detected and prepared per invocation.
 - Commands and hooks in the user's configuration are trusted local code and run
   through `/bin/sh -c`; arbitrary side effects from a command the user configured
   are not a sandbox escape.

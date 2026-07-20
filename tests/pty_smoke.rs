@@ -1,13 +1,13 @@
 //! Real PTY integration smoke tests for the catomic binary.
 //!
 //! Purpose: drive the compiled binary through a pseudo-terminal so key handling,
-//!   raw-mode setup, render, help, save, undo, search, Project tooling, guarded
+//!   raw-mode setup, render, help, save, undo, search, direct linting, guarded
 //!   external commands/hooks, explicit LLM confirmation, and clean quit are exercised.
 //! Owns: narrow default PTY smoke coverage for core and guarded workflows.
 //! Must not: grow into a broad UI harness, contact a live/public LLM, use ambient config,
 //!   or run large-file/perf scenarios; model tests use private loopback fakes only.
 //! Invariants: PTY children run serially, use temporary files, time out and are
-//!   killed on hangs, and leave Plain startup behavior unchanged.
+//!   killed on hangs, and leave idle startup behavior unchanged.
 
 use std::error::Error;
 use std::fs;
@@ -1175,6 +1175,32 @@ fn pty_custom_theme_reaches_content_status_and_cursor_then_resets() -> TestResul
 }
 
 #[test]
+fn pty_f4_lints_active_file_and_exposes_raw_message() -> TestResult {
+    let project = TempProject::new("direct_lint");
+    project.write(
+        "catomic/config.toml",
+        "[linters]\nrs = \"printf '%s:1:2: raw PTY lint message\\\\n' {file}\"\n",
+    );
+    let active = project.write("linted.rs", "cat\n");
+    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"\x1bOS")?; // F4
+    editor.wait_for_output("direct lint result", "Lint found 1 issue(s)")?;
+    editor.clear_output();
+    editor.send_keys(b"\x1b[C")?; // Clear the completion notice while staying on the marked line.
+    editor.wait_for_output("raw lint message", "Lint 1:2: raw PTY lint message")?;
+    assert!(
+        editor.output_string().contains("\x1b[31;4ma\x1b[0m"),
+        "the finding column should be underlined in the active buffer"
+    );
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+
+    Ok(())
+}
+
+#[test]
 fn pty_help_scrolls_to_compact_model_guidance_and_closes_without_editing() -> TestResult {
     let temp = TempPath::new("model_help");
     let source = "source stays unchanged";
@@ -1590,65 +1616,6 @@ fn pty_f7_persists_across_relaunch_and_applies_to_new_unicode_buffer() -> TestRe
     )?;
     relaunched.send_keys(b"\x11")?;
     relaunched.wait_for_exit()?;
-    Ok(())
-}
-
-#[test]
-fn pty_local_completion_does_not_invoke_configured_model_backend() -> TestResult {
-    let project = TempProject::new("local_completion_no_model");
-    let invoked = project.root.join("model-invoked");
-    let script = project.write(
-        "fail-if-invoked.sh",
-        &format!("#!/bin/sh\ntouch '{}'\nexit 99\n", invoked.display()),
-    );
-    project.write(
-        "catomic/config.toml",
-        &format!(
-            "[llm]\ndefault = 'trap'\n[[llm.backends]]\nname = 'trap'\ntype = 'command'\nmodel = 'never-used'\nprogram = '/bin/sh'\nargs = ['{}']\noutput = 'claude-json-v1'\n",
-            script.display()
-        ),
-    );
-    let active = project.write("note.txt", "alpha alpine alphabet\nal");
-    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
-
-    editor.wait_for_initial_render()?;
-    editor.send_keys(b"\x1b[B\x1b[C\x1b[C\0")?;
-    editor.wait_for_output("local completion", "Completion 1/3")?;
-    editor.send_keys(b"\r\x13\x11")?;
-    editor.wait_for_exit()?;
-
-    assert!(!invoked.exists());
-    assert_eq!(
-        fs::read_to_string(active)?,
-        "alpha alpine alphabet\nalpha\n"
-    );
-    Ok(())
-}
-
-#[test]
-fn pty_project_discovery_and_path_completion_save_exact_text() -> TestResult {
-    let project = TempProject::new("completion");
-    let active = project.write("note.txt", "src/ma");
-    project.write("src/main.rs", "fn main() {}\n");
-    let mut editor = PtyEditor::spawn(&active)?;
-
-    editor.wait_for_initial_render()?;
-    editor.wait_for_output("Project completion source", "src/ma")?;
-    editor.send_keys(b"\x1b[80;6uproject\r")?; // Ctrl+Shift+P via CSI-u, then command.
-    editor.wait_for_output("Project mode enabled", "Project mode enabled")?;
-    editor.send_keys(b"\x1b[80;6ufiles\r")?;
-    editor.wait_for_output("Project files discovered", "Found 2 Project file(s)")?;
-    editor.wait_for_output("Project file picker", "src/main.rs")?;
-    editor.clear_output();
-    editor.send_keys(b"\x1b")?;
-    editor.wait_for_output("Project file picker closed", "src/ma")?;
-
-    editor.send_keys(b"\x1b[C\x1b[C\x1b[C\x1b[C\x1b[C\x1b[C\0")?; // Right x6, Ctrl+Space.
-    editor.wait_for_output("Project path completion", "Completion 1/1: src/main.rs")?;
-    editor.send_keys(b"\r\x13\x11")?;
-    editor.wait_for_exit()?;
-
-    assert_eq!(fs::read_to_string(active)?, "src/main.rs\n");
     Ok(())
 }
 

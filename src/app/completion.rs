@@ -1,4 +1,4 @@
-//! Purpose: connect bounded local and cached Project completion to explicit editor input.
+//! Purpose: connect bounded current-buffer word completion to explicit editor input.
 //! Owns: transient candidate selection, key handling, messages, and atomic acceptance.
 //! Must not: scan projects/buffers, start discovery, spawn work/processes, or emit terminal codes.
 //! Invariants: no content changes before Enter; accepted text is one undoable replacement.
@@ -10,7 +10,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use crate::buffer::Cursor;
 use crate::config::actions::Action;
 mod candidates;
-use candidates::{CandidateRead, PREFIX_COLS};
+use candidates::PREFIX_COLS;
 
 #[derive(Default)]
 pub(crate) struct CompletionUiState {
@@ -47,23 +47,11 @@ pub(crate) fn handle_key(
 }
 
 pub(crate) fn cancel(app: &mut super::App) -> bool {
-    if let Some(state) = app.completion.as_mut() {
-        return state.active.take().is_some();
-    }
-    false
+    app.completion.active.take().is_some()
 }
 
 fn open(app: &mut super::App, out: &mut dyn Write) -> io::Result<OpenOutcome> {
-    if !app.caps.local_completion || app.completion.is_none() {
-        app.message_info("Local completion is unavailable.");
-        app.render(out)?;
-        return Ok(OpenOutcome::Handled);
-    }
-    if super::view::is_preview(app)
-        || super::lint::is_viewing(app)
-        || super::project_files::is_viewing(app)
-        || app.buffer.is_read_only()
-    {
+    if super::view::is_preview(app) || app.buffer.is_read_only() {
         app.message_info("Local completion requires an editable source buffer.");
         app.render(out)?;
         return Ok(OpenOutcome::Handled);
@@ -87,14 +75,7 @@ fn open(app: &mut super::App, out: &mut dyn Write) -> io::Result<OpenOutcome> {
         app.render(out)?;
         return Ok(OpenOutcome::NoCandidate);
     }
-    let completion_candidates = match candidates::read_candidates(app, cursor, &prefix)? {
-        CandidateRead::Ready(candidates) => candidates,
-        CandidateRead::ProjectFilesUnavailable => {
-            app.message_info("Run :files before requesting Project path completion.");
-            app.render(out)?;
-            return Ok(OpenOutcome::Handled);
-        }
-    };
+    let completion_candidates = candidates::read_candidates(app, cursor, &prefix)?;
     if completion_candidates.is_empty() {
         app.message_info(format!("No completion for '{}'.", prefix.text));
         app.render(out)?;
@@ -104,7 +85,7 @@ fn open(app: &mut super::App, out: &mut dyn Write) -> io::Result<OpenOutcome> {
         row: cursor.row,
         col: cursor.col.saturating_sub(prefix.text.chars().count()),
     };
-    app.completion.as_mut().expect("capability checked").active = Some(ActiveCompletion {
+    app.completion.active = Some(ActiveCompletion {
         prefix: prefix.text,
         start,
         end: cursor,
@@ -176,11 +157,7 @@ fn handle_active_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -
 }
 
 fn cycle(app: &mut super::App, forward: bool) {
-    let active = app
-        .completion
-        .as_mut()
-        .and_then(|state| state.active.as_mut())
-        .expect("active completion");
+    let active = app.completion.active.as_mut().expect("active completion");
     let count = active.candidates.len();
     active.selected = if forward {
         active.selected.saturating_add(1) % count
@@ -190,11 +167,7 @@ fn cycle(app: &mut super::App, forward: bool) {
 }
 
 fn accept(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
-    let active = app
-        .completion
-        .as_mut()
-        .and_then(|state| state.active.take())
-        .expect("active completion");
+    let active = app.completion.active.take().expect("active completion");
     let unchanged = app.buffer.cursor() == active.end
         && app.buffer.text_range(active.start, active.end)? == active.prefix;
     if !unchanged {
@@ -208,11 +181,7 @@ fn accept(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
 }
 
 fn update_message(app: &mut super::App) {
-    let active = app
-        .completion
-        .as_ref()
-        .and_then(|state| state.active.as_ref())
-        .expect("active completion");
+    let active = app.completion.active.as_ref().expect("active completion");
     app.message_info(format!(
         "Completion {}/{}: {} (Tab next, Enter accept, Esc dismiss)",
         active.selected + 1,
@@ -228,9 +197,7 @@ fn update_message_unless_dismissed(app: &mut super::App) {
 }
 
 pub(super) fn is_active(app: &super::App) -> bool {
-    app.completion
-        .as_ref()
-        .is_some_and(|state| state.active.is_some())
+    app.completion.active.is_some()
 }
 
 fn is_trigger(key: KeyEvent) -> bool {

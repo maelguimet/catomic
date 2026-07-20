@@ -301,7 +301,6 @@ fn active_surface(app: &super::App) -> Surface {
         || super::model_picker::is_viewing(app)
         || super::recovery::is_viewing(app)
         || super::external_command::is_viewing(app)
-        || super::project_files::is_viewing(app)
     {
         return Surface::Confirmation;
     }
@@ -312,8 +311,7 @@ fn active_surface(app: &super::App) -> Surface {
     {
         return Surface::Prompt;
     }
-    if super::help::is_viewing(app) || super::lint::is_viewing(app) || super::view::is_preview(app)
-    {
+    if super::help::is_viewing(app) || super::view::is_preview(app) {
         return Surface::ReadOnly;
     }
     if app.llm_task.is_some()

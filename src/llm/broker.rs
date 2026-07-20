@@ -1,13 +1,13 @@
-//! Purpose: this file must broker bounded, read-only Project context for repo LLM commands.
+//! Purpose: broker bounded, request-local read-only context for repo LLM commands.
 //! Owns: Git context, file-map discovery, byte budget, ranged reads, grep, and file drift checks.
-//! Must not: exist in Plain mode, follow symlinks, escape the repo, write, run tests, or network.
+//! Must not: persist workspace state, follow symlinks, escape the repo, write, run tests, or network.
 //! Invariants: every returned byte consumes budget; Git and every read file must remain unchanged.
 
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 
-use crate::project::discovery::{discover_files_until, DiscoveryLimits};
-use crate::project::git::GitContext;
+use super::repo_context::discovery::{discover_files_until, DiscoveryLimits};
+use super::repo_context::git::GitContext;
 
 mod error;
 mod relevant;

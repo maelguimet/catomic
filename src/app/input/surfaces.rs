@@ -10,11 +10,12 @@ use crossterm::event::KeyEvent;
 
 use super::super::{
     command_prompt, completion, external_command, help, inline_clanker, lint, llm_preview,
-    llm_request, model_picker, project_files, recovery, replace, repo_llm, search, view, App,
+    llm_request, model_picker, recovery, replace, repo_llm, search, view, App,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RawKeySurface {
+    Lint,
     ModelPicker,
     Help,
     Recovery,
@@ -27,12 +28,11 @@ enum RawKeySurface {
     InlineClanker,
     LlmPreview,
     Completion,
-    ProjectFiles,
-    Diagnostics,
     MarkdownPreview,
 }
 
-const RAW_KEY_PRECEDENCE: [RawKeySurface; 15] = [
+const RAW_KEY_PRECEDENCE: [RawKeySurface; 14] = [
+    RawKeySurface::Lint,
     RawKeySurface::ModelPicker,
     RawKeySurface::Help,
     RawKeySurface::Recovery,
@@ -45,8 +45,6 @@ const RAW_KEY_PRECEDENCE: [RawKeySurface; 15] = [
     RawKeySurface::InlineClanker,
     RawKeySurface::LlmPreview,
     RawKeySurface::Completion,
-    RawKeySurface::ProjectFiles,
-    RawKeySurface::Diagnostics,
     RawKeySurface::MarkdownPreview,
 ];
 
@@ -70,6 +68,7 @@ fn handle_raw_key_for(
     key: KeyEvent,
 ) -> io::Result<bool> {
     match surface {
+        RawKeySurface::Lint => lint::handle_key(app, out, key),
         RawKeySurface::ModelPicker => model_picker::handle_key(app, out, key),
         RawKeySurface::Help => help::handle_key(app, out, key),
         RawKeySurface::Recovery => recovery::handle_key(app, out, key),
@@ -82,8 +81,6 @@ fn handle_raw_key_for(
         RawKeySurface::InlineClanker => inline_clanker::handle_key(app, out, key),
         RawKeySurface::LlmPreview => llm_preview::handle_key(app, out, key),
         RawKeySurface::Completion => completion::handle_key(app, out, key),
-        RawKeySurface::ProjectFiles => project_files::handle_key(app, out, key),
-        RawKeySurface::Diagnostics => lint::handle_key(app, out, key),
         RawKeySurface::MarkdownPreview if view::is_preview(app) => view::handle_key(app, out, key),
         RawKeySurface::MarkdownPreview => Ok(false),
     }
@@ -103,11 +100,7 @@ pub(super) fn dispatch_action(
             replace::dispatch_action(app, out, action)?
                 || command_prompt::dispatch_action(app, out, action)?
         }
-        Scope::Picker => {
-            model_picker::dispatch_action(app, out, action)?
-                || project_files::dispatch_action(app, out, action)?
-                || lint::dispatch_action(app, out, action)?
-        }
+        Scope::Picker => model_picker::dispatch_action(app, out, action)?,
         Scope::Preview => {
             recovery::dispatch_action(app, out, action)?
                 || external_command::dispatch_action(app, out, action)?
@@ -137,12 +130,10 @@ enum PasteSurface {
     InlineClanker,
     LlmPreview,
     ModelPicker,
-    ProjectFiles,
-    Diagnostics,
     MarkdownPreview,
 }
 
-const PASTE_PRECEDENCE: [PasteSurface; 12] = [
+const PASTE_PRECEDENCE: [PasteSurface; 10] = [
     PasteSurface::Help,
     PasteSurface::Replace,
     PasteSurface::Recovery,
@@ -152,8 +143,6 @@ const PASTE_PRECEDENCE: [PasteSurface; 12] = [
     PasteSurface::InlineClanker,
     PasteSurface::LlmPreview,
     PasteSurface::ModelPicker,
-    PasteSurface::ProjectFiles,
-    PasteSurface::Diagnostics,
     PasteSurface::MarkdownPreview,
 ];
 
@@ -169,8 +158,6 @@ pub(super) fn handle_paste(app: &mut App, out: &mut dyn Write, text: &str) -> io
             PasteSurface::InlineClanker => inline_clanker::handle_paste(app, out)?,
             PasteSurface::LlmPreview => llm_preview::handle_paste(app, out)?,
             PasteSurface::ModelPicker => model_picker::handle_paste(app, out, text)?,
-            PasteSurface::ProjectFiles => project_files::handle_paste(app, out)?,
-            PasteSurface::Diagnostics => lint::handle_paste(app, out)?,
             PasteSurface::MarkdownPreview => view::handle_paste(app, out)?,
         };
         if handled {
@@ -186,16 +173,17 @@ mod tests {
 
     #[test]
     fn precedence_contracts_are_named_and_locked() {
-        assert_eq!(RAW_KEY_PRECEDENCE[0], RawKeySurface::ModelPicker);
-        assert_eq!(RAW_KEY_PRECEDENCE[6], RawKeySurface::Replace);
-        assert_eq!(RAW_KEY_PRECEDENCE[7], RawKeySurface::Search);
-        assert_eq!(RAW_KEY_PRECEDENCE[8], RawKeySurface::CommandPrompt);
-        assert_eq!(RAW_KEY_PRECEDENCE[9], RawKeySurface::InlineClanker);
-        assert_eq!(RAW_KEY_PRECEDENCE[14], RawKeySurface::MarkdownPreview);
+        assert_eq!(RAW_KEY_PRECEDENCE[0], RawKeySurface::Lint);
+        assert_eq!(RAW_KEY_PRECEDENCE[1], RawKeySurface::ModelPicker);
+        assert_eq!(RAW_KEY_PRECEDENCE[7], RawKeySurface::Replace);
+        assert_eq!(RAW_KEY_PRECEDENCE[8], RawKeySurface::Search);
+        assert_eq!(RAW_KEY_PRECEDENCE[9], RawKeySurface::CommandPrompt);
+        assert_eq!(RAW_KEY_PRECEDENCE[10], RawKeySurface::InlineClanker);
+        assert_eq!(RAW_KEY_PRECEDENCE[13], RawKeySurface::MarkdownPreview);
         assert_eq!(PASTE_PRECEDENCE[0], PasteSurface::Help);
         assert_eq!(PASTE_PRECEDENCE[1], PasteSurface::Replace);
         assert_eq!(PASTE_PRECEDENCE[6], PasteSurface::InlineClanker);
         assert_eq!(PASTE_PRECEDENCE[8], PasteSurface::ModelPicker);
-        assert_eq!(PASTE_PRECEDENCE[11], PasteSurface::MarkdownPreview);
+        assert_eq!(PASTE_PRECEDENCE[9], PasteSurface::MarkdownPreview);
     }
 }

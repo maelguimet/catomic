@@ -6,9 +6,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::{Cursor, PieceTable};
-use crate::mode::{Capabilities, Mode};
-use crate::project::discovery::Discovery;
-use crate::project::ProjectSession;
 
 use super::super::App;
 
@@ -80,20 +77,6 @@ fn tab_without_completion_uses_language_tab_stop_as_one_edit() {
 }
 
 #[test]
-fn capability_disabled_does_not_offer_local_completion() {
-    let mut app = completion_app();
-    app.caps.local_completion = false;
-    let original = app.buffer.to_string();
-    let mut out = Vec::new();
-
-    app.handle_key_with(&mut out, key(KeyCode::Char(' '), KeyModifiers::CONTROL))
-        .unwrap();
-
-    assert_eq!(app.buffer.to_string(), original);
-    assert!(app.message.as_deref().unwrap_or("").contains("unavailable"));
-}
-
-#[test]
 fn changed_prefix_is_refused_instead_of_replaced() {
     let mut app = completion_app();
     let mut out = Vec::new();
@@ -158,56 +141,8 @@ fn null_form_of_ctrl_space_opens_and_cycles() {
     assert!(app.message.as_deref().unwrap_or("").contains("alphabet"));
 }
 
-fn project_completion_app(with_discovery: bool) -> App {
-    let root = std::path::PathBuf::from("/tmp/catomic-completion-project");
-    let mut app = App::new(None).unwrap();
-    app.mode = Mode::Project;
-    app.caps = Capabilities::project();
-    app.buffer = Box::new(PieceTable::from_text("src/ma"));
-    app.buffer.set_cursor(Cursor { row: 0, col: 6 });
-    let mut project = ProjectSession::new(root.clone());
-    if with_discovery {
-        project.set_discovered(Discovery {
-            files: vec![root.join("src/main.rs"), root.join("src/map.rs")],
-            truncated: false,
-            unreadable_directories: 0,
-        });
-    }
-    app.project = Some(project);
-    app
-}
-
 #[test]
-fn project_path_completion_uses_only_cached_discovery() {
-    let mut app = project_completion_app(true);
-    let mut out = Vec::new();
-
-    app.handle_key_with(&mut out, key(KeyCode::Null, KeyModifiers::CONTROL))
-        .unwrap();
-    assert!(app.message.as_deref().unwrap_or("").contains("src/main.rs"));
-    app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
-        .unwrap();
-
-    assert_eq!(app.buffer.to_string(), "src/main.rs");
-    app.buffer.undo();
-    assert_eq!(app.buffer.to_string(), "src/ma");
-}
-
-#[test]
-fn project_path_completion_never_starts_discovery_implicitly() {
-    let mut app = project_completion_app(false);
-    let mut out = Vec::new();
-
-    app.handle_key_with(&mut out, key(KeyCode::Null, KeyModifiers::CONTROL))
-        .unwrap();
-
-    assert!(!app.project.as_ref().unwrap().is_discovery_running());
-    assert!(app.message.as_deref().unwrap_or("").contains("Run :files"));
-    assert_eq!(app.buffer.to_string(), "src/ma");
-}
-
-#[test]
-fn plain_path_shaped_text_still_uses_only_local_words() {
+fn path_shaped_text_still_uses_only_local_words() {
     let mut app = App::new(None).unwrap();
     app.buffer = Box::new(PieceTable::from_text("main src/ma"));
     app.buffer.set_cursor(Cursor { row: 0, col: 11 });
@@ -218,6 +153,5 @@ fn plain_path_shaped_text_still_uses_only_local_words() {
     app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
         .unwrap();
 
-    assert!(app.project.is_none());
     assert_eq!(app.buffer.to_string(), "main src/main");
 }

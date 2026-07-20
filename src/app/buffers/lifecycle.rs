@@ -29,6 +29,7 @@ impl App {
             return Ok(CloseBufferOutcome::Dirty);
         }
         super::super::command_prompt::forget_active_config_detour(self);
+        super::lint::invalidate(self);
         external_command::cancel_all(self);
         hooks::cancel_all(self);
         super::inline_clanker::cancel_all(self);

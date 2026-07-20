@@ -16,7 +16,7 @@ and startup do not construct a parser.
 1. The standard library has no CommonMark parser, and maintaining another
    partial Markdown grammar would not make preview trustworthy.
 2. Only explicitly opened Markdown surfaces use it, including `F6` preview.
-3. Plain startup and typing paths do not parse or allocate preview content.
+3. Startup and typing paths do not parse or allocate preview content.
 4. Event-to-terminal rendering has unit tests; app and PTY tests cover toggling,
    read-only behavior, and teardown.
 5. Removal is isolated to `editor::markdown_preview`, the F6 view toggle, and

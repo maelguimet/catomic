@@ -9,7 +9,7 @@ use crate::terminal as term;
 
 use super::{
     external_command, external_diff, help, inline_clanker, lint, llm_preview, mobile, model_picker,
-    project_files, recovery, status, view, App,
+    recovery, status, view, App,
 };
 
 impl App {
@@ -74,17 +74,52 @@ fn render(app: &App, out: &mut dyn Write) -> io::Result<()> {
         changed_ranges: &external_changed,
         markers: &external_markers,
     });
+    let lint_ranges = lint_ranges(app);
     let action_bar = mobile::action_bar_text(app);
-    let mut options = render_options(app, llm_changes, external_changes, action_bar.as_deref());
+    let mut options = render_options(
+        app,
+        &lint_ranges,
+        llm_changes,
+        external_changes,
+        action_bar.as_deref(),
+    );
     options.window_title = Some(&window_title);
     if let Some(message) = app.message.as_deref() {
         options.status_role = status::transient_role(app);
         return render_frame(app, out, message, options);
     }
+    if let Some(message) = lint::message_at_cursor(app) {
+        options.status_role = term::render::StatusRole::Info;
+        return render_frame(app, out, &message, options);
+    }
     let status = status_line(app);
     options.status_filename = Some(status.filename);
     options.status_selection = app.selection.status_range(&status.text);
     render_frame(app, out, &status.text, options)
+}
+
+fn lint_ranges(app: &App) -> Vec<term::render::TextHighlight> {
+    lint::visible_findings(app)
+        .into_iter()
+        .flat_map(|findings| findings.iter())
+        .filter_map(|finding| {
+            let line_len = app.buffer.line_char_count(finding.row)?;
+            if line_len == 0 {
+                return None;
+            }
+            let col = finding.col.min(line_len.saturating_sub(1));
+            Some(term::render::TextHighlight {
+                start: crate::buffer::Cursor {
+                    row: finding.row,
+                    col,
+                },
+                end: crate::buffer::Cursor {
+                    row: finding.row,
+                    col: col.saturating_add(1),
+                },
+            })
+        })
+        .collect()
 }
 
 fn external_ranges(
@@ -123,6 +158,7 @@ fn render_frame(
 
 fn render_options<'a>(
     app: &'a App,
+    lint_ranges: &'a [term::render::TextHighlight],
     llm_changes: Option<term::render::LlmChanges<'a>>,
     external_changes: Option<term::render::ExternalChanges<'a>>,
     action_bar: Option<&'a str>,
@@ -139,6 +175,7 @@ fn render_options<'a>(
         },
         highlight,
         highlight_kind,
+        lint_ranges: (!lint_ranges.is_empty()).then_some(lint_ranges),
         llm_changes,
         external_changes,
         syntax: view::display_syntax(app),
@@ -206,8 +243,6 @@ fn local_surface_is_open(app: &App) -> bool {
         || recovery::is_viewing(app)
         || help::is_viewing(app)
         || view::is_preview(app)
-        || lint::is_viewing(app)
-        || project_files::is_viewing(app)
         || model_picker::is_viewing(app)
         || llm_preview::is_viewing(app)
         || inline_clanker::is_previewing(app)

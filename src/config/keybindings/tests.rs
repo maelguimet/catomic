@@ -29,12 +29,16 @@ fn terminal_aliases_resolve_to_one_action_without_rewriting_the_event() {
             Some(Action::Complete)
         );
     }
+    assert_eq!(
+        bindings.action_for_key(Scope::Editor, key(KeyCode::F(4), KeyModifiers::NONE)),
+        Some(Action::Lint)
+    );
 }
 
 #[test]
 fn overrides_replace_defaults_and_unbound_defaults_are_suppressed() {
     let bindings = parse(
-        "[keybindings]\nsave = [\"alt+s\"]\nhelp = []\ncommand-prompt = [\"alt+p\", \"f4\"]\n",
+        "[keybindings]\nsave = [\"alt+s\"]\nhelp = []\ncommand-prompt = [\"alt+p\", \"f12\"]\n",
     )
     .unwrap();
     let ctrl_s = key(KeyCode::Char('s'), KeyModifiers::CONTROL);
@@ -45,7 +49,7 @@ fn overrides_replace_defaults_and_unbound_defaults_are_suppressed() {
         Some(Action::Save)
     );
     assert_eq!(
-        bindings.action_for_key(Scope::Editor, key(KeyCode::F(4), KeyModifiers::NONE)),
+        bindings.action_for_key(Scope::Editor, key(KeyCode::F(12), KeyModifiers::NONE)),
         Some(Action::CommandPrompt)
     );
     assert!(bindings.is_default_key(Scope::Editor, key(KeyCode::F(1), KeyModifiers::NONE)));
@@ -157,7 +161,7 @@ fn mouse_gestures_resolve_to_semantic_actions_and_can_be_unbound() {
 #[test]
 fn registry_defaults_are_complete_and_collision_free() {
     let bindings = KeyBindings::default();
-    assert_eq!(actions::REGISTRY.len(), 88);
+    assert_eq!(actions::REGISTRY.len(), 89);
     for descriptor in actions::REGISTRY {
         assert!(!descriptor.name.is_empty());
         assert!(!descriptor.scopes.is_empty());

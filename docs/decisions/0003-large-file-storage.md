@@ -83,7 +83,7 @@ Costs and risks:
 - Requires a new dependency such as `memmap2`, or Linux-specific unsafe mmap code.
 - Needs a clear story for external file changes while the map is live.
 - Needs UTF-8 validation and CRLF normalization policy.
-- Must document Plain startup impact and dependency removal path.
+- Must document startup and typing-path impact plus a dependency removal path.
 
 ### Option B: file-backed ranged reads
 

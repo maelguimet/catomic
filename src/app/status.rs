@@ -185,7 +185,6 @@ fn prompt_is_active(app: &super::App) -> bool {
         || super::llm_preview::is_viewing(app)
         || super::recovery::is_viewing(app)
         || super::external_command::is_viewing(app)
-        || super::project_files::is_viewing(app)
 }
 
 #[cfg(test)]
@@ -208,9 +207,7 @@ mod tests {
             &status.text[status.filename.0..status.filename.1],
             "notes.txt"
         );
-        for slop in [
-            "ac off", "plain", "INS", "OVR", "saved", "modified", "utf-8", "lf",
-        ] {
+        for slop in ["ac off", "INS", "OVR", "saved", "modified", "utf-8", "lf"] {
             assert!(!status.text.contains(slop), "status: {}", status.text);
         }
     }

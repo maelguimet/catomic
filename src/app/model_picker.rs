@@ -395,8 +395,6 @@ fn model_work_active(app: &super::App) -> bool {
 fn close_other_views(app: &mut super::App) {
     super::help::close_for_transient(app);
     super::view::cancel_preview(app);
-    super::lint::close_view(app);
-    super::project_files::close_view(app);
     super::llm_preview::close(app);
     super::recovery::close(app);
     super::external_command::cancel_all(app);

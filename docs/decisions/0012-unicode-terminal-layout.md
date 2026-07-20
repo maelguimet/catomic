@@ -7,7 +7,7 @@ The standard library exposes Unicode scalar iteration but does not implement
 Unicode grapheme segmentation or terminal display width. Reimplementing those
 evolving standards locally would be both larger and less correct.
 
-Both dependencies are pure, `no_std`-capable text tables. Plain mode uses them
+Both dependencies are pure, `no_std`-capable text tables. The editor uses them
 only while moving or rendering visible text; they construct no service and do
 no startup, filesystem, process, or network work. Focused tests cover combining
 marks, wide characters, emoji, clipping, and tab expansion. They can be removed

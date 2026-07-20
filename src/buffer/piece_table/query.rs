@@ -1,7 +1,7 @@
 //! Purpose: query logical PieceTable ranges without full-buffer materialization.
 //! Owns: piece overlap traversal, scalar counts, cursor byte mapping,
 //!   compatibility string slices, and piece lookup/split points.
-//! Must not: mutate pieces, perform App/render policy, or know Project/LLM work.
+//! Must not: mutate pieces, perform App/render policy, or know repository/model work.
 //! Invariants: source ranges respect UTF-8 boundaries and logical offsets are global.
 
 use super::types::{PieceTable, Source};

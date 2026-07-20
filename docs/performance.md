@@ -50,7 +50,7 @@ Never add full-file scans, full-buffer clones, background work, or network calls
 ## Phase 6 bounded broker sample (2026-07-16)
 
 Phase 6 adds no LLM work to startup or typing. Current-file context collection
-is explicit and capped at 64 KiB/2,000 lines. Project context preparation is an
+is explicit and capped at 64 KiB/2,000 lines. Repository context preparation is an
 explicit cancellable worker capped at 4,096 files, 65,536 entries, depth 64,
 and a selected 64 KiB (`gitmeow`) or 128 KiB (`megameow`) returned-context
 budget. Network latency is not benchmarked and no live endpoint is used.
@@ -484,25 +484,6 @@ default-suite timing assertions.
 
 Future measurements should use the same fixture name and stable `PERF sample`
 label before comparing results.
-
-### Phase 5 Project tooling acceptance (2026-07-16, post 5-e)
-
-The ignored release fixture creates 4,096 files before timing, performs one
-explicit bounded Project discovery, then requests cached path candidates 100
-times. A warm release invocation measured:
-
-```text
-PERF sample: label=discover bounded 4096-file project bytes=4096 elapsed_ms=2
-PERF sample: label=complete cached paths 100x over 4096 files bytes=4096 elapsed_ms=0
-Maximum resident set size: 33480 KiB
-```
-
-The zero-millisecond completion sample means the complete 100-run loop was
-below the timer's one-millisecond resolution. Reference budgets on this machine
-are under 50 ms for discovery, under 10 ms for 100 cached completions, and under
-64 MiB peak RSS for the complete warm release test process. Fixture creation is
-outside the timed samples. These are recorded acceptance budgets, not default
-test timing assertions.
 
 ### Candidate Phase 2B budgets — not enforced yet
 

@@ -15,7 +15,7 @@ fn path_change_while_repo_context_is_built_cancels_request() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let settings = settings(format!("http://{}/v1", listener.local_addr().unwrap()));
-    let mut app = project_app(&repo);
+    let mut app = repo_app(&repo);
     let mut out = Vec::new();
 
     begin_with_settings(&mut app, &mut out, "write tests", settings).unwrap();
@@ -37,7 +37,7 @@ fn path_change_before_confirmation_cancels_without_connecting() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let settings = settings(format!("http://{}/v1", listener.local_addr().unwrap()));
-    let mut app = project_app(&repo);
+    let mut app = repo_app(&repo);
     let mut out = Vec::new();
     begin_with_settings(&mut app, &mut out, "write tests", settings).unwrap();
     poll_until_pending(&mut app, &mut out);
@@ -58,7 +58,7 @@ fn path_change_before_confirmation_cancels_without_connecting() {
 fn path_change_while_repo_model_works_discards_response() {
     let repo = TempRepo::new();
     let (settings, server) = patch_server();
-    let mut app = project_app(&repo);
+    let mut app = repo_app(&repo);
     let original = app.buffer.to_string();
     let mut out = Vec::new();
     begin_with_settings(&mut app, &mut out, "uppercase second line", settings).unwrap();

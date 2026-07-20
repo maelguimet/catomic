@@ -232,35 +232,3 @@ fn closing_buffer_cancels_and_reaps_running_hook() {
     assert_reaped(pids);
     let _ = std::fs::remove_file(pid_path);
 }
-
-#[cfg(unix)]
-#[test]
-fn project_mode_switch_cancels_and_reaps_running_hook() {
-    let pid_path =
-        std::env::temp_dir().join(format!("catomic-mode-hook-{}.pid", std::process::id()));
-    let source_path = std::env::temp_dir().join(format!(
-        "catomic-mode-hook-source-{}.txt",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_file(&pid_path);
-    let mut app =
-        super::super::App::new(Some(source_path.to_str().expect("UTF-8 temp path"))).unwrap();
-    configure(
-        &mut app,
-        &format!(
-            "[commands.slow]\ncommand = \"sleep 60 & printf '%s %s' $$ $! > {}; wait\"\n[hooks]\non_open = [\"slow\"]\n",
-            pid_path.display()
-        ),
-    );
-    let mut out = Vec::new();
-    trigger_open(&mut app);
-    pump(&mut app, &mut out).unwrap();
-    let pids = wait_for_pids(&pid_path);
-
-    super::super::project_mode::switch_to_project(&mut app, &mut out).unwrap();
-
-    assert!(!is_pending(&app));
-    assert!(!super::super::external_command::is_running(&app));
-    assert_reaped(pids);
-    let _ = std::fs::remove_file(pid_path);
-}

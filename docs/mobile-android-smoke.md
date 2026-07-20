@@ -92,7 +92,7 @@ from a screenshot or retried after that safety stop.
 ## Narrow views and model safety
 
 - [ ] At 20x6, scroll/dismiss help, every prompt, overwrite/reload warnings,
-      recovery preview, command output, diagnostics, and Markdown preview.
+      recovery preview, command output, and Markdown preview.
 - [ ] Configure a loopback fake endpoint or stop before send. Verify endpoint and
       context confirmation Info/No/Yes, proposal preview scrolling, apply, cancel,
       task cancellation, and undo—never a live model or public endpoint.

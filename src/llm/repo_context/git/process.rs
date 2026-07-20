@@ -1,4 +1,4 @@
-//! Purpose: this file must run read-only Git children with hard resource/lifetime bounds.
+//! Purpose: run request-local read-only Git children with hard resource/lifetime bounds.
 //! Owns: safe command construction, capped stdout capture, cancellation, timeout, and reaping.
 //! Must not: invoke a shell, inherit Git identity overrides, write repositories, or network.
 //! Invariants: every child is waited; output readers remain interruptible after child cleanup.

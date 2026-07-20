@@ -1,4 +1,4 @@
-//! FileWatcher lifecycle owned by App (gated, best-effort).
+//! FileWatcher lifecycle owned by App (best-effort).
 //!
 //! Purpose: manage construction/refresh/clear of the optional FileWatcher on App
 //! and provide explicit seams for signal handling.
@@ -7,7 +7,7 @@
 //!   check_file_watcher_once (single try_recv + apply), check_file_watcher_once_and_render.
 //! Must not: be called from handle_key / save / render paths; discard dirty buffers;
 //!   trust signal kind without fresh metadata observation;
-//!   expand Project/LLM/UI; call try_recv outside check_file_watcher_once.
+//!   expand repository/model/UI policy; call try_recv outside check_file_watcher_once.
 //! Invariants: signals are hints only; watcher Unchanged/NoPath observations are ignored
 //!   (no message/pending change, no render) when no pending_reload is armed (to avoid
 //!   self-save noise); when a pending_reload exists they clear it, restore normal status,
@@ -29,25 +29,18 @@ use std::path::PathBuf;
 use crate::file;
 use crate::file::io::observe_external_file;
 
-/// Best-effort construct or clear the App's file_watcher based on current
-/// caps and file.path. Safe to call any time; never errors to caller.
-/// On !caps or no path: clears to None.
-/// On path present + file_watch: attempts FileWatcher::new; stores Ok(Some)
-/// or falls back to None on any construction error (non-fatal).
+/// Best-effort construct or clear the App's file_watcher based on the current
+/// file path. Safe to call any time; never errors to caller.
 pub(crate) fn refresh_file_watcher(app: &mut super::App) {
-    if !app.caps.file_watch {
-        app.file_watcher = None;
-        return;
-    }
     let Some(ref p) = app.file.path else {
         app.file_watcher = None;
         return;
     };
     // Clone path for the ctor (watcher takes ownership of normalized target).
     let target: PathBuf = p.clone();
-    match file::watcher::FileWatcher::new(target, &app.caps) {
-        Ok(maybe_w) => {
-            app.file_watcher = maybe_w;
+    match file::watcher::FileWatcher::new(target) {
+        Ok(watcher) => {
+            app.file_watcher = Some(watcher);
         }
         Err(_) => {
             // Construction failure must not prevent editing. Store None.
@@ -133,6 +126,7 @@ pub(crate) fn apply_file_watch_signal(
                 ExternalFileStatus::Modified
                 | ExternalFileStatus::Deleted
                 | ExternalFileStatus::Unknown(_) => {
+                    super::lint::invalidate(app);
                     let matching_save_conflict = current_path.as_deref().is_some_and(|path| {
                         app.pending_save_conflict
                             .as_ref()

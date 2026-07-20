@@ -114,7 +114,7 @@ fn help_is_short_task_oriented_and_excludes_registry_clutter() {
 #[test]
 fn help_uses_configured_chords_and_does_not_advertise_unbound_defaults() {
     let bindings = crate::config::keybindings::parse(
-        "[keybindings]\nsave = [\"alt+s\"]\nredo = []\ncommand-prompt = [\"f4\"]\n",
+        "[keybindings]\nsave = [\"alt+s\"]\nredo = []\ncommand-prompt = [\"f12\"]\n",
     )
     .unwrap();
     let markdown = help_markdown(&bindings);
@@ -124,7 +124,7 @@ fn help_uses_configured_chords_and_does_not_advertise_unbound_defaults() {
     assert!(markdown.contains("**Redo** — Redo"));
     assert!(!markdown.contains("Ctrl+Y"));
     assert!(!markdown.contains("Ctrl+Shift+Z"));
-    assert!(markdown.contains("**Command palette** (`F4`)"));
+    assert!(markdown.contains("**Command palette** (`F12`)"));
     assert!(!markdown.contains("Ctrl+Shift+P"));
     assert!(!markdown.contains("`F2`"));
 }

@@ -48,6 +48,7 @@ pub(super) fn write_content_line<W: Write + ?Sized>(
         )
     });
     let selected = visible_highlight(options.highlight, row, start_col, chars.len());
+    let lint = visible_ranges(options.lint_ranges, row, start_col, chars.len());
     let llm_changed = visible_ranges(
         options.llm_changes.map(|changes| changes.ranges),
         row,
@@ -72,7 +73,7 @@ pub(super) fn write_content_line<W: Write + ?Sized>(
         &content,
         &spans,
         selected,
-        &[&llm_changed, &external_added, &external_changed],
+        &[&lint, &llm_changed, &external_added, &external_changed],
         &links,
     );
     let mut cell = 0;
@@ -91,6 +92,7 @@ pub(super) fn write_content_line<W: Write + ?Sized>(
             .find(|link| start >= link.start && start < link.end)
             .map(|link| link.destination.as_ref());
         let highlighted = selected.is_some_and(|(from, to)| start >= from && start < to);
+        let lint = lint.iter().any(|(from, to)| start >= *from && start < *to);
         let llm_changed = llm_changed
             .iter()
             .any(|(from, to)| start >= *from && start < *to);
@@ -104,10 +106,13 @@ pub(super) fn write_content_line<W: Write + ?Sized>(
         let style = segment_style(
             options,
             syntax_styles,
-            highlighted,
-            llm_changed,
-            external_added,
-            external_changed,
+            SegmentRoles {
+                highlighted,
+                lint,
+                llm_changed,
+                external_added,
+                external_changed,
+            },
         );
         write_segment(
             out,
@@ -257,13 +262,18 @@ fn write_segment<W: Write + ?Sized>(
     Ok(())
 }
 
-fn segment_style(
-    options: RenderOptions<'_>,
-    spans: impl Iterator<Item = SpanStyle>,
+struct SegmentRoles {
     highlighted: bool,
+    lint: bool,
     llm_changed: bool,
     external_added: bool,
     external_changed: bool,
+}
+
+fn segment_style(
+    options: RenderOptions<'_>,
+    spans: impl Iterator<Item = SpanStyle>,
+    roles: SegmentRoles,
 ) -> Style {
     let theme = options.theme;
     let mut style = match options.surface {
@@ -273,16 +283,19 @@ fn segment_style(
     for span in spans {
         style = style.overlay(span_style(theme, span));
     }
-    if external_added {
+    if roles.external_added {
         style = style.overlay(theme.external_added);
     }
-    if external_changed {
+    if roles.external_changed {
         style = style.overlay(theme.external_changed);
     }
-    if llm_changed {
+    if roles.lint {
+        style = style.overlay(theme.lint);
+    }
+    if roles.llm_changed {
         style = style.overlay(theme.llm_changed);
     }
-    if highlighted {
+    if roles.highlighted {
         style = style.overlay(match options.highlight_kind {
             HighlightKind::Selection => theme.selection,
             HighlightKind::Search => theme.search_match,

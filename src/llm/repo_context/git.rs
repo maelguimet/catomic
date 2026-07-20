@@ -1,6 +1,6 @@
-//! Purpose: this file must capture bounded, read-only Git context and safety snapshots.
+//! Purpose: capture bounded, request-local Git context and safety snapshots.
 //! Owns: repo-root detection, HEAD/branch/base/status/diff summaries, and dirty fingerprinting.
-//! Must not: run in Plain mode, mutate Git state, invoke a shell, network, or accept huge output.
+//! Must not: mutate Git state, invoke a shell, network, or accept huge output.
 //! Invariants: snapshots ignore ambient Git overrides and distinguish already-dirty states.
 
 use std::collections::hash_map::DefaultHasher;

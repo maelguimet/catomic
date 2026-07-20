@@ -12,7 +12,7 @@ use crate::terminal as term;
 
 use super::{
     command_prompt, external_command, hooks, inline_clanker, input, lint, llm_request,
-    model_picker, project_files, recovery, repo_llm, search, selection, viewport, watch, App,
+    model_picker, recovery, repo_llm, search, selection, viewport, watch, App,
 };
 
 impl App {
@@ -62,7 +62,6 @@ impl App {
         search::poll_search(self, out)?;
         command_prompt::poll_goto(self, out)?;
         lint::poll(self, out)?;
-        project_files::poll(self, out)?;
         model_picker::poll(self, out)?;
         llm_request::poll(self, out)?;
         inline_clanker::poll(self, out)?;

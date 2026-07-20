@@ -6,7 +6,7 @@
 //! observe_external_file.
 //! Owns: PendingReload struct, arm/perform helpers, handle_reload_key.
 //! Must not: own watcher polling, background work, snapshot capture policy,
-//!   config parsing, Project, or LLM work.
+//!   config parsing, repository, or model work.
 //! Invariants: pending is bound to concrete (path + status + live snapshot);
 //!   second press only acts on exact match; any content mutation clears it;
 //!   automatic reload is invoked only for clean buffers by caller policy;
@@ -267,8 +267,7 @@ fn apply_modified_reload(
     super::search::cancel_running_search(app);
     super::command_prompt::cancel_running_goto(app);
     super::completion::cancel(app);
-    super::lint::close_view(app);
-    super::project_files::close_view(app);
+    super::lint::invalidate(app);
     super::view::cancel_preview(app);
     app.selection.clear();
     app.buffer = reloaded.buffer;
@@ -292,8 +291,7 @@ fn apply_deleted_reload(app: &mut super::App) {
     super::search::cancel_running_search(app);
     super::command_prompt::cancel_running_goto(app);
     super::completion::cancel(app);
-    super::lint::close_view(app);
-    super::project_files::close_view(app);
+    super::lint::invalidate(app);
     super::view::cancel_preview(app);
     app.selection.clear();
     app.buffer = cleared;

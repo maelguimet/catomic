@@ -2,7 +2,7 @@
 //! Owns: file-backed visible-line reads, bounded descriptor streaming, and
 //!   read-only movement; delegates initial scanning to the scan submodule.
 //! Must not: edit or write back to file content, own App policy, construct watchers,
-//!   depend on Project/LLM, or materialize the whole file for rendering/navigation.
+//!   depend on repository/model work, or materialize the whole file for rendering/navigation.
 //! Invariants: line_starts[0] == 0; per-line metadata lengths match line_starts;
 //!   file content was UTF-8 valid at construction; ranged reads use the same
 //!   descriptor scanned at open and fail closed if descriptor metadata changes;

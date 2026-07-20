@@ -66,6 +66,7 @@ diff_removed = "red"
 external_added = { fg = "green", underline = true }
 external_changed = { fg = "cyan", underline = true }
 external_deleted = { fg = "red", bold = true }
+lint = { fg = "red", underline = true }
 llm_changed = { fg = "red", underline = true }
 preview = "default"
 
@@ -89,6 +90,7 @@ preview = "default"
 # new = ["ctrl+n"]
 # close = ["ctrl+w"]
 # reload = ["ctrl+r"]
+# lint = ["f4"]
 # previous-buffer = ["alt+pageup"]
 # next-buffer = ["alt+pagedown"]
 # previous-page = ["ctrl+pageup"]
@@ -189,7 +191,9 @@ preview = "default"
 # Extension names are normalized and may include or omit a leading dot.
 # [languages.rs]
 # tab_size = 4
-# linter = "cargo check --message-format short {file}"
+#
+# [languages.py]
+# linter = "ruff check {file}"
 
 # Named commands run only after `run NAME` (or an explicit configured hook).
 # They are trusted shell commands, not a sandbox.

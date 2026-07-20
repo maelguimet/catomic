@@ -18,7 +18,7 @@ in `progress/phase-3-progress.md`; measurements are also retained in
 | Mouse | Captured left clicks map through both viewport offsets, drags select, status-row clicks are ignored, and double-click expands Unicode word or punctuation runs. Teardown disables mouse capture on normal exit and panic cleanup. |
 | Golden search/replacement | `golden_search_selection_replace_and_save` finds the first exact match, replaces only that range, atomically saves, and compares the complete output file with `alpha cat omega\ntarget stays`. Phase 3 does not add a separate replace prompt. |
 | Real terminal Ctrl+F | The default PTY smoke sends Ctrl+F and a query separately, requires the live reverse-video match before Enter, then exits cleanly. |
-| Plain startup discipline | Search workers are explicit and cancellable; selection, prompts, clipboard, and mouse handling construct no Project, LLM, indexer, or network machinery. |
+| Startup discipline | Search workers are explicit and cancellable; selection, prompts, clipboard, and mouse handling construct no repository, LLM, indexer, or network machinery. |
 
 ## Performance target and result
 
@@ -62,4 +62,4 @@ the always-available internal clipboard is not dependent on those bindings.
 
 Phase 3 acceptance is complete. Search, goto, the minimal command surface,
 selection replacement, clipboard paths, bracketed paste, and mouse interaction
-are implemented and verified without adding idle Plain-mode services.
+are implemented and verified without adding idle startup services.

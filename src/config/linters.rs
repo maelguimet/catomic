@@ -1,6 +1,6 @@
 //! Purpose: parse on-demand extension-to-command mappings from `[linters]`.
 //! Owns: linter command validation, extension normalization, and lazy config-file loading.
-//! Must not: run commands, construct Project services, load during Plain startup, or write config.
+//! Must not: run commands, construct services, load during ordinary startup, or write config.
 //! Invariants: every accepted command contains `{file}`; missing config yields an empty mapping.
 
 use std::collections::BTreeMap;
@@ -86,13 +86,13 @@ mod tests {
     #[test]
     fn parses_quoted_extension_mappings_and_normalizes_dots() {
         let config = parse(
-            "[linters]\n\".rs\" = \"cargo check --message-format short {file}\"\npy = 'ruff check {file}'\n",
+            "[linters]\n\".rs\" = \"rustc --error-format short {file}\"\npy = 'ruff check {file}'\n",
         )
         .unwrap();
 
         assert_eq!(
             config.command_for_extension("rs"),
-            Some("cargo check --message-format short {file}")
+            Some("rustc --error-format short {file}")
         );
         assert_eq!(
             config.command_for_extension(".py"),

@@ -1,6 +1,6 @@
-//! Purpose: run one explicitly requested Project linter without blocking editor input.
+//! Purpose: run one explicitly requested linter without blocking editor input.
 //! Owns: safe `{file}` shell substitution, child lifetime, bounded output capture, and polling.
-//! Must not: load config, mutate App/buffers/files, run automatically, index projects, or network.
+//! Must not: load config, mutate App/buffers/files, run automatically, scan repositories, or network.
 //! Invariants: output memory is capped; dropping a live task requests child termination.
 
 use std::io;
@@ -15,7 +15,11 @@ use crate::external::substitute_file;
 const LINTER_TIMEOUT: Duration = Duration::from_secs(120);
 
 pub(crate) enum LinterResult {
-    Finished { output: String, code: Option<i32> },
+    Finished {
+        output: String,
+        code: Option<i32>,
+        truncated: bool,
+    },
     Cancelled,
     Error(String),
 }
@@ -57,10 +61,11 @@ fn map_result(result: ExternalCommandResult) -> LinterResult {
         output.push('\n');
     }
     output.push_str(&stderr);
-    if truncated {
-        output.push_str("\n[catomic: linter output truncated]\n");
+    LinterResult::Finished {
+        output,
+        code,
+        truncated,
     }
-    LinterResult::Finished { output, code }
 }
 
 #[cfg(test)]
@@ -94,10 +99,16 @@ mod tests {
             std::thread::sleep(Duration::from_millis(5));
         };
 
-        let LinterResult::Finished { output, code } = result else {
+        let LinterResult::Finished {
+            output,
+            code,
+            truncated,
+        } = result
+        else {
             panic!("unexpected linter result");
         };
         assert_eq!(code, Some(7));
+        assert!(!truncated);
         assert!(output.contains("a.rs:2:3"));
         assert!(output.contains("b.rs:1:1"));
     }

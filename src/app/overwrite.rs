@@ -83,7 +83,5 @@ fn alternate_input_surface(app: &super::App) -> bool {
         || super::command_prompt::is_active(app)
         || super::llm_preview::is_viewing(app)
         || super::completion::is_active(app)
-        || super::project_files::is_viewing(app)
-        || super::lint::is_viewing(app)
         || super::view::is_preview(app)
 }

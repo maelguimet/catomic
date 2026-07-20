@@ -1,6 +1,6 @@
-//! Purpose: this file must cage Project-only repo-aware LLM commands end to end.
+//! Purpose: cage explicitly invoked repo-aware LLM commands end to end.
 //! Owns: async context preparation, explicit send confirmation, task polling, and cancellation.
-//! Must not: construct in Plain, block typing, apply output, write files, or bypass repo checks.
+//! Must not: construct at startup, block typing, apply output, write files, or bypass repo checks.
 //! Invariants: no client before Enter; source/path/repo drift refuses preview and apply.
 
 use std::io::{self, Write};

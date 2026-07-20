@@ -14,10 +14,10 @@ Every patch or replacement LLM edit must be previewed, confirmed, undoable.
 
 ## Commands
 
-- `:meow` — selection/block (Plain allowed when explicit)
+- `:meow` — selection/block
 - `:bigmeow` — current file
-- `:gitmeow` — focused repo-aware request, capped at 64 KiB of broker context (Project only)
-- `:megameow` — broader repo-aware request, capped at 128 KiB of broker context (Project only)
+- `:gitmeow` — focused repo-aware request, capped at 64 KiB of broker context
+- `:megameow` — broader repo-aware request, capped at 128 KiB of broker context
 - `F3` / `run-clanker` / `inline-meow` — inline instruction with automatic
   `selection → catblocks → bounded full file` scope
 
@@ -85,7 +85,8 @@ and per-file diff. No command writes or runs a process other than read-only Git.
   endpoint; every 3xx response is an error.
 - Ambient proxy environment variables must not reroute context. Proxy support
   requires future explicit configuration and confirmation.
-- Plain mode must not gain repository LLM machinery or unconfirmed network work.
+- Startup and ordinary editing must not gain repository LLM machinery or
+  unconfirmed network work.
 - Provider headers are explicit per preset. Static headers are non-secret
   metadata; credential-looking static headers are rejected in favor of named
   environment variables. Values are scoped to that preset; secret values are

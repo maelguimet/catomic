@@ -1,7 +1,7 @@
-//! Purpose: this file must prove Project gating, no-network preparation, and guarded preview.
+//! Purpose: prove request-local repository detection, no-network preparation, and guarded preview.
 //! Owns: isolated Git repos and loopback-only repo command integration.
 //! Must not: contact a live model, public endpoint, remote Git service, or user repository.
-//! Invariants: Plain constructs no state; network starts only on Enter; repo drift blocks apply.
+//! Invariants: startup constructs no repo state; network starts only on Enter; repo drift blocks apply.
 
 mod path_identity;
 mod relevant_file;
@@ -21,15 +21,14 @@ use super::*;
 static NEXT_TEMP: AtomicUsize = AtomicUsize::new(0);
 
 #[test]
-fn plain_command_constructs_no_repo_state() {
+fn unnamed_buffer_constructs_no_repo_state() {
     let mut app = super::super::App::new(None).unwrap();
     let mut out = Vec::new();
 
     begin(&mut app, &mut out, RepoLlmCommand::GitMeow, "write tests").unwrap();
 
     assert!(app.repo_llm_state.is_none());
-    assert!(app.project.is_none());
-    assert!(app.message.as_deref().unwrap().contains("Project mode"));
+    assert!(app.message.as_deref().unwrap().contains("Save"));
 }
 
 #[test]
@@ -43,12 +42,12 @@ fn repo_command_variants_have_distinct_bounded_context_profiles() {
 }
 
 #[test]
-fn project_preparation_reaches_confirmation_without_connecting() {
+fn request_local_repo_preparation_reaches_confirmation_without_connecting() {
     let repo = TempRepo::new();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let settings = settings(format!("http://{}/v1", listener.local_addr().unwrap()));
-    let mut app = project_app(&repo);
+    let mut app = repo_app(&repo);
     let mut out = Vec::new();
 
     begin_with_settings(&mut app, &mut out, "write tests", settings).unwrap();
@@ -97,7 +96,7 @@ fn repo_http_body_uses_relative_paths_and_omits_the_checkout_root() {
     let (settings, request, server) = captured_response_server(
         "--- a/note.txt\n+++ b/note.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n",
     );
-    let mut app = project_app(&repo);
+    let mut app = repo_app(&repo);
     let mut out = Vec::new();
 
     begin_with_settings(&mut app, &mut out, "uppercase second line", settings).unwrap();
@@ -118,7 +117,7 @@ fn megameow_profile_survives_async_preparation_without_connecting() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let settings = settings(format!("http://{}/v1", listener.local_addr().unwrap()));
-    let mut app = project_app(&repo);
+    let mut app = repo_app(&repo);
     let mut out = Vec::new();
 
     begin_with_command_and_settings(
@@ -161,7 +160,7 @@ fn megameow_profile_survives_async_preparation_without_connecting() {
 fn confirmed_patch_previews_but_repo_drift_blocks_apply() {
     let repo = TempRepo::new();
     let (settings, server) = patch_server();
-    let mut app = project_app(&repo);
+    let mut app = repo_app(&repo);
     let original = app.buffer.to_string();
     let mut out = Vec::new();
     begin_with_settings(&mut app, &mut out, "uppercase second line", settings).unwrap();
@@ -193,7 +192,7 @@ fn confirmed_patch_previews_but_repo_drift_blocks_apply() {
 fn confirmed_repo_patch_checks_then_applies_as_one_undo_step() {
     let repo = TempRepo::new();
     let (settings, server) = patch_server();
-    let mut app = project_app(&repo);
+    let mut app = repo_app(&repo);
     let original = app.buffer.to_string();
     let original_position = app.buffer.edit_history_position();
     let mut out = Vec::new();
@@ -254,7 +253,7 @@ fn confirmed_command_backend_reuses_repo_drift_preview_and_no_save_contract() {
     .unwrap()
     .default_preset()
     .clone();
-    let mut app = project_app(&repo);
+    let mut app = repo_app(&repo);
     let mut out = Vec::new();
 
     begin_with_settings(&mut app, &mut out, "uppercase second line", preset).unwrap();
@@ -288,7 +287,7 @@ fn patch_for_a_different_repo_file_is_refused_before_preview() {
     let repo = TempRepo::new();
     let patch = "--- a/other.txt\n+++ b/other.txt\n@@ -1 +1 @@\n-stable\n+changed\n";
     let (settings, server) = response_server(patch);
-    let mut app = project_app(&repo);
+    let mut app = repo_app(&repo);
     let original = app.buffer.to_string();
     let mut out = Vec::new();
     begin_with_settings(&mut app, &mut out, "uppercase second line", settings).unwrap();
@@ -307,15 +306,12 @@ fn patch_for_a_different_repo_file_is_refused_before_preview() {
         .contains("other than active path note.txt"));
 }
 
-fn project_app(repo: &TempRepo) -> super::super::App {
-    project_app_at(&repo.0.join("note.txt"))
+fn repo_app(repo: &TempRepo) -> super::super::App {
+    repo_app_at(&repo.0.join("note.txt"))
 }
 
-fn project_app_at(path: &Path) -> super::super::App {
-    let mut app = super::super::App::new(path.to_str()).unwrap();
-    let mut out = Vec::new();
-    super::super::project_mode::switch_to_project(&mut app, &mut out).unwrap();
-    app
+fn repo_app_at(path: &Path) -> super::super::App {
+    super::super::App::new(path.to_str()).unwrap()
 }
 
 fn poll_until_pending(app: &mut super::super::App, out: &mut Vec<u8>) {

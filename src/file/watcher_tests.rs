@@ -11,18 +11,8 @@
 //!   (map_event_to_signal) accessible via super because this is a path child mod.
 
 use super::*;
-use crate::mode::{Capabilities, Mode};
 use notify::event::{CreateKind, RemoveKind};
 use std::path::PathBuf;
-
-#[test]
-fn file_watch_false_returns_ok_none_even_for_nonsense() {
-    // Force false even if Plain normally enables it.
-    let mut caps = Capabilities::from_mode(Mode::Plain);
-    caps.file_watch = false;
-    let res = FileWatcher::new(PathBuf::from("/no/such/!!!/path.txt"), &caps);
-    assert!(matches!(res, Ok(None)));
-}
 
 #[test]
 fn watch_parent_chosen_correctly() {

@@ -12,7 +12,7 @@ use super::*;
 #[test]
 fn prepares_broker_and_initial_context_without_a_client() {
     let root = temp_repo();
-    let mut task = RepoPrepareTask::start(&root, &root.join("note.txt")).unwrap();
+    let mut task = RepoPrepareTask::start(&root.join("note.txt")).unwrap();
     let deadline = Instant::now() + Duration::from_secs(2);
     let result = loop {
         if let Some(result) = task.try_result() {

@@ -536,7 +536,7 @@ Document the col model (char index / scalar within line for this subphase; inter
 - Line numbers (toggleable, off by default or on for code)
 - Whitespace indicators (optional); acceptance: [`docs/phase-4-acceptance.md`](../phase-4-acceptance.md)
 
-### Phase 5 — Tooling (Linters + Autocomplete) ([progress](phase-5-progress.md))
+### Phase 5 — Tooling (Linters + Autocomplete)
 
 **Project / Code Mode features are behind the `Capabilities` bouncer.** When `Capabilities` for Plain is active, none of the Project services here are constructed.
 
@@ -554,7 +554,7 @@ Document the col model (char index / scalar within line for this subphase; inter
   - Project-aware: file path completion, keywords, snippets, etc. (requires Project capabilities)
   - Trigger on Ctrl+Space or Tab in some contexts
   - Dismiss on Esc
-- Project file discovery (simple "find in dir" for open file); acceptance: [`docs/phase-5-acceptance.md`](../phase-5-acceptance.md)
+- Project file discovery (simple "find in dir" for open file)
 
 ### Phase 6 — LLM (Powerful but Caged) ([acceptance](../phase-6-acceptance.md), [progress](phase-6-progress.md))
 

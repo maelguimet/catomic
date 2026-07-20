@@ -1,6 +1,6 @@
 //! Purpose: decode global editor defaults and extension-specific language settings.
 //! Owns: tab width resolution and validated per-language linter commands.
-//! Must not: inspect buffers, run commands, construct Project services, or write config.
+//! Must not: inspect buffers, run commands, construct services, or write config.
 //! Invariants: tab sizes are 1..=16; extensions are normalized; linters contain `{file}`.
 
 use std::collections::BTreeMap;
@@ -179,10 +179,11 @@ mod tests {
 
     #[test]
     fn language_linter_is_validated_and_exposed() {
-        let config = parse("[languages.rs]\nlinter = \"cargo check {file}\"\n").unwrap();
+        let config =
+            parse("[languages.rs]\nlinter = \"rustc --error-format short {file}\"\n").unwrap();
         let linters: Vec<_> = config.language_linters().collect();
 
-        assert_eq!(linters, vec![("rs", "cargo check {file}")]);
+        assert_eq!(linters, vec![("rs", "rustc --error-format short {file}")]);
         assert!(parse("[languages.rs]\nlinter = \"cargo check\"\n").is_err());
     }
 

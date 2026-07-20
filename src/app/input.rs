@@ -126,8 +126,7 @@ pub(super) fn prepare_editor_action(app: &mut super::App, action: Option<EditorA
     let is_save = matches!(action, Some(EditorAction::Save));
     let is_reload = matches!(action, Some(EditorAction::Reload));
     let keeps_confirmation = (is_quit
-        && (app.pending_quit_confirm
-            || command_prompt::config_discard_confirmation_pending(app)))
+        && (app.pending_quit_confirm || command_prompt::config_discard_confirmation_pending(app)))
         || (is_save && app.pending_save_conflict.is_some())
         || (is_reload && app.pending_reload.is_some());
     if !is_quit {

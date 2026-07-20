@@ -63,6 +63,20 @@ fn watcher_changed_clean_buffer_auto_reloads() {
         "must show reload success"
     );
     assert!(app.pending_reload.is_none());
+    let external = app
+        .external_changes
+        .visible(app.buffer.edit_history_position())
+        .expect("automatic reload must retain visible external changes");
+    assert!(!external.changed_ranges.is_empty());
+    let rendered = String::from_utf8(out).unwrap();
+    assert!(
+        rendered.contains("\x1b[36;4m"),
+        "replacement text must use the external_changed role: {rendered:?}"
+    );
+    assert!(
+        rendered.contains('~'),
+        "replacement line needs a gutter marker"
+    );
 
     let _ = std::fs::remove_file(&p);
 }

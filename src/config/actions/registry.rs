@@ -364,6 +364,13 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
         ["ctrl+pagedown"]
     ),
     key!(
+        ToggleExternalDiff,
+        "toggle-external-diff",
+        "Toggle and remember external-reload change highlighting",
+        E,
+        ["f5"]
+    ),
+    key!(
         MarkdownPreview,
         "markdown-preview",
         "Toggle Markdown preview",

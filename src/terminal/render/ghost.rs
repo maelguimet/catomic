@@ -10,8 +10,8 @@ use crate::buffer::Buffer;
 use crate::editor::text_layout;
 
 use super::{
-    change_gutter_width, line_number_gutter, write_change_gutter, write_line_number, GhostText,
-    RenderOptions, RenderViewport,
+    change_gutter_width, line_number_gutter, write_change_gutter, write_external_change_gutter,
+    write_line_number, GhostText, RenderOptions, RenderViewport,
 };
 
 mod wrapped;
@@ -54,8 +54,10 @@ fn compose_unwrapped(
     {
         return super::frame::compose_buffer(out, buffer, viewport, message, options);
     }
-    let (line_gutter, change_gutter) = gutters(buffer, viewport.width, options);
-    let gutter = line_gutter.saturating_add(change_gutter);
+    let (line_gutter, external_gutter, llm_gutter) = gutters(buffer, viewport.width, options);
+    let gutter = line_gutter
+        .saturating_add(external_gutter)
+        .saturating_add(llm_gutter);
     let width = viewport.width.saturating_sub(gutter);
     let cursor_window = ghost.cursor.col.saturating_sub(viewport.start_col) + 1;
     let fetch = width
@@ -87,7 +89,8 @@ fn compose_unwrapped(
         content_height,
         width,
         line_gutter,
-        change_gutter,
+        external_gutter,
+        llm_gutter,
         options,
         ghost.cursor.row,
     )?;
@@ -110,7 +113,8 @@ fn write_unwrapped_rows(
     height: usize,
     width: usize,
     line_gutter: usize,
-    change_gutter: usize,
+    external_gutter: usize,
+    llm_gutter: usize,
     options: RenderOptions<'_>,
     cursor_row: usize,
 ) -> io::Result<()> {
@@ -149,7 +153,8 @@ fn write_unwrapped_rows(
             out,
             document_row,
             line_gutter,
-            change_gutter,
+            external_gutter,
+            llm_gutter,
             numbered,
             options,
         )?;
@@ -217,33 +222,49 @@ pub(super) fn gutters(
     buffer: &dyn Buffer,
     width: usize,
     options: RenderOptions<'_>,
-) -> (usize, usize) {
+) -> (usize, usize, usize) {
     let line_gutter = if options.line_numbers {
         line_number_gutter(buffer.line_count()).min(width)
     } else {
         0
     };
-    let change_gutter = change_gutter_width(
+    let external_gutter = change_gutter_width(
+        options
+            .external_changes
+            .is_some_and(|changes| !changes.markers.is_empty()),
+    )
+    .min(width.saturating_sub(line_gutter));
+    let llm_gutter = change_gutter_width(
         options
             .llm_changes
             .is_some_and(|changes| !changes.gutter_lines.is_empty()),
     )
-    .min(width.saturating_sub(line_gutter));
-    (line_gutter, change_gutter)
+    .min(
+        width
+            .saturating_sub(line_gutter)
+            .saturating_sub(external_gutter),
+    );
+    (line_gutter, external_gutter, llm_gutter)
 }
 
 pub(super) fn write_row_prefix(
     out: &mut Vec<u8>,
     row: usize,
     line_gutter: usize,
-    change_gutter: usize,
+    external_gutter: usize,
+    llm_gutter: usize,
     numbered: bool,
     options: RenderOptions<'_>,
 ) -> io::Result<()> {
-    if change_gutter > 0 && numbered {
+    if external_gutter > 0 && numbered {
+        write_external_change_gutter(out, row, options.external_changes, options.theme)?;
+    } else if external_gutter > 0 {
+        write!(out, "{:external_gutter$}", "")?;
+    }
+    if llm_gutter > 0 && numbered {
         write_change_gutter(out, row, options.llm_changes, options.theme)?;
-    } else if change_gutter > 0 {
-        write!(out, "{:change_gutter$}", "")?;
+    } else if llm_gutter > 0 {
+        write!(out, "{:llm_gutter$}", "")?;
     }
     if line_gutter > 0 && numbered {
         write_line_number(out, row, line_gutter, options.theme)

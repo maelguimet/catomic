@@ -17,6 +17,12 @@ page_lines = 20_000
 # Clean files may reload after a verified external change. Dirty files never do.
 auto_reload = true
 
+[view]
+# F5 toggles external-reload change highlighting and persists the explicit choice.
+external_diff = true
+# F7 toggles line numbers and persists the explicit choice.
+line_numbers = false
+
 [cat]
 status_messages = true
 
@@ -68,6 +74,9 @@ syntax_number = "yellow"
 search_match = { fg = "black", bg = "yellow" }
 diff_added = "green"
 diff_removed = "red"
+external_added = { fg = "green", underline = true }
+external_changed = { fg = "cyan", underline = true }
+external_deleted = { fg = "red", bold = true }
 llm_changed = { fg = "red", underline = true }
 autocomplete = { fg = "bright-black", dim = true }
 preview = "default"

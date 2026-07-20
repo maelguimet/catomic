@@ -33,6 +33,7 @@ mod command_prompt;
 mod completion;
 mod construction;
 mod external_command;
+mod external_diff;
 mod help;
 mod hooks;
 mod indentation;
@@ -156,6 +157,8 @@ pub struct App {
     pub(crate) inline_clanker: inline_clanker::InlineClankerState,
     /// Per-buffer render-only history for the latest accepted inline-clanker changes.
     pub(crate) clanker_changes: inline_clanker::ChangeHistory,
+    /// Per-buffer render-only metadata for the exact latest external reload revision.
+    pub(crate) external_changes: external_diff::ExternalChanges,
     /// Project-only repo-context preparation, confirmation, or confirmed network task.
     pub(crate) repo_llm_state: Option<repo_llm::RepoLlmState>,
     /// External process/preview state; empty at startup and while unused.

@@ -1,7 +1,7 @@
 //! Purpose: own non-mutating display modes and their key bindings.
-//! Owns: F6 preview, F7/F8 indicators, F9 soft wrap, and display coordinates.
+//! Owns: F5 external changes, F6 preview, F7/F8 indicators, F9 wrap, and coordinates.
 //! Must not: mutate source text/history, emit terminal setup, or contact the network.
-//! Invariants: preview is explicit/read-only; F7 is session-global and explicitly persisted;
+//! Invariants: preview is explicit/read-only; F5/F7 are session-global and persisted;
 //!   F8/F9 and source viewports remain per buffer.
 //! Phase: 4-b/4-c optional indicators and Markdown preview.
 
@@ -33,6 +33,7 @@ pub(crate) fn handle_key(
     key: KeyEvent,
 ) -> io::Result<bool> {
     match help_catalog::default_editor_action(key) {
+        Some(EditorAction::ExternalDiff) => return toggle_external_diff(app, out),
         Some(EditorAction::MarkdownPreview) => return toggle_preview(app, out),
         Some(EditorAction::LineNumbers) => return toggle_line_numbers(app, out),
         Some(EditorAction::Whitespace) => return toggle_whitespace(app, out),
@@ -166,7 +167,16 @@ pub(crate) fn gutter_width(app: &super::App) -> usize {
             .then(|| super::inline_clanker::source_changes(app))
             .flatten()
     });
+    let external_changes = (source_is_visible && app.view_preferences.external_diff())
+        .then(|| {
+            app.external_changes
+                .visible(app.buffer.edit_history_position())
+        })
+        .flatten();
     line_numbers
+        + crate::terminal::render::change_gutter_width(
+            external_changes.is_some_and(|changes| !changes.markers.is_empty()),
+        )
         + crate::terminal::render::change_gutter_width(
             changes.is_some_and(|changes| !changes.gutter_lines.is_empty()),
         )
@@ -230,6 +240,24 @@ fn toggle_line_numbers(app: &mut super::App, out: &mut dyn Write) -> io::Result<
     app.message = Some(match app.view_preferences.persist() {
         Ok(()) => format!("Line numbers {state}."),
         Err(error) => format!("Line numbers {state}; preference not saved: {error}."),
+    });
+    reveal_display_cursor(app);
+    app.render(out)?;
+    Ok(true)
+}
+
+fn toggle_external_diff(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {
+    let enabled = !app.view_preferences.external_diff();
+    app.view_preferences.set_external_diff(enabled);
+    if !enabled {
+        app.clear_external_changes();
+    }
+    let state = if enabled { "on" } else { "off" };
+    app.message = Some(match app.view_preferences.persist() {
+        Ok(()) => format!("External change highlighting {state}."),
+        Err(error) => {
+            format!("External change highlighting {state}; preference not saved: {error}.")
+        }
     });
     reveal_display_cursor(app);
     app.render(out)?;
@@ -346,6 +374,35 @@ mod tests {
         handle_key(&mut app, &mut out, key(KeyCode::F(8))).unwrap();
         assert!(app.view.whitespace);
         assert!(String::from_utf8(out).unwrap().contains("a·b→c"));
+    }
+
+    #[test]
+    fn f5_toggles_only_external_diff_presentation_and_dismisses_current_marks() {
+        let mut app = super::super::App::new(None).unwrap();
+        let old = crate::buffer::PieceTable::from_text("before");
+        app.buffer = Box::new(crate::buffer::PieceTable::from_text("after"));
+        app.external_changes = match super::super::external_diff::compare(&old, &*app.buffer) {
+            super::super::external_diff::DiffOutcome::Compared(changes) => changes,
+            super::super::external_diff::DiffOutcome::Skipped(reason) => {
+                panic!("unexpected skip: {reason}")
+            }
+        };
+        let text = app.buffer.to_string();
+        let history = app.buffer.edit_history_position();
+        let dirty = app.file.dirty;
+        let mut out = Vec::new();
+
+        handle_key(&mut app, &mut out, key(KeyCode::F(5))).unwrap();
+
+        assert!(!app.view_preferences.external_diff());
+        assert!(app.external_changes.visible(history).is_none());
+        assert_eq!(app.buffer.to_string(), text);
+        assert_eq!(app.buffer.edit_history_position(), history);
+        assert_eq!(app.file.dirty, dirty);
+
+        handle_key(&mut app, &mut out, key(KeyCode::F(5))).unwrap();
+        assert!(app.view_preferences.external_diff());
+        assert!(app.external_changes.visible(history).is_none());
     }
 
     #[test]

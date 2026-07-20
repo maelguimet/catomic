@@ -59,6 +59,102 @@ fn render_buffer_highlights_a_multiline_selection() {
 }
 
 #[test]
+fn external_insert_replace_and_delete_have_separate_styles_and_markers() {
+    let b = SimpleBuffer::from_text("added\nchanged\nafter deletion");
+    let added = [TextHighlight {
+        start: Cursor { row: 0, col: 0 },
+        end: Cursor { row: 0, col: 5 },
+    }];
+    let changed = [TextHighlight {
+        start: Cursor { row: 1, col: 0 },
+        end: Cursor { row: 1, col: 7 },
+    }];
+    let markers = [
+        ExternalLineMarker {
+            line: 0,
+            kind: ExternalChangeKind::Added,
+        },
+        ExternalLineMarker {
+            line: 1,
+            kind: ExternalChangeKind::Changed,
+        },
+        ExternalLineMarker {
+            line: 2,
+            kind: ExternalChangeKind::Deleted,
+        },
+    ];
+    let mut out = Vec::new();
+
+    render_buffer(
+        &mut out,
+        &b,
+        RenderViewport::new(0, 0, 5, 40),
+        None,
+        RenderOptions {
+            external_changes: Some(ExternalChanges {
+                added_ranges: &added,
+                changed_ranges: &changed,
+                markers: &markers,
+            }),
+            ..RenderOptions::default()
+        },
+    )
+    .unwrap();
+
+    let rendered = String::from_utf8(out).unwrap();
+    assert!(rendered.contains("\x1b[32;4madded\x1b[0m"));
+    assert!(rendered.contains("\x1b[36;4mchanged\x1b[0m"));
+    assert!(rendered.contains("+\x1b[0m "));
+    assert!(rendered.contains("~\x1b[0m "));
+    assert!(rendered.contains("-\x1b[0m "));
+}
+
+#[test]
+fn external_changes_keep_non_color_unicode_tab_wrap_fallbacks() {
+    let b = SimpleBuffer::from_text("a\u{301}\t猫xyz");
+    let changed = [TextHighlight {
+        start: Cursor { row: 0, col: 0 },
+        end: Cursor { row: 0, col: 3 },
+    }];
+    let markers = [ExternalLineMarker {
+        line: 0,
+        kind: ExternalChangeKind::Changed,
+    }];
+    let mut theme = Theme::default();
+    theme.external_changed = crate::config::theme::Style {
+        reversed: Some(true),
+        ..crate::config::theme::Style::default()
+    };
+    let mut out = Vec::new();
+
+    render_buffer(
+        &mut out,
+        &b,
+        RenderViewport::new(0, 0, 4, 8),
+        None,
+        RenderOptions {
+            external_changes: Some(ExternalChanges {
+                added_ranges: &[],
+                changed_ranges: &changed,
+                markers: &markers,
+            }),
+            theme,
+            line_numbers: true,
+            whitespace: true,
+            soft_wrap: true,
+            ..RenderOptions::default()
+        },
+    )
+    .unwrap();
+
+    let rendered = String::from_utf8(out).unwrap();
+    assert!(rendered.contains("\x1b[7m"));
+    assert!(rendered.contains('~'));
+    assert!(rendered.contains("a\u{301}"));
+    assert!(rendered.contains('→'));
+}
+
+#[test]
 fn source_buffer_terminal_controls_render_inertly() {
     let b = SimpleBuffer::from_text(
         "visible-before\x1b[2JCONTROL-CLEAR\x1b]52;c;cGF5bG9hZA==\x07visible-after\u{009b}?2004h",

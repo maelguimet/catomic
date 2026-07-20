@@ -93,6 +93,12 @@ fn monochrome_capability_keeps_non_color_distinctions() {
     assert_eq!(theme.selection.reversed, Some(true));
     assert_eq!(theme.search_match.underlined, Some(true));
     assert_eq!(theme.diff_added.bold, Some(true));
+    assert_eq!(theme.external_added.fg, None);
+    assert_eq!(theme.external_added.underlined, Some(true));
+    assert_eq!(theme.external_changed.fg, None);
+    assert_eq!(theme.external_changed.reversed, Some(true));
+    assert_eq!(theme.external_deleted.fg, None);
+    assert_eq!(theme.external_deleted.bold, Some(true));
     assert_eq!(theme.llm_changed.fg, None);
     assert_eq!(theme.llm_changed.underlined, Some(true));
     assert_eq!(theme.llm_changed.reversed, Some(true));

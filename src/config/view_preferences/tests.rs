@@ -138,7 +138,15 @@ fn explicit_persist_is_atomic_and_does_not_rewrite_config() {
 
     assert_eq!(fs::read_to_string(config).unwrap(), config_text);
     assert_eq!(
-        parse_preferences(&fs::read_to_string(&preferences).unwrap()).unwrap(),
+        parse_preferences(&fs::read_to_string(&preferences).unwrap())
+            .unwrap()
+            .line_numbers,
+        Some(true)
+    );
+    assert_eq!(
+        parse_preferences(&fs::read_to_string(&preferences).unwrap())
+            .unwrap()
+            .external_diff,
         Some(true)
     );
     assert_no_temporary_siblings(&preferences);
@@ -216,10 +224,28 @@ fn concurrent_atomic_writers_never_leave_partial_toml() {
 
     let text = fs::read_to_string(&preferences).unwrap();
     assert!(matches!(
-        parse_preferences(&text).unwrap(),
+        parse_preferences(&text).unwrap().line_numbers,
         Some(false) | Some(true)
     ));
     assert_no_temporary_siblings(&preferences);
+}
+
+#[test]
+fn external_diff_preference_uses_persisted_then_config_then_default_precedence() {
+    let fixture = Fixture::new("external_diff_precedence");
+    let preferences = fixture.path("state/catomic/preferences.toml");
+
+    let configured =
+        load_with_config("[view]\nexternal_diff = false\n", Some(preferences.clone())).unwrap();
+    assert!(!configured.external_diff());
+
+    ViewPreferences::with_values(false, true, preferences.clone())
+        .persist()
+        .unwrap();
+    let persisted = load_with_config("[view]\nexternal_diff = false\n", Some(preferences)).unwrap();
+    assert!(persisted.external_diff());
+
+    assert!(load_with_config("", None).unwrap().external_diff());
 }
 
 #[test]

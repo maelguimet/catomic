@@ -9,8 +9,8 @@ use std::io::{self, Write};
 use crate::terminal as term;
 
 use super::{
-    autocomplete, external_command, help, inline_clanker, lint, llm_answer, llm_preview, mobile,
-    model_picker, project_files, recovery, status, view, App,
+    autocomplete, external_command, external_diff, help, inline_clanker, lint, llm_answer,
+    llm_preview, mobile, model_picker, project_files, recovery, status, view, App,
 };
 
 impl App {
@@ -42,8 +42,41 @@ fn render(app: &App, out: &mut dyn Write) -> io::Result<()> {
         ranges: &change_ranges,
         gutter_lines: changes.gutter_lines,
     });
+    let visible_external = (app.view_preferences.external_diff() && view::source_is_displayed(app))
+        .then(|| {
+            app.external_changes
+                .visible(app.buffer.edit_history_position())
+        })
+        .flatten();
+    let external_added = external_ranges(visible_external.map(|changes| changes.added_ranges));
+    let external_changed = external_ranges(visible_external.map(|changes| changes.changed_ranges));
+    let external_markers = visible_external
+        .map(|changes| {
+            changes
+                .markers
+                .iter()
+                .map(|marker| term::render::ExternalLineMarker {
+                    line: marker.line,
+                    kind: match marker.kind {
+                        external_diff::ChangeKind::Added => term::render::ExternalChangeKind::Added,
+                        external_diff::ChangeKind::Changed => {
+                            term::render::ExternalChangeKind::Changed
+                        }
+                        external_diff::ChangeKind::Deleted => {
+                            term::render::ExternalChangeKind::Deleted
+                        }
+                    },
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let external_changes = visible_external.map(|_| term::render::ExternalChanges {
+        added_ranges: &external_added,
+        changed_ranges: &external_changed,
+        markers: &external_markers,
+    });
     let action_bar = mobile::action_bar_text(app);
-    let mut options = render_options(app, llm_changes, action_bar.as_deref());
+    let mut options = render_options(app, llm_changes, external_changes, action_bar.as_deref());
     options.window_title = Some(&window_title);
     if let Some(message) = app.message.as_deref() {
         options.status_role = status::transient_role(app, message);
@@ -53,6 +86,19 @@ fn render(app: &App, out: &mut dyn Write) -> io::Result<()> {
     options.status_filename = Some(status.filename);
     options.status_selection = app.selection.status_range(&status.text);
     render_frame(app, out, &status.text, options)
+}
+
+fn external_ranges(
+    ranges: Option<&[external_diff::ChangedRange]>,
+) -> Vec<term::render::TextHighlight> {
+    ranges
+        .into_iter()
+        .flat_map(|ranges| ranges.iter())
+        .map(|range| term::render::TextHighlight {
+            start: range.start,
+            end: range.end,
+        })
+        .collect()
 }
 
 fn render_frame(
@@ -87,6 +133,7 @@ fn render_frame(
 fn render_options<'a>(
     app: &App,
     llm_changes: Option<term::render::LlmChanges<'a>>,
+    external_changes: Option<term::render::ExternalChanges<'a>>,
     action_bar: Option<&'a str>,
 ) -> term::render::RenderOptions<'a> {
     let (highlight, highlight_kind) = active_highlight(app).map_or(
@@ -102,6 +149,7 @@ fn render_options<'a>(
         highlight,
         highlight_kind,
         llm_changes,
+        external_changes,
         syntax: view::display_syntax(app),
         surface: view::display_surface(app),
         theme: app.theme,

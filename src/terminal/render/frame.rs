@@ -9,8 +9,8 @@ use std::io;
 use crate::buffer::{Buffer, Cursor, LineView};
 
 use super::{
-    change_gutter_width, line_number_gutter, style, write_change_gutter, write_line_number,
-    RenderOptions, RenderViewport,
+    change_gutter_width, line_number_gutter, style, write_change_gutter,
+    write_external_change_gutter, write_line_number, RenderOptions, RenderViewport,
 };
 
 pub(super) fn compose_buffer(
@@ -28,8 +28,10 @@ pub(super) fn compose_buffer(
         ..
     } = viewport;
     let content_height = super::content_height(height, options.action_bar);
-    let (line_gutter, change_gutter) = gutter_width(buffer, options, width);
-    let gutter = line_gutter.saturating_add(change_gutter);
+    let (line_gutter, external_gutter, llm_gutter) = gutter_width(buffer, options, width);
+    let gutter = line_gutter
+        .saturating_add(external_gutter)
+        .saturating_add(llm_gutter);
     let content_width = width.saturating_sub(gutter);
     let cursor = buffer.cursor();
     let fetch_width = fetch_width(cursor, start_row, start_col, content_height, content_width);
@@ -43,7 +45,8 @@ pub(super) fn compose_buffer(
         content_height,
         content_width,
         line_gutter,
-        change_gutter,
+        external_gutter,
+        llm_gutter,
         options,
     )?;
     super::write_bottom_rows(out, viewport, message, options)?;
@@ -51,20 +54,34 @@ pub(super) fn compose_buffer(
     super::write_terminal_cursor(out, position, options.cursor_shape)
 }
 
-fn gutter_width(buffer: &dyn Buffer, options: RenderOptions<'_>, width: usize) -> (usize, usize) {
+fn gutter_width(
+    buffer: &dyn Buffer,
+    options: RenderOptions<'_>,
+    width: usize,
+) -> (usize, usize, usize) {
     let line_gutter = if options.line_numbers {
         line_number_gutter(buffer.line_count())
     } else {
         0
     }
     .min(width);
-    let change_gutter = change_gutter_width(
+    let external_gutter = change_gutter_width(
+        options
+            .external_changes
+            .is_some_and(|changes| !changes.markers.is_empty()),
+    )
+    .min(width.saturating_sub(line_gutter));
+    let llm_gutter = change_gutter_width(
         options
             .llm_changes
             .is_some_and(|changes| !changes.gutter_lines.is_empty()),
     )
-    .min(width.saturating_sub(line_gutter));
-    (line_gutter, change_gutter)
+    .min(
+        width
+            .saturating_sub(line_gutter)
+            .saturating_sub(external_gutter),
+    );
+    (line_gutter, external_gutter, llm_gutter)
 }
 
 fn fetch_width(
@@ -95,12 +112,21 @@ fn write_rows(
     height: usize,
     width: usize,
     line_gutter: usize,
-    change_gutter: usize,
+    external_gutter: usize,
+    llm_gutter: usize,
     options: RenderOptions<'_>,
 ) -> io::Result<()> {
     for screen_row in 1..=height {
         style::write_row_start(out, screen_row, options.theme.text, options.theme.truecolor)?;
-        if change_gutter > 0 {
+        if external_gutter > 0 {
+            write_external_change_gutter(
+                out,
+                start_row + screen_row - 1,
+                options.external_changes,
+                options.theme,
+            )?;
+        }
+        if llm_gutter > 0 {
             write_change_gutter(
                 out,
                 start_row + screen_row - 1,

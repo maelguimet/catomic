@@ -3,9 +3,9 @@
 //! Must not: interpret editor selections, terminal key events, or shell syntax.
 //! Invariants: clipboard text is written only through a child's stdin; failed helpers are reaped and fall through.
 
-use std::env;
 #[cfg(test)]
 use std::cell::Cell;
+use std::env;
 use std::ffi::OsStr;
 use std::io::{self, Write};
 use std::process::{Child, Command, Stdio};

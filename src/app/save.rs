@@ -335,6 +335,7 @@ fn do_atomic_save_to(app: &mut super::App, out: &mut dyn Write, target: PathBuf)
             col: app.buffer.line_char_count(row).unwrap_or(0),
         };
         if end.col > 0 && app.buffer.replace_range(end, end, "\n")? {
+            super::file_state::note_content_change(&mut app.file);
             super::file_state::refresh_dirty(&mut app.file, &*app.buffer);
         }
         Ok(())

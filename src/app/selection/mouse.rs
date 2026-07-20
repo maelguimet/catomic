@@ -87,6 +87,7 @@ fn handle_status_mouse(
         MouseEventKind::Up(MouseButton::Left) if app.selection.is_status_dragging() => {
             app.selection
                 .update_status_drag(event.column as usize, true);
+            let _ = super::capture_selection(app, out)?;
             app.render(out)?;
             Ok(true)
         }
@@ -172,17 +173,19 @@ fn dispatch_action(
     else {
         return Ok(());
     };
-    match action {
+    let should_copy_on_select = match action {
         Action::MousePlaceCursor => {
             app.buffer.set_cursor(cursor);
             app.selection.clear();
             app.selection.drag_anchor = Some(cursor);
             app.selection.last_click = Some((cursor, now));
+            false
         }
         Action::MouseSelectWord => {
             select_word(app, cursor);
             app.selection.last_click = None;
             app.selection.drag_anchor = None;
+            true
         }
         Action::MouseExtendSelection => {
             let Some(anchor) = app.selection.drag_anchor else {
@@ -190,6 +193,7 @@ fn dispatch_action(
             };
             app.buffer.set_cursor(cursor);
             app.selection.range = Some(Selection::new(anchor, app.buffer.cursor()));
+            false
         }
         Action::MouseFinishSelection => {
             let Some(anchor) = app.selection.drag_anchor.take() else {
@@ -198,8 +202,12 @@ fn dispatch_action(
             app.buffer.set_cursor(cursor);
             let selection = Selection::new(anchor, app.buffer.cursor());
             app.selection.range = (!selection.is_empty()).then_some(selection);
+            !selection.is_empty()
         }
         _ => unreachable!("mouse maps contain only mouse actions"),
+    };
+    if should_copy_on_select {
+        let _ = super::capture_selection(app, out)?;
     }
     app.reveal_cursor();
     app.render(out)

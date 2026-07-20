@@ -113,6 +113,7 @@ troubleshooting, see the [complete user guide](docs/user-guide.md).
 | Select model/backend for this session | `F10` |
 | Previous / next large-file page | `Ctrl+PageUp` / `Ctrl+PageDown` |
 | Quit | `Ctrl+Q` |
+| Immediate interrupt | `Ctrl+Shift+C` |
 
 Catomic keeps `Ctrl+Shift+Z` as a default GUI-style redo alias. If a terminal
 reports that chord without the Shift modifier, it is indistinguishable from
@@ -122,6 +123,9 @@ remappable through `[keybindings]`.
 Terminal emulators and multiplexers can intercept or rewrite some key chords.
 Bracketed paste is inserted as one undoable edit; Catomic also has an internal
 clipboard and sends copied text through OSC 52 when the terminal supports it.
+Completed mouse selections use the same clipboard path. In Ghostty, `Shift`
+keeps the terminal's native selection and copy-on-select bypass available while
+Catomic owns unmodified clicks and drags.
 The mouse wheel scrolls the viewport without moving the editing cursor or
 selection; the next keyboard or editing action reveals the logical cursor.
 

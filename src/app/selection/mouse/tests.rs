@@ -105,6 +105,8 @@ fn left_drag_creates_a_multiline_half_open_selection() {
         (Cursor { row: 0, col: 1 }, Cursor { row: 1, col: 3 })
     );
     assert_eq!(app.buffer.cursor(), Cursor { row: 1, col: 3 });
+    assert_eq!(app.clipboard, "ero\nmid");
+    assert!(String::from_utf8_lossy(&out).contains("\x1b]52;c;ZXJvCm1pZA==\x1b\\"));
 }
 
 #[test]
@@ -143,7 +145,7 @@ fn status_row_mouse_down_starts_chrome_selection_without_moving_cursor() {
 }
 
 #[test]
-fn status_path_drag_is_copied_only_when_ctrl_c_is_pressed() {
+fn status_path_drag_copies_on_select_and_ctrl_c_uses_the_same_path() {
     let mut app = app_with("zero");
     app.file.path = Some("/work/cats/notes.txt".into());
     let mut out = Vec::new();
@@ -172,9 +174,10 @@ fn status_path_drag_is_copied_only_when_ctrl_c_is_pressed() {
         app.selection.status_range(&status.text),
         Some((8, status.text.len()))
     );
-    assert_eq!(app.clipboard, "");
-    assert!(!String::from_utf8_lossy(&out).contains("\x1b]52;"));
+    assert_eq!(app.clipboard, "/work/cats/notes.txt");
+    assert!(String::from_utf8_lossy(&out).contains("\x1b]52;c;L3dvcmsvY2F0cy9ub3Rlcy50eHQ=\x1b\\"));
 
+    out.clear();
     app.handle_key_with(
         &mut out,
         KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),

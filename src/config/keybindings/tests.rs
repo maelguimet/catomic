@@ -26,6 +26,32 @@ fn word_selection_defaults_include_terminal_safe_fallbacks() {
 }
 
 #[test]
+fn copy_and_interrupt_are_distinct_and_interrupt_is_remappable() {
+    let defaults = KeyBindings::default();
+    let ctrl_c = key(KeyCode::Char('c'), KeyModifiers::CONTROL);
+    let ctrl_shift_c = key(
+        KeyCode::Char('c'),
+        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+    );
+
+    assert_eq!(defaults.translate(Scope::Editor, ctrl_c), Some(ctrl_c));
+    assert_eq!(
+        defaults.translate(Scope::Editor, ctrl_shift_c),
+        Some(ctrl_shift_c)
+    );
+
+    let remapped = parse("[keybindings]\ninterrupt = [\"alt+i\"]\n").unwrap();
+    assert!(remapped.translate(Scope::Editor, ctrl_shift_c).is_none());
+    assert_eq!(
+        remapped.translate(Scope::Editor, key(KeyCode::Char('i'), KeyModifiers::ALT)),
+        Some(ctrl_shift_c)
+    );
+
+    let unbound = parse("[keybindings]\ninterrupt = []\n").unwrap();
+    assert!(unbound.translate(Scope::Editor, ctrl_shift_c).is_none());
+}
+
+#[test]
 fn action_overrides_replace_all_defaults_and_empty_arrays_unbind() {
     let bindings = parse(
         "[keybindings]\nsave = [\"alt+s\"]\nhelp = []\ncommand-prompt = [\"alt+p\", \"f4\"]\n",
@@ -225,7 +251,7 @@ fn wheel_gestures_can_be_swapped_or_unbound_without_crossing_button_types() {
 #[test]
 fn registry_defaults_are_complete_and_collision_free() {
     let bindings = KeyBindings::default();
-    assert_eq!(actions::REGISTRY.len(), 86);
+    assert_eq!(actions::REGISTRY.len(), 87);
     for descriptor in actions::REGISTRY {
         assert!(!descriptor.name.is_empty());
         assert!(!descriptor.scopes.is_empty());

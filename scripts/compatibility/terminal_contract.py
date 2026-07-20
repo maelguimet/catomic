@@ -13,9 +13,9 @@ TERMINAL_EXPECTATIONS = {
     "fallback-function-keys": "F1 opens help and F2 opens the command prompt without editing.",
     "mouse-mapping": "An SGR click maps to the expected document row and column.",
     "bracketed-paste": "A bracketed UTF-8 paste is one undoable and redoable edit.",
-    "osc52": "Copy emits a bounded OSC 52 clipboard sequence.",
+    "osc52": "A real terminal clipboard read returns the exact bounded OSC 52 copy.",
     "resize": "Smaller and larger dimensions trigger renders without file changes or failure.",
-    "signals": "SIGTERM exits through the signal path and restores terminal modes.",
+    "signals": "SIGINT exits through the signal path and restores terminal modes.",
     "terminal-restoration": "Clean exit disables mouse/paste modes and leaves the alternate screen.",
 }
 TERMINAL_SCENARIOS = tuple(TERMINAL_EXPECTATIONS)

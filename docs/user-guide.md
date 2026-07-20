@@ -260,7 +260,8 @@ Most prompts and read-only result views follow the same small interaction model:
 - `Enter` accepts, opens, applies, or advances the current operation;
 - `Escape` cancels or closes it;
 - arrow keys and page keys navigate read-only content; and
-- `Ctrl+Q` still reaches the normal quit guard.
+- `Ctrl+Q` still reaches the normal quit guard; and
+- `Ctrl+Shift+C` immediately interrupts through the SIGINT teardown path.
 
 ## Editing and navigation
 
@@ -358,6 +359,20 @@ and `Ctrl+C` copies it through the same clipboard path as a document selection.
 Prompts and read-only views ignore document clicks; close the active surface
 before positioning the editable source cursor.
 
+Completing a Catomic drag, double-click word selection, or persistent-path drag
+immediately updates the process-local clipboard and emits the same bounded OSC
+52 system-clipboard write as `Ctrl+C`. A click without a selection does not
+change either clipboard. This preserves click-to-position and editor selection
+while providing copy-on-select even though Catomic receives unmodified mouse
+events.
+
+Ghostty's default `Shift` mouse bypass remains available for native terminal
+selection and Ghostty copy-on-select. Catomic does not override that bypass:
+hold `Shift` while selecting when terminal scrollback or text outside Catomic's
+document mapping is the intended source. A Ghostty configuration that forces
+`mouse-shift-capture = always` deliberately sends those events to Catomic and
+therefore disables the native bypass.
+
 The mouse wheel scrolls three visible rows per normalized wheel event without
 moving the document cursor or selection. With soft wrap enabled those are
 wrapped visual rows; otherwise they are logical lines. Horizontal scroll is
@@ -377,8 +392,10 @@ cursor and selection. The status and action rows never map into document text.
 
 `Ctrl+C`, `Ctrl+X`, and `Ctrl+V` use Catomic's process-local clipboard. The
 clipboard is shared by all buffers in the current session. Copying also sends
-the text through OSC 52 when the terminal supports it, so the terminal or host
-clipboard may receive the same value.
+the text through bounded, ST-terminated OSC 52 when the terminal supports it,
+so the terminal or host clipboard receives the same value. Completed desktop
+mouse selections use this path automatically; `Ctrl+C` remains the explicit
+copy action and never interrupts Catomic.
 
 `Ctrl+K` cuts the current logical line, including its terminating line break
 when present. Consecutive presses append complete lines to one clipboard payload
@@ -490,6 +507,9 @@ session-global preference shared by every buffer.
 
 `Ctrl+S` saves only the active buffer. `Ctrl+Q` checks every open buffer; if any
 are dirty, the first press warns and the second press quits without saving.
+`Ctrl+Shift+C` is deliberately different: it is the configurable `interrupt`
+action, exits immediately with SIGINT status, and does not ask about unsaved
+changes. Catomic still restores its terminal modes before exiting.
 
 A dirty buffer refuses an ordinary close. Save it first, or use the explicit
 `close!` command when discarding the changes is intentional.
@@ -1491,6 +1511,7 @@ checked against the same registry in tests:
 ```text
 help | global | ctrl+h, f1
 quit | global | ctrl+q
+interrupt | global | ctrl+shift+c
 save | editor | ctrl+s
 save-as | editor | ctrl+shift+s
 open | editor | ctrl+o
@@ -1585,6 +1606,7 @@ mouse-scroll-down | editor,preview,picker,help | mouse-wheel-down
 | --- | --- | --- |
 | App | Help | `Ctrl+H` or `F1` |
 | App | Quit; press twice to discard dirty buffers | `Ctrl+Q` |
+| App | Interrupt immediately through SIGINT teardown | `Ctrl+Shift+C` |
 | Files | Save | `Ctrl+S` |
 | Files | Save As | `Ctrl+Shift+S` |
 | Files | Open | `Ctrl+O` |
@@ -1792,9 +1814,10 @@ complete preference file in place when atomic replacement fails.
 
 Catomic's internal `Ctrl+C`/`Ctrl+X`/`Ctrl+V` clipboard should still work within
 the session. System clipboard export requires OSC 52 support, and external paste
-depends on the terminal delivering bracketed paste. Some terminals reserve
-`Ctrl+Shift+C` and `Ctrl+Shift+V`; those are terminal shortcuts, not Catomic's
-internal clipboard bindings.
+depends on the terminal delivering bracketed paste. `Ctrl+Shift+C` is Catomic's
+default configurable `interrupt` action, not its copy key. If the terminal
+reserves that chord, Catomic cannot observe it; change either terminal or
+Catomic keybindings when an in-editor interrupt chord is required.
 
 ### Mouse clicks do not reach Catomic
 
@@ -1815,11 +1838,14 @@ and [tmux FAQ](https://github.com/tmux/tmux/wiki/FAQ#how-do-i-use-the-mouse) for
 the current forwarding and terminal-bypass behavior.
 
 Many terminals reserve a modifier such as `Shift` for selecting terminal
-scrollback even when an application requested mouse input. Do not hold that
-bypass modifier when testing Catomic. Check terminal mouse-reporting settings,
-then include whether click, drag, double-click, and wheel events work in a bug
-report along with the Catomic version and terminal dimensions; Catomic cannot
-recover coordinates that never reach its PTY.
+scrollback even when an application requested mouse input. In Ghostty this is
+the documented native-selection coexistence path: unmodified mouse events reach
+Catomic, while `Shift` selection stays in Ghostty and uses its copy-on-select
+setting. Do not hold that bypass modifier when testing Catomic cursor mapping;
+do hold it when testing Ghostty-native selection. Check terminal mouse-reporting
+settings, then include whether click, drag, double-click, wheel, and bypassed
+selection work in a bug report along with the Catomic version and terminal
+dimensions; Catomic cannot recover coordinates that never reach its PTY.
 
 ### Save is refused after another program edited the file
 

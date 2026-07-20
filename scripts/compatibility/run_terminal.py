@@ -140,6 +140,9 @@ def run_manual(args: argparse.Namespace, sandbox: Path, candidate: Path):
             env=environment,
             check=False,
         )
+        clipboard_probe = _run_clipboard_probe(
+            tty_input, tty_output, sandbox, candidate
+        )
         stty_after = _stty_state(tty_input)
         after = sha256_file(fixture)
         visual_restore = _ask_yes_no(
@@ -156,6 +159,37 @@ def run_manual(args: argparse.Namespace, sandbox: Path, candidate: Path):
         records = []
         for identifier in TERMINAL_SCENARIOS:
             expected = _manual_expected(identifier)
+            if identifier == "osc52":
+                matched = (
+                    clipboard_probe["pasted"] == clipboard_probe["expected"]
+                    and clipboard_probe["exit_status"] == 0
+                    and clipboard_probe["before_sha256"]
+                    == clipboard_probe["after_sha256"]
+                )
+                issue = None
+                notes = ""
+                if not matched:
+                    tty_output.write(
+                        "Exact clipboard bytes did not match. Focused GitHub issue URL: "
+                    )
+                    issue = tty_input.readline().strip()
+                    notes = "Real terminal clipboard paste differed from the exact probe token."
+                records.append(
+                    scenario(
+                        identifier,
+                        expected,
+                        "pass" if matched else "fail",
+                        exit_status=clipboard_probe["exit_status"],
+                        before_sha256=clipboard_probe["before_sha256"],
+                        after_sha256=clipboard_probe["after_sha256"],
+                        evidence=[
+                            "exact bytes pasted back from the named terminal's system clipboard"
+                        ],
+                        focused_issue=issue,
+                        notes=notes,
+                    )
+                )
+                continue
             status, issue, notes = _ask_status(
                 tty_input, tty_output, identifier, expected
             )
@@ -204,10 +238,41 @@ def _print_manual_instructions(tty) -> None:
         "\nCatomic manual terminal checklist\n"
         "Use only the generated non-sensitive fixture. Exercise open/edit/save/quit; type\n"
         "uppercase and shifted punctuation plus ÅΩ中🙂; use F1 and F2; click and type at\n"
-        "a known position; paste with the terminal; copy and verify the host clipboard;\n"
+        "a known position; paste with the terminal; confirm an unmodified Catomic drag\n"
+        "copies on selection; and confirm Shift-drag uses native terminal selection.\n"
         "resize narrower and wider; and verify clean/signal restoration. Record unsupported\n"
         "when this path cannot expose a capability. Do not mark inferred behavior as pass.\n\n"
     )
+
+
+def _run_clipboard_probe(tty_input, tty_output, sandbox: Path, candidate: Path):
+    expected = "CATOMIC_CLIPBOARD_PROBE"
+    fixture = sandbox / "manual-clipboard-probe.txt"
+    fixture.write_text(expected, encoding="utf-8")
+    before = sha256_file(fixture)
+    tty_output.write(
+        "\nExact Ctrl+C clipboard probe\n"
+        "Press Enter, then in Catomic press Ctrl+A, Ctrl+C, and Ctrl+Q.\n"
+        "Do not use the terminal's separate copy shortcut. "
+    )
+    tty_input.readline()
+    environment = isolated_environment(
+        sandbox / "manual-clipboard-env", os.environ.get("TERM", "unknown")
+    )
+    completed = subprocess.run(
+        [str(candidate), str(fixture)], env=environment, check=False
+    )
+    tty_output.write(
+        "Paste once from the system clipboard, then press Enter: "
+    )
+    pasted = tty_input.readline().removesuffix("\n").removesuffix("\r")
+    return {
+        "expected": expected,
+        "pasted": pasted,
+        "exit_status": completed.returncode,
+        "before_sha256": before,
+        "after_sha256": sha256_file(fixture),
+    }
 
 
 def _stty_state(tty) -> str:
@@ -252,7 +317,7 @@ def _manual_expected(identifier: str) -> str:
         "input-delivery": "Text, navigation, and control shortcuts reach Catomic correctly.",
         "shifted-text": "Uppercase, shifted punctuation, and Unicode are delivered exactly.",
         "fallback-function-keys": "F1 opens help and F2 opens the command prompt.",
-        "mouse-mapping": "A click places the cursor at the intended document character.",
+        "mouse-mapping": "A click maps correctly, unmodified selection copies on select, and Shift selection remains terminal-native.",
         "bracketed-paste": "Terminal paste arrives once as one undoable edit.",
         "osc52": "Copy reaches the host clipboard through OSC 52 without terminal corruption.",
         "resize": "Narrower and wider resizes redraw correctly and preserve cursor/content.",

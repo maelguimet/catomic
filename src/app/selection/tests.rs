@@ -280,3 +280,65 @@ fn base64_handles_partial_chunks() {
     assert_eq!(base64(b"ab"), "YWI=");
     assert_eq!(base64(b"abc"), "YWJj");
 }
+
+#[test]
+fn unicode_copy_uses_st_terminated_osc52_and_internal_clipboard() {
+    let mut app = app_with("猫🙂");
+    let mut out = Vec::new();
+
+    send(&mut app, &mut out, KeyCode::Right, KeyModifiers::SHIFT);
+    send(&mut app, &mut out, KeyCode::Right, KeyModifiers::SHIFT);
+    out.clear();
+    send(
+        &mut app,
+        &mut out,
+        KeyCode::Char('c'),
+        KeyModifiers::CONTROL,
+    );
+
+    assert_eq!(app.clipboard, "猫🙂");
+    assert!(String::from_utf8(out)
+        .unwrap()
+        .contains("\x1b]52;c;54yr8J+Zgg==\x1b\\"));
+}
+
+#[test]
+fn empty_selection_does_not_replace_or_export_the_clipboard() {
+    let mut app = app_with("abc");
+    app.clipboard = "keep".to_string();
+    let mut out = Vec::new();
+
+    send(
+        &mut app,
+        &mut out,
+        KeyCode::Char('c'),
+        KeyModifiers::CONTROL,
+    );
+
+    assert_eq!(app.clipboard, "keep");
+    assert!(!String::from_utf8_lossy(&out).contains("\x1b]52;"));
+}
+
+#[test]
+fn oversized_selection_remains_internal_without_osc52() {
+    let text = "a".repeat(OSC52_MAX_BYTES + 1);
+    let mut app = app_with(&text);
+    let mut out = Vec::new();
+
+    send(
+        &mut app,
+        &mut out,
+        KeyCode::Char('a'),
+        KeyModifiers::CONTROL,
+    );
+    out.clear();
+    send(
+        &mut app,
+        &mut out,
+        KeyCode::Char('c'),
+        KeyModifiers::CONTROL,
+    );
+
+    assert_eq!(app.clipboard, text);
+    assert!(!String::from_utf8_lossy(&out).contains("\x1b]52;"));
+}

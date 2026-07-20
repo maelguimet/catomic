@@ -164,7 +164,7 @@ pub(crate) fn handle_shortcut(
     let KeyCode::Char(ch) = key.code else {
         return Ok(false);
     };
-    if !key.modifiers.contains(KeyModifiers::CONTROL) {
+    if key.modifiers != KeyModifiers::CONTROL {
         return Ok(false);
     }
     match ch.to_ascii_lowercase() {

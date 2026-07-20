@@ -83,6 +83,10 @@ pub(crate) fn handle_key_with(
     let Some(key) = app.keybindings.translate(scope, key) else {
         return Ok(());
     };
+    if shortcuts::is_interrupt_key(key) {
+        crate::terminal::request_interrupt();
+        return Ok(());
+    }
     if scope != crate::config::actions::Scope::Editor || !selection::is_cut_line_key(key) {
         selection::end_cut_line_chain(app);
     }

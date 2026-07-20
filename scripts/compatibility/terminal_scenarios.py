@@ -114,8 +114,16 @@ def _core_session(launcher: TerminalLauncher, root: Path) -> list[dict[str, obje
             "terminal-restoration",
         )
     ]
-    if b"\x1b]52;c;" in output:
-        records.append(scenario("osc52", terminal_expected("osc52"), "pass", **common))
+    if b"\x1b]52;c;" in output and b"\x1b\\" in output:
+        records.append(
+            scenario(
+                "osc52",
+                terminal_expected("osc52"),
+                "unsupported",
+                **common,
+                notes="PTY output verifies OSC 52 framing only; it cannot attest a real host clipboard read.",
+            )
+        )
     elif launcher.path_id == "tmux":
         records.append(
             scenario(
@@ -264,7 +272,7 @@ def _signal_session(launcher: TerminalLauncher, root: Path) -> list[dict[str, ob
         target = (
             child.pid if launcher.path_id == "direct-pty" else launcher.signal_target()
         )
-        os.kill(target, signal.SIGTERM)
+        os.kill(target, signal.SIGINT)
         exit_status = child.finish()
         output = bytes(child.output)
     finally:
@@ -272,10 +280,10 @@ def _signal_session(launcher: TerminalLauncher, root: Path) -> list[dict[str, ob
         launcher.cleanup()
     after = sha256_file(fixture)
     restore = restoration_evidence(output)
-    if launcher.path_id == "direct-pty" and exit_status != 143:
-        raise PtyError(f"direct SIGTERM exit was {exit_status}, expected 143")
+    if launcher.path_id == "direct-pty" and exit_status != 130:
+        raise PtyError(f"direct SIGINT exit was {exit_status}, expected 130")
     if before != after or not restore["restored"]:
-        raise PtyError("SIGTERM changed the fixture or omitted teardown sequences")
+        raise PtyError("SIGINT changed the fixture or omitted teardown sequences")
     return [
         scenario(
             "signals",
@@ -284,7 +292,7 @@ def _signal_session(launcher: TerminalLauncher, root: Path) -> list[dict[str, ob
             exit_status=exit_status,
             before_sha256=before,
             after_sha256=after,
-            evidence=[f"SIGTERM delivered to Catomic pid {target}"],
+            evidence=[f"SIGINT delivered to Catomic pid {target}"],
             restoration=restore,
         )
     ]

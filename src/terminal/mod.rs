@@ -12,7 +12,9 @@ mod signal;
 mod title;
 
 pub(crate) use session::TerminalGuard;
-pub(crate) use signal::{install_process_handlers, take_resize_pending, termination_signal};
+pub(crate) use signal::{
+    install_process_handlers, request_interrupt, take_resize_pending, termination_signal,
+};
 
 use std::io::{self, Write};
 use std::sync::{Arc, Mutex};

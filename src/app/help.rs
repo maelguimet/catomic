@@ -153,8 +153,6 @@ fn close_with_message(app: &mut super::App, out: &mut dyn Write) -> io::Result<(
 fn close_transients(app: &mut super::App) {
     super::autocomplete::invalidate(app);
     super::view::cancel_preview(app);
-    super::lint::close_view(app);
-    super::project_files::close_view(app);
     super::model_picker::close(app);
     super::llm_preview::close(app);
     super::llm_answer::close(app);
@@ -272,7 +270,7 @@ fn help_markdown(bindings: &KeyBindings) -> String {
     push_external_change_help(&mut markdown);
     push_model_help(&mut markdown, bindings);
     markdown.push_str(
-        "Configuration, model setup, Project commands, mobile controls, and troubleshooting live in the [user guide](https://github.com/maelguimet/catomic/blob/master/docs/user-guide.md).\n",
+        "Configuration, model setup, mobile controls, and troubleshooting live in the [user guide](https://github.com/maelguimet/catomic/blob/master/docs/user-guide.md).\n",
     );
     markdown
 }
@@ -305,6 +303,7 @@ fn push_edit_actions(markdown: &mut String, bindings: &KeyBindings) {
 
 fn push_command_actions(markdown: &mut String, bindings: &KeyBindings) {
     push_action(markdown, bindings, Action::CommandPrompt, "Command palette");
+    push_action(markdown, bindings, Action::Lint, "Lint active file");
     push_action(
         markdown,
         bindings,

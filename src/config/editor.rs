@@ -1,6 +1,6 @@
 //! Purpose: decode global editor defaults and extension-specific language settings.
 //! Owns: tab width resolution and validated per-language linter commands.
-//! Must not: inspect buffers, run commands, construct Project services, or write config.
+//! Must not: inspect buffers, run commands, construct services, or write config.
 //! Invariants: tab sizes are 1..=16; extensions are normalized; linters contain `{file}`.
 
 use std::collections::BTreeMap;

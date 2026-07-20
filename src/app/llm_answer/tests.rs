@@ -1,5 +1,5 @@
 //! Purpose: this file must prove explanations remain read-only and transient.
-//! Owns: answer rendering, non-apply keys, Escape restoration, and Plain startup state.
+//! Owns: answer rendering, non-apply keys, Escape restoration, and startup state.
 //! Must not: construct a client, contact an endpoint, or mutate files.
 //! Invariants: answer interaction never changes source text or edit history.
 
@@ -37,7 +37,7 @@ fn explanation_is_read_only_and_escape_restores_source_viewport() {
 }
 
 #[test]
-fn plain_start_constructs_no_answer_view() {
+fn startup_constructs_no_answer_view() {
     let app = super::super::App::new(None).unwrap();
     assert!(app.surfaces.llm_answer.is_none());
 }

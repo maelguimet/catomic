@@ -1,6 +1,6 @@
-//! Purpose: collect Plain-safe startup settings used to construct editor buffers.
+//! Purpose: collect inert startup settings used to construct editor buffers.
 //! Owns: typed config loading, constructor grouping, and same-session cloning.
-//! Must not: open buffers, render UI, construct Project/LLM services, or write files.
+//! Must not: open buffers, render UI, construct linter/LLM services, or write files.
 //! Invariants: every buffer in one session receives the same startup defaults.
 
 use std::io;

@@ -22,8 +22,6 @@ pub(crate) fn show(app: &mut super::App, out: &mut dyn Write, answer: &str) -> i
         return app.render(out);
     }
     super::view::cancel_preview(app);
-    super::lint::close_view(app);
-    super::project_files::close_view(app);
     super::llm_preview::close(app);
     close(app);
     app.surfaces.llm_answer = Some(AnswerView {

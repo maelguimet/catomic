@@ -42,8 +42,8 @@ dependencies. Every new dependency needs the justification required by
 2. Keep each commit to one coherent change; avoid drive-by formatting.
 3. Add regression tests for behavior changes. Core buffer, coordinate, and
    undo/redo work should be developed test-first.
-4. Preserve Plain mode's boundary: no implicit repository scans, subprocesses,
-   network clients, or Project services.
+4. Preserve the startup boundary: no implicit repository scans, subprocesses,
+   network clients, or persistent workspace services.
 5. Never run tests against a live model or public endpoint.
 6. Update user-facing documentation when commands, configuration, safety
    behavior, or limitations change.

@@ -121,8 +121,6 @@ Normal status remained distinct from document text.
 Prompt, warning/confirmation, and error states were visibly distinct.
 Status and prompts remained understandable at narrow and normal widths.
 Markdown source and F6 preview were reviewed at both widths.
-Judged the Plain editing loop solid before entering Project mode.
-Exercised Project discovery and returned to Plain mode cleanly.
 Opened current-file and repository model confirmations, then pressed Escape.
 Confirmed no model request or live endpoint was used.
 EOF
@@ -202,9 +200,9 @@ verify_record() {
     "## Candidate and environment" \
     "## Child issue dispositions" \
     "## Cold-use discoverability" \
-    "## Sustained plain editing" \
+    "## Sustained editing" \
     "## Visual states and widths" \
-    "## Project and model safety" \
+    "## Model safety" \
     "## Defects" \
     "## Remaining limitations" \
     "## Result"; do
@@ -348,7 +346,7 @@ EOF
 - [ ] Used only built-in help for open → edit → undo/redo → find → save → close.
 - [ ] Common actions were understandable without repository documentation.
 
-## Sustained plain editing
+## Sustained editing
 
 - [ ] Created, opened, saved, Save-As'd, and closed real text and code files.
 - [ ] Exercised undo/redo, selection, search/replace, clipboard, and wrapping.
@@ -363,10 +361,8 @@ EOF
 - [ ] Status and prompts remained understandable at narrow and normal widths.
 - [ ] Markdown source and F6 preview were reviewed at both widths.
 
-## Project and model safety
+## Model safety
 
-- [ ] Judged the Plain editing loop solid before entering Project mode.
-- [ ] Exercised Project discovery and returned to Plain mode cleanly.
 - [ ] Opened current-file and repository model confirmations, then pressed Escape.
 - [ ] Confirmed no model request or live endpoint was used.
 
@@ -444,7 +440,7 @@ run_session() {
   [[ "$dimensions" =~ ^[1-9][0-9]*\ [1-9][0-9]*$ ]] || die "terminal dimensions are unavailable"
 
   echo "Release $release_version ($source_sha) is preserved in $session_dir/release."
-  echo "Use built-in help only for common actions. Exercise Plain editing before Project/model confirmations."
+  echo "Use built-in help only for common actions. Exercise ordinary editing before model confirmations."
   echo "Run $session_dir/workspace/external-change.sh from another terminal for the external-change scenario."
   echo "Cancel every model confirmation with Escape; do not send a request."
 

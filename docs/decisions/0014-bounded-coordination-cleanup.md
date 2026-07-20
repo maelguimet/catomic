@@ -69,8 +69,8 @@ The same inventory reviewed the other reported files and stopped here:
   discovery, viewport mutation, and redraw; a real PTY resize test proves both
   shrink and growth redraw at the new status row.
 - The cleanup adds no dependency and no startup worker, scan, process, or network
-  construction. Plain startup tests keep Project state, read-only surfaces, and
+  construction. Startup tests keep repository state, read-only surfaces, and
   explicit LLM tasks absent.
 
-This is the stop point. Buffer storage, file transaction policy, Project, and
+This is the stop point. Buffer storage, file transaction policy, repository, and
 LLM implementation remain outside this cleanup.

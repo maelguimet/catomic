@@ -374,6 +374,24 @@ fn llm_changed_ranges_are_red_underlined_and_grapheme_safe() {
 }
 
 #[test]
+fn lint_ranges_use_the_distinct_underlined_role() {
+    let ranges = [TextHighlight {
+        start: Cursor { row: 0, col: 1 },
+        end: Cursor { row: 0, col: 2 },
+    }];
+    let output = rendered(
+        "cat",
+        0,
+        RenderOptions {
+            lint_ranges: Some(&ranges),
+            ..RenderOptions::default()
+        },
+    );
+
+    assert_eq!(output, "c\x1b[31;4ma\x1b[0mt");
+}
+
+#[test]
 fn llm_changed_ranges_have_a_non_color_fallback() {
     let ranges = [TextHighlight {
         start: Cursor { row: 0, col: 1 },

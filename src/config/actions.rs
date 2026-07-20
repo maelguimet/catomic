@@ -48,6 +48,7 @@ pub(crate) enum Action {
     New,
     Close,
     Reload,
+    Lint,
     Search,
     Replace,
     GotoLine,

@@ -76,8 +76,6 @@ fn open(
     super::super::view::cancel_preview(app);
     super::super::llm_preview::close(app);
     super::super::llm_answer::close(app);
-    super::super::lint::close_view(app);
-    super::super::project_files::close_view(app);
     app.recovery.preview = Some(RecoveryPreview {
         buffer: PieceTable::from_text(candidate.text()),
         candidate,

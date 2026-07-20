@@ -125,8 +125,6 @@ pub(crate) fn show_with_region_fallback(
 
 fn open(app: &mut super::App, out: &mut dyn Write, draft: PreviewDraft<'_>) -> io::Result<()> {
     super::view::cancel_preview(app);
-    super::lint::close_view(app);
-    super::project_files::close_view(app);
     close(app);
     app.surfaces.llm_preview = Some(PatchPreview {
         proposal: draft.proposal,

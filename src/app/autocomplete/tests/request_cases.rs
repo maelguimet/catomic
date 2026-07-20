@@ -55,7 +55,7 @@ fn malformed_result_enters_bounded_retry_backoff() {
 }
 
 #[test]
-fn identity_pins_revision_mode_generation_endpoint_and_model() {
+fn identity_pins_revision_generation_endpoint_and_model() {
     let app = enabled_app("prefix", Cursor { row: 0, col: 6 });
     let policy = app.autocomplete.confirmed.as_ref().unwrap().clone();
     let identity = request::current_identity(&app, &policy);
@@ -64,10 +64,6 @@ fn identity_pins_revision_mode_generation_endpoint_and_model() {
     let mut revision_drift = enabled_app("prefix", Cursor { row: 0, col: 6 });
     revision_drift.buffer.insert_char('!');
     assert!(!request::identity_is_current(&revision_drift, &identity));
-
-    let mut mode_drift = enabled_app("prefix", Cursor { row: 0, col: 6 });
-    mode_drift.mode = crate::mode::Mode::Project;
-    assert!(!request::identity_is_current(&mode_drift, &identity));
 
     let mut generation_drift = enabled_app("prefix", Cursor { row: 0, col: 6 });
     generation_drift.autocomplete.generation += 1;

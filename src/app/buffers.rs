@@ -16,7 +16,7 @@ use crate::file::watcher::FileWatcher;
 
 use super::{
     command_prompt, completion, external_command, hooks, inline_clanker, lint, llm_answer,
-    llm_preview, llm_request, model_picker, project_files, recovery, reload, repo_llm, save,
+    llm_preview, llm_request, model_picker, recovery, reload, repo_llm, save,
     search, selection, view, App, FileState, StartupConfig,
 };
 
@@ -160,8 +160,7 @@ impl App {
         if completion::cancel(self) {
             self.message = None;
         }
-        lint::close_view(self);
-        project_files::close_view(self);
+        lint::invalidate(self);
         model_picker::close(self);
         if llm_preview::close(self) {
             self.message = None;
@@ -243,6 +242,7 @@ impl App {
     }
 
     pub(crate) fn replace_active_file_buffer(&mut self, path: &Path) -> io::Result<()> {
+        lint::invalidate(self);
         let path = path.to_str().ok_or_else(|| {
             io::Error::new(io::ErrorKind::InvalidData, "file path is not valid UTF-8")
         })?;

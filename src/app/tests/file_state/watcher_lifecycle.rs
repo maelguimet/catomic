@@ -1,13 +1,13 @@
 //! Focused App FileWatcher lifecycle tests.
 //!
-//! Purpose: verify App owns a gated FileWatcher after new(path) and after
+//! Purpose: verify App owns a best-effort FileWatcher after new(path) and after
 //! successful first-save path creation; failure paths leave None; no signals
 //! are ever received here.
 //! Owns: pure ctor and post-assign lifecycle assertions using temp paths.
 //! Must not: consume try_recv, drive any reload, add live OS event waits,
-//!   mutate behavior of save conflict, use set_current_dir, or touch Project/LLM.
+//!   mutate behavior of save conflict, use set_current_dir, or touch repo/LLM work.
 //! Invariants: watcher presence only; construction non-fatal; uses existing
-//!   Plain caps; tests the helper directly for the "after save assign" case
+//!   tests the helper directly for the "after save assign" case
 //!   to avoid hardcoded "untitled.txt" cwd writes in potentially parallel runs.
 
 use super::super::super::*;
@@ -25,7 +25,7 @@ fn app_new_no_path_has_no_file_watcher() {
 }
 
 #[test]
-fn app_new_with_existing_temp_file_gets_watcher_under_plain_caps() {
+fn app_new_with_existing_temp_file_gets_watcher() {
     let mut tmp = std::env::temp_dir();
     tmp.push(format!("catomic_2z_exist_{}.txt", std::process::id()));
     let p = tmp.to_string_lossy().to_string();
@@ -34,10 +34,10 @@ fn app_new_with_existing_temp_file_gets_watcher_under_plain_caps() {
 
     let app = App::new(Some(&p)).unwrap();
     assert!(app.file.path.is_some());
-    // Parent exists; Plain has file_watch=true; should get a watcher (parent dir).
+    // Parent exists, so the file should get a watcher for its directory.
     assert!(
         app.file_watcher.is_some(),
-        "watcher must be Some for file in existing parent under Plain caps"
+        "watcher must be Some for file in existing parent"
     );
 
     let _ = std::fs::remove_file(&p);

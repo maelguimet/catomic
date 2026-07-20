@@ -1,6 +1,6 @@
 //! Purpose: parse on-demand extension-to-command mappings from `[linters]`.
 //! Owns: linter command validation, extension normalization, and lazy config-file loading.
-//! Must not: run commands, construct Project services, load during Plain startup, or write config.
+//! Must not: run commands, construct services, load during ordinary startup, or write config.
 //! Invariants: every accepted command contains `{file}`; missing config yields an empty mapping.
 
 use std::collections::BTreeMap;

@@ -10,7 +10,7 @@ is in decision 0008 and measurements are retained in `performance.md`.
 
 | Requirement | Current evidence |
 | --- | --- |
-| Capability and construction gates | Plain startup owns no pending request, task, client, repo broker, or answer/preview state. `:meow` builds only a draft; Enter constructs the transient worker. Repo preparation returns immediately unless `repo_llm` and a Project session are present. |
+| Construction gates | Startup owns no pending request, task, client, repo broker, or answer/preview state. `:meow` builds only a draft; Enter constructs the transient worker. Repository preparation is request-local and starts only after an explicit repo-aware command. |
 | Explicit context | Selection plus command instruction, instruction blocks, and current-file context are deterministic. Context fails closed above 64 KiB or 2,000 lines; confirmation names exact lines/bytes, model, endpoint, and sensitivity. |
 | Backend | Lazy `[llm]` configuration accepts a canonical plain HTTP(S) base URL without credentials/query/fragment. API keys, Tokio runtime, and Reqwest client are created/read only after Enter. Response size and timeout are bounded. Redirects are refused and ambient proxy variables are ignored, so context cannot be silently rerouted away from the confirmed endpoint. |
 | Output validation | Unified-diff parsing checks hunk counts, source context, overlap, bounds, and single-file shape. Current-buffer responses must name the exact confirmed path; repo responses must name the exact active repo-relative path. Another-file and rename-shaped patches fail before preview. Selection fallback accepts only one strict JSON string field capped at 64 KiB. Arbitrary prose cannot become an edit. |
@@ -34,7 +34,7 @@ request, and final-apply drift workers are polled without blocking typing.
 
 - `cargo test --all-targets`: 487 passed, 12 intentional manual tests ignored;
   7 PTY smokes passed.
-- `cargo test project::git::tests`: 6 passed, including isolated repository
+- `cargo test llm::repo_context::git::tests`: 6 passed, including isolated repository
   identity overrides, a self-validating malicious helper configuration, and
   isolated cancellation/timeout child-reaping coverage.
 - `cargo test config::llm::tests`: 4 passed, including canonical endpoint
@@ -57,7 +57,7 @@ request, and final-apply drift workers are polled without blocking typing.
   substantive manual checks passed, covering live file notification, 10/100 MiB
   dense and line-heavy files, non-ASCII far-window rendering, sparse 1 GiB
   editing, Extreme paging, Markdown preview, medium-file search, and bounded
-  Project discovery/completion. The then-present twelfth ignored check was an
+  the then-present bounded repository discovery/completion implementation. The twelfth ignored check was an
   empty terminal placeholder and has since been removed; the 7 real binary PTY
   smokes above are the terminal setup/teardown evidence.
 - `cargo clippy --all-targets -- -D warnings`: passed after completed-phase

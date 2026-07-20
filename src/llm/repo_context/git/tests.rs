@@ -109,7 +109,7 @@ fn ignores_ambient_git_repository_overrides() {
     let output = Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
-            "project::git::tests::ignores_ambient_git_repository_overrides",
+            "llm::repo_context::git::tests::ignores_ambient_git_repository_overrides",
             "--nocapture",
         ])
         .env("CATOMIC_GIT_ENV_TEST_CHILD", "1")
@@ -216,7 +216,7 @@ fn bounded_runner_kills_process_groups_after_exit_cancel_and_timeout() {
     let output = Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
-            "project::git::tests::bounded_runner_kills_process_groups_after_exit_cancel_and_timeout",
+            "llm::repo_context::git::tests::bounded_runner_kills_process_groups_after_exit_cancel_and_timeout",
             "--nocapture",
         ])
         .env("CATOMIC_GIT_RUNNER_TEST_CHILD", "1")

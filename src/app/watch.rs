@@ -1,4 +1,4 @@
-//! FileWatcher lifecycle owned by App (gated, best-effort).
+//! FileWatcher lifecycle owned by App (best-effort).
 //!
 //! Purpose: manage construction/refresh/clear of the optional FileWatcher on App
 //! and provide explicit seams for signal handling.
@@ -29,25 +29,18 @@ use std::path::PathBuf;
 use crate::file;
 use crate::file::io::observe_external_file;
 
-/// Best-effort construct or clear the App's file_watcher based on current
-/// caps and file.path. Safe to call any time; never errors to caller.
-/// On !caps or no path: clears to None.
-/// On path present + file_watch: attempts FileWatcher::new; stores Ok(Some)
-/// or falls back to None on any construction error (non-fatal).
+/// Best-effort construct or clear the App's file_watcher based on the current
+/// file path. Safe to call any time; never errors to caller.
 pub(crate) fn refresh_file_watcher(app: &mut super::App) {
-    if !app.caps.file_watch {
-        app.file_watcher = None;
-        return;
-    }
     let Some(ref p) = app.file.path else {
         app.file_watcher = None;
         return;
     };
     // Clone path for the ctor (watcher takes ownership of normalized target).
     let target: PathBuf = p.clone();
-    match file::watcher::FileWatcher::new(target, &app.caps) {
-        Ok(maybe_w) => {
-            app.file_watcher = maybe_w;
+    match file::watcher::FileWatcher::new(target) {
+        Ok(watcher) => {
+            app.file_watcher = Some(watcher);
         }
         Err(_) => {
             // Construction failure must not prevent editing. Store None.

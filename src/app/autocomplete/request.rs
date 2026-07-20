@@ -183,7 +183,6 @@ pub(super) fn current_identity(
     RequestIdentity {
         revision: app.buffer.edit_history_position(),
         cursor: app.buffer.cursor(),
-        mode: app.mode,
         generation: app.autocomplete.generation,
         preset: policy.preset.name.clone(),
         destination: policy.destination.clone(),
@@ -198,7 +197,6 @@ pub(super) fn identity_is_current(app: &super::super::App, identity: &RequestIde
     app.autocomplete.enabled
         && identity.revision == app.buffer.edit_history_position()
         && identity.cursor == app.buffer.cursor()
-        && identity.mode == app.mode
         && identity.generation == app.autocomplete.generation
         && identity.preset == policy.preset.name
         && identity.destination == policy.destination

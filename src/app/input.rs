@@ -12,8 +12,8 @@ use crate::config::actions::{Action, Scope};
 
 use super::file_state::refresh_dirty;
 use super::{
-    autocomplete, buffers, command_prompt, completion, help, mobile, model_picker, navigation,
-    overwrite, paging, reload, replace, save, search, selection, view,
+    autocomplete, buffers, command_prompt, completion, help, lint, mobile, model_picker,
+    navigation, overwrite, paging, reload, replace, save, search, selection, view,
 };
 
 mod editing;
@@ -71,6 +71,7 @@ pub(super) fn finish_content_edit_with_message(
     message: Option<String>,
 ) -> io::Result<()> {
     autocomplete::note_content_edit(app);
+    lint::invalidate(app);
     completion::cancel(app);
     app.selection.clear();
     refresh_dirty(&mut app.file, &*app.buffer);
@@ -209,6 +210,7 @@ pub(super) fn dispatch_action(
         Action::Save => save::handle_save(app, out),
         Action::SaveAs => command_prompt::open_save_as_prompt(app, out),
         Action::Reload => reload::handle_reload_key(app, out),
+        Action::Lint => lint::start(app, out),
         Action::Open => command_prompt::open_file_prompt(app, out),
         Action::New => command_prompt::execute_new(app, out),
         Action::Close => command_prompt::execute_close(app, out, false),

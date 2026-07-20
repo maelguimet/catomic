@@ -1,14 +1,13 @@
-//! Purpose: collect bounded local-word or cached Project-path completion candidates.
-//! Owns: prefix-kind selection, buffer-window reads, and discovered-path projection.
+//! Purpose: collect bounded current-buffer word completion candidates.
+//! Owns: prefix selection and bounded buffer-window reads.
 //! Must not: start discovery, scan files, spawn work/processes, mutate App, or render.
-//! Invariants: Plain reads only the current buffer window; Project paths require cached discovery.
+//! Invariants: completion reads only the current buffer window.
 
 use std::io;
 
 use crate::buffer::Cursor;
 use crate::editor::completion::{
-    complete_paths, complete_words, is_path_char, is_word_char, path_prefix_before_cursor,
-    prefix_before_cursor,
+    complete_words, is_word_char, prefix_before_cursor,
 };
 
 const CONTEXT_ROWS: usize = 257;
@@ -18,17 +17,6 @@ const MAX_CANDIDATES: usize = 16;
 
 pub(super) struct CompletionPrefix {
     pub(super) text: String,
-    kind: PrefixKind,
-}
-
-enum PrefixKind {
-    LocalWord,
-    ProjectPath,
-}
-
-pub(super) enum CandidateRead {
-    Ready(Vec<String>),
-    ProjectFilesUnavailable,
 }
 
 pub(super) fn read_prefix(
@@ -45,36 +33,24 @@ pub(super) fn read_prefix(
         .next()
         .map(|line| line.content)
         .unwrap_or_default();
-    let path = path_prefix_before_cursor(&line, relative_cursor);
-    let kind = if app.caps.repo_scan && app.project.is_some() && looks_like_path(&path) {
-        PrefixKind::ProjectPath
-    } else {
-        PrefixKind::LocalWord
-    };
-    let text = match kind {
-        PrefixKind::LocalWord => prefix_before_cursor(&line, relative_cursor),
-        PrefixKind::ProjectPath => path,
-    };
+    let text = prefix_before_cursor(&line, relative_cursor);
     let cut_at_left = read_start < start_col && text.chars().count() == relative_cursor;
-    Ok((!cut_at_left).then_some(CompletionPrefix { text, kind }))
+    Ok((!cut_at_left).then_some(CompletionPrefix { text }))
 }
 
 pub(super) fn read_candidates(
     app: &super::super::App,
     cursor: Cursor,
     prefix: &CompletionPrefix,
-) -> io::Result<CandidateRead> {
-    match prefix.kind {
-        PrefixKind::LocalWord => read_local_candidates(app, cursor, &prefix.text),
-        PrefixKind::ProjectPath => Ok(read_project_candidates(app, &prefix.text)),
-    }
+) -> io::Result<Vec<String>> {
+    read_local_candidates(app, cursor, &prefix.text)
 }
 
 fn read_local_candidates(
     app: &super::super::App,
     cursor: Cursor,
     prefix: &str,
-) -> io::Result<CandidateRead> {
+) -> io::Result<Vec<String>> {
     let row_start = cursor.row.saturating_sub(CONTEXT_ROWS / 2);
     let col_start = cursor.col.saturating_sub(CONTEXT_COLS / 2);
     let lines = app.buffer.try_visible_lines_window(
@@ -87,36 +63,11 @@ fn read_local_candidates(
         .iter()
         .map(|line| complete_fragment(&line.content, col_start))
         .collect();
-    Ok(CandidateRead::Ready(complete_words(
+    Ok(complete_words(
         fragments.iter().map(String::as_str),
         prefix,
         MAX_CANDIDATES,
-    )))
-}
-
-fn read_project_candidates(app: &super::super::App, prefix: &str) -> CandidateRead {
-    let Some(project) = app.project.as_ref() else {
-        return CandidateRead::ProjectFilesUnavailable;
-    };
-    let Some(discovery) = project.discovered() else {
-        return CandidateRead::ProjectFilesUnavailable;
-    };
-    let (search_prefix, leading_dot) = prefix
-        .strip_prefix("./")
-        .map_or((prefix, false), |prefix| (prefix, true));
-    let relative: Vec<_> = discovery
-        .files
-        .iter()
-        .filter_map(|path| path.strip_prefix(project.root()).ok())
-        .filter_map(|path| path.to_str())
-        .collect();
-    let mut candidates = complete_paths(relative, search_prefix, MAX_CANDIDATES);
-    if leading_dot {
-        for candidate in &mut candidates {
-            candidate.insert_str(0, "./");
-        }
-    }
-    CandidateRead::Ready(candidates)
+    ))
 }
 
 fn complete_fragment(content: &str, start_col: usize) -> String {
@@ -137,8 +88,4 @@ fn complete_fragment(content: &str, start_col: usize) -> String {
         chars.len()
     };
     chars[start.min(end)..end].iter().collect()
-}
-
-fn looks_like_path(prefix: &str) -> bool {
-    (prefix.contains('/') || prefix.starts_with('.')) && prefix.chars().all(is_path_char)
 }

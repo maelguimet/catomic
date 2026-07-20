@@ -87,6 +87,7 @@ pub(crate) struct Theme {
     pub(crate) external_added: Style,
     pub(crate) external_changed: Style,
     pub(crate) external_deleted: Style,
+    pub(crate) lint: Style,
     pub(crate) llm_changed: Style,
     pub(crate) autocomplete: Style,
     pub(crate) preview: Style,
@@ -173,6 +174,7 @@ fn apply_capabilities(mut theme: Theme, monochrome: bool, truecolor: bool) -> Th
         &mut theme.external_added,
         &mut theme.external_changed,
         &mut theme.external_deleted,
+        &mut theme.lint,
         &mut theme.llm_changed,
         &mut theme.autocomplete,
         &mut theme.preview,
@@ -188,6 +190,7 @@ fn apply_capabilities(mut theme: Theme, monochrome: bool, truecolor: bool) -> Th
     theme.external_added.underlined = Some(true);
     theme.external_changed.reversed = Some(true);
     theme.external_deleted.bold = Some(true);
+    theme.lint.underlined = Some(true);
     theme.llm_changed.underlined = Some(true);
     theme.llm_changed.reversed = Some(true);
     theme.autocomplete.dim = Some(true);
@@ -253,6 +256,10 @@ fn named(name: &str) -> io::Result<Theme> {
             bold: Some(true),
             ..Style::fg(Color::Ansi(1))
         },
+        lint: Style {
+            underlined: Some(true),
+            ..Style::fg(Color::Ansi(1))
+        },
         llm_changed: Style {
             underlined: Some(true),
             ..Style::fg(Color::Ansi(1))
@@ -302,6 +309,10 @@ fn named(name: &str) -> io::Result<Theme> {
                 bold: Some(true),
                 ..plain
             };
+            theme.lint = Style {
+                underlined: Some(true),
+                ..plain
+            };
             theme.llm_changed = Style {
                 underlined: Some(true),
                 reversed: Some(true),
@@ -345,6 +356,7 @@ fn apply_role(theme: &mut Theme, role: &str, value: &toml::Value) -> io::Result<
         "external_added" => apply_style(&mut theme.external_added, value, role)?,
         "external_changed" => apply_style(&mut theme.external_changed, value, role)?,
         "external_deleted" => apply_style(&mut theme.external_deleted, value, role)?,
+        "lint" => apply_style(&mut theme.lint, value, role)?,
         "llm_changed" => apply_style(&mut theme.llm_changed, value, role)?,
         "autocomplete" => apply_style(&mut theme.autocomplete, value, role)?,
         "preview" => apply_style(&mut theme.preview, value, role)?,

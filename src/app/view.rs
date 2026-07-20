@@ -152,12 +152,6 @@ pub(crate) fn display_buffer(app: &super::App) -> &dyn Buffer {
     if let Some(buffer) = super::model_picker::display_buffer(app) {
         return buffer;
     }
-    if let Some(buffer) = super::project_files::display_buffer(app) {
-        return buffer;
-    }
-    if let Some(buffer) = super::lint::display_buffer(app) {
-        return buffer;
-    }
     app.view
         .preview
         .as_ref()
@@ -185,8 +179,6 @@ pub(crate) fn display_syntax(app: &super::App) -> SyntaxKind {
         || super::inline_clanker::is_previewing(app)
         || super::llm_answer::is_viewing(app)
         || super::model_picker::is_viewing(app)
-        || super::lint::is_viewing(app)
-        || super::project_files::is_viewing(app)
     {
         SyntaxKind::Plain
     } else if is_preview(app) {
@@ -207,8 +199,6 @@ pub(crate) fn display_surface(app: &super::App) -> crate::terminal::render::Cont
         || super::external_command::is_viewing(app)
         || super::llm_answer::is_viewing(app)
         || super::model_picker::is_viewing(app)
-        || super::lint::is_viewing(app)
-        || super::project_files::is_viewing(app)
         || is_preview(app)
     {
         ContentSurface::Preview
@@ -262,9 +252,7 @@ pub(crate) fn soft_wrap_active(app: &super::App) -> bool {
                 && !super::llm_preview::is_viewing(app)
                 && !super::inline_clanker::is_previewing(app)
                 && !super::llm_answer::is_viewing(app)
-                && !super::model_picker::is_viewing(app)
-                && !super::lint::is_viewing(app)
-                && !super::project_files::is_viewing(app)))
+                && !super::model_picker::is_viewing(app)))
 }
 
 pub(crate) fn cancel_preview(app: &mut super::App) {

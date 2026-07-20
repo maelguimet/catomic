@@ -1,6 +1,6 @@
 //! Purpose: load typed TOML user configuration with safe defaults.
 //! Owns: shared TOML decoding and focused configuration submodules.
-//! Must not: construct Project/LLM services, perform network work, or mutate files.
+//! Must not: construct linter/LLM services, perform network work, or mutate files.
 //! Invariants: no config file is required; malformed recognized values and unknown keys are errors.
 
 use std::io;

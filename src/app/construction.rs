@@ -1,7 +1,7 @@
 //! Purpose: construct App state from startup configuration and an optional initial path.
-//! Owns: initial Plain capabilities, open planning, and zero-work transient defaults.
-//! Must not: enter Project mode, create network/process clients, or start background work.
-//! Invariants: Plain starts without Project/LLM services; watcher failure remains non-fatal.
+//! Owns: open planning and zero-work transient defaults.
+//! Must not: create repository/network/process clients or start background work.
+//! Invariants: startup has no repository/LLM task; watcher failure remains non-fatal.
 
 use std::collections::VecDeque;
 use std::io;
@@ -9,7 +9,6 @@ use std::path::PathBuf;
 
 #[cfg(test)]
 use crate::config::big_files::BigFileConfig;
-use crate::mode::{Capabilities, Mode};
 use crate::terminal as term;
 
 use super::{
@@ -54,11 +53,7 @@ impl App {
             autocomplete: autocomplete_config,
             mobile: mobile_config,
         } = config;
-        let mode = Mode::Plain;
-        let caps = Capabilities::from_mode(mode);
-        let completion = caps
-            .local_completion
-            .then(completion::CompletionUiState::default);
+        let completion = completion::CompletionUiState::default();
         let mut meta = open::prepare_open_file_meta(initial_path)?;
         let buffer = open::build_open_buffer(&mut meta, initial_path, big_files.page_lines)?;
         let initial_pos = buffer.edit_history_position();
@@ -69,9 +64,6 @@ impl App {
         };
 
         let mut app = App {
-            mode,
-            caps,
-            project: None,
             big_files,
             auto_reload,
             editor_config,
@@ -105,6 +97,7 @@ impl App {
             replace: replace::ReplaceState::default(),
             command_prompt: command_prompt::CommandPromptState::default(),
             completion,
+            lint: super::lint::LintState::default(),
             surfaces: surfaces::SurfaceState::default(),
             pending_llm_request: None,
             llm_task: None,
@@ -141,13 +134,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn plain_startup_keeps_read_only_surfaces_and_explicit_tasks_absent() {
+    fn ordinary_startup_constructs_no_repository_or_model_tasks() {
         let app = App::new(None).unwrap();
 
-        assert!(app.project.is_none());
         assert!(app.surfaces.help.is_none());
-        assert!(app.surfaces.diagnostics.is_none());
-        assert!(app.surfaces.project_files.is_none());
         assert!(app.surfaces.llm_preview.is_none());
         assert!(app.surfaces.llm_answer.is_none());
         assert!(app.pending_llm_request.is_none());

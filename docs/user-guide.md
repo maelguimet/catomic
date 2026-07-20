@@ -1,9 +1,9 @@
 # Catomic user guide
 
-Catomic is a Linux-first, modeless terminal text editor. Its default Plain mode
-behaves like a conventional editor and does not scan repositories, start
-linters, or contact a network service. Project tools and model-assisted commands
-exist, but they run only after you invoke them explicitly. Inline autocomplete
+Catomic is a Linux-first, modeless terminal text editor. It does not scan
+repositories, start linters, or contact a network service during startup or
+ordinary editing. Linter and model-assisted actions run only after you invoke
+them explicitly. Inline autocomplete
 is disabled by default and begins automatic calls only after a separate,
 scoped session confirmation.
 
@@ -23,9 +23,8 @@ it on files with unusual links, ACLs, or extended attributes.
 - [Saving and external changes](#saving-and-external-changes)
 - [Views, highlighting, and Markdown](#views-highlighting-and-markdown)
 - [Large files](#large-files)
-- [Plain mode and Project mode](#plain-mode-and-project-mode)
 - [Completion](#completion)
-- [Linters and diagnostics](#linters-and-diagnostics)
+- [Linting](#linting)
 - [External commands and hooks](#external-commands-and-hooks)
 - [Model-assisted commands](#model-assisted-commands)
 - [Crash recovery](#crash-recovery)
@@ -258,8 +257,8 @@ search it, the arrow and page keys to navigate, and `Escape` to return.
 ### Prompts and read-only views
 
 `Ctrl+Shift+P` or `F2` opens the command prompt. Commands are entered without a
-leading colon. For example, type `project`, not `:project`. This guide uses
-plain command names for that reason.
+leading colon. For example, type `save`, not `:save`. This guide uses command
+names without a colon for that reason.
 
 Most prompts and read-only result views follow the same small interaction model:
 
@@ -563,7 +562,7 @@ save succeeds.
 
 ### External file changes
 
-File watching is enabled in both Plain and Project mode. Watch notifications are
+File watching is always enabled for watchable named files. Watch notifications are
 hints; Catomic captures a fresh bounded disk identity before acting. Files up to
 100 MiB use a streaming SHA-256 of the complete content in addition to size,
 timestamps, and Unix device/inode/change time. This detects rapid same-length
@@ -713,48 +712,6 @@ page_lines = 10_000
 
 The value must be a positive integer.
 
-## Plain mode and Project mode
-
-Catomic always starts in Plain mode.
-
-### Plain mode
-
-Plain mode includes ordinary editing, file watching, Markdown, local
-current-buffer completion, and explicitly invoked current-file model commands.
-It does not construct repository scanners, linters, diagnostics, background
-indexers, repository-aware model machinery, or a network client at startup.
-
-### Project mode
-
-Run `project` or `code` in the command prompt to opt in. The Project root is the
-active file's parent directory, or the current working directory when the
-buffer has no usable parent.
-
-Project mode enables explicit file discovery, linting, diagnostics, cached-path
-completion, and repository-aware model commands. These features remain lazy:
-entering Project mode does not itself scan the tree, run a linter, or contact a
-model.
-
-Run `plain` or `text` to leave Project mode. This stops Project tasks, discards
-the Project session and its cached discovery results, and restores the Plain
-capability set.
-
-### File discovery
-
-In Project mode, run `files` to start a bounded, cancellable scan under the
-Project root. Nothing scans before this command.
-
-The result opens as a read-only picker:
-
-- use arrows or page keys to move;
-- press `Enter` to open the selected file in a buffer; and
-- press `Escape` to close the picker or cancel a running scan.
-
-The most recent discovery result also becomes the path-completion cache. The
-scan is bounded to 4,096 returned files, 65,536 visited entries, and 64 levels
-of depth; the result tells you when it is partial or contains unreadable
-directories.
-
 ## Completion
 
 Press `Ctrl+Space` or `Tab` to request completion.
@@ -763,18 +720,18 @@ Press `Ctrl+Space` or `Tab` to request completion.
 - `Enter` accepts the active candidate.
 - `Escape` dismisses the list.
 
-Plain mode derives candidates only from a bounded window of the current buffer.
-Project mode can additionally use path-like candidates from the last explicit
-`files` result. Completion never starts a project scan by itself. If there is no
-completion candidate, `Tab` performs normal indentation.
+Completion derives candidates only from a bounded window of the current buffer.
+It does not scan directories, retain a project cache, or perform filesystem
+work. If there is no completion candidate, `Tab` performs normal indentation.
 
 Accepting a completion is one undoable replacement. Catomic does not enable
 continuous ghost text or a background completion service.
 
-## Linters and diagnostics
+## Linting
 
-Linting is explicit and Project-only. Configure a command for the file
-extension, enter Project mode, save the active buffer, then run `lint`.
+Linting is an explicit editor action. Configure a command for the file
+extension, save the active buffer, then press `F4` (the remappable `lint`
+action).
 
 Language-specific configuration is preferred:
 
@@ -793,19 +750,17 @@ linter = "eslint {file}"
 ```
 
 Every linter command must contain `{file}`. Catomic shell-quotes and substitutes
-the absolute active path, then runs the command from the Project root without
-blocking typing. `Escape` cancels a running linter.
+the absolute active path, then runs the command from that file's parent
+directory without blocking typing. `Escape` cancels a running linter.
 
-After a run:
-
-- `diagnostics` or `dlist` opens the read-only result list;
-- `dnext` jumps to the next diagnostic; and
-- `dprev` jumps to the previous diagnostic.
-
-Jumping can open an already-discovered diagnostic file in another buffer. The
-parser accepts common `file:line:column: message`-shaped output. If a command
-fails without parseable diagnostics, Catomic reports the exit state instead of
-inventing a clean result.
+The parser accepts common `file:line:column: message`-shaped output for the
+active file. Findings appear directly as lightweight underlined marks. Move the
+cursor to a marked line to see the raw linter message in the status row. A rerun
+replaces all prior marks. Editing, reloading, renaming, or switching buffers
+immediately cancels and invalidates stale results; a late result from an older
+revision is discarded. Catomic does not infer severity from message wording or
+open a separate findings picker. If a command fails without parseable findings,
+Catomic reports the exit state instead of inventing a clean result.
 
 The older extension table remains supported, but a `[languages.EXT]` linter
 wins when both are present:
@@ -1036,9 +991,9 @@ not dirty the buffer, enter history, or save. `Tab` accepts the whole visible
 continuation as one undoable edit. `Escape` dismisses it. Without visible ghost
 text, those keys retain their normal behavior.
 
-Editing, paste, navigation, selection changes, prompts, buffer/mode changes,
-model selection, and external refresh cancel stale work. Responses pin the
-buffer revision, cursor, mode, preset, canonical destination, model, and request
+Editing, paste, navigation, selection changes, prompts, buffer changes, model
+selection, and external refresh cancel stale work. Responses pin the buffer
+revision, cursor, preset, canonical destination, model, and request
 generation. Idle autocomplete adds no status noise; only an active request or
 error is appended to the compact file identity.
 
@@ -1156,7 +1111,7 @@ set, reverse/underline and gutter markers provide the non-color fallback.
 
 ### Current-file commands
 
-These commands are available from Plain or Project mode:
+These commands are available directly:
 
 - `meow INSTRUCTION` sends the active selection.
 - `bigmeow INSTRUCTION` sends the current file.
@@ -1198,11 +1153,11 @@ proposal is discarded or refused.
 `gitmeow INSTRUCTION` asks about a focused task with at most 64 KiB of
 repository-broker context. `megameow INSTRUCTION` asks with a broader, still
 bounded 128 KiB repository budget. The active-file context remains separately
-capped at 64 KiB for either command. Both commands require:
-
-- explicit Project mode;
-- a saved active file inside a Git repository; and
-- a stable repository and active-file snapshot throughout the request.
+capped at 64 KiB for either command. Both commands require a saved active file
+inside a Git repository and a stable repository and active-file snapshot
+throughout the request. Catomic detects and validates the Git root for each
+invocation; it does not retain a workspace or repository session between
+requests.
 
 After invocation, Catomic captures bounded Git state and a bounded file map on a
 cancellable worker, then presents a separate send confirmation. The model can
@@ -1258,8 +1213,7 @@ Catomic reads one TOML file from:
 The source installer creates this file from Catomic's documented template and
 never replaces an existing path. Unknown keys are ignored for forward
 compatibility, but a malformed recognized value is a startup error for settings
-loaded at startup. Project-only and model settings are loaded lazily when
-invoked.
+loaded at startup. Linter and model settings are loaded lazily when invoked.
 
 Run `catomic config` from the shell, or `config` from the in-editor command
 prompt, to open that exact path as an ordinary editable buffer inside Catomic.
@@ -1385,6 +1339,7 @@ diff_removed = "red"
 external_added = { fg = "green", underline = true }
 external_changed = { fg = "cyan", underline = true }
 external_deleted = { fg = "red", bold = true }
+lint = { fg = "red", underline = true }
 llm_changed = { fg = "red", underline = true }
 autocomplete = { fg = "bright-black", dim = true }
 preview = "default"
@@ -1512,7 +1467,7 @@ surface. The complete role inventory is `text`, `background`, `cursor`,
 `markdown_heading`, `markdown_emphasis`, `markdown_code`, `markdown_marker`,
 `markdown_link`, `syntax_keyword`, `syntax_string`, `syntax_comment`, `syntax_number`,
 `search_match`, `diff_added`, `diff_removed`, `external_added`,
-`external_changed`, `external_deleted`, `llm_changed`, `autocomplete`, and
+`external_changed`, `external_deleted`, `lint`, `llm_changed`, `autocomplete`, and
 `preview`. External-reload and model-change roles remain independent. The syntax roles
 apply consistently to the built-in Rust, Python, and JSON highlighters.
 
@@ -1711,6 +1666,7 @@ mouse-scroll-down | editor,preview,picker,help | mouse-wheel-down
 | Tools | Completion | `Ctrl+Space` |
 | Tools | Inline clanker | `F3` |
 | Tools | Clear clanker change marks | `Shift+F3` |
+| Tools | Lint saved active file | `F4` |
 | View | External-reload change marks | `F5` |
 | View | Markdown preview | `F6` |
 | View | Line numbers | `F7` |
@@ -1743,13 +1699,6 @@ Open the prompt with `Ctrl+Shift+P` or `F2`. Do not add a leading colon.
 | `goto LINE` | `line LINE` | Go to a 1-based line |
 | `replace` | — | Replace next match |
 | `replace-all` | `replaceall` | Replace all in an ordinary buffer |
-| `project` | `code` | Enter Project mode |
-| `plain` | `text` | Leave Project mode and stop Project services |
-| `files` | — | Run Project file discovery and open picker |
-| `lint` | — | Run configured linter on saved active file in Project mode |
-| `diagnostics` | `dlist` | Open last diagnostic list |
-| `dnext` | — | Jump to next diagnostic |
-| `dprev` | — | Jump to previous diagnostic |
 | `run NAME` | — | Run a configured trusted command |
 | `recover` | — | Preview a newer `.catnap` sidecar |
 | `model` | `models`, `select-model` | Search/select a process-local model preset |
@@ -1759,8 +1708,8 @@ Open the prompt with `Ctrl+Shift+P` or `F2`. Do not add a leading colon.
 | `autocomplete off` | `autocomplete disable` | Cancel work and disable inline suggestions |
 | `meow TEXT` | — | Send selection/instruction block to configured model |
 | `bigmeow TEXT` | — | Send current ordinary file to configured model |
-| `gitmeow TEXT` | — | Use focused bounded repository context in Project mode |
-| `megameow TEXT` | — | Use broader bounded repository context in Project mode |
+| `gitmeow TEXT` | — | Detect Git and use focused bounded repository context |
+| `megameow TEXT` | — | Detect Git and use broader bounded repository context |
 | `quit` | `q` | Use the normal guarded quit path |
 
 ## File formats and save safety
@@ -1969,11 +1918,10 @@ until you have compared or restored its contents.
 
 Confirm that you:
 
-1. entered Project mode with `project`;
-2. saved the active buffer;
-3. configured its normalized extension under `[languages.EXT]` or `[linters]`;
-4. included `{file}` in the command; and
-5. installed the linter in the environment where Catomic runs.
+1. saved the active buffer;
+2. configured its normalized extension under `[languages.EXT]` or `[linters]`;
+3. included `{file}` in the command; and
+4. installed the linter in the environment where Catomic runs.
 
 ### A model command cannot connect or refuses the endpoint
 

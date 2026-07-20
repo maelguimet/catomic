@@ -1,7 +1,7 @@
 //! Purpose: this file must prove explicit current-buffer invocation and confirmation gating.
 //! Owns: selection/block drafts, no-network-before-Enter, loopback completion, and preview.
 //! Must not: contact a live model, public endpoint, user service, or external network.
-//! Invariants: Plain startup has no request objects; model output never bypasses preview.
+//! Invariants: startup has no request objects; model output never bypasses preview.
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -21,11 +21,10 @@ use super::*;
 static NEXT_COMMAND_FIXTURE: AtomicUsize = AtomicUsize::new(0);
 
 #[test]
-fn plain_start_constructs_no_pending_request_task_or_client() {
+fn startup_constructs_no_pending_request_task_or_client() {
     let app = super::super::App::new(None).unwrap();
     assert!(app.pending_llm_request.is_none());
     assert!(app.llm_task.is_none());
-    assert!(!app.caps.network_llm);
 }
 
 #[test]

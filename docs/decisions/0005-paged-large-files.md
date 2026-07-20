@@ -24,7 +24,7 @@ ADR 0006 replaces the read-only policy with editable pages.
 - Paged mode remains read-only until safe cross-page edit/save semantics exist.
 
 The configuration is Plain-safe: it performs one small local file read during
-startup and constructs no Project, LLM, background, or network services.
+startup and constructs no repository, LLM, background, or network services.
 
 ## Rationale
 

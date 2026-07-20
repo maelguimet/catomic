@@ -134,6 +134,7 @@ const THEME_COLOR_KEYS: &[&str] = &[
     "external_added",
     "external_changed",
     "external_deleted",
+    "lint",
     "llm_changed",
     "autocomplete",
     "preview",

@@ -6,7 +6,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use crate::project::git::GitError;
+use super::super::repo_context::git::GitError;
 
 #[derive(Debug)]
 pub enum BrokerError {

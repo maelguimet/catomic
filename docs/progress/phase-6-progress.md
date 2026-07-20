@@ -19,7 +19,7 @@ Phase 6 is complete. Its exit evidence is in
 - **Preview lifecycle**: source remains unchanged through response and preview;
   Enter applies one buffer transaction, Escape cancels, and undo restores the
   exact source.
-- **Repository broker**: Project-only Git capture, bounded file discovery,
+- **Repository broker**: request-local Git capture, bounded file discovery,
   selected 64 KiB (`gitmeow`) or 128 KiB (`megameow`) consumable context
   budgets, and read-only list/range/grep/diff commands across at most eight
   model broker rounds. Dot paths stay outside its file map;

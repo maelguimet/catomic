@@ -27,7 +27,7 @@ fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
 }
 
 #[test]
-fn plain_start_constructs_no_command_task_or_preview() {
+fn startup_constructs_no_command_task_or_preview() {
     let app = super::super::App::new(None).unwrap();
 
     assert!(app.external_command.running.is_none());

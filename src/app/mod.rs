@@ -1,7 +1,7 @@
 //! Purpose: define App state and wire its focused coordination modules.
-//! Owns: top-level editor state, capability-bearing services, and module boundaries.
+//! Owns: top-level editor state, editor services, and module boundaries.
 //! Must not: implement the terminal loop, input precedence, frame composition, or buffer edits.
-//! Invariants: Plain constructs no Project/network/process services; new top-level state
+//! Invariants: startup constructs no repository/network/process services; new top-level state
 //!   requires an ownership review before bypassing an existing aggregate or subsystem.
 
 use std::collections::VecDeque;
@@ -17,7 +17,6 @@ use crate::config::theme::Theme;
 use crate::config::view_preferences::ViewPreferences;
 use crate::file;
 
-use crate::mode::{Capabilities, Mode};
 use crate::terminal as term;
 
 mod file_state;
@@ -40,8 +39,6 @@ mod inline_clanker;
 mod open;
 mod overwrite;
 mod paging;
-mod project_files;
-mod project_mode;
 mod recovery;
 mod reload;
 mod render;
@@ -72,18 +69,14 @@ use startup_config::StartupConfig;
 
 /// High-level application state for the editor.
 pub struct App {
-    pub mode: Mode,
-    pub caps: Capabilities,
-    /// Project lifetime marker/root. Strictly absent throughout Plain mode.
-    pub(crate) project: Option<crate::project::ProjectSession>,
-    /// Plain-safe paging policy loaded once at startup.
+    /// Paging policy loaded once at startup.
     pub(crate) big_files: BigFileConfig,
     /// Default-on policy for automatically reloading clean external changes.
     /// Dirty buffers always retain their explicit confirmation path.
     pub(crate) auto_reload: bool,
-    /// Plain-safe editor defaults and extension-specific settings loaded at startup.
+    /// Editor defaults and extension-specific settings loaded at startup.
     pub(crate) editor_config: EditorConfig,
-    /// Plain-safe normal-mode chord overrides; contains no command runner.
+    /// Normal-mode chord overrides; contains no command runner.
     pub(crate) keybindings: KeyBindings,
     /// Session-wide direct-typing mode. Prompts and read-only views never consume it.
     pub(crate) typing_mode: overwrite::TypingMode,
@@ -100,14 +93,14 @@ pub struct App {
     pub(crate) theme: Theme,
     /// Session-level opt-in autocomplete policy; contains no client at startup.
     pub(crate) autocomplete: autocomplete::AutocompleteState,
-    /// Plain-safe touch UI; disabled unless Android/Termux/config explicitly enables it.
+    /// Touch UI; disabled unless Android/Termux/config explicitly enables it.
     pub(crate) mobile: mobile::MobileUiState,
     /// The active buffer (trait object for now; concrete type behind it).
     pub buffer: Box<dyn Buffer>,
     /// File path and dirty tracking.
     pub file: FileState,
-    /// Gated, best-effort FileWatcher owned by App.
-    /// Some only when caps.file_watch && file.path.is_some() && parent watchable.
+    /// Best-effort FileWatcher owned by App.
+    /// Some only when file.path.is_some() and its parent is watchable.
     /// Construction failure never prevents opening or editing the file.
     /// Watcher signals are consumed only by the runtime loop via watch::check_file_watcher_once
     /// (once per iteration, as hints only). Fresh observations auto-reload clean
@@ -144,8 +137,10 @@ pub struct App {
     pub(crate) replace: replace::ReplaceState,
     /// Global transient goto/command prompt. It constructs no background service.
     pub(crate) command_prompt: command_prompt::CommandPromptState,
-    /// Plain-safe local completion UI, constructed only when its capability is enabled.
-    pub(crate) completion: Option<completion::CompletionUiState>,
+    /// Bounded local current-buffer completion UI.
+    pub(crate) completion: completion::CompletionUiState,
+    /// Explicit on-demand linter task and findings for the exact active revision.
+    pub(crate) lint: lint::LintState,
     /// Transient read-only surfaces. New surfaces require an ownership review before
     /// adding another top-level App field; clients/workers never belong in this group.
     pub(crate) surfaces: surfaces::SurfaceState,
@@ -163,7 +158,7 @@ pub struct App {
     pub(crate) clanker_changes: inline_clanker::ChangeHistory,
     /// Per-buffer render-only metadata for the exact latest external reload revision.
     pub(crate) external_changes: external_diff::ExternalChanges,
-    /// Project-only repo-context preparation, confirmation, or confirmed network task.
+    /// Explicit request-local repo-context preparation, confirmation, or network task.
     pub(crate) repo_llm_state: Option<repo_llm::RepoLlmState>,
     /// External process/preview state; empty at startup and while unused.
     pub(crate) external_command: external_command::ExternalCommandState,

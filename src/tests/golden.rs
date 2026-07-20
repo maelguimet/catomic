@@ -1,6 +1,6 @@
 //! Purpose: verify edit sequences produce exact saved bytes.
 //! Owns: cross-layer golden fixtures for buffer edits, search replacement, and atomic save.
-//! Must not: launch a terminal, benchmark hot paths, depend on Project/LLM, or network.
+//! Must not: launch a terminal, benchmark hot paths, depend on repository/LLM work, or network.
 //! Invariants: every fixture compares complete output bytes with an explicit expectation.
 
 #[cfg(test)]

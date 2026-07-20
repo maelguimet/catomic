@@ -19,7 +19,7 @@ in `progress/phase-2-progress.md`; measurement history is in `performance.md`.
 | Rendering | Rendering is viewport-only and clears/repaints rows without a terminal-wide full-screen clear. |
 | Multiple buffers | Every positional CLI path opens in order; Alt+PageUp/PageDown switches a state-preserving ring; dirty inactive buffers participate in quit protection. |
 | Status | Persistent status reports mode, path, saved/modified state, UTF-8, size/tier, page range, and active buffer position when applicable. |
-| Plain startup discipline | Paging/config/watcher behavior is local and Plain-safe; it constructs no Project, LLM, background search, or network machinery. |
+| Startup discipline | Paging/config/watcher behavior is local and constructs no repository, LLM, background search, or network machinery. |
 
 ## Verification commands
 

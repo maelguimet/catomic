@@ -268,8 +268,7 @@ fn apply_modified_reload(
     super::search::cancel_running_search(app);
     super::command_prompt::cancel_running_goto(app);
     super::completion::cancel(app);
-    super::lint::close_view(app);
-    super::project_files::close_view(app);
+    super::lint::invalidate(app);
     super::view::cancel_preview(app);
     app.selection.clear();
     app.buffer = reloaded.buffer;
@@ -293,8 +292,7 @@ fn apply_deleted_reload(app: &mut super::App) {
     super::search::cancel_running_search(app);
     super::command_prompt::cancel_running_goto(app);
     super::completion::cancel(app);
-    super::lint::close_view(app);
-    super::project_files::close_view(app);
+    super::lint::invalidate(app);
     super::view::cancel_preview(app);
     app.selection.clear();
     app.buffer = cleared;

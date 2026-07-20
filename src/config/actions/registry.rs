@@ -92,6 +92,13 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
         ["ctrl+r"]
     ),
     key!(
+        Lint,
+        "lint",
+        "Run the configured linter for the saved active file; Esc cancels.",
+        E,
+        ["f4"]
+    ),
+    key!(
         Search,
         "search",
         "Search incrementally; `Enter` or `Down` moves forward and `Up` moves backward.",
@@ -115,7 +122,7 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
     key!(
         CommandPrompt,
         "command-prompt",
-        "Run commands such as `config`, `project`, `recover`, and `close!` without a leading colon.",
+        "Run commands such as `config`, `recover`, and `close!` without a leading colon.",
         E,
         ["ctrl+shift+p", "f2"]
     ),

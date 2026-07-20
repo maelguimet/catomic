@@ -60,6 +60,7 @@ pub(super) fn write_content_line_with_ghost<W: Write + ?Sized>(
         )
     });
     let selected = visible_highlight(options.highlight, row, start_col, chars.len());
+    let lint = visible_ranges(options.lint_ranges, row, start_col, chars.len());
     let llm_changed = visible_ranges(
         options.llm_changes.map(|changes| changes.ranges),
         row,
@@ -84,7 +85,7 @@ pub(super) fn write_content_line_with_ghost<W: Write + ?Sized>(
         &content,
         &spans,
         selected,
-        &[&llm_changed, &external_added, &external_changed],
+        &[&lint, &llm_changed, &external_added, &external_changed],
         ghost,
         &links,
     );
@@ -104,6 +105,9 @@ pub(super) fn write_content_line_with_ghost<W: Write + ?Sized>(
             .find(|link| start >= link.start && start < link.end)
             .map(|link| link.destination.as_ref());
         let highlighted = selected.is_some_and(|(from, to)| start >= from && start < to);
+        let lint = lint
+            .iter()
+            .any(|(from, to)| start >= *from && start < *to);
         let llm_changed = llm_changed
             .iter()
             .any(|(from, to)| start >= *from && start < *to);
@@ -119,6 +123,7 @@ pub(super) fn write_content_line_with_ghost<W: Write + ?Sized>(
             options,
             syntax_styles,
             highlighted,
+            lint,
             llm_changed,
             external_added,
             external_changed,
@@ -281,6 +286,7 @@ fn segment_style(
     options: RenderOptions<'_>,
     spans: impl Iterator<Item = SpanStyle>,
     highlighted: bool,
+    lint: bool,
     llm_changed: bool,
     external_added: bool,
     external_changed: bool,
@@ -299,6 +305,9 @@ fn segment_style(
     }
     if external_changed {
         style = style.overlay(theme.external_changed);
+    }
+    if lint {
+        style = style.overlay(theme.lint);
     }
     if llm_changed {
         style = style.overlay(theme.llm_changed);

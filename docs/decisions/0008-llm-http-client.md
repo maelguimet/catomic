@@ -9,7 +9,7 @@ Status: accepted for Phase 6
 Use `reqwest` with Rustls, `serde`/`serde_json`, and a current-thread Tokio
 runtime created inside each explicitly confirmed LLM worker.
 
-The worker—not `App`, Plain startup, or the first `:meow` invocation—constructs
+The worker—not `App`, startup, or the first `:meow` invocation—constructs
 the runtime and HTTP client. The first invocation only collects bounded context
 and displays the endpoint/model/context confirmation. Enter starts the worker.
 Dropping or cancelling the worker drops the request future and client.
@@ -19,9 +19,9 @@ Dropping or cancelling the worker drops the request future and client.
 1. `std` has TCP but no HTTPS/TLS implementation or safe JSON codec. Hand-rolled
    TLS, HTTP framing, escaping, or response parsing would be a larger and less
    safe dependency in practice.
-2. The dependencies are used only by explicitly confirmed Phase 6 LLM requests
-   in Plain or Project mode. Repo context remains separately gated by `repo_llm`.
-3. They affect binary size and build time, but not Plain startup construction:
+2. The dependencies are used only by explicitly confirmed LLM requests. Repo
+   context is prepared request-locally by explicit repository commands.
+3. They affect binary size and build time, but not startup construction:
    no runtime, `reqwest::Client`, request, or LLM worker exists at startup.
 4. Tests use a deterministic loopback fake HTTP server. No test contacts a live
    model, public API, or user-configured endpoint.

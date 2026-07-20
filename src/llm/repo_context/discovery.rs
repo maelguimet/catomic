@@ -1,15 +1,12 @@
-//! Purpose: discover Project files within explicit traversal budgets.
+//! Purpose: discover request-local repository files within explicit traversal budgets.
 //! Owns: bounded directory walking, generated-directory ignores, and result ordering.
-//! Must not: run in Plain mode, follow symlinks, read file contents, index, or network.
+//! Must not: follow symlinks, read file contents, index, persist a cache, or network.
 //! Invariants: every visited entry consumes budget; complete results are path-sorted.
 
 use std::collections::VecDeque;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-
-mod task;
-pub(crate) use task::{DiscoveryTask, DiscoveryTaskResult};
 
 const IGNORED_DIRECTORIES: &[&str] = &[".git", "node_modules", "target"];
 
@@ -32,7 +29,7 @@ pub(crate) fn discover_files(root: &Path, limits: DiscoveryLimits) -> io::Result
     discover_files_until(root, limits, || false)?.ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::Interrupted,
-            "project discovery unexpectedly cancelled",
+            "repository discovery unexpectedly cancelled",
         )
     })
 }
@@ -45,7 +42,7 @@ pub(crate) fn discover_files_until(
     if !fs::symlink_metadata(root)?.file_type().is_dir() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "project discovery root is not a directory",
+            "repository discovery root is not a directory",
         ));
     }
     if limits.max_files == 0 || limits.max_entries == 0 {

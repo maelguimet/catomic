@@ -18,7 +18,7 @@ compatibility, while malformed TOML and invalid recognized values fail with an
 `InvalidData` error. Missing files continue to use safe defaults.
 
 The standard library has no TOML parser. This dependency is used for Plain-safe
-startup settings and for lazily loaded Project/LLM settings; parsing data does
+startup settings and for lazily loaded repository/LLM settings; parsing data does
 not construct a linter, repository scanner, process runner, network client, or
 other capability-gated service. Unit tests cover defaults, valid TOML syntax,
 section isolation, and validation failures.

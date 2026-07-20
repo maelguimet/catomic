@@ -13,7 +13,6 @@ use crate::config::actions::Action;
 use crate::config::autocomplete::AutocompleteConfig;
 use crate::config::llm::{BackendAdapter, BackendPreset, LlmCatalog};
 use crate::llm::task::LlmTask;
-use crate::mode::Mode;
 
 mod request;
 
@@ -36,7 +35,6 @@ pub(super) struct PendingConfirmation {
 pub(super) struct RequestIdentity {
     pub(super) revision: u64,
     pub(super) cursor: Cursor,
-    pub(super) mode: Mode,
     pub(super) generation: u64,
     pub(super) preset: String,
     pub(super) destination: String,

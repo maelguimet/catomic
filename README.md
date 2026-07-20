@@ -24,8 +24,8 @@ making it your only editor.
   `.catnap` recovery for when reality happens.
 - Fast, viewport-only highlighting for Markdown, Rust, Python, and JSON, plus a
   read-only Markdown preview.
-- Project mode when you ask for it: files, linting, diagnostics, and cached path
-  completion. Plain mode stays plain and does not quietly scan your repository.
+- Direct, configured linting with `F4`: it runs only when asked, remains
+  cancellable, and marks findings in the active buffer without a Problems view.
 - Cat-themed model commands, because of course. They are explicit and
   preview-first: nothing is sent until you invoke a command and confirm where it
   is going and what context it gets.
@@ -107,6 +107,7 @@ troubleshooting, see the [complete user guide](docs/user-guide.md).
 | Local completion | `Ctrl+Space` |
 | Command prompt | `Ctrl+Shift+P` or `F2` |
 | Inline clanker / clear its change marks | `F3` / `Shift+F3` |
+| Lint the saved active file | `F4` |
 | External-reload change marks | `F5` |
 | Markdown preview | `F6` |
 | Line numbers / whitespace / soft wrap | `F7` / `F8` / `F9` |
@@ -142,8 +143,6 @@ leading `:`.
 | `save`, `save as PATH` | Save the active buffer |
 | `config` | Open the resolved user configuration (confirm before first creation) |
 | `goto LINE`, `replace`, `replace-all` | Navigate and edit |
-| `project`, `plain` | Enter or leave opt-in Project mode |
-| `files`, `lint`, `diagnostics`, `dnext`, `dprev` | Run Project tools |
 | `run NAME` | Run a configured, trusted external command |
 | `recover` | Preview and apply a newer `.catnap` sidecar |
 | `model`, `models` | Search configured model/backend presets |

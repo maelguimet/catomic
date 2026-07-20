@@ -1,7 +1,8 @@
 //! Purpose: this file must prepare bounded repo context away from the editor input thread.
 //! Owns: broker construction, active-file disk pinning, context, and non-blocking polling.
 //! Must not: construct HTTP clients, read keys, contact endpoints, mutate repos, or apply output.
-//! Invariants: repo I/O stays off the input thread; Drop requests discovery cancellation.
+//! Invariants: repo I/O stays off the input thread; each invocation detects its Git root;
+//!   Drop requests discovery cancellation.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -31,21 +32,31 @@ pub struct RepoPrepareTask {
 
 impl RepoPrepareTask {
     #[cfg(test)]
-    pub fn start(root: &Path, active_path: &Path) -> io::Result<Self> {
-        Self::start_with_budget(root, active_path, DEFAULT_CONTEXT_BUDGET)
+    pub fn start(active_path: &Path) -> io::Result<Self> {
+        Self::start_with_budget(active_path, DEFAULT_CONTEXT_BUDGET)
     }
 
-    pub fn start_with_budget(root: &Path, active_path: &Path, budget: usize) -> io::Result<Self> {
+    pub fn start_with_budget(active_path: &Path, budget: usize) -> io::Result<Self> {
         let (sender, receiver) = mpsc::sync_channel(1);
         let cancel = Arc::new(AtomicBool::new(false));
         let worker_cancel = Arc::clone(&cancel);
-        let root = root.to_path_buf();
-        let active_path = active_path.to_path_buf();
+        let active_path = if active_path.is_absolute() {
+            active_path.to_path_buf()
+        } else {
+            std::env::current_dir()?.join(active_path)
+        };
+        let cwd = active_path.parent().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "active file has no repository search directory",
+            )
+        })?;
+        let cwd = cwd.to_path_buf();
         std::thread::Builder::new()
             .name("catomic-repo-context".to_string())
             .spawn(move || {
                 let result = prepare(
-                    &root,
+                    &cwd,
                     &active_path,
                     budget.min(DEFAULT_CONTEXT_BUDGET),
                     &worker_cancel,
@@ -83,12 +94,12 @@ impl Drop for RepoPrepareTask {
 }
 
 fn prepare(
-    root: &Path,
+    cwd: &Path,
     active_path: &Path,
     budget: usize,
     cancel: &AtomicBool,
 ) -> RepoPrepareResult {
-    let broker = match ContextBroker::new_until(root, budget, || cancel.load(Ordering::Acquire)) {
+    let broker = match ContextBroker::new_until(cwd, budget, || cancel.load(Ordering::Acquire)) {
         Ok(Some(broker)) => broker,
         Ok(None) => return RepoPrepareResult::Cancelled,
         Err(error) => return RepoPrepareResult::Error(error.to_string()),

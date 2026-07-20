@@ -21,7 +21,7 @@ Add `portable-pty = "0.9.0"` as a dev-dependency only.
 Dependency justification:
 
 - std cannot open a PTY and spawn a child with it as the controlling terminal.
-- The dependency is used only by integration tests, not by Plain or Project
+- The dependency is used only by integration tests, not by editor or repository
   runtime code.
 - It has no Plain startup effect because it is under `[dev-dependencies]`.
 - It is tested by `tests/pty_smoke.rs`, which drives the real `catomic` binary
@@ -30,5 +30,5 @@ Dependency justification:
 - Removal path: delete the root PTY integration tests and remove the
   dev-dependency, or replace both with another PTY harness.
 
-No new production dependency, background work, Project subsystem, or network
+No new production dependency, background work, repository subsystem, or network
 surface is introduced.

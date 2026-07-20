@@ -26,7 +26,7 @@ fn live_smoke_watcher_sees_external_change_and_auto_reloads() {
     std::fs::write(&p, "LIVEBASE").unwrap();
 
     let mut app = App::new(Some(&p)).unwrap();
-    // Must have a real watcher under Plain + watchable parent for the smoke.
+    // Must have a real watcher for the watchable parent in this smoke test.
     if app.file_watcher.is_none() {
         let _ = std::fs::remove_file(&p);
         eprintln!("skipping live smoke: no watcher (parent not watchable in this env)");

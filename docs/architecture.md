@@ -13,26 +13,24 @@ terminal event -> normalized input -> semantic command -> state change -> render
 Rendering reads editor state and must not mutate it. Terminal-specific input is
 normalized at the boundary; editor commands must not reach into buffer internals.
 
-## Modes and construction
+## Construction
 
-Catomic has one editor core and two user-facing modes:
+Catomic has one editor mode:
 
-- Plain startup and ordinary editing perform no repository scans, background
+- Startup and ordinary editing perform no repository scans, background
   indexing, configured commands or hooks, model probing, credential reads, or
   network requests.
-- Project mode enables repository-aware features explicitly. Those features
-  remain lazy, bounded, cancellable, and absent until invoked.
+- Linting is a direct editor action. Repository-aware model context is detected
+  and prepared afresh for each explicit request. Both remain bounded,
+  cancellable, and absent until invoked.
 
-Capabilities gate construction, not merely use. A disabled service must not be
-allocated or hidden behind a dormant global. Plain-safe facilities such as file
-watching, Markdown presentation, and current-buffer completion do not imply
-Project construction.
+There is no persistent workspace, project session, or global capability bouncer.
+File watching, Markdown presentation, syntax, and completion remain local to
+the active editor/file state.
 
 Model-backed actions have an additional explicit confirmation boundary. Clients
 and command processes are transient, model output is untrusted, and edits remain
-preview-first. The complete contract is in [`llm-rules.md`](llm-rules.md); the
-accepted mode decision is in
-[`decisions/0001-plain-project-modes.md`](decisions/0001-plain-project-modes.md).
+preview-first. The complete contract is in [`llm-rules.md`](llm-rules.md).
 
 ## Ownership boundaries
 
@@ -44,19 +42,16 @@ accepted mode decision is in
   ANSI presentation, screen output, and terminal capability quirks. It does not
   implement editor commands.
 - `src/buffer/` owns text storage, queries, mutations, and edit history. It does
-  not perform terminal, filesystem, Project, or model work.
+  not perform terminal, filesystem, repository, or model work.
 - `src/editor/` owns pure editing concepts such as document coordinates,
   selection, search, completion, syntax classification, and Markdown preview.
 - `src/file/` owns file identity, loading, atomic saving, text formats, size
   policy, external-change watching, and recovery storage.
 - `src/config/` owns typed configuration, validation, defaults, and keybinding
   translation. Loading configuration must not construct the services it names.
-- `src/project/` owns explicitly invoked repository discovery, diagnostics,
-  read-only Git context, and Project task lifetimes. Nothing in this module is
-  constructed during Plain startup.
 - `src/llm/` owns bounded context, backend adapters, request workers, brokered
-  repository reads, proposal parsing, and model-specific safety limits. It does
-  not own application state or silently write files.
+  request-local repository reads, proposal parsing, and model-specific safety
+  limits. It does not own application state or silently write files.
 - `src/external/` owns bounded child-process execution primitives. User-facing
   command policy, confirmation, preview, and apply state stay in `src/app/`.
 - `src/tests/` contains crate-internal golden, performance, and PTY helpers;

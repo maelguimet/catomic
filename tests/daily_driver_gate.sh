@@ -71,7 +71,7 @@ EOF
 - [x] Used only built-in help for open → edit → undo/redo → find → save → close.
 - [x] Common actions were understandable without repository documentation.
 
-## Sustained plain editing
+## Sustained editing
 
 - [x] Created, opened, saved, Save-As'd, and closed real text and code files.
 - [x] Exercised undo/redo, selection, search/replace, clipboard, and wrapping.
@@ -86,10 +86,8 @@ EOF
 - [x] Status and prompts remained understandable at narrow and normal widths.
 - [x] Markdown source and F6 preview were reviewed at both widths.
 
-## Project and model safety
+## Model safety
 
-- [x] Judged the Plain editing loop solid before entering Project mode.
-- [x] Exercised Project discovery and returned to Plain mode cleanly.
 - [x] Opened current-file and repository model confirmations, then pressed Escape.
 - [x] Confirmed no model request or live endpoint was used.
 

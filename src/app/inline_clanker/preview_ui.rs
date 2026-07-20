@@ -22,8 +22,6 @@ pub(super) fn open(
     preview_changes: ChangeSet,
 ) -> io::Result<()> {
     super::super::view::cancel_preview(app);
-    super::super::lint::close_view(app);
-    super::super::project_files::close_view(app);
     super::super::llm_preview::close(app);
     let source_scroll_top = app.screen.scroll_top;
     let source_scroll_left = app.screen.scroll_left;

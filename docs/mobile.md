@@ -108,7 +108,7 @@ direct drag selection. Termux long-press invokes its own terminal-text selector;
 it does not change Catomic's editor selection.
 
 Wheel/finger scrolling moves the viewport without moving the cursor or
-discarding a selection. Menu, help, preview, confirmation, diagnostics, and
+discarding a selection. Menu, help, preview, confirmation, and
 model proposal surfaces use the same wheel events for navigation. Line-number
 gutters, tabs, soft wrapping, wide characters, combining sequences, and emoji
 are included in coordinate mapping.

@@ -1,29 +1,25 @@
-//! File watcher (notify-backed, gated).
+//! File watcher (notify-backed, best-effort).
 //!
-//! Purpose: provide a small, explicitly gated wrapper around notify for single-file
-//! external change/delete detection. Construction is the only gate; signals are
+//! Purpose: provide a small wrapper around notify for single-file external
+//! change/delete detection. Signals are
 //! consumed via non-blocking try_recv.
 //! Owns: the notify RecommendedWatcher (kept alive), normalized lexical and
 //!   resolved target paths,
 //!   and mpsc receiver for events (notify manages its internal polling thread).
-//! Must not: be constructed unless Capabilities::file_watch; must not imply or
-//!   construct any Project services (linters, lsp, repo_scan, llm, etc.).
-//! Invariants: if !file_watch -> Ok(None) before any notify/fs; watches the
-//!   lexical target parent plus a distinct resolved referent parent (non-recursive);
+//! Must not: imply or construct repository services (linters, scans, LLM, etc.).
+//! Invariants: watches the lexical target parent plus a distinct resolved referent parent (non-recursive);
 //!   events filter to either exact target path; try_recv drains at most one.
 //!   best-effort lifecycle and consumes via app/watch helper (hints only).
 //!
 //! Dependency justification (per AGENTS.md):
 //! 1. std has no portable filesystem event notification API.
 //! 2. Used only by `file::watcher`.
-//! 3. Plain-safe only when `Capabilities::file_watch` is true.
-//! 4. FileWatcher is App-owned best-effort when `Capabilities::file_watch`
-//!    and a file path exist. App runtime checks once per loop via watch helper
+//! 3. FileWatcher is App-owned best-effort when a file path exists. App runtime checks once per loop via watch helper
 //!    (try_recv only inside check_file_watcher_once). Signals are hints only.
 //! 5. Removable by deleting the watcher wrapper + the dependency.
 //!
 //! Current truth:
-//! - App owns FileWatcher (best-effort) when file_watch + path.
+//! - App owns FileWatcher (best-effort) when an active file path is watchable.
 //! - Runtime polls via check_file_watcher_once_and_render (once/iter).
 //! - Signals are hints only; App policy decides automatic or confirmed reload.
 //! - Unchanged/NoPath from watcher are ignored unless they clear a stale
@@ -38,7 +34,6 @@ use std::sync::mpsc::{self, Receiver};
 use std::sync::mpsc::Sender;
 
 use crate::file::watch_path::{is_relevant, normalize_path, watch_parent};
-use crate::mode::Capabilities;
 use notify::{self, Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
 /// Signals emitted for the watched target path only.
@@ -54,9 +49,8 @@ pub enum FileWatchSignal {
 
 /// Notify-backed watcher for a single target file.
 ///
-/// Kept capability-gated. The lexical parent and any distinct resolved
-/// referent parent are watched non-recursively; events are filtered to the
-/// corresponding exact target paths.
+/// The lexical parent and any distinct resolved referent parent are watched
+/// non-recursively; events are filtered to the corresponding exact target paths.
 pub struct FileWatcher {
     /// Held to keep the watcher alive (notify uses it for its internal thread).
     /// In tests a TestStub variant allows construction without a live notify thread.
@@ -82,17 +76,9 @@ enum InnerWatcher {
 }
 
 impl FileWatcher {
-    /// Construct only if allowed by caps. Returns Ok(None) for !file_watch
-    /// without touching notify or the FS. On success returns the live watcher
-    /// or a notify::Error.
-    ///
     /// Watches the lexical target's parent plus a distinct referent parent so
     /// both link replacement and referent edits are observable.
-    pub fn new(path: PathBuf, caps: &Capabilities) -> Result<Option<Self>, notify::Error> {
-        if !caps.file_watch {
-            return Ok(None);
-        }
-
+    pub fn new(path: PathBuf) -> Result<Self, notify::Error> {
         let targets = watch_targets(&path);
         let directories = watch_directories(&targets);
 
@@ -110,13 +96,13 @@ impl FileWatcher {
             watcher.watch(&directory, RecursiveMode::NonRecursive)?;
         }
 
-        Ok(Some(Self {
+        Ok(Self {
             _watcher: InnerWatcher::Real(watcher),
             targets,
             rx,
             #[cfg(test)]
             test_inject: std::sync::Mutex::new(None),
-        }))
+        })
     }
 
     /// Non-blocking receive of at most one signal.

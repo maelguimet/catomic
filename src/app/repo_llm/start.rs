@@ -1,7 +1,7 @@
-//! Purpose: this file must gate and start explicit Project repo-context preparation.
-//! Owns: capability checks, current-file draft validation, config load, and prepare task start.
+//! Purpose: start explicit request-local repository context preparation.
+//! Owns: current-file validation, config load, and prepare task start.
 //! Must not: construct clients, read API keys, block for repo scans, network, or mutate buffers.
-//! Invariants: Plain returns before constructing any broker task; preparation has no client.
+//! Invariants: Git root detection occurs per invocation; preparation has no client.
 
 use std::io::{self, Write};
 
@@ -17,10 +17,6 @@ pub(crate) fn begin(
     command: super::RepoLlmCommand,
     instruction: &str,
 ) -> io::Result<()> {
-    if !app.caps.repo_llm || app.project.is_none() {
-        app.message_info("Repo LLM requires explicit Project mode (:project).");
-        return app.render(out);
-    }
     let catalog = match crate::config::llm::load() {
         Ok(catalog) => catalog,
         Err(error) => {
@@ -79,8 +75,7 @@ pub(super) fn begin_with_command_and_settings(
             return app.render(out);
         }
     };
-    let root = app.project.as_ref().expect("Project checked").root();
-    match RepoPrepareTask::start_with_budget(root, &path, command.context_budget()) {
+    match RepoPrepareTask::start_with_budget(&path, command.context_budget()) {
         Ok(task) => {
             app.repo_llm_state = Some(RepoLlmState::Preparing(Preparing {
                 task,
@@ -91,7 +86,7 @@ pub(super) fn begin_with_command_and_settings(
                 path,
             }));
             app.message_info(format!(
-                "Building {} {} repo context ({} KiB max)... Esc cancels; typing remains live.",
+                "Building {} {} repository context ({} KiB max)... Esc cancels; typing remains live.",
                 command.name(),
                 command.profile(),
                 command.context_budget() / 1024

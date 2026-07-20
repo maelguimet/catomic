@@ -351,6 +351,7 @@ fn do_atomic_save_to(app: &mut super::App, out: &mut dyn Write, target: PathBuf)
     match save_result {
         Ok(written_len) => {
             if path_changed {
+                super::lint::invalidate(app);
                 app.file.path = Some(target.clone());
                 // Refresh only after the write succeeds, so failed Save As keeps
                 // both the prior path and watcher association intact.

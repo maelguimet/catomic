@@ -17,7 +17,7 @@ in `progress/phase-4-progress.md`; measurements are also retained in
 | Read-only safety | Ordinary key input and bracketed paste cannot edit preview source; mouse selection is ignored there. External reload cancels stale preview state before replacing source. |
 | Representative preview | The complete heading, list, inline-code, and blockquote fixture asserts semantic spans, defined layout, delimiter removal, and byte-identical source without blessing decorative replacement strings. |
 | Real terminal flow | The default PTY smoke sends F6/F7/F8 to the release-shaped binary, requires rendered/read-only/toggle messages, verifies the source file is unchanged, and requires mouse, bracketed-paste, and alternate-screen teardown. |
-| Plain startup discipline | `pulldown-cmark` is invoked only by explicit F6. Startup, typing, and ordinary viewport rendering do not construct a parser or add Project/LLM/network services. Dependency scope and removal are recorded in decision 0005. |
+| Startup discipline | `pulldown-cmark` is invoked only by explicit F6. Startup, typing, and ordinary viewport rendering do not construct a parser or add repository/LLM/network services. Dependency scope and removal are recorded in decision 0005. |
 
 ## Performance target and result
 
@@ -59,4 +59,4 @@ verified:
 
 Phase 4 acceptance is complete. Catomic now has useful, bounded light syntax,
 an explicit terminal-native Markdown preview, and optional view indicators
-without adding idle work or Project-mode cost to Plain editing.
+without adding idle work to ordinary editing.

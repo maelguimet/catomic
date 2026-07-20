@@ -1,209 +1,227 @@
-//! Purpose: verify on-demand lint guards, polling, list view, and diagnostic navigation.
-//! Owns: App-level linter behavior tests without a real terminal.
-//! Must not: load user config, auto-run tools, scan projects, mutate disk, or network.
-//! Invariants: Plain/dirty spawn nothing; views never edit; jumps use 1-based diagnostics.
+//! Purpose: verify direct on-demand lint, in-buffer findings, cancellation, and invalidation.
+//! Owns: App-level linter behavior with isolated files and fake shell linters.
+//! Must not: load user config, auto-run tools, scan repositories, or contact a network.
+//! Invariants: findings describe only the exact active path/revision that launched the task.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::buffer::{Cursor, PieceTable};
+use crate::buffer::Cursor;
 use crate::config::linters;
-use crate::project::diagnostics::parse_common_output;
 
-use super::super::{project_mode, App};
+use super::super::App;
+
+static NEXT_TEMP: AtomicUsize = AtomicUsize::new(0);
 
 #[test]
-fn plain_and_dirty_buffers_spawn_no_linter() {
-    let config = linters::parse("[linters]\nrs = \"true {file}\"\n").unwrap();
+fn dirty_buffer_does_not_spawn_linter() {
+    let config = config("true {file}");
     let mut app = App::new(None).unwrap();
     app.file.path = Some(PathBuf::from("/tmp/sample.rs"));
+    app.file.dirty = true;
     let mut out = Vec::new();
 
-    super::start_with_config(&mut app, &mut out, config.clone()).unwrap();
-    assert!(app.project.is_none());
-    assert!(app
-        .message
-        .as_deref()
-        .unwrap_or("")
-        .contains("Project mode"));
-
-    project_mode::switch_to_project(&mut app, &mut out).unwrap();
-    app.file.dirty = true;
     super::start_with_config(&mut app, &mut out, config).unwrap();
-    assert!(!app.project.as_ref().unwrap().is_linter_running());
+
+    assert!(!super::is_running(&app));
     assert!(app.message.as_deref().unwrap_or("").contains("Save"));
 }
 
 #[test]
-fn configured_linter_completes_into_project_diagnostics() {
-    let config =
-        linters::parse("[linters]\nrs = \"printf '%s:2:3: warning: found\\n' {file}\"\n").unwrap();
-    let mut app = App::new(None).unwrap();
-    app.file.path = Some(PathBuf::from("/tmp/sample.rs"));
+fn configured_linter_installs_raw_current_buffer_finding() {
+    let file = TempFile::new("sample.rs", "zero\none\n");
+    let config = config("printf '%s:2:2: suspicious thing\\n' {file}");
+    let mut app = App::new(file.path.to_str()).unwrap();
     let mut out = Vec::new();
-    project_mode::switch_to_project(&mut app, &mut out).unwrap();
 
     super::start_with_config(&mut app, &mut out, config).unwrap();
-    assert!(app.project.as_ref().unwrap().is_linter_running());
-    assert!(app.message.as_deref().unwrap_or("").contains("Running"));
-    let deadline = Instant::now() + Duration::from_secs(2);
-    while app.project.as_ref().unwrap().is_linter_running() {
-        super::poll(&mut app, &mut out).unwrap();
-        assert!(Instant::now() < deadline, "linter integration timed out");
-        std::thread::sleep(Duration::from_millis(5));
-    }
+    poll_until_done(&mut app, &mut out);
 
-    let diagnostics = app.project.as_ref().unwrap().diagnostics();
-    assert_eq!(diagnostics.items.len(), 1);
+    let findings = super::visible_findings(&app).unwrap();
+    assert_eq!(findings.len(), 1);
+    assert_eq!((findings[0].row, findings[0].col), (1, 1));
+    assert_eq!(findings[0].message, "suspicious thing");
+    app.buffer.set_cursor(Cursor { row: 1, col: 1 });
     assert_eq!(
-        (diagnostics.items[0].line, diagnostics.items[0].col),
-        (2, 3)
+        super::message_at_cursor(&app).as_deref(),
+        Some("Lint 2:2: suspicious thing")
     );
-    assert!(app
-        .message
-        .as_deref()
-        .unwrap_or("")
-        .contains("1 diagnostic"));
 }
 
 #[test]
-fn linter_completion_names_origin_after_buffer_switch() {
-    let nonce = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "catomic-lint-origin-{}-{nonce}",
-        std::process::id()
-    ));
-    std::fs::create_dir(&root).unwrap();
-    let origin = root.join("origin.rs");
-    let other = root.join("other.rs");
-    std::fs::write(&origin, "fn origin() {}\n").unwrap();
-    std::fs::write(&other, "fn other() {}\n").unwrap();
-    let config = linters::parse(
-        "[linters]\nrs = \"sleep 0.05; printf '%s:1:1: warning: found\\n' {file}\"\n",
+fn finding_renders_in_buffer_and_exposes_raw_message_at_cursor() {
+    let file = TempFile::new("render.rs", "cat\n");
+    let mut app = App::new(file.path.to_str()).unwrap();
+    app.lint.results = Some(super::LintResults {
+        source: file.path.clone(),
+        history_position: app.buffer.edit_history_position(),
+        findings: vec![super::LintFinding {
+            row: 0,
+            col: 1,
+            message: "raw compiler wording".to_string(),
+        }],
+    });
+    app.buffer.set_cursor(Cursor { row: 0, col: 1 });
+    let mut out = Vec::new();
+
+    app.render(&mut out).unwrap();
+
+    let rendered = String::from_utf8(out).unwrap();
+    assert!(rendered.contains("\x1b[31;4ma\x1b[0m"));
+    assert!(rendered.contains("Lint 1:2: raw compiler wording"));
+}
+
+#[test]
+fn rerun_replaces_previous_findings() {
+    let file = TempFile::new("rerun.rs", "zero\none\n");
+    let mut app = App::new(file.path.to_str()).unwrap();
+    let mut out = Vec::new();
+    super::start_with_config(
+        &mut app,
+        &mut out,
+        config("printf '%s:1:1: first\\n' {file}"),
     )
     .unwrap();
-    let mut app = App::new(origin.to_str()).unwrap();
+    poll_until_done(&mut app, &mut out);
+
+    super::start_with_config(
+        &mut app,
+        &mut out,
+        config("printf '%s:2:1: second\\n' {file}"),
+    )
+    .unwrap();
+    assert!(super::visible_findings(&app).is_none());
+    poll_until_done(&mut app, &mut out);
+
+    let findings = super::visible_findings(&app).unwrap();
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].row, 1);
+    assert_eq!(findings[0].message, "second");
+}
+
+#[test]
+fn content_edit_cancels_slow_lint_and_discards_late_result() {
+    let file = TempFile::new("stale.rs", "version a\n");
+    let config = config("sleep 0.1; printf '%s:1:1: stale finding\\n' {file}");
+    let mut app = App::new(file.path.to_str()).unwrap();
     let mut out = Vec::new();
-    project_mode::switch_to_project(&mut app, &mut out).unwrap();
 
     super::start_with_config(&mut app, &mut out, config).unwrap();
-    assert!(app.project.as_ref().unwrap().is_linter_running());
-    app.open_file_buffer(&other).unwrap();
-    assert_eq!(app.file.path.as_deref(), Some(other.as_path()));
+    assert!(super::is_running(&app));
+    app.buffer.set_cursor(Cursor { row: 0, col: 9 });
+    app.buffer.insert_char('!');
+    super::super::input::finish_content_edit(&mut app, &mut out).unwrap();
 
+    assert!(!super::is_running(&app));
+    assert!(super::visible_findings(&app).is_none());
+    std::thread::sleep(Duration::from_millis(150));
+    super::poll(&mut app, &mut out).unwrap();
+    assert!(super::visible_findings(&app).is_none());
+}
+
+#[test]
+fn content_edit_clears_completed_findings() {
+    let file = TempFile::new("completed.rs", "cat\n");
+    let mut app = App::new(file.path.to_str()).unwrap();
+    let mut out = Vec::new();
+    super::start_with_config(
+        &mut app,
+        &mut out,
+        config("printf '%s:1:1: completed finding\\n' {file}"),
+    )
+    .unwrap();
+    poll_until_done(&mut app, &mut out);
+    assert!(super::visible_findings(&app).is_some());
+
+    app.buffer.set_cursor(Cursor { row: 0, col: 3 });
+    app.buffer.insert_char('!');
+    super::super::input::finish_content_edit(&mut app, &mut out).unwrap();
+
+    assert!(super::visible_findings(&app).is_none());
+}
+
+#[test]
+fn escape_cancels_running_linter_without_blocking_editor() {
+    let file = TempFile::new("cancel.rs", "fn main() {}\n");
+    let mut app = App::new(file.path.to_str()).unwrap();
+    let mut out = Vec::new();
+    super::start_with_config(
+        &mut app,
+        &mut out,
+        config("while :; do :; done # {file}"),
+    )
+    .unwrap();
+    assert!(super::is_running(&app));
+
+    assert!(
+        super::handle_key(
+            &mut app,
+            &mut out,
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)
+        )
+        .unwrap()
+    );
+
+    assert!(!super::is_running(&app));
+    assert!(app.message.is_none());
+}
+
+#[test]
+fn path_change_invalidates_results() {
+    let file = TempFile::new("origin.rs", "fn main() {}\n");
+    let mut app = App::new(file.path.to_str()).unwrap();
+    let mut out = Vec::new();
+    super::start_with_config(
+        &mut app,
+        &mut out,
+        config("printf '%s:1:1: origin finding\\n' {file}"),
+    )
+    .unwrap();
+    poll_until_done(&mut app, &mut out);
+    assert!(super::visible_findings(&app).is_some());
+
+    app.file.path = Some(file.path.with_file_name("renamed.rs"));
+
+    assert!(super::visible_findings(&app).is_none());
+}
+
+fn config(command: &str) -> linters::LinterConfig {
+    linters::parse(&format!("[linters]\nrs = {command:?}\n")).unwrap()
+}
+
+fn poll_until_done(app: &mut App, out: &mut Vec<u8>) {
     let deadline = Instant::now() + Duration::from_secs(2);
-    while app.project.as_ref().unwrap().is_linter_running() {
-        super::poll(&mut app, &mut out).unwrap();
+    while super::is_running(app) {
+        super::poll(app, out).unwrap();
         assert!(Instant::now() < deadline, "linter integration timed out");
         std::thread::sleep(Duration::from_millis(5));
     }
-
-    let message = app.message.as_deref().unwrap_or("");
-    assert!(
-        message.contains("origin.rs"),
-        "completion on another active buffer must name its origin: {message:?}"
-    );
-    assert_eq!(app.file.path.as_deref(), Some(other.as_path()));
-    let _ = std::fs::remove_dir_all(root);
 }
 
-fn app_with_diagnostics() -> App {
-    let mut app = App::new(None).unwrap();
-    app.file.path = Some(PathBuf::from("/tmp/sample.rs"));
-    app.buffer = Box::new(PieceTable::from_text("zero\none\ntwo"));
-    let mut out = Vec::new();
-    project_mode::switch_to_project(&mut app, &mut out).unwrap();
-    let diagnostics = parse_common_output(
-        "/tmp/sample.rs:2:3: warning: first\n/tmp/sample.rs:3:1: error: second\n",
-        std::path::Path::new("/tmp"),
-    );
-    app.project.as_mut().unwrap().set_diagnostics(diagnostics);
-    app
+struct TempFile {
+    root: PathBuf,
+    path: PathBuf,
 }
 
-#[test]
-fn diagnostics_view_is_read_only_and_escape_restores_source() {
-    let mut app = app_with_diagnostics();
-    let source = app.buffer.to_string();
-    let mut out = Vec::new();
-
-    super::show_diagnostics(&mut app, &mut out).unwrap();
-    assert!(app.surfaces.diagnostics.is_some());
-    assert!(String::from_utf8_lossy(&out).contains("warning"));
-    app.handle_key_with(
-        &mut out,
-        KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE),
-    )
-    .unwrap();
-    assert_eq!(app.buffer.to_string(), source);
-    app.handle_key_with(&mut out, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
-        .unwrap();
-    assert!(app.surfaces.diagnostics.is_none());
+impl TempFile {
+    fn new(name: &str, text: &str) -> Self {
+        let suffix = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "catomic-direct-lint-{}-{suffix}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join(name);
+        std::fs::write(&path, text).unwrap();
+        Self { root, path }
+    }
 }
 
-#[test]
-fn next_and_previous_diagnostics_jump_with_scalar_coordinates() {
-    let mut app = app_with_diagnostics();
-    let mut out = Vec::new();
-
-    super::move_diagnostic(&mut app, &mut out, true).unwrap();
-    assert_eq!(app.buffer.cursor(), Cursor { row: 1, col: 2 });
-    super::move_diagnostic(&mut app, &mut out, true).unwrap();
-    assert_eq!(app.buffer.cursor(), Cursor { row: 2, col: 0 });
-    super::move_diagnostic(&mut app, &mut out, false).unwrap();
-    assert_eq!(app.buffer.cursor(), Cursor { row: 1, col: 2 });
-}
-
-#[test]
-fn cross_file_diagnostic_opens_a_buffer_and_jumps() {
-    let nonce = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "catomic-cross-diagnostic-{}-{nonce}",
-        std::process::id()
-    ));
-    std::fs::create_dir(&root).unwrap();
-    let active = root.join("active.rs");
-    let target = root.join("target.rs");
-    std::fs::write(&active, "active\n").unwrap();
-    std::fs::write(&target, "zero\nβeta\n").unwrap();
-    let mut app = App::new(active.to_str()).unwrap();
-    let mut out = Vec::new();
-    project_mode::switch_to_project(&mut app, &mut out).unwrap();
-    let diagnostics = parse_common_output(
-        &format!("{}:2:2: error: cross file\n", target.display()),
-        &root,
-    );
-    app.project.as_mut().unwrap().set_diagnostics(diagnostics);
-
-    super::move_diagnostic(&mut app, &mut out, true).unwrap();
-
-    assert_eq!(app.file.path.as_deref(), Some(target.as_path()));
-    assert_eq!(app.buffer.cursor(), Cursor { row: 1, col: 1 });
-    assert_eq!(app.buffer_count(), 2);
-    let _ = std::fs::remove_dir_all(root);
-}
-
-#[test]
-fn escape_cancels_a_running_linter() {
-    let config = linters::parse("[linters]\nrs = \"while :; do :; done # {file}\"\n").unwrap();
-    let mut app = App::new(None).unwrap();
-    app.file.path = Some(PathBuf::from("/tmp/sample.rs"));
-    let mut out = Vec::new();
-    project_mode::switch_to_project(&mut app, &mut out).unwrap();
-    super::start_with_config(&mut app, &mut out, config).unwrap();
-    assert!(app.project.as_ref().unwrap().is_linter_running());
-
-    app.handle_key_with(&mut out, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
-        .unwrap();
-
-    assert!(!app.project.as_ref().unwrap().is_linter_running());
-    assert!(app.message.is_none());
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.root);
+    }
 }

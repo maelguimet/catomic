@@ -302,7 +302,6 @@ fn active_surface(app: &super::App) -> Surface {
         || super::model_picker::is_viewing(app)
         || super::recovery::is_viewing(app)
         || super::external_command::is_viewing(app)
-        || super::project_files::is_viewing(app)
     {
         return Surface::Confirmation;
     }
@@ -315,7 +314,6 @@ fn active_surface(app: &super::App) -> Surface {
     }
     if super::help::is_viewing(app)
         || super::llm_answer::is_viewing(app)
-        || super::lint::is_viewing(app)
         || super::view::is_preview(app)
     {
         return Surface::ReadOnly;

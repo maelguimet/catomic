@@ -32,7 +32,11 @@ pub(crate) enum SpanStyle {
     Comment,
     Number,
     Code,
-    PreviewCode,
+    PreviewInlineCode,
+    PreviewCodeBlock,
+    PreviewHeading1,
+    PreviewHeading2,
+    PreviewHeading3,
     PreviewHeading4,
     PreviewHeading5,
     PreviewHeading6,
@@ -77,7 +81,7 @@ pub(crate) fn spans_for_line(syntax: SyntaxKind, line: &str) -> Vec<StyledSpan> 
     match syntax {
         SyntaxKind::Plain => Vec::new(),
         SyntaxKind::Markdown => markdown::spans(line),
-        SyntaxKind::MarkdownPreview => markdown::preview_spans(line),
+        SyntaxKind::MarkdownPreview => Vec::new(),
         SyntaxKind::Rust | SyntaxKind::Python | SyntaxKind::Json => code::spans(syntax, line),
         SyntaxKind::Diff => diff_spans(line),
     }

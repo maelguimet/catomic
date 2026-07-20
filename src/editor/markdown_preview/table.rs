@@ -1,5 +1,5 @@
 //! Purpose: preserve parsed Markdown table structure before terminal-text rendering.
-//! Owns: table rows, bounded grid/stacked layout, grapheme-safe clipping, and borders.
+//! Owns: table rows, bounded column/stacked layout, and grapheme-safe clipping.
 //! Must not: parse Markdown, emit ANSI, inspect terminal state, mutate buffers, or perform I/O.
 //! Invariants: cell widths use editor terminal-cell rules; output amplification is cell-width capped.
 
@@ -11,6 +11,20 @@ const MAX_CELL_WIDTH: usize = 40;
 const MAX_TABLE_COLUMNS: usize = 128;
 const MAX_TABLE_ROWS: usize = 10_000;
 const MAX_TABLE_TEXT_BYTES: usize = 1024 * 1024;
+const COLUMN_GAP: usize = 3;
+
+pub(super) struct TableLine {
+    pub(super) text: String,
+    pub(super) style: TableLineStyle,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum TableLineStyle {
+    Header,
+    Body,
+    Label,
+    Blank,
+}
 
 pub(super) struct TableBuilder {
     alignments: Vec<Alignment>,
@@ -113,7 +127,7 @@ impl TableBuilder {
         }
     }
 
-    pub(super) fn finish(mut self, width: usize) -> Result<Vec<String>, ()> {
+    pub(super) fn finish(mut self, width: usize) -> Result<Vec<TableLine>, ()> {
         self.end_row();
         if self.too_large {
             return Err(());
@@ -128,29 +142,34 @@ impl TableBuilder {
         let grid_width = widths
             .iter()
             .sum::<usize>()
-            .saturating_add(columns.saturating_mul(3))
-            .saturating_add(1);
+            .saturating_add(columns.saturating_sub(1).saturating_mul(COLUMN_GAP));
         if grid_width > width {
             return Ok(stacked_rows(&header, &self.rows, columns));
         }
-        let mut lines = vec![border('┌', '┬', '┐', '─', &widths)];
+        let mut lines = Vec::new();
         if !header.is_empty() {
-            lines.push(render_row(&header, &widths, &self.alignments));
-            lines.push(border('╞', '╪', '╡', '═', &widths));
+            lines.push(TableLine {
+                text: render_row(&header, &widths, &self.alignments),
+                style: TableLineStyle::Header,
+            });
         }
-        lines.extend(
-            self.rows
-                .iter()
-                .map(|row| render_row(row, &widths, &self.alignments)),
-        );
-        lines.push(border('└', '┴', '┘', '─', &widths));
+        lines.extend(self.rows.iter().map(|row| TableLine {
+            text: render_row(row, &widths, &self.alignments),
+            style: TableLineStyle::Body,
+        }));
         Ok(lines)
     }
 }
 
-fn stacked_rows(header: &[String], rows: &[Vec<String>], columns: usize) -> Vec<String> {
+fn stacked_rows(header: &[String], rows: &[Vec<String>], columns: usize) -> Vec<TableLine> {
     if rows.is_empty() {
-        return header.iter().map(|cell| format!("- {cell}")).collect();
+        return header
+            .iter()
+            .map(|cell| TableLine {
+                text: cell.clone(),
+                style: TableLineStyle::Header,
+            })
+            .collect();
     }
     let mut lines = Vec::new();
     for (row_index, row) in rows.iter().enumerate() {
@@ -161,10 +180,16 @@ fn stacked_rows(header: &[String], rows: &[Vec<String>], columns: usize) -> Vec<
                 .cloned()
                 .unwrap_or_else(|| format!("Column {}", column + 1));
             let value = row.get(column).map(String::as_str).unwrap_or("");
-            lines.push(format!("- {label}: {value}"));
+            lines.push(TableLine {
+                text: format!("{label}: {value}"),
+                style: TableLineStyle::Label,
+            });
         }
         if row_index + 1 < rows.len() {
-            lines.push(String::new());
+            lines.push(TableLine {
+                text: String::new(),
+                style: TableLineStyle::Blank,
+            });
         }
     }
     lines
@@ -199,16 +224,16 @@ fn column_widths(columns: usize, header: &[String], rows: &[Vec<String>]) -> Vec
 }
 
 fn render_row(row: &[String], widths: &[usize], alignments: &[Alignment]) -> String {
-    let mut output = String::from("│");
+    let mut output = String::new();
     for (column, width) in widths.iter().copied().enumerate() {
-        output.push(' ');
+        if column > 0 {
+            output.push_str(&" ".repeat(COLUMN_GAP));
+        }
         output.push_str(&aligned_cell(
             row.get(column).map(String::as_str).unwrap_or(""),
             width,
             alignments[column],
         ));
-        output.push(' ');
-        output.push('│');
     }
     output
 }
@@ -221,19 +246,6 @@ fn aligned_cell(cell: &str, width: usize, alignment: Alignment) -> String {
         Alignment::None | Alignment::Left => (0, padding),
     };
     format!("{}{}{}", " ".repeat(left), cell, " ".repeat(right))
-}
-
-fn border(left: char, join: char, right: char, fill: char, widths: &[usize]) -> String {
-    let mut output = String::new();
-    output.push(left);
-    for (index, width) in widths.iter().copied().enumerate() {
-        if index > 0 {
-            output.push(join);
-        }
-        output.extend(std::iter::repeat_n(fill, width.saturating_add(2)));
-    }
-    output.push(right);
-    output
 }
 
 #[cfg(test)]
@@ -259,14 +271,15 @@ mod tests {
         }
         table.end_row();
 
-        assert_eq!(
-            table.finish(80).unwrap().join("\n"),
-            "┌──────┬────────┬───────┐\n\
-             │ Left │ Center │ Right │\n\
-             ╞══════╪════════╪═══════╡\n\
-             │ 猫   │   e\u{301}    │    🐾 │\n\
-             └──────┴────────┴───────┘"
-        );
+        let lines = table.finish(80).unwrap();
+        assert_eq!(lines[0].text, "Left   Center   Right");
+        assert!(lines[1].text.starts_with("猫"));
+        assert!(lines[1].text.contains("e\u{301}"));
+        assert!(lines[1].text.ends_with("🐾"));
+        assert!(lines
+            .iter()
+            .all(|line| text_layout::cell_width_from(&line.text, 0) == 21));
+        assert_eq!(lines[0].style, TableLineStyle::Header);
     }
 
     #[test]
@@ -281,7 +294,13 @@ mod tests {
         table.push(&"猫".repeat(30));
         table.end_row();
 
-        let rendered = table.finish(80).unwrap().join("\n");
+        let rendered = table
+            .finish(80)
+            .unwrap()
+            .into_iter()
+            .map(|line| line.text)
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(rendered.contains("猫猫猫猫猫猫猫猫猫猫猫猫猫猫猫猫猫猫猫…"));
         assert!(!rendered.contains(&"猫".repeat(20)));
         let widths: Vec<_> = rendered
@@ -289,7 +308,7 @@ mod tests {
             .map(|line| text_layout::cell_width_from(line, 0))
             .collect();
         assert!(widths.iter().all(|width| *width == widths[0]));
-        assert!(widths[0] <= MAX_CELL_WIDTH + 4);
+        assert!(widths[0] <= MAX_CELL_WIDTH);
     }
 
     #[test]
@@ -304,8 +323,14 @@ mod tests {
         table.push("a\tb");
         table.end_row();
 
-        let rendered = table.finish(80).unwrap().join("\n");
-        assert!(rendered.contains("│ a   b │"));
+        let rendered = table
+            .finish(80)
+            .unwrap()
+            .into_iter()
+            .map(|line| line.text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(rendered.contains("a   b"));
         let widths: Vec<_> = rendered
             .lines()
             .map(|line| text_layout::cell_width_from(line, 0))
@@ -329,9 +354,9 @@ mod tests {
         }
         table.end_row();
 
-        assert_eq!(
-            table.finish(12).unwrap(),
-            vec!["- Name: long item", "- Value: 123"]
-        );
+        let lines = table.finish(12).unwrap();
+        assert_eq!(lines[0].text, "Name: long item");
+        assert_eq!(lines[1].text, "Value: 123");
+        assert!(lines.iter().all(|line| line.style == TableLineStyle::Label));
     }
 }

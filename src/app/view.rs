@@ -279,7 +279,7 @@ pub(crate) fn relayout_preview(app: &mut super::App) {
     let Some(preview) = app.view.preview.as_ref() else {
         return;
     };
-    let width = crate::editor::markdown_preview::reading_width(content_width(app));
+    let width = crate::editor::markdown_preview::layout_width(content_width(app));
     if preview.layout_width == width {
         return;
     }
@@ -307,7 +307,7 @@ fn toggle_preview(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool>
         cancel_preview(app);
         app.message = None;
     } else {
-        let width = crate::editor::markdown_preview::reading_width(content_width(app));
+        let width = crate::editor::markdown_preview::layout_width(content_width(app));
         match crate::editor::markdown_preview::render_with_width(&app.buffer.to_string(), width) {
             Ok(rendered) => {
                 app.view.preview = Some(PreviewDocument {
@@ -589,7 +589,7 @@ mod tests {
         press(&mut app, &mut out, KeyCode::End);
 
         assert_eq!(app.screen.scroll_left, 0);
-        assert!(preview_text.contains("- Right:"));
+        assert!(preview_text.contains("Right:"));
         assert!(!preview_text.contains('┌'));
     }
 

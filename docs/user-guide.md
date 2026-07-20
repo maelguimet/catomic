@@ -637,16 +637,20 @@ preference used by every current buffer and buffers opened later.
 
 The shared Markdown presentation layer reflows paragraphs, headings, nested
 quotes and lists, tasks, links, footnotes, rules, and padded code blocks to the
-terminal width, with a 100-cell maximum reading column on wide terminals. It
+terminal width. At 40 cells and above it reserves two side margins; on wider
+terminals it centers an 88-cell maximum reading column. It
 keeps parsed inline semantics through terminal presentation: strong, emphasis,
 strikethrough, inline code, and links use terminal attributes without restoring
-their source delimiters. Headings use spacing and restrained rules, quotes and
-lists use presentation markers, code blocks use padding without fences, and
-links use OSC 8 destinations without dumping URLs into prose. These attributes
-and structural markers remain readable when color is unavailable.
-Tables retain parsed alignment and terminal-cell measurement (including wide
-characters, combining marks, and emoji). A table uses a bordered grid when it
-fits and a wrapped label/value layout when it does not.
+their source delimiters. H1–H6 use six semantic roles, progressively deeper
+indentation at lower levels, and defined block spacing without generated
+rulers. Quotes use one rail plus
+depth indentation, thematic breaks use a compact centered mark, inline code is
+distinct from fully padded code-block rows, and links use OSC 8 destinations
+without dumping URLs into prose. These attributes and structural markers remain
+readable when color is unavailable. Tables retain parsed alignment and
+terminal-cell measurement (including wide characters, combining marks, and
+emoji). They use borderless aligned columns when they fit and a wrapped
+label/value layout when they do not.
 An active preview is laid out again when the terminal width or line-number
 gutter changes; this never reparses during ordinary editing.
 

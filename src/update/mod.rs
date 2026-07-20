@@ -1,7 +1,7 @@
 //! Purpose: coordinate explicit, recoverable Catomic updates outside the editor runtime.
 //! Owns: install detection, confirmation, reporting, and stable updater exit codes.
 //! Must not: enter terminal raw mode, silently contact a network, or mutate user files.
-//! Invariants: checks are read-only; installs retain a rollback binary; user state is immutable.
+//! Invariants: checks are read-only; managed/checkout installs retain rollback; user state is immutable.
 //! Phase: safe self-update workflow.
 
 mod backup;

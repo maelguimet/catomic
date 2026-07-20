@@ -77,7 +77,7 @@ mod tests {
         std::fs::write(&path, "zero\none\ntwo").unwrap();
         let mut app = super::super::App::new(None).unwrap();
         app.buffer = Box::new(crate::buffer::LargeFileBuffer::open_paged(&path, 1).unwrap());
-        app.message_info("initial warning");
+        app.message_warning("initial warning");
         app.screen.scroll_top = 4;
         app.screen.scroll_left = 5;
         let mut out = Vec::new();

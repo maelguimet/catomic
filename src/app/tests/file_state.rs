@@ -53,6 +53,10 @@ fn app_quit_dirty_first_sets_pending_and_message_second_quits() {
         .unwrap();
     assert!(!app.should_quit, "first dirty Q does not quit");
     assert!(app.pending_quit_confirm);
+    assert_eq!(
+        app.message_role,
+        crate::terminal::render::StatusRole::Warning
+    );
     let msg = app.message.as_deref().unwrap_or("");
     assert!(
         msg.contains("Unsaved changes") && msg.contains("Ctrl+Q again"),
@@ -178,7 +182,7 @@ fn movement_cancels_save_conflict_and_reload_pending() {
         status: crate::file::io::ExternalFileStatus::Modified,
         snapshot: None,
     });
-    app.message_info("armed");
+    app.message_warning("armed");
 
     app.handle_key(make_key(KeyCode::Left, KeyModifiers::NONE))
         .unwrap();

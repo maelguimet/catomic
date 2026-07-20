@@ -86,7 +86,7 @@ pub(super) fn begin_with_preset(
     if prepared.draft.scope == InlineScope::FullFile
         && prepared.draft.full_file_lines > prepared.inline.warn_lines
     {
-        app.message_info(warning_question(&prepared));
+        app.message_warning(warning_question(&prepared));
         app.inline_clanker.phase = Some(Phase::Warning(prepared));
         return super::super::command_prompt::open_inline_warning(app, out);
     }
@@ -112,7 +112,7 @@ pub(super) fn answer_warning(
             Ok(true)
         }
         _ => {
-            app.message_info(format!(
+            app.message_warning(format!(
                 "Please type yes or no. {} Type yes or no: {}",
                 warning_question(&prepared),
                 answer.trim()

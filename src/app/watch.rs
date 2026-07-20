@@ -152,7 +152,7 @@ pub(crate) fn apply_file_watch_signal(
                         )
                     {
                         app.pending_reload = None;
-                        app.message_info(super::reload::reload_drift_message_for_ui(
+                        app.message_warning(super::reload::reload_drift_message_for_ui(
                             &obs.status,
                             app.file.dirty,
                             super::mobile::is_enabled(app),
@@ -161,7 +161,7 @@ pub(crate) fn apply_file_watch_signal(
                         super::reload::apply_check_observation(app, &obs);
                     }
                     if matching_save_conflict {
-                        app.message_info(super::save::save_conflict_message_for_ui(
+                        app.message_warning(super::save::save_conflict_message_for_ui(
                             &obs.status,
                             super::mobile::is_enabled(app),
                         ));

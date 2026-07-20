@@ -76,7 +76,7 @@ fn mobile_warning_chrome_exposes_full_details_and_touch_instructions() {
         true,
     )
     .contains("Tap Menu > Check / reload file"));
-    app.message_info(warning.clone());
+    app.message_warning(warning.clone());
     assert_eq!(action_bar_text(&app).as_deref(), Some("[Menu][Info][Save]"));
 
     let mut out = Vec::new();

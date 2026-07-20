@@ -226,7 +226,7 @@ pub(super) fn handle_quit(app: &mut super::App, out: &mut dyn Write) -> io::Resu
     if let Some(request) = command_prompt::request_config_close(app) {
         match request {
             command_prompt::ConfigCloseRequest::WarnDirty => {
-                app.message_info(
+                app.message_warning(
                     "Unsaved configuration. Press Ctrl+Q again to discard it, or Ctrl+S to save.",
                 );
                 return app.render(out);
@@ -260,7 +260,7 @@ pub(super) fn handle_quit(app: &mut super::App, out: &mut dyn Write) -> io::Resu
         return Ok(());
     }
     app.pending_quit_confirm = true;
-    app.message_info(if mobile::is_enabled(app) && dirty_count == 1 {
+    app.message_warning(if mobile::is_enabled(app) && dirty_count == 1 {
         "Unsaved changes. Tap Menu > Quit again to discard, or tap Save.".to_string()
     } else if mobile::is_enabled(app) {
         format!("Unsaved changes in {dirty_count} buffers. Tap Menu > Quit again to discard.")

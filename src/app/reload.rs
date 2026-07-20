@@ -376,7 +376,7 @@ pub(crate) fn apply_check_observation(app: &mut super::App, obs: &ExternalFileOb
             let dirty = app.file.dirty;
             let text =
                 reload_arm_message_for_ui(&obs.status, dirty, super::mobile::is_enabled(app));
-            app.message_info(text);
+            app.message_warning(text);
         }
     }
 }

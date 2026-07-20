@@ -107,28 +107,7 @@ pub(super) fn handle_normalized_key(
         return Ok(());
     }
     if active_scope(app) == crate::config::actions::Scope::Editor {
-        let action = help_catalog::default_editor_action(key);
-        let is_quit = matches!(action, Some(EditorAction::Quit));
-        let is_save = matches!(action, Some(EditorAction::Save | EditorAction::SaveAs));
-        let is_reload = matches!(action, Some(EditorAction::Reload));
-        let keeps_confirmation = (is_quit
-            && (app.pending_quit_confirm
-                || command_prompt::config_discard_confirmation_pending(app)))
-            || (is_save && app.pending_save_conflict.is_some())
-            || (is_reload && app.pending_reload.is_some());
-        if !is_quit {
-            app.pending_quit_confirm = false;
-            command_prompt::clear_config_discard_confirmation(app);
-        }
-        if !is_save {
-            app.pending_save_conflict = None;
-        }
-        if !is_reload {
-            app.pending_reload = None;
-        }
-        if !keeps_confirmation {
-            app.message = None;
-        }
+        prepare_editor_action(app, help_catalog::default_editor_action(key));
     }
     if shortcuts::handle_inline_clanker_key(app, out, key)? {
         return Ok(());
@@ -140,6 +119,30 @@ pub(super) fn handle_normalized_key(
         return Ok(());
     }
     editing::handle_key(app, out, key)
+}
+
+pub(super) fn prepare_editor_action(app: &mut super::App, action: Option<EditorAction>) {
+    let is_quit = matches!(action, Some(EditorAction::Quit));
+    let is_save = matches!(action, Some(EditorAction::Save));
+    let is_reload = matches!(action, Some(EditorAction::Reload));
+    let keeps_confirmation = (is_quit
+        && (app.pending_quit_confirm
+            || command_prompt::config_discard_confirmation_pending(app)))
+        || (is_save && app.pending_save_conflict.is_some())
+        || (is_reload && app.pending_reload.is_some());
+    if !is_quit {
+        app.pending_quit_confirm = false;
+        command_prompt::clear_config_discard_confirmation(app);
+    }
+    if !is_save {
+        app.pending_save_conflict = None;
+    }
+    if !is_reload {
+        app.pending_reload = None;
+    }
+    if !keeps_confirmation {
+        app.message = None;
+    }
 }
 
 pub(super) fn dispatch_editor_action(

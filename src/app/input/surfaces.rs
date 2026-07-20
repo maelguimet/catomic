@@ -10,8 +10,8 @@ use crossterm::event::KeyEvent;
 
 use super::super::{
     command_prompt, completion, external_command, help, inline_clanker, lint, llm_answer,
-    llm_preview, llm_request, model_picker, project_files, recovery, replace, repo_llm, search, view,
-    App,
+    llm_preview, llm_request, model_picker, project_files, recovery, replace, repo_llm, search,
+    view, App,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -1634,7 +1634,10 @@ fn pty_local_completion_does_not_invoke_configured_model_backend() -> TestResult
     editor.wait_for_exit()?;
 
     assert!(!invoked.exists());
-    assert_eq!(fs::read_to_string(active)?, "alpha alpine alphabet\nalpha\n");
+    assert_eq!(
+        fs::read_to_string(active)?,
+        "alpha alpine alphabet\nalpha\n"
+    );
     Ok(())
 }
 

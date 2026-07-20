@@ -15,12 +15,20 @@ pub(crate) struct ProjectSession {
     discovery: Option<DiscoveryTask>,
     discovered: Option<Discovery>,
     diagnostics: Diagnostics,
+    diagnostics_source: Option<LintSource>,
     diagnostic_index: Option<usize>,
 }
 
 struct RunningLinter {
     task: LinterTask,
-    source: PathBuf,
+    source: LintSource,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct LintSource {
+    pub(crate) path: PathBuf,
+    pub(crate) buffer_id: u64,
+    pub(crate) content_generation: u64,
 }
 
 impl ProjectSession {
@@ -31,6 +39,7 @@ impl ProjectSession {
             discovery: None,
             discovered: None,
             diagnostics: Diagnostics::new(),
+            diagnostics_source: None,
             diagnostic_index: None,
         }
     }
@@ -39,23 +48,35 @@ impl ProjectSession {
         &self.root
     }
 
-    pub(crate) fn start_linter(&mut self, task: LinterTask, source: PathBuf) {
+    pub(crate) fn start_linter(&mut self, task: LinterTask, source: LintSource) {
         self.linter = Some(RunningLinter { task, source });
         self.diagnostics = Diagnostics::new();
+        self.diagnostics_source = None;
     }
 
     pub(crate) fn is_linter_running(&self) -> bool {
         self.linter.is_some()
     }
 
-    pub(crate) fn take_linter_result(&mut self) -> Option<(PathBuf, LinterResult)> {
+    pub(crate) fn take_linter_result(&mut self) -> Option<(LintSource, LinterResult)> {
         let result = self.linter.as_mut()?.task.try_result()?;
         let running = self.linter.take().expect("completed linter is present");
         Some((running.source, result))
     }
 
-    pub(crate) fn set_diagnostics(&mut self, diagnostics: Diagnostics) {
+    pub(crate) fn set_diagnostics(&mut self, source: LintSource, diagnostics: Diagnostics) {
         self.diagnostics = diagnostics;
+        self.diagnostics_source = Some(source);
+        self.diagnostic_index = None;
+    }
+
+    pub(crate) fn diagnostics_source(&self) -> Option<&LintSource> {
+        self.diagnostics_source.as_ref()
+    }
+
+    pub(crate) fn clear_diagnostics(&mut self) {
+        self.diagnostics = Diagnostics::new();
+        self.diagnostics_source = None;
         self.diagnostic_index = None;
     }
 

@@ -10,6 +10,7 @@ use crate::config::linters::LinterConfig;
 use crate::external::substitute_file;
 use crate::project::diagnostics::parse_common_output;
 use crate::project::linter::{LinterResult, LinterTask};
+use crate::project::LintSource;
 
 mod view;
 pub(crate) use view::{
@@ -84,10 +85,14 @@ fn start_with_config(
     let command = substitute_file(template, &absolute_path);
     match LinterTask::start(&command, &root) {
         Ok(task) => {
-            app.project
-                .as_mut()
-                .expect("Project checked")
-                .start_linter(task, absolute_path.clone());
+            app.project.as_mut().expect("Project checked").start_linter(
+                task,
+                LintSource {
+                    path: absolute_path.clone(),
+                    buffer_id: app.file.buffer_id,
+                    content_generation: app.file.content_generation,
+                },
+            );
             app.message_info(format!("Running linter for {}...", absolute_path.display()));
         }
         Err(error) => app.message_error(format!("Could not start linter: {error}")),
@@ -103,32 +108,36 @@ pub(crate) fn poll(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
     let Some((source, result)) = result else {
         return Ok(());
     };
+    if !app.lint_source_is_current(&source) {
+        return Ok(());
+    }
     match result {
-        LinterResult::Finished { output, code } => finish(app, &source, output, code),
+        LinterResult::Finished { output, code } => finish(app, source, output, code),
         LinterResult::Cancelled => app.message = None,
-        LinterResult::Error(error) => {
-            app.message_error(format!("Linter error for {}: {error}", source.display()))
-        }
+        LinterResult::Error(error) => app.message_error(format!(
+            "Linter error for {}: {error}",
+            source.path.display()
+        )),
     }
     app.render(out)
 }
 
-fn finish(app: &mut super::App, source: &std::path::Path, output: String, code: Option<i32>) {
+fn finish(app: &mut super::App, source: LintSource, output: String, code: Option<i32>) {
     let project = app.project.as_mut().expect("result requires Project");
     let diagnostics = parse_common_output(&output, project.root());
     let count = diagnostics.items.len();
-    project.set_diagnostics(diagnostics);
+    project.set_diagnostics(source.clone(), diagnostics);
     let message = if count > 0 {
         format!(
             "Lint for {} finished with {count} diagnostic(s). Use :dnext or :diagnostics.",
-            source.display()
+            source.path.display()
         )
     } else if code == Some(0) {
-        format!("Lint clean for {}: no diagnostics.", source.display())
+        format!("Lint clean for {}: no diagnostics.", source.path.display())
     } else {
         format!(
             "Linter for {} exited {} without parseable diagnostics.",
-            source.display(),
+            source.path.display(),
             code.map_or_else(
                 || "by signal".to_string(),
                 |code| format!("with code {code}")
@@ -148,6 +157,7 @@ pub(crate) fn move_diagnostic(
     forward: bool,
 ) -> io::Result<()> {
     view::close_view(app);
+    discard_stale_diagnostics(app);
     let Some((index, count, diagnostic)) = app
         .project
         .as_mut()
@@ -188,6 +198,20 @@ pub(crate) fn move_diagnostic(
         diagnostic.message
     ));
     app.render(out)
+}
+
+pub(super) fn discard_stale_diagnostics(app: &mut super::App) {
+    let is_current = app
+        .project
+        .as_ref()
+        .and_then(|project| project.diagnostics_source())
+        .is_none_or(|source| app.lint_source_is_current(source));
+    if !is_current {
+        app.project
+            .as_mut()
+            .expect("diagnostic source requires Project")
+            .clear_diagnostics();
+    }
 }
 
 fn active_absolute_path(app: &super::App) -> Option<std::path::PathBuf> {

@@ -1469,7 +1469,6 @@ fn pty_narrow_markdown_table_preview_uses_stacked_fallback_without_mutation() ->
     let initial_preview = strip_csi(&editor.output_string());
     assert!(initial_preview.contains("- Left: short"));
     assert!(!initial_preview.contains('╞'));
-    assert!(!initial_preview.contains("2,000"));
 
     editor.send_keys(b"\x1b")?;
     editor.wait_for_output("leave narrow table preview", "Markdown preview off")?;

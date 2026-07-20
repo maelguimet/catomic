@@ -321,5 +321,5 @@ fn render_buffer_cursor_uses_grapheme_display_width() {
 
     let rendered = String::from_utf8(out).unwrap();
     assert!(rendered.contains("a\u{301}猫x"));
-    assert!(rendered.ends_with("\x1b[0 q\x1b[1;4H\x1b[?25h"));
+    assert!(rendered.ends_with("\x1b[0 q\x1b[1;4H\x1b[?25h\x1b[?2026l"));
 }

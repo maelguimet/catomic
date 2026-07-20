@@ -59,7 +59,7 @@ fn ctrl_h_commits_help_content_and_status_as_one_frame() {
     assert!(frame.contains("\x1b[50;1H"));
     assert!(frame.contains("\x1b[2KHelp; Esc closes."));
     assert!(
-        frame.ends_with("\x1b[0m\x1b[0 q\x1b[1;1H\x1b[?25h"),
+        frame.ends_with("\x1b[0m\x1b[0 q\x1b[1;1H\x1b[?25h\x1b[?2026l"),
         "frame must reset styling, select the default cursor, place it, and show it"
     );
 }

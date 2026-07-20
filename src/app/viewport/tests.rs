@@ -69,7 +69,7 @@ fn wheel_preserves_selection_bytes_dirty_save_point_and_history() {
     assert_eq!(app.buffer.edit_history_position(), history);
     assert_eq!(app.file.saved_history_position, save_point);
     assert!(!app.file.dirty);
-    assert!(String::from_utf8_lossy(&out).ends_with("\x1b[?25l\x1b[1;1H"));
+    assert!(String::from_utf8_lossy(&out).ends_with("\x1b[?25l\x1b[1;1H\x1b[?2026l"));
 }
 
 #[test]
@@ -111,7 +111,7 @@ fn keyboard_navigation_after_scroll_moves_from_and_reveals_the_original_cursor()
 
     assert_eq!(app.buffer.cursor(), Cursor { row: 1, col: 4 });
     assert_eq!(app.screen.scroll_top, 1);
-    assert!(String::from_utf8_lossy(&out).ends_with("\x1b[1;5H\x1b[?25h"));
+    assert!(String::from_utf8_lossy(&out).ends_with("\x1b[1;5H\x1b[?25h\x1b[?2026l"));
 }
 
 #[test]
@@ -208,7 +208,7 @@ fn resize_preserves_a_valid_wrapped_origin_with_an_offscreen_cursor() {
     assert_eq!(app.screen.scroll_top, 0);
     assert_eq!(app.screen.wrap_col, before);
     assert!(app.screen.wrap_col <= app.buffer.line_char_count(0).unwrap());
-    assert!(String::from_utf8_lossy(&out).ends_with("\x1b[?25l\x1b[1;1H"));
+    assert!(String::from_utf8_lossy(&out).ends_with("\x1b[?25l\x1b[1;1H\x1b[?2026l"));
 }
 
 #[test]

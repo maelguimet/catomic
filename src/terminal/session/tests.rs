@@ -24,11 +24,16 @@ fn setup_and_repeated_restore_push_and_pop_keyboard_flags_once() {
     assert_eq!(count(&output, b"\x1b[>4;0m"), 1);
     assert_eq!(count(&output, b"\x1b[<1u"), 1);
     assert_eq!(count(&output, b"\x1b[0 q"), 1);
+    assert_eq!(count(&output, crate::terminal::render::SYNC_UPDATE_END), 1);
     assert_eq!(count(&output, b"\x1b]112\x07"), 1);
     assert_eq!(count(&output, b"\x1b[22;0t"), 1);
     assert_eq!(count(&output, b"\x1b[23;0t"), 1);
     assert!(position(&output, b"\x1b[?1049h") < position(&output, b"\x1b[>1u"));
     assert!(position(&output, b"\x1b[>4;0m") < position(&output, b"\x1b[<1u"));
+    assert!(
+        position(&output, crate::terminal::render::SYNC_UPDATE_END)
+            < position(&output, b"\x1b[0 q")
+    );
     assert!(position(&output, b"\x1b[<1u") < position(&output, b"\x1b[?1049l"));
     assert!(position(&output, b"\x1b[?1049l") < position(&output, b"\x1b[23;0t"));
 }

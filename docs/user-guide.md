@@ -117,9 +117,9 @@ exact backup path.
   checkout as its update source.
   Catomic preserves local changes, checks the official remote revision, refuses
   non-fast-forward history, fetches without running hooks, and builds in an
-  isolated temporary worktree. The new revision must pass all tests and validate
-  the existing configuration before the executable is replaced. Only then is
-  the source checkout fast-forwarded and the local changes reapplied.
+  isolated temporary worktree. The new revision must build successfully and
+  validate the existing configuration before the executable is replaced. Only
+  then is the source checkout fast-forwarded and the local changes reapplied.
 - If that source checkout no longer exists, Catomic runs the official Cargo git
   install command itself. `--check` remains unsupported for a missing checkout
   and exits without writing.
@@ -135,7 +135,7 @@ conflicts normally.
 Managed releases and retained-checkout updates stage the new executable beside
 the installed one, sync it, and atomically rename over it. Before that rename,
 Catomic creates a sibling rollback binary containing the old bytes. A failed
-download, checksum, test, build,
+download, checksum, build,
 configuration validation, or staging step leaves the installed executable
 untouched. If final source fast-forwarding fails after replacement, Catomic
 automatically restores the old binary.
@@ -166,7 +166,7 @@ state remains untouched unless you separately choose to delete it.
 Updater exit codes are stable for automation: `0` means current, successfully
 updated, or user-cancelled; `2` is command-line usage; `3` unsupported install;
 `4` remote/checksum policy failure; `5` unsafe source state or prompt I/O; `6`
-backup failure; `7` candidate configuration failure; `8` test/build failure;
+backup failure; `7` candidate configuration failure; `8` build failure;
 and `9` install or rollback failure.
 
 If the updater is unavailable for a source install, the manual equivalent is:

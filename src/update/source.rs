@@ -1,7 +1,8 @@
 //! Purpose: safely update binaries built from the official Catomic source.
 //! Owns: checkout updates, dirty-change preservation, and missing-checkout Cargo reinstall.
 //! Must not: reset, clean, discard local changes, run hooks, or edit user state.
-//! Invariants: dirty changes survive; candidates pass tests/config; Cargo uses the official remote.
+//! Invariants: dirty changes survive; candidates build and pass config validation; Cargo uses the
+//! official remote.
 
 use std::ffi::OsString;
 use std::fs;
@@ -31,6 +32,7 @@ const GIT_TIMEOUT: Duration = Duration::from_secs(30);
 const NETWORK_TIMEOUT: Duration = Duration::from_secs(120);
 const BUILD_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 const MAX_COMMAND_OUTPUT: usize = 4 * 1024 * 1024;
+const RELEASE_BUILD_ARGS: [&str; 3] = ["build", "--release", "--locked"];
 
 #[derive(Debug)]
 struct SourceInstall {
@@ -58,7 +60,7 @@ pub(super) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
     println!("source: {OFFICIAL_REMOTE} branch {OFFICIAL_BRANCH}");
     if !confirm(
         options,
-        "Fetch, test, build, and install from this source? Network and disk writes will follow.",
+        "Fetch, build, and install from this source? Network and disk writes will follow.",
     )? {
         println!("update cancelled; no network or disk changes made");
         return Ok(());
@@ -162,12 +164,10 @@ fn apply(
     }
     require_fast_forward(&install.root, &install.current_sha, &fetched_sha)?;
     let worktree = Worktree::create(&install.root, &fetched_sha)?;
-    println!("testing revision {}...", short_sha(&fetched_sha));
-    cargo(&worktree.checkout, &["test", "--all-targets", "--locked"])?;
     println!("building release binary...");
     cargo_with_source(
         &worktree.checkout,
-        &["build", "--release", "--locked"],
+        &RELEASE_BUILD_ARGS,
         &install.root,
         &fetched_sha,
     )?;
@@ -480,10 +480,6 @@ fn fast_forward_checkout(root: &Path, sha: &str) -> Result<(), String> {
     }
 }
 
-fn cargo(root: &Path, args: &[&str]) -> Result<(), UpdateError> {
-    cargo_command(root, args, None)
-}
-
 fn cargo_install_command() -> Command {
     let mut command = Command::new("cargo");
     command.args(["install", "--git", OFFICIAL_REMOTE, "--locked", "--force"]);
@@ -502,16 +498,6 @@ fn cargo_with_source(
     command.env("CATOMIC_BUILD_COMMIT", revision);
     command.env("CATOMIC_BUILD_DIRTY", "0");
     command.env_remove("CATOMIC_MANAGED_RELEASE");
-    run_cargo(&mut command)
-}
-
-fn cargo_command(root: &Path, args: &[&str], source: Option<&Path>) -> Result<(), UpdateError> {
-    let mut command = Command::new("cargo");
-    command.current_dir(root).args(args);
-    if let Some(source) = source {
-        command.env("CATOMIC_SOURCE_DIR", source);
-        command.env_remove("CATOMIC_MANAGED_RELEASE");
-    }
     run_cargo(&mut command)
 }
 

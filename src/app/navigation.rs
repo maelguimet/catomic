@@ -366,7 +366,7 @@ mod tests {
         handle_key(&mut app, &mut out, key(KeyCode::End, KeyModifiers::NONE)).unwrap();
         assert_eq!(app.buffer.cursor().col, 7);
         handle_key(&mut app, &mut out, key(KeyCode::PageUp, KeyModifiers::NONE)).unwrap();
-        assert_eq!(app.buffer.cursor().row, 2);
+        assert_eq!(app.buffer.cursor().row, 3);
         handle_key(
             &mut app,
             &mut out,

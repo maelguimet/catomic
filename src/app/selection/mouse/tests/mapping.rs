@@ -101,8 +101,11 @@ fn click_maps_first_and_last_visible_content_rows() {
     click(&mut app, 0, 0);
     assert_eq!(app.buffer.cursor(), Cursor { row: 5, col: 0 });
 
+    click(&mut app, 0, 1);
+    assert_eq!(app.buffer.cursor(), Cursor { row: 6, col: 0 });
+
     click(&mut app, 0, 2);
-    assert_eq!(app.buffer.cursor(), Cursor { row: 7, col: 0 });
+    assert_eq!(app.buffer.cursor(), Cursor { row: 6, col: 0 });
 }
 
 #[test]

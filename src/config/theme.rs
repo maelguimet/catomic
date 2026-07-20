@@ -192,11 +192,12 @@ fn named(name: &str) -> io::Result<Theme> {
         cursor: None,
         selection: Style::pair(black, Color::Ansi(6)),
         line_number: Style::fg(Color::Ansi(8)),
-        status: Style {
-            dim: Some(true),
-            ..Style::fg(Color::Ansi(8))
+        status: Style::fg(Color::Default),
+        status_filename: Style {
+            bold: Some(true),
+            underlined: Some(true),
+            ..Style::fg(Color::Default)
         },
-        status_filename: Style::fg(Color::Ansi(9)),
         message: Style::pair(black, Color::Ansi(14)),
         status_warning: Style {
             bold: Some(true),

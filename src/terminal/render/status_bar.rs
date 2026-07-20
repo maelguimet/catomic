@@ -55,6 +55,17 @@ impl StatusStyle {
         }
     }
 
+    const fn emphasized_default() -> Self {
+        Self {
+            foreground: Some(Color::Reset),
+            background: None,
+            bold: true,
+            dim: false,
+            underlined: true,
+            reversed: false,
+        }
+    }
+
     const fn monochrome(bold: bool, underlined: bool) -> Self {
         Self {
             foreground: None,
@@ -88,8 +99,8 @@ pub(super) struct StatusBarPresentation {
 impl Default for StatusTheme {
     fn default() -> Self {
         Self {
-            normal: StatusStyle::foreground(Color::DarkGrey, false, true),
-            filename: StatusStyle::foreground(Color::Red, false, false),
+            normal: StatusStyle::foreground(Color::Reset, false, false),
+            filename: StatusStyle::emphasized_default(),
             info: StatusStyle::colors(Color::Black, Color::Cyan, false),
             warning: StatusStyle::colors(Color::Black, Color::Yellow, true),
             error: StatusStyle::colors(Color::White, Color::DarkRed, true),
@@ -105,7 +116,7 @@ impl StatusTheme {
                 foreground: None,
                 background: None,
                 bold: false,
-                dim: true,
+                dim: false,
                 underlined: false,
                 reversed: false,
             },

@@ -36,7 +36,7 @@ fn logical_scroll_is_three_rows_bounded_and_preserves_horizontal_offset() {
     for _ in 0..100 {
         scroll_viewport(&mut app, ScrollDirection::Down, MOUSE_WHEEL_ROWS).unwrap();
     }
-    assert_eq!(app.screen.scroll_top, 15);
+    assert_eq!(app.screen.scroll_top, 16);
     assert!(!scroll_viewport(&mut app, ScrollDirection::Down, MOUSE_WHEEL_ROWS).unwrap());
 
     for _ in 0..100 {

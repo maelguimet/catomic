@@ -48,7 +48,7 @@ fn terminal_capability_selection_has_a_monochrome_inverse_fallback() {
 }
 
 #[test]
-fn monochrome_messages_keep_a_boundary_while_normal_status_stays_quiet() {
+fn monochrome_messages_keep_a_boundary_while_normal_status_uses_default_contrast() {
     for role in [
         StatusRole::Normal,
         StatusRole::Info,
@@ -72,7 +72,7 @@ fn monochrome_messages_keep_a_boundary_while_normal_status_stays_quiet() {
         .unwrap();
         let rendered = String::from_utf8(out).unwrap();
         if role == StatusRole::Normal {
-            assert!(rendered.contains("\x1b[2m"), "role {role:?}: {rendered:?}");
+            assert!(!rendered.contains("\x1b[2m"), "role {role:?}: {rendered:?}");
             assert!(!rendered.contains("\x1b[7m"), "role {role:?}: {rendered:?}");
             assert!(rendered.ends_with("ok\x1b[0m"));
         } else {
@@ -85,7 +85,7 @@ fn monochrome_messages_keep_a_boundary_while_normal_status_stays_quiet() {
 #[test]
 fn default_semantic_roles_use_distinct_basic_color_pairs() {
     let cases = [
-        (StatusRole::Normal, "\x1b[90m\x1b[2m"),
+        (StatusRole::Normal, "\x1b[39m"),
         (StatusRole::Info, "\x1b[30m\x1b[106m"),
         (StatusRole::Warning, "\x1b[30m\x1b[103m\x1b[1m"),
         (StatusRole::Error, "\x1b[97m\x1b[41m\x1b[1m"),
@@ -188,13 +188,13 @@ fn normal_status_clears_the_row_without_painting_a_full_width_background() {
     .unwrap();
 
     let rendered = String::from_utf8(out).unwrap();
-    assert!(rendered.contains("\x1b[2;1H\x1b[2K\x1b[0m\x1b[2mok\x1b[0m"));
+    assert!(rendered.contains("\x1b[2;1H\x1b[2K\x1b[0mok\x1b[0m"));
     assert!(!rendered.contains("ok    "));
     assert!(rendered.ends_with("\x1b[0m\x1b[0 q\x1b[1;1H\x1b[?25h\x1b[?2026l"));
 }
 
 #[test]
-fn persistent_path_uses_muted_parent_red_filename_and_selection_reverse_video() {
+fn persistent_path_uses_terminal_contrast_emphasized_filename_and_selection_reverse_video() {
     let mut out = Vec::new();
     let text = "=^..^=  /work/note.txt";
     write_status_bar(
@@ -212,9 +212,9 @@ fn persistent_path_uses_muted_parent_red_filename_and_selection_reverse_video() 
     .unwrap();
     let rendered = String::from_utf8(out).unwrap();
 
-    assert!(rendered.contains("\x1b[90m\x1b[2m=^..^=  "));
-    assert!(rendered.contains("\x1b[90m\x1b[7m/work/"));
-    assert!(rendered.contains("\x1b[91m\x1b[7mnote.txt"));
+    assert!(rendered.contains("\x1b[39m=^..^=  "));
+    assert!(rendered.contains("\x1b[39m\x1b[7m/work/"));
+    assert!(rendered.contains("\x1b[39m\x1b[1m\x1b[4m\x1b[7mnote.txt"));
     assert!(!rendered.contains("note.txt                  "));
 }
 
@@ -304,7 +304,7 @@ fn status_terminal_controls_render_inertly() {
 }
 
 #[test]
-fn height_one_reserves_only_row_for_the_status_bar() {
+fn height_one_hides_chrome_and_keeps_one_editing_row() {
     let buffer = SimpleBuffer::from_text("L0\nL1\nL2\n");
     let mut out = Vec::new();
     render_buffer(
@@ -317,8 +317,29 @@ fn height_one_reserves_only_row_for_the_status_bar() {
     .unwrap();
     let rendered = String::from_utf8(out).unwrap();
 
-    assert!(!rendered.contains("L0") && !rendered.contains("L1") && !rendered.contains("L2"));
-    assert!(rendered.contains("\x1b[1;1H\x1b[7m\x1b[2Kmsg"));
+    assert!(rendered.contains("L0"));
+    assert!(!rendered.contains("\x1b[7m\x1b[2Kmsg"));
+}
+
+#[test]
+fn normal_height_clears_a_separator_between_document_and_footer() {
+    let buffer = SimpleBuffer::from_text("L0\nL1\nL2");
+    let mut out = Vec::new();
+    render_buffer(
+        &mut out,
+        &buffer,
+        RenderViewport::new(0, 0, 4, 10),
+        Some("status"),
+        monochrome_status(StatusRole::Normal),
+    )
+    .unwrap();
+    let rendered = String::from_utf8(out).unwrap();
+
+    assert!(rendered.contains("\x1b[1;1H\x1b[KL0"));
+    assert!(rendered.contains("\x1b[2;1H\x1b[KL1"));
+    assert!(rendered.contains("\x1b[3;1H\x1b[0m\x1b[2K"));
+    assert!(rendered.contains("\x1b[4;1H\x1b[2K"));
+    assert!(!rendered.contains("L2"));
 }
 
 #[test]

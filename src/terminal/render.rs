@@ -154,9 +154,7 @@ pub(crate) fn change_gutter_width(has_changes: bool) -> usize {
 }
 
 pub(super) fn content_height(height: usize, action_bar: Option<&str>) -> usize {
-    height
-        .saturating_sub(1)
-        .saturating_sub(usize::from(action_bar.is_some()))
+    super::screen::bottom_layout(height, action_bar.is_some()).content_height
 }
 
 pub(super) fn write_bottom_rows(
@@ -165,9 +163,11 @@ pub(super) fn write_bottom_rows(
     message: Option<&str>,
     options: RenderOptions<'_>,
 ) -> io::Result<()> {
-    let action_rows = usize::from(options.action_bar.is_some());
-    let status_row = viewport.height.saturating_sub(action_rows);
-    if status_row > 0 {
+    let layout = super::screen::bottom_layout(viewport.height, options.action_bar.is_some());
+    if let Some(separator_row) = layout.separator_row {
+        write!(out, "\x1b[{separator_row};1H\x1b[0m\x1b[2K")?;
+    }
+    if let Some(status_row) = layout.status_row {
         status_bar::write_status_bar(
             out,
             status_row,
@@ -181,10 +181,10 @@ pub(super) fn write_bottom_rows(
             },
         )?;
     }
-    if let Some(action_bar) = options.action_bar.filter(|_| viewport.height > 0) {
+    if let Some((action_row, action_bar)) = layout.action_row.zip(options.action_bar) {
         status_bar::write_status_bar(
             out,
-            viewport.height,
+            action_row,
             viewport.width,
             action_bar,
             status_bar::StatusBarPresentation {

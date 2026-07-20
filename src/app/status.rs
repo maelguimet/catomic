@@ -208,9 +208,7 @@ mod tests {
             &status.text[status.filename.0..status.filename.1],
             "notes.txt"
         );
-        for slop in [
-            "ac off", "INS", "OVR", "saved", "modified", "utf-8", "lf",
-        ] {
+        for slop in ["ac off", "INS", "OVR", "saved", "modified", "utf-8", "lf"] {
             assert!(!status.text.contains(slop), "status: {}", status.text);
         }
     }

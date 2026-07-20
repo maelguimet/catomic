@@ -16,8 +16,8 @@ use crate::file::watcher::FileWatcher;
 
 use super::{
     command_prompt, completion, external_command, hooks, inline_clanker, lint, llm_answer,
-    llm_preview, llm_request, model_picker, recovery, reload, repo_llm, save,
-    search, selection, view, App, FileState, StartupConfig,
+    llm_preview, llm_request, model_picker, recovery, reload, repo_llm, save, search, selection,
+    view, App, FileState, StartupConfig,
 };
 
 mod lifecycle;

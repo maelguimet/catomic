@@ -6,9 +6,7 @@
 use std::io;
 
 use crate::buffer::Cursor;
-use crate::editor::completion::{
-    complete_words, is_word_char, prefix_before_cursor,
-};
+use crate::editor::completion::{complete_words, is_word_char, prefix_before_cursor};
 
 const CONTEXT_ROWS: usize = 257;
 const CONTEXT_COLS: usize = 1_024;

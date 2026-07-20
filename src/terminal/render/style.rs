@@ -105,9 +105,7 @@ pub(super) fn write_content_line_with_ghost<W: Write + ?Sized>(
             .find(|link| start >= link.start && start < link.end)
             .map(|link| link.destination.as_ref());
         let highlighted = selected.is_some_and(|(from, to)| start >= from && start < to);
-        let lint = lint
-            .iter()
-            .any(|(from, to)| start >= *from && start < *to);
+        let lint = lint.iter().any(|(from, to)| start >= *from && start < *to);
         let llm_changed = llm_changed
             .iter()
             .any(|(from, to)| start >= *from && start < *to);

@@ -157,11 +157,7 @@ fn handle_active_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -
 }
 
 fn cycle(app: &mut super::App, forward: bool) {
-    let active = app
-        .completion
-        .active
-        .as_mut()
-        .expect("active completion");
+    let active = app.completion.active.as_mut().expect("active completion");
     let count = active.candidates.len();
     active.selected = if forward {
         active.selected.saturating_add(1) % count
@@ -171,11 +167,7 @@ fn cycle(app: &mut super::App, forward: bool) {
 }
 
 fn accept(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
-    let active = app
-        .completion
-        .active
-        .take()
-        .expect("active completion");
+    let active = app.completion.active.take().expect("active completion");
     let unchanged = app.buffer.cursor() == active.end
         && app.buffer.text_range(active.start, active.end)? == active.prefix;
     if !unchanged {
@@ -189,11 +181,7 @@ fn accept(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
 }
 
 fn update_message(app: &mut super::App) {
-    let active = app
-        .completion
-        .active
-        .as_ref()
-        .expect("active completion");
+    let active = app.completion.active.as_ref().expect("active completion");
     app.message_info(format!(
         "Completion {}/{}: {} (Tab next, Enter accept, Esc dismiss)",
         active.selected + 1,

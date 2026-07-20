@@ -110,9 +110,7 @@ pub(super) fn dispatch_action(
             replace::dispatch_action(app, out, action)?
                 || command_prompt::dispatch_action(app, out, action)?
         }
-        Scope::Picker => {
-            model_picker::dispatch_action(app, out, action)?
-        }
+        Scope::Picker => model_picker::dispatch_action(app, out, action)?,
         Scope::Preview => {
             autocomplete::dispatch_action(app, out, action)?
                 || recovery::dispatch_action(app, out, action)?

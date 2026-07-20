@@ -75,7 +75,13 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
         E,
         ["ctrl+shift+s"]
     ),
-    key!(Open, "open", "Open a path in another buffer.", E, ["ctrl+o"]),
+    key!(
+        Open,
+        "open",
+        "Open a path in another buffer.",
+        E,
+        ["ctrl+o"]
+    ),
     key!(New, "new", "Create an untitled buffer.", E, ["ctrl+n"]),
     key!(
         Close,

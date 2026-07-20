@@ -148,22 +148,15 @@ fn escape_cancels_running_linter_without_blocking_editor() {
     let file = TempFile::new("cancel.rs", "fn main() {}\n");
     let mut app = App::new(file.path.to_str()).unwrap();
     let mut out = Vec::new();
-    super::start_with_config(
-        &mut app,
-        &mut out,
-        config("while :; do :; done # {file}"),
-    )
-    .unwrap();
+    super::start_with_config(&mut app, &mut out, config("while :; do :; done # {file}")).unwrap();
     assert!(super::is_running(&app));
 
-    assert!(
-        super::handle_key(
-            &mut app,
-            &mut out,
-            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)
-        )
-        .unwrap()
-    );
+    assert!(super::handle_key(
+        &mut app,
+        &mut out,
+        KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)
+    )
+    .unwrap());
 
     assert!(!super::is_running(&app));
     assert!(app.message.is_none());

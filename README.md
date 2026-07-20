@@ -123,9 +123,10 @@ remappable through `[keybindings]`.
 Terminal emulators and multiplexers can intercept or rewrite some key chords.
 Bracketed paste is inserted as one undoable edit; Catomic also has an internal
 clipboard and sends copied text through OSC 52 when the terminal supports it.
-Completed mouse selections use the same clipboard path. In Ghostty, `Shift`
-keeps the terminal's native selection and copy-on-select bypass available while
-Catomic owns unmodified clicks and drags.
+Catomic selections use the same clipboard path immediately, so the selected
+text is already copied even when Ghostty consumes its configured `Ctrl+C`.
+`Shift` keeps Ghostty's native selection bypass available while Catomic owns
+unmodified clicks and drags.
 The mouse wheel scrolls the viewport without moving the editing cursor or
 selection; the next keyboard or editing action reveals the logical cursor.
 

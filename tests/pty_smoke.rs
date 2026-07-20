@@ -1233,6 +1233,25 @@ fn pty_mouse_selection_ctrl_c_emits_ghostty_compatible_osc52() -> TestResult {
 }
 
 #[test]
+fn pty_ctrl_a_exports_selection_before_ctrl_c_reaches_catomic() -> TestResult {
+    let temp = TempPath::new("ctrl_a_copy");
+    fs::write(&temp.path, "copy me")?;
+    let mut editor = PtyEditor::spawn(&temp.path)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"\x01")?;
+    editor.wait_for_output(
+        "Ctrl+A OSC 52 clipboard write",
+        "\x1b]52;c;Y29weSBtZQ==\x1b\\",
+    )?;
+
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+    assert_eq!(fs::read_to_string(&temp.path)?, "copy me");
+    Ok(())
+}
+
+#[test]
 fn pty_ctrl_shift_c_uses_interrupt_teardown_and_preserves_dirty_file() -> TestResult {
     let temp = TempPath::new("interrupt_chord");
     fs::write(&temp.path, "keep")?;

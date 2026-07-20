@@ -359,12 +359,13 @@ and `Ctrl+C` copies it through the same clipboard path as a document selection.
 Prompts and read-only views ignore document clicks; close the active surface
 before positioning the editable source cursor.
 
-Completing a Catomic drag, double-click word selection, or persistent-path drag
+Completing any Catomic selection, including keyboard selection, Select All,
+dragging, double-clicking a word, or dragging across the persistent path,
 immediately updates the process-local clipboard and emits the same bounded OSC
-52 system-clipboard write as `Ctrl+C`. A click without a selection does not
-change either clipboard. This preserves click-to-position and editor selection
-while providing copy-on-select even though Catomic receives unmodified mouse
-events.
+52 system-clipboard write as `Ctrl+C`. An empty selection does not change either
+clipboard. This preserves click-to-position and editor selection while keeping
+the selected bytes copied even when the terminal consumes its configured
+`Ctrl+C` before Catomic can receive it.
 
 Ghostty's default `Shift` mouse bypass remains available for native terminal
 selection and Ghostty copy-on-select. Catomic does not override that bypass:
@@ -394,8 +395,8 @@ cursor and selection. The status and action rows never map into document text.
 clipboard is shared by all buffers in the current session. Copying also sends
 the text through bounded, ST-terminated OSC 52 when the terminal supports it,
 so the terminal or host clipboard receives the same value. Completed desktop
-mouse selections use this path automatically; `Ctrl+C` remains the explicit
-copy action and never interrupts Catomic.
+and keyboard selections use this path automatically. `Ctrl+C` repeats the copy
+when Catomic receives it and never interrupts Catomic.
 
 `Ctrl+K` cuts the current logical line, including its terminating line break
 when present. Consecutive presses append complete lines to one clipboard payload

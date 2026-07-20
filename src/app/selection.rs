@@ -145,6 +145,7 @@ pub(crate) fn move_to(
     if extend {
         app.selection.clear_status();
         app.selection.range = Some(Selection::new(anchor, app.buffer.cursor()));
+        let _ = capture_selection(app, out)?;
     } else {
         app.selection.clear();
     }
@@ -236,6 +237,7 @@ fn extend_with_arrow(app: &mut super::App, out: &mut dyn Write, code: KeyCode) -
     }
     app.selection.clear_status();
     app.selection.range = Some(Selection::new(anchor, app.buffer.cursor()));
+    let _ = capture_selection(app, out)?;
     app.reveal_cursor();
     app.render(out)
 }
@@ -249,6 +251,7 @@ fn select_all(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     app.buffer.set_cursor(end);
     app.selection.clear_status();
     app.selection.range = Some(Selection::new(Cursor::default(), end));
+    let _ = capture_selection(app, out)?;
     app.reveal_cursor();
     app.message = None;
     app.render(out)

@@ -295,8 +295,10 @@ fn stash_changes(root: &Path) -> Result<Option<String>, UpdateError> {
         .map_err(|error| UpdateError::new(EXIT_SOURCE_STATE, error))?;
     if !remaining.is_empty() {
         let message = match restore_changes(root, Some(&stash)) {
-            Ok(()) => "source checkout remained dirty after stashing; original changes were reapplied"
-                .to_string(),
+            Ok(()) => {
+                "source checkout remained dirty after stashing; original changes were reapplied"
+                    .to_string()
+            }
             Err(error) => format!("source checkout remained dirty after stashing; {error}"),
         };
         return Err(UpdateError::new(EXIT_SOURCE_STATE, message));
@@ -335,7 +337,10 @@ fn restore_changes(root: &Path, stash: Option<&str>) -> Result<(), String> {
     }
     println!("source changes: reapplied");
     if action == "apply" {
-        println!("source changes backup retained in stash {}", short_sha(stash));
+        println!(
+            "source changes backup retained in stash {}",
+            short_sha(stash)
+        );
     }
     Ok(())
 }

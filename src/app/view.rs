@@ -300,24 +300,6 @@ fn toggle_external_diff(app: &mut super::App, out: &mut dyn Write) -> io::Result
     Ok(true)
 }
 
-fn toggle_external_diff(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {
-    let enabled = !app.view_preferences.external_diff();
-    app.view_preferences.set_external_diff(enabled);
-    if !enabled {
-        app.clear_external_changes();
-    }
-    let state = if enabled { "on" } else { "off" };
-    app.message = Some(match app.view_preferences.persist() {
-        Ok(()) => format!("External change highlighting {state}."),
-        Err(error) => {
-            format!("External change highlighting {state}; preference not saved: {error}.")
-        }
-    });
-    reveal_display_cursor(app);
-    app.render(out)?;
-    Ok(true)
-}
-
 fn toggle_whitespace(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {
     app.view.whitespace = !app.view.whitespace;
     app.message = Some(format!(

@@ -2,7 +2,6 @@
 //! Owns: deterministic TOML fixtures for HTTP, command, static-model, and error cases.
 //! Must not: read user config, inspect environment values, spawn commands, or network.
 //! Invariants: old `[llm]` input produces the same effective local HTTP backend.
-//! Phase: post-v0.1 model/backend selection tests.
 
 use super::*;
 

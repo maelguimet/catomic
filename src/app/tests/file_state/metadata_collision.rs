@@ -2,7 +2,6 @@
 //! Owns: deterministic App-level collision regressions.
 //! Must not: depend on filesystem timestamp resolution or sleeps.
 //! Invariants: spoofed equal metadata cannot bypass destructive confirmation.
-//! Phase: post-v0.1 external-change hardening.
 
 use super::super::*;
 use super::make_key;

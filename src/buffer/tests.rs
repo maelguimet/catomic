@@ -1,18 +1,10 @@
-//! Buffer tests (unit + property).
-//!
-//! Golden tests and property-based tests live here or under src/tests/.
-//!
-//! Phase 0: basic insert/delete/newline/save roundtrips.
-//! Phase 1A+: property tests that random edits on the real impl match a dumb
-//! String model. This is non-negotiable.
-
-//! Buffer tests (unit + property). Split in Phase 2-k for size (<800 lines).
+//! Buffer unit and property tests.
 //!
 //! This is now a small hub. Submodules own focused groups of tests.
 //! All are under `buffer::tests::*` so `cargo test buffer::tests::...` works.
 //! Shared helpers (if cross-module) live here with pub(super) visibility.
+//! Random-edit tests compare production storage against a simple String model.
 //!
-//! Phase: 2-k narrow cleanup (no behavior or API change).
 
 #[cfg(test)]
 mod basic;

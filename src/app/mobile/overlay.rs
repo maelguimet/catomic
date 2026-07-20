@@ -2,7 +2,6 @@
 //! Owns: overlay buffers, selected menu rows, bounded wrapping, and saved display state.
 //! Must not: dispatch editor actions, decode terminal events, save, or start work.
 //! Invariants: closing an overlay restores the underlying message and all viewport offsets.
-//! Phase: Android/Termux mobile support.
 
 use crossterm::event::KeyCode;
 

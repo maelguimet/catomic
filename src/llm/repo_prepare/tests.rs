@@ -2,7 +2,6 @@
 //! Owns: isolated-repository completion and initial context assertions.
 //! Must not: contact endpoints, inspect user repos, or rely on global Git identity.
 //! Invariants: the result contains only broker/context data created after explicit task start.
-//! Phase: 6 (LLM Context Broker).
 
 use std::fs;
 use std::process::Command;

@@ -2,7 +2,6 @@
 //! Owns: deterministic color/monochrome frame assertions for normal and wrapped rendering.
 //! Must not: depend on ambient terminal capabilities, launch a PTY, touch disk, or mutate config.
 //! Invariants: status tests use explicit themes and assert resets after every styled row.
-//! Phase: post-v0.1 status/message bar accessibility.
 
 use crossterm::style::Color;
 

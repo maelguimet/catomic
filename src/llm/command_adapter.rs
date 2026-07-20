@@ -2,7 +2,6 @@
 //! Owns: argv spawning, stdin protocol, process-group cancellation, bounds, and format parsing.
 //! Must not: invoke a shell, inherit the editor cwd, interpret tool calls, or mutate buffers.
 //! Invariants: output/runtime are bounded; cancellation kills the group and reaps its direct child.
-//! Phase: post-v0.1 command-backed LLM adapters.
 
 use std::fs;
 use std::io::{self, Read, Write};

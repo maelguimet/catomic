@@ -2,7 +2,6 @@
 //! Owns: Git context, file-map discovery, byte budget, ranged reads, grep, and file drift checks.
 //! Must not: exist in Plain mode, follow symlinks, escape the repo, write, run tests, or network.
 //! Invariants: every returned byte consumes budget; Git and every read file must remain unchanged.
-//! Phase: 6 (LLM Context Broker).
 
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};

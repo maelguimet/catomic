@@ -2,7 +2,6 @@
 //! Owns: valid and dangling final-symlink regression tests.
 //! Must not: test snapshot, watcher, recovery, or App policy.
 //! Invariants: valid symlinks survive saves and dangling symlinks fail closed.
-//! Phase: post-v0.1 release hardening.
 
 use super::{atomic_write_string, cleanup, temp_path};
 use std::{fs, io};

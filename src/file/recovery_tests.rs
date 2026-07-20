@@ -2,7 +2,6 @@
 //! Owns: deterministic file-level recovery tests using temporary sidecars.
 //! Must not: test App preview policy, sleep for race windows, or touch user files.
 //! Invariants: symlinks and special files are never read as recovery content.
-//! Phase: 8 recovery plus post-v0.1 file-semantics hardening.
 
 use super::*;
 

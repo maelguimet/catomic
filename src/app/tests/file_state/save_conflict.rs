@@ -1,10 +1,9 @@
-//! Save-conflict guard tests from Phase 2-n (moved in 2-o split).
+//! Save-conflict guard tests.
 //!
 //! Purpose: cover first-refusal, force, and external-change save safety.
 //! Owns: conflict tests including Absent, drift, edit-clear, and metadata spoofing.
 //! Must not: other test groups.
 //! Invariants: a first conflicting save never overwrites observed external content.
-//! Phase: 2-o cleanup through 2-bu Linux metadata identity hardening.
 
 use super::super::*;
 use super::make_key;

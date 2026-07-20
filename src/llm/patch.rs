@@ -2,7 +2,6 @@
 //! Owns: unified-diff validation, hunk representation, and context-checked preview.
 //! Must not: mutate buffers, read files, accept multiple files, or bypass confirmation.
 //! Invariants: hunk counts match their bodies; preview fails on stale source context.
-//! Phase: 6 (LLM, Powerful but Caged).
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Patch {

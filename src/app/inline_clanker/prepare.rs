@@ -2,7 +2,6 @@
 //! Owns: lazy config load, automatic precedence, full-file warning, and typed warning answers.
 //! Must not: read API keys, construct HTTP clients, start workers, apply edits, or save files.
 //! Invariants: hard context limits are checked before the soft warning; warning overrides are one-shot.
-//! Phase: issue #65 one-key inline clanker workflow.
 
 use std::io::{self, Write};
 

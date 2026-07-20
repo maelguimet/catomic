@@ -2,7 +2,6 @@
 //! Owns: representative view-open, click, close, and resumed-source interaction fixtures.
 //! Must not: contact a model, start a process, write files, or inspect private view buffers.
 //! Invariants: hidden source text and cursor remain stable until the view is explicitly closed.
-//! Phase: beta mouse click regression coverage.
 
 use super::*;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};

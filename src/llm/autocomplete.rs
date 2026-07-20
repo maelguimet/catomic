@@ -2,7 +2,6 @@
 //! Owns: continuation prompts, useful-prefix checks, output bounds, and malformed rejection.
 //! Must not: read files/repositories, construct clients, mutate buffers, or expose tools.
 //! Invariants: prompts contain only bounded before/after text; accepted output is terminal-safe.
-//! Phase: post-v0.1 opt-in inline autocomplete.
 
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;

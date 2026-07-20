@@ -2,7 +2,6 @@
 //! Owns: initial Plain capabilities, open planning, and zero-work transient defaults.
 //! Must not: enter Project mode, create network/process clients, or start background work.
 //! Invariants: Plain starts without Project/LLM services; watcher failure remains non-fatal.
-//! Phase: bounded post-beta App ownership cleanup.
 
 use std::collections::VecDeque;
 use std::io;

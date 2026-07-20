@@ -3,7 +3,6 @@
 //! Must not: decode raw terminal bytes, access buffer internals, render content, or network.
 //! Invariants: scoped normalization precedes active surfaces; guarded editor actions win over
 //!   text input; ordinary editor actions clear stale completed messages.
-//! Phase: 3-d keyboard selection, with bounded post-beta routing cleanup.
 
 use std::io::{self, Write};
 

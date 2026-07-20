@@ -2,7 +2,6 @@
 //! Owns: isolated Git repos and loopback-only repo command integration.
 //! Must not: contact a live model, public endpoint, remote Git service, or user repository.
 //! Invariants: Plain constructs no state; network starts only on Enter; repo drift blocks apply.
-//! Phase: 6 (LLM Context Broker).
 
 mod path_identity;
 mod relevant_file;

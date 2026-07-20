@@ -1,8 +1,7 @@
 //! Purpose: measure explicit preview construction and repeated styled viewport rendering.
-//! Owns: the ignored Phase 4 10 MiB Markdown preview/render samples.
+//! Owns: the ignored 10 MiB Markdown preview/render samples.
 //! Must not: run by default, enforce machine timing, touch disk, add dependencies, or network.
 //! Invariants: preview is built once; repeated renders request only the final 23 source rows.
-//! Phase: 4 acceptance performance measurement.
 
 use crate::buffer::{Buffer, PieceTable};
 use crate::editor::syntax::SyntaxKind;

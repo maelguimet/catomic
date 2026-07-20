@@ -3,12 +3,11 @@
 //! Purpose: drive the compiled binary through a pseudo-terminal so key handling,
 //!   raw-mode setup, render, help, save, undo, search, Project tooling, guarded
 //!   external commands/hooks, explicit LLM confirmation, and clean quit are exercised.
-//! Owns: narrow default PTY smoke coverage for accepted Phase 0 through 8 behavior.
+//! Owns: narrow default PTY smoke coverage for core and guarded workflows.
 //! Must not: grow into a broad UI harness, contact a live/public LLM, use ambient config,
 //!   or run large-file/perf scenarios; model tests use private loopback fakes only.
 //! Invariants: PTY children run serially, use temporary files, time out and are
 //!   killed on hangs, and leave Plain startup behavior unchanged.
-//! Phase: 8 acceptance, including catnap recovery and prior guarded workflows.
 
 use std::error::Error;
 use std::fs;

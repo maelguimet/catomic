@@ -1,11 +1,10 @@
-//! Snapshot, external status, and 2-m regression tests (moved in 2-o split).
+//! Snapshot, external-status, and regression tests.
 //!
-//! Purpose: Phase 2-l / 2-m tests for disk_snapshot, external_file_status, Absent/Present,
+//! Purpose: test disk_snapshot, external_file_status, Absent/Present,
 //!          external append/delete, no_path, and regressions.
 //! Owns: open_*, save_*_snapshot, external_*_reports, no_path_reports, regression_* , new_does_not_silently...
 //! Must not: dirty/save-point or save-conflict tests.
 //! Invariants: original names and behavior exactly; super::super::* for access.
-//! Phase: 2-o cleanup.
 
 use super::super::*;
 use super::make_key;

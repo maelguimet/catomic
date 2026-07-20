@@ -2,7 +2,6 @@
 //! Owns: synthetic metadata-collision and bounded sampled-identity coverage.
 //! Must not: rely on timestamp resolution, sleeps, or large allocated fixtures.
 //! Invariants: full identities detect equal-metadata content drift; paged capture samples.
-//! Phase: post-v0.1 external-change hardening.
 
 use super::*;
 use std::io::{Seek, SeekFrom, Write};

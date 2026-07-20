@@ -2,7 +2,6 @@
 //! Owns: small deterministic App-level paged edit/save acceptance cases.
 //! Must not: allocate threshold-sized fixtures, use live watchers, or bypass Buffer edits.
 //! Invariants: every page is editable; Ctrl+S streams the complete logical document.
-//! Phase: 2-bz editable oversized-file App integration.
 
 use super::super::*;
 use super::make_key;

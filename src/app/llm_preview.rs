@@ -2,7 +2,6 @@
 //! Owns: patch/marked-region preview state, stale-source checks, and confirmed apply.
 //! Must not: construct clients, call endpoints, read repos, write files, or auto-apply.
 //! Invariants: Enter is the only apply action; apply is one undoable buffer transaction.
-//! Phase: 6 (LLM, Powerful but Caged).
 
 use std::io::{self, Write};
 

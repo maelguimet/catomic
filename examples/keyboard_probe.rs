@@ -2,7 +2,6 @@
 //! Owns: an explicit, short-lived live-terminal compatibility diagnostic.
 //! Must not: edit files, contact a network, reuse ambient input, or persist terminal state.
 //! Invariants: raw mode and any pushed keyboard flags are restored before results print.
-//! Phase: post-v0.1 Ctrl+Backspace compatibility evidence.
 
 use std::io::{self, Write};
 

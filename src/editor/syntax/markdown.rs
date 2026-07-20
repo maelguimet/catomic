@@ -2,7 +2,6 @@
 //! Owns: scalar-indexed block markers, tables, links, emphasis, and code spans.
 //! Must not: retain multiline state, inspect other lines, emit ANSI, or mutate text.
 //! Invariants: returned spans are ordered, non-overlapping scalar ranges.
-//! Phase: viewport-only Markdown styling, expanded for issue #54.
 
 use super::{SpanStyle, StyledSpan};
 

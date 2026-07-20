@@ -3,7 +3,6 @@
 //! Must not: own App policy, path replacement, terminal input/rendering, Project, or LLM.
 //! Invariants: only pages with edit history are retained; original page byte ranges
 //!   never overlap; descriptor drift fails page loads and whole-file writes closed.
-//! Phase: 2-by editable paged-file storage.
 
 use std::collections::BTreeMap;
 use std::fs::File;

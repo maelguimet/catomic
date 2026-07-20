@@ -2,7 +2,6 @@
 //! Owns: ordered edited-page overlays and bounded untouched descriptor copies.
 //! Must not: replace paths, mutate page/history state, render, or scan line metadata.
 //! Invariants: each original byte range is emitted once; descriptor drift fails closed.
-//! Phase: 2-by editable paged-file storage.
 
 use std::io::{self, Write};
 use std::os::unix::fs::FileExt;

@@ -1,10 +1,9 @@
 //! Tests for the read-only LargeFileBuffer.
 //!
-//! Purpose: cover bounded query/movement behavior for the Phase 2B Huge-file buffer.
+//! Purpose: cover bounded query and movement behavior for the read-only huge-file buffer.
 //! Owns: LargeFileBuffer construction/query/movement/invalid UTF-8 tests.
 //! Must not: allocate 10/100 MiB fixtures, assert timing, or test App policy.
 //! Invariants: sibling test module of large_file.rs; uses tiny temp files only.
-//! Phase: 2B limited Huge-file storage foundation.
 
 use super::*;
 use crate::buffer::Buffer;

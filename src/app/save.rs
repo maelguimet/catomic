@@ -3,7 +3,6 @@
 //! Must not: decode keys, run the event loop, or write non-save files.
 //! Invariants: writes are atomic; destination conflicts require confirmation; App's path
 //!             and watcher change only after a successful write.
-//! Phase: 6 explicit file-write lifecycle.
 
 use std::ffi::OsStr;
 use std::io::{self, Write};

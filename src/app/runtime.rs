@@ -2,7 +2,6 @@
 //! Owns: setup/teardown guards, runtime polling order, event reads, and resize dispatch.
 //! Must not: decode terminal bytes, implement editor commands, scan projects, or call networks.
 //! Invariants: background work is polled once per loop; terminal teardown is guard-backed.
-//! Phase: bounded post-beta App ownership cleanup.
 
 use std::io::{self, Write};
 use std::path::PathBuf;

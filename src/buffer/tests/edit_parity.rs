@@ -7,7 +7,6 @@
 //! coalescing, (large_file left in temp or moved here for focus).
 //! Must not: undo/redo, dumb model full random+undo, history token (separate subs).
 //! Invariants: descendant of buffer::tests; original test names preserved.
-//! Phase: 2-k narrow cleanup.
 
 use crate::buffer::{Buffer, PieceTable, SimpleBuffer};
 

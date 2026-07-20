@@ -2,7 +2,6 @@
 //! Owns: session override selection and effective configured-default resolution.
 //! Must not: load or write config, read credentials, resolve programs, spawn, or network.
 //! Invariants: selection is explicit, process-local, and never serialized automatically.
-//! Phase: post-v0.1 model/backend selection.
 
 use std::collections::HashMap;
 

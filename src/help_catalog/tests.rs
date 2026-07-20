@@ -2,7 +2,6 @@
 //! Owns: catalog uniqueness, lookup, alias, and binding regression tests.
 //! Must not: construct App, read configuration, touch disk, or dispatch editor actions.
 //! Invariants: every catalog entry is reachable through its declared spellings.
-//! Phase: post-v0.1 discoverability and help-drift prevention.
 
 use std::collections::HashSet;
 

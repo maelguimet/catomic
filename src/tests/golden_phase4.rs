@@ -1,8 +1,7 @@
-//! Purpose: lock exact source-to-preview output for the Phase 4 Markdown surface.
+//! Purpose: lock exact source-to-preview output for the Markdown surface.
 //! Owns: complete representative Markdown preview golden fixtures.
 //! Must not: launch a terminal, touch disk, benchmark, mutate buffers, or network.
 //! Invariants: source remains byte-identical; expected preview compares as a whole string.
-//! Phase: 4 acceptance golden coverage.
 
 #[cfg(test)]
 mod tests {

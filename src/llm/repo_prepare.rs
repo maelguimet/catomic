@@ -2,7 +2,6 @@
 //! Owns: broker construction, active-file disk pinning, context, and non-blocking polling.
 //! Must not: construct HTTP clients, read keys, contact endpoints, mutate repos, or apply output.
 //! Invariants: repo I/O stays off the input thread; Drop requests discovery cancellation.
-//! Phase: 6 (LLM Context Broker).
 
 use std::io;
 use std::path::{Path, PathBuf};

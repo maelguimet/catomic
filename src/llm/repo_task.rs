@@ -2,7 +2,6 @@
 //! Owns: transient runtime/client, strict broker command rounds, cancellation, and final output.
 //! Must not: construct before confirmation, retry, mutate repos, apply patches, or use live tests.
 //! Invariants: at most eight broker calls; only an unchanged repository returns final output.
-//! Phase: 6 (LLM Context Broker).
 
 use super::backend::{
     BackendErrorKind, BackendMessage, BackendRunner, ConfirmedBackend, MessageRole,

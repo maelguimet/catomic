@@ -2,7 +2,6 @@
 //! Owns: strict JSON command envelopes and mapping commands to budgeted broker operations.
 //! Must not: infer commands from prose, write files, run tests, invoke a shell, or network.
 //! Invariants: unknown/extra fields fail parsing; every successful result is broker-charged.
-//! Phase: 6 (LLM Context Broker).
 
 use std::path::Path;
 

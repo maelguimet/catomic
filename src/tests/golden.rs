@@ -2,7 +2,6 @@
 //! Owns: cross-layer golden fixtures for buffer edits, search replacement, and atomic save.
 //! Must not: launch a terminal, benchmark hot paths, depend on Project/LLM, or network.
 //! Invariants: every fixture compares complete output bytes with an explicit expectation.
-//! Phase: 3 acceptance golden coverage over the established Phase 0/1 cases.
 
 #[cfg(test)]
 mod tests {

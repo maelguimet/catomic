@@ -2,7 +2,6 @@
 //! Owns: wheel bounds, wrapping, resize decoupling, and logical-state regression fixtures.
 //! Must not: require a terminal, write files, start services, or mutate through scroll actions.
 //! Invariants: scrolling changes only the viewport origin and rendered caret visibility.
-//! Phase: post-v0.1 viewport-only wheel scrolling.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 

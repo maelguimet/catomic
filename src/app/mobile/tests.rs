@@ -2,7 +2,6 @@
 //! Owns: synthetic status/action taps and touch menu dispatch fixtures.
 //! Must not: launch a terminal, touch disk, use timing, or contact services.
 //! Invariants: crossterm coordinates are zero-based and mobile is explicitly enabled.
-//! Phase: Android/Termux mobile support.
 
 use super::*;
 

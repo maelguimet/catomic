@@ -2,7 +2,6 @@
 //! Owns: system instructions, confirmation summaries, and user prompt formatting.
 //! Must not: collect context, create network clients, mutate editor state, or log secrets.
 //! Invariants: confirmation names exact extent/model/endpoint; prompts retain line provenance.
-//! Phase: 6 (LLM, Powerful but Caged).
 
 use std::path::Path;
 

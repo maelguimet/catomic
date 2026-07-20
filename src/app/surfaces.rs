@@ -2,7 +2,6 @@
 //! Owns: optional help, diagnostics, file-picker, model-preview, and model-answer state.
 //! Must not: construct Project services, model clients, workers, processes, or network state.
 //! Invariants: every surface is absent at startup and created only by its explicit action.
-//! Phase: bounded post-beta App ownership cleanup.
 
 use super::{help, lint, llm_answer, llm_preview, project_files};
 

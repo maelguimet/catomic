@@ -2,7 +2,6 @@
 //! Owns: safe `{file}` shell substitution, child lifetime, bounded output capture, and polling.
 //! Must not: load config, mutate App/buffers/files, run automatically, index projects, or network.
 //! Invariants: output memory is capped; dropping a live task requests child termination.
-//! Phase: 5-c on-demand linter process runner.
 
 use std::io;
 use std::path::Path;

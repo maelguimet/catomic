@@ -3,7 +3,6 @@
 //! Must not: enable terminal modes, mutate text, access clipboard, or inspect buffer internals.
 //! Invariants: persistent status selection never maps into document coordinates;
 //!   mapped document cursors stay within the active page.
-//! Phase: 3-e mouse selection interaction.
 
 use std::io::{self, Write};
 use std::time::{Duration, Instant};

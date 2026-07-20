@@ -311,8 +311,7 @@ fn active_surface(app: &super::App) -> Surface {
     {
         return Surface::Prompt;
     }
-    if super::help::is_viewing(app) || super::view::is_preview(app)
-    {
+    if super::help::is_viewing(app) || super::view::is_preview(app) {
         return Surface::ReadOnly;
     }
     if app.llm_task.is_some()

@@ -240,8 +240,7 @@ pub(crate) fn soft_wrap_active(app: &super::App) -> bool {
                 && !super::external_command::is_viewing(app)
                 && !super::llm_preview::is_viewing(app)
                 && !super::inline_clanker::is_previewing(app)
-                && !super::model_picker::is_viewing(app)
-                ))
+                && !super::model_picker::is_viewing(app)))
 }
 
 pub(crate) fn cancel_preview(app: &mut super::App) {

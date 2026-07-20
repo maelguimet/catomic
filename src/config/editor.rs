@@ -179,14 +179,11 @@ mod tests {
 
     #[test]
     fn language_linter_is_validated_and_exposed() {
-        let config = parse("[languages.rs]\nlinter = \"rustc --error-format short {file}\"\n")
-            .unwrap();
+        let config =
+            parse("[languages.rs]\nlinter = \"rustc --error-format short {file}\"\n").unwrap();
         let linters: Vec<_> = config.language_linters().collect();
 
-        assert_eq!(
-            linters,
-            vec![("rs", "rustc --error-format short {file}")]
-        );
+        assert_eq!(linters, vec![("rs", "rustc --error-format short {file}")]);
         assert!(parse("[languages.rs]\nlinter = \"cargo check\"\n").is_err());
     }
 

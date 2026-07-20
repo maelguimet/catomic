@@ -2,7 +2,6 @@
 //! Owns: package-version, Git-revision, and dirty-state version-line formatting.
 //! Must not: inspect the runtime checkout or infer metadata absent at build time.
 //! Invariants: clean identities use the same 12-character revision as updater output.
-//! Phase: post-v0.1 build diagnostics.
 
 const UNKNOWN: &str = "unknown";
 const SHORT_COMMIT_LEN: usize = 12;

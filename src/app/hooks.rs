@@ -2,7 +2,6 @@
 //! Owns: hook queues, active-hook outcome, lifecycle triggers, and before-LLM continuation.
 //! Must not: spawn processes directly, apply output, load config, write files, or call network.
 //! Invariants: hooks run in configured order; failure/cancellation aborts the remaining chain.
-//! Phase: 7 lifecycle hooks.
 
 use std::collections::VecDeque;
 use std::io::{self, Write};

@@ -3,7 +3,6 @@
 //! Must not: decode keys, run the event loop, or write non-save files.
 //! Invariants: writes are atomic; destination conflicts require confirmation; App's path
 //!             and watcher change only after a successful write.
-//! Phase: 6 explicit file-write lifecycle.
 
 use std::ffi::OsStr;
 use std::io::{self, Write};
@@ -326,21 +325,25 @@ pub(crate) fn do_atomic_save(app: &mut super::App, out: &mut dyn Write) -> io::R
 
 fn do_atomic_save_to(app: &mut super::App, out: &mut dyn Write, target: PathBuf) -> io::Result<()> {
     super::recovery::finish_before_save(app);
-    let original_page = app.buffer.page_info().map_or(0, |page| page.page_number);
+    let original_page = app.buffer.page_info();
     let original_cursor = app.buffer.cursor();
-    while app.buffer.next_page()? {}
-    let row = app.buffer.line_count().saturating_sub(1);
-    let end = crate::buffer::Cursor {
-        row,
-        col: app.buffer.line_char_count(row).unwrap_or(0),
-    };
-    if end.col > 0 && app.buffer.replace_range(end, end, "\n")? {
-        super::file_state::refresh_dirty(&mut app.file, &*app.buffer);
+    let preparation = (|| {
+        while app.buffer.next_page()? {}
+        let row = app.buffer.line_count().saturating_sub(1);
+        let end = crate::buffer::Cursor {
+            row,
+            col: app.buffer.line_char_count(row).unwrap_or(0),
+        };
+        if end.col > 0 && app.buffer.replace_range(end, end, "\n")? {
+            super::file_state::refresh_dirty(&mut app.file, &*app.buffer);
+        }
+        Ok(())
+    })();
+    let restoration = restore_save_position(&mut *app.buffer, original_page, original_cursor);
+    if let Err(error) = preparation.and(restoration) {
+        app.message = Some(format!("Save error: {error}"));
+        return app.render(out);
     }
-    while app.buffer.page_info().map_or(0, |page| page.page_number) > original_page {
-        app.buffer.previous_page()?;
-    }
-    app.buffer.set_cursor(original_cursor);
     let path_changed = app.file.path.as_ref() != Some(&target);
     let save_result = file::io::atomic_write_with(&target, |writer| {
         file::text_format::write_buffer(&*app.buffer, writer, app.file.text_format)
@@ -407,4 +410,46 @@ fn do_atomic_save_to(app: &mut super::App, out: &mut dyn Write, target: PathBuf)
         }
     }
     app.render(out)
+}
+
+fn restore_save_position(
+    buffer: &mut dyn crate::buffer::Buffer,
+    original_page: Option<crate::buffer::PageInfo>,
+    original_cursor: crate::buffer::Cursor,
+) -> io::Result<()> {
+    let Some(original_page) = original_page else {
+        buffer.set_cursor(original_cursor);
+        return Ok(());
+    };
+    while buffer
+        .page_info()
+        .is_some_and(|page| page.start_byte != original_page.start_byte)
+    {
+        match buffer.previous_page() {
+            Ok(true) => {}
+            Ok(false) => {
+                let _ = buffer.set_descriptor_position(crate::buffer::DescriptorPosition {
+                    page_start: original_page.start_byte,
+                    page_number: original_page.page_number,
+                    row: original_cursor.row,
+                    col: original_cursor.col,
+                });
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "could not return to the original page",
+                ));
+            }
+            Err(error) => {
+                let _ = buffer.set_descriptor_position(crate::buffer::DescriptorPosition {
+                    page_start: original_page.start_byte,
+                    page_number: original_page.page_number,
+                    row: original_cursor.row,
+                    col: original_cursor.col,
+                });
+                return Err(error);
+            }
+        }
+    }
+    buffer.set_cursor(original_cursor);
+    Ok(())
 }

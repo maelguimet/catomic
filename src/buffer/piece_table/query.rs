@@ -4,7 +4,6 @@
 //! Must not: mutate pieces, perform App/render policy, or know Project/LLM work.
 //! Invariants: source ranges respect UTF-8 boundaries; file-backed scalar
 //!   windows use bounded checkpoint-assisted reads; logical offsets are global.
-//! Phase: 2-bj bounded file-backed PieceTable queries.
 
 use super::types::{PieceTable, Source};
 use crate::buffer::CursorContext;

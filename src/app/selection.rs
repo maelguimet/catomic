@@ -2,7 +2,6 @@
 //! Owns: Shift extension, select-all, process-local clipboard, and OSC 52 export.
 //! Must not: implement buffer storage, terminal event polling, mouse decoding, or network.
 //! Invariants: selections are half-open scalar ranges; replacement is one Buffer edit.
-//! Phase: 3-d/3-e keyboard and mouse selection interaction.
 
 use std::io::{self, Write};
 

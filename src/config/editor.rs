@@ -2,7 +2,6 @@
 //! Owns: tab width resolution and validated per-language linter commands.
 //! Must not: inspect buffers, run commands, construct Project services, or write config.
 //! Invariants: tab sizes are 1..=16; extensions are normalized; linters contain `{file}`.
-//! Phase: 7 per-language configuration.
 
 use std::collections::BTreeMap;
 use std::io;

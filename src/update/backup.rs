@@ -2,7 +2,6 @@
 //! Owns: XDG user roots, recursive copying, private modes, and backup manifests.
 //! Must not: follow symlinks, copy caches, include older update backups, or alter sources.
 //! Invariants: backup directories are 0700 and regular files are 0600 on Unix.
-//! Phase: safe self-update workflow.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};

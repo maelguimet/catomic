@@ -2,7 +2,6 @@
 //! Owns: small deterministic tests for retained edits and original-range overlays.
 //! Must not: depend on App policy, terminal input, live watchers, or large fixtures.
 //! Invariants: configured pages stay bounded; every page remains editable and writable.
-//! Phase: 2-by editable paged-file storage acceptance.
 
 use std::io::Write;
 

@@ -1,4 +1,4 @@
-//! Mutation logic for PieceTable: insert, delete, basic movement, undo/redo splice (Phases 1B-1C).
+//! Mutation logic for PieceTable: insert, delete, basic movement, and undo/redo splicing.
 //!
 //! Coalescing and index maintenance will be wired here. History deltas returned for tx recording.
 

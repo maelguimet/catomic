@@ -1,4 +1,4 @@
-//! Deterministic queued-signal + render seam tests (Phase 2-ac).
+//! Deterministic queued-signal and render-seam tests.
 //!
 //! Purpose: exercise check_file_watcher_once_and_render (and the check/apply
 //! chain) using the #[cfg(test)] injection seam. All tests are fully
@@ -9,7 +9,6 @@
 //!   or save-conflict; read content except through existing reload path (not here).
 //! Invariants: watcher signals are hints; unchanged/no-path are suppressed;
 //!   clean Modified/Deleted auto-reload by default; at most one signal is consumed.
-//! Phase: 2-ac through 2-bx automatic clean reload.
 
 use super::super::super::*;
 use crossterm::event::{KeyCode, KeyModifiers};

@@ -2,7 +2,6 @@
 //! Owns: virtual cursor-line insertion, dim styling ranges, and unchanged cursor placement.
 //! Must not: mutate buffers, expose ghost text through document APIs, or scan full files.
 //! Invariants: reads stay viewport-bounded; suffix text shifts visually; ANSI is one frame.
-//! Phase: post-v0.1 opt-in inline autocomplete.
 
 use std::io::{self, Write};
 

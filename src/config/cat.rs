@@ -2,7 +2,6 @@
 //! Owns: the default-on status badge plus opt-in `.catnap` limits and TOML decoding.
 //! Must not: mutate editor state, write files, inspect buffers, or start background work.
 //! Invariants: recovery is disabled by default and every enabled workload is bounded.
-//! Phase: 8 cat polish and recovery.
 
 use std::io;
 

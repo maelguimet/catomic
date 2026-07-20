@@ -2,7 +2,6 @@
 //! Owns: preview construction, navigation, drift checks, one edit, cancel, and display buffer.
 //! Must not: write source files, schedule autosave, load config, remove sidecars, or network.
 //! Invariants: source stays unchanged until Enter; source or retained-candidate drift refuses apply.
-//! Phase: 8 recovery preview.
 
 use std::io::{self, Write};
 use std::path::PathBuf;

@@ -2,7 +2,6 @@
 //! Owns: enable confirmation, invalidation, acceptance/dismissal, and status labels.
 //! Must not: collect context, contact endpoints, render ghost layout, or read repositories.
 //! Invariants: no automatic request precedes confirmation; suggestions never mutate the buffer.
-//! Phase: post-v0.1 opt-in inline autocomplete.
 
 use std::io::{self, Write};
 use std::time::{Duration, Instant};

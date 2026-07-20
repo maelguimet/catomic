@@ -2,13 +2,15 @@
 //! Owns: overlay buffers, selected menu rows, bounded wrapping, and saved display state.
 //! Must not: dispatch editor actions, decode terminal events, save, or start work.
 //! Invariants: closing an overlay restores the underlying message and all viewport offsets.
-//! Phase: Android/Termux mobile support.
 
 use crossterm::event::KeyCode;
 
 use crate::buffer::{Buffer, Cursor, PieceTable};
 
 use super::actions::{MenuAction, MENU_ENTRIES};
+
+const MENU_MESSAGE: &str = "Mobile actions: tap an item or use Up/Down and Run.";
+const NOTICE_MESSAGE: &str = "Message details (read-only). Back returns.";
 
 #[derive(Default)]
 pub(crate) struct MobileUiState {
@@ -62,7 +64,7 @@ pub(super) fn open_menu(app: &mut super::super::App) {
     };
     app.mobile.overlay = Some(Overlay::Menu(view));
     reset_viewport(app);
-    app.message_info("Mobile actions: tap an item or use Up/Down and Run.");
+    refresh_message(app);
 }
 
 pub(super) fn open_notice(app: &mut super::super::App, text: &str) {
@@ -74,7 +76,20 @@ pub(super) fn open_notice(app: &mut super::super::App, text: &str) {
     };
     app.mobile.overlay = Some(Overlay::Notice(view));
     reset_viewport(app);
-    app.message_info("Message details (read-only). Back returns.");
+    refresh_message(app);
+}
+
+pub(super) fn refresh_message(app: &mut super::super::App) {
+    let message = match app.mobile.overlay.as_ref() {
+        Some(Overlay::Menu(_)) => Some(MENU_MESSAGE),
+        Some(Overlay::Notice(_)) => Some(NOTICE_MESSAGE),
+        None => None,
+    };
+    if let Some(message) = message {
+        app.message_info(message);
+    } else {
+        app.message = None;
+    }
 }
 
 pub(super) fn close(app: &mut super::super::App) -> bool {

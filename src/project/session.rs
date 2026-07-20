@@ -2,7 +2,6 @@
 //! Owns: the stable root plus explicitly requested Project task/results.
 //! Must not: scan itself, construct LSP/LLM clients, auto-run tools, or network.
 //! Invariants: App owns this only in Project mode; workers are absent until invocation.
-//! Phase: 5-b bouncer through 5-d on-demand tooling state.
 
 use std::path::{Path, PathBuf};
 

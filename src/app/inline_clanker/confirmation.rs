@@ -2,7 +2,6 @@
 //! Owns: auditable confirmation text, read-only navigation, and source viewport restoration.
 //! Must not: construct clients, start requests without Enter, mutate source text, or save files.
 //! Invariants: destination, scope, request sizes, sensitivity, and cleanup are visible before send.
-//! Phase: issue #65 one-key inline clanker workflow.
 
 use std::io::{self, Write};
 

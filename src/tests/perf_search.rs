@@ -2,7 +2,6 @@
 //! Owns: the ignored 10 MiB line-heavy search sample and its correctness guard.
 //! Must not: run by default, enforce machine-dependent timing, touch disk, or add dependencies.
 //! Invariants: the only query is at EOF, so a forward match scans the complete buffer.
-//! Phase: 3 acceptance performance measurement.
 
 use crate::buffer::{Buffer, Cursor, PieceTable};
 use crate::editor::search::{find_match, SearchDirection};

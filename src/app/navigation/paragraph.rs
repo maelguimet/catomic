@@ -2,7 +2,6 @@
 //! Owns: blank-line paragraph semantics and visual-column preservation.
 //! Must not: mutate buffers, selections, viewport state, history, or terminal output.
 //! Invariants: targets are clamped scalar coordinates on grapheme boundaries.
-//! Phase: post-v0.1 prose navigation.
 
 use std::io;
 

@@ -2,7 +2,6 @@
 //! Owns: post-confirmation credential resolution, cancellable GET, and pollable task results.
 //! Must not: start on picker open, send file context, persist models, retry, or follow redirects.
 //! Invariants: only opted-in HTTP presets run; response is 256 KiB/128 models at most.
-//! Phase: post-v0.1 explicit model discovery.
 
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};

@@ -2,7 +2,6 @@
 //! Owns: deterministic success, stale-context, malformed-input, and newline tests.
 //! Must not: access disk, mutate editor buffers, or exercise live LLM endpoints.
 //! Invariants: every accepted preview has validated source lines and hunk counts.
-//! Phase: 6 (LLM, Powerful but Caged).
 
 use super::*;
 

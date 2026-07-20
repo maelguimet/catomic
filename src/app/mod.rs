@@ -3,7 +3,6 @@
 //! Must not: implement the terminal loop, input precedence, frame composition, or buffer edits.
 //! Invariants: Plain constructs no Project/network/process services; new top-level state
 //!   requires an ownership review before bypassing an existing aggregate or subsystem.
-//! Phase: bounded post-beta App ownership cleanup.
 
 use std::collections::VecDeque;
 use std::io;

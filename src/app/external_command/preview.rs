@@ -2,7 +2,6 @@
 //! Owns: read-only result view, navigation, stale-source checks, and one edit transaction.
 //! Must not: spawn processes, load config, write files, or apply failed/truncated output.
 //! Invariants: Enter alone applies successful complete output; source/path drift refuses it.
-//! Phase: 7 external command preview and undo safety.
 
 use std::io::{self, Write};
 use std::path::PathBuf;

@@ -2,7 +2,6 @@
 //! Owns: selection/block drafts, no-network-before-Enter, loopback completion, and preview.
 //! Must not: contact a live model, public endpoint, user service, or external network.
 //! Invariants: Plain startup has no request objects; model output never bypasses preview.
-//! Phase: 6 (LLM, Powerful but Caged).
 
 use std::io::{Read, Write};
 use std::net::TcpListener;

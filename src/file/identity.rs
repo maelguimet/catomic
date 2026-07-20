@@ -3,7 +3,6 @@
 //! Must not: open buffers, choose save policy, construct watchers, or read file content.
 //! Invariants: existing regular files follow symlinks and compare by device/inode on Unix;
 //!   missing paths compare only after resolving their deepest existing ancestor.
-//! Phase: post-v0.1 same-file buffer deduplication.
 
 use std::fs;
 use std::io;

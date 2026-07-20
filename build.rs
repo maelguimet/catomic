@@ -2,7 +2,6 @@
 //! Owns: explicit release overrides and local Git revision/dirty discovery.
 //! Must not: contact a network, modify the checkout, or invent a clean revision.
 //! Invariants: accepted commits are full lowercase Git object IDs; missing metadata is explicit.
-//! Phase: post-v0.1 build diagnostics.
 
 use std::env;
 use std::path::{Path, PathBuf};

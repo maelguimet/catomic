@@ -2,7 +2,6 @@
 //! Owns: completed-task polling, source/path rechecks, and guarded preview handoff.
 //! Must not: construct clients, read repos, apply edits, write files, or accept stale responses.
 //! Invariants: only an unchanged source identity and repository can reach patch preview.
-//! Phase: 6 (LLM Context Broker).
 
 use std::io::{self, Write};
 use std::path::Path;

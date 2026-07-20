@@ -3,7 +3,6 @@
 //! Must not: scan file bytes, reopen paths, edit content, save, or create idle workers.
 //! Invariants: search workers exist only while an explicit non-empty prompt is active;
 //!   Escape clears the highlight; descriptor matches switch page before reveal.
-//! Phase: 3-a incremental search foundation.
 
 use std::io::{self, Write};
 

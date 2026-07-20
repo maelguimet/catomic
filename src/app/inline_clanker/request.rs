@@ -2,7 +2,6 @@
 //! Owns: lazy API-key/client construction, serial progress, response handoff, and stop policy.
 //! Must not: discover scope, apply proposals, save files, or start queued work concurrently.
 //! Invariants: identity/guards match before every send and response preview; one task exists at most.
-//! Phase: issue #65 one-key inline clanker workflow.
 
 use std::io::{self, Write};
 

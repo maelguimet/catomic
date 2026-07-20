@@ -2,7 +2,6 @@
 //! Owns: a loopback hanging server and non-blocking task polling assertions.
 //! Must not: contact a live model, public endpoint, user service, or external network.
 //! Invariants: cancellation produces `Cancelled` promptly and closes the request socket.
-//! Phase: 6 (LLM, Powerful but Caged).
 
 use std::io::Read;
 use std::net::TcpListener;

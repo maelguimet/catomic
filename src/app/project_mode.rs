@@ -2,7 +2,6 @@
 //! Owns: capability replacement and lazy Project session construction/destruction.
 //! Must not: scan repositories, run tools, start background work, mutate buffers, or network.
 //! Invariants: Plain holds no Project session; Project session exists only after explicit opt-in.
-//! Phase: 5-b Project tooling bouncer foundation.
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};

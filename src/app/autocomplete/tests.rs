@@ -2,7 +2,6 @@
 //! Owns: deterministic App fixtures, session policy, undo, and line-ending acceptance tests.
 //! Must not: contact a live/public endpoint, read repositories, or use real credentials.
 //! Invariants: ghost text is non-buffer state; acceptance is one undoable transaction.
-//! Phase: post-v0.1 opt-in inline autocomplete.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 

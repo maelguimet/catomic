@@ -2,7 +2,6 @@
 //! Owns: decoder, detector, and streaming formatter unit tests.
 //! Must not: construct App state, use network access, or bypass text_format APIs.
 //! Invariants: test documents normalize to LF in memory and restore exact disk format.
-//! Phase: post-v0.1 core usability.
 
 use super::*;
 use crate::buffer::{Buffer, PagedFileBuffer, PieceTable};

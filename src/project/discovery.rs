@@ -2,7 +2,6 @@
 //! Owns: bounded directory walking, generated-directory ignores, and result ordering.
 //! Must not: run in Plain mode, follow symlinks, read file contents, index, or network.
 //! Invariants: every visited entry consumes budget; complete results are path-sorted.
-//! Phase: 5-d Project file discovery foundation.
 
 use std::collections::VecDeque;
 use std::fs;

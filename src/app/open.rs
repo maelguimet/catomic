@@ -1,4 +1,4 @@
-//! Open-size guardrail extraction + initial snapshot/open plan for App::new (Phase 2B).
+//! Open-size guardrail extraction and initial snapshot/open plan for App::new.
 //!
 //! Purpose: encapsulate pre-read size policy (Large warn, Huge/Extreme page),
 //!   one pinned regular-file descriptor (disk_snapshot + content plan), and
@@ -14,7 +14,6 @@
 //!   invalid UTF-8 errors from read after successful metadata); non-regular paths
 //!   are refused before buffer reads; one bounded identity capture drives
 //!   size/snapshot/content planning; pathname drift fails closed.
-//! Phase: 2-bm configurable paged open policy.
 
 use std::io::{self, ErrorKind};
 

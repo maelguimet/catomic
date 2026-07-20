@@ -2,7 +2,6 @@
 //! Owns: worker lifetime, cancellation signaling, non-blocking result polling.
 //! Must not: start automatically, retain App state, open files, index, or network.
 //! Invariants: Drop requests cancellation; at most one bounded result crosses the channel.
-//! Phase: 5-d asynchronous Project file discovery.
 
 use std::io;
 use std::path::Path;

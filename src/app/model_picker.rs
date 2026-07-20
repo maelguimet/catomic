@@ -2,7 +2,6 @@
 //! Owns: filtering, session selection, explicit discovery confirmation/cache, and navigation.
 //! Must not: persist config, send document context, read secret values, auto-probe, or spawn CLIs.
 //! Invariants: opening/selecting is side-effect-free; only confirmed discovery contacts one URL.
-//! Phase: post-v0.1 model/backend picker.
 
 use std::collections::HashMap;
 use std::io::{self, Write};

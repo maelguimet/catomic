@@ -2,7 +2,6 @@
 //! Owns: warning/confirmation/request/preview phases, serial queue lifetime, and change metadata.
 //! Must not: start network work before confirmation, save files, or send out-of-scope text.
 //! Invariants: at most one request runs; every apply revalidates path, revision, guards, and ranges.
-//! Phase: issue #65 one-key inline clanker workflow.
 
 use std::io::{self, Write};
 use std::path::PathBuf;

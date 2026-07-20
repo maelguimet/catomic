@@ -2,7 +2,6 @@
 //! Owns: transient candidate selection, key handling, messages, and atomic acceptance.
 //! Must not: scan projects/buffers, start discovery, spawn work/processes, or emit terminal codes.
 //! Invariants: no content changes before Enter; accepted text is one undoable replacement.
-//! Phase: 5-a local completion through 5-e Project path completion.
 
 use std::io::{self, Write};
 

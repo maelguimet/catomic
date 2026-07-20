@@ -2,7 +2,6 @@
 //! Owns: context-specific labels, cell spans, and width adaptation.
 //! Must not: inspect App internals, dispatch actions, render ANSI, or mutate state.
 //! Invariants: labels are ASCII cell widths; required cancel/accept paths fit at 20 columns.
-//! Phase: Android/Termux mobile support.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Surface {

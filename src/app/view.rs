@@ -3,7 +3,6 @@
 //! Must not: mutate source text/history, emit terminal setup, or contact the network.
 //! Invariants: preview is explicit/read-only; F5/F7 are session-global and persisted;
 //!   F8/F9 and source viewports remain per buffer.
-//! Phase: 4-b/4-c optional indicators and Markdown preview.
 
 use std::io::{self, Write};
 

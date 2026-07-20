@@ -2,7 +2,6 @@
 //! Owns: command/shortcut coverage and dirty-close safety fixtures.
 //! Must not: use a real terminal or leave temporary files behind.
 //! Invariants: dirty data is never discarded without `close!`.
-//! Phase: post-v0.1 core usability.
 
 use std::fs;
 use std::path::PathBuf;

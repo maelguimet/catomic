@@ -2,7 +2,6 @@
 //! Owns: semantic highlights, surfaces, status text/roles, and viewport options.
 //! Must not: mutate App/buffers, perform terminal setup, load config, or own input dispatch.
 //! Invariants: messages replace status; local read-only surfaces never show edit highlights.
-//! Phase: issue #62 semantic theme integration plus bounded App render extraction.
 
 use std::io::{self, Write};
 

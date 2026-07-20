@@ -2,7 +2,6 @@
 //! Owns: one-write/one-flush success evidence and no-partial-output composition failure evidence.
 //! Must not: require a real terminal, mutate editor state, or weaken file-backed error handling.
 //! Invariants: only complete frames reach the writer; one successful frame is flushed once.
-//! Phase: bounded post-beta render ownership cleanup.
 
 use std::io::{self, Write};
 

@@ -2,7 +2,6 @@
 //! Owns: prompt text editing, parsing, and dispatch to existing safe App actions.
 //! Must not: access buffer internals, bypass save/quit guards, spawn services, or network.
 //! Invariants: lines are user-facing 1-based; invalid commands do not mutate editor state.
-//! Phase: 3-c command surface, extended for explicit Save As.
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};

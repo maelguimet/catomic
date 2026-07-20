@@ -2,7 +2,6 @@
 //! Owns: list formatting, display-buffer selection, navigation, paste guard, and restoration.
 //! Must not: run linters, load config, mutate source/history, scan projects, or network.
 //! Invariants: Escape restores the source viewport; all non-navigation input is read-only.
-//! Phase: 5-c diagnostics list view.
 
 use std::io::{self, Write};
 

@@ -1,4 +1,4 @@
-//! Manual reload-from-disk confirmation (Phase 2-s narrow pass).
+//! Manual reload-from-disk confirmation.
 //!
 //! Purpose: owns the pending reload confirmation token, message helpers,
 //! and the Ctrl+R decision + perform logic (extracted in 2-t for mod.rs hygiene).
@@ -12,7 +12,6 @@
 //!   automatic reload is invoked only for clean buffers by caller policy;
 //!   successful reloads refresh watcher path identities;
 //!   input routing cancels it before any unrelated editor action.
-//! Phase: 2-s / 2-t cleanup through 2-bx automatic clean reload.
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};

@@ -2,7 +2,6 @@
 //! Owns: synthetic click, drag, status-row, and double-click fixtures.
 //! Must not: require a real terminal, timing sleeps, filesystem, or text mutation.
 //! Invariants: all assertions use crossterm's zero-based mouse coordinates.
-//! Phase: 3-e mouse selection interaction.
 
 use super::*;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -338,4 +337,37 @@ fn mobile_two_tap_selection_ends_on_a_wrapped_unicode_grapheme_boundary() {
         end.col,
     );
     assert!(!super::super::is_touch_selecting(&app));
+}
+
+#[test]
+fn touch_endpoint_cancels_every_unrelated_editor_confirmation() {
+    let mut app = app_with("select me");
+    super::super::super::mobile::configure(&mut app, true);
+    super::super::begin_touch_selection(&mut app);
+    app.pending_quit_confirm = true;
+    app.pending_save_conflict = Some(super::super::super::save::PendingSaveConflict {
+        path: "save.txt".into(),
+        status: crate::file::io::ExternalFileStatus::Modified,
+        snapshot: None,
+    });
+    app.pending_reload = Some(super::super::super::reload::PendingReload {
+        path: "reload.txt".into(),
+        status: crate::file::io::ExternalFileStatus::Modified,
+        snapshot: None,
+    });
+    app.message = Some("armed confirmation".to_string());
+    let mut out = Vec::new();
+
+    handle_mouse(
+        &mut app,
+        &mut out,
+        event(MouseEventKind::Down(MouseButton::Left), 6, 0),
+    )
+    .unwrap();
+
+    assert!(!app.pending_quit_confirm);
+    assert!(app.pending_save_conflict.is_none());
+    assert!(app.pending_reload.is_none());
+    assert!(!super::super::is_touch_selecting(&app));
+    assert_eq!(app.clipboard, "select");
 }

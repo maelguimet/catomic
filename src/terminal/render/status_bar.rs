@@ -2,7 +2,6 @@
 //! Owns: status roles, filename/selection spans, terminal fallback, and row painting.
 //! Must not: inspect App/buffer state, classify messages, mutate editor state, or read config files.
 //! Invariants: text is terminal-safe and cell-clipped; normal chrome stays quiet; ANSI resets last.
-//! Phase: post-v0.1 status/message bar accessibility.
 
 use std::io::{self, Write};
 

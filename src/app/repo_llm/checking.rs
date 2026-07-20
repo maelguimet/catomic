@@ -2,7 +2,6 @@
 //! Owns: the pre-send worker state, non-blocking polling, and guarded handoff to HTTP.
 //! Must not: run Git on the input thread, contact endpoints before success, or edit buffers.
 //! Invariants: source, path, and repository identity remain pinned across the async check.
-//! Phase: 6 acceptance hardening.
 
 use std::io::{self, Write};
 use std::path::PathBuf;

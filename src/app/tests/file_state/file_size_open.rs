@@ -1,4 +1,4 @@
-//! Pre-read open-size guardrail tests (Phase 2-ag).
+//! Pre-read open-size guardrail tests.
 //!
 //! Purpose: verify App::new decides from metadata before content read:
 //!   Small opens with no warning; Large warns; Huge/Extreme select paged mode.
@@ -8,7 +8,6 @@
 //!   read >~10 MiB in default runs; depend on live watcher.
 //! Invariants: decision comes from pre-read metadata; byte size alone does not refuse;
 //!   paged plans are selected before content scans; Small/missing/utf8-error unchanged.
-//! Phase: 2-bm paged open policy.
 
 use super::super::*;
 use std::fs::{self, OpenOptions};

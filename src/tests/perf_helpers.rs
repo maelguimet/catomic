@@ -8,7 +8,6 @@
 //!   determinism; non-ASCII generated sizes must preserve UTF-8 boundaries;
 //!   sparse uses only set_len (no write) and returns Err for FS that refuse large sparse;
 //!   cleanup is best-effort (ignore errors); helpers are test-only.
-//! Phase: 2-ai (harness split; no behavior change from split).
 
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};

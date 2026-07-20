@@ -3,7 +3,6 @@
 //! Must not: decode keys, render, mutate buffer content, or perform terminal I/O.
 //! Invariants: active state stays in App; each inactive slot retains its file,
 //!   cursor/buffer, watcher, viewport, message, and pending file operations.
-//! Phase: 2-b multiple-buffer foundation.
 
 use std::io;
 use std::mem;

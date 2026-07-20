@@ -2,7 +2,6 @@
 //! Owns: deterministic path-drift tests across preparation, confirmation, and response.
 //! Must not: contact a live model, public endpoint, remote Git service, or user repository.
 //! Invariants: path drift cancels or discards before any proposal can reach preview.
-//! Phase: 6 acceptance hardening.
 
 use std::net::TcpListener;
 

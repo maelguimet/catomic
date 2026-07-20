@@ -2,7 +2,6 @@
 //! Owns: per-buffer timer/task state, `:recover`, preview input, apply, and save cleanup.
 //! Must not: overwrite source files, run when disabled, autosave unbounded buffers, or block typing.
 //! Invariants: offers retain the opened candidate; Enter applies one edit; drift refuses apply.
-//! Phase: 8 bounded crash recovery.
 
 use std::io::{self, Write};
 use std::time::{Duration, Instant};

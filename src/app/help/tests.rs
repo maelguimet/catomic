@@ -2,7 +2,6 @@
 //! Owns: focused help rendering, navigation, and source-preservation regression tests.
 //! Must not: touch disk, spawn services, access network, or depend on a real terminal.
 //! Invariants: opening and closing help never changes the source buffer.
-//! Phase: issue #134 task-oriented Markdown help.
 
 use crate::buffer::{Cursor, PieceTable};
 use crate::editor::syntax::SyntaxKind;

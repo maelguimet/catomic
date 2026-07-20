@@ -3,7 +3,6 @@
 //! Must not: open paths, replace files, parse config, render, or own App policy.
 //! Invariants: the synthetic trailing boundary row is hidden; edits remain writable;
 //!   global undo/redo returns to the page containing the affected transaction.
-//! Phase: 2-by editable paged-file storage.
 
 use std::borrow::Cow;
 use std::io::{self, Write};
@@ -89,6 +88,13 @@ impl Buffer for PagedFileBuffer {
     }
 
     fn next_page(&mut self) -> io::Result<bool> {
+        #[cfg(test)]
+        if let Some((successful_calls, kind)) = self.fail_next_page_after.take() {
+            if successful_calls == 0 {
+                return Err(kind.into());
+            }
+            self.fail_next_page_after = Some((successful_calls - 1, kind));
+        }
         let Some(start) = self.active().next_page_start else {
             return Ok(false);
         };
@@ -98,6 +104,10 @@ impl Buffer for PagedFileBuffer {
     }
 
     fn previous_page(&mut self) -> io::Result<bool> {
+        #[cfg(test)]
+        if let Some(kind) = self.fail_previous_page_once.take() {
+            return Err(kind.into());
+        }
         if self.active().start_byte == 0 {
             return Ok(false);
         }

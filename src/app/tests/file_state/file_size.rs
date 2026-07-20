@@ -1,4 +1,4 @@
-//! Focused App/FileState size metadata tests (Phase 2B foundation).
+//! Focused App/FileState size metadata tests.
 //!
 //! Purpose: verify size_bytes + size_tier are captured from metadata only at the
 //!   documented points (open existing, open missing, successful save, confirmed
@@ -8,7 +8,6 @@
 //!   assert on UI strings beyond size bookkeeping; depend on live watcher.
 //! Invariants: None for no-path and for missing/deleted; Present len+tier for
 //!   real on-disk files after open/save/reload-Modified; no content-derived sizes.
-//! Phase: 2-af (metadata bookkeeping only; no guardrails or large-file paths).
 
 use super::super::*;
 use super::make_key;

@@ -1,4 +1,4 @@
-//! Undo / redo stack (Phase 1C).
+//! Undo / redo stack.
 //!
 //! Purpose: record piece-level inverse edits for undo/redo without full-text snapshots.
 //! Owns: undo and redo vectors of Transactions.
@@ -9,7 +9,6 @@
 //! - No-op edits produce no Transaction.
 //! - Redo of insert re-uses stored piece descriptors (no re-append to add buffer).
 //!
-//! Phase: 1C
 
 use crate::buffer::piece_table::types::Piece;
 use crate::buffer::Cursor;
@@ -41,7 +40,7 @@ pub(crate) enum PieceEdit {
 }
 
 /// Stack of transactions supporting undo and redo.
-/// Phase 2-j: tracks a monotonic history position id for exact save-point dirty tracking.
+/// Tracks a monotonic history position id for exact save-point dirty tracking.
 #[derive(Clone, Debug)]
 pub struct UndoStack {
     undo: Vec<Transaction>,

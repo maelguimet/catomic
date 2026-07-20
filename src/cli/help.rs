@@ -2,7 +2,6 @@
 //! Owns: option spellings, visibility, usage forms, examples, and documentation pointers.
 //! Must not: inspect paths, parse editor state, contact a network, or perform an update.
 //! Invariants: CLI parsing looks up options here; internal options are explicitly hidden.
-//! Phase: post-v0.1 discoverability and help-drift prevention.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum MainOption {

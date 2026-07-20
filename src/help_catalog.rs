@@ -3,7 +3,6 @@
 //! Must not: dispatch actions, read configuration, mutate editor state, or start services.
 //! Invariants: normal-mode action shortcuts and parsed prompt commands come from this catalog;
 //!   fixed editing/navigation keys are explicitly classified in `FIXED_SHORTCUTS`.
-//! Phase: post-v0.1 discoverability and help-drift prevention.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 

@@ -2,7 +2,6 @@
 //! Owns: scan invocation/polling, picker formatting/navigation, and selected-file opening.
 //! Must not: scan in Plain, block input, mutate source/history, auto-run, or network.
 //! Invariants: no worker exists before `:files`; picker paths come from the bounded result.
-//! Phase: 5-d Project file discovery UI.
 
 use std::io::{self, Write};
 use std::path::PathBuf;

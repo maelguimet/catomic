@@ -2,7 +2,6 @@
 //! Owns: `:meow` drafts, endpoint/context confirmation, task polling, and cancellation.
 //! Must not: collect repo context, create clients before Enter, apply output, or write files.
 //! Invariants: pending state has no client; source drift discards output; patches go to preview.
-//! Phase: 6 (LLM, Powerful but Caged).
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};

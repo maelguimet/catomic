@@ -15,7 +15,6 @@
 //!   user-visible; clean Modified/Deleted observations auto-reload when configured;
 //!   watcher drift invalidates rather than silently re-arms confirmation;
 //!   construction failure is non-fatal.
-//! Phase: 2-ad stale pending cleanup through 2-bx automatic clean reload.
 //!
 //! The only sites that set app.file.path are:
 //! - App::new (initial_path or None)

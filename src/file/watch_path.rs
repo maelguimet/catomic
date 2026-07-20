@@ -9,7 +9,6 @@
 //! Invariants: works for missing paths; relatives absolutized via current_dir();
 //!   lexical only (no symlinks); normalize + watch_parent produce paths safe for
 //!   non-recursive parent watch + exact target filter.
-//! Phase: 2-y narrow cleanup (harden before App wiring).
 
 use std::path::{Component, Path, PathBuf};
 

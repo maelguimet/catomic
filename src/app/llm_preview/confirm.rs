@@ -2,7 +2,6 @@
 //! Owns: final repo/path/text rechecks and the one confirmed buffer transaction.
 //! Must not: construct clients, send requests, write files, or bypass ordinary undo.
 //! Invariants: any repo, active-path, or source-text drift refuses the proposal.
-//! Phase: 6 acceptance hardening.
 
 use std::io::{self, Write};
 

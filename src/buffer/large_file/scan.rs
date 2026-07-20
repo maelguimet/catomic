@@ -6,7 +6,6 @@
 //! Invariants: the first line starts at byte zero; metadata vectors describe
 //!   every scanned line; checkpoints land on UTF-8 boundaries; total_bytes is
 //!   the exact number of bytes read.
-//! Phase: 2-bq shared optimized ASCII line scanning.
 
 #[cfg(test)]
 use std::fs::File;

@@ -1,8 +1,8 @@
 # Catomic configuration
 #
 # This file is user-owned. Catomic never rewrites or migrates it automatically.
-# Unknown keys are kept for forward compatibility because Catomic only reads
-# configuration. Restart Catomic after saving; settings are applied as one
+# Unknown keys are rejected with their full TOML path so typos do not silently
+# select defaults. Restart Catomic after saving; settings are applied as one
 # validated document at startup, never partially.
 
 [editor]

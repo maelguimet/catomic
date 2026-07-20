@@ -179,12 +179,26 @@ fn refresh_keybindings_is_confirmed_preserving_valid_and_idempotent() -> TestRes
     let accepted = run_with_input(&fixture, &["config", "refresh-keybindings"], b"yes\n")?;
     assert!(accepted.status.success());
     let refreshed = fs::read_to_string(&config)?;
-    assert!(refreshed.starts_with(original));
+    assert!(refreshed.starts_with(concat!(
+        "# old user config\n",
+        "[editor]\n",
+        "tab_size = 2\n",
+        "\n",
+        "[keybindings]\n",
+        "save = [\"alt+s\"]\n",
+        "help = []\n",
+    )));
     assert!(refreshed.contains("# action-registry-start\n"));
     assert!(refreshed.contains("# help = [\"ctrl+h\", \"f1\"]"));
     assert!(refreshed.contains("# paste = [\"ctrl+v\"]"));
     assert!(refreshed.contains("# prompt-cancel = [\"esc\"]"));
     assert!(refreshed.contains("# action-registry-end\n"));
+    assert!(refreshed.contains(concat!(
+        "# action-registry-end\n",
+        "[view]\n",
+        "line_numbers = true\n",
+        "# keep this user comment\n",
+    )));
     assert_eq!(refreshed.matches("# action-registry-start").count(), 1);
     assert_eq!(fs::metadata(&config)?.permissions().mode() & 0o777, 0o600);
 

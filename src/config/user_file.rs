@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 pub(crate) const TEMPLATE: &str = include_str!("config_template.toml");
 const INVENTORY_START: &str = "# action-registry-start";
 const INVENTORY_END: &str = "# action-registry-end";
+const KEYBINDINGS_HEADER: &str = "[keybindings]";
 
 pub(crate) fn path() -> io::Result<PathBuf> {
     resolve_path(
@@ -248,19 +249,8 @@ fn refresh_inventory_text(existing: &str) -> io::Result<String> {
     };
     let inventory = inventory_block().replace('\n', newline);
 
-    let refreshed = match (start, end) {
-        (None, None) => {
-            let mut text = existing.to_string();
-            if !text.is_empty() && !text.ends_with('\n') {
-                text.push_str(newline);
-            }
-            if !text.is_empty() && !text.ends_with(&format!("{newline}{newline}")) {
-                text.push_str(newline);
-            }
-            text.push_str(&inventory);
-            text.push_str(newline);
-            text
-        }
+    let (base, active) = match (start, end) {
+        (None, None) => (existing.to_string(), Vec::new()),
         (Some(start), Some(end)) if start < end => {
             let mut block_end = end + INVENTORY_END.len();
             if existing[block_end..].starts_with("\r\n") {
@@ -277,18 +267,12 @@ fn refresh_inventory_text(existing: &str) -> io::Result<String> {
                 .lines()
                 .filter(|line| {
                     let line = line.trim_start();
-                    !line.is_empty() && !line.starts_with('#')
+                    !line.is_empty()
+                        && !line.starts_with('#')
+                        && line.trim() != KEYBINDINGS_HEADER
                 })
                 .collect::<Vec<_>>();
-            let mut text = prefix.to_string();
-            if !active.is_empty() {
-                text.push_str(&active.join(newline));
-                text.push_str(newline);
-            }
-            text.push_str(&inventory);
-            text.push_str(newline);
-            text.push_str(&existing[block_end..]);
-            text
+            (format!("{prefix}{}", &existing[block_end..]), active)
         }
         _ => {
             return Err(io::Error::new(
@@ -297,8 +281,61 @@ fn refresh_inventory_text(existing: &str) -> io::Result<String> {
             ));
         }
     };
+    let refreshed = insert_inventory(&base, &active, newline, &inventory);
     super::validate_text(&refreshed)?;
     Ok(refreshed)
+}
+
+fn insert_inventory(base: &str, active: &[&str], newline: &str, inventory: &str) -> String {
+    let mut insertion = String::new();
+    if !active.is_empty() {
+        insertion.push_str(&active.join(newline));
+        insertion.push_str(newline);
+    }
+    insertion.push_str(inventory);
+    insertion.push_str(newline);
+
+    if let Some(insertion_index) = keybindings_insertion_index(base) {
+        let mut text = base[..insertion_index].to_string();
+        if !text.ends_with('\n') {
+            text.push_str(newline);
+        }
+        text.push_str(&insertion);
+        text.push_str(&base[insertion_index..]);
+        return text;
+    }
+
+    let mut text = base.to_string();
+    if !text.is_empty() && !text.ends_with('\n') {
+        text.push_str(newline);
+    }
+    if !text.is_empty() && !text.ends_with(&format!("{newline}{newline}")) {
+        text.push_str(newline);
+    }
+    text.push_str(KEYBINDINGS_HEADER);
+    text.push_str(newline);
+    text.push_str(&insertion);
+    text
+}
+
+fn keybindings_insertion_index(text: &str) -> Option<usize> {
+    let mut offset = 0;
+    let mut found = false;
+    for line in text.split_inclusive('\n') {
+        let line_start = offset;
+        offset += line.len();
+        if !found {
+            found = line.trim() == KEYBINDINGS_HEADER;
+        } else if is_table_header(line) {
+            return Some(line_start);
+        }
+    }
+    found.then_some(text.len())
+}
+
+fn is_table_header(line: &str) -> bool {
+    let before_comment = line.split('#').next().unwrap_or_default().trim();
+    before_comment.starts_with('[') && before_comment.ends_with(']')
 }
 
 fn unique_marker(text: &str, marker: &str) -> io::Result<Option<usize>> {

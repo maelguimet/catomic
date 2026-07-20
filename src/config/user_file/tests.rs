@@ -175,8 +175,8 @@ fn realistic_existing_config_gains_current_inventory_without_losing_user_bytes()
         "\n",
         "[keybindings]\n",
         "save = [\"alt+s\"]\n",
-        "help = []\n",
     )));
+    assert!(refreshed.contains("help = []\n# action-registry-start\n"));
     assert!(refreshed.ends_with(concat!(
         "[view]\n",
         "line_numbers = true\n",
@@ -196,6 +196,31 @@ fn realistic_existing_config_gains_current_inventory_without_losing_user_bytes()
     }
     crate::config::validate_text(&refreshed).unwrap();
     assert_eq!(refresh_inventory_text(&refreshed).unwrap(), refreshed);
+}
+
+#[test]
+fn partial_keybindings_table_gets_an_inventory_that_can_be_uncommented_in_place() {
+    let existing = concat!(
+        "[keybindings]\n",
+        "save = [\"alt+s\"]\n",
+        "\n",
+        "[view]\n",
+        "line_numbers = true\n",
+    );
+
+    let refreshed = refresh_inventory_text(existing).unwrap();
+    let inventory = refreshed.find(INVENTORY_START).unwrap();
+    let view = refreshed.find("[view]").unwrap();
+    assert!(refreshed[..inventory].contains("save = [\"alt+s\"]"));
+    assert!(inventory < view);
+    assert_eq!(refreshed.matches(KEYBINDINGS_HEADER).count(), 1);
+
+    let enabled = refreshed.replacen(
+        "# paste = [\"ctrl+v\"]",
+        "paste = [\"ctrl+v\"]",
+        1,
+    );
+    crate::config::validate_text(&enabled).unwrap();
 }
 
 #[test]

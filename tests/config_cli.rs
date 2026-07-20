@@ -107,12 +107,22 @@ fn config_path_check_and_help_are_read_only_and_preserving() -> TestResult {
     fs::create_dir_all(config.parent().expect("config parent"))?;
     fs::write(
         &config,
-        "# preserve exact bytes\n[theme]\nname = \"default\"\n[future]\ncat = true\n",
+        "# preserve exact bytes\n[theme]\nname = \"default\"\n",
     )?;
     let before = fs::read(&config)?;
     let checked = run(&fixture, &["config", "check"])?;
     assert!(checked.status.success());
     assert_eq!(fs::read(&config)?, before);
+
+    fs::write(
+        &config,
+        "[theme]\nname = \"default\"\n[future]\ncat = true\n",
+    )?;
+    let unknown_before = fs::read(&config)?;
+    let unknown = run(&fixture, &["config", "check"])?;
+    assert!(!unknown.status.success());
+    assert!(String::from_utf8(unknown.stderr)?.contains("unknown configuration key future"));
+    assert_eq!(fs::read(&config)?, unknown_before);
 
     fs::write(&config, "[theme]\nname = \"missing\"\n")?;
     let invalid_before = fs::read(&config)?;

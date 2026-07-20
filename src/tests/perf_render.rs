@@ -30,7 +30,7 @@ fn manual_phase4_10mib_markdown_reports_samples() {
             crate::editor::markdown_preview::render_with_width(&source, 80).unwrap()
         });
     print_perf_sample(&preview_sample);
-    assert!(preview.contains("- item with `code`"));
+    assert!(preview.text.contains("• item with code"));
     drop(preview);
     drop(source);
 

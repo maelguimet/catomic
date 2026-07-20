@@ -9,7 +9,7 @@ use std::io::{self, Write};
 
 use crate::buffer::{Buffer, Cursor};
 use crate::config::theme::Theme;
-use crate::editor::syntax::SyntaxKind;
+use crate::editor::syntax::{HyperlinkSpan, StyledSpan, SyntaxKind};
 use crate::terminal::cursor_style::{self, CursorShape};
 
 #[cfg(test)]
@@ -84,6 +84,12 @@ pub(crate) struct ExternalChanges<'a> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct DocumentPresentation<'a> {
+    pub(crate) spans: &'a [Vec<StyledSpan>],
+    pub(crate) links: &'a [Vec<HyperlinkSpan>],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct RenderOptions<'a> {
     pub(crate) cursor_shape: CursorShape,
     pub(crate) highlight: Option<TextHighlight>,
@@ -91,6 +97,7 @@ pub(crate) struct RenderOptions<'a> {
     pub(crate) llm_changes: Option<LlmChanges<'a>>,
     pub(crate) external_changes: Option<ExternalChanges<'a>>,
     pub(crate) syntax: SyntaxKind,
+    pub(crate) presentation: Option<DocumentPresentation<'a>>,
     pub(crate) surface: ContentSurface,
     pub(crate) theme: Theme,
     pub(crate) line_numbers: bool,
@@ -114,6 +121,7 @@ impl Default for RenderOptions<'_> {
             llm_changes: None,
             external_changes: None,
             syntax: SyntaxKind::Plain,
+            presentation: None,
             surface: ContentSurface::Normal,
             theme: Theme::default(),
             line_numbers: false,

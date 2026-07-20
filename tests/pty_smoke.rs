@@ -636,11 +636,11 @@ fn pty_f1_help_wraps_and_scrolls_to_reload_reference_in_a_narrow_terminal() -> T
 
     editor.wait_for_initial_render()?;
     editor.send_keys(b"\x1bOP")?; // F1
-    editor.wait_for_output("F1 built-in help", "Catomic help")?;
+    editor.wait_for_output("F1 built-in help", "Help; Esc closes.")?;
     for _ in 0..12 {
         editor.send_keys(b"\x1b[6~")?; // PageDown
     }
-    editor.wait_for_output("external change help", "External changes and recovery")?;
+    editor.wait_for_output("external change help", "observed state is unchanged")?;
 
     editor.clear_output();
     editor.send_keys(b"\x1bOP")?;
@@ -1171,11 +1171,11 @@ fn pty_help_scrolls_to_compact_model_guidance_and_closes_without_editing() -> Te
 
     editor.wait_for_initial_render()?;
     editor.send_keys(b"\x1bOP")?; // F1
-    editor.wait_for_output("built-in help", "Catomic help")?;
+    editor.wait_for_output("built-in help", "Help; Esc closes.")?;
     for _ in 0..16 {
         editor.send_keys(b"\x1b[6~")?;
     }
-    editor.wait_for_output("compact model section", "Select model")?;
+    editor.wait_for_output("compact model section", "process-local preset")?;
     editor.wait_for_output("model safety contract", "never auto-saved")?;
     editor.clear_output();
     editor.send_keys(b"\x1bOP")?; // F1 closes help without a persistent message.
@@ -1382,8 +1382,14 @@ fn pty_markdown_preview_and_view_toggles_leave_source_unchanged() -> TestResult 
     editor.wait_for_initial_render()?;
     let startup_output = editor.output_string();
     editor.wait_for_output("Markdown source", "# PTY Heading")?;
+    editor.clear_output();
     editor.send_keys(b"\x1b[17~")?; // F6
     editor.wait_for_output("preview enabled", "Markdown preview on")?;
+    let preview_output = editor.output_string();
+    assert!(preview_output.contains("PTY"));
+    assert!(!preview_output.contains("# PTY Heading"));
+    assert!(preview_output.contains("• "));
+    assert!(!preview_output.contains("- item with"));
 
     editor.send_keys(b"x")?;
     editor.wait_for_output("preview read-only guard", "preview is read-only")?;
@@ -1565,7 +1571,7 @@ fn pty_help_scrolls_through_recovery_and_model_summary_without_editing() -> Test
 
     editor.wait_for_initial_render()?;
     editor.send_keys(b"\x1bOP")?; // F1.
-    editor.wait_for_output("built-in help", "Catomic help")?;
+    editor.wait_for_output("built-in help", "Help; Esc closes.")?;
     editor.send_keys(&b"\x1b[6~".repeat(16))?;
     editor.wait_for_output("recovery help", "crash recovery is enabled")?;
     editor.wait_for_output("model save boundary", "never auto-saved")?;

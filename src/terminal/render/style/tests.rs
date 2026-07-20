@@ -45,6 +45,81 @@ fn markdown_inline_code_is_distinct_from_cyan_markers() {
 }
 
 #[test]
+fn markdown_presentation_uses_attributes_and_osc8_without_source_delimiters() {
+    let spans = vec![vec![
+        StyledSpan {
+            start: 0,
+            end: 6,
+            style: SpanStyle::PreviewStrong,
+        },
+        StyledSpan {
+            start: 7,
+            end: 15,
+            style: SpanStyle::PreviewEmphasis,
+        },
+        StyledSpan {
+            start: 16,
+            end: 22,
+            style: SpanStyle::PreviewStrikethrough,
+        },
+        StyledSpan {
+            start: 23,
+            end: 27,
+            style: SpanStyle::PreviewLink,
+        },
+        StyledSpan {
+            start: 28,
+            end: 32,
+            style: SpanStyle::PreviewCode,
+        },
+    ]];
+    let links = vec![vec![HyperlinkSpan {
+        start: 23,
+        end: 27,
+        destination: "https://example.com".into(),
+    }]];
+    let presentation = super::super::DocumentPresentation {
+        spans: &spans,
+        links: &links,
+    };
+
+    let output = rendered(
+        "strong emphasis strike link code",
+        0,
+        RenderOptions {
+            presentation: Some(presentation),
+            surface: ContentSurface::Preview,
+            ..RenderOptions::default()
+        },
+    );
+
+    assert!(output.contains("\x1b[35;1mstrong\x1b[0m"), "{output:?}");
+    assert!(output.contains("\x1b[35;4memphasis\x1b[0m"), "{output:?}");
+    assert!(output.contains("\x1b[35;9mstrike\x1b[0m"), "{output:?}");
+    assert!(output.contains("\x1b[94;4mlink\x1b[0m"), "{output:?}");
+    assert!(output.contains("\x1b[32;7mcode\x1b[0m"), "{output:?}");
+    assert!(output.contains("\x1b]8;;https://example.com\x1b\\"));
+    assert!(output.contains("\x1b]8;;\x1b\\"));
+    assert!(!output.contains("**"));
+    assert!(!output.contains("~~"));
+
+    let monochrome = rendered(
+        "strong emphasis strike link code",
+        0,
+        RenderOptions {
+            presentation: Some(presentation),
+            theme: crate::config::theme::parse("[theme]\nname = 'mono'\n").unwrap(),
+            ..RenderOptions::default()
+        },
+    );
+    assert!(monochrome.contains("\x1b[1mstrong\x1b[0m"));
+    assert!(monochrome.contains("\x1b[4memphasis\x1b[0m"));
+    assert!(monochrome.contains("\x1b[9mstrike\x1b[0m"));
+    assert!(monochrome.contains("\x1b[4mlink\x1b[0m"));
+    assert!(monochrome.contains("\x1b[7mcode\x1b[0m"));
+}
+
+#[test]
 fn selection_combines_with_keyword_color() {
     let output = rendered(
         "let cat = 1",

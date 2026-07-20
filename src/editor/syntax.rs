@@ -5,6 +5,7 @@
 //! Phase: 4-a viewport-only syntax foundation.
 
 use std::path::Path;
+use std::sync::Arc;
 
 mod code;
 mod markdown;
@@ -32,8 +33,23 @@ pub(crate) enum SpanStyle {
     Comment,
     Number,
     Code,
+    PreviewCode,
+    PreviewHeading4,
+    PreviewHeading5,
+    PreviewHeading6,
+    PreviewLink,
+    PreviewStrong,
+    PreviewEmphasis,
+    PreviewStrikethrough,
     DiffAdded,
     DiffRemoved,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct HyperlinkSpan {
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+    pub(crate) destination: Arc<str>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

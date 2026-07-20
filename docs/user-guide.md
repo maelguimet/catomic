@@ -623,8 +623,12 @@ preference used by every current buffer and buffers opened later.
 The shared Markdown presentation layer reflows paragraphs, headings, nested
 quotes and lists, tasks, links, footnotes, rules, and padded code blocks to the
 terminal width, with a 100-cell maximum reading column on wide terminals. It
-uses familiar Markdown markers for a readable monochrome fallback while the
-active theme distinguishes headings, markers, links, emphasis, and code.
+keeps parsed inline semantics through terminal presentation: strong, emphasis,
+strikethrough, inline code, and links use terminal attributes without restoring
+their source delimiters. Headings use spacing and restrained rules, quotes and
+lists use presentation markers, code blocks use padding without fences, and
+links use OSC 8 destinations without dumping URLs into prose. These attributes
+and structural markers remain readable when color is unavailable.
 Tables retain parsed alignment and terminal-cell measurement (including wide
 characters, combining marks, and emoji). A table uses a bordered grid when it
 fits and a wrapped label/value layout when it does not.

@@ -5,9 +5,11 @@
 Use `pulldown-cmark` without default features when the user explicitly enters
 Markdown preview. An explicit render command treats the active in-memory buffer
 or active large-file page as Markdown regardless of its path, then converts it
-once into a read-only terminal text buffer. The same presentation entry point
-is available to authored in-app Markdown surfaces. Ordinary editing and startup
-do not construct a parser.
+once into a read-only terminal text buffer plus scalar-indexed semantic spans
+and hyperlinks. The normal terminal renderer consumes that presentation data;
+Markdown source delimiters are not regenerated to recover styling. The same
+entry point is available to authored in-app Markdown surfaces. Ordinary editing
+and startup do not construct a parser.
 
 ## Dependency justification
 
@@ -24,7 +26,9 @@ do not construct a parser.
 
 Preview parses the current active Buffer. For a paged large file that means
 only the active editable page, never the complete backing file. The generated
-preview is then rendered with the existing visible-window query.
+preview is then rendered with the existing visible-window query. Semantic spans
+are kept beside the read-only preview buffer so they cannot become file content
+or alter editor coordinates.
 
 Input is capped at 10 MiB and rendered output at 32 MiB. The reading column is
 capped at 100 cells, prose and code reflow at narrower widths, and long graphemes

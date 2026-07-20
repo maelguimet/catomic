@@ -82,23 +82,67 @@ fn creation_refuses_a_symlinked_catomic_directory() {
     let error = create_template(&root.join("catomic/config.toml"))
         .expect_err("config directory symlink must be refused");
     assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+    assert!(error.to_string().contains("must not be a symlink"));
     assert!(!elsewhere.join("config.toml").exists());
     fs::remove_dir_all(root).unwrap();
 }
 
 #[cfg(unix)]
 #[test]
-fn creation_refuses_a_group_or_other_accessible_config_directory() {
+fn creation_accepts_existing_non_writable_config_directories_without_chmod() {
     use std::os::unix::fs::PermissionsExt;
 
-    let root = fixture("directory_mode");
-    let directory = root.join("catomic");
-    fs::create_dir_all(&directory).unwrap();
-    fs::set_permissions(&directory, fs::Permissions::from_mode(0o755)).unwrap();
-    let path = directory.join("config.toml");
+    for mode in [0o700, 0o750, 0o755] {
+        let root = fixture(&format!("directory_mode_{mode:o}"));
+        let directory = root.join("catomic");
+        fs::create_dir_all(&directory).unwrap();
+        fs::set_permissions(&directory, fs::Permissions::from_mode(mode)).unwrap();
+        let path = directory.join("config.toml");
 
-    let error = create_template(&path).expect_err("unsafe parent permissions must fail closed");
-    assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
-    assert!(!path.exists());
+        create_template(&path).unwrap();
+
+        assert_eq!(fs::read_to_string(&path).unwrap(), TEMPLATE);
+        assert_eq!(
+            fs::metadata(&directory).unwrap().permissions().mode() & 0o777,
+            mode
+        );
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn creation_refuses_group_or_other_writable_config_directories() {
+    use std::os::unix::fs::PermissionsExt;
+
+    for mode in [0o720, 0o702, 0o777] {
+        let root = fixture(&format!("writable_directory_mode_{mode:o}"));
+        let directory = root.join("catomic");
+        fs::create_dir_all(&directory).unwrap();
+        fs::set_permissions(&directory, fs::Permissions::from_mode(mode)).unwrap();
+        let path = directory.join("config.toml");
+
+        let error = create_template(&path).expect_err("writable parent must fail closed");
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+        assert!(error.to_string().contains(&format!("mode {mode:04o}")));
+        assert!(!path.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[test]
+fn creation_refuses_a_non_directory_parent() {
+    let root = fixture("non_directory");
+    fs::create_dir_all(&root).unwrap();
+    let parent = root.join("catomic");
+    fs::write(&parent, "not a directory").unwrap();
+
+    let error = create_template(&parent.join("config.toml"))
+        .expect_err("non-directory config parent must be refused");
+    assert_eq!(error.kind(), io::ErrorKind::NotADirectory);
     fs::remove_dir_all(root).unwrap();
 }

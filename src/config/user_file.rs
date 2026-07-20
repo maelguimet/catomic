@@ -76,18 +76,25 @@ pub(crate) fn create_template(path: &Path) -> io::Result<()> {
 }
 
 fn ensure_private_directory(path: &Path) -> io::Result<()> {
-    let existed = match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.is_dir() => true,
+    let existing = match fs::symlink_metadata(path) {
+        #[cfg(unix)]
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("config parent must not be a symlink: {}", path.display()),
+            ));
+        }
+        Ok(metadata) if metadata.is_dir() => Some(metadata),
         Ok(_) => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 format!("config parent is not a directory: {}", path.display()),
             ));
         }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => false,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => None,
         Err(error) => return Err(error),
     };
-    if !existed {
+    if existing.is_none() {
         fs::create_dir_all(path)?;
         #[cfg(unix)]
         {
@@ -96,14 +103,26 @@ fn ensure_private_directory(path: &Path) -> io::Result<()> {
         }
     }
     #[cfg(unix)]
-    if existed {
-        use std::os::unix::fs::PermissionsExt;
-        let mode = fs::symlink_metadata(path)?.permissions().mode() & 0o777;
-        if mode & 0o077 != 0 {
+    if let Some(metadata) = existing {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        // SAFETY: geteuid has no preconditions and only reads process credentials.
+        let current_uid = unsafe { libc::geteuid() };
+        if metadata.uid() != current_uid {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 format!(
-                    "config directory must be user-only (mode 0700): {} has mode {mode:04o}",
+                    "config directory must be owned by the current user: {} is owned by uid {}",
+                    path.display(),
+                    metadata.uid()
+                ),
+            ));
+        }
+        let mode = metadata.permissions().mode() & 0o777;
+        if mode & 0o022 != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!(
+                    "config directory must not be writable by group or others: {} has mode {mode:04o}",
                     path.display()
                 ),
             ));

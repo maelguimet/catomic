@@ -1,8 +1,7 @@
 //! Purpose: load typed TOML user configuration with safe defaults.
 //! Owns: shared TOML decoding and focused configuration submodules.
 //! Must not: construct Project/LLM services, perform network work, or mutate files.
-//! Invariants: no config file is required; malformed recognized values are errors;
-//!   unknown keys are ignored for forward compatibility.
+//! Invariants: no config file is required; malformed recognized values and unknown keys are errors.
 //! Phase: 7 typed configuration foundation.
 
 use std::io;
@@ -22,7 +21,10 @@ pub(crate) mod llm;
 pub(crate) mod mobile;
 pub(crate) mod theme;
 pub(crate) mod user_file;
+mod validation;
 pub(crate) mod view_preferences;
+
+pub(crate) use validation::validate_unknown_keys;
 
 pub(crate) fn decode<T: DeserializeOwned>(text: &str) -> io::Result<T> {
     toml::from_str(text).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
@@ -34,6 +36,7 @@ pub(crate) fn validate_all() -> io::Result<()> {
 }
 
 pub(crate) fn validate_text(text: &str) -> io::Result<()> {
+    validate_unknown_keys(text)?;
     auto_reload::parse(text)?;
     autocomplete::parse(text)?;
     big_files::parse(text)?;

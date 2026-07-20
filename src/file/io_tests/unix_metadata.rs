@@ -1,7 +1,7 @@
-//! Purpose: prove Linux-kernel atomic saves fail closed when inode metadata cannot be preserved.
+//! Purpose: prove Linux-kernel atomic saves preserve supported inode metadata or fail closed.
 //! Owns: hard-link, xattr/ACL, ownership, and boundary-race save regressions.
 //! Must not: test App save policy, snapshots, watchers, or recovery sidecars.
-//! Invariants: a refused save leaves the existing filesystem object and contents intact.
+//! Invariants: metadata survives replacement; a refused save leaves the target intact.
 //! Phase: post-v0.1 OSS beta file-semantics hardening.
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -64,20 +64,30 @@ mod linux_kernel {
     }
 
     #[test]
-    fn atomic_write_refuses_to_discard_extended_attributes_or_acls() {
+    fn atomic_write_preserves_extended_attributes() {
         let target = temp_path("xattr_target.txt");
         cleanup(&target);
         fs::write(&target, "attributed").unwrap();
         set_user_xattr(&target);
         let inode = fs::metadata(&target).unwrap().ino();
 
-        let error = atomic_write_string(&target, "replacement")
-            .expect_err("atomic replacement must refuse metadata it cannot preserve");
+        atomic_write_string(&target, "replacement").unwrap();
 
-        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
-        assert!(error.to_string().contains("extended attributes or ACLs"));
-        assert_eq!(fs::read_to_string(&target).unwrap(), "attributed");
-        assert_eq!(fs::metadata(&target).unwrap().ino(), inode);
+        assert_eq!(fs::read_to_string(&target).unwrap(), "replacement");
+        assert_ne!(fs::metadata(&target).unwrap().ino(), inode);
+        let path = CString::new(target.as_os_str().as_bytes()).unwrap();
+        let name = c"user.catomic-test";
+        let mut value = vec![0_u8; b"preserve-me".len()];
+        let read = unsafe {
+            libc::getxattr(
+                path.as_ptr(),
+                name.as_ptr(),
+                value.as_mut_ptr().cast(),
+                value.len(),
+            )
+        };
+        assert_eq!(read, value.len() as isize);
+        assert_eq!(value, b"preserve-me");
         cleanup(&target);
     }
 

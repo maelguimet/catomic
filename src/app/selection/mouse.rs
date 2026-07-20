@@ -107,6 +107,7 @@ fn dispatch_scroll(
     let Some(action) = app.keybindings.mouse_action(scope, gesture) else {
         return Ok(());
     };
+    super::super::input::prepare_editor_action(app, None);
     let direction = match action {
         Action::MouseScrollUp => super::super::viewport::ScrollDirection::Up,
         Action::MouseScrollDown => super::super::viewport::ScrollDirection::Down,
@@ -175,6 +176,7 @@ fn dispatch_action(
     else {
         return Ok(());
     };
+    super::super::input::prepare_editor_action(app, None);
     let should_copy_on_select = match action {
         Action::MousePlaceCursor => {
             app.buffer.set_cursor(cursor);

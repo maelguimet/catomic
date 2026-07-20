@@ -13,6 +13,7 @@
 use std::error::Error;
 use std::fs;
 use std::io::{Read, Write};
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
@@ -151,6 +152,37 @@ impl PtyEditor {
         cmd.env("HOME", &environment.root);
         cmd.env("TERM", "xterm-256color");
         Self::spawn_command_sized_with_environment(cmd, rows, cols, environment)
+    }
+
+    fn spawn_with_clipboard_helper(path: &PathBuf) -> TestResult<(Self, PathBuf)> {
+        let environment = TempProject::new("clipboard_environment");
+        let bin = environment.root.join("bin");
+        fs::create_dir(&bin)?;
+        let helper = bin.join("wl-copy");
+        fs::write(
+            &helper,
+            "#!/bin/sh\n/bin/cat > \"$CATOMIC_TEST_CLIPBOARD\"\n",
+        )?;
+        let mut permissions = fs::metadata(&helper)?.permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&helper, permissions)?;
+        let clipboard = environment.root.join("clipboard.txt");
+
+        let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
+        cmd.arg(path);
+        cmd.env("PATH", &bin);
+        cmd.env("WAYLAND_DISPLAY", "catomic-test");
+        cmd.env("CATOMIC_TEST_CLIPBOARD", &clipboard);
+        cmd.env("XDG_CONFIG_HOME", &environment.root);
+        cmd.env("XDG_STATE_HOME", &environment.root);
+        cmd.env("HOME", &environment.root);
+        cmd.env("TERM", "xterm-256color");
+        cmd.env_remove("DISPLAY");
+        cmd.env_remove("WSL_DISTRO_NAME");
+        cmd.env_remove("WSL_INTEROP");
+        cmd.env_remove("TERMUX_VERSION");
+        let editor = Self::spawn_command_with_environment(cmd, environment)?;
+        Ok((editor, clipboard))
     }
 
     fn spawn_with(path: &PathBuf, xdg_config_home: Option<&PathBuf>) -> TestResult<Self> {
@@ -1212,7 +1244,7 @@ fn pty_encoded_sgr_and_x10_clicks_position_the_next_edits() -> TestResult {
 }
 
 #[test]
-fn pty_mouse_selection_ctrl_c_emits_ghostty_compatible_osc52() -> TestResult {
+fn pty_mouse_selection_ctrl_c_emits_bounded_st_osc52() -> TestResult {
     let temp = TempPath::new("ctrl_c_copy");
     fs::write(&temp.path, "copy me")?;
     let mut editor = PtyEditor::spawn(&temp.path)?;
@@ -1229,6 +1261,52 @@ fn pty_mouse_selection_ctrl_c_emits_ghostty_compatible_osc52() -> TestResult {
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
     assert_eq!(fs::read_to_string(&temp.path)?, "copy me");
+    Ok(())
+}
+
+#[test]
+fn pty_ctrl_a_exports_selection_before_ctrl_c_reaches_catomic() -> TestResult {
+    let temp = TempPath::new("ctrl_a_copy");
+    fs::write(&temp.path, "copy me")?;
+    let mut editor = PtyEditor::spawn(&temp.path)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"\x01")?;
+    editor.wait_for_output(
+        "Ctrl+A OSC 52 clipboard write",
+        "\x1b]52;c;Y29weSBtZQ==\x1b\\",
+    )?;
+
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+    assert_eq!(fs::read_to_string(&temp.path)?, "copy me");
+    Ok(())
+}
+
+#[test]
+fn pty_ctrl_c_writes_selection_to_system_clipboard_helper() -> TestResult {
+    let temp = TempPath::new("system_clipboard_copy");
+    fs::write(&temp.path, "copy 猫🙂")?;
+    let (mut editor, clipboard) = PtyEditor::spawn_with_clipboard_helper(&temp.path)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"\x01")?;
+    assert!(
+        !clipboard.exists(),
+        "selection alone must not invoke the system clipboard helper"
+    );
+
+    editor.send_keys(b"\x03")?;
+    wait_until("system clipboard write", Duration::from_secs(2), || {
+        fs::read_to_string(&clipboard).ok().as_deref() == Some("copy 猫🙂")
+    })?;
+    assert_eq!(fs::read_to_string(&clipboard)?, "copy 猫🙂");
+    assert!(!editor
+        .output_string()
+        .contains("Copied selection to system clipboard."));
+
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
     Ok(())
 }
 

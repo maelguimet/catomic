@@ -330,6 +330,9 @@ fn mobile_two_tap_selection_ends_on_a_wrapped_unicode_grapheme_boundary() {
 
     let (_, end) = app.selection.active().unwrap().ordered();
     assert_eq!(end, app.buffer.cursor());
+    let (start, end) = app.selection.active().unwrap().ordered();
+    assert_eq!(app.clipboard, app.buffer.text_range(start, end).unwrap());
+    assert!(String::from_utf8_lossy(&out).contains("\x1b]52;c;"));
     assert_eq!(
         crate::editor::text_layout::ceil_to_grapheme_col(&app.buffer.line(0).unwrap(), end.col),
         end.col,

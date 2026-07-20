@@ -121,11 +121,13 @@ reports that chord without the Shift modifier, it is indistinguishable from
 remappable through `[keybindings]`.
 
 Terminal emulators and multiplexers can intercept or rewrite some key chords.
-Bracketed paste is inserted as one undoable edit; Catomic also has an internal
-clipboard and sends copied text through OSC 52 when the terminal supports it.
-Completed mouse selections use the same clipboard path. In Ghostty, `Shift`
-keeps the terminal's native selection and copy-on-select bypass available while
-Catomic owns unmodified clicks and drags.
+Bracketed paste is inserted as one undoable edit. On explicit copy and cut,
+Catomic keeps an internal copy, tries the desktop clipboard through `wl-copy`,
+`xclip`, `xsel`, WSL `clip.exe`, or Termux, and also sends bounded OSC 52 for
+terminal/SSH clipboard transport. Completed Catomic selections update the
+internal and OSC 52 paths immediately; the desktop helper runs when Catomic
+receives `Ctrl+C`, `Ctrl+X`, or `Ctrl+K`. Terminal-native selection remains
+available through the emulator's mouse-bypass modifier, commonly `Shift`.
 The mouse wheel scrolls the viewport without moving the editing cursor or
 selection; the next keyboard or editing action reveals the logical cursor.
 
@@ -297,8 +299,9 @@ code and may itself contact services after confirmation.
   files use metadata plus fixed start/middle/end samples so checks stay bounded;
   an in-place rewrite outside those samples that also preserves size, inode, and
   all available timestamps remains best-effort.
-- Terminal clipboard behavior depends on the emulator. Some environments
-  intercept `Ctrl`/`Ctrl+Shift` chords or do not support OSC 52.
+- Clipboard behavior depends on the environment. Desktop copy needs
+  `wl-clipboard`, `xclip`, or `xsel` on ordinary Linux; terminal/SSH copy needs
+  OSC 52 support. Some environments intercept `Ctrl`/`Ctrl+Shift` chords.
 - Syntax highlighting is deliberately lexical and viewport-only. Catomic does
   not provide tree-sitter, a full LSP client, split views, or a plugin ABI.
 - LLM edits are limited to the confirmed active file. Wide multi-file proposals

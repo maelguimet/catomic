@@ -145,6 +145,7 @@ pub(crate) fn move_to(
     if extend {
         app.selection.clear_status();
         app.selection.range = Some(Selection::new(anchor, app.buffer.cursor()));
+        let _ = capture_selection(app, out)?;
     } else {
         app.selection.clear();
     }
@@ -236,6 +237,7 @@ fn extend_with_arrow(app: &mut super::App, out: &mut dyn Write, code: KeyCode) -
     }
     app.selection.clear_status();
     app.selection.range = Some(Selection::new(anchor, app.buffer.cursor()));
+    let _ = capture_selection(app, out)?;
     app.reveal_cursor();
     app.render(out)
 }
@@ -249,6 +251,7 @@ fn select_all(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     app.buffer.set_cursor(end);
     app.selection.clear_status();
     app.selection.range = Some(Selection::new(Cursor::default(), end));
+    let _ = capture_selection(app, out)?;
     app.reveal_cursor();
     app.message = None;
     app.render(out)
@@ -259,8 +262,11 @@ fn copy(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         app.message = Some("No selection to copy.".to_string());
         return app.render(out);
     };
-    app.message = (!exported)
-        .then(|| "Copied internally; selection is too large for terminal clipboard.".to_string());
+    let system = crate::clipboard::write_system(&app.clipboard);
+    app.message = (!system && !exported).then(|| {
+        "Copied internally; no system clipboard helper is available and the selection is too large for terminal clipboard."
+            .to_string()
+    });
     app.render(out)
 }
 
@@ -269,6 +275,7 @@ fn cut(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         app.message = Some("No selection to cut.".to_string());
         return app.render(out);
     }
+    let _ = crate::clipboard::write_system(&app.clipboard);
     let Some(selection) = app.selection.active() else {
         return app.render(out);
     };
@@ -315,6 +322,7 @@ fn cut_line(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         text
     };
     let _ = export_text(app, out, payload)?;
+    let _ = crate::clipboard::write_system(&app.clipboard);
     if app.buffer.replace_range(start, end, "")? {
         app.cut_line_append = true;
         super::input::finish_content_edit(app, out)

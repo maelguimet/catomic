@@ -130,6 +130,7 @@ fn mouse_down(
         app.selection.range = (!selection.is_empty()).then_some(selection);
         app.selection.drag_anchor = None;
         app.selection.last_click = None;
+        let _ = super::capture_selection(app, out)?;
         app.message = Some(if selection.is_empty() {
             "Selection endpoint matches its start.".to_string()
         } else {

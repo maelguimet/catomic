@@ -31,13 +31,16 @@ fn send_control(app: &mut super::super::App, out: &mut Vec<u8>, character: char)
 }
 
 #[test]
-fn shift_arrows_select_and_ctrl_c_populates_both_clipboards() {
+fn shift_arrows_populate_both_clipboards_before_ctrl_c() {
     let mut app = app_with("abc");
     let mut out = Vec::new();
 
     send(&mut app, &mut out, KeyCode::Right, KeyModifiers::SHIFT);
     send(&mut app, &mut out, KeyCode::Right, KeyModifiers::SHIFT);
-    assert!(!String::from_utf8_lossy(&out).contains("\x1b]52;"));
+    assert_eq!(app.clipboard, "ab");
+    assert!(String::from_utf8_lossy(&out).contains("\x1b]52;c;YWI=\x1b\\"));
+
+    out.clear();
     send(
         &mut app,
         &mut out,
@@ -50,9 +53,7 @@ fn shift_arrows_select_and_ctrl_c_populates_both_clipboards() {
         app.selection.active().unwrap().ordered(),
         (Cursor { row: 0, col: 0 }, Cursor { row: 0, col: 2 })
     );
-    assert!(String::from_utf8(out)
-        .unwrap()
-        .contains("\x1b]52;c;YWI=\x1b\\"));
+    assert!(String::from_utf8_lossy(&out).contains("\x1b]52;c;YWI=\x1b\\"));
 }
 
 #[test]
@@ -272,6 +273,8 @@ fn ctrl_a_selects_the_active_buffer() {
         (Cursor { row: 0, col: 0 }, Cursor { row: 1, col: 3 })
     );
     assert_eq!(app.buffer.cursor(), Cursor { row: 1, col: 3 });
+    assert_eq!(app.clipboard, "one\ntwo");
+    assert!(String::from_utf8_lossy(&out).contains("\x1b]52;c;b25lCnR3bw==\x1b\\"));
 }
 
 #[test]

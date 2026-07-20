@@ -54,8 +54,8 @@ commented user configuration:
 
 The installer never replaces an existing configuration.
 
-For an official `master` checkout, either launch method supports the
-state-preserving updater:
+For an official checkout whose current branch can fast-forward to `master`,
+either launch method supports the state-preserving updater:
 
 ```sh
 catomic update --check

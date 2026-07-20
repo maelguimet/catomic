@@ -26,7 +26,7 @@ mod tests;
 use self::worktree::Worktree;
 
 const OFFICIAL_REMOTE: &str = "https://github.com/maelguimet/catomic.git";
-const SUPPORTED_BRANCH: &str = "master";
+const OFFICIAL_BRANCH: &str = "master";
 const GIT_TIMEOUT: Duration = Duration::from_secs(30);
 const NETWORK_TIMEOUT: Duration = Duration::from_secs(120);
 const BUILD_TIMEOUT: Duration = Duration::from_secs(20 * 60);
@@ -55,7 +55,7 @@ pub(super) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
     if options.check {
         return check(&install);
     }
-    println!("source: {OFFICIAL_REMOTE} branch {SUPPORTED_BRANCH}");
+    println!("source: {OFFICIAL_REMOTE} branch {OFFICIAL_BRANCH}");
     if !confirm(
         options,
         "Fetch, test, build, and install from this source? Network and disk writes will follow.",
@@ -100,7 +100,7 @@ pub(super) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
 
 fn cargo_install(options: UpdateOptions) -> Result<(), UpdateError> {
     println!("install method: Cargo git install");
-    println!("source: {OFFICIAL_REMOTE} branch {SUPPORTED_BRANCH}");
+    println!("source: {OFFICIAL_REMOTE} branch {OFFICIAL_BRANCH}");
     if !confirm(
         options,
         "Reinstall from the official Cargo git source? Network and disk writes will follow.",
@@ -372,14 +372,9 @@ fn discover_at(root: &Path) -> Result<SourceInstall, String> {
     }
     let branch = git_text(&root, &["symbolic-ref", "--quiet", "--short", "HEAD"])
         .map_err(|_| {
-            "detached source checkout cannot self-update; check out `master` or update through Cargo"
+            "detached source checkout cannot self-update; check out a branch or update through Cargo"
                 .to_string()
         })?;
-    if branch != SUPPORTED_BRANCH {
-        return Err(format!(
-            "source checkout is on {branch:?}; self-update only supports {SUPPORTED_BRANCH:?}"
-        ));
-    }
     let remote = git_text(&root, &["remote", "get-url", "origin"])?;
     if !is_official_remote(&remote) {
         return Err(format!(

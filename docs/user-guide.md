@@ -112,8 +112,9 @@ exact backup path.
   redirects are allowlisted, requests have bounded timeouts, responses and
   declared asset sizes are capped, and the candidate's checksum and version are
   verified before it can run or replace the installed binary.
-- A binary built in an official `master` checkout, including one installed
-  by `./scripts/install.sh`, retains that checkout as its update source.
+- A binary built in an official checkout whose current branch can fast-forward
+  to `master`, including one installed by `./scripts/install.sh`, retains that
+  checkout as its update source.
   Catomic preserves local changes, checks the official remote revision, refuses
   non-fast-forward history, fetches without running hooks, and builds in an
   isolated temporary worktree. The new revision must pass all tests and validate
@@ -122,8 +123,8 @@ exact backup path.
 - If that source checkout no longer exists, Catomic runs the official Cargo git
   install command itself. `--check` remains unsupported for a missing checkout
   and exits without writing.
-- Cargo registry installs, detached Git installs, forks, non-`master` branches,
-  and architectures without a managed release are reported as unsupported.
+- Cargo registry installs, detached Git installs, forks, diverged branches, and
+  architectures without a managed release are reported as unsupported.
 
 Dirty official source checkouts are stashed with untracked files before an
 update and popped afterward with their staged state restored. Git reports any

@@ -128,9 +128,6 @@ pub(crate) fn display_buffer(app: &super::App) -> &dyn Buffer {
     if let Some(buffer) = super::mobile::display_buffer(app) {
         return buffer;
     }
-    if let Some(buffer) = super::autocomplete::display_buffer(app) {
-        return buffer;
-    }
     if let Some(buffer) = super::help::display_buffer(app) {
         return buffer;
     }
@@ -144,9 +141,6 @@ pub(crate) fn display_buffer(app: &super::App) -> &dyn Buffer {
         return buffer;
     }
     if let Some(buffer) = super::inline_clanker::display_buffer(app) {
-        return buffer;
-    }
-    if let Some(buffer) = super::llm_answer::display_buffer(app) {
         return buffer;
     }
     if let Some(buffer) = super::model_picker::display_buffer(app) {
@@ -178,12 +172,10 @@ pub(crate) fn display_syntax(app: &super::App) -> SyntaxKind {
     } else if super::help::is_viewing(app) {
         SyntaxKind::MarkdownPreview
     } else if super::mobile::is_viewing(app)
-        || super::autocomplete::is_viewing(app)
         || super::recovery::is_viewing(app)
         || super::external_command::is_viewing(app)
         || super::llm_preview::is_viewing(app)
         || super::inline_clanker::is_previewing(app)
-        || super::llm_answer::is_viewing(app)
         || super::model_picker::is_viewing(app)
         || super::lint::is_viewing(app)
         || super::project_files::is_viewing(app)
@@ -201,11 +193,9 @@ pub(crate) fn display_surface(app: &super::App) -> crate::terminal::render::Cont
     if super::llm_preview::is_viewing(app) {
         ContentSurface::Diff
     } else if super::mobile::is_viewing(app)
-        || super::autocomplete::is_viewing(app)
         || super::help::is_viewing(app)
         || super::recovery::is_viewing(app)
         || super::external_command::is_viewing(app)
-        || super::llm_answer::is_viewing(app)
         || super::model_picker::is_viewing(app)
         || super::lint::is_viewing(app)
         || super::project_files::is_viewing(app)
@@ -253,15 +243,13 @@ pub(crate) fn content_width(app: &super::App) -> usize {
 
 pub(crate) fn soft_wrap_active(app: &super::App) -> bool {
     !super::mobile::is_viewing(app)
-        && (super::autocomplete::is_viewing(app)
-            || super::help::is_viewing(app)
+        && (super::help::is_viewing(app)
             || (app.view.soft_wrap
                 && !is_preview(app)
                 && !super::recovery::is_viewing(app)
                 && !super::external_command::is_viewing(app)
                 && !super::llm_preview::is_viewing(app)
                 && !super::inline_clanker::is_previewing(app)
-                && !super::llm_answer::is_viewing(app)
                 && !super::model_picker::is_viewing(app)
                 && !super::lint::is_viewing(app)
                 && !super::project_files::is_viewing(app)))

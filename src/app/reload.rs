@@ -264,7 +264,6 @@ fn apply_modified_reload(
         (Some(size), Some(diff)) => Some(format!("{size} {diff}")),
         (size, diff) => size.or(diff),
     };
-    super::autocomplete::invalidate(app);
     super::search::cancel_running_search(app);
     super::command_prompt::cancel_running_goto(app);
     super::completion::cancel(app);
@@ -290,7 +289,6 @@ fn apply_deleted_reload(app: &mut super::App) {
     let cleared: Box<dyn buffer::Buffer> = Box::new(buffer::PieceTable::new());
     let external_diff = super::external_diff::compare(&*app.buffer, &*cleared);
     let reload_warning = external_diff_warning(&external_diff);
-    super::autocomplete::invalidate(app);
     super::search::cancel_running_search(app);
     super::command_prompt::cancel_running_goto(app);
     super::completion::cancel(app);

@@ -8,7 +8,6 @@ use std::io;
 use toml::{Table, Value};
 
 const ROOT_KEYS: &[&str] = &[
-    "autocomplete",
     "big_files",
     "cat",
     "commands",
@@ -30,16 +29,6 @@ const FILE_KEYS: &[&str] = &["auto_reload"];
 const VIEW_KEYS: &[&str] = &["external_diff", "line_numbers"];
 const CAT_KEYS: &[&str] = &["status_messages"];
 const RECOVERY_KEYS: &[&str] = &["enabled", "interval_secs", "max_bytes"];
-const AUTOCOMPLETE_KEYS: &[&str] = &[
-    "enabled",
-    "idle_debounce_ms",
-    "minimum_prefix_length",
-    "max_context_before",
-    "max_context_after",
-    "max_generated_tokens",
-    "model",
-    "allow_remote",
-];
 const MOBILE_KEYS: &[&str] = &["action_bar"];
 const HOOK_KEYS: &[&str] = &["on_open", "on_save", "before_llm"];
 const LANGUAGE_KEYS: &[&str] = &["tab_size", "linter", "llm"];
@@ -135,7 +124,6 @@ const THEME_COLOR_KEYS: &[&str] = &[
     "external_changed",
     "external_deleted",
     "llm_changed",
-    "autocomplete",
     "preview",
 ];
 const STYLE_KEYS: &[&str] = &["fg", "bg", "bold", "dim", "underline", "reverse"];
@@ -150,7 +138,6 @@ pub(crate) fn validate_unknown_keys(text: &str) -> io::Result<()> {
         ("view", VIEW_KEYS),
         ("cat", CAT_KEYS),
         ("recovery", RECOVERY_KEYS),
-        ("autocomplete", AUTOCOMPLETE_KEYS),
         ("mobile", MOBILE_KEYS),
         ("hooks", HOOK_KEYS),
     ] {
@@ -291,6 +278,7 @@ mod tests {
     fn reports_unknown_keys_with_full_paths() {
         for (text, path) in [
             ("[edtor]\ntab_size = 2\n", "edtor"),
+            ("[autocomplete]\nenabled = true\n", "autocomplete"),
             ("[editor]\ntab_szie = 2\n", "editor.tab_szie"),
             ("[files]\nauto_relod = false\n", "files.auto_relod"),
             (
@@ -303,6 +291,10 @@ mod tests {
                 "llm.backends[0].timeot_secs",
             ),
             ("[theme.colors]\nstatuz = \"red\"\n", "theme.colors.statuz"),
+            (
+                "[theme.colors]\nautocomplete = \"bright-black\"\n",
+                "theme.colors.autocomplete",
+            ),
             (
                 "[theme.colors]\nstatus = { fg = \"red\", blod = true }\n",
                 "theme.colors.status.blod",

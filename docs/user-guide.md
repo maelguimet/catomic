@@ -3,9 +3,7 @@
 Catomic is a Linux-first, modeless terminal text editor. Its default Plain mode
 behaves like a conventional editor and does not scan repositories, start
 linters, or contact a network service. Project tools and model-assisted commands
-exist, but they run only after you invoke them explicitly. Inline autocomplete
-is disabled by default and begins automatic calls only after a separate,
-scoped session confirmation.
+exist, but they run only after you invoke them explicitly.
 
 Catomic is currently open-beta software. Keep backups of important files, and
 read [File formats and save safety](#file-formats-and-save-safety) before using
@@ -117,9 +115,9 @@ exact backup path.
   checkout as its update source.
   Catomic preserves local changes, checks the official remote revision, refuses
   non-fast-forward history, fetches without running hooks, and builds in an
-  isolated temporary worktree. The new revision must pass all tests and validate
-  the existing configuration before the executable is replaced. Only then is
-  the source checkout fast-forwarded and the local changes reapplied.
+  isolated temporary worktree. The new revision must build successfully and
+  validate the existing configuration before the executable is replaced. Only
+  then is the source checkout fast-forwarded and the local changes reapplied.
 - If that source checkout no longer exists, Catomic runs the official Cargo git
   install command itself. `--check` remains unsupported for a missing checkout
   and exits without writing.
@@ -135,7 +133,7 @@ conflicts normally.
 Managed releases and retained-checkout updates stage the new executable beside
 the installed one, sync it, and atomically rename over it. Before that rename,
 Catomic creates a sibling rollback binary containing the old bytes. A failed
-download, checksum, test, build,
+download, checksum, build,
 configuration validation, or staging step leaves the installed executable
 untouched. If final source fast-forwarding fails after replacement, Catomic
 automatically restores the old binary.
@@ -166,7 +164,7 @@ state remains untouched unless you separately choose to delete it.
 Updater exit codes are stable for automation: `0` means current, successfully
 updated, or user-cancelled; `2` is command-line usage; `3` unsupported install;
 `4` remote/checksum policy failure; `5` unsafe source state or prompt I/O; `6`
-backup failure; `7` candidate configuration failure; `8` test/build failure;
+backup failure; `7` candidate configuration failure; `8` build failure;
 and `9` install or rollback failure.
 
 If the updater is unavailable for a source install, the manual equivalent is:
@@ -235,8 +233,7 @@ The main area contains the active buffer. The bottom line shows a transient
 message when an operation needs attention; otherwise it shows only the active
 path (or `[untitled]`) beside the small cat decoration. The parent path is
 muted and the filename is red. Exceptional navigation context is appended as
-`file N/M` or `page N`; an autocomplete request or error is shown only while it
-is active. The terminal window title tracks the active filename and Catomic
+`file N/M` or `page N`. The terminal window title tracks the active filename and Catomic
 restores the previous title when the editor exits.
 
 The small cat decoration is enabled by default. It changes presentation only
@@ -902,9 +899,8 @@ the hook is running.
 Model support is explicit, transient, and preview-first. A named preset can use
 an OpenAI-compatible Chat Completions endpoint or a headless command adapter.
 Catomic does not construct an HTTP client, read a credential value, or start a
-command until you invoke a model action and confirm its destination and context,
-or confirm the scoped autocomplete session. Credentials are resolved only when
-a confirmed request is about to start.
+command until you invoke a model action and confirm its destination and context.
+Credentials are resolved only when a confirmed request is about to start.
 
 ### Presets and HTTP configuration
 
@@ -1019,44 +1015,6 @@ requests for every buffer in this Catomic process. It never invokes the backend,
 reads credential values, or rewrites configuration. To persist another default,
 edit `llm.default` as a separate explicit configuration action. Reopening or
 filtering the picker and switching buffers never persists anything.
-
-### Inline autocomplete
-
-Inline autocomplete is off by default. Use `autocomplete on` or
-`autocomplete off` in the command prompt. The first enable in each process
-opens a read-only document showing the selected preset, adapter, model,
-canonical URL or executable, idle delay, exact bounded context before and after
-the cursor, output limit, and automatic-send risk. `Enter` confirms this exact
-session policy; `Escape` leaves it disabled and starts nothing. Setting
-`autocomplete.enabled = true` only opens that confirmation at startup.
-
-After a confirmed typing pause, a continuation may appear at the cursor as
-semantically styled ghost text. It is display state, not document text: it does
-not dirty the buffer, enter history, or save. `Tab` accepts the whole visible
-continuation as one undoable edit. `Escape` dismisses it. Without visible ghost
-text, those keys retain their normal behavior.
-
-Editing, paste, navigation, selection changes, prompts, buffer/mode changes,
-model selection, and external refresh cancel stale work. Responses pin the
-buffer revision, cursor, mode, preset, canonical destination, model, and request
-generation. Idle autocomplete adds no status noise; only an active request or
-error is appended to the compact file identity.
-
-Requests use only a bounded Unicode-scalar window from the fully loaded active
-buffer; paged buffers are skipped. Catomic supplies explicit before/after
-delimiters but no path, repository broker, filesystem context, or tool access.
-Only one cancellable request runs at a time. Its timeout is capped at 30 seconds,
-failures use bounded 1–30 second backoff, and malformed/control-heavy or
-oversized output is rejected.
-
-Non-loopback HTTP—including LAN hosts—requires
-`autocomplete.allow_remote = true`. This separate capability matters because
-confirmed autocomplete sends context automatically after typing pauses. The
-selected preset retains the normal redirect, proxy, credential, URL, and
-plaintext-HTTP protections. A configured command adapter is trusted user code
-with the same warnings described above and may itself contact services.
-`autocomplete.model` optionally overrides the selected preset's model only for
-this feature.
 
 ### One-key inline clanker
 
@@ -1173,8 +1131,8 @@ Do not edit outside this block unless necessary.
 ```
 
 With no `bigmeow` argument, an instruction block under the cursor supplies the
-instruction. An instruction beginning with `explain` requests a read-only answer
-instead of an edit proposal.
+instruction. Every instruction follows the same proposed-edit flow; words such
+as `explain`, `ask`, or `edit` have no special command meaning.
 
 Before sending, Catomic shows the active preset, adapter, canonical endpoint or
 resolved executable, model, exact context extent, and warnings for a dotfile
@@ -1347,16 +1305,6 @@ enabled = false
 interval_secs = 30
 max_bytes = 1_048_576
 
-[autocomplete]
-enabled = false
-idle_debounce_ms = 750
-minimum_prefix_length = 20
-max_context_before = 2_048
-max_context_after = 512
-max_generated_tokens = 64
-# model = "writer-model"
-allow_remote = false
-
 [theme]
 name = "default"
 
@@ -1386,7 +1334,6 @@ external_added = { fg = "green", underline = true }
 external_changed = { fg = "cyan", underline = true }
 external_deleted = { fg = "red", bold = true }
 llm_changed = { fg = "red", underline = true }
-autocomplete = { fg = "bright-black", dim = true }
 preview = "default"
 
 [languages.rs]
@@ -1461,14 +1408,6 @@ remove_instruction_after_apply = true
 | `recovery.enabled` | `false` | Boolean |
 | `recovery.interval_secs` | `30` | Integer `5`–`3600` |
 | `recovery.max_bytes` | `1048576` | Integer `1`–`16777216` |
-| `autocomplete.enabled` | `false` | Boolean; still requires session confirmation |
-| `autocomplete.idle_debounce_ms` | `750` | Integer `100`–`10000` |
-| `autocomplete.minimum_prefix_length` | `20` | Integer `1`–`4096`, no greater than context-before |
-| `autocomplete.max_context_before` | `2048` | Unicode scalars, integer `64`–`65536` |
-| `autocomplete.max_context_after` | `512` | Unicode scalars, integer `0`–`16384` |
-| `autocomplete.max_generated_tokens` | `64` | Integer `1`–`512` |
-| `autocomplete.model` | selected model | Optional non-empty model override |
-| `autocomplete.allow_remote` | `false` | Boolean; permits non-loopback automatic HTTP sending |
 | `theme.name` | `default` | `default`, `high-contrast`, or `mono` |
 | `commands.NAME.input` | `none` | `none`, `selection`, `buffer` |
 | `commands.NAME.output` | `preview` | `preview`, `insert`, `replace-input` |
@@ -1512,8 +1451,8 @@ surface. The complete role inventory is `text`, `background`, `cursor`,
 `markdown_heading`, `markdown_emphasis`, `markdown_code`, `markdown_marker`,
 `markdown_link`, `syntax_keyword`, `syntax_string`, `syntax_comment`, `syntax_number`,
 `search_match`, `diff_added`, `diff_removed`, `external_added`,
-`external_changed`, `external_deleted`, `llm_changed`, `autocomplete`, and
-`preview`. External-reload and model-change roles remain independent. The syntax roles
+`external_changed`, `external_deleted`, `llm_changed`, and `preview`.
+External-reload and model-change roles remain independent. The syntax roles
 apply consistently to the built-in Rust, Python, and JSON highlighters.
 
 A role may be `"default"`, one of the standard 16 names (`black` through
@@ -1755,8 +1694,6 @@ Open the prompt with `Ctrl+Shift+P` or `F2`. Do not add a leading colon.
 | `model` | `models`, `select-model` | Search/select a process-local model preset |
 | `run-clanker` | `inline-meow` | Run document instruction with automatic bounded scope |
 | `clear-clanker-changes` | — | Dismiss applied-model marks without editing text |
-| `autocomplete on` | `autocomplete enable` | Confirm and enable inline suggestions |
-| `autocomplete off` | `autocomplete disable` | Cancel work and disable inline suggestions |
 | `meow TEXT` | — | Send selection/instruction block to configured model |
 | `bigmeow TEXT` | — | Send current ordinary file to configured model |
 | `gitmeow TEXT` | — | Use focused bounded repository context in Project mode |
@@ -1993,8 +1930,7 @@ outside Catomic when authentication or version setup needs more detail.
 
 An edit response must be a single-file unified patch for the confirmed active
 path, or the strict selected-region replacement envelope. Prose or full-file
-replacement output can be viewed as an explanation only when requested; it
-cannot bypass the edit parser.
+replacement output is rejected and cannot bypass the edit parser.
 
 ### The terminal looks broken after a crash
 

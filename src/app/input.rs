@@ -12,8 +12,8 @@ use crate::config::actions::{Action, Scope};
 
 use super::file_state::{note_content_change, refresh_dirty};
 use super::{
-    autocomplete, buffers, command_prompt, completion, help, mobile, model_picker, navigation,
-    overwrite, paging, reload, replace, save, search, selection, view,
+    buffers, command_prompt, completion, help, mobile, model_picker, navigation, overwrite, paging,
+    reload, replace, save, search, selection, view,
 };
 
 mod editing;
@@ -71,7 +71,6 @@ pub(super) fn finish_content_edit_with_message(
     message: Option<String>,
 ) -> io::Result<()> {
     note_content_change(&mut app.file);
-    autocomplete::note_content_edit(app);
     completion::cancel(app);
     app.selection.clear();
     refresh_dirty(&mut app.file, &*app.buffer);
@@ -193,10 +192,6 @@ pub(super) fn dispatch_action(
     if scope != Scope::Editor {
         return surfaces::dispatch_action(app, out, scope, action);
     }
-    if autocomplete::dispatch_editor_action(app, out, action)? {
-        return Ok(());
-    }
-    autocomplete::invalidate(app);
     if completion::dispatch_editor_action(app, out, action)? {
         return Ok(());
     }
@@ -323,9 +318,6 @@ pub(crate) fn handle_paste(
 ) -> io::Result<()> {
     selection::end_cut_line_chain(app);
     if mobile::handle_paste(app, out)? {
-        return Ok(());
-    }
-    if autocomplete::handle_paste(app, out)? {
         return Ok(());
     }
     completion::cancel(app);

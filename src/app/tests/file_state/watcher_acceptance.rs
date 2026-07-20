@@ -59,8 +59,8 @@ fn watcher_changed_clean_buffer_auto_reloads() {
     }
     assert_eq!(
         app.message.as_deref(),
-        Some("Reloaded from disk."),
-        "must show reload success"
+        None,
+        "successful reload restores normal status"
     );
     assert!(app.pending_reload.is_none());
     let external = app
@@ -177,10 +177,7 @@ fn watcher_deleted_clean_buffer_auto_clears() {
         Some(crate::file::io::FileSnapshot::Absent),
         "snapshot must be Absent after clear"
     );
-    assert_eq!(
-        app.message.as_deref(),
-        Some("Buffer cleared (file deleted on disk).")
-    );
+    assert_eq!(app.message.as_deref(), None);
     assert!(app.pending_reload.is_none());
 
     // recreate for cleanup hygiene

@@ -88,9 +88,7 @@ pub(super) fn poll(app: &mut super::super::App, out: &mut dyn Write) -> io::Resu
             app.message =
                 Some("Repository changed before confirmation; repo LLM cancelled.".to_string())
         }
-        RepoCheckResult::Cancelled => {
-            app.message = Some("Repository check cancelled; no network call made.".to_string())
-        }
+        RepoCheckResult::Cancelled => app.message = None,
         RepoCheckResult::Error(error) => {
             app.message = Some(format!("Could not recheck repository: {error}"))
         }
@@ -133,7 +131,7 @@ fn pending(broker: ContextBroker, state: CheckingSend) -> Pending {
 pub(super) fn handle_key(app: &mut super::super::App, key: KeyEvent) {
     if key.code == KeyCode::Esc {
         super::cancel_all(app);
-        app.message = Some("Repository check cancelled; no network call made.".to_string());
+        app.message = None;
     } else {
         app.message = Some("Repository check running; Esc cancels.".to_string());
     }

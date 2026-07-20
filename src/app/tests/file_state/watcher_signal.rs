@@ -25,11 +25,11 @@ fn apply_file_watch_signal_changed_on_unchanged_disk_ignores_to_avoid_noise() {
 
     let mut app = App::new(Some(&p)).unwrap();
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
-        .unwrap(); // ensure clean snapshot + possible "Saved." (but we set sentinel)
+        .unwrap(); // ensure a clean snapshot before setting the sentinel
     assert!(!app.file.dirty);
 
-    // Set a sentinel message that must be preserved (simulates "Saved." after real save)
-    app.message = Some("Saved.".to_string());
+    // Set a warning sentinel that must be preserved.
+    app.message = Some("Prior warning.".to_string());
 
     // Simulate a Changed signal for our own write (unchanged vs snapshot)
     let sig = crate::file::watcher::FileWatchSignal::Changed;
@@ -39,7 +39,7 @@ fn apply_file_watch_signal_changed_on_unchanged_disk_ignores_to_avoid_noise() {
     assert!(!visible, "watcher unchanged must report not visible");
     assert_eq!(
         app.message.as_deref(),
-        Some("Saved."),
+        Some("Prior warning."),
         "must not overwrite prior message with unchanged"
     );
     assert!(app.pending_reload.is_none());
@@ -65,7 +65,7 @@ fn apply_file_watch_signal_changed_clean_buffer_auto_reloads() {
     let sig = crate::file::watcher::FileWatchSignal::Changed;
     crate::app::watch::apply_file_watch_signal(&mut app, sig);
 
-    assert_eq!(app.message.as_deref(), Some("Reloaded from disk."));
+    assert!(app.message.is_none());
     assert!(app.pending_reload.is_none());
     assert_eq!(app.buffer.to_string(), "ORIGEXT");
     assert!(!app.file.dirty);
@@ -168,10 +168,7 @@ fn apply_file_watch_signal_deleted_clean_buffer_auto_clears() {
     let sig = crate::file::watcher::FileWatchSignal::Deleted;
     crate::app::watch::apply_file_watch_signal(&mut app, sig);
 
-    assert_eq!(
-        app.message.as_deref(),
-        Some("Buffer cleared (file deleted on disk).")
-    );
+    assert_eq!(app.message.as_deref(), None);
     assert!(app.pending_reload.is_none());
     assert_eq!(app.buffer.to_string(), "");
     assert!(!app.file.dirty);

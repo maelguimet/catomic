@@ -119,7 +119,6 @@ fn pty_autocomplete_confirms_waits_renders_unicode_ghost_and_accepts() -> TestRe
     assert!(accepted.try_recv().is_err());
 
     editor.send_keys(b"\r\x1b[20~")?;
-    editor.wait_for_output("soft wrap for narrow autocomplete", "Soft wrap on")?;
     editor.send_keys(b"prefix text")?;
     accepted.recv_timeout(Duration::from_secs(2))?;
     assert_eq!(fs::read_to_string(&active)?, "");
@@ -129,8 +128,9 @@ fn pty_autocomplete_confirms_waits_renders_unicode_ghost_and_accepts() -> TestRe
     })?;
     assert_eq!(fs::read_to_string(&active)?, "");
 
+    editor.clear_output();
     editor.send_keys(b"\t")?;
-    editor.wait_for_output("accepted autocomplete", "does it.")?;
+    editor.wait_for_output("accepted autocomplete", "ued 猫🙂")?;
     editor.send_keys(b"\x1b[80;6uautocomplete off\r\x13\x11")?;
     editor.wait_for_exit()?;
 
@@ -186,8 +186,9 @@ fn pty_autocomplete_runs_confirmed_headless_adapter_without_tools() -> TestResul
     })?;
     editor.wait_for_output("command ghost", "command continuation")?;
     assert_eq!(fs::read_to_string(&active)?, "");
+    editor.clear_output();
     editor.send_keys(b"\t")?;
-    editor.wait_for_output("command acceptance", "Ctrl+Z undoes it.")?;
+    editor.wait_for_output("command acceptance", "typed command continuation")?;
     editor.send_keys(b"\x1b[80;6uautocomplete off\r\x13\x11")?;
     editor.wait_for_exit()?;
 

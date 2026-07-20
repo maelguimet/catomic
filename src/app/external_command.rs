@@ -153,7 +153,7 @@ pub(crate) fn handle_key(
 ) -> io::Result<bool> {
     if app.external_command.running.is_some() && key.code == KeyCode::Esc {
         app.external_command.running = None;
-        app.message = Some("External command cancelled.".to_string());
+        app.message = None;
         super::hooks::finish_command(app, false);
         app.render(out)?;
         return Ok(true);

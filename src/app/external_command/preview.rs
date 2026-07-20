@@ -145,7 +145,7 @@ fn apply_or_close(app: &mut super::super::App, out: &mut dyn Write) -> io::Resul
     let preview = app.external_command.preview.take().expect("preview active");
     restore_scroll(app, &preview);
     let Some(target) = preview.target else {
-        app.message = Some(format!("Closed command {} output.", preview.name));
+        app.message = None;
         super::super::hooks::finish_command(app, preview.succeeded);
         app.reveal_cursor();
         return app.render(out);
@@ -174,14 +174,7 @@ fn apply_or_close(app: &mut super::super::App, out: &mut dyn Write) -> io::Resul
         return app.render(out);
     }
     super::super::hooks::finish_command(app, true);
-    super::super::input::finish_content_edit_with_message(
-        app,
-        out,
-        Some(format!(
-            "Command {} applied; Ctrl+Z undoes it.",
-            preview.name
-        )),
-    )
+    super::super::input::finish_content_edit(app, out)
 }
 
 fn replace_buffer(buffer: &mut dyn Buffer, text: &str) -> io::Result<bool> {
@@ -194,16 +187,8 @@ fn replace_buffer(buffer: &mut dyn Buffer, text: &str) -> io::Result<bool> {
 }
 
 fn cancel(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
-    let name = app
-        .external_command
-        .preview
-        .as_ref()
-        .map(|preview| preview.name.clone())
-        .unwrap_or_default();
     close(app);
-    app.message = Some(format!(
-        "Command {name} output cancelled; no changes applied."
-    ));
+    app.message = None;
     super::super::hooks::finish_command(app, false);
     app.reveal_cursor();
     app.render(out)

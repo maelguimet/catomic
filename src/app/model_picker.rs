@@ -140,7 +140,7 @@ pub(crate) fn poll(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
             ));
         }
         DiscoveryResult::Cancelled => {
-            app.message = Some("Model discovery cancelled.".to_string());
+            app.message = None;
         }
         DiscoveryResult::Error(error) => {
             app.model_session
@@ -337,20 +337,17 @@ fn start_discovery(app: &mut super::App, entry_index: usize) -> io::Result<()> {
 }
 
 fn escape(app: &mut super::App) {
-    if app.model_picker.discovery.take().is_some() {
-        app.message = Some("Model discovery cancelled.".to_string());
-    } else if app
-        .model_picker
-        .view
-        .as_mut()
-        .is_some_and(|view| view.pending_discovery.take().is_some())
-    {
-        app.message = Some("Model discovery cancelled before network access.".to_string());
-    } else {
+    let cancelled = app.model_picker.discovery.take().is_some()
+        || app
+            .model_picker
+            .view
+            .as_mut()
+            .is_some_and(|view| view.pending_discovery.take().is_some());
+    if !cancelled {
         close(app);
-        app.message = Some("Model selection cancelled; active model unchanged.".to_string());
         app.reveal_cursor();
     }
+    app.message = None;
 }
 
 fn purge_cache(state: &mut ModelPickerState) {

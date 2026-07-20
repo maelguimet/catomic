@@ -189,6 +189,9 @@ impl App {
             BufferDirection::Next => self.inactive_buffers.push_back(slot),
             BufferDirection::Previous => self.inactive_buffers.push_front(slot),
         }
+        if self.pending_save_conflict.is_none() && self.pending_reload.is_none() {
+            self.message = None;
+        }
 
         let count = self.buffer_count();
         self.active_buffer_index = match direction {
@@ -425,6 +428,28 @@ mod tests {
         assert_eq!(app.buffer_count(), 1);
         assert_eq!(app.active_buffer_index, 0);
         assert_eq!(app.screen.scroll_top, 9);
+    }
+
+    #[test]
+    fn switching_does_not_restore_stale_status_messages() {
+        let first = temp_file("message_first", "alpha");
+        let second = temp_file("message_second", "beta");
+        let paths = vec![
+            first.to_string_lossy().into_owned(),
+            second.to_string_lossy().into_owned(),
+        ];
+        let mut app =
+            App::new_with_paths_and_big_file_config(&paths, BigFileConfig::default()).unwrap();
+
+        app.message = Some("stale first message".to_string());
+        app.switch_buffer(BufferDirection::Next);
+        app.message = Some("stale second message".to_string());
+        app.switch_buffer(BufferDirection::Previous);
+
+        assert!(app.message.is_none());
+
+        fs::remove_file(first).unwrap();
+        fs::remove_file(second).unwrap();
     }
 
     #[test]

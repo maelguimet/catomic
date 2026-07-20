@@ -18,7 +18,7 @@ use crossterm::event::{KeyCode, KeyModifiers};
 // When a prior watcher Changed armed pending, and disk reverts to match baseline,
 // a subsequent watcher Changed observes Unchanged and clears the stale pending.
 #[test]
-fn watcher_unchanged_clears_stale_pending_and_sets_message() {
+fn watcher_unchanged_clears_stale_pending_and_restores_status() {
     let mut tmp = std::env::temp_dir();
     tmp.push(format!(
         "catomic_2ad_sig_unch_clr_{}.txt",
@@ -49,7 +49,7 @@ fn watcher_unchanged_clears_stale_pending_and_sets_message() {
         app.file.disk_snapshot = Some(s);
     }
 
-    app.message = Some("Saved.".to_string()); // sentinel that should be overwritten on resolution
+    app.message = Some("Prior warning.".to_string()); // sentinel cleared on resolution
     let before_dirty = app.file.dirty;
 
     let visible = crate::app::watch::apply_file_watch_signal(
@@ -59,17 +59,13 @@ fn watcher_unchanged_clears_stale_pending_and_sets_message() {
 
     assert!(
         visible,
-        "Unchanged with prior pending must be visible (clear + msg)"
+        "Unchanged with prior pending must visibly restore normal status"
     );
     assert!(
         app.pending_reload.is_none(),
         "stale pending must be cleared"
     );
-    assert_eq!(
-        app.message.as_deref(),
-        Some("File unchanged on disk."),
-        "must surface unchanged resolution message"
-    );
+    assert_eq!(app.message.as_deref(), None, "must restore normal status");
     assert_eq!(app.file.dirty, before_dirty);
     assert_eq!(app.buffer.to_string(), "BASE\n"); // no reload of content
 
@@ -92,7 +88,7 @@ fn watcher_unchanged_with_no_pending_ignores_and_preserves_saved() {
         .unwrap();
     assert!(!app.file.dirty);
 
-    app.message = Some("Saved.".to_string());
+    app.message = Some("Prior warning.".to_string());
     let before_pend = app.pending_reload.clone();
 
     // Disk is already at baseline; Changed -> observe Unchanged, no pending => ignore
@@ -102,7 +98,7 @@ fn watcher_unchanged_with_no_pending_ignores_and_preserves_saved() {
     );
 
     assert!(!visible);
-    assert_eq!(app.message.as_deref(), Some("Saved."));
+    assert_eq!(app.message.as_deref(), Some("Prior warning."));
     assert_eq!(app.pending_reload, before_pend);
 
     let _ = std::fs::remove_file(&p);
@@ -181,7 +177,7 @@ fn queued_changed_then_unchanged_clears_stale_pending_and_renders() {
         .expect("test watcher")
         .inject_signal(crate::file::watcher::FileWatchSignal::Changed);
 
-    app.message = Some("Saved.".to_string());
+    app.message = Some("Prior warning.".to_string());
 
     let mut out1: Vec<u8> = Vec::new();
     let r1 = crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out1).unwrap();
@@ -209,7 +205,7 @@ fn queued_changed_then_unchanged_clears_stale_pending_and_renders() {
         "Unchanged observation with stale pending must be visible and render"
     );
     assert!(app.pending_reload.is_none(), "pending must be cleared");
-    assert_eq!(app.message.as_deref(), Some("File unchanged on disk."));
+    assert!(app.message.is_none());
     assert!(!out2.is_empty(), "must render on resolution");
     assert_eq!(
         app.buffer.to_string(),
@@ -222,9 +218,7 @@ fn queued_changed_then_unchanged_clears_stale_pending_and_renders() {
 
 // Manual Ctrl+R Unchanged behavior is independent of watcher path.
 #[test]
-fn manual_ctrl_r_unchanged_shows_message_even_with_no_pending() {
-    // Explicit coverage per 2-ad: manual path must always surface the message for
-    // Unchanged, independent of pending state. (reload::apply_check_observation)
+fn manual_ctrl_r_unchanged_restores_normal_status() {
     let mut tmp = std::env::temp_dir();
     tmp.push(format!("catomic_2ad_man_unch_{}.txt", std::process::id()));
     let p = tmp.to_string_lossy().to_string();
@@ -239,7 +233,7 @@ fn manual_ctrl_r_unchanged_shows_message_even_with_no_pending() {
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
 
-    assert_eq!(app.message.as_deref(), Some("File unchanged on disk."));
+    assert!(app.message.is_none());
     assert!(app.pending_reload.is_none());
 
     let _ = std::fs::remove_file(&p);

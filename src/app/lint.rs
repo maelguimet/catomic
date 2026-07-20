@@ -106,9 +106,7 @@ pub(crate) fn poll(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
     };
     match result {
         LinterResult::Finished { output, code } => finish(app, &source, output, code),
-        LinterResult::Cancelled => {
-            app.message = Some(format!("Linter for {} cancelled.", source.display()))
-        }
+        LinterResult::Cancelled => app.message = None,
         LinterResult::Error(error) => {
             app.message = Some(format!("Linter error for {}: {error}", source.display()))
         }

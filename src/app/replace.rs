@@ -63,7 +63,7 @@ pub(crate) fn handle_key(
     match key.code {
         KeyCode::Esc => {
             app.replace.prompt = None;
-            app.message = Some("Replace cancelled.".to_string());
+            app.message = None;
         }
         KeyCode::Enter => return advance_or_apply(app, out).map(|()| true),
         KeyCode::Backspace => {
@@ -169,11 +169,7 @@ fn replace_next(
         col: found.end_col,
     };
     app.buffer.replace_range(found.start, end, replacement)?;
-    super::input::finish_content_edit_with_message(
-        app,
-        out,
-        Some(format!("Replaced next '{find}'.")),
-    )
+    super::input::finish_content_edit(app, out)
 }
 
 fn replace_all(
@@ -202,12 +198,8 @@ fn replace_all(
         return app.render(out);
     }
     matches.reverse();
-    let count = app.buffer.replace_ranges(&matches, replacement)?;
-    super::input::finish_content_edit_with_message(
-        app,
-        out,
-        Some(format!("Replaced {count} occurrence(s) of '{find}'.")),
-    )
+    app.buffer.replace_ranges(&matches, replacement)?;
+    super::input::finish_content_edit(app, out)
 }
 
 #[cfg(test)]
@@ -256,7 +248,7 @@ mod tests {
         handle_key(&mut app, &mut out, key(KeyCode::Enter)).unwrap();
 
         assert_eq!(app.buffer.to_string(), "猫 cat 猫\n猫");
-        assert!(app.message.as_deref().unwrap().contains("3 occurrence"));
+        assert!(app.message.is_none());
         app.buffer.undo();
         assert_eq!(app.buffer.to_string(), "α cat α\nα");
     }

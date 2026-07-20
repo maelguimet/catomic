@@ -213,7 +213,7 @@ pub(super) fn finish_repo_apply(app: &mut super::App, out: &mut dyn Write) -> io
 
 fn cancel(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     close(app);
-    app.message = Some("LLM proposal cancelled; no changes applied.".to_string());
+    app.message = None;
     app.reveal_cursor();
     app.render(out)
 }

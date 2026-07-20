@@ -121,7 +121,7 @@ fn handle_active_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -
     match key.code {
         KeyCode::Esc => {
             cancel(app);
-            app.message = Some("Completion dismissed.".to_string());
+            app.message = None;
         }
         KeyCode::Enter => return accept(app, out).map(|()| true),
         KeyCode::BackTab => cycle(app, false),

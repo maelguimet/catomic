@@ -64,7 +64,7 @@ pub(crate) fn poll(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
     match result {
         DiscoveryTaskResult::Finished(discovery) => return finish_scan(app, out, discovery),
         DiscoveryTaskResult::Cancelled => {
-            app.message = Some("File discovery cancelled.".to_string());
+            app.message = None;
         }
         DiscoveryTaskResult::Error(error) => {
             app.message = Some(format!("File discovery error: {error}"));
@@ -149,7 +149,7 @@ pub(crate) fn handle_key(
             .as_mut()
             .is_some_and(|project| project.cancel_discovery())
     {
-        app.message = Some("File discovery cancelled.".to_string());
+        app.message = None;
         app.render(out)?;
         return Ok(true);
     }
@@ -195,7 +195,7 @@ fn handle_view_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -> 
     match key.code {
         KeyCode::Esc => {
             close_view(app);
-            app.message = Some("Project files closed.".to_string());
+            app.message = None;
             app.reveal_cursor();
         }
         KeyCode::Enter => return open_selected(app, out),
@@ -219,8 +219,7 @@ fn open_selected(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     let path = view.paths[index].clone();
     close_view(app);
     match app.open_file_buffer(&path) {
-        Ok(true) => app.message = Some(format!("Opened {}.", path.display())),
-        Ok(false) => app.message = Some(format!("Already viewing {}.", path.display())),
+        Ok(true) | Ok(false) => app.message = None,
         Err(error) => app.message = Some(format!("Could not open {}: {error}", path.display())),
     }
     app.selection.clear();

@@ -136,7 +136,7 @@ pub(crate) fn handle_active_key(
     if app.command_prompt.active.is_none() {
         if app.command_prompt.running.is_some() && key.code == KeyCode::Esc {
             cancel_running(&mut app.command_prompt);
-            app.message = Some("Goto cancelled.".to_string());
+            app.message = None;
             app.render(out)?;
             return Ok(true);
         }
@@ -325,20 +325,14 @@ fn execute_open(app: &mut super::App, out: &mut dyn Write, input: &str) -> io::R
             return app.render(out);
         }
     };
-    open_path(app, out, &path, "Opened")
+    open_path(app, out, &path)
 }
 
-fn open_path(
-    app: &mut super::App,
-    out: &mut dyn Write,
-    path: &Path,
-    success_label: &str,
-) -> io::Result<()> {
+fn open_path(app: &mut super::App, out: &mut dyn Write, path: &Path) -> io::Result<()> {
     // The prompt is complete before open_file_buffer may swap this buffer into a slot.
     app.message = None;
     match app.open_file_buffer(path) {
-        Ok(true) => app.message = Some(format!("{success_label} {}.", path.display())),
-        Ok(false) => app.message = Some(format!("Already open: {}.", path.display())),
+        Ok(true) | Ok(false) => app.message = None,
         Err(error) => app.message = Some(format!("Open error: {error}")),
     }
     app.render(out)
@@ -400,7 +394,7 @@ fn execute_config_create(
     answer: &str,
 ) -> io::Result<()> {
     if !matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
-        app.message = Some("Configuration creation cancelled; no file was written.".to_string());
+        app.message = None;
         app.should_quit = exit_on_decline;
         return app.render(out);
     }
@@ -430,7 +424,7 @@ fn open_created_config_path(
 fn open_config_path(app: &mut super::App, out: &mut dyn Write, path: &Path) -> io::Result<()> {
     let source_path = app.file.path.clone();
     let source_buffer_index = app.active_buffer_index;
-    open_path(app, out, path, "Configuration opened")?;
+    open_path(app, out, path)?;
     if app.buffer_count() > 1
         && source_path.as_deref() != Some(path)
         && app.file.path.as_deref() == Some(path)
@@ -441,10 +435,7 @@ fn open_config_path(app: &mut super::App, out: &mut dyn Write, path: &Path) -> i
             discard_pending: false,
         });
     }
-    app.message = Some(format!(
-        "Editing {}. Restart Catomic after saving to apply settings.",
-        path.display()
-    ));
+    app.message = None;
     app.render(out)
 }
 
@@ -488,14 +479,14 @@ fn execute_goto(app: &mut super::App, out: &mut dyn Write, input: &str) -> io::R
     let row = line.saturating_sub(1).min(last_row);
     app.buffer.set_cursor(crate::buffer::Cursor { row, col: 0 });
     app.reveal_cursor();
-    app.message = Some(if row + 1 == line {
-        format!("Moved to line {line}.")
+    app.message = if row + 1 == line {
+        None
     } else {
-        format!(
+        Some(format!(
             "Line {line} is past end of file; moved to line {}.",
             row + 1
-        )
-    });
+        ))
+    };
     app.render(out)
 }
 
@@ -517,14 +508,14 @@ pub(crate) fn poll_goto(app: &mut super::App, out: &mut dyn Write) -> io::Result
         GotoLineResult::Found(found) => {
             app.buffer.set_descriptor_position(found.position)?;
             app.reveal_cursor();
-            app.message = Some(if found.line == running.requested_line {
-                format!("Moved to line {}.", found.line)
+            app.message = if found.line == running.requested_line {
+                None
             } else {
-                format!(
+                Some(format!(
                     "Line {} is past end of file; moved to line {}.",
                     running.requested_line, found.line
-                )
-            });
+                ))
+            };
         }
         GotoLineResult::Error(error) => {
             app.message = Some(format!("Goto error: {error}"));

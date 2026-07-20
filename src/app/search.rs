@@ -61,7 +61,7 @@ pub(crate) fn handle_active_key(
     }
     if app.search.running.is_some() && key.code == KeyCode::Esc {
         cancel_running(&mut app.search);
-        app.message = Some("Search cancelled.".to_string());
+        app.message = None;
         app.render(out)?;
         return Ok(true);
     }
@@ -76,7 +76,7 @@ fn handle_prompt_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -
             app.search.origin = None;
             app.search.active_match = None;
             app.search.active_descriptor_position = None;
-            app.message = Some("Search cancelled.".to_string());
+            app.message = None;
         }
         KeyCode::Enter => {
             return navigate_match(app, out, SearchDirection::Forward);
@@ -478,7 +478,7 @@ mod tests {
             .unwrap();
 
         assert!(app.search.running.is_none());
-        assert_eq!(app.message.as_deref(), Some("Search cancelled."));
+        assert!(app.message.is_none());
 
         let _ = std::fs::remove_file(path);
     }

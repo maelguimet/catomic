@@ -168,7 +168,7 @@ fn replace_buffer(buffer: &mut dyn Buffer, text: &str) -> io::Result<bool> {
 
 fn cancel(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
     close(app);
-    app.message = Some("Catnap recovery cancelled; source unchanged.".to_string());
+    app.message = None;
     app.reveal_cursor();
     app.render(out)
 }

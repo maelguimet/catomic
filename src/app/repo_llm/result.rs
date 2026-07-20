@@ -46,7 +46,10 @@ pub(super) fn poll_running(app: &mut super::super::App, out: &mut dyn Write) -> 
             out,
             &format!("Could not recheck repository; response discarded: {error}"),
         ),
-        RepoLlmTaskResult::Cancelled => render_message(app, out, "Repo LLM request cancelled."),
+        RepoLlmTaskResult::Cancelled => {
+            app.message = None;
+            app.render(out)
+        }
         RepoLlmTaskResult::Error { kind, message } => {
             app.model_session.record_failure(&state.preset_name, kind);
             render_message(app, out, &format!("Repo LLM request failed: {message}"))

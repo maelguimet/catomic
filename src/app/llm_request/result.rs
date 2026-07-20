@@ -24,7 +24,10 @@ pub(crate) fn poll(app: &mut super::super::App, out: &mut dyn Write) -> io::Resu
             app.model_session.record_ready(&running.preset_name);
             finish_output(app, out, output, running)
         }
-        LlmTaskResult::Cancelled => render_message(app, out, "LLM request cancelled."),
+        LlmTaskResult::Cancelled => {
+            app.message = None;
+            app.render(out)
+        }
         LlmTaskResult::Error { kind, message } => {
             app.model_session.record_failure(&running.preset_name, kind);
             render_message(app, out, &format!("LLM request failed: {message}"))

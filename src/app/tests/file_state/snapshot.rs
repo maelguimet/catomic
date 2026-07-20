@@ -318,7 +318,7 @@ fn app_file_state_manual_check_unchanged_sets_message_no_mutation() {
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
 
-    assert_eq!(app.message.as_deref(), Some("File unchanged on disk."));
+    assert!(app.message.is_none());
     assert_eq!(app.file.dirty, dirty_before);
     assert_eq!(app.file.disk_snapshot, snap_before);
 
@@ -453,7 +453,7 @@ fn app_file_state_ctrl_r_unchanged_no_pending_no_mutation() {
 
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
-    assert_eq!(app.message.as_deref(), Some("File unchanged on disk."));
+    assert!(app.message.is_none());
     assert!(app.pending_reload.is_none());
     assert_eq!(app.file.dirty, dirty_b);
     assert_eq!(app.file.disk_snapshot, snap_b);
@@ -488,7 +488,7 @@ fn app_file_state_reload_modified_clean_second_press() {
     assert_eq!(app.buffer.to_string(), "DISKNEW");
     assert!(!app.file.dirty);
     assert!(app.pending_reload.is_none());
-    assert!(app.message.as_deref().unwrap_or("").contains("Reloaded"));
+    assert!(app.message.is_none());
 
     let _ = std::fs::remove_file(&p);
 }

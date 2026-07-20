@@ -132,16 +132,6 @@ fn mobile_reload_message(prefix: &str, dirty: bool) -> String {
     }
 }
 
-/// Success message after actual reload of modified content.
-pub(crate) fn reload_success_message() -> String {
-    "Reloaded from disk.".to_string()
-}
-
-/// Success message after clearing buffer due to deleted file.
-pub(crate) fn reload_cleared_message() -> String {
-    "Buffer cleared (file deleted on disk).".to_string()
-}
-
 struct ReloadedModifiedBuffer {
     buffer: Box<dyn buffer::Buffer>,
     snapshot: FileSnapshot,
@@ -221,13 +211,13 @@ fn build_modified_reload_buffer(
     })
 }
 
-fn reload_modified_success_message(size_bytes: u64, size_tier: FileSizeTier) -> String {
+fn reload_modified_warning(size_bytes: u64, size_tier: FileSizeTier) -> Option<String> {
     if matches!(size_tier, FileSizeTier::Huge | FileSizeTier::Extreme) {
         if let Some(warning) = size::open_size_warning_message(size_bytes, size_tier) {
-            return format!("Reloaded from disk. {}", warning);
+            return Some(warning);
         }
     }
-    reload_success_message()
+    None
 }
 
 /// Replace a clean buffer from one already-fresh Modified/Deleted observation.
@@ -268,10 +258,8 @@ fn apply_modified_reload(
 ) -> io::Result<()> {
     let external_diff = super::external_diff::compare(&*app.buffer, &*reloaded.buffer);
     crate::file::io::ensure_path_matches_snapshot(path, &reloaded.snapshot)?;
-    let reload_message = external_diff_message(
-        reload_modified_success_message(reloaded.size_bytes, reloaded.size_tier),
-        &external_diff,
-    );
+    let reload_warning = reload_modified_warning(reloaded.size_bytes, reloaded.size_tier)
+        .or_else(|| external_diff_warning(&external_diff));
     super::autocomplete::invalidate(app);
     super::search::cancel_running_search(app);
     super::command_prompt::cancel_running_goto(app);
@@ -289,7 +277,7 @@ fn apply_modified_reload(
     app.file.disk_snapshot = Some(reloaded.snapshot);
     app.file.size_bytes = Some(reloaded.size_bytes);
     app.file.size_tier = Some(reloaded.size_tier);
-    finish_reload(app, reload_message);
+    finish_reload(app, reload_warning);
     Ok(())
 }
 
@@ -313,19 +301,16 @@ fn apply_deleted_reload(app: &mut super::App) {
     app.file.disk_snapshot = Some(FileSnapshot::Absent);
     app.file.size_bytes = None;
     app.file.size_tier = None;
-    finish_reload(app, reload_message);
+    finish_reload(app, external_diff_warning(&external_diff));
 }
 
-fn external_diff_message(
-    mut message: String,
-    outcome: &super::external_diff::DiffOutcome,
-) -> String {
-    if let super::external_diff::DiffOutcome::Skipped(reason) = outcome {
-        message.push_str(" External change highlighting skipped: ");
-        message.push_str(reason);
-        message.push('.');
+fn external_diff_warning(outcome: &super::external_diff::DiffOutcome) -> Option<String> {
+    match outcome {
+        super::external_diff::DiffOutcome::Skipped(reason) => {
+            Some(format!("External change highlighting skipped: {reason}."))
+        }
+        super::external_diff::DiffOutcome::Compared(_) => None,
     }
-    message
 }
 
 fn report_reload_error(app: &mut super::App, error: io::Error) {
@@ -344,18 +329,18 @@ fn report_reload_error(app: &mut super::App, error: io::Error) {
     }
 }
 
-fn finish_reload(app: &mut super::App, message: String) {
+fn finish_reload(app: &mut super::App, message: Option<String>) {
     super::watch::refresh_file_watcher(app);
-    app.message = Some(message);
+    app.message = message;
     app.pending_reload = None;
     app.pending_save_conflict = None;
     app.pending_quit_confirm = false;
     app.reveal_cursor();
 }
 
-/// Apply a single ExternalFileObservation to set user message and arm/clear
-/// pending_reload. This is the single-source status+arm path for manual check.
-/// NoPath/Unchanged/Unknown: set message, clear pending.
+/// Apply a single ExternalFileObservation to update status and arm/clear pending_reload.
+/// This is the single-source status+arm path for manual checks.
+/// NoPath/Unknown report a problem; Unchanged restores normal status; all clear pending.
 /// Modified/Deleted: arm pending bound to obs.live_snapshot (for drift), set arm message.
 /// Does not mutate buffer, dirty, disk_snapshot, or history.
 pub(crate) fn apply_check_observation(app: &mut super::App, obs: &ExternalFileObservation) {
@@ -365,7 +350,7 @@ pub(crate) fn apply_check_observation(app: &mut super::App, obs: &ExternalFileOb
             app.pending_reload = None;
         }
         ExternalFileStatus::Unchanged => {
-            app.message = Some("File unchanged on disk.".to_string());
+            app.message = None;
             app.pending_reload = None;
         }
         ExternalFileStatus::Unknown(kind) => {

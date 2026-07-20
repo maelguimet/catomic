@@ -31,7 +31,7 @@ fn preview_is_read_only_until_enter_then_applies_as_one_undo_step() {
     assert!(!is_viewing(&app));
     assert_eq!(app.buffer.to_string(), "one\nTWO\n");
     assert!(app.file.dirty);
-    assert!(app.message.as_deref().unwrap().contains("Ctrl+Z"));
+    assert!(app.message.is_none());
 
     app.buffer.undo();
     assert_eq!(app.buffer.to_string(), "one\ntwo\n");

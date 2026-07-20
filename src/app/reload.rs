@@ -284,7 +284,7 @@ fn apply_modified_reload(
 fn apply_deleted_reload(app: &mut super::App) {
     let cleared: Box<dyn buffer::Buffer> = Box::new(buffer::PieceTable::new());
     let external_diff = super::external_diff::compare(&*app.buffer, &*cleared);
-    let reload_message = external_diff_message(reload_cleared_message(), &external_diff);
+    let reload_warning = external_diff_warning(&external_diff);
     super::autocomplete::invalidate(app);
     super::search::cancel_running_search(app);
     super::command_prompt::cancel_running_goto(app);
@@ -301,7 +301,7 @@ fn apply_deleted_reload(app: &mut super::App) {
     app.file.disk_snapshot = Some(FileSnapshot::Absent);
     app.file.size_bytes = None;
     app.file.size_tier = None;
-    finish_reload(app, external_diff_warning(&external_diff));
+    finish_reload(app, reload_warning);
 }
 
 fn external_diff_warning(outcome: &super::external_diff::DiffOutcome) -> Option<String> {

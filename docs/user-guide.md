@@ -724,6 +724,17 @@ work. If there is no completion candidate, `Tab` performs normal indentation.
 Accepting a completion is one undoable replacement. Catomic does not enable
 continuous ghost text or a background completion service.
 
+Typing a colon-prefixed query of at least two characters at a token boundary
+opens the inline emoji picker. For example, `:hun` ranks `💯 hundred points`
+first. The table updates as the query changes; use `Up`/`Down`, `Tab`, or
+`Shift+Tab` to select a row, `Enter` to replace only the active query, and
+`Escape` to dismiss it without changing the text. Colons inside words, URLs,
+times, and `::` sequences do not trigger the picker.
+
+Emoji names and GitHub-style aliases come from a bundled deterministic table.
+Matching and insertion are entirely local: typing never starts a process,
+filesystem scan, or network request.
+
 ## Linting
 
 Linting is an explicit editor action. Configure a command for the file

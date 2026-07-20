@@ -16,6 +16,8 @@ making it your only editor.
 
 - Familiar editing: selection, mouse input, search/replace, goto line,
   undo/redo, multiple buffers, and GUI-style shortcuts.
+- A local fuzzy emoji picker: type a boundary-safe query such as `:hun`, choose
+  from the inline table, and insert `💯` without an API call.
 - Proper Unicode cursor movement and layout, including grapheme clusters, wide
   characters, emoji sequences, and tabs.
 - Large-file paging, so opening a monster log does not mean swallowing the whole

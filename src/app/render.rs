@@ -8,8 +8,8 @@ use std::io::{self, Write};
 use crate::terminal as term;
 
 use super::{
-    external_command, external_diff, help, inline_clanker, lint, llm_preview, mobile, model_picker,
-    recovery, status, view, App,
+    completion, external_command, external_diff, help, inline_clanker, lint, llm_preview, mobile,
+    model_picker, recovery, status, view, App,
 };
 
 impl App {
@@ -76,12 +76,14 @@ fn render(app: &App, out: &mut dyn Write) -> io::Result<()> {
     });
     let lint_ranges = lint_ranges(app);
     let action_bar = mobile::action_bar_text(app);
+    let emoji_picker = completion::emoji_picker_presentation(app);
     let mut options = render_options(
         app,
         &lint_ranges,
         llm_changes,
         external_changes,
         action_bar.as_deref(),
+        emoji_picker.as_ref(),
     );
     options.window_title = Some(&window_title);
     if let Some(message) = app.message.as_deref() {
@@ -162,6 +164,7 @@ fn render_options<'a>(
     llm_changes: Option<term::render::LlmChanges<'a>>,
     external_changes: Option<term::render::ExternalChanges<'a>>,
     action_bar: Option<&'a str>,
+    emoji_picker: Option<&'a completion::EmojiPickerPresentation>,
 ) -> term::render::RenderOptions<'a> {
     let (highlight, highlight_kind) = active_highlight(app).map_or(
         (None, term::render::HighlightKind::Selection),
@@ -189,6 +192,10 @@ fn render_options<'a>(
         status_theme: app.status_theme,
         status_filename: None,
         status_selection: None,
+        emoji_picker: emoji_picker.map(|picker| term::render::EmojiPicker {
+            rows: &picker.rows,
+            selected: picker.selected,
+        }),
         window_title: None,
         action_bar,
     }

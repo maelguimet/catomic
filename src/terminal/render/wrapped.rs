@@ -244,6 +244,14 @@ pub(super) fn compose_buffer(
     )?;
     super::write_bottom_rows(out, viewport, message, options)?;
     let cursor = wrapped_cursor_position(buffer.cursor(), &rows, gutter, content_width);
+    super::emoji_picker::write(
+        out,
+        cursor,
+        content_height,
+        viewport.width,
+        options.emoji_picker,
+        options.theme,
+    )?;
     super::write_terminal_cursor(out, cursor, options.cursor_shape)
 }
 

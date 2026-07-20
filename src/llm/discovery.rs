@@ -1,7 +1,7 @@
-//! Purpose: this file must explicitly discover a bounded HTTP provider model list off-thread.
+//! Purpose: this file must explicitly discover an HTTP provider model list off-thread.
 //! Owns: post-confirmation credential resolution, cancellable GET, and pollable task results.
 //! Must not: start on picker open, send file context, persist models, retry, or follow redirects.
-//! Invariants: only opted-in HTTP presets run; response is 256 KiB/128 models at most.
+//! Invariants: only opted-in HTTP presets run; response capture and duration stay bounded.
 
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};

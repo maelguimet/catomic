@@ -112,34 +112,39 @@ exact backup path.
   redirects are allowlisted, requests have bounded timeouts, responses and
   declared asset sizes are capped, and the candidate's checksum and version are
   verified before it can run or replace the installed binary.
-- A binary built in a clean official `master` checkout, including one installed
+- A binary built in an official `master` checkout, including one installed
   by `./scripts/install.sh`, retains that checkout as its update source.
-  Catomic checks the official remote revision, refuses non-fast-forward history,
-  fetches without running hooks, and builds in an isolated temporary worktree.
-  The new revision must pass all tests and validate the existing configuration
-  before the executable is replaced. Only then is the source checkout
-  fast-forwarded.
-- Cargo registry installs, detached Git installs, forks, missing source
-  checkouts, non-`master` branches, and architectures without a managed release
-  are reported as unsupported. The command exits without changing anything and
-  prints a manual Cargo command where applicable.
+  Catomic preserves local changes, checks the official remote revision, refuses
+  non-fast-forward history, fetches without running hooks, and builds in an
+  isolated temporary worktree. The new revision must pass all tests and validate
+  the existing configuration before the executable is replaced. Only then is
+  the source checkout fast-forwarded and the local changes reapplied.
+- If that source checkout no longer exists, Catomic runs the official Cargo git
+  install command itself. `--check` remains unsupported for a missing checkout
+  and exits without writing.
+- Cargo registry installs, detached Git installs, forks, non-`master` branches,
+  and architectures without a managed release are reported as unsupported.
 
-Dirty source checkouts are never stashed, reset, cleaned, or overwritten.
-Commit, stash, or back up both tracked and untracked work yourself, then rerun
-the updater. This deliberately leaves stash policy under your control.
+Dirty official source checkouts are stashed with untracked files before an
+update and popped afterward with their staged state restored. Git reports any
+conflicts normally.
 
 ### Atomic install and recovery
 
-The new executable is staged beside the installed one, synced, and atomically
-renamed over it. Before that rename, Catomic creates a sibling rollback binary
-containing the old bytes. A failed download, checksum, test, build,
+Managed releases and retained-checkout updates stage the new executable beside
+the installed one, sync it, and atomically rename over it. Before that rename,
+Catomic creates a sibling rollback binary containing the old bytes. A failed
+download, checksum, test, build,
 configuration validation, or staging step leaves the installed executable
 untouched. If final source fast-forwarding fails after replacement, Catomic
 automatically restores the old binary.
 
-On success Catomic prints the old and new versions, backup status, rollback
-path, and an exact recovery command. Roll back manually with the printed
-command, which has this shape:
+The missing-checkout fallback delegates the replacement directly to `cargo
+install` and therefore does not create Catomic's sibling rollback binary.
+
+On managed-release and retained-checkout success Catomic prints the old and new
+versions, backup status, rollback path, and an exact recovery command. Roll back
+manually with the printed command, which has this shape:
 
 ```sh
 cp -- /path/to/.catomic.rollback-VERSION-TIMESTAMP /path/to/catomic

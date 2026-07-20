@@ -54,7 +54,7 @@ commented user configuration:
 
 The installer never replaces an existing configuration.
 
-For a clean official `master` checkout, either launch method supports the
+For an official `master` checkout, either launch method supports the
 state-preserving updater:
 
 ```sh
@@ -62,7 +62,7 @@ catomic update --check
 catomic update --backup
 ```
 
-The updater never rewrites Catomic configuration or local source changes. See
+The updater never rewrites Catomic configuration or drops local source changes. See
 [Updating, backup, and rollback](docs/user-guide.md#updating-backup-and-rollback)
 for supported install methods and recovery behavior.
 

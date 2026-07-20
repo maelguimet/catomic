@@ -1,7 +1,7 @@
-//! Purpose: safely update binaries built from the official Catomic source checkout.
-//! Owns: source discovery, read-only checks, fetch/worktree/build/test, and fast-forward.
-//! Must not: stash, reset, clean, overwrite local changes, run hooks, or edit user state.
-//! Invariants: only clean official `master` checkouts update; candidate passes tests/config first.
+//! Purpose: safely update binaries built from the official Catomic source.
+//! Owns: checkout updates, dirty-change preservation, and missing-checkout Cargo reinstall.
+//! Must not: reset, clean, discard local changes, run hooks, or edit user state.
+//! Invariants: dirty changes survive; candidates pass tests/config; Cargo uses the official remote.
 //! Phase: safe self-update workflow.
 
 use std::ffi::OsString;
@@ -42,13 +42,19 @@ struct SourceInstall {
 }
 
 pub(super) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
-    let install = discover().map_err(|error| UpdateError::new(EXIT_UNSUPPORTED, error))?;
+    let Some(install) = discover().map_err(|error| UpdateError::new(EXIT_UNSUPPORTED, error))?
+    else {
+        if options.check {
+            return Err(UpdateError::new(
+                EXIT_UNSUPPORTED,
+                "source checkout is unavailable; no files changed",
+            ));
+        }
+        return cargo_install(options);
+    };
     print_local_status(&install);
     if options.check {
         return check(&install);
-    }
-    if install.dirty {
-        return Err(dirty_error(&install.root));
     }
     println!("source: {OFFICIAL_REMOTE} branch {SUPPORTED_BRANCH}");
     if !confirm(
@@ -81,7 +87,35 @@ pub(super) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
         ));
     }
     let backup = maybe_backup(options)?;
-    apply(&install, &remote_sha, &remote_version, backup.as_deref())
+    let stashed = stash_changes(&install.root)?;
+    let update = apply(&install, &remote_sha, &remote_version, backup.as_deref());
+    match (update, restore_changes(&install.root, stashed)) {
+        (result, Ok(())) => result,
+        (Ok(()), Err(error)) => Err(UpdateError::new(EXIT_SOURCE_STATE, error)),
+        (Err(update), Err(restore)) => Err(UpdateError::new(
+            update.exit_code(),
+            format!("{update}; additionally, {restore}"),
+        )),
+    }
+}
+
+fn cargo_install(options: UpdateOptions) -> Result<(), UpdateError> {
+    println!("install method: Cargo git install");
+    println!("source: {OFFICIAL_REMOTE} branch {SUPPORTED_BRANCH}");
+    if !confirm(
+        options,
+        "Reinstall from the official Cargo git source? Network and disk writes will follow.",
+    )? {
+        println!("update cancelled; no network or disk changes made");
+        return Ok(());
+    }
+    maybe_backup(options)?;
+    println!("running Cargo install...");
+    let mut command = cargo_install_command();
+    run_cargo(&mut command)?;
+    println!("updated from {OFFICIAL_REMOTE}");
+    println!("user state: unchanged");
+    Ok(())
 }
 
 fn check(install: &SourceInstall) -> Result<(), UpdateError> {
@@ -90,8 +124,7 @@ fn check(install: &SourceInstall) -> Result<(), UpdateError> {
     let relation = super::managed::source_relation(&install.current_sha, &remote_sha)?;
     let downgrade = super::managed::source_version_is_downgrade(&remote_version)?;
     let available = remote_sha != install.current_sha;
-    let can_apply =
-        !install.dirty && !downgrade && matches!(relation.as_str(), "ahead" | "identical");
+    let can_apply = !downgrade && matches!(relation.as_str(), "ahead" | "identical");
     println!(
         "available version: {remote_version} (commit {})",
         short_sha(&remote_sha)
@@ -100,7 +133,7 @@ fn check(install: &SourceInstall) -> Result<(), UpdateError> {
     println!("official branch relation to checkout: {relation}");
     println!("can apply: {}", if can_apply { "yes" } else { "no" });
     if install.dirty {
-        println!("reason: tracked or untracked source changes are present");
+        println!("source changes will be stashed and reapplied");
     } else if downgrade {
         println!("reason: the official branch reports an older package version");
     } else if !can_apply {
@@ -213,25 +246,82 @@ fn ensure_checkout_unchanged(install: &SourceInstall) -> Result<(), UpdateError>
     }
 }
 
-fn discover() -> Result<SourceInstall, String> {
+fn stash_changes(root: &Path) -> Result<bool, UpdateError> {
+    let status = git_text(root, &["status", "--porcelain=v1", "--untracked-files=all"])
+        .map_err(|error| UpdateError::new(EXIT_SOURCE_STATE, error))?;
+    if status.is_empty() {
+        return Ok(false);
+    }
+    let output = git_output(
+        root,
+        &[
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "user.name=Catomic updater",
+            "-c",
+            "user.email=catomic@localhost",
+            "stash",
+            "push",
+            "--include-untracked",
+            "--message",
+            "catomic update",
+        ],
+    )
+    .map_err(|error| UpdateError::new(EXIT_SOURCE_STATE, error))?;
+    if !output.status.success() {
+        return Err(UpdateError::new(
+            EXIT_SOURCE_STATE,
+            format!(
+                "could not stash source changes: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+        ));
+    }
+    println!("source changes: stashed");
+    Ok(true)
+}
+
+fn restore_changes(root: &Path, stashed: bool) -> Result<(), String> {
+    if !stashed {
+        return Ok(());
+    }
+    let output = git_output(
+        root,
+        &["-c", "core.hooksPath=/dev/null", "stash", "pop", "--index"],
+    )?;
+    if !output.status.success() {
+        return Err(format!(
+            "could not reapply source changes: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    println!("source changes: reapplied");
+    Ok(())
+}
+
+fn discover() -> Result<Option<SourceInstall>, String> {
     const SOURCE: &str = match option_env!("CATOMIC_SOURCE_DIR") {
         Some(path) => path,
         None => env!("CARGO_MANIFEST_DIR"),
     };
-    discover_at(Path::new(SOURCE)).map_err(|error| {
-        format!(
-            "{error}; no files changed. Update manually with `cargo install --git {OFFICIAL_REMOTE} --locked --force`"
-        )
-    })
+    discover_path(Path::new(SOURCE))
+}
+
+fn discover_path(root: &Path) -> Result<Option<SourceInstall>, String> {
+    if !root
+        .try_exists()
+        .map_err(|error| format!("inspect source checkout {}: {error}", root.display()))?
+    {
+        return Ok(None);
+    }
+    discover_at(root).map(Some)
 }
 
 fn discover_at(root: &Path) -> Result<SourceInstall, String> {
-    let root = root.canonicalize().map_err(|error| {
-        format!(
-            "this binary's source checkout is unavailable at {}: {error}; update manually with `cargo install --git {OFFICIAL_REMOTE} --locked --force`",
-            root.display()
-        )
-    })?;
+    let root = root
+        .canonicalize()
+        .map_err(|error| format!("resolve source checkout {}: {error}", root.display()))?;
     let top = git_text(&root, &["rev-parse", "--show-toplevel"])?;
     let top = Path::new(&top)
         .canonicalize()
@@ -362,6 +452,12 @@ fn cargo(root: &Path, args: &[&str]) -> Result<(), UpdateError> {
     cargo_command(root, args, None)
 }
 
+fn cargo_install_command() -> Command {
+    let mut command = Command::new("cargo");
+    command.args(["install", "--git", OFFICIAL_REMOTE, "--locked", "--force"]);
+    command
+}
+
 fn cargo_with_source(
     root: &Path,
     args: &[&str],
@@ -483,16 +579,6 @@ fn is_official_remote(remote: &str) -> bool {
 
 fn valid_sha(sha: &str) -> bool {
     matches!(sha.len(), 40 | 64) && sha.bytes().all(|byte| byte.is_ascii_hexdigit())
-}
-
-fn dirty_error(root: &Path) -> UpdateError {
-    UpdateError::new(
-        EXIT_SOURCE_STATE,
-        format!(
-            "source checkout {} has tracked or untracked changes; commit, stash, or back them up explicitly, then rerun. Nothing was discarded.",
-            root.display()
-        ),
-    )
 }
 
 fn shell_quote(path: &Path) -> String {

@@ -1,5 +1,5 @@
-//! Purpose: verify source-install discovery and trusted-origin policy with local Git fixtures.
-//! Owns: clean/dirty checkout cases and official-remote lookalike rejection.
+//! Purpose: verify source-update behavior with local Git fixtures.
+//! Owns: discovery, dirty-change preservation, and trusted-origin rejection.
 //! Must not: contact a remote, alter the real checkout, or invoke the full updater.
 //! Invariants: each repository is unique, temporary, and removed after the assertion.
 //! Phase: safe self-update workflow.
@@ -59,6 +59,10 @@ fn fixture() -> PathBuf {
     root
 }
 
+fn git(root: &Path, args: &[&str]) {
+    assert!(git_output(root, args).unwrap().status.success());
+}
+
 #[test]
 fn discovery_detects_clean_and_dirty_official_source_checkouts() {
     let root = fixture();
@@ -79,4 +83,61 @@ fn remote_policy_rejects_lookalikes() {
     assert!(!is_official_remote(
         "https://github.com/attacker/maelguimet-catomic.git"
     ));
+}
+
+#[test]
+fn missing_checkout_selects_cargo_git_install() {
+    let root = fixture();
+    assert!(discover_path(&root.join("missing")).unwrap().is_none());
+
+    let command = cargo_install_command();
+    let args: Vec<_> = command
+        .get_args()
+        .map(|argument| argument.to_str().unwrap())
+        .collect();
+    assert_eq!(
+        args,
+        ["install", "--git", OFFICIAL_REMOTE, "--locked", "--force"]
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn source_changes_survive_update_and_restore_staged_state() {
+    let root = fixture();
+    fs::write(root.join("Cargo.toml"), "previous stash\n").unwrap();
+    git(&root, &["stash", "push", "--message", "previous stash"]);
+    let previous = git_text(&root, &["rev-parse", "--verify", "refs/stash"]).unwrap();
+    fs::write(root.join("Cargo.toml"), "local change\n").unwrap();
+    git(&root, &["add", "Cargo.toml"]);
+    fs::write(root.join("local-notes"), "untracked change\n").unwrap();
+
+    let stashed = stash_changes(&root).unwrap();
+    assert!(stashed);
+    assert!(git_text(&root, &["status", "--porcelain=v1"])
+        .unwrap()
+        .is_empty());
+    fs::write(root.join("upstream"), "new upstream file\n").unwrap();
+    git(&root, &["add", "upstream"]);
+    git(&root, &["commit", "-m", "upstream update"]);
+
+    restore_changes(&root, stashed).unwrap();
+
+    assert_eq!(
+        fs::read_to_string(root.join("Cargo.toml")).unwrap(),
+        "local change\n"
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("local-notes")).unwrap(),
+        "untracked change\n"
+    );
+    assert_eq!(
+        git_text(&root, &["diff", "--cached", "--name-only"]).unwrap(),
+        "Cargo.toml"
+    );
+    assert_eq!(
+        git_text(&root, &["rev-parse", "--verify", "refs/stash"]).unwrap(),
+        previous
+    );
+    fs::remove_dir_all(root).unwrap();
 }

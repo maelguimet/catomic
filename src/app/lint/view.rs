@@ -19,6 +19,7 @@ pub(crate) struct DiagnosticsView {
 
 pub(crate) fn show_diagnostics(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
     super::super::project_files::close_view(app);
+    super::discard_stale_diagnostics(app);
     let Some(project) = app.project.as_ref() else {
         app.message_info("Diagnostics require Project mode (:project).");
         return app.render(out);

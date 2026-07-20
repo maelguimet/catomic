@@ -10,4 +10,4 @@ pub mod git;
 pub(crate) mod linter;
 mod session;
 
-pub(crate) use session::ProjectSession;
+pub(crate) use session::{LintSource, ProjectSession};

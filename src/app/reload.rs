@@ -273,6 +273,7 @@ fn apply_modified_reload(
     super::view::cancel_preview(app);
     app.selection.clear();
     app.buffer = reloaded.buffer;
+    super::file_state::note_content_change(&mut app.file);
     app.clanker_changes.clear();
     app.external_changes = external_diff.into_changes();
     app.file.saved_history_position = app.buffer.edit_history_position();
@@ -298,6 +299,7 @@ fn apply_deleted_reload(app: &mut super::App) {
     super::view::cancel_preview(app);
     app.selection.clear();
     app.buffer = cleared;
+    super::file_state::note_content_change(&mut app.file);
     app.clanker_changes.clear();
     app.external_changes = external_diff.into_changes();
     app.file.saved_history_position = app.buffer.edit_history_position();

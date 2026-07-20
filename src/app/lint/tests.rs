@@ -11,6 +11,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::buffer::{Cursor, PieceTable};
 use crate::config::linters;
 use crate::project::diagnostics::parse_common_output;
+use crate::project::LintSource;
 
 use super::super::{project_mode, App};
 
@@ -42,6 +43,7 @@ fn configured_linter_completes_into_project_diagnostics() {
         linters::parse("[linters]\nrs = \"printf '%s:2:3: warning: found\\n' {file}\"\n").unwrap();
     let mut app = App::new(None).unwrap();
     app.file.path = Some(PathBuf::from("/tmp/sample.rs"));
+    app.buffer = Box::new(PieceTable::from_text("zero\none\n"));
     let mut out = Vec::new();
     project_mode::switch_to_project(&mut app, &mut out).unwrap();
 
@@ -66,6 +68,42 @@ fn configured_linter_completes_into_project_diagnostics() {
         .as_deref()
         .unwrap_or("")
         .contains("1 diagnostic"));
+    super::move_diagnostic(&mut app, &mut out, true).unwrap();
+    assert_eq!(app.buffer.cursor(), Cursor { row: 1, col: 2 });
+}
+
+#[test]
+fn linter_result_is_discarded_after_source_edit() {
+    let config = linters::parse(
+        "[linters]\nrs = \"sleep 0.05; printf '%s:2:1: warning: stale\\n' {file}\"\n",
+    )
+    .unwrap();
+    let mut app = App::new(None).unwrap();
+    app.file.path = Some(PathBuf::from("/tmp/sample.rs"));
+    let mut out = Vec::new();
+    project_mode::switch_to_project(&mut app, &mut out).unwrap();
+
+    super::start_with_config(&mut app, &mut out, config).unwrap();
+    assert!(app.project.as_ref().unwrap().is_linter_running());
+    app.handle_key_with(
+        &mut out,
+        KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE),
+    )
+    .unwrap();
+    let cursor_after_edit = app.buffer.cursor();
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while app.project.as_ref().unwrap().is_linter_running() {
+        super::poll(&mut app, &mut out).unwrap();
+        assert!(Instant::now() < deadline, "linter integration timed out");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+
+    assert!(app.project.as_ref().unwrap().diagnostics().items.is_empty());
+    super::move_diagnostic(&mut app, &mut out, true).unwrap();
+    assert_eq!(app.buffer.cursor(), cursor_after_edit);
+    super::show_diagnostics(&mut app, &mut out).unwrap();
+    assert!(app.surfaces.diagnostics.is_none());
 }
 
 #[test]
@@ -122,7 +160,14 @@ fn app_with_diagnostics() -> App {
         "/tmp/sample.rs:2:3: warning: first\n/tmp/sample.rs:3:1: error: second\n",
         std::path::Path::new("/tmp"),
     );
-    app.project.as_mut().unwrap().set_diagnostics(diagnostics);
+    app.project.as_mut().unwrap().set_diagnostics(
+        LintSource {
+            path: PathBuf::from("/tmp/sample.rs"),
+            buffer_id: app.file.buffer_id,
+            content_generation: app.file.content_generation,
+        },
+        diagnostics,
+    );
     app
 }
 
@@ -160,6 +205,24 @@ fn next_and_previous_diagnostics_jump_with_scalar_coordinates() {
 }
 
 #[test]
+fn editing_after_lint_invalidates_installed_diagnostics() {
+    let mut app = app_with_diagnostics();
+    let mut out = Vec::new();
+    app.handle_key_with(
+        &mut out,
+        KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE),
+    )
+    .unwrap();
+    let cursor_after_edit = app.buffer.cursor();
+
+    super::move_diagnostic(&mut app, &mut out, true).unwrap();
+    assert_eq!(app.buffer.cursor(), cursor_after_edit);
+    assert!(app.project.as_ref().unwrap().diagnostics().items.is_empty());
+    super::show_diagnostics(&mut app, &mut out).unwrap();
+    assert!(app.surfaces.diagnostics.is_none());
+}
+
+#[test]
 fn cross_file_diagnostic_opens_a_buffer_and_jumps() {
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -181,7 +244,14 @@ fn cross_file_diagnostic_opens_a_buffer_and_jumps() {
         &format!("{}:2:2: error: cross file\n", target.display()),
         &root,
     );
-    app.project.as_mut().unwrap().set_diagnostics(diagnostics);
+    app.project.as_mut().unwrap().set_diagnostics(
+        LintSource {
+            path: active,
+            buffer_id: app.file.buffer_id,
+            content_generation: app.file.content_generation,
+        },
+        diagnostics,
+    );
 
     super::move_diagnostic(&mut app, &mut out, true).unwrap();
 

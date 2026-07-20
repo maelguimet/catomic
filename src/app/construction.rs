@@ -88,6 +88,8 @@ impl App {
             file: FileState {
                 path: initial_path.map(PathBuf::from),
                 dirty: false,
+                buffer_id: super::file_state::next_buffer_id(),
+                content_generation: 0,
                 saved_history_position: initial_pos,
                 disk_snapshot: meta.disk_snapshot,
                 size_bytes: meta.size_bytes,

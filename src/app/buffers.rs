@@ -93,6 +93,35 @@ impl BufferSlot {
 }
 
 impl App {
+    pub(crate) fn lint_source_is_current(&self, source: &crate::project::LintSource) -> bool {
+        fn absolute_path(path: &Path) -> Option<std::path::PathBuf> {
+            if path.is_absolute() {
+                Some(path.to_path_buf())
+            } else {
+                std::env::current_dir().ok().map(|cwd| cwd.join(path))
+            }
+        }
+
+        let active_matches = self
+            .file
+            .path
+            .as_deref()
+            .and_then(absolute_path)
+            .is_some_and(|path| path == source.path)
+            && self.file.buffer_id == source.buffer_id
+            && self.file.content_generation == source.content_generation;
+        active_matches
+            || self.inactive_buffers.iter().any(|slot| {
+                slot.file
+                    .path
+                    .as_deref()
+                    .and_then(absolute_path)
+                    .is_some_and(|path| path == source.path)
+                    && slot.file.buffer_id == source.buffer_id
+                    && slot.file.content_generation == source.content_generation
+            })
+    }
+
     pub(crate) fn clear_external_changes(&mut self) {
         self.external_changes.clear();
         for slot in &mut self.inactive_buffers {

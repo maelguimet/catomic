@@ -10,7 +10,7 @@ use crossterm::event::KeyEvent;
 
 use crate::config::actions::{Action, Scope};
 
-use super::file_state::refresh_dirty;
+use super::file_state::{note_content_change, refresh_dirty};
 use super::{
     autocomplete, buffers, command_prompt, completion, help, mobile, model_picker, navigation,
     overwrite, paging, reload, replace, save, search, selection, view,
@@ -70,6 +70,7 @@ pub(super) fn finish_content_edit_with_message(
     out: &mut dyn Write,
     message: Option<String>,
 ) -> io::Result<()> {
+    note_content_change(&mut app.file);
     autocomplete::note_content_edit(app);
     completion::cancel(app);
     app.selection.clear();

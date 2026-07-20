@@ -8,6 +8,7 @@
 //! Invariants: pub fields for test access; no behavior change; usable from App.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::buffer::Buffer;
 #[cfg(test)]
@@ -35,6 +36,11 @@ use crate::file::text_format::TextFormat;
 pub struct FileState {
     pub path: Option<PathBuf>,
     pub dirty: bool,
+    /// Process-local identity of the buffer instance that owns this file state.
+    pub(crate) buffer_id: u64,
+    /// Monotonic token for the in-memory contents of this buffer. Unlike the
+    /// undo history position, this never moves backwards when an edit is undone.
+    pub(crate) content_generation: u64,
     /// History position token captured at last open or successful save.
     pub saved_history_position: u64,
     /// On-disk snapshot captured at open or after successful save.
@@ -48,6 +54,15 @@ pub struct FileState {
     pub size_tier: Option<FileSizeTier>,
     /// Encoding marker and newline sequence restored by Save and Save As.
     pub text_format: TextFormat,
+}
+
+pub(crate) fn next_buffer_id() -> u64 {
+    static NEXT_BUFFER_ID: AtomicU64 = AtomicU64::new(1);
+    NEXT_BUFFER_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+pub(crate) fn note_content_change(file: &mut FileState) {
+    file.content_generation = file.content_generation.wrapping_add(1);
 }
 
 /// Refresh dirty from exact buffer history position vs last saved token.

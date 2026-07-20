@@ -112,9 +112,9 @@ fn external_reload_adopts_the_new_disk_format() {
 #[test]
 fn cut_line_save_preserves_lf_crlf_and_cr_bytes() {
     let cases: [(&str, &[u8], &[u8]); 3] = [
-        ("lf", b"one\ntwo\nthree", b"one\nthree"),
-        ("crlf", b"one\r\ntwo\r\nthree", b"one\r\nthree"),
-        ("cr", b"one\rtwo\rthree", b"one\rthree"),
+        ("lf", b"one\ntwo\nthree", b"one\nthree\n"),
+        ("crlf", b"one\r\ntwo\r\nthree", b"one\r\nthree\r\n"),
+        ("cr", b"one\rtwo\rthree", b"one\rthree\r"),
     ];
     for (label, source, expected) in cases {
         let path = temp_path(label);

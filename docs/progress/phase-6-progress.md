@@ -15,7 +15,7 @@ Phase 6 is complete. Its exit evidence is in
   ambiguous URL forms fail before confirmation.
 - **Safe output**: strict single-file unified patches, exact active repo-path
   and current-buffer path validation, rename refusal, a strict marked-region
-  replacement envelope, read-only explanation results, and fail-closed parsing.
+  replacement envelope, and fail-closed parsing.
 - **Preview lifecycle**: source remains unchanged through response and preview;
   Enter applies one buffer transaction, Escape cancels, and undo restores the
   exact source.

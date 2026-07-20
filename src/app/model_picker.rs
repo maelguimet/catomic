@@ -301,7 +301,6 @@ fn enter(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     }
     let name = preset.name.clone();
     let model = preset.model.clone();
-    super::autocomplete::model_selection_changed(app);
     app.model_session.select(preset);
     close(app);
     app.message_info(format!(
@@ -397,7 +396,6 @@ fn close_other_views(app: &mut super::App) {
     super::help::close_for_transient(app);
     super::view::cancel_preview(app);
     super::llm_preview::close(app);
-    super::llm_answer::close(app);
     super::recovery::close(app);
     super::external_command::cancel_all(app);
     super::replace::cancel(app);

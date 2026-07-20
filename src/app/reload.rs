@@ -6,7 +6,7 @@
 //! observe_external_file.
 //! Owns: PendingReload struct, arm/perform helpers, handle_reload_key.
 //! Must not: own watcher polling, background work, snapshot capture policy,
-//!   config parsing, Project, or LLM work.
+//!   config parsing, repository, or model work.
 //! Invariants: pending is bound to concrete (path + status + live snapshot);
 //!   second press only acts on exact match; any content mutation clears it;
 //!   automatic reload is invoked only for clean buffers by caller policy;
@@ -264,7 +264,6 @@ fn apply_modified_reload(
         (Some(size), Some(diff)) => Some(format!("{size} {diff}")),
         (size, diff) => size.or(diff),
     };
-    super::autocomplete::invalidate(app);
     super::search::cancel_running_search(app);
     super::command_prompt::cancel_running_goto(app);
     super::completion::cancel(app);
@@ -272,6 +271,7 @@ fn apply_modified_reload(
     super::view::cancel_preview(app);
     app.selection.clear();
     app.buffer = reloaded.buffer;
+    super::file_state::note_content_change(&mut app.file);
     app.clanker_changes.clear();
     app.external_changes = external_diff.into_changes();
     app.file.saved_history_position = app.buffer.edit_history_position();
@@ -288,7 +288,6 @@ fn apply_deleted_reload(app: &mut super::App) {
     let cleared: Box<dyn buffer::Buffer> = Box::new(buffer::PieceTable::new());
     let external_diff = super::external_diff::compare(&*app.buffer, &*cleared);
     let reload_warning = external_diff_warning(&external_diff);
-    super::autocomplete::invalidate(app);
     super::search::cancel_running_search(app);
     super::command_prompt::cancel_running_goto(app);
     super::completion::cancel(app);
@@ -296,6 +295,7 @@ fn apply_deleted_reload(app: &mut super::App) {
     super::view::cancel_preview(app);
     app.selection.clear();
     app.buffer = cleared;
+    super::file_state::note_content_change(&mut app.file);
     app.clanker_changes.clear();
     app.external_changes = external_diff.into_changes();
     app.file.saved_history_position = app.buffer.edit_history_position();

@@ -1,7 +1,7 @@
 //! Purpose: run configured linters explicitly and retain current-buffer findings.
 //! Owns: F4 invocation, task lifetime, stale-result invalidation, and marker messages.
 //! Must not: auto-run, scan repositories, block editing, invent severity, or open a Problems view.
-//! Invariants: findings belong to one exact path/revision; any edit or path change drops them.
+//! Invariants: findings belong to one exact path, buffer generation, and on-disk snapshot.
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -10,6 +10,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::config::linters::LinterConfig;
 use crate::external::substitute_file;
+use crate::file::io::{ensure_path_matches_snapshot, FileSnapshot};
 
 mod output;
 mod task;
@@ -29,13 +30,16 @@ pub(crate) struct LintState {
 struct RunningLint {
     task: LinterTask,
     source: PathBuf,
-    history_position: u64,
+    buffer_id: u64,
+    content_generation: u64,
+    disk_snapshot: FileSnapshot,
     generation: u64,
 }
 
 struct LintResults {
     source: PathBuf,
-    history_position: u64,
+    buffer_id: u64,
+    content_generation: u64,
     findings: Vec<LintFinding>,
 }
 
@@ -88,6 +92,20 @@ fn start_with_config(
             return app.render(out);
         }
     };
+    let Some(disk_snapshot) = app.file.disk_snapshot.clone() else {
+        app.message_warning("Save the active buffer before linting it.");
+        return app.render(out);
+    };
+    if !matches!(disk_snapshot, FileSnapshot::Present { .. }) {
+        app.message_warning("Save the active buffer before linting it.");
+        return app.render(out);
+    }
+    if let Err(error) = ensure_path_matches_snapshot(&absolute_path, &disk_snapshot) {
+        app.message_warning(format!(
+            "File changed on disk; reload or save before linting: {error}"
+        ));
+        return app.render(out);
+    }
     let Some(cwd) = absolute_path.parent() else {
         app.message_error("Cannot determine the linter working directory.");
         return app.render(out);
@@ -101,7 +119,9 @@ fn start_with_config(
             app.lint.running = Some(RunningLint {
                 task,
                 source: absolute_path.clone(),
-                history_position: app.buffer.edit_history_position(),
+                buffer_id: app.file.buffer_id,
+                content_generation: app.file.content_generation,
+                disk_snapshot,
                 generation,
             });
             app.message_info(format!(
@@ -131,6 +151,12 @@ pub(crate) fn poll(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
     if !run_is_current(app, &running) {
         return Ok(());
     }
+    if let Err(error) = ensure_path_matches_snapshot(&running.source, &running.disk_snapshot) {
+        app.message_warning(format!(
+            "Discarded linter result because the file changed on disk: {error}"
+        ));
+        return app.render(out);
+    }
     match result {
         LinterResult::Finished { output, code } => finish(app, running, output, code),
         LinterResult::Cancelled => app.message = None,
@@ -159,7 +185,8 @@ fn finish(app: &mut super::App, running: RunningLint, output: String, code: Opti
     let count = findings.len();
     app.lint.results = Some(LintResults {
         source: running.source.clone(),
-        history_position: running.history_position,
+        buffer_id: running.buffer_id,
+        content_generation: running.content_generation,
         findings,
     });
     if count > 0 {
@@ -212,7 +239,8 @@ pub(crate) fn is_running(app: &super::App) -> bool {
 pub(crate) fn visible_findings(app: &super::App) -> Option<&[LintFinding]> {
     let results = app.lint.results.as_ref()?;
     (current_absolute_path(app).as_deref() == Some(results.source.as_path())
-        && app.buffer.edit_history_position() == results.history_position
+        && app.file.buffer_id == results.buffer_id
+        && app.file.content_generation == results.content_generation
         && !results.findings.is_empty())
     .then_some(results.findings.as_slice())
 }
@@ -241,7 +269,8 @@ fn cancel_running(app: &mut super::App) {
 fn run_is_current(app: &super::App, running: &RunningLint) -> bool {
     running.generation == app.lint.generation
         && current_absolute_path(app).as_deref() == Some(running.source.as_path())
-        && app.buffer.edit_history_position() == running.history_position
+        && app.file.buffer_id == running.buffer_id
+        && app.file.content_generation == running.content_generation
 }
 
 fn current_absolute_path(app: &super::App) -> Option<PathBuf> {

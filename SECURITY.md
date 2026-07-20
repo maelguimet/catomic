@@ -27,8 +27,8 @@ Include as much of the following as you safely can:
 - the expected and observed behavior;
 - the security impact, including whether confidentiality, integrity, or
   availability is affected;
-- whether symlinks, hard links, unusual file types, external commands, repository
-  mode, or an LLM endpoint are involved; and
+- whether symlinks, hard links, unusual file types, external commands,
+  repository-aware actions, or an LLM endpoint are involved; and
 - any proposed fix or mitigation.
 
 Please allow time to reproduce and fix the issue before public disclosure. The

@@ -75,7 +75,6 @@ fn open(
 ) -> io::Result<()> {
     super::super::view::cancel_preview(app);
     super::super::llm_preview::close(app);
-    super::super::llm_answer::close(app);
     app.recovery.preview = Some(RecoveryPreview {
         buffer: PieceTable::from_text(candidate.text()),
         candidate,

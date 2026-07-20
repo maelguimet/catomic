@@ -8,7 +8,7 @@
 //!   (editable PieceTable vs editable paged file buffer from the same descriptor).
 //! Must not: construct watcher, mutate App, change snapshot/dirty/save/reload
 //!   semantics beyond carrying the initial snapshot/plan and constructing the
-//!   initial buffer, know terminal/render, or Project/LLM.
+//!   initial buffer, know terminal/render, or repository/model policy.
 //! Invariants: identical observable outcomes for all documented App::new cases
 //!   (None, missing, Small, Large, Huge/Extreme paged, hard meta error,
 //!   invalid UTF-8 errors from read after successful metadata); non-regular paths

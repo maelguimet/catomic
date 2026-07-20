@@ -6,7 +6,6 @@
 
 use std::io;
 use std::mem;
-use std::path::Path;
 
 use crate::buffer::Buffer;
 #[cfg(test)]
@@ -15,8 +14,8 @@ use crate::file::identity::BufferFileIdentity;
 use crate::file::watcher::FileWatcher;
 
 use super::{
-    command_prompt, completion, external_command, hooks, inline_clanker, lint, llm_answer,
-    llm_preview, llm_request, model_picker, recovery, reload, repo_llm, save, search, selection,
+    command_prompt, completion, external_command, hooks, inline_clanker, lint, llm_preview,
+    llm_request, model_picker, recovery, reload, repo_llm, save, search, selection,
     view, App, FileState, StartupConfig,
 };
 
@@ -154,7 +153,6 @@ impl App {
             return false;
         }
 
-        super::autocomplete::invalidate(self);
         search::cancel_running_search(self);
         command_prompt::cancel_running_goto(self);
         if completion::cancel(self) {
@@ -163,9 +161,6 @@ impl App {
         lint::invalidate(self);
         model_picker::close(self);
         if llm_preview::close(self) {
-            self.message = None;
-        }
-        if llm_answer::close(self) {
             self.message = None;
         }
         llm_request::cancel_all(self);

@@ -1,7 +1,7 @@
 //! Purpose: make key and paste surface precedence explicit and independently testable.
 //! Owns: ordered dispatch across active prompts, previews, pickers, and editor surfaces.
 //! Must not: edit buffer content, translate keybindings, decode bytes, or start background work.
-//! Invariants: active surfaces precede editor actions; autocomplete invalidates before other input.
+//! Invariants: active surfaces precede editor actions.
 
 use std::io::{self, Write};
 
@@ -9,14 +9,12 @@ use crate::config::actions::{Action, Scope};
 use crossterm::event::KeyEvent;
 
 use super::super::{
-    autocomplete, command_prompt, completion, external_command, help, inline_clanker, lint,
-    llm_answer, llm_preview, llm_request, model_picker, recovery, replace, repo_llm, search, view,
-    App,
+    command_prompt, completion, external_command, help, inline_clanker, lint, llm_preview,
+    llm_request, model_picker, recovery, replace, repo_llm, search, view, App,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RawKeySurface {
-    Autocomplete,
     Lint,
     ModelPicker,
     Help,
@@ -29,13 +27,11 @@ enum RawKeySurface {
     CommandPrompt,
     InlineClanker,
     LlmPreview,
-    LlmAnswer,
     Completion,
     MarkdownPreview,
 }
 
-const RAW_KEY_PRECEDENCE: [RawKeySurface; 16] = [
-    RawKeySurface::Autocomplete,
+const RAW_KEY_PRECEDENCE: [RawKeySurface; 14] = [
     RawKeySurface::Lint,
     RawKeySurface::ModelPicker,
     RawKeySurface::Help,
@@ -48,7 +44,6 @@ const RAW_KEY_PRECEDENCE: [RawKeySurface; 16] = [
     RawKeySurface::CommandPrompt,
     RawKeySurface::InlineClanker,
     RawKeySurface::LlmPreview,
-    RawKeySurface::LlmAnswer,
     RawKeySurface::Completion,
     RawKeySurface::MarkdownPreview,
 ];
@@ -62,9 +57,6 @@ pub(super) fn handle_raw_key(
         if handle_raw_key_for(surface, app, out, key)? {
             return Ok(true);
         }
-        if surface == RawKeySurface::Autocomplete {
-            autocomplete::invalidate(app);
-        }
     }
     Ok(false)
 }
@@ -76,7 +68,6 @@ fn handle_raw_key_for(
     key: KeyEvent,
 ) -> io::Result<bool> {
     match surface {
-        RawKeySurface::Autocomplete => autocomplete::handle_key(app, out, key),
         RawKeySurface::Lint => lint::handle_key(app, out, key),
         RawKeySurface::ModelPicker => model_picker::handle_key(app, out, key),
         RawKeySurface::Help => help::handle_key(app, out, key),
@@ -89,7 +80,6 @@ fn handle_raw_key_for(
         RawKeySurface::CommandPrompt => command_prompt::handle_active_key(app, out, key),
         RawKeySurface::InlineClanker => inline_clanker::handle_key(app, out, key),
         RawKeySurface::LlmPreview => llm_preview::handle_key(app, out, key),
-        RawKeySurface::LlmAnswer => llm_answer::handle_key(app, out, key),
         RawKeySurface::Completion => completion::handle_key(app, out, key),
         RawKeySurface::MarkdownPreview if view::is_preview(app) => view::handle_key(app, out, key),
         RawKeySurface::MarkdownPreview => Ok(false),
@@ -112,14 +102,12 @@ pub(super) fn dispatch_action(
         }
         Scope::Picker => model_picker::dispatch_action(app, out, action)?,
         Scope::Preview => {
-            autocomplete::dispatch_action(app, out, action)?
-                || recovery::dispatch_action(app, out, action)?
+            recovery::dispatch_action(app, out, action)?
                 || external_command::dispatch_action(app, out, action)?
                 || repo_llm::dispatch_action(app, out, action)?
                 || llm_request::dispatch_action(app, out, action)?
                 || inline_clanker::dispatch_action(app, out, action)?
                 || llm_preview::dispatch_action(app, out, action)?
-                || llm_answer::dispatch_action(app, out, action)?
                 || view::dispatch_action(app, out, action)?
                 || view::dispatch_preview_action(app, out, action)?
         }
@@ -141,12 +129,11 @@ enum PasteSurface {
     LlmRequest,
     InlineClanker,
     LlmPreview,
-    LlmAnswer,
     ModelPicker,
     MarkdownPreview,
 }
 
-const PASTE_PRECEDENCE: [PasteSurface; 11] = [
+const PASTE_PRECEDENCE: [PasteSurface; 10] = [
     PasteSurface::Help,
     PasteSurface::Replace,
     PasteSurface::Recovery,
@@ -155,7 +142,6 @@ const PASTE_PRECEDENCE: [PasteSurface; 11] = [
     PasteSurface::LlmRequest,
     PasteSurface::InlineClanker,
     PasteSurface::LlmPreview,
-    PasteSurface::LlmAnswer,
     PasteSurface::ModelPicker,
     PasteSurface::MarkdownPreview,
 ];
@@ -171,7 +157,6 @@ pub(super) fn handle_paste(app: &mut App, out: &mut dyn Write, text: &str) -> io
             PasteSurface::LlmRequest => llm_request::handle_paste(app, out)?,
             PasteSurface::InlineClanker => inline_clanker::handle_paste(app, out)?,
             PasteSurface::LlmPreview => llm_preview::handle_paste(app, out)?,
-            PasteSurface::LlmAnswer => llm_answer::handle_paste(app, out)?,
             PasteSurface::ModelPicker => model_picker::handle_paste(app, out, text)?,
             PasteSurface::MarkdownPreview => view::handle_paste(app, out)?,
         };
@@ -188,18 +173,17 @@ mod tests {
 
     #[test]
     fn precedence_contracts_are_named_and_locked() {
-        assert_eq!(RAW_KEY_PRECEDENCE[0], RawKeySurface::Autocomplete);
-        assert_eq!(RAW_KEY_PRECEDENCE[1], RawKeySurface::Lint);
-        assert_eq!(RAW_KEY_PRECEDENCE[2], RawKeySurface::ModelPicker);
-        assert_eq!(RAW_KEY_PRECEDENCE[8], RawKeySurface::Replace);
-        assert_eq!(RAW_KEY_PRECEDENCE[9], RawKeySurface::Search);
-        assert_eq!(RAW_KEY_PRECEDENCE[10], RawKeySurface::CommandPrompt);
-        assert_eq!(RAW_KEY_PRECEDENCE[11], RawKeySurface::InlineClanker);
-        assert_eq!(RAW_KEY_PRECEDENCE[15], RawKeySurface::MarkdownPreview);
+        assert_eq!(RAW_KEY_PRECEDENCE[0], RawKeySurface::Lint);
+        assert_eq!(RAW_KEY_PRECEDENCE[1], RawKeySurface::ModelPicker);
+        assert_eq!(RAW_KEY_PRECEDENCE[7], RawKeySurface::Replace);
+        assert_eq!(RAW_KEY_PRECEDENCE[8], RawKeySurface::Search);
+        assert_eq!(RAW_KEY_PRECEDENCE[9], RawKeySurface::CommandPrompt);
+        assert_eq!(RAW_KEY_PRECEDENCE[10], RawKeySurface::InlineClanker);
+        assert_eq!(RAW_KEY_PRECEDENCE[13], RawKeySurface::MarkdownPreview);
         assert_eq!(PASTE_PRECEDENCE[0], PasteSurface::Help);
         assert_eq!(PASTE_PRECEDENCE[1], PasteSurface::Replace);
         assert_eq!(PASTE_PRECEDENCE[6], PasteSurface::InlineClanker);
-        assert_eq!(PASTE_PRECEDENCE[9], PasteSurface::ModelPicker);
-        assert_eq!(PASTE_PRECEDENCE[10], PasteSurface::MarkdownPreview);
+        assert_eq!(PASTE_PRECEDENCE[8], PasteSurface::ModelPicker);
+        assert_eq!(PASTE_PRECEDENCE[9], PasteSurface::MarkdownPreview);
     }
 }

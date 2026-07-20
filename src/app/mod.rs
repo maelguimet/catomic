@@ -25,7 +25,6 @@ pub use file_state::FileState;
 #[cfg(test)]
 use file_state::external_file_status;
 
-mod autocomplete;
 mod buffers;
 mod command_prompt;
 mod completion;
@@ -57,7 +56,6 @@ mod watch;
 
 mod input;
 mod lint;
-mod llm_answer;
 mod llm_preview;
 mod llm_request;
 mod mobile;
@@ -91,8 +89,6 @@ pub struct App {
     pub(crate) view_preferences: ViewPreferences,
     /// Validated semantic colors loaded atomically with startup configuration.
     pub(crate) theme: Theme,
-    /// Session-level opt-in autocomplete policy; contains no client at startup.
-    pub(crate) autocomplete: autocomplete::AutocompleteState,
     /// Touch UI; disabled unless Android/Termux/config explicitly enables it.
     pub(crate) mobile: mobile::MobileUiState,
     /// The active buffer (trait object for now; concrete type behind it).

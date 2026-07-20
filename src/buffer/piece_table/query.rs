@@ -1,71 +1,13 @@
 //! Purpose: query logical PieceTable ranges without full-buffer materialization.
-//! Owns: piece overlap traversal, scalar counts/windows, cursor byte mapping,
+//! Owns: piece overlap traversal, scalar counts, cursor byte mapping,
 //!   compatibility string slices, and piece lookup/split points.
-//! Must not: mutate pieces, perform App/render policy, or know Project/LLM work.
-//! Invariants: source ranges respect UTF-8 boundaries; file-backed scalar
-//!   windows use bounded checkpoint-assisted reads; logical offsets are global.
+//! Must not: mutate pieces, perform App/render policy, or know repository/model work.
+//! Invariants: source ranges respect UTF-8 boundaries and logical offsets are global.
 
 use super::types::{PieceTable, Source};
-use crate::buffer::CursorContext;
 use std::io;
 
 impl PieceTable {
-    pub(crate) fn try_cursor_context(
-        &self,
-        max_before: usize,
-        max_after: usize,
-    ) -> io::Result<CursorContext> {
-        let cursor = self.cursor_byte_offset.min(self.index.total_bytes);
-        let start = self.bounded_start(cursor, max_before)?;
-        let end = self.bounded_end(cursor, max_after)?;
-        let before = self.try_slice_to_string(start, cursor)?;
-        let after = self.try_slice_to_string(cursor, end)?;
-        Ok(CursorContext {
-            before: suffix_chars(&before, max_before),
-            after: after.chars().take(max_after).collect(),
-        })
-    }
-
-    fn bounded_start(&self, cursor: usize, max_chars: usize) -> io::Result<usize> {
-        let mut start = cursor.saturating_sub(max_chars.saturating_mul(4));
-        while start < cursor && !self.logical_char_boundary(start)? {
-            start += 1;
-        }
-        Ok(start)
-    }
-
-    fn bounded_end(&self, cursor: usize, max_chars: usize) -> io::Result<usize> {
-        let mut end = cursor
-            .saturating_add(max_chars.saturating_mul(4))
-            .min(self.index.total_bytes);
-        while end > cursor && !self.logical_char_boundary(end)? {
-            end -= 1;
-        }
-        Ok(end)
-    }
-
-    fn logical_char_boundary(&self, offset: usize) -> io::Result<bool> {
-        if offset == self.index.total_bytes {
-            return Ok(true);
-        }
-        let piece_index = self.find_piece_for_byte(offset);
-        let piece = &self.pieces[piece_index];
-        let local = offset.saturating_sub(self.piece_starts[piece_index]);
-        let source_offset = piece.start.saturating_add(local);
-        match piece.source {
-            Source::Original => self
-                .original
-                .owned_is_char_boundary(source_offset)
-                .ok_or_else(|| {
-                    io::Error::new(
-                        io::ErrorKind::Unsupported,
-                        "autocomplete context cannot read a descriptor-backed buffer",
-                    )
-                }),
-            Source::Add => Ok(self.add.is_char_boundary(source_offset)),
-        }
-    }
-
     /// Return the logical text for the byte range [start, end).
     /// Uses piece_starts for bounded lookup of start piece (no full head scan).
     pub(crate) fn slice_to_string(&self, start: usize, end: usize) -> String {
@@ -313,10 +255,4 @@ impl PieceTable {
     pub(crate) fn file_original_read_bytes(&self) -> usize {
         self.original.file_read_bytes()
     }
-}
-
-fn suffix_chars(text: &str, limit: usize) -> String {
-    let mut chars: Vec<char> = text.chars().rev().take(limit).collect();
-    chars.reverse();
-    chars.into_iter().collect()
 }

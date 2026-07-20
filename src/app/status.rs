@@ -185,7 +185,6 @@ fn prompt_is_active(app: &super::App) -> bool {
         || super::llm_preview::is_viewing(app)
         || super::recovery::is_viewing(app)
         || super::external_command::is_viewing(app)
-        || super::autocomplete::is_viewing(app)
 }
 
 #[cfg(test)]
@@ -265,20 +264,6 @@ mod tests {
         );
 
         assert_eq!(status.text, "huge.log  file 2/4  page 3");
-    }
-
-    #[test]
-    fn active_autocomplete_is_shown_without_an_idle_ac_label() {
-        let status = format_status_line(
-            Some(Path::new("notes.txt")),
-            None,
-            None,
-            Some("autocomplete…"),
-            false,
-            80,
-        );
-
-        assert_eq!(status.text, "notes.txt  autocomplete…");
     }
 
     #[test]

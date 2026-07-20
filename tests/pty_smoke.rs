@@ -24,9 +24,6 @@ type TestResult<T = ()> = Result<T, Box<dyn Error>>;
 
 static PTY_TEST_LOCK: Mutex<()> = Mutex::new(());
 
-#[path = "pty_smoke/autocomplete.rs"]
-mod autocomplete;
-
 struct TempPath {
     path: PathBuf,
 }
@@ -123,22 +120,6 @@ impl PtyEditor {
 
     fn spawn_with_xdg(path: &PathBuf, xdg_config_home: &PathBuf) -> TestResult<Self> {
         Self::spawn_with(path, Some(xdg_config_home))
-    }
-
-    fn spawn_with_size_and_xdg(
-        path: &PathBuf,
-        xdg_config_home: &PathBuf,
-        rows: u16,
-        cols: u16,
-    ) -> TestResult<Self> {
-        let environment = TempProject::new("sized_xdg_environment");
-        let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
-        cmd.arg(path);
-        cmd.env("XDG_CONFIG_HOME", xdg_config_home);
-        cmd.env("XDG_STATE_HOME", &environment.root);
-        cmd.env("HOME", &environment.root);
-        cmd.env("TERM", "xterm-256color");
-        Self::spawn_command_sized_with_environment(cmd, rows, cols, environment)
     }
 
     fn spawn_mobile(path: &PathBuf, rows: u16, cols: u16) -> TestResult<Self> {

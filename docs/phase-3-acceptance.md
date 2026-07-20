@@ -62,4 +62,4 @@ the always-available internal clipboard is not dependent on those bindings.
 
 Phase 3 acceptance is complete. Search, goto, the minimal command surface,
 selection replacement, clipboard paths, bracketed paste, and mouse interaction
-are implemented and verified without adding idle Plain-mode services.
+are implemented and verified without adding idle startup services.

@@ -20,7 +20,7 @@ separate display-coordinate mapping; they must not change saved selection ranges
   editing coordinate.
 - Terminal columns vary with display policy and are not stable document positions.
 - Scalar positions preserve the existing Buffer contract and make Unicode range
-  boundaries deterministic without adding a dependency in Plain startup.
+  boundaries deterministic without adding a startup dependency.
 
 ## Known Boundary
 

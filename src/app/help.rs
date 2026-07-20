@@ -151,11 +151,9 @@ fn close_with_message(app: &mut super::App, out: &mut dyn Write) -> io::Result<(
 }
 
 fn close_transients(app: &mut super::App) {
-    super::autocomplete::invalidate(app);
     super::view::cancel_preview(app);
     super::model_picker::close(app);
     super::llm_preview::close(app);
-    super::llm_answer::close(app);
     super::recovery::close(app);
     super::external_command::cancel_all(app);
     super::repo_llm::cancel_all(app);

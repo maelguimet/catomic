@@ -104,8 +104,7 @@ impl ContextBroker {
         let file_map_note =
             sensitive::file_map_note(self.discovery_truncated, self.sensitive_paths_omitted);
         let context = format!(
-            "Repository: {}\nHEAD: {}\nBranch: {branch}\nBase branch: {base}\nState: {dirty}\n\nGit status:\n{}\nGit diff --stat:\n{}\nGit diff --name-only:\n{}\nFile map{file_map_note}:\n{files}",
-            self.git.root.display(),
+            "Repository paths: relative to the confirmed root\nHEAD: {}\nBranch: {branch}\nBase branch: {base}\nState: {dirty}\n\nGit status:\n{}\nGit diff --stat:\n{}\nGit diff --name-only:\n{}\nFile map{file_map_note}:\n{files}",
             self.git.snapshot.head,
             self.git.status,
             self.git.diff_stat,

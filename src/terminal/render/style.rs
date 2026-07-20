@@ -19,18 +19,6 @@ pub(super) fn write_content_line<W: Write + ?Sized>(
     max_cells: usize,
     options: RenderOptions<'_>,
 ) -> io::Result<()> {
-    write_content_line_with_ghost(out, content, row, start_col, max_cells, options, None)
-}
-
-pub(super) fn write_content_line_with_ghost<W: Write + ?Sized>(
-    out: &mut W,
-    content: &str,
-    row: usize,
-    start_col: usize,
-    max_cells: usize,
-    options: RenderOptions<'_>,
-    ghost: Option<(usize, usize)>,
-) -> io::Result<()> {
     let visible_len = text_layout::clipped_scalar_len(content, max_cells);
     let content: String = content.chars().take(visible_len).collect();
     let chars: Vec<char> = content.chars().collect();
@@ -86,7 +74,6 @@ pub(super) fn write_content_line_with_ghost<W: Write + ?Sized>(
         &spans,
         selected,
         &[&lint, &llm_changed, &external_added, &external_changed],
-        ghost,
         &links,
     );
     let mut cell = 0;
@@ -115,7 +102,6 @@ pub(super) fn write_content_line_with_ghost<W: Write + ?Sized>(
         let external_changed = external_changed
             .iter()
             .any(|(from, to)| start >= *from && start < *to);
-        let ghost_text = ghost.is_some_and(|(from, to)| start >= from && start < to);
         let segment: String = chars[start..end].iter().collect();
         let style = segment_style(
             options,
@@ -126,7 +112,6 @@ pub(super) fn write_content_line_with_ghost<W: Write + ?Sized>(
                 llm_changed,
                 external_added,
                 external_changed,
-                ghost_text,
             },
         );
         write_segment(
@@ -224,7 +209,6 @@ fn segment_boundaries(
     spans: &[StyledSpan],
     selected: Option<(usize, usize)>,
     change_sets: &[&[(usize, usize)]],
-    ghost: Option<(usize, usize)>,
     links: &[HyperlinkSpan],
 ) -> Vec<usize> {
     let content_len = content.chars().count();
@@ -242,10 +226,6 @@ fn segment_boundaries(
             boundaries.push(start);
             boundaries.push(end);
         }
-    }
-    if let Some((start, end)) = ghost {
-        boundaries.push(start.min(content_len));
-        boundaries.push(end.min(content_len));
     }
     for link in links {
         boundaries.push(link.start.min(content_len));
@@ -288,7 +268,6 @@ struct SegmentRoles {
     llm_changed: bool,
     external_added: bool,
     external_changed: bool,
-    ghost_text: bool,
 }
 
 fn segment_style(
@@ -315,9 +294,6 @@ fn segment_style(
     }
     if roles.llm_changed {
         style = style.overlay(theme.llm_changed);
-    }
-    if roles.ghost_text {
-        style = style.overlay(theme.autocomplete);
     }
     if roles.highlighted {
         style = style.overlay(match options.highlight_kind {

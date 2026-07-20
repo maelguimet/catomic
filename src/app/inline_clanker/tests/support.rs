@@ -71,6 +71,17 @@ pub(super) fn response_server(
     (settings, requests, server)
 }
 
+pub(super) fn http_response_server(
+    response: &str,
+) -> (LlmSettings, Arc<Mutex<String>>, std::thread::JoinHandle<()>) {
+    let (base_url, request, server) = crate::llm::test_support::response_server(response);
+    let settings = crate::config::llm::parse(&format!(
+        "[llm]\nbase_url={base_url:?}\nmodel='inline-http-model'\ntimeout_secs=2\n"
+    ))
+    .unwrap();
+    (settings, request, server)
+}
+
 type TrackedServer = (
     LlmSettings,
     Arc<Mutex<Vec<String>>>,

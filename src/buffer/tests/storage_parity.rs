@@ -63,63 +63,6 @@ fn assert_observable_parity(label: &str, sb: &SimpleBuffer, pt: &PieceTable) {
 }
 
 #[test]
-fn bounded_cursor_context_matches_storage_backends_and_unicode_boundaries() {
-    let text = "zero\naé猫🙂 middle\nafter";
-    let cursor = crate::buffer::Cursor { row: 1, col: 5 };
-    let mut simple = SimpleBuffer::from_text(text);
-    let mut piece = PieceTable::from_text(text);
-    simple.set_cursor(cursor);
-    piece.set_cursor(cursor);
-
-    let simple_context = simple.cursor_context(7, 6).unwrap();
-    let piece_context = piece.cursor_context(7, 6).unwrap();
-
-    assert_eq!(simple_context, piece_context);
-    assert_eq!(piece_context.before, "o\naé猫🙂 ");
-    assert_eq!(piece_context.after, "middle");
-}
-
-#[test]
-fn cursor_context_never_includes_text_beyond_exact_scalar_bounds() {
-    let text = format!(
-        "FAR-BEFORE{}CURSOR{}FAR-AFTER",
-        "é".repeat(100),
-        "猫".repeat(100)
-    );
-    let cursor_col = "FAR-BEFORE".chars().count() + 100 + "CURSOR".chars().count();
-    let mut piece = PieceTable::from_text(&text);
-    piece.set_cursor(crate::buffer::Cursor {
-        row: 0,
-        col: cursor_col,
-    });
-
-    let context = piece.cursor_context(16, 12).unwrap();
-
-    assert_eq!(context.before.chars().count(), 16);
-    assert_eq!(context.after.chars().count(), 12);
-    assert!(!context.before.contains("FAR-BEFORE"));
-    assert!(!context.after.contains("FAR-AFTER"));
-}
-
-#[test]
-fn cursor_context_refuses_descriptor_backing_without_reading_file_bytes() {
-    let path = std::env::temp_dir().join(format!(
-        "catomic_autocomplete_descriptor_{}.txt",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_file(&path);
-    std::fs::write(&path, "x".repeat(512)).unwrap();
-    let piece = PieceTable::from_file(&path).expect("file-backed piece table");
-    let reads_before = piece.file_original_read_bytes();
-
-    let error = piece.cursor_context(64, 64).unwrap_err();
-
-    assert_eq!(error.kind(), std::io::ErrorKind::Unsupported);
-    assert_eq!(piece.file_original_read_bytes(), reads_before);
-    let _ = std::fs::remove_file(path);
-}
-
-#[test]
 fn parity_empty() {
     assert_parity("");
 }

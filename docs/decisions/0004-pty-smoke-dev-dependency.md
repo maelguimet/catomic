@@ -23,7 +23,7 @@ Dependency justification:
 - std cannot open a PTY and spawn a child with it as the controlling terminal.
 - The dependency is used only by integration tests, not by editor or repository
   runtime code.
-- It has no Plain startup effect because it is under `[dev-dependencies]`.
+- It has no editor startup effect because it is under `[dev-dependencies]`.
 - It is tested by `tests/pty_smoke.rs`, which drives the real `catomic` binary
   through save/undo/save and external-edit confirmation/reload flows, followed
   by clean quit.

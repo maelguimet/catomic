@@ -54,6 +54,33 @@ fn f3_discovers_inline_scope_without_connecting_before_confirmation() {
 }
 
 #[test]
+fn inline_http_request_uses_only_the_basename_and_discloses_that_identifier() {
+    let root = std::env::temp_dir().join(format!(
+        "catomic-sensitive-inline-root-{}/client/private-checkout",
+        std::process::id()
+    ));
+    let path = root.join("inline.txt");
+    let (settings, request, server) = http_response_server(r#"{"catomic_replacement":"CAT\n"}"#);
+    let mut app = app_with(">> Rewrite\n<catblock>\ncat\n</catblock>\n");
+    app.file.path = Some(path);
+    let mut out = Vec::new();
+
+    prepare::begin_with_settings(&mut app, &mut out, settings).unwrap();
+
+    let confirmation = display_buffer(&app).unwrap().to_string();
+    assert!(confirmation.contains("File identifier: inline.txt (basename only)"));
+    assert!(!confirmation.contains(&root.to_string_lossy().into_owned()));
+    app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
+        .unwrap();
+    poll_until_not_running(&mut app, &mut out);
+    server.join().unwrap();
+
+    let request = request.lock().unwrap();
+    assert!(request.contains("Path: inline.txt"));
+    assert!(!request.contains(&root.to_string_lossy().into_owned()));
+}
+
+#[test]
 fn proposal_preview_restores_the_source_wrap_viewport_when_closed() {
     let (settings, _, server) =
         response_server(vec![r#"{"catomic_replacement":"CAT\n"}"#.to_string()]);

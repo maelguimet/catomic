@@ -1,7 +1,7 @@
 //! Purpose: verify direct on-demand lint, in-buffer findings, cancellation, and invalidation.
 //! Owns: App-level linter behavior with isolated files and fake shell linters.
 //! Must not: load user config, auto-run tools, scan repositories, or contact a network.
-//! Invariants: findings describe only the exact active path/revision that launched the task.
+//! Invariants: findings describe only the exact active path, buffer generation, and disk snapshot.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -57,7 +57,8 @@ fn finding_renders_in_buffer_and_exposes_raw_message_at_cursor() {
     let mut app = App::new(file.path.to_str()).unwrap();
     app.lint.results = Some(super::LintResults {
         source: file.path.clone(),
-        history_position: app.buffer.edit_history_position(),
+        buffer_id: app.file.buffer_id,
+        content_generation: app.file.content_generation,
         findings: vec![super::LintFinding {
             row: 0,
             col: 1,
@@ -163,6 +164,19 @@ fn escape_cancels_running_linter_without_blocking_editor() {
 }
 
 #[test]
+fn closing_the_source_buffer_cancels_running_linter() {
+    let file = TempFile::new("close.rs", "fn main() {}\n");
+    let mut app = App::new(file.path.to_str()).unwrap();
+    let mut out = Vec::new();
+    super::start_with_config(&mut app, &mut out, config("while :; do :; done # {file}")).unwrap();
+    assert!(super::is_running(&app));
+
+    app.close_active_buffer(true).unwrap();
+
+    assert!(!super::is_running(&app));
+}
+
+#[test]
 fn path_change_invalidates_results() {
     let file = TempFile::new("origin.rs", "fn main() {}\n");
     let mut app = App::new(file.path.to_str()).unwrap();
@@ -177,6 +191,90 @@ fn path_change_invalidates_results() {
     assert!(super::visible_findings(&app).is_some());
 
     app.file.path = Some(file.path.with_file_name("renamed.rs"));
+
+    assert!(super::visible_findings(&app).is_none());
+}
+
+#[test]
+fn buffer_identity_change_hides_results_even_at_same_path_and_history() {
+    let file = TempFile::new("identity.rs", "cat\n");
+    let mut app = App::new(file.path.to_str()).unwrap();
+    app.lint.results = Some(super::LintResults {
+        source: file.path.clone(),
+        buffer_id: app.file.buffer_id,
+        content_generation: app.file.content_generation,
+        findings: vec![super::LintFinding {
+            row: 0,
+            col: 0,
+            message: "old buffer".to_string(),
+        }],
+    });
+
+    app.file.buffer_id = app.file.buffer_id.wrapping_add(1);
+
+    assert!(super::visible_findings(&app).is_none());
+}
+
+#[test]
+fn external_change_before_start_refuses_to_spawn() {
+    let file = TempFile::new("before.rs", "original\n");
+    let mut app = App::new(file.path.to_str()).unwrap();
+    std::fs::write(&file.path, "changed before lint\n").unwrap();
+    let mut out = Vec::new();
+
+    super::start_with_config(&mut app, &mut out, config("true {file}")).unwrap();
+
+    assert!(!super::is_running(&app));
+    assert!(app
+        .message
+        .as_deref()
+        .unwrap_or("")
+        .contains("changed on disk"));
+}
+
+#[test]
+fn external_change_during_run_discards_result() {
+    let file = TempFile::new("during.rs", "original\n");
+    let mut app = App::new(file.path.to_str()).unwrap();
+    let mut out = Vec::new();
+    super::start_with_config(
+        &mut app,
+        &mut out,
+        config("sleep 0.1; printf '%s:1:1: stale\\n' {file}"),
+    )
+    .unwrap();
+    assert!(super::is_running(&app));
+
+    std::fs::write(&file.path, "changed during lint\n").unwrap();
+    poll_until_done(&mut app, &mut out);
+
+    assert!(super::visible_findings(&app).is_none());
+    assert!(app
+        .message
+        .as_deref()
+        .unwrap_or("")
+        .contains("changed on disk"));
+}
+
+#[test]
+fn observed_external_change_invalidates_completed_results() {
+    let file = TempFile::new("observed.rs", "original\n");
+    let mut app = App::new(file.path.to_str()).unwrap();
+    let mut out = Vec::new();
+    super::start_with_config(
+        &mut app,
+        &mut out,
+        config("printf '%s:1:1: old finding\\n' {file}"),
+    )
+    .unwrap();
+    poll_until_done(&mut app, &mut out);
+    assert!(super::visible_findings(&app).is_some());
+
+    std::fs::write(&file.path, "external change\n").unwrap();
+    assert!(super::super::watch::apply_file_watch_signal(
+        &mut app,
+        crate::file::watcher::FileWatchSignal::Changed,
+    ));
 
     assert!(super::visible_findings(&app).is_none());
 }

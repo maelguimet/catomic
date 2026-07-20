@@ -3,14 +3,14 @@
 //! Must not: load config, collect context, persist clients, retry silently, or mutate files.
 //! Invariants: clients exist only inside confirmed workers; response capture is bounded.
 
+use std::collections::HashSet;
 use std::net::IpAddr;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 const MAX_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
-const MAX_MODEL_RESPONSE_BYTES: usize = 256 * 1024;
-const MAX_DISCOVERED_MODELS: usize = 128;
+const MAX_MODEL_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Clone)]
 pub struct LlmConfig {
@@ -71,28 +71,10 @@ impl OpenAiCompatClient {
     }
 
     pub async fn complete_messages(&self, messages: &[ChatMessage]) -> Result<String, LlmError> {
-        self.complete_messages_with_limit(messages, None).await
-    }
-
-    pub(crate) async fn complete_messages_bounded(
-        &self,
-        messages: &[ChatMessage],
-        max_tokens: u32,
-    ) -> Result<String, LlmError> {
-        self.complete_messages_with_limit(messages, Some(max_tokens))
-            .await
-    }
-
-    async fn complete_messages_with_limit(
-        &self,
-        messages: &[ChatMessage],
-        max_tokens: Option<u32>,
-    ) -> Result<String, LlmError> {
         let endpoint = format!("{}/chat/completions", self.config.base_url);
         let request = ChatRequest {
             model: &self.config.model,
             messages,
-            max_tokens,
         };
         let mut builder = self.client.post(endpoint).json(&request);
         if let Some(key) = self.config.api_key.as_deref() {
@@ -147,16 +129,12 @@ impl OpenAiCompatClient {
         }
         let parsed: ModelListResponse = serde_json::from_slice(&body)
             .map_err(|error| LlmError::InvalidResponse(error.to_string()))?;
-        if parsed.data.len() > MAX_DISCOVERED_MODELS {
-            return Err(LlmError::InvalidResponse(
-                "model list exceeded 128 entries".to_string(),
-            ));
-        }
         let mut models = Vec::new();
+        let mut seen = HashSet::new();
         for entry in parsed.data {
             let model = crate::config::llm::validated_model(entry.id)
                 .map_err(|_| LlmError::InvalidResponse("invalid model identifier".to_string()))?;
-            if !models.contains(&model) {
+            if seen.insert(model.clone()) {
                 models.push(model);
             }
         }
@@ -191,13 +169,6 @@ fn is_loopback_host(host: &str) -> bool {
         .is_ok_and(|address| address.is_loopback())
 }
 
-pub(crate) fn endpoint_is_loopback(base_url: &str) -> bool {
-    reqwest::Url::parse(base_url)
-        .ok()
-        .and_then(|url| url.host_str().map(str::to_string))
-        .is_some_and(|host| is_loopback_host(&host))
-}
-
 async fn read_bounded(mut response: reqwest::Response, limit: usize) -> Result<Vec<u8>, LlmError> {
     if response
         .content_length()
@@ -223,8 +194,6 @@ async fn read_bounded(mut response: reqwest::Response, limit: usize) -> Result<V
 struct ChatRequest<'a> {
     model: &'a str,
     messages: &'a [ChatMessage],
-    #[serde(skip_serializing_if = "Option::is_none")]
-    max_tokens: Option<u32>,
 }
 
 #[derive(Clone, Serialize)]

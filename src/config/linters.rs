@@ -86,13 +86,13 @@ mod tests {
     #[test]
     fn parses_quoted_extension_mappings_and_normalizes_dots() {
         let config = parse(
-            "[linters]\n\".rs\" = \"cargo check --message-format short {file}\"\npy = 'ruff check {file}'\n",
+            "[linters]\n\".rs\" = \"rustc --error-format short {file}\"\npy = 'ruff check {file}'\n",
         )
         .unwrap();
 
         assert_eq!(
             config.command_for_extension("rs"),
-            Some("cargo check --message-format short {file}")
+            Some("rustc --error-format short {file}")
         );
         assert_eq!(
             config.command_for_extension(".py"),

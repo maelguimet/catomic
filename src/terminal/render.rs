@@ -16,7 +16,6 @@ mod coherence_tests;
 #[cfg(test)]
 mod cursor_tests;
 mod frame;
-mod ghost;
 mod status_bar;
 mod style;
 pub(crate) mod wrapped;
@@ -33,12 +32,6 @@ const HIDE_CURSOR: &[u8] = b"\x1b[?25l";
 pub(crate) struct TextHighlight {
     pub(crate) start: Cursor,
     pub(crate) end: Cursor,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct GhostText<'a> {
-    pub(crate) cursor: Cursor,
-    pub(crate) text: &'a str,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -256,28 +249,6 @@ pub fn render_buffer<W: Write + ?Sized>(
     } else {
         frame::compose_buffer(&mut frame, buffer, viewport, message, options)?;
     }
-    end_frame(&mut frame)?;
-    out.write_all(&frame)?;
-    out.flush()
-}
-
-pub(crate) fn render_buffer_with_ghost<W: Write + ?Sized>(
-    out: &mut W,
-    buffer: &dyn Buffer,
-    viewport: RenderViewport,
-    message: Option<&str>,
-    options: RenderOptions<'_>,
-    ghost: Option<GhostText<'_>>,
-) -> io::Result<()> {
-    let Some(ghost) = ghost.filter(|ghost| ghost.cursor == buffer.cursor()) else {
-        return render_buffer(out, buffer, viewport, message, options);
-    };
-    validate_frame_size(viewport)?;
-    let mut frame = Vec::new();
-    begin_frame(&mut frame)?;
-    super::title::write(&mut frame, options.window_title)?;
-    style::write_cursor_color(&mut frame, options.theme)?;
-    ghost::compose_buffer(&mut frame, buffer, viewport, message, options, ghost)?;
     end_frame(&mut frame)?;
     out.write_all(&frame)?;
     out.flush()

@@ -2,7 +2,7 @@
 //! Owns: chunk-boundary UTF-8 validation, line starts, scalar counts, ASCII
 //!   flags, and sparse scalar-column checkpoints.
 //! Must not: reopen paths, retain the descriptor, render, edit, save, or know
-//!   about App/terminal/Project/LLM policy.
+//!   about App/terminal/repository/model policy.
 //! Invariants: the first line starts at byte zero; metadata vectors describe
 //!   every scanned line; checkpoints land on UTF-8 boundaries; total_bytes is
 //!   the exact number of bytes read.

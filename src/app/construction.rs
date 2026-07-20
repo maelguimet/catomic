@@ -12,8 +12,8 @@ use crate::config::big_files::BigFileConfig;
 use crate::terminal as term;
 
 use super::{
-    autocomplete, command_prompt, completion, external_command, hooks, inline_clanker, mobile,
-    model_picker, model_session, open, overwrite, recovery, replace, search, selection,
+    command_prompt, completion, external_command, hooks, inline_clanker, mobile, model_picker,
+    model_session, open, overwrite, recovery, replace, search, selection,
     startup_config::StartupConfig, surfaces, view, watch, App, FileState,
 };
 
@@ -50,7 +50,6 @@ impl App {
             cat: cat_config,
             theme,
             view_preferences,
-            autocomplete: autocomplete_config,
             mobile: mobile_config,
         } = config;
         let completion = completion::CompletionUiState::default();
@@ -74,12 +73,13 @@ impl App {
             status_theme: term::render::StatusTheme::from_theme(theme),
             view_preferences,
             theme,
-            autocomplete: autocomplete::AutocompleteState::new(autocomplete_config),
             mobile: mobile::MobileUiState::default(),
             buffer,
             file: FileState {
                 path: initial_path.map(PathBuf::from),
                 dirty: false,
+                buffer_id: super::file_state::next_buffer_id(),
+                content_generation: 0,
                 saved_history_position: initial_pos,
                 disk_snapshot: meta.disk_snapshot,
                 size_bytes: meta.size_bytes,
@@ -139,12 +139,10 @@ mod tests {
 
         assert!(app.surfaces.help.is_none());
         assert!(app.surfaces.llm_preview.is_none());
-        assert!(app.surfaces.llm_answer.is_none());
         assert!(app.pending_llm_request.is_none());
         assert!(app.llm_task.is_none());
         assert!(app.repo_llm_state.is_none());
         assert!(!model_picker::is_viewing(&app));
         assert!(!inline_clanker::is_busy(&app));
-        assert!(app.autocomplete.running.is_none());
     }
 }

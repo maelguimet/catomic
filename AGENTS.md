@@ -203,7 +203,8 @@ Before saying done:
 - relevant formatting, tests, linting, and build checks pass;
 - `git diff --check` passes and the full diff has been reviewed;
 - no unrelated files or accidental generated artifacts changed;
-- startup and ordinary editing gained no repository or model cost;
+- startup and ordinary editing gained no linter, configured-process,
+  repository, or model cost;
 - documentation matches user-visible behavior;
 - remaining limitations and unrun checks are stated plainly.
 

@@ -7,7 +7,7 @@
 //!   check_file_watcher_once (single try_recv + apply), check_file_watcher_once_and_render.
 //! Must not: be called from handle_key / save / render paths; discard dirty buffers;
 //!   trust signal kind without fresh metadata observation;
-//!   expand Project/LLM/UI; call try_recv outside check_file_watcher_once.
+//!   expand repository/model/UI policy; call try_recv outside check_file_watcher_once.
 //! Invariants: signals are hints only; watcher Unchanged/NoPath observations are ignored
 //!   (no message/pending change, no render) when no pending_reload is armed (to avoid
 //!   self-save noise); when a pending_reload exists they clear it, restore normal status,
@@ -126,6 +126,7 @@ pub(crate) fn apply_file_watch_signal(
                 ExternalFileStatus::Modified
                 | ExternalFileStatus::Deleted
                 | ExternalFileStatus::Unknown(_) => {
+                    super::lint::invalidate(app);
                     let matching_save_conflict = current_path.as_deref().is_some_and(|path| {
                         app.pending_save_conflict
                             .as_ref()

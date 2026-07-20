@@ -102,26 +102,3 @@ fn oversized_frame_is_rejected_before_transport() {
     assert_eq!(out.flushes, 0);
     assert!(out.bytes.is_empty());
 }
-
-#[test]
-fn ghost_frame_uses_one_transport_write_and_flush() {
-    let buffer = SimpleBuffer::from_text("complete frame");
-    let mut out = CountingWriter::default();
-
-    render_buffer_with_ghost(
-        &mut out,
-        &buffer,
-        RenderViewport::new(0, 0, 2, 20),
-        Some("status"),
-        RenderOptions::default(),
-        Some(GhostText {
-            cursor: buffer.cursor(),
-            text: " ghost",
-        }),
-    )
-    .unwrap();
-
-    assert_eq!(out.writes, 1);
-    assert_eq!(out.flushes, 1);
-    assert!(!out.bytes.is_empty());
-}

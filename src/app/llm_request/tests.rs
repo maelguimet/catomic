@@ -3,7 +3,6 @@
 //! Must not: contact a live model, public endpoint, user service, or external network.
 //! Invariants: startup has no request objects; model output never bypasses preview.
 
-use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::os::unix::fs::PermissionsExt;
 use std::time::{Duration, Instant};
@@ -236,35 +235,68 @@ fn confirmed_marked_region_response_previews_then_replaces_only_selection() {
 }
 
 #[test]
-fn confirmed_explain_response_opens_read_only_answer_instead_of_edit_preview() {
-    let (settings, server) = response_server("This function returns its input.");
-    let mut app = super::super::App::new(None).unwrap();
-    app.buffer = Box::new(PieceTable::from_text("fn identity(x: i32) -> i32 { x }"));
-    let history = app.buffer.edit_history_position();
+fn explain_phrasings_follow_the_same_edit_proposal_path() {
+    for instruction in ["Explain this.", "Could you explain this?"] {
+        let (settings, server) = patch_server();
+        let mut app = super::super::App::new(None).unwrap();
+        app.buffer = Box::new(PieceTable::from_text("one\ntwo\n"));
+        app.file.path = Some("note.txt".into());
+        let mut out = Vec::new();
+        begin_with_settings(
+            &mut app,
+            &mut out,
+            CurrentLlmCommand::BigMeow,
+            instruction,
+            settings,
+        )
+        .unwrap();
+
+        handle_key(&mut app, &mut out, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+        poll_until_done(&mut app, &mut out);
+        server.join().unwrap();
+
+        assert!(
+            app.surfaces.llm_preview.is_some(),
+            "{instruction:?} did not enter the edit preview: {:?}",
+            app.message
+        );
+        assert_eq!(app.buffer.to_string(), "one\ntwo\n");
+    }
+}
+
+#[test]
+fn http_request_uses_only_the_basename_and_discloses_that_identifier() {
+    let root = std::env::temp_dir().join(format!(
+        "catomic-sensitive-sentinel-root-{}/client/private-checkout",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).unwrap();
+    let source_path = root.join("note.txt");
+    fs::write(&source_path, "one\ntwo\n").unwrap();
+    let (settings, request, server) = captured_response_server("Plain explanation.");
+    let mut app = super::super::App::new(source_path.to_str()).unwrap();
     let mut out = Vec::new();
+
     begin_with_settings(
         &mut app,
         &mut out,
         CurrentLlmCommand::BigMeow,
-        "Explain this function.",
+        "Explain this file.",
         settings,
     )
     .unwrap();
 
-    assert_eq!(
-        app.pending_llm_request.as_ref().unwrap().purpose,
-        RequestPurpose::Explain
-    );
+    let confirmation = app.message.as_deref().unwrap();
+    assert!(confirmation.contains("identified as basename note.txt"));
+    assert!(!confirmation.contains(&root.to_string_lossy().into_owned()));
     handle_key(&mut app, &mut out, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
     poll_until_done(&mut app, &mut out);
     server.join().unwrap();
 
-    assert!(app.surfaces.llm_answer.is_some());
-    assert!(app.surfaces.llm_preview.is_none());
-    assert_eq!(app.buffer.to_string(), "fn identity(x: i32) -> i32 { x }");
-    app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
-        .unwrap();
-    assert_eq!(app.buffer.edit_history_position(), history);
+    let request = request.lock().unwrap();
+    assert!(request.contains("Path: note.txt"));
+    assert!(!request.contains(&root.to_string_lossy().into_owned()));
+    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
@@ -379,14 +411,6 @@ fn prompt_names_the_path_instruction_extent_and_confirmed_sensitivity() {
     assert!(prompt.contains("secret-like line 5"));
 }
 
-#[test]
-fn only_an_explicit_explain_verb_selects_the_read_only_response_path() {
-    let explain = context::for_current_file("code", "Explain: why", None).unwrap();
-    let tests = context::for_current_file("code", "write tests", None).unwrap();
-    assert_eq!(prompt::purpose(&explain), RequestPurpose::Explain);
-    assert_eq!(prompt::purpose(&tests), RequestPurpose::Edit);
-}
-
 fn settings(base_url: String) -> BackendPreset {
     crate::config::llm::parse(&format!(
         "[llm]\nbase_url={base_url:?}\nmodel='test-model'\ntimeout_secs=2\n"
@@ -415,27 +439,17 @@ fn patch_server() -> (BackendPreset, std::thread::JoinHandle<()>) {
 }
 
 fn response_server(content: &str) -> (BackendPreset, std::thread::JoinHandle<()>) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    let content = content.to_string();
-    let server = std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        let mut request = Vec::new();
-        let mut chunk = [0_u8; 4096];
-        loop {
-            let count = stream.read(&mut chunk).unwrap();
-            request.extend_from_slice(&chunk[..count]);
-            if request.windows(4).any(|window| window == b"\r\n\r\n") {
-                break;
-            }
-        }
-        let body = serde_json::json!({"choices":[{"message":{"content":content}}]}).to_string();
-        write!(
-            stream,
-            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        )
-        .unwrap();
-    });
-    (settings(format!("http://{address}/v1")), server)
+    let (settings, _, server) = captured_response_server(content);
+    (settings, server)
+}
+
+fn captured_response_server(
+    content: &str,
+) -> (
+    BackendPreset,
+    std::sync::Arc<std::sync::Mutex<String>>,
+    std::thread::JoinHandle<()>,
+) {
+    let (base_url, request, server) = crate::llm::test_support::response_server(content);
+    (settings(base_url), request, server)
 }

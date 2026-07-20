@@ -105,24 +105,6 @@ fn session_selection_survives_buffer_switch_and_picker_cancel() {
 }
 
 #[test]
-fn selecting_a_model_disables_prior_autocomplete_authorization() {
-    let mut app = super::super::App::new(None).unwrap();
-    let mut out = Vec::new();
-    let first = catalog("http://127.0.0.1:9/v1");
-    super::super::autocomplete::begin_with_catalog(&mut app, &mut out, first.clone()).unwrap();
-    super::super::autocomplete::handle_key(&mut app, &mut out, key(KeyCode::Enter)).unwrap();
-    assert!(app.autocomplete.enabled);
-    assert!(app.autocomplete.confirmed.is_some());
-
-    show_with_catalog(&mut app, &mut out, first).unwrap();
-    handle_key(&mut app, &mut out, key(KeyCode::Down)).unwrap();
-    handle_key(&mut app, &mut out, key(KeyCode::Enter)).unwrap();
-
-    assert!(!app.autocomplete.enabled);
-    assert!(app.autocomplete.confirmed.is_none());
-}
-
-#[test]
 fn picker_owns_and_restores_the_complete_viewport() {
     let mut app = super::super::App::new(None).unwrap();
     app.buffer = Box::new(PieceTable::from_text("a\nb\nc\nsource"));
@@ -228,6 +210,32 @@ fn narrow_terminal_clips_safely_and_discovery_requires_second_confirmation() {
         .is_none());
     assert!(app.message.is_none());
     assert!(listener.accept().is_err());
+}
+
+#[test]
+fn picker_displays_complete_large_discovered_catalog() {
+    let endpoint = "http://127.0.0.1:9/v1";
+    let catalog = catalog(endpoint);
+    let cache_key = cache_key(catalog.default_preset());
+    let models = (0..300)
+        .map(|index| format!("discovered-{index:03}"))
+        .collect();
+    let mut app = super::super::App::new(None).unwrap();
+    app.model_picker.cache.insert(
+        cache_key,
+        CachedModels {
+            models,
+            expires: Instant::now() + CACHE_TTL,
+        },
+    );
+    let mut out = Vec::new();
+
+    show_with_catalog(&mut app, &mut out, catalog).unwrap();
+
+    let text = display_buffer(&app).unwrap().to_string();
+    assert!(text.contains("discovered-000"));
+    assert!(text.contains("discovered-150"));
+    assert!(text.contains("discovered-299"));
 }
 
 #[test]

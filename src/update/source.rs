@@ -87,9 +87,9 @@ pub(super) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
         ));
     }
     let backup = maybe_backup(options)?;
-    let stash = stash_changes(&install.root)?;
+    let stashed = stash_changes(&install.root)?;
     let update = apply(&install, &remote_sha, &remote_version, backup.as_deref());
-    match (update, restore_changes(&install.root, stash.as_deref())) {
+    match (update, restore_changes(&install.root, stashed)) {
         (result, Ok(())) => result,
         (Ok(()), Err(error)) => Err(UpdateError::new(EXIT_SOURCE_STATE, error)),
         (Err(update), Err(restore)) => Err(UpdateError::new(
@@ -246,13 +246,12 @@ fn ensure_checkout_unchanged(install: &SourceInstall) -> Result<(), UpdateError>
     }
 }
 
-fn stash_changes(root: &Path) -> Result<Option<String>, UpdateError> {
+fn stash_changes(root: &Path) -> Result<bool, UpdateError> {
     let status = git_text(root, &["status", "--porcelain=v1", "--untracked-files=all"])
         .map_err(|error| UpdateError::new(EXIT_SOURCE_STATE, error))?;
     if status.is_empty() {
-        return Ok(None);
+        return Ok(false);
     }
-    let previous = git_text(root, &["rev-parse", "--verify", "refs/stash"]).ok();
     let output = git_output(
         root,
         &[
@@ -279,69 +278,25 @@ fn stash_changes(root: &Path) -> Result<Option<String>, UpdateError> {
             ),
         ));
     }
-    let stash = git_text(root, &["rev-parse", "--verify", "refs/stash"]).map_err(|_| {
-        UpdateError::new(
-            EXIT_SOURCE_STATE,
-            "could not stash source changes; no update attempted",
-        )
-    })?;
-    if previous.as_deref() == Some(stash.as_str()) {
-        return Err(UpdateError::new(
-            EXIT_SOURCE_STATE,
-            "Git did not create a source-change stash; no update attempted",
-        ));
-    }
-    let remaining = git_text(root, &["status", "--porcelain=v1", "--untracked-files=all"])
-        .map_err(|error| UpdateError::new(EXIT_SOURCE_STATE, error))?;
-    if !remaining.is_empty() {
-        let message = match restore_changes(root, Some(&stash)) {
-            Ok(()) => {
-                "source checkout remained dirty after stashing; original changes were reapplied"
-                    .to_string()
-            }
-            Err(error) => format!("source checkout remained dirty after stashing; {error}"),
-        };
-        return Err(UpdateError::new(EXIT_SOURCE_STATE, message));
-    }
-    println!("source changes: stashed as {}", short_sha(&stash));
-    Ok(Some(stash))
+    println!("source changes: stashed");
+    Ok(true)
 }
 
-fn restore_changes(root: &Path, stash: Option<&str>) -> Result<(), String> {
-    let Some(stash) = stash else {
+fn restore_changes(root: &Path, stashed: bool) -> Result<(), String> {
+    if !stashed {
         return Ok(());
-    };
-    let latest = git_text(root, &["rev-parse", "--verify", "refs/stash"]);
-    let (action, target) = if latest.as_deref() == Ok(stash) {
-        ("pop", "stash@{0}")
-    } else {
-        ("apply", stash)
-    };
+    }
     let output = git_output(
         root,
-        &[
-            "-c",
-            "core.hooksPath=/dev/null",
-            "stash",
-            action,
-            "--index",
-            target,
-        ],
+        &["-c", "core.hooksPath=/dev/null", "stash", "pop", "--index"],
     )?;
     if !output.status.success() {
         return Err(format!(
-            "could not reapply source changes; stash {} was retained: {}",
-            short_sha(stash),
+            "could not reapply source changes: {}",
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
     println!("source changes: reapplied");
-    if action == "apply" {
-        println!(
-            "source changes backup retained in stash {}",
-            short_sha(stash)
-        );
-    }
     Ok(())
 }
 

@@ -1,8 +1,9 @@
 //! Purpose: own the paired lifetime of terminal modes used by an editor session.
 //! Owns: alternate-screen, enhanced-keyboard, bracketed-paste, mouse, and raw-mode setup.
 //! Must not: decode input, interpret editor commands, render content, or mutate App state.
-//! Invariants: each negotiated keyboard mode is reset once before alternate-screen exit.
-//! Phase: post-v0.1 terminal keyboard compatibility.
+//! Invariants: each negotiated keyboard mode is reset once before alternate-screen exit;
+//!   teardown first releases any interrupted synchronized render update.
+//! Phase: issue #128 synchronized-render fail-safe plus terminal keyboard compatibility.
 
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -140,7 +141,12 @@ fn restore_output_modes<W: Write>(out: &mut W, active: u8) -> (u8, io::Result<()
     use crossterm::{cursor, event, execute, terminal};
 
     let mut remaining = active;
-    let mut first_error = crate::terminal::cursor_style::restore(out).err();
+    let mut first_error = out
+        .write_all(crate::terminal::render::SYNC_UPDATE_END)
+        .err();
+    if let Err(error) = crate::terminal::cursor_style::restore(out) {
+        first_error.get_or_insert(error);
+    }
     if let Err(error) = write!(out, "\x1b[0m\x1b]112\x07") {
         first_error.get_or_insert(error);
     }

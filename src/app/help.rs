@@ -304,12 +304,7 @@ fn push_edit_actions(markdown: &mut String, bindings: &KeyBindings) {
 }
 
 fn push_command_actions(markdown: &mut String, bindings: &KeyBindings) {
-    push_action(
-        markdown,
-        bindings,
-        Action::CommandPrompt,
-        "Command palette",
-    );
+    push_action(markdown, bindings, Action::CommandPrompt, "Command palette");
     push_action(
         markdown,
         bindings,
@@ -336,23 +331,13 @@ fn push_external_change_help(markdown: &mut String) {
 
 fn push_model_help(markdown: &mut String, bindings: &KeyBindings) {
     markdown.push_str("\n## Models\n\n");
-    push_action(
-        markdown,
-        bindings,
-        Action::SelectModel,
-        "Select model",
-    );
+    push_action(markdown, bindings, Action::SelectModel, "Select model");
     markdown.push_str(
         "- Model requests show the destination and bounded context before sending. Proposals are read-only until separately applied and are never auto-saved.\n\n",
     );
 }
 
-fn push_action(
-    markdown: &mut String,
-    bindings: &KeyBindings,
-    action: Action,
-    label: &str,
-) {
+fn push_action(markdown: &mut String, bindings: &KeyBindings, action: Action, label: &str) {
     let purpose = crate::config::actions::descriptor(action).help;
     let chords = display_chords(bindings, action);
     if chords.is_empty() {

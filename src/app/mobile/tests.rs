@@ -199,7 +199,10 @@ fn autocomplete_opt_in_can_be_confirmed_from_the_touch_action_row() {
 
 #[test]
 fn touch_vertical_actions_follow_the_active_surface_semantics() {
-    assert_eq!(vertical_action(Scope::Search, false), Action::SearchPrevious);
+    assert_eq!(
+        vertical_action(Scope::Search, false),
+        Action::SearchPrevious
+    );
     assert_eq!(vertical_action(Scope::Search, true), Action::SearchNext);
     assert_eq!(
         vertical_action(Scope::Completion, false),

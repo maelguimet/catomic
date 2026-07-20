@@ -180,6 +180,7 @@ fn successful_parent_exit_does_not_wait_for_escaped_pipe_holders() {
     let fixture = Fixture::script(
         r#"cat >/dev/null
 setsid sh -c 'printf %s "$$" > "$1"; sleep 30' sh "$3" &
+while [ ! -s "$3" ]; do sleep 0.01; done
 printf '%s' '{"type":"result","is_error":false,"result":"PATCH"}'"#,
     );
     let pid_path = fixture.root.join("lingering child pid");
@@ -188,7 +189,7 @@ printf '%s' '{"type":"result","is_error":false,"result":"PATCH"}'"#,
     let started = Instant::now();
     let output = complete(&config, &messages(), &AtomicBool::new(false)).unwrap();
     assert_eq!(output, "PATCH");
-    assert!(started.elapsed() < Duration::from_secs(1));
+    assert!(started.elapsed() < Duration::from_secs(2));
     let deadline = Instant::now() + Duration::from_secs(1);
     while !pid_path.exists() {
         assert!(

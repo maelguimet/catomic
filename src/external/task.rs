@@ -325,8 +325,9 @@ mod tests {
             std::env::temp_dir().join(format!("catomic-external-escaped-{}", std::process::id()));
         let _ = std::fs::remove_file(&pid_path);
         let command = format!(
-            "setsid sh -c 'printf %s \"$$\" > \"$1\"; sleep 30' sh '{}' &",
-            pid_path.display()
+            "setsid sh -c 'printf %s \"$$\" > \"$1\"; sleep 30' sh '{0}' & \
+             while [ ! -s '{0}' ]; do sleep 0.01; done",
+            pid_path.display(),
         );
         let started = Instant::now();
 
@@ -334,7 +335,7 @@ mod tests {
             &command,
             Path::new("/tmp"),
             Vec::new(),
-            Duration::from_millis(50),
+            Duration::from_secs(1),
             &AtomicBool::new(false),
         );
 
@@ -342,7 +343,7 @@ mod tests {
             result,
             ExternalCommandResult::Finished { code: Some(0), .. }
         ));
-        assert!(started.elapsed() < Duration::from_secs(1));
+        assert!(started.elapsed() < Duration::from_secs(2));
         wait_for_path(&pid_path);
         let pid = std::fs::read_to_string(&pid_path)
             .unwrap()

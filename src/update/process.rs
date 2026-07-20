@@ -160,16 +160,17 @@ mod tests {
         command.args([
             "-c",
             &format!(
-                "setsid sh -c 'printf %s \"$$\" > \"$1\"; sleep 30' sh '{}' &",
-                pid_path.display()
+                "setsid sh -c 'printf %s \"$$\" > \"$1\"; sleep 30' sh '{0}' & \
+                 while [ ! -s '{0}' ]; do sleep 0.01; done",
+                pid_path.display(),
             ),
         ]);
         let started = Instant::now();
 
-        let output = run(&mut command, Duration::from_millis(50), 1024).unwrap();
+        let output = run(&mut command, Duration::from_secs(1), 1024).unwrap();
 
         assert!(output.status.success());
-        assert!(started.elapsed() < Duration::from_secs(1));
+        assert!(started.elapsed() < Duration::from_secs(2));
         let deadline = Instant::now() + Duration::from_secs(1);
         while !pid_path.exists() {
             assert!(

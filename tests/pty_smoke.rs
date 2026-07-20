@@ -848,6 +848,25 @@ fn pty_external_edit_confirm_reload_quit_shows_disk_content() -> TestResult {
 
     editor.wait_for_output("confirmed external reload", "Reloaded from disk.")?;
     editor.wait_for_output("reloaded external content", "external disk content")?;
+    editor.wait_for_output("replacement gutter marker", "\x1b[36;1;4m~\x1b[0m ")?;
+
+    let toggle_start = editor.output_len();
+    editor.send_keys(b"\x1b[15~")?; // F5
+    editor.wait_for_output(
+        "external highlighting disabled",
+        "External change highlighting off.",
+    )?;
+    let toggled_frame = editor.output_since(toggle_start);
+    assert!(toggled_frame.contains("external disk content"));
+    assert!(!toggled_frame.contains("\x1b[36;1;4m~\x1b[0m "));
+    assert!(!toggled_frame.contains("\x1b[36;4mexternal disk content"));
+    let preferences = editor._environment.root.join("catomic/preferences.toml");
+    wait_until("persisted F5 preference", Duration::from_secs(2), || {
+        fs::read_to_string(&preferences).is_ok_and(|text| {
+            text.contains("external_diff = false") && text.contains("line_numbers = false")
+        })
+    })?;
+
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
 

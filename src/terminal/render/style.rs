@@ -37,8 +37,33 @@ pub(super) fn write_content_line_with_ghost<W: Write + ?Sized>(
     let chars: Vec<char> = content.chars().collect();
     let spans = syntax::spans_for_line(options.syntax, &content);
     let selected = visible_highlight(options.highlight, row, start_col, chars.len());
-    let changed = visible_changes(options, row, start_col, chars.len());
-    let boundaries = segment_boundaries(&content, &spans, selected, &changed, ghost);
+    let llm_changed = visible_ranges(
+        options.llm_changes.map(|changes| changes.ranges),
+        row,
+        start_col,
+        chars.len(),
+    );
+    let external_added = visible_ranges(
+        options.external_changes.map(|changes| changes.added_ranges),
+        row,
+        start_col,
+        chars.len(),
+    );
+    let external_changed = visible_ranges(
+        options
+            .external_changes
+            .map(|changes| changes.changed_ranges),
+        row,
+        start_col,
+        chars.len(),
+    );
+    let boundaries = segment_boundaries(
+        &content,
+        &spans,
+        selected,
+        &[&llm_changed, &external_added, &external_changed],
+        ghost,
+    );
     let mut cell = 0;
     for range in boundaries.windows(2) {
         let start = range[0];
@@ -51,12 +76,26 @@ pub(super) fn write_content_line_with_ghost<W: Write + ?Sized>(
             .find(|span| start >= span.start && start < span.end)
             .map(|span| span.style);
         let highlighted = selected.is_some_and(|(from, to)| start >= from && start < to);
-        let llm_changed = changed
+        let llm_changed = llm_changed
+            .iter()
+            .any(|(from, to)| start >= *from && start < *to);
+        let external_added = external_added
+            .iter()
+            .any(|(from, to)| start >= *from && start < *to);
+        let external_changed = external_changed
             .iter()
             .any(|(from, to)| start >= *from && start < *to);
         let ghost_text = ghost.is_some_and(|(from, to)| start >= from && start < to);
         let segment: String = chars[start..end].iter().collect();
-        let style = segment_style(options, syntax_style, highlighted, llm_changed, ghost_text);
+        let style = segment_style(
+            options,
+            syntax_style,
+            highlighted,
+            llm_changed,
+            external_added,
+            external_changed,
+            ghost_text,
+        );
         write_segment(
             out,
             &segment,
@@ -70,16 +109,15 @@ pub(super) fn write_content_line_with_ghost<W: Write + ?Sized>(
     Ok(())
 }
 
-fn visible_changes(
-    options: RenderOptions<'_>,
+fn visible_ranges(
+    ranges: Option<&[TextHighlight]>,
     row: usize,
     start_col: usize,
     content_len: usize,
 ) -> Vec<(usize, usize)> {
-    options
-        .llm_changes
+    ranges
         .into_iter()
-        .flat_map(|changes| changes.ranges.iter().copied())
+        .flat_map(|ranges| ranges.iter().copied())
         .filter_map(|range| visible_highlight(Some(range), row, start_col, content_len))
         .collect()
 }
@@ -108,14 +146,18 @@ fn visible_highlight(
     };
     let start = range_start.max(start_col);
     let end = range_end.min(visible_end);
-    (start < end).then_some((start - start_col, end - start_col))
+    if start < end {
+        Some((start - start_col, end - start_col))
+    } else {
+        None
+    }
 }
 
 fn segment_boundaries(
     content: &str,
     spans: &[StyledSpan],
     selected: Option<(usize, usize)>,
-    changed: &[(usize, usize)],
+    change_sets: &[&[(usize, usize)]],
     ghost: Option<(usize, usize)>,
 ) -> Vec<usize> {
     let content_len = content.chars().count();
@@ -128,9 +170,11 @@ fn segment_boundaries(
         boundaries.push(start);
         boundaries.push(end);
     }
-    for &(start, end) in changed {
-        boundaries.push(start);
-        boundaries.push(end);
+    for changed in change_sets {
+        for &(start, end) in *changed {
+            boundaries.push(start);
+            boundaries.push(end);
+        }
     }
     if let Some((start, end)) = ghost {
         boundaries.push(start.min(content_len));
@@ -164,6 +208,8 @@ fn segment_style(
     span: Option<SpanStyle>,
     highlighted: bool,
     llm_changed: bool,
+    external_added: bool,
+    external_changed: bool,
     ghost: bool,
 ) -> Style {
     let theme = options.theme;
@@ -173,6 +219,12 @@ fn segment_style(
     };
     if let Some(span) = span {
         style = style.overlay(span_style(theme, span));
+    }
+    if external_added {
+        style = style.overlay(theme.external_added);
+    }
+    if external_changed {
+        style = style.overlay(theme.external_changed);
     }
     if llm_changed {
         style = style.overlay(theme.llm_changed);

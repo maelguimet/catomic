@@ -107,6 +107,7 @@ impl App {
             model_picker: model_picker::ModelPickerState::default(),
             inline_clanker: inline_clanker::InlineClankerState::default(),
             clanker_changes: inline_clanker::ChangeHistory::default(),
+            external_changes: super::external_diff::ExternalChanges::default(),
             repo_llm_state: None,
             external_command: external_command::ExternalCommandState::default(),
             hooks: hooks::HookState::default(),

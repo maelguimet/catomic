@@ -108,6 +108,7 @@ troubleshooting, see the [complete user guide](docs/user-guide.md).
 | Local completion | `Ctrl+Space` |
 | Command prompt | `Ctrl+Shift+P` or `F2` |
 | Inline clanker / clear its change marks | `F3` / `Shift+F3` |
+| External-reload change marks | `F5` |
 | Markdown preview | `F6` |
 | Line numbers / whitespace / soft wrap | `F7` / `F8` / `F9` |
 | Select model/backend for this session | `F10` |
@@ -177,6 +178,7 @@ page_lines = 20000
 auto_reload = true
 
 [view]
+external_diff = true
 line_numbers = false
 
 [cat]
@@ -241,9 +243,10 @@ stop_on_error = true
 remove_instruction_after_apply = true
 ```
 
-`F7` changes line numbers for the whole session and atomically remembers that
-choice under the XDG state directory for later launches. The saved choice takes
-precedence over `[view].line_numbers`; Catomic never rewrites `config.toml`.
+`F5` changes external-reload highlighting and `F7` changes line numbers for the
+whole session. Both atomically remember the explicit choice under the XDG state
+directory for later launches. Saved choices take precedence over their `[view]`
+defaults; Catomic never rewrites `config.toml`.
 
 Recovery is disabled by default. Named commands and hooks invoke the platform's
 POSIX shell (`$PREFIX/bin/sh` on Android/Termux, normally `/bin/sh` on Linux)

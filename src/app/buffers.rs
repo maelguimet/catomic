@@ -35,6 +35,7 @@ pub(crate) struct BufferSlot {
     selection: selection::SelectionUiState,
     view: view::ViewOptions,
     clanker_changes: inline_clanker::ChangeHistory,
+    external_changes: super::external_diff::ExternalChanges,
     scroll_top: usize,
     scroll_left: usize,
     wrap_col: usize,
@@ -60,6 +61,7 @@ impl BufferSlot {
             selection: app.selection,
             view: app.view,
             clanker_changes: app.clanker_changes,
+            external_changes: app.external_changes,
             scroll_top: app.screen.scroll_top,
             scroll_left: app.screen.scroll_left,
             wrap_col: app.screen.wrap_col,
@@ -81,6 +83,7 @@ impl BufferSlot {
         mem::swap(&mut self.selection, &mut app.selection);
         mem::swap(&mut self.view, &mut app.view);
         mem::swap(&mut self.clanker_changes, &mut app.clanker_changes);
+        mem::swap(&mut self.external_changes, &mut app.external_changes);
         mem::swap(&mut self.scroll_top, &mut app.screen.scroll_top);
         mem::swap(&mut self.scroll_left, &mut app.screen.scroll_left);
         mem::swap(&mut self.wrap_col, &mut app.screen.wrap_col);
@@ -88,6 +91,13 @@ impl BufferSlot {
 }
 
 impl App {
+    pub(crate) fn clear_external_changes(&mut self) {
+        self.external_changes.clear();
+        for slot in &mut self.inactive_buffers {
+            slot.external_changes.clear();
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn new_with_paths_and_big_file_config(
         initial_paths: &[String],
@@ -339,7 +349,7 @@ mod tests {
     }
 
     #[test]
-    fn switching_preserves_buffer_state_and_keeps_f7_session_global() {
+    fn switching_preserves_buffer_state_and_keeps_persistent_view_state_global() {
         let first = temp_file("state_first", "alpha");
         let second = temp_file("state_second", "beta");
         let paths = vec![
@@ -360,6 +370,13 @@ mod tests {
         app.view.whitespace = true;
         app.view.soft_wrap = true;
         app.file.dirty = true;
+        let original = crate::buffer::PieceTable::from_text("alpha");
+        app.external_changes = match crate::app::external_diff::compare(&original, &*app.buffer) {
+            crate::app::external_diff::DiffOutcome::Compared(changes) => changes,
+            crate::app::external_diff::DiffOutcome::Skipped(reason) => {
+                panic!("unexpected external diff skip: {reason}")
+            }
+        };
 
         app.switch_buffer(BufferDirection::Next);
         assert_eq!(app.buffer.to_string(), "beta");
@@ -368,6 +385,7 @@ mod tests {
         assert_eq!(app.screen.scroll_left, 0);
         assert_eq!(app.screen.wrap_col, 0);
         assert!(app.view_preferences.line_numbers());
+        assert!(app.view_preferences.external_diff());
         assert!(!app.view.whitespace);
         assert!(!app.view.soft_wrap);
 
@@ -383,6 +401,11 @@ mod tests {
         assert_eq!(app.screen.scroll_left, 3);
         assert_eq!(app.screen.wrap_col, 2);
         assert!(app.view_preferences.line_numbers());
+        assert!(app.view_preferences.external_diff());
+        assert!(app
+            .external_changes
+            .visible(app.buffer.edit_history_position())
+            .is_some());
         assert!(app.view.whitespace);
         assert!(app.view.soft_wrap);
 

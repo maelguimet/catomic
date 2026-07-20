@@ -81,6 +81,9 @@ pub(crate) struct Theme {
     pub(crate) search_match: Style,
     pub(crate) diff_added: Style,
     pub(crate) diff_removed: Style,
+    pub(crate) external_added: Style,
+    pub(crate) external_changed: Style,
+    pub(crate) external_deleted: Style,
     pub(crate) llm_changed: Style,
     pub(crate) autocomplete: Style,
     pub(crate) preview: Style,
@@ -164,6 +167,9 @@ fn apply_capabilities(mut theme: Theme, monochrome: bool, truecolor: bool) -> Th
         &mut theme.search_match,
         &mut theme.diff_added,
         &mut theme.diff_removed,
+        &mut theme.external_added,
+        &mut theme.external_changed,
+        &mut theme.external_deleted,
         &mut theme.llm_changed,
         &mut theme.autocomplete,
         &mut theme.preview,
@@ -176,6 +182,9 @@ fn apply_capabilities(mut theme: Theme, monochrome: bool, truecolor: bool) -> Th
     theme.search_match.underlined = Some(true);
     theme.diff_added.bold = Some(true);
     theme.diff_removed.underlined = Some(true);
+    theme.external_added.underlined = Some(true);
+    theme.external_changed.reversed = Some(true);
+    theme.external_deleted.bold = Some(true);
     theme.llm_changed.underlined = Some(true);
     theme.llm_changed.reversed = Some(true);
     theme.autocomplete.dim = Some(true);
@@ -229,6 +238,18 @@ fn named(name: &str) -> io::Result<Theme> {
         search_match: Style::pair(black, Color::Ansi(3)),
         diff_added: Style::fg(Color::Ansi(2)),
         diff_removed: Style::fg(Color::Ansi(1)),
+        external_added: Style {
+            underlined: Some(true),
+            ..Style::fg(Color::Ansi(2))
+        },
+        external_changed: Style {
+            underlined: Some(true),
+            ..Style::fg(Color::Ansi(6))
+        },
+        external_deleted: Style {
+            bold: Some(true),
+            ..Style::fg(Color::Ansi(1))
+        },
         llm_changed: Style {
             underlined: Some(true),
             ..Style::fg(Color::Ansi(1))
@@ -266,6 +287,18 @@ fn named(name: &str) -> io::Result<Theme> {
             theme.syntax_number = plain;
             theme.diff_added = plain;
             theme.diff_removed = plain;
+            theme.external_added = Style {
+                underlined: Some(true),
+                ..plain
+            };
+            theme.external_changed = Style {
+                reversed: Some(true),
+                ..plain
+            };
+            theme.external_deleted = Style {
+                bold: Some(true),
+                ..plain
+            };
             theme.llm_changed = Style {
                 underlined: Some(true),
                 reversed: Some(true),
@@ -306,6 +339,9 @@ fn apply_role(theme: &mut Theme, role: &str, value: &toml::Value) -> io::Result<
         "search_match" => apply_style(&mut theme.search_match, value, role)?,
         "diff_added" => apply_style(&mut theme.diff_added, value, role)?,
         "diff_removed" => apply_style(&mut theme.diff_removed, value, role)?,
+        "external_added" => apply_style(&mut theme.external_added, value, role)?,
+        "external_changed" => apply_style(&mut theme.external_changed, value, role)?,
+        "external_deleted" => apply_style(&mut theme.external_deleted, value, role)?,
         "llm_changed" => apply_style(&mut theme.llm_changed, value, role)?,
         "autocomplete" => apply_style(&mut theme.autocomplete, value, role)?,
         "preview" => apply_style(&mut theme.preview, value, role)?,

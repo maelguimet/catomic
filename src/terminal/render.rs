@@ -64,11 +64,32 @@ pub(crate) struct LlmChanges<'a> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ExternalChangeKind {
+    Added,
+    Changed,
+    Deleted,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ExternalLineMarker {
+    pub(crate) line: usize,
+    pub(crate) kind: ExternalChangeKind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ExternalChanges<'a> {
+    pub(crate) added_ranges: &'a [TextHighlight],
+    pub(crate) changed_ranges: &'a [TextHighlight],
+    pub(crate) markers: &'a [ExternalLineMarker],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct RenderOptions<'a> {
     pub(crate) cursor_shape: CursorShape,
     pub(crate) highlight: Option<TextHighlight>,
     pub(crate) highlight_kind: HighlightKind,
     pub(crate) llm_changes: Option<LlmChanges<'a>>,
+    pub(crate) external_changes: Option<ExternalChanges<'a>>,
     pub(crate) syntax: SyntaxKind,
     pub(crate) surface: ContentSurface,
     pub(crate) theme: Theme,
@@ -91,6 +112,7 @@ impl Default for RenderOptions<'_> {
             highlight: None,
             highlight_kind: HighlightKind::Selection,
             llm_changes: None,
+            external_changes: None,
             syntax: SyntaxKind::Plain,
             surface: ContentSurface::Normal,
             theme: Theme::default(),
@@ -312,6 +334,36 @@ pub(super) fn write_change_gutter<W: Write + ?Sized>(
     } else {
         write!(out, "  ")
     }
+}
+
+pub(super) fn write_external_change_gutter<W: Write + ?Sized>(
+    out: &mut W,
+    row: usize,
+    changes: Option<ExternalChanges<'_>>,
+    theme: Theme,
+) -> std::io::Result<()> {
+    let Some(marker) = changes
+        .into_iter()
+        .flat_map(|changes| changes.markers.iter())
+        .find(|marker| marker.line == row)
+    else {
+        return write!(out, "  ");
+    };
+    let (symbol, style) = match marker.kind {
+        ExternalChangeKind::Added => ("+", theme.external_added),
+        ExternalChangeKind::Changed => ("~", theme.external_changed),
+        ExternalChangeKind::Deleted => ("-", theme.external_deleted),
+    };
+    style::write_styled_text(
+        out,
+        symbol,
+        style.overlay(crate::config::theme::Style {
+            bold: Some(true),
+            ..crate::config::theme::Style::default()
+        }),
+        theme.truecolor,
+    )?;
+    write!(out, " ")
 }
 
 #[cfg(test)]

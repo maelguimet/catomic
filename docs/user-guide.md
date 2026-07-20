@@ -502,8 +502,9 @@ open missing paths later converge on one file, Save is blocked instead of
 letting independent dirty buffers overwrite one another through watcher timing.
 
 Each buffer retains its cursor, viewport, selection, dirty state, file watcher,
-whitespace/wrapping toggles, and large-file page position. Line numbers are a
-session-global preference shared by every buffer.
+latest external-reload markers, whitespace/wrapping toggles, and large-file page
+position. External-reload marker visibility and line numbers are session-global
+preferences shared by every buffer.
 
 `Ctrl+S` saves only the active buffer. `Ctrl+Q` checks every open buffer; if any
 are dirty, the first press warns and the second press quits without saving.
@@ -557,6 +558,24 @@ rewrites even when every available metadata field collides.
 - A dirty buffer is never discarded automatically.
 - `Ctrl+R` explicitly checks for an external change or confirms a reload.
 
+Every accepted reload compares the exact prior buffer revision with the exact
+verified disk revision that is installed. Added graphemes use the semantic
+`external_added` role and a `+` gutter marker; replacements use
+`external_changed` and `~`; deleted text uses a non-document `-` marker on the
+nearest surviving line. The markers never enter buffer bytes, selection,
+search, clipboard, save output, dirty tracking, or undo history.
+
+`F5` toggles this presentation and remembers the choice. Turning it off dismisses
+the current markers in every buffer. A later reload replaces that buffer's
+previous set. Any local content edit clears the active buffer's complete set;
+Catomic deliberately does not guess how snapshot coordinates map through an
+unrelated edit. Buffer switching alone preserves each set.
+
+External diffing is bounded to old and new buffers of at most 10 MiB and 200,000
+lines each. Larger, paged, or length-opaque buffers still reload safely but show
+an explicit status message that highlighting was skipped. A line over 1 MiB is
+marked as one changed line instead of building a grapheme index for it.
+
 When a dirty buffer differs from disk, the first `Ctrl+R` arms a reload and the
 second performs it only if the observed disk state is still the same. Editing
 the buffer or another disk change invalidates the confirmation.
@@ -587,6 +606,7 @@ malformed constructs remain ordinary readable text.
 
 | View | Key | Behavior |
 | --- | --- | --- |
+| External changes | `F5` | Toggle latest external-reload marks for all buffers and remember the choice |
 | Markdown preview | `F6` | Preview the buffer or active large-file page |
 | Line numbers | `F7` | Toggle line numbers for all buffers and remember the choice |
 | Visible whitespace | `F8` | Show spaces and tabs |
@@ -594,8 +614,8 @@ malformed constructs remain ordinary readable text.
 
 Press `F6` again or `Escape` to leave Markdown preview. Soft-wrapped
 continuations preserve document coordinates and mouse mapping. Whitespace and
-soft wrapping remain per-buffer settings. F7 updates every current buffer and
-the default for buffers opened later in the session.
+soft wrapping remain per-buffer settings. F5 and F7 update the session-global
+preference used by every current buffer and buffers opened later.
 
 Markdown preview renders headings, nested quotes and lists, tasks, links,
 footnotes, rules, and fenced code with terminal-native markers. Tables retain
@@ -1241,20 +1261,21 @@ catomic config edit
 enter Catomic and ask before recreating a missing file. If terminal setup fails,
 no missing configuration is created.
 
-The configured line-number default is:
+The configured persistent presentation defaults are:
 
 ```toml
 [view]
+external_diff = true
 line_numbers = false
 ```
 
-After an explicit F7 press, Catomic atomically writes the chosen value to
+After an explicit F5 or F7 press, Catomic atomically writes both current values to
 `$XDG_STATE_HOME/catomic/preferences.toml`, or
 `~/.local/state/catomic/preferences.toml` when `HOME` is absolute. It never
 rewrites `config.toml`, and merely starting Catomic does not create the state
-file. Precedence is the saved F7 preference, then `[view].line_numbers`, then the
-built-in `false` default. Remove `preferences.toml` to return control to
-`config.toml`.
+file. Each key resolves independently: its saved value, then its `[view]` value,
+then the built-in default (`true` for `external_diff`, `false` for
+`line_numbers`). Remove `preferences.toml` to return control to `config.toml`.
 
 Running instances do not live-reload each other's view state. Each keeps its
 current session choice; atomic replacement prevents partial TOML, and the last
@@ -1273,6 +1294,7 @@ page_lines = 20_000
 auto_reload = true
 
 [view]
+external_diff = true
 line_numbers = false
 
 [cat]
@@ -1318,6 +1340,9 @@ syntax_number = "yellow"
 search_match = { fg = "black", bg = "yellow" }
 diff_added = "green"
 diff_removed = "red"
+external_added = { fg = "green", underline = true }
+external_changed = { fg = "cyan", underline = true }
+external_deleted = { fg = "red", bold = true }
 llm_changed = { fg = "red", underline = true }
 autocomplete = { fg = "bright-black", dim = true }
 preview = "default"
@@ -1387,6 +1412,7 @@ remove_instruction_after_apply = true
 | `languages.EXT.linter` | none | String containing `{file}` |
 | `big_files.page_lines` | `20000` | Positive integer |
 | `files.auto_reload` | `true` | Boolean |
+| `view.external_diff` | `true` | Boolean; overridden by the saved F5 choice |
 | `view.line_numbers` | `false` | Boolean; overridden by the saved F7 choice |
 | `cat.status_messages` | `true` | Boolean |
 | `mobile.action_bar` | `auto` | `auto`, `always`, or `never` |
@@ -1443,8 +1469,9 @@ surface. The complete role inventory is `text`, `background`, `cursor`,
 `status_warning`, `status_prompt`, `error`,
 `markdown_heading`, `markdown_emphasis`, `markdown_code`, `markdown_marker`,
 `markdown_link`, `syntax_keyword`, `syntax_string`, `syntax_comment`, `syntax_number`,
-`search_match`, `diff_added`, `diff_removed`, `llm_changed`, `autocomplete`, and
-`preview`. The syntax roles
+`search_match`, `diff_added`, `diff_removed`, `external_added`,
+`external_changed`, `external_deleted`, `llm_changed`, `autocomplete`, and
+`preview`. External-reload and model-change roles remain independent. The syntax roles
 apply consistently to the built-in Rust, Python, and JSON highlighters.
 
 A role may be `"default"`, one of the standard 16 names (`black` through
@@ -1576,6 +1603,7 @@ previous-buffer | editor | alt+pageup
 next-buffer | editor | alt+pagedown
 previous-page | editor | ctrl+pageup
 next-page | editor | ctrl+pagedown
+toggle-external-diff | editor | f5
 markdown-preview | editor,preview | f6
 line-numbers | editor | f7
 whitespace | editor | f8
@@ -1639,6 +1667,7 @@ mouse-scroll-down | editor,preview,picker,help | mouse-wheel-down
 | Tools | Completion | `Ctrl+Space` |
 | Tools | Inline clanker | `F3` |
 | Tools | Clear clanker change marks | `Shift+F3` |
+| View | External-reload change marks | `F5` |
 | View | Markdown preview | `F6` |
 | View | Line numbers | `F7` |
 | View | Visible whitespace | `F8` |

@@ -266,8 +266,12 @@ fn apply_modified_reload(
     path: &Path,
     reloaded: ReloadedModifiedBuffer,
 ) -> io::Result<()> {
+    let external_diff = super::external_diff::compare(&*app.buffer, &*reloaded.buffer);
     crate::file::io::ensure_path_matches_snapshot(path, &reloaded.snapshot)?;
-    let reload_message = reload_modified_success_message(reloaded.size_bytes, reloaded.size_tier);
+    let reload_message = external_diff_message(
+        reload_modified_success_message(reloaded.size_bytes, reloaded.size_tier),
+        &external_diff,
+    );
     super::autocomplete::invalidate(app);
     super::search::cancel_running_search(app);
     super::command_prompt::cancel_running_goto(app);
@@ -277,6 +281,8 @@ fn apply_modified_reload(
     super::view::cancel_preview(app);
     app.selection.clear();
     app.buffer = reloaded.buffer;
+    app.clanker_changes.clear();
+    app.external_changes = external_diff.into_changes();
     app.file.saved_history_position = app.buffer.edit_history_position();
     app.file.dirty = false;
     app.file.text_format = reloaded.text_format;
@@ -288,6 +294,9 @@ fn apply_modified_reload(
 }
 
 fn apply_deleted_reload(app: &mut super::App) {
+    let cleared: Box<dyn buffer::Buffer> = Box::new(buffer::PieceTable::new());
+    let external_diff = super::external_diff::compare(&*app.buffer, &*cleared);
+    let reload_message = external_diff_message(reload_cleared_message(), &external_diff);
     super::autocomplete::invalidate(app);
     super::search::cancel_running_search(app);
     super::command_prompt::cancel_running_goto(app);
@@ -296,13 +305,27 @@ fn apply_deleted_reload(app: &mut super::App) {
     super::project_files::close_view(app);
     super::view::cancel_preview(app);
     app.selection.clear();
-    app.buffer = Box::new(buffer::PieceTable::new());
+    app.buffer = cleared;
+    app.clanker_changes.clear();
+    app.external_changes = external_diff.into_changes();
     app.file.saved_history_position = app.buffer.edit_history_position();
     app.file.dirty = false;
     app.file.disk_snapshot = Some(FileSnapshot::Absent);
     app.file.size_bytes = None;
     app.file.size_tier = None;
-    finish_reload(app, reload_cleared_message());
+    finish_reload(app, reload_message);
+}
+
+fn external_diff_message(
+    mut message: String,
+    outcome: &super::external_diff::DiffOutcome,
+) -> String {
+    if let super::external_diff::DiffOutcome::Skipped(reason) = outcome {
+        message.push_str(" External change highlighting skipped: ");
+        message.push_str(reason);
+        message.push('.');
+    }
+    message
 }
 
 fn report_reload_error(app: &mut super::App, error: io::Error) {
@@ -462,6 +485,44 @@ mod tests {
         assert!(!reloaded.buffer.is_read_only());
         assert!(reloaded.buffer.page_info().unwrap().has_next);
 
+        cleanup(&path);
+    }
+
+    #[test]
+    fn huge_reload_stays_paged_and_explicitly_skips_external_highlighting() {
+        use std::io::{Seek, SeekFrom, Write};
+
+        let path = temp_path("huge_external_diff_skip.txt");
+        cleanup(&path);
+        std::fs::write(&path, "before\nsecond").unwrap();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(size::LARGE_FILE_LIMIT_BYTES + 1)
+            .unwrap();
+        let mut app = super::super::App::new(Some(&path.to_string_lossy())).unwrap();
+
+        let mut file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        file.seek(SeekFrom::Start(0)).unwrap();
+        file.write_all(b"AFTER!").unwrap();
+        file.sync_all().unwrap();
+        let observation = observe_external_file(Some(&path), app.file.disk_snapshot.as_ref());
+        assert_eq!(observation.status, ExternalFileStatus::Modified);
+
+        perform_observed_reload(&mut app, &observation);
+
+        assert_eq!(app.buffer.line(0).as_deref(), Some("AFTER!"));
+        assert!(app.buffer.page_info().is_some());
+        assert!(app
+            .message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("External change highlighting skipped"));
+        assert!(app
+            .external_changes
+            .visible(app.buffer.edit_history_position())
+            .is_none());
         cleanup(&path);
     }
 

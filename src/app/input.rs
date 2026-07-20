@@ -48,6 +48,8 @@ pub(super) fn finish_content_edit_with_message(
     refresh_dirty(&mut app.file, &*app.buffer);
     app.clanker_changes
         .reconcile(app.buffer.edit_history_position());
+    app.external_changes
+        .reconcile(app.buffer.edit_history_position());
     if app.buffer.is_read_only() {
         app.message = Some("Large file is read-only in paged mode.".to_string());
     } else {
@@ -152,7 +154,8 @@ pub(super) fn dispatch_editor_action(
             paging::handle_page_key(app, out, paging::PageDirection::Previous)
         }
         EditorAction::NextPage => paging::handle_page_key(app, out, paging::PageDirection::Next),
-        EditorAction::MarkdownPreview
+        EditorAction::ExternalDiff
+        | EditorAction::MarkdownPreview
         | EditorAction::LineNumbers
         | EditorAction::Whitespace
         | EditorAction::SoftWrap => {

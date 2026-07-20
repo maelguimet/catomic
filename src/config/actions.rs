@@ -102,6 +102,7 @@ pub(crate) enum Action {
     PreviousPage,
     NextPage,
     MarkdownPreview,
+    ToggleExternalDiff,
     LineNumbers,
     Whitespace,
     SoftWrap,

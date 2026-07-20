@@ -251,7 +251,7 @@ fn wheel_gestures_can_be_swapped_or_unbound_without_crossing_button_types() {
 #[test]
 fn registry_defaults_are_complete_and_collision_free() {
     let bindings = KeyBindings::default();
-    assert_eq!(actions::REGISTRY.len(), 87);
+    assert_eq!(actions::REGISTRY.len(), 88);
     for descriptor in actions::REGISTRY {
         assert!(!descriptor.name.is_empty());
         assert!(!descriptor.scopes.is_empty());
@@ -306,4 +306,30 @@ fn inline_clanker_actions_are_remappable_and_unbindable() {
         ),
         None
     );
+}
+
+#[test]
+fn external_diff_toggle_is_remappable_and_unbindable() {
+    let remapped = parse("[keybindings]\ntoggle-external-diff = [\"alt+d\"]\n").unwrap();
+    assert_eq!(
+        remapped.translate(
+            Scope::Editor,
+            KeyEvent::new(KeyCode::Char('d'), KeyModifiers::ALT)
+        ),
+        Some(KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE))
+    );
+    assert!(remapped
+        .translate(
+            Scope::Editor,
+            KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE)
+        )
+        .is_none());
+
+    let unbound = parse("[keybindings]\ntoggle-external-diff = []\n").unwrap();
+    assert!(unbound
+        .translate(
+            Scope::Editor,
+            KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE)
+        )
+        .is_none());
 }

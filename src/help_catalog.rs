@@ -34,6 +34,7 @@ pub(crate) enum EditorAction {
     NextBuffer,
     PreviousPage,
     NextPage,
+    ExternalDiff,
     MarkdownPreview,
     LineNumbers,
     Whitespace,
@@ -350,6 +351,14 @@ pub(crate) const EDITOR_ACTIONS: &[EditorActionSpec] = &[
         "Insert",
         "Toggle session-wide insert/overwrite typing; overwrite replaces one grapheme.",
         &[ShortcutKey::plain(ShortcutCode::Insert)],
+    ),
+    action(
+        EditorAction::ExternalDiff,
+        "toggle-external-diff",
+        "View",
+        "F5",
+        "Toggle external-reload change marks and remember the explicit choice.",
+        &[ShortcutKey::plain(ShortcutCode::Function(5))],
     ),
     action(
         EditorAction::MarkdownPreview,

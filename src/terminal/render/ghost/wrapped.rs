@@ -25,8 +25,11 @@ pub(super) fn compose_buffer(
     ghost: GhostText<'_>,
 ) -> io::Result<()> {
     let height = super::super::content_height(viewport.height, options.action_bar);
-    let (line_gutter, change_gutter) = gutters(buffer, viewport.width, options);
-    let gutter = line_gutter.saturating_add(change_gutter);
+    let gutters = gutters(buffer, viewport.width, options);
+    let (line_gutter, external_gutter, llm_gutter) = gutters;
+    let gutter = line_gutter
+        .saturating_add(external_gutter)
+        .saturating_add(llm_gutter);
     let width = viewport.width.saturating_sub(gutter);
     let mut rows = Vec::with_capacity(height);
     let mut document_row = viewport.start_row;
@@ -58,15 +61,7 @@ pub(super) fn compose_buffer(
         }
         document_row += 1;
     }
-    write_display_rows(
-        out,
-        &rows,
-        height,
-        width,
-        line_gutter,
-        change_gutter,
-        options,
-    )?;
+    write_display_rows(out, &rows, height, width, gutters, options)?;
     write_status(out, viewport, message, options)?;
     let (row, col) = rows
         .iter()
@@ -218,10 +213,10 @@ fn write_display_rows(
     rows: &[DisplayRow],
     height: usize,
     width: usize,
-    line_gutter: usize,
-    change_gutter: usize,
+    gutters: (usize, usize, usize),
     options: RenderOptions<'_>,
 ) -> io::Result<()> {
+    let (line_gutter, external_gutter, llm_gutter) = gutters;
     for screen_row in 1..=height {
         super::super::style::write_row_start(
             out,
@@ -236,7 +231,8 @@ fn write_display_rows(
             out,
             row.document_row,
             line_gutter,
-            change_gutter,
+            external_gutter,
+            llm_gutter,
             row.line_number,
             options,
         )?;

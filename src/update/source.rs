@@ -42,7 +42,16 @@ struct SourceInstall {
 }
 
 pub(super) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
-    let install = discover().map_err(|error| UpdateError::new(EXIT_UNSUPPORTED, error))?;
+    let Some(install) = discover().map_err(|error| UpdateError::new(EXIT_UNSUPPORTED, error))?
+    else {
+        if options.check {
+            return Err(UpdateError::new(
+                EXIT_UNSUPPORTED,
+                "source checkout is unavailable; no files changed",
+            ));
+        }
+        return cargo_install(options);
+    };
     print_local_status(&install);
     if options.check {
         return check(&install);
@@ -82,6 +91,25 @@ pub(super) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
     }
     let backup = maybe_backup(options)?;
     apply(&install, &remote_sha, &remote_version, backup.as_deref())
+}
+
+fn cargo_install(options: UpdateOptions) -> Result<(), UpdateError> {
+    println!("install method: Cargo git install");
+    println!("source: {OFFICIAL_REMOTE} branch {SUPPORTED_BRANCH}");
+    if !confirm(
+        options,
+        "Reinstall from the official Cargo git source? Network and disk writes will follow.",
+    )? {
+        println!("update cancelled; no network or disk changes made");
+        return Ok(());
+    }
+    maybe_backup(options)?;
+    println!("running Cargo install...");
+    let mut command = cargo_install_command();
+    run_cargo(&mut command)?;
+    println!("updated from {OFFICIAL_REMOTE}");
+    println!("user state: unchanged");
+    Ok(())
 }
 
 fn check(install: &SourceInstall) -> Result<(), UpdateError> {
@@ -213,25 +241,28 @@ fn ensure_checkout_unchanged(install: &SourceInstall) -> Result<(), UpdateError>
     }
 }
 
-fn discover() -> Result<SourceInstall, String> {
+fn discover() -> Result<Option<SourceInstall>, String> {
     const SOURCE: &str = match option_env!("CATOMIC_SOURCE_DIR") {
         Some(path) => path,
         None => env!("CARGO_MANIFEST_DIR"),
     };
-    discover_at(Path::new(SOURCE)).map_err(|error| {
-        format!(
-            "{error}; no files changed. Update manually with `cargo install --git {OFFICIAL_REMOTE} --locked --force`"
-        )
-    })
+    discover_path(Path::new(SOURCE))
+}
+
+fn discover_path(root: &Path) -> Result<Option<SourceInstall>, String> {
+    if !root
+        .try_exists()
+        .map_err(|error| format!("inspect source checkout {}: {error}", root.display()))?
+    {
+        return Ok(None);
+    }
+    discover_at(root).map(Some)
 }
 
 fn discover_at(root: &Path) -> Result<SourceInstall, String> {
-    let root = root.canonicalize().map_err(|error| {
-        format!(
-            "this binary's source checkout is unavailable at {}: {error}; update manually with `cargo install --git {OFFICIAL_REMOTE} --locked --force`",
-            root.display()
-        )
-    })?;
+    let root = root
+        .canonicalize()
+        .map_err(|error| format!("resolve source checkout {}: {error}", root.display()))?;
     let top = git_text(&root, &["rev-parse", "--show-toplevel"])?;
     let top = Path::new(&top)
         .canonicalize()
@@ -360,6 +391,18 @@ fn fast_forward_checkout(root: &Path, sha: &str) -> Result<(), String> {
 
 fn cargo(root: &Path, args: &[&str]) -> Result<(), UpdateError> {
     cargo_command(root, args, None)
+}
+
+fn cargo_install_command() -> Command {
+    let mut command = Command::new("cargo");
+    command.args([
+        "install",
+        "--git",
+        OFFICIAL_REMOTE,
+        "--locked",
+        "--force",
+    ]);
+    command
 }
 
 fn cargo_with_source(

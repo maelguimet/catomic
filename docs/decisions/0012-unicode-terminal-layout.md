@@ -1,4 +1,4 @@
-# Decision 0008: Unicode terminal layout helpers
+# Decision 0012: Unicode terminal layout helpers
 
 Catomic uses `unicode-segmentation` for extended grapheme boundaries and
 `unicode-width` for terminal cell widths.

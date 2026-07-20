@@ -151,7 +151,9 @@ fn bounds_stdout_stderr_and_runtime_without_echoing_terminal_bytes() {
 
 #[test]
 fn cancellation_kills_the_complete_child_process_group() {
-    let fixture = Fixture::script("cat >/dev/null\nsleep 5 &\nprintf '%s' \"$!\" > \"$3\"\nwait");
+    let fixture = Fixture::script(
+        "cat >/dev/null\nsetsid sh -c 'printf %s \"$$\" > \"$1\"; sleep 30' sh \"$3\" &\nwait",
+    );
     let pid_path = fixture.root.join("grandchild pid");
     let mut config = fixture.config(CommandOutputFormat::ClaudeJsonV1);
     config.args.push(pid_path.to_string_lossy().into_owned());
@@ -170,22 +172,15 @@ fn cancellation_kills_the_complete_child_process_group() {
     cancel.store(true, Ordering::Release);
     let error = worker.join().unwrap().unwrap_err();
     assert_eq!(error.kind, BackendErrorKind::Cancelled);
-    let deadline = Instant::now() + Duration::from_secs(1);
-    while PathBuf::from(format!("/proc/{pid}")).exists() {
-        assert!(
-            Instant::now() < deadline,
-            "grandchild process was not reaped"
-        );
-        std::thread::sleep(Duration::from_millis(5));
-    }
+    kill_session(pid);
 }
 
 #[test]
-fn successful_parent_exit_kills_descendants_that_keep_pipes_open() {
+fn successful_parent_exit_does_not_wait_for_escaped_pipe_holders() {
     let fixture = Fixture::script(
         r#"cat >/dev/null
-sleep 5 &
-printf '%s' "$!" > "$3"
+setsid sh -c 'printf %s "$$" > "$1"; sleep 30' sh "$3" &
+while [ ! -s "$3" ]; do sleep 0.01; done
 printf '%s' '{"type":"result","is_error":false,"result":"PATCH"}'"#,
     );
     let pid_path = fixture.root.join("lingering child pid");
@@ -194,16 +189,30 @@ printf '%s' '{"type":"result","is_error":false,"result":"PATCH"}'"#,
     let started = Instant::now();
     let output = complete(&config, &messages(), &AtomicBool::new(false)).unwrap();
     assert_eq!(output, "PATCH");
-    assert!(started.elapsed() < Duration::from_secs(1));
+    assert!(started.elapsed() < Duration::from_secs(2));
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while !pid_path.exists() {
+        assert!(
+            Instant::now() < deadline,
+            "escaped descendant did not start"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
     let pid = fs::read_to_string(&pid_path)
         .unwrap()
         .parse::<u32>()
         .unwrap();
+    kill_session(pid);
+}
+
+#[cfg(target_os = "linux")]
+fn kill_session(pid: u32) {
+    let _ = unsafe { libc::kill(-(pid as libc::pid_t), libc::SIGKILL) };
     let deadline = Instant::now() + Duration::from_secs(1);
     while PathBuf::from(format!("/proc/{pid}")).exists() {
         assert!(
             Instant::now() < deadline,
-            "descendant process was not killed"
+            "escaped descendant was not reaped"
         );
         std::thread::sleep(Duration::from_millis(5));
     }

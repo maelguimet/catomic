@@ -103,8 +103,10 @@ and per-file diff. No command writes or runs a process other than read-only Git.
   directory, caps stdout at 2 MiB and stderr at 64 KiB, enforces the configured
   timeout, and kills the complete child process group while reaping its direct
   child on cancellation.
-- Command prompts use an active-file basename or confirmed repo-relative path,
-  not the workspace's absolute path; the child does not inherit Catomic's cwd.
+- Current-buffer and inline prompts use only the active-file basename; repo
+  prompts use only confirmed repo-relative paths. Neither HTTP nor command
+  payloads include Catomic's absolute workspace path, and command children do
+  not inherit Catomic's cwd.
 - Command stdout must match exactly `claude-json-v1` or `codex-jsonl-v1`.
   Malformed/partial output and Codex tool/item events fail closed. Stderr and
   HTTP error bodies are suppressed rather than copied into terminal errors.

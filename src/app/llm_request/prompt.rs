@@ -3,8 +3,6 @@
 //! Must not: collect context, create network clients, mutate editor state, or log secrets.
 //! Invariants: confirmation names exact extent/model/endpoint; prompts retain line provenance.
 
-use std::path::Path;
-
 use crate::config::llm::{BackendAdapter, BackendPreset};
 use crate::llm::context::{ContextScope, RequestDraft, Sensitivity};
 
@@ -14,6 +12,7 @@ pub(super) fn confirmation_message(
     draft: &RequestDraft,
     preset: &BackendPreset,
     destination: &str,
+    path: &str,
 ) -> String {
     let scope = match draft.context.scope {
         ContextScope::Selection => "selection",
@@ -26,7 +25,7 @@ pub(super) fn confirmation_message(
         " SENSITIVE context detected; Enter explicitly allows sending it."
     };
     format!(
-        "To {destination}: preset {} model {} via {}; send {} lines/{} bytes from {scope}?{sensitive} Enter confirms; Esc cancels.",
+        "To {destination}: preset {} model {} via {}; send {} lines/{} bytes from {scope}, identified as basename {path}?{sensitive} Enter confirms; Esc cancels.",
         preset.name,
         preset.model,
         adapter_label(&preset.adapter),
@@ -60,18 +59,6 @@ pub(super) fn user_prompt(draft: &RequestDraft, path: &str) -> String {
         draft.instruction,
         draft.context.text
     )
-}
-
-pub(super) fn display_path(path: Option<&Path>, preset: &BackendPreset) -> String {
-    let path = path.unwrap_or_else(|| Path::new("untitled.txt"));
-    if matches!(&preset.adapter, BackendAdapter::Command(_)) {
-        path.file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .filter(|name| !name.is_empty())
-            .unwrap_or_else(|| "active-file.txt".to_string())
-    } else {
-        path.to_string_lossy().into_owned()
-    }
 }
 
 fn sensitivity_label(sensitivity: &Sensitivity) -> String {

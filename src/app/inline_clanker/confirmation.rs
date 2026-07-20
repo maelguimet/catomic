@@ -169,11 +169,12 @@ fn document(prepared: &PreparedWorkflow) -> String {
         .collect::<Vec<_>>()
         .join("\n");
     format!(
-        "Inline clanker send confirmation\n\nPreset: {}\nModel: {}\nAdapter: {}\nDestination: {}\nInstruction source: line {}\nInstruction:\n{}\n\nMode: {}\nScope: {}\n{}\nSensitive content: {}\nCleanup after final accepted proposal: {}\n\nNo client, process, or network request starts until Enter.\nEnter sends; Esc cancels.\n",
+        "Inline clanker send confirmation\n\nPreset: {}\nModel: {}\nAdapter: {}\nDestination: {}\nFile identifier: {} (basename only)\nInstruction source: line {}\nInstruction:\n{}\n\nMode: {}\nScope: {}\n{}\nSensitive content: {}\nCleanup after final accepted proposal: {}\n\nNo client, process, or network request starts until Enter.\nEnter sends; Esc cancels.\n",
         prepared.preset.name,
         prepared.preset.model,
         prepared.preset.adapter_label(),
         prepared.destination,
+        prepared.path,
         prepared.draft.instruction.display_line,
         prepared.draft.instruction.text,
         prepared.draft.block_mode_label(&prepared.inline),

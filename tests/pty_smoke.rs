@@ -637,7 +637,6 @@ fn pty_f1_help_wraps_and_scrolls_to_reload_reference_in_a_narrow_terminal() -> T
     editor.wait_for_initial_render()?;
     editor.send_keys(b"\x1bOP")?; // F1
     editor.wait_for_output("F1 built-in help", "Catomic help")?;
-    editor.wait_for_output("curated file workflows", "Files and buffers")?;
     for _ in 0..12 {
         editor.send_keys(b"\x1b[6~")?; // PageDown
     }

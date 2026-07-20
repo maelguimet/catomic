@@ -26,11 +26,13 @@ impl App {
     }
 
     pub(crate) fn close_active_buffer(&mut self, force: bool) -> io::Result<CloseBufferOutcome> {
+        super::super::selection::end_cut_line_chain(self);
         if self.file.dirty && !force {
             self.message =
                 Some("Buffer has unsaved changes. Save it or use close! to discard.".to_string());
             return Ok(CloseBufferOutcome::Dirty);
         }
+        super::super::command_prompt::forget_active_config_detour(self);
         super::super::autocomplete::invalidate(self);
         external_command::cancel_all(self);
         hooks::cancel_all(self);

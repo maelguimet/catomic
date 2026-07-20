@@ -171,10 +171,20 @@ pub(crate) fn handle_shortcut(
         'a' => select_all(app, out),
         'c' => copy(app, out),
         'x' => cut(app, out),
+        'k' => cut_line(app, out),
         'v' => paste_internal(app, out),
         _ => return Ok(false),
     }?;
     Ok(true)
+}
+
+pub(crate) fn is_cut_line_key(key: KeyEvent) -> bool {
+    matches!(key.code, KeyCode::Char(ch) if ch.eq_ignore_ascii_case(&'k'))
+        && key.modifiers.contains(KeyModifiers::CONTROL)
+}
+
+pub(crate) fn end_cut_line_chain(app: &mut super::App) {
+    app.cut_line_append = false;
 }
 
 pub(crate) fn replace_active(app: &mut super::App, text: &str) -> io::Result<bool> {
@@ -274,6 +284,49 @@ fn cut(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         super::input::finish_content_edit(app, out)
     } else {
         app.message = Some("Current file page is read-only; selection was copied.".to_string());
+        app.render(out)
+    }
+}
+
+fn cut_line(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    if app.selection.active().is_some() || app.selection.status_text().is_some() {
+        end_cut_line_chain(app);
+        return cut(app, out);
+    }
+
+    let row = app.buffer.cursor().row;
+    let start = Cursor { row, col: 0 };
+    let end = if row + 1 < app.buffer.line_count() {
+        Cursor {
+            row: row + 1,
+            col: 0,
+        }
+    } else {
+        Cursor {
+            row,
+            col: app.buffer.line_char_count(row).unwrap_or(0),
+        }
+    };
+    let text = app.buffer.text_range(start, end)?;
+    if text.is_empty() {
+        app.message = Some("Nothing to cut on this line.".to_string());
+        return app.render(out);
+    }
+
+    let payload = if app.cut_line_append {
+        let mut payload = String::with_capacity(app.clipboard.len() + text.len());
+        payload.push_str(&app.clipboard);
+        payload.push_str(&text);
+        payload
+    } else {
+        text
+    };
+    let _ = export_text(app, out, payload)?;
+    if app.buffer.replace_range(start, end, "")? {
+        app.cut_line_append = true;
+        super::input::finish_content_edit(app, out)
+    } else {
+        app.message = Some("Current file page is read-only; line was copied.".to_string());
         app.render(out)
     }
 }

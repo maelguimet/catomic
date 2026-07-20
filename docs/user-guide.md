@@ -397,6 +397,13 @@ so the terminal or host clipboard receives the same value. Completed desktop
 mouse selections use this path automatically; `Ctrl+C` remains the explicit
 copy action and never interrupts Catomic.
 
+`Ctrl+K` cuts the current logical line, including its terminating line break
+when present. Consecutive presses append complete lines to one clipboard payload
+in document order, so one `Ctrl+V` restores them together. Each press is a
+separate undo transaction. Moving, editing, switching buffers, or using another
+action ends the append chain; an active selection keeps ordinary selection-cut
+behavior.
+
 Bracketed terminal paste is inserted as one undoable edit. Terminal emulators,
 multiplexers, desktop shortcuts, and SSH clients may intercept clipboard chords
 before Catomic receives them; see [Troubleshooting](#troubleshooting).
@@ -480,10 +487,23 @@ the editor session:
 | Next buffer | `Alt+PageDown` | — |
 | Previous buffer | `Alt+PageUp` | — |
 
-Opening an already-open path switches to or reports the existing buffer rather
-than creating a duplicate. Each buffer retains its cursor, viewport, selection,
-dirty state, file watcher, whitespace/wrapping toggles, and large-file page
-position. Line numbers are a session-global preference shared by every buffer.
+Opening an already-open file switches to or reports the existing buffer rather
+than creating a duplicate. On Linux, Catomic follows symlinks and identifies an
+existing regular file by device and inode, so relative/absolute spellings,
+`.`/`..` aliases, symlinks, and hard links select the first buffer that opened
+the file. That buffer keeps its original path spelling. A hard-linked file still
+cannot be saved because the atomic-save safety policy refuses targets with more
+than one link.
+
+For a missing path, Catomic resolves the deepest existing parent directory and
+then compares the remaining normalized path. It does not assume that different
+nonexistent or dangling path components will later become the same file. If two
+open missing paths later converge on one file, Save is blocked instead of
+letting independent dirty buffers overwrite one another through watcher timing.
+
+Each buffer retains its cursor, viewport, selection, dirty state, file watcher,
+whitespace/wrapping toggles, and large-file page position. Line numbers are a
+session-global preference shared by every buffer.
 
 `Ctrl+S` saves only the active buffer. `Ctrl+Q` checks every open buffer; if any
 are dirty, the first press warns and the second press quits without saving.
@@ -509,6 +529,10 @@ absolute, or home-relative, such as `~/notes/today.md`.
 If a Save As destination already exists, Catomic refuses the first submission
 and asks you to submit the same path again. If the target changes between those
 submissions, the confirmation is invalidated.
+
+Save As never overwrites a path represented by another open buffer, including a
+symlink or hard-link alias. Switch to that buffer or close it first; repeated
+confirmation does not bypass this in-process collision guard.
 
 ### Atomic saves
 
@@ -1197,7 +1221,11 @@ overwrites a file that appears during confirmation. Configuration is validated
 and applied as one document at normal startup, so restart Catomic after saving;
 the running session does not silently apply a partial reload. The dedicated
 config action uses built-in defaults, so an invalid config can still be opened
-and repaired.
+and repaired. When the in-editor command opens config from another buffer,
+`Ctrl+Q` closes that temporary config buffer and returns to the invoking buffer.
+Unsaved config changes are never discarded on the first press; a second
+`Ctrl+Q` explicitly discards only the config detour. A config opened directly
+from the shell keeps the editor's normal session-quit behavior.
 
 Shell workflows can discover, validate, or edit the same path without guessing
 the XDG resolution:
@@ -1534,6 +1562,7 @@ toggle-overwrite | editor | insert
 select-all | editor | ctrl+a
 copy | editor | ctrl+c
 cut | editor | ctrl+x
+cut-line | editor | ctrl+k
 paste | editor | ctrl+v
 previous-buffer | editor | alt+pageup
 next-buffer | editor | alt+pagedown
@@ -1586,6 +1615,7 @@ mouse-scroll-down | editor,preview,picker,help | mouse-wheel-down
 | Files | Check/reload external change | `Ctrl+R` |
 | Buffers | Previous / next buffer | `Alt+PageUp` / `Alt+PageDown` |
 | Editing | Select/copy/cut/paste | `Ctrl+A` / `Ctrl+C` / `Ctrl+X` / `Ctrl+V` |
+| Editing | Cut current line; repeated cuts append | `Ctrl+K` |
 | Editing | Undo | `Ctrl+Z` |
 | Editing | Redo | `Ctrl+Y` / `Ctrl+Shift+Z` |
 | Editing | Indent / unindent | `Tab` / `Shift+Tab` |

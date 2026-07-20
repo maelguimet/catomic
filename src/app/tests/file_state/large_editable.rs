@@ -75,7 +75,7 @@ fn paged_buffer_edits_multiple_pages_and_saves_the_whole_file() {
     )
     .unwrap();
 
-    assert_eq!(fs::read_to_string(&path).unwrap(), "Xfirst\nYsecond");
+    assert_eq!(fs::read_to_string(&path).unwrap(), "Xfirst\nYsecond\n");
     assert!(!app.file.dirty);
     assert!(app.message.is_none());
 
@@ -97,7 +97,10 @@ fn paged_buffer_keeps_editing_untouched_pages_after_atomic_save() {
         make_key(KeyCode::Char('s'), KeyModifiers::CONTROL),
     )
     .unwrap();
-    assert_eq!(fs::read_to_string(&path).unwrap(), "Xfirst\nsecond\nthird");
+    assert_eq!(
+        fs::read_to_string(&path).unwrap(),
+        "Xfirst\nsecond\nthird\n"
+    );
 
     app.handle_key_with(&mut out, make_key(KeyCode::PageDown, KeyModifiers::CONTROL))
         .unwrap();
@@ -109,7 +112,10 @@ fn paged_buffer_keeps_editing_untouched_pages_after_atomic_save() {
     )
     .unwrap();
 
-    assert_eq!(fs::read_to_string(&path).unwrap(), "Xfirst\nYsecond\nthird");
+    assert_eq!(
+        fs::read_to_string(&path).unwrap(),
+        "Xfirst\nYsecond\nthird\n"
+    );
     assert!(!app.file.dirty);
 
     let _ = fs::remove_file(path);

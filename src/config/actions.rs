@@ -95,6 +95,7 @@ pub(crate) enum Action {
     SelectAll,
     Copy,
     Cut,
+    CutLine,
     Paste,
     PreviousBuffer,
     NextBuffer,

@@ -148,7 +148,7 @@ fn queued_changed_on_unchanged_ignored_no_render() {
         "must preserve prior message"
     );
     assert_eq!(app.pending_reload, before_pend);
-    assert_eq!(app.buffer.to_string(), "BASE");
+    assert_eq!(app.buffer.to_string(), "BASE\n");
     assert!(!app.file.dirty);
 
     let _ = std::fs::remove_file(&p);
@@ -242,7 +242,7 @@ fn one_call_processes_at_most_one_signal() {
     assert!(!out2.is_empty(), "second must have rendered");
 
     // State remains sane; no content mutation; both signals were observable.
-    assert_eq!(app.buffer.to_string(), "ONE", "buffer content unchanged");
+    assert_eq!(app.buffer.to_string(), "ONE\n", "buffer content unchanged");
     assert!(!app.file.dirty, "dirty state sane");
     // pending may be set (or re-set); message from arm path is present.
     let msg = app.message.as_deref().unwrap_or("");

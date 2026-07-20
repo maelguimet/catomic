@@ -261,6 +261,26 @@ fn registry_defaults_are_complete_and_collision_free() {
 }
 
 #[test]
+fn cut_line_is_default_bound_remappable_and_unbindable() {
+    let default = KeyBindings::default();
+    let ctrl_k = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+    assert_eq!(default.translate(Scope::Editor, ctrl_k), Some(ctrl_k));
+
+    let remapped = parse("[keybindings]\ncut-line = [\"alt+k\"]\n").unwrap();
+    assert_eq!(remapped.translate(Scope::Editor, ctrl_k), None);
+    assert_eq!(
+        remapped.translate(
+            Scope::Editor,
+            KeyEvent::new(KeyCode::Char('k'), KeyModifiers::ALT)
+        ),
+        Some(ctrl_k)
+    );
+
+    let unbound = parse("[keybindings]\ncut-line = []\n").unwrap();
+    assert_eq!(unbound.translate(Scope::Editor, ctrl_k), None);
+}
+
+#[test]
 fn inline_clanker_actions_are_remappable_and_unbindable() {
     let bindings =
         parse("[keybindings]\nrun-clanker = [\"alt+x\"]\nclear-clanker-changes = []\n").unwrap();

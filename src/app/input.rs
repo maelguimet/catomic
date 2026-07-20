@@ -51,6 +51,7 @@ pub(super) fn finish_content_edit_with_message(
     if app.buffer.is_read_only() {
         app.message = Some("Large file is read-only in paged mode.".to_string());
     } else {
+        command_prompt::clear_config_discard_confirmation(app);
         app.pending_quit_confirm = false;
         app.pending_save_conflict = None;
         app.pending_reload = None;
@@ -75,6 +76,7 @@ pub(crate) fn handle_key_with(
     key: KeyEvent,
 ) -> io::Result<()> {
     if mobile::handle_key(app, out, key)? {
+        selection::end_cut_line_chain(app);
         return Ok(());
     }
     let scope = scope::active(app);
@@ -84,6 +86,9 @@ pub(crate) fn handle_key_with(
     if shortcuts::is_interrupt_key(key) {
         crate::terminal::request_interrupt();
         return Ok(());
+    }
+    if scope != crate::config::actions::Scope::Editor || !selection::is_cut_line_key(key) {
+        selection::end_cut_line_chain(app);
     }
     handle_normalized_key(app, out, key)
 }
@@ -172,6 +177,7 @@ pub(crate) fn handle_paste(
     out: &mut dyn Write,
     text: &str,
 ) -> io::Result<()> {
+    selection::end_cut_line_chain(app);
     if mobile::handle_paste(app, out)? {
         return Ok(());
     }
@@ -186,19 +192,32 @@ pub(crate) fn handle_paste(
 }
 
 pub(super) fn handle_quit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
-    // The config command is a temporary detour: quit once returns without closing either buffer.
-    if app.buffer_count() > 1 {
-        if let Some(target) = command_prompt::take_config_return_target(app) {
-            for _ in 0..app.buffer_count() {
-                if app.active_buffer_index == target
-                    || !app.switch_buffer(buffers::BufferDirection::Previous)
-                {
-                    break;
-                }
+    if let Some(request) = command_prompt::request_config_close(app) {
+        match request {
+            command_prompt::ConfigCloseRequest::WarnDirty => {
+                app.message = Some(
+                    "Unsaved configuration. Press Ctrl+Q again to discard it, or Ctrl+S to save."
+                        .to_string(),
+                );
+                return app.render(out);
             }
-            if app.active_buffer_index == target {
-                app.message =
-                    Some("Returned to previous buffer; configuration remains open.".to_string());
+            command_prompt::ConfigCloseRequest::Close {
+                return_target,
+                discard,
+            } => {
+                if let Err(error) = app.close_active_buffer(discard) {
+                    app.message = Some(format!("Close error: {error}"));
+                    return app.render(out);
+                }
+                app.message = None;
+                for _ in 0..app.buffer_count() {
+                    if app.active_buffer_index == return_target
+                        || !app.switch_buffer(buffers::BufferDirection::Previous)
+                    {
+                        break;
+                    }
+                }
+                app.message = None;
                 app.reveal_cursor();
                 return app.render(out);
             }

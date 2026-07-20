@@ -26,6 +26,10 @@ fn send(app: &mut super::super::App, out: &mut Vec<u8>, code: KeyCode, modifiers
     app.handle_key_with(out, key(code, modifiers)).unwrap();
 }
 
+fn send_control(app: &mut super::super::App, out: &mut Vec<u8>, character: char) {
+    send(app, out, KeyCode::Char(character), KeyModifiers::CONTROL);
+}
+
 #[test]
 fn shift_arrows_select_and_ctrl_c_populates_both_clipboards() {
     let mut app = app_with("abc");
@@ -100,6 +104,128 @@ fn cut_and_internal_paste_are_single_undoable_edits() {
     assert_eq!(app.buffer.to_string(), "abc");
     app.buffer.undo();
     assert_eq!(app.buffer.to_string(), "c");
+}
+
+#[test]
+fn ctrl_k_cuts_whole_lines_and_consecutive_cuts_append_in_order() {
+    let mut app = app_with("one\ntwo\nthree");
+    let mut out = Vec::new();
+
+    send_control(&mut app, &mut out, 'k');
+    assert_eq!(app.buffer.to_string(), "two\nthree");
+    assert_eq!(app.clipboard, "one\n");
+    assert_eq!(app.buffer.cursor(), Cursor { row: 0, col: 0 });
+
+    send_control(&mut app, &mut out, 'k');
+    assert_eq!(app.buffer.to_string(), "three");
+    assert_eq!(app.clipboard, "one\ntwo\n");
+    assert!(String::from_utf8_lossy(&out).contains("\x1b]52;c;b25lCnR3bwo=\x1b\\"));
+
+    send_control(&mut app, &mut out, 'v');
+    assert_eq!(app.buffer.to_string(), "one\ntwo\nthree");
+}
+
+#[test]
+fn ctrl_k_handles_empty_final_and_no_final_newline_lines() {
+    let cases = [
+        ("first\nlast", Cursor { row: 0, col: 3 }, "last", "first\n"),
+        ("first\nlast", Cursor { row: 1, col: 2 }, "first\n", "last"),
+        ("solo", Cursor { row: 0, col: 2 }, "", "solo"),
+        (
+            "first\n\nlast",
+            Cursor { row: 1, col: 0 },
+            "first\nlast",
+            "\n",
+        ),
+    ];
+    for (source, cursor, expected, clipboard) in cases {
+        let mut app = app_with(source);
+        let mut out = Vec::new();
+        app.buffer.set_cursor(cursor);
+        send_control(&mut app, &mut out, 'k');
+        assert_eq!(app.buffer.to_string(), expected, "source {source:?}");
+        assert_eq!(app.clipboard, clipboard, "source {source:?}");
+    }
+
+    for source in ["", "first\n"] {
+        let mut app = app_with(source);
+        let mut out = Vec::new();
+        if source.ends_with('\n') {
+            app.buffer.set_cursor(Cursor { row: 1, col: 0 });
+        }
+        send_control(&mut app, &mut out, 'k');
+        assert_eq!(app.buffer.to_string(), source);
+        assert!(app.clipboard.is_empty());
+        assert_eq!(app.message.as_deref(), Some("Nothing to cut on this line."));
+    }
+}
+
+#[test]
+fn ctrl_k_preserves_selection_cut_and_unicode_bytes() {
+    let mut selected = app_with("abc\nrest");
+    let mut out = Vec::new();
+    send(&mut selected, &mut out, KeyCode::Right, KeyModifiers::SHIFT);
+    send(&mut selected, &mut out, KeyCode::Right, KeyModifiers::SHIFT);
+    send_control(&mut selected, &mut out, 'k');
+    assert_eq!(selected.buffer.to_string(), "c\nrest");
+    assert_eq!(selected.clipboard, "ab");
+
+    let mut app = app_with("e\u{301}猫🙂\nnext");
+    let mut out = Vec::new();
+    app.buffer.set_cursor(Cursor { row: 0, col: 2 });
+    send_control(&mut app, &mut out, 'k');
+    assert_eq!(app.clipboard, "e\u{301}猫🙂\n");
+    assert_eq!(app.buffer.to_string(), "next");
+}
+
+#[test]
+fn repeated_line_cuts_are_independent_undo_transactions() {
+    let mut app = app_with("a\nb\nc");
+    let mut out = Vec::new();
+    for _ in 0..2 {
+        send_control(&mut app, &mut out, 'k');
+    }
+    assert_eq!(app.buffer.to_string(), "c");
+    assert_eq!(app.clipboard, "a\nb\n");
+
+    send_control(&mut app, &mut out, 'z');
+    assert_eq!(app.buffer.to_string(), "b\nc");
+    send_control(&mut app, &mut out, 'z');
+    assert_eq!(app.buffer.to_string(), "a\nb\nc");
+    send_control(&mut app, &mut out, 'y');
+    assert_eq!(app.buffer.to_string(), "b\nc");
+    send_control(&mut app, &mut out, 'y');
+    assert_eq!(app.buffer.to_string(), "c");
+}
+
+#[test]
+fn movement_editing_and_buffer_switches_end_the_cut_line_chain() {
+    let mut moved = app_with("a\nb\nc");
+    let mut out = Vec::new();
+    send_control(&mut moved, &mut out, 'k');
+    send(&mut moved, &mut out, KeyCode::Down, KeyModifiers::NONE);
+    send_control(&mut moved, &mut out, 'k');
+    assert_eq!(moved.clipboard, "c");
+
+    let mut edited = app_with("a\nb\nc");
+    let mut out = Vec::new();
+    send_control(&mut edited, &mut out, 'k');
+    send(
+        &mut edited,
+        &mut out,
+        KeyCode::Char('X'),
+        KeyModifiers::SHIFT,
+    );
+    send_control(&mut edited, &mut out, 'k');
+    assert_eq!(edited.clipboard, "Xb\n");
+
+    let mut switched = app_with("left\nrest");
+    let mut out = Vec::new();
+    send_control(&mut switched, &mut out, 'k');
+    switched.new_file_buffer().unwrap();
+    switched.buffer = Box::new(crate::buffer::PieceTable::from_text("right\nrest"));
+    send_control(&mut switched, &mut out, 'k');
+    assert_eq!(switched.clipboard, "right\n");
 }
 
 #[test]

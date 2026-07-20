@@ -8,8 +8,8 @@ use std::io::{self, Write};
 use crate::terminal as term;
 
 use super::{
-    autocomplete, external_command, external_diff, help, inline_clanker, lint, llm_answer,
-    llm_preview, mobile, model_picker, project_files, recovery, status, view, App,
+    external_command, external_diff, help, inline_clanker, lint, llm_answer, llm_preview, mobile,
+    model_picker, project_files, recovery, status, view, App,
 };
 
 impl App {
@@ -106,14 +106,7 @@ fn render_frame(
     annotation: &str,
     options: term::render::RenderOptions<'_>,
 ) -> io::Result<()> {
-    let ghost = view::source_is_displayed(app)
-        .then(|| autocomplete::visible_text(app))
-        .flatten()
-        .map(|text| term::render::GhostText {
-            cursor: app.buffer.cursor(),
-            text,
-        });
-    term::render::render_buffer_with_ghost(
+    term::render::render_buffer(
         out,
         view::display_buffer(app),
         term::render::RenderViewport::new(
@@ -125,7 +118,6 @@ fn render_frame(
         .with_wrap_col(app.screen.wrap_col),
         Some(annotation),
         options,
-        ghost,
     )
 }
 
@@ -220,7 +212,6 @@ fn local_surface_is_open(app: &App) -> bool {
         || llm_preview::is_viewing(app)
         || llm_answer::is_viewing(app)
         || inline_clanker::is_previewing(app)
-        || autocomplete::is_viewing(app)
 }
 
 pub(super) fn status_line(app: &App) -> status::StatusLine {
@@ -235,16 +226,11 @@ pub(super) fn status_line(app: &App) -> status::StatusLine {
             app.buffer_count(),
         )
     });
-    let activity = match autocomplete::status_label(app) {
-        "ac request" => Some("autocomplete…"),
-        "ac error" => Some("autocomplete error"),
-        _ => None,
-    };
     status::format_status_line(
         display_path.as_deref(),
         app.buffer.page_info(),
         position,
-        activity,
+        None,
         app.cat_config.status_messages,
         app.screen.width as usize,
     )

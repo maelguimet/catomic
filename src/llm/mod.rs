@@ -9,7 +9,6 @@
 //! - Every edit is a validated patch or strict marked-region replacement and
 //!   must pass through a read-only, explicitly confirmed preview.
 
-pub(crate) mod autocomplete;
 pub(crate) mod backend;
 pub mod broker;
 pub mod broker_protocol;

@@ -105,24 +105,6 @@ fn session_selection_survives_buffer_switch_and_picker_cancel() {
 }
 
 #[test]
-fn selecting_a_model_disables_prior_autocomplete_authorization() {
-    let mut app = super::super::App::new(None).unwrap();
-    let mut out = Vec::new();
-    let first = catalog("http://127.0.0.1:9/v1");
-    super::super::autocomplete::begin_with_catalog(&mut app, &mut out, first.clone()).unwrap();
-    super::super::autocomplete::handle_key(&mut app, &mut out, key(KeyCode::Enter)).unwrap();
-    assert!(app.autocomplete.enabled);
-    assert!(app.autocomplete.confirmed.is_some());
-
-    show_with_catalog(&mut app, &mut out, first).unwrap();
-    handle_key(&mut app, &mut out, key(KeyCode::Down)).unwrap();
-    handle_key(&mut app, &mut out, key(KeyCode::Enter)).unwrap();
-
-    assert!(!app.autocomplete.enabled);
-    assert!(app.autocomplete.confirmed.is_none());
-}
-
-#[test]
 fn picker_owns_and_restores_the_complete_viewport() {
     let mut app = super::super::App::new(None).unwrap();
     app.buffer = Box::new(PieceTable::from_text("a\nb\nc\nsource"));

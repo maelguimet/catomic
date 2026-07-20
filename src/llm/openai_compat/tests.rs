@@ -184,13 +184,11 @@ fn lists_complete_large_model_catalog_in_provider_order() {
             })
         })
         .collect::<Vec<_>>();
-    let body = serde_json::json!({"data": entries}).to_string().into_bytes();
+    let body = serde_json::json!({"data": entries})
+        .to_string()
+        .into_bytes();
     assert!(body.len() > 256 * 1024);
-    let (base_url, server) = fake_server(
-        "200 OK",
-        "application/json",
-        body,
-    );
+    let (base_url, server) = fake_server("200 OK", "application/json", body);
     let client = OpenAiCompatClient::new(config(base_url, None)).unwrap();
     let models = runtime.block_on(client.list_models()).unwrap();
     server.join().unwrap();

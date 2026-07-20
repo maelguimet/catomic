@@ -57,7 +57,7 @@ pub(crate) fn show(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
     app.screen.scroll_left = 0;
     app.screen.wrap_col = 0;
     app.selection.clear();
-    app.message = Some("Help; Esc closes.".to_string());
+    app.message_info("Help; Esc closes.");
     app.render(out)
 }
 
@@ -109,7 +109,7 @@ pub(crate) fn handle_key(
         KeyCode::PageDown => return scroll_page(app, out, true),
         KeyCode::Home => set_line_edge(app, false),
         KeyCode::End => set_line_edge(app, true),
-        _ => app.message = Some("Shortcut help is read-only; Esc closes.".to_string()),
+        _ => app.message_info("Shortcut help is read-only; Esc closes."),
     }
     reveal_cursor(app);
     app.render(out)?;
@@ -120,7 +120,7 @@ pub(crate) fn handle_paste(app: &mut super::App, out: &mut dyn Write) -> io::Res
     if !is_viewing(app) {
         return Ok(false);
     }
-    app.message = Some("Shortcut help is read-only; Esc closes.".to_string());
+    app.message_info("Shortcut help is read-only; Esc closes.");
     app.render(out)?;
     Ok(true)
 }
@@ -447,7 +447,7 @@ fn display_chords(bindings: &KeyBindings, action: Action) -> Vec<String> {
         .collect()
 }
 
-fn is_searching(app: &super::App) -> bool {
+pub(crate) fn is_searching(app: &super::App) -> bool {
     app.surfaces
         .help
         .as_ref()
@@ -459,7 +459,7 @@ fn open_search(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     view.search.prompt = Some(String::new());
     view.search.origin = Some(view.buffer.cursor());
     view.search.active_match = None;
-    app.message = Some("Find help: ".to_string());
+    app.message_info("Find help: ");
     app.render(out)
 }
 
@@ -516,7 +516,7 @@ fn cancel_search(app: &mut super::App) {
     }
     view.search.prompt = None;
     view.search.active_match = None;
-    app.message = Some("Help; Esc closes.".to_string());
+    app.message_info("Help; Esc closes.");
     app.reveal_cursor();
 }
 
@@ -541,7 +541,7 @@ fn find_help_match(app: &mut super::App, direction: SearchDirection, include_ori
         if let Some(origin) = view.search.origin {
             view.buffer.set_cursor(origin);
         }
-        app.message = Some("Find help: ".to_string());
+        app.message_info("Find help: ");
         app.reveal_cursor();
         return;
     }
@@ -553,12 +553,12 @@ fn find_help_match(app: &mut super::App, direction: SearchDirection, include_ori
     view.search.active_match = found;
     if let Some(found) = found {
         view.buffer.set_cursor(found.start);
-        app.message = Some(format!(
+        app.message_info(format!(
             "Found '{query}'. Enter/Down next, Up previous, Esc closes search."
         ));
         app.reveal_cursor();
     } else {
-        app.message = Some(format!("No matches for '{query}'. Esc closes search."));
+        app.message_info(format!("No matches for '{query}'. Esc closes search."));
     }
 }
 

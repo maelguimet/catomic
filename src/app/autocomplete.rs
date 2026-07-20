@@ -93,7 +93,7 @@ pub(crate) fn begin_enable(app: &mut super::App, out: &mut dyn Write) -> io::Res
     let catalog = match crate::config::llm::load() {
         Ok(catalog) => catalog,
         Err(error) => {
-            app.message = Some(format!("Autocomplete LLM config error: {error}"));
+            app.message_error(format!("Autocomplete LLM config error: {error}"));
             return app.render(out);
         }
     };
@@ -110,7 +110,7 @@ pub(super) fn begin_with_catalog(
     let policy = resolved_policy(&app.autocomplete.config, preset);
     if is_remote_http(&policy.preset) && !policy.autocomplete.allow_remote {
         app.autocomplete.enabled = false;
-        app.message = Some(format!(
+        app.message_info(format!(
             "Autocomplete remains disabled: {} is remote; set autocomplete.allow_remote = true to permit automatic context sending.",
             policy.destination
         ));
@@ -118,7 +118,7 @@ pub(super) fn begin_with_catalog(
     }
     if app.autocomplete.confirmed.as_ref() == Some(&policy) {
         app.autocomplete.enabled = true;
-        app.message = Some("Autocomplete enabled for the confirmed session scope.".to_string());
+        app.message_info("Autocomplete enabled for the confirmed session scope.");
         return app.render(out);
     }
     app.autocomplete.enabled = false;
@@ -133,9 +133,8 @@ pub(super) fn begin_with_catalog(
     app.screen.scroll_left = 0;
     app.screen.wrap_col = 0;
     app.selection.clear();
-    app.message = Some(
-        "Autocomplete confirmation (read-only): review details; Enter enables; Esc cancels."
-            .to_string(),
+    app.message_info(
+        "Autocomplete confirmation (read-only): review details; Enter enables; Esc cancels.",
     );
     app.autocomplete.pending = Some(confirmation);
     app.render(out)
@@ -148,7 +147,7 @@ pub(crate) fn disable(app: &mut super::App, out: &mut dyn Write) -> io::Result<(
     app.autocomplete.failures = 0;
     app.autocomplete.backoff_until = None;
     app.autocomplete.error = None;
-    app.message = Some("Autocomplete disabled; no automatic model requests will run.".to_string());
+    app.message_info("Autocomplete disabled; no automatic model requests will run.");
     app.render(out)
 }
 
@@ -190,9 +189,8 @@ pub(crate) fn handle_key(
                 app.render(out)?;
             }
             _ => {
-                app.message = Some(
-                    "Autocomplete not confirmed. Enter enables automatic sending; Esc cancels."
-                        .to_string(),
+                app.message_info(
+                    "Autocomplete not confirmed. Enter enables automatic sending; Esc cancels.",
                 );
                 app.render(out)?;
             }
@@ -216,8 +214,7 @@ pub(crate) fn handle_key(
 
 pub(crate) fn handle_paste(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {
     if app.autocomplete.pending.is_some() {
-        app.message =
-            Some("Autocomplete confirmation is read-only. Enter enables; Esc cancels.".to_string());
+        app.message_info("Autocomplete confirmation is read-only. Enter enables; Esc cancels.");
         app.render(out)?;
         return Ok(true);
     }
@@ -328,9 +325,8 @@ fn confirm(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     app.autocomplete.failures = 0;
     app.autocomplete.backoff_until = None;
     app.autocomplete.error = None;
-    app.message = Some(
-        "Autocomplete enabled. Type normally; Tab accepts ghost text and Esc dismisses it."
-            .to_string(),
+    app.message_info(
+        "Autocomplete enabled. Type normally; Tab accepts ghost text and Esc dismisses it.",
     );
     app.render(out)
 }
@@ -338,8 +334,8 @@ fn confirm(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
 fn cancel_confirmation(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     close_confirmation(app);
     app.autocomplete.enabled = false;
-    app.message = Some(
-        "Autocomplete confirmation cancelled; no model request or command was started.".to_string(),
+    app.message_info(
+        "Autocomplete confirmation cancelled; no model request or command was started.",
     );
     app.render(out)
 }
@@ -388,7 +384,7 @@ fn accept(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         .expect("visible suggestion");
     if !request::identity_is_current(app, &suggestion.identity) {
         invalidate(app);
-        app.message = Some("Autocomplete suggestion became stale and was discarded.".to_string());
+        app.message_warning("Autocomplete suggestion became stale and was discarded.");
         return app.render(out);
     }
     let cursor = app.buffer.cursor();

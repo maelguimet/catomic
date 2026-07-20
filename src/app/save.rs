@@ -106,7 +106,7 @@ pub(crate) fn handle_save(app: &mut super::App, out: &mut dyn Write) -> io::Resu
     }
     if app.buffer.is_read_only() {
         app.pending_save_conflict = None;
-        app.message = Some("Large file is read-only in paged mode; save disabled.".to_string());
+        app.message_warning("Large file is read-only in paged mode; save disabled.");
         return app.render(out);
     }
 
@@ -115,16 +115,15 @@ pub(crate) fn handle_save(app: &mut super::App, out: &mut dyn Write) -> io::Resu
         match app.another_buffer_represents_path(path) {
             Ok(true) => {
                 app.pending_save_conflict = None;
-                app.message = Some(
-                    "Save blocked: this file is also open in another buffer. Close the conflicting buffer first."
-                        .to_string(),
+                app.message_warning(
+                    "Save blocked: this file is also open in another buffer. Close the conflicting buffer first.",
                 );
                 return app.render(out);
             }
             Ok(false) => {}
             Err(error) => {
                 app.pending_save_conflict = None;
-                app.message = Some(format!(
+                app.message_error(format!(
                     "Save error: could not compare open buffers: {error}"
                 ));
                 return app.render(out);
@@ -158,7 +157,7 @@ pub(crate) fn handle_save(app: &mut super::App, out: &mut dyn Write) -> io::Resu
             status: obs.status.clone(),
             snapshot: obs.live_snapshot,
         });
-        app.message = Some(save_conflict_message_for_ui(
+        app.message_warning(save_conflict_message_for_ui(
             &obs.status,
             super::mobile::is_enabled(app),
         ));
@@ -178,33 +177,32 @@ pub(crate) fn handle_save_as(
     let target = match expand_user_path(input, std::env::var_os("HOME").as_deref()) {
         Ok(path) => path,
         Err(error) => {
-            app.message = Some(format!("Save As error: {error}"));
+            app.message_error(format!("Save As error: {error}"));
             return app.render(out);
         }
     };
     if app.buffer.is_read_only() {
         app.pending_save_conflict = None;
-        app.message = Some("Large file is read-only in paged mode; save disabled.".to_string());
+        app.message_warning("Large file is read-only in paged mode; save disabled.");
         return app.render(out);
     }
     if let Err(error) = file::io::validate_regular_save_target(&target) {
         app.pending_save_conflict = None;
-        app.message = Some(format!("Save As error: {error}"));
+        app.message_error(format!("Save As error: {error}"));
         return app.render(out);
     }
     match app.another_buffer_represents_path(&target) {
         Ok(true) => {
             app.pending_save_conflict = None;
-            app.message = Some(
-                "Save As blocked: target is already open in another buffer. Switch to or close that buffer first."
-                    .to_string(),
+            app.message_warning(
+                "Save As blocked: target is already open in another buffer. Switch to or close that buffer first.",
             );
             return app.render(out);
         }
         Ok(false) => {}
         Err(error) => {
             app.pending_save_conflict = None;
-            app.message = Some(format!(
+            app.message_error(format!(
                 "Save As error: could not compare open buffers: {error}"
             ));
             return app.render(out);
@@ -241,7 +239,7 @@ pub(crate) fn handle_save_as(
         status: obs.status.clone(),
         snapshot: obs.live_snapshot,
     });
-    app.message = Some(save_as_conflict_message(
+    app.message_warning(save_as_conflict_message(
         &obs.status,
         super::mobile::is_enabled(app),
     ));
@@ -381,20 +379,29 @@ fn do_atomic_save_to(app: &mut super::App, out: &mut dyn Write, target: PathBuf)
             app.pending_quit_confirm = false;
             app.pending_save_conflict = None;
             app.pending_reload = None;
-            app.message = super::recovery::after_save(app)
-                .err()
-                .map(|error| format!("Saved, but catnap cleanup failed: {error}"));
+            match super::recovery::after_save(app) {
+                Ok(()) => {
+                    app.message = None;
+                    app.message_role = crate::terminal::render::StatusRole::Info;
+                }
+                Err(error) => {
+                    app.message_error(format!("Saved, but catnap cleanup failed: {error}"));
+                }
+            }
             if crate::config::user_file::optional_path().as_deref() == Some(target.as_path()) {
                 let restart = "Restart Catomic to apply configuration changes.";
                 app.message = Some(match app.message.take() {
                     Some(message) => format!("{message} {restart}"),
                     None => format!("Saved configuration. {restart}"),
                 });
+                if app.message_role != crate::terminal::render::StatusRole::Error {
+                    app.message_role = crate::terminal::render::StatusRole::Info;
+                }
             }
             super::hooks::trigger_save(app);
         }
         Err(e) => {
-            app.message = Some(format!("Save error: {}", e));
+            app.message_error(format!("Save error: {}", e));
             // keep dirty; do not clear save conflict (user may still want to force after fixing env)
             // snapshot intentionally NOT updated on failure
         }

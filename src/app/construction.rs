@@ -63,6 +63,11 @@ impl App {
         let mut meta = open::prepare_open_file_meta(initial_path)?;
         let buffer = open::build_open_buffer(&mut meta, initial_path, big_files.page_lines)?;
         let initial_pos = buffer.edit_history_position();
+        let initial_message_role = if meta.initial_message.is_some() {
+            term::render::StatusRole::Warning
+        } else {
+            term::render::StatusRole::Info
+        };
 
         let mut app = App {
             mode,
@@ -93,6 +98,7 @@ impl App {
             file_watcher: None,
             should_quit: false,
             message: meta.initial_message,
+            message_role: initial_message_role,
             pending_quit_confirm: false,
             pending_save_conflict: None,
             pending_reload: None,

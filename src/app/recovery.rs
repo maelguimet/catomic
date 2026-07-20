@@ -44,12 +44,11 @@ pub(crate) fn initialize(app: &mut super::App) {
         Ok(Some(candidate)) => {
             app.recovery.offered_candidate = Some(candidate);
             if app.message.is_none() {
-                app.message =
-                    Some("Catnap recovery found. Run :recover to preview it.".to_string());
+                app.message_info("Catnap recovery found. Run :recover to preview it.");
             }
         }
         Err(error) if app.message.is_none() => {
-            app.message = Some(format!("Catnap check failed: {error}"));
+            app.message_error(format!("Catnap check failed: {error}"));
         }
         _ => {}
     }
@@ -82,7 +81,7 @@ fn finish_task_if_ready(app: &mut super::App, out: &mut dyn Write) -> io::Result
             }
         }
         CatnapResult::Error(error) => {
-            app.message = Some(format!("Catnap autosave failed: {error}"));
+            app.message_error(format!("Catnap autosave failed: {error}"));
             app.render(out)?;
         }
     }
@@ -116,7 +115,7 @@ fn start_autosave(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     match CatnapTask::start(path, content, app.buffer.edit_history_position()) {
         Ok(task) => app.recovery.task = Some(task),
         Err(error) => {
-            app.message = Some(format!("Could not start catnap autosave: {error}"));
+            app.message_error(format!("Could not start catnap autosave: {error}"));
             app.render(out)?;
         }
     }

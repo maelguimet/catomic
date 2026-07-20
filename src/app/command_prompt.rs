@@ -189,29 +189,35 @@ fn update_message(app: &mut super::App) {
     let Some(prompt) = app.command_prompt.active.as_ref() else {
         return;
     };
-    let label = match &prompt.kind {
-        PromptKind::GotoLine => "Goto line",
-        PromptKind::Command => "Command",
-        PromptKind::SaveAs => "Save as",
-        PromptKind::OpenFile => "Open file",
-        PromptKind::CreateConfig { path, .. } => {
-            app.message = Some(format!(
+    let text = prompt.text.clone();
+    let width = app.screen.width as usize;
+    let (message, inline_warning) = match &prompt.kind {
+        PromptKind::GotoLine => (
+            super::status::format_prompt("Goto line", &text, width),
+            false,
+        ),
+        PromptKind::Command => (super::status::format_prompt("Command", &text, width), false),
+        PromptKind::SaveAs => (super::status::format_prompt("Save as", &text, width), false),
+        PromptKind::OpenFile => (
+            super::status::format_prompt("Open file", &text, width),
+            false,
+        ),
+        PromptKind::CreateConfig { path, .. } => (
+            format!(
                 "Create {} from the documented template? Type yes to confirm: {}",
                 path.display(),
-                prompt.text
-            ));
-            return;
-        }
-        PromptKind::InlineWarning => {
-            app.message = super::inline_clanker::warning_prompt_message(app, &prompt.text);
-            return;
-        }
+                text
+            ),
+            false,
+        ),
+        PromptKind::InlineWarning => (String::new(), true),
     };
-    app.message = Some(super::status::format_prompt(
-        label,
-        &prompt.text,
-        app.screen.width as usize,
-    ));
+    if inline_warning {
+        app.message = super::inline_clanker::warning_prompt_message(app, &text);
+        app.message_role = crate::terminal::render::StatusRole::Prompt;
+    } else {
+        app.message_info(message);
+    }
 }
 
 fn submit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
@@ -320,7 +326,7 @@ fn execute_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> 
 }
 
 fn unknown_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> io::Result<()> {
-    app.message = Some(format!("Unknown command: {command}"));
+    app.message_error(format!("Unknown command: {command}"));
     app.render(out)
 }
 
@@ -328,7 +334,7 @@ fn execute_open(app: &mut super::App, out: &mut dyn Write, input: &str) -> io::R
     let path = match super::save::expand_user_path(input, std::env::var_os("HOME").as_deref()) {
         Ok(path) => path,
         Err(error) => {
-            app.message = Some(format!("Open error: {error}"));
+            app.message_error(format!("Open error: {error}"));
             return app.render(out);
         }
     };
@@ -340,7 +346,7 @@ fn open_path(app: &mut super::App, out: &mut dyn Write, path: &Path) -> io::Resu
     app.message = None;
     match app.open_file_buffer(path) {
         Ok(true) | Ok(false) => app.message = None,
-        Err(error) => app.message = Some(format!("Open error: {error}")),
+        Err(error) => app.message_error(format!("Open error: {error}")),
     }
     app.render(out)
 }
@@ -349,7 +355,7 @@ fn execute_config(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     match crate::config::user_file::path() {
         Ok(path) => execute_config_path(app, out, path, false),
         Err(error) => {
-            app.message = Some(format!("Config error: {error}"));
+            app.message_error(format!("Config error: {error}"));
             app.render(out)
         }
     }
@@ -372,7 +378,7 @@ fn execute_config_path(
     match std::fs::metadata(&path) {
         Ok(metadata) if metadata.is_file() => open_config_path(app, out, &path),
         Ok(_) => {
-            app.message = Some(format!(
+            app.message_error(format!(
                 "Config path is not a regular file: {}",
                 path.display()
             ));
@@ -387,7 +393,7 @@ fn execute_config_path(
             },
         ),
         Err(error) => {
-            app.message = Some(format!("Config error: {error}"));
+            app.message_error(format!("Config error: {error}"));
             app.render(out)
         }
     }
@@ -411,7 +417,7 @@ fn execute_config_create(
             open_created_config_path(app, out, &path)
         }
         Err(error) => {
-            app.message = Some(format!("Config creation error: {error}"));
+            app.message_error(format!("Config creation error: {error}"));
             app.render(out)
         }
     }
@@ -448,7 +454,7 @@ fn open_config_path(app: &mut super::App, out: &mut dyn Write, path: &Path) -> i
 
 pub(crate) fn execute_new(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     if let Err(error) = app.new_file_buffer() {
-        app.message = Some(format!("New buffer error: {error}"));
+        app.message_error(format!("New buffer error: {error}"));
     }
     app.render(out)
 }
@@ -459,18 +465,18 @@ pub(crate) fn execute_close(
     force: bool,
 ) -> io::Result<()> {
     if let Err(error) = app.close_active_buffer(force) {
-        app.message = Some(format!("Close error: {error}"));
+        app.message_error(format!("Close error: {error}"));
     }
     app.render(out)
 }
 
 fn execute_goto(app: &mut super::App, out: &mut dyn Write, input: &str) -> io::Result<()> {
     let Ok(line) = input.trim().parse::<usize>() else {
-        app.message = Some("Goto line requires a positive line number.".to_string());
+        app.message_info("Goto line requires a positive line number.");
         return app.render(out);
     };
     if line == 0 {
-        app.message = Some("Line numbers start at 1.".to_string());
+        app.message_info("Line numbers start at 1.");
         return app.render(out);
     }
     if let Some(source) = app.buffer.descriptor_source()? {
@@ -479,21 +485,21 @@ fn execute_goto(app: &mut super::App, out: &mut dyn Write, input: &str) -> io::R
             requested_line: line,
             task,
         });
-        app.message = Some(format!("Locating line {line}... Esc cancels."));
+        app.message_info(format!("Locating line {line}... Esc cancels."));
         return app.render(out);
     }
     let last_row = app.buffer.line_count().saturating_sub(1);
     let row = line.saturating_sub(1).min(last_row);
     app.buffer.set_cursor(crate::buffer::Cursor { row, col: 0 });
     app.reveal_cursor();
-    app.message = if row + 1 == line {
-        None
+    if row + 1 == line {
+        app.message = None;
     } else {
-        Some(format!(
+        app.message_warning(format!(
             "Line {line} is past end of file; moved to line {}.",
             row + 1
-        ))
-    };
+        ));
+    }
     app.render(out)
 }
 
@@ -515,17 +521,17 @@ pub(crate) fn poll_goto(app: &mut super::App, out: &mut dyn Write) -> io::Result
         GotoLineResult::Found(found) => {
             app.buffer.set_descriptor_position(found.position)?;
             app.reveal_cursor();
-            app.message = if found.line == running.requested_line {
-                None
+            if found.line == running.requested_line {
+                app.message = None;
             } else {
-                Some(format!(
+                app.message_warning(format!(
                     "Line {} is past end of file; moved to line {}.",
                     running.requested_line, found.line
-                ))
-            };
+                ));
+            }
         }
         GotoLineResult::Error(error) => {
-            app.message = Some(format!("Goto error: {error}"));
+            app.message_error(format!("Goto error: {error}"));
         }
     }
     app.render(out)

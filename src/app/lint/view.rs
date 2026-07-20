@@ -20,11 +20,11 @@ pub(crate) struct DiagnosticsView {
 pub(crate) fn show_diagnostics(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
     super::super::project_files::close_view(app);
     let Some(project) = app.project.as_ref() else {
-        app.message = Some("Diagnostics require Project mode (:project).".to_string());
+        app.message_info("Diagnostics require Project mode (:project).");
         return app.render(out);
     };
     if project.diagnostics().items.is_empty() {
-        app.message = Some("No diagnostics to show; run :lint first.".to_string());
+        app.message_info("No diagnostics to show; run :lint first.");
         return app.render(out);
     }
     let mut text = String::new();
@@ -51,7 +51,7 @@ pub(crate) fn show_diagnostics(app: &mut super::super::App, out: &mut dyn Write)
     });
     app.screen.scroll_top = 0;
     app.screen.scroll_left = 0;
-    app.message = Some("Diagnostics (read-only; arrows move, Esc closes).".to_string());
+    app.message_info("Diagnostics (read-only; arrows move, Esc closes).");
     app.render(out)
 }
 
@@ -84,7 +84,7 @@ pub(crate) fn handle_paste(app: &mut super::super::App, out: &mut dyn Write) -> 
     if !is_viewing(app) {
         return Ok(false);
     }
-    app.message = Some("Diagnostics view is read-only; press Esc to close.".to_string());
+    app.message_info("Diagnostics view is read-only; press Esc to close.");
     app.render(out)?;
     Ok(true)
 }
@@ -140,7 +140,7 @@ fn handle_view_key(
             row: buffer.cursor().row,
             col: buffer.line_char_count(buffer.cursor().row).unwrap_or(0),
         }),
-        _ => app.message = Some("Diagnostics view is read-only; press Esc to close.".to_string()),
+        _ => app.message_info("Diagnostics view is read-only; press Esc to close."),
     }
     app.reveal_cursor();
     app.render(out)

@@ -26,15 +26,15 @@ pub(super) struct RecoveryPreview {
 pub(crate) fn start_preview(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
     let config = app.cat_config.recovery;
     if !config.enabled {
-        app.message = Some("Catnap recovery is disabled in [recovery].".to_string());
+        app.message_info("Catnap recovery is disabled in [recovery].");
         return app.render(out);
     }
     if super::super::external_command::is_busy(app) {
-        app.message = Some("Finish the active external command before recovery.".to_string());
+        app.message_info("Finish the active external command before recovery.");
         return app.render(out);
     }
     let Some(path) = app.file.path.clone() else {
-        app.message = Some("Catnap recovery requires a named file.".to_string());
+        app.message_info("Catnap recovery requires a named file.");
         return app.render(out);
     };
     let mut candidate = match app.recovery.offered_candidate.take() {
@@ -42,7 +42,7 @@ pub(crate) fn start_preview(app: &mut super::super::App, out: &mut dyn Write) ->
         None => match crate::file::recovery::load_candidate(&path, config.max_bytes) {
             Ok(Some(candidate)) => candidate,
             Ok(None) => {
-                app.message = Some("No newer catnap recovery is available.".to_string());
+                app.message_info("No newer catnap recovery is available.");
                 return app.render(out);
             }
             Err(error) => return preview_error(app, out, error),
@@ -51,7 +51,7 @@ pub(crate) fn start_preview(app: &mut super::super::App, out: &mut dyn Write) ->
     match candidate.is_current(&path) {
         Ok(true) => {}
         Ok(false) => {
-            app.message = Some("No newer catnap recovery is available.".to_string());
+            app.message_info("No newer catnap recovery is available.");
             return app.render(out);
         }
         Err(error) => return preview_error(app, out, error),
@@ -64,7 +64,7 @@ fn preview_error(
     out: &mut dyn Write,
     error: io::Error,
 ) -> io::Result<()> {
-    app.message = Some(format!("Cannot open catnap recovery: {error}"));
+    app.message_error(format!("Cannot open catnap recovery: {error}"));
     app.render(out)
 }
 
@@ -134,7 +134,7 @@ fn apply(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
         || app.buffer.edit_history_position() != preview.source_history
         || app.file.disk_snapshot != preview.source_disk_snapshot
     {
-        app.message = Some("Source changed during recovery preview; nothing applied.".to_string());
+        app.message_warning("Source changed during recovery preview; nothing applied.");
         return app.render(out);
     }
     let candidate_is_current = preview
@@ -143,11 +143,11 @@ fn apply(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
         .map(|path| preview.candidate.is_current(path).unwrap_or(false))
         .unwrap_or(false);
     if !candidate_is_current {
-        app.message = Some("Catnap changed during recovery preview; nothing applied.".to_string());
+        app.message_warning("Catnap changed during recovery preview; nothing applied.");
         return app.render(out);
     }
     if !replace_buffer(&mut *app.buffer, preview.candidate.text())? {
-        app.message = Some("Recovery already matches the current buffer.".to_string());
+        app.message_info("Recovery already matches the current buffer.");
         return app.render(out);
     }
     super::super::input::finish_content_edit_with_message(
@@ -205,7 +205,7 @@ fn reveal_cursor(app: &mut super::super::App) {
 }
 
 fn preview_message(app: &mut super::super::App) {
-    app.message = Some("Catnap preview (read-only). Enter recovers; Esc cancels.".to_string());
+    app.message_info("Catnap preview (read-only). Enter recovers; Esc cancels.");
 }
 
 fn is_quit(key: KeyEvent) -> bool {

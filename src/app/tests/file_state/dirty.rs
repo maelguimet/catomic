@@ -168,6 +168,7 @@ fn app_save_refuses_read_only_target_and_keeps_buffer_dirty() {
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "protected");
     assert_eq!(std::fs::metadata(&path).unwrap().ino(), inode);
     assert!(app.message.as_deref().unwrap().contains("read-only"));
+    assert_eq!(app.message_role, crate::terminal::render::StatusRole::Error);
     let _ = std::fs::remove_file(path);
 }
 

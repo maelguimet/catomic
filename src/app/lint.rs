@@ -28,13 +28,13 @@ pub(super) fn is_active(app: &super::App) -> bool {
 
 pub(crate) fn start(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     if !app.caps.linters || app.project.is_none() {
-        app.message = Some("Linting requires explicit Project mode (:project).".to_string());
+        app.message_info("Linting requires explicit Project mode (:project).");
         return app.render(out);
     }
     match crate::config::linters::load() {
         Ok(config) => start_with_config(app, out, config),
         Err(error) => {
-            app.message = Some(format!("Linter config error: {error}"));
+            app.message_error(format!("Linter config error: {error}"));
             app.render(out)
         }
     }
@@ -46,23 +46,23 @@ fn start_with_config(
     config: LinterConfig,
 ) -> io::Result<()> {
     if !app.caps.linters || app.project.is_none() {
-        app.message = Some("Linting requires explicit Project mode (:project).".to_string());
+        app.message_info("Linting requires explicit Project mode (:project).");
         return app.render(out);
     }
     if app.file.dirty {
-        app.message = Some("Save the active buffer before linting it.".to_string());
+        app.message_info("Save the active buffer before linting it.");
         return app.render(out);
     }
     let Some(path) = app.file.path.clone() else {
-        app.message = Some("Save the active buffer to a file before linting it.".to_string());
+        app.message_info("Save the active buffer to a file before linting it.");
         return app.render(out);
     };
     let Some(extension) = path.extension().and_then(|value| value.to_str()) else {
-        app.message = Some("No linter is configured for a file without an extension.".to_string());
+        app.message_info("No linter is configured for a file without an extension.");
         return app.render(out);
     };
     let Some(template) = config.command_for_extension(extension) else {
-        app.message = Some(format!("No linter configured for .{extension}."));
+        app.message_info(format!("No linter configured for .{extension}."));
         return app.render(out);
     };
     let absolute_path = if path.is_absolute() {
@@ -71,7 +71,7 @@ fn start_with_config(
         match std::env::current_dir() {
             Ok(cwd) => cwd.join(path),
             Err(error) => {
-                app.message = Some(format!("Cannot resolve linter file path: {error}"));
+                app.message_error(format!("Cannot resolve linter file path: {error}"));
                 return app.render(out);
             }
         }
@@ -89,9 +89,9 @@ fn start_with_config(
                 .as_mut()
                 .expect("Project checked")
                 .start_linter(task, absolute_path.clone());
-            app.message = Some(format!("Running linter for {}...", absolute_path.display()));
+            app.message_info(format!("Running linter for {}...", absolute_path.display()));
         }
-        Err(error) => app.message = Some(format!("Could not start linter: {error}")),
+        Err(error) => app.message_error(format!("Could not start linter: {error}")),
     }
     app.render(out)
 }
@@ -108,7 +108,7 @@ pub(crate) fn poll(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
         LinterResult::Finished { output, code } => finish(app, &source, output, code),
         LinterResult::Cancelled => app.message = None,
         LinterResult::Error(error) => {
-            app.message = Some(format!("Linter error for {}: {error}", source.display()))
+            app.message_error(format!("Linter error for {}: {error}", source.display()))
         }
     }
     app.render(out)
@@ -119,7 +119,7 @@ fn finish(app: &mut super::App, source: &std::path::Path, output: String, code: 
     let diagnostics = parse_common_output(&output, project.root());
     let count = diagnostics.items.len();
     project.set_diagnostics(diagnostics);
-    app.message = Some(if count > 0 {
+    let message = if count > 0 {
         format!(
             "Lint for {} finished with {count} diagnostic(s). Use :dnext or :diagnostics.",
             source.display()
@@ -135,7 +135,12 @@ fn finish(app: &mut super::App, source: &std::path::Path, output: String, code: 
                 |code| format!("with code {code}")
             )
         )
-    });
+    };
+    if code == Some(0) {
+        app.message_info(message);
+    } else {
+        app.message_error(message);
+    }
 }
 
 pub(crate) fn move_diagnostic(
@@ -149,19 +154,19 @@ pub(crate) fn move_diagnostic(
         .as_mut()
         .and_then(|project| project.move_diagnostic(forward))
     else {
-        app.message = Some("No diagnostics; run :lint first.".to_string());
+        app.message_info("No diagnostics; run :lint first.");
         return app.render(out);
     };
     if active_absolute_path(app).as_deref() != Some(diagnostic.file.as_path()) {
         if !diagnostic.file.is_file() {
-            app.message = Some(format!(
+            app.message_error(format!(
                 "Cannot jump to missing diagnostic file {}.",
                 diagnostic.file.display()
             ));
             return app.render(out);
         }
         if let Err(error) = app.open_file_buffer(&diagnostic.file) {
-            app.message = Some(format!(
+            app.message_error(format!(
                 "Cannot open diagnostic file {}: {error}",
                 diagnostic.file.display()
             ));
@@ -174,7 +179,7 @@ pub(crate) fn move_diagnostic(
     });
     app.selection.clear();
     app.reveal_cursor();
-    app.message = Some(format!(
+    app.message_info(format!(
         "Diagnostic {}/{}: {}:{}:{} {}",
         index + 1,
         count,

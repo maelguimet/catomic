@@ -115,7 +115,7 @@ fn update_message(app: &mut super::App) {
             prompt.replacement.as_str(),
         ),
     };
-    app.message = Some(super::status::format_prompt(
+    app.message_info(super::status::format_prompt(
         &label,
         text,
         app.screen.width as usize,
@@ -126,7 +126,7 @@ fn advance_or_apply(app: &mut super::App, out: &mut dyn Write) -> io::Result<()>
     let prompt = app.replace.prompt.as_mut().expect("replace prompt exists");
     if matches!(prompt.stage, PromptStage::Find) {
         if prompt.find.is_empty() {
-            app.message = Some("Replace query cannot be empty.".to_string());
+            app.message_info("Replace query cannot be empty.");
             return app.render(out);
         }
         prompt.stage = PromptStage::Replacement;
@@ -135,9 +135,8 @@ fn advance_or_apply(app: &mut super::App, out: &mut dyn Write) -> io::Result<()>
     }
     let prompt = app.replace.prompt.take().expect("replace prompt exists");
     if app.buffer.page_info().is_some() {
-        app.message = Some(
-            "Replace is unavailable for paged files; use an external command with preview."
-                .to_string(),
+        app.message_info(
+            "Replace is unavailable for paged files; use an external command with preview.",
         );
         return app.render(out);
     }
@@ -161,7 +160,7 @@ fn replace_next(
         SearchDirection::Forward,
         true,
     ) else {
-        app.message = Some(format!("No matches for '{find}'."));
+        app.message_info(format!("No matches for '{find}'."));
         return app.render(out);
     };
     let end = Cursor {
@@ -194,7 +193,7 @@ fn replace_all(
         }));
     }
     if matches.is_empty() {
-        app.message = Some(format!("No matches for '{find}'."));
+        app.message_info(format!("No matches for '{find}'."));
         return app.render(out);
     }
     matches.reverse();

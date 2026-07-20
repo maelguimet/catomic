@@ -47,7 +47,7 @@ fn click_maps_through_both_viewport_offsets() {
 fn click_cancels_a_pending_confirmation_and_message() {
     let mut app = app_with("abc");
     app.pending_quit_confirm = true;
-    app.message = Some("Press Ctrl+Q again to quit without saving.".to_string());
+    app.message_info("Press Ctrl+Q again to quit without saving.");
     let mut out = Vec::new();
 
     handle_mouse(

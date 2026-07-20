@@ -37,7 +37,7 @@ fn begin_repo_check(app: &mut super::super::App, out: &mut dyn Write) -> io::Res
             &format!("Could not start final repository check; patch refused: {error}"),
         );
     }
-    app.message = Some("Rechecking repository before apply... Esc cancels.".to_string());
+    app.message_info("Rechecking repository before apply... Esc cancels.");
     app.render(out)
 }
 
@@ -79,7 +79,7 @@ fn identity_error(app: &super::super::App) -> Option<&'static str> {
 }
 
 fn refuse(app: &mut super::super::App, out: &mut dyn Write, message: &str) -> io::Result<()> {
-    app.message = Some(message.to_string());
+    app.message_warning(message);
     app.reveal_cursor();
     app.render(out)
 }

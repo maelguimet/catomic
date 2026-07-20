@@ -211,7 +211,7 @@ pub(super) fn update_message(app: &mut super::super::App) {
     if view.pending_discovery.is_some() || app.model_picker.discovery.is_some() {
         return;
     }
-    app.message = Some(format!(
+    app.message_info(format!(
         "Models filter: {} | {}/{} | type to filter, Up/Down, Enter selects session, Ctrl+D discovers, Esc cancels. A=active S=session D=default",
         if view.filter.is_empty() { "[all]" } else { &view.filter },
         view.buffer.cursor().row.saturating_add(1).min(view.visible.len()),

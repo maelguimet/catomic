@@ -62,7 +62,7 @@ pub(crate) fn show(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
     let catalog = match crate::config::llm::load() {
         Ok(catalog) => catalog,
         Err(error) => {
-            app.message = Some(format!("LLM config error: {error}"));
+            app.message_error(format!("LLM config error: {error}"));
             return app.render(out);
         }
     };
@@ -75,9 +75,8 @@ fn show_with_catalog(
     catalog: LlmCatalog,
 ) -> io::Result<()> {
     if model_work_active(app) {
-        app.message = Some(
-            "Finish or cancel the active LLM or external command before selecting a model."
-                .to_string(),
+        app.message_info(
+            "Finish or cancel the active LLM or external command before selecting a model.",
         );
         return app.render(out);
     }
@@ -134,7 +133,7 @@ pub(crate) fn poll(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
             );
             document::refresh_entries(app);
             app.model_session.record_ready(&running.preset_name);
-            app.message = Some(format!(
+            app.message_info(format!(
                 "Discovered {count} models for {}; cached for this session.",
                 running.preset_name
             ));
@@ -146,7 +145,7 @@ pub(crate) fn poll(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
             app.model_session
                 .record_failure(&running.preset_name, error.kind);
             document::refresh_entries(app);
-            app.message = Some(format!("Model discovery failed: {error}"));
+            app.message_error(format!("Model discovery failed: {error}"));
         }
     }
     app.render(out)
@@ -266,11 +265,11 @@ fn enter(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         return start_discovery(app, index);
     }
     let Some(preset) = document::selected_preset(app) else {
-        app.message = Some("No matching model to select.".to_string());
+        app.message_info("No matching model to select.");
         return Ok(());
     };
     if !preset.enabled {
-        app.message = Some(format!("Preset {} is disabled.", preset.name));
+        app.message_info(format!("Preset {} is disabled.", preset.name));
         return Ok(());
     }
     let name = preset.name.clone();
@@ -278,7 +277,7 @@ fn enter(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     super::autocomplete::model_selection_changed(app);
     app.model_session.select(preset);
     close(app);
-    app.message = Some(format!(
+    app.message_info(format!(
         "Active model for this session: preset {name}, model {model}"
     ));
     app.reveal_cursor();
@@ -287,26 +286,26 @@ fn enter(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
 
 fn request_discovery(app: &mut super::App) {
     if app.model_picker.discovery.is_some() {
-        app.message = Some("Model discovery is already running; Esc cancels.".to_string());
+        app.message_info("Model discovery is already running; Esc cancels.");
         return;
     }
     let Some((entry_index, entry)) = document::selected_entry(app) else {
-        app.message = Some("No HTTP preset selected for discovery.".to_string());
+        app.message_info("No HTTP preset selected for discovery.");
         return;
     };
     let preset = &entry.preset;
     let BackendAdapter::OpenAiCompatible(http) = &preset.adapter else {
-        app.message = Some("Selected command preset does not support model discovery.".to_string());
+        app.message_info("Selected command preset does not support model discovery.");
         return;
     };
     if !http.discovery {
-        app.message = Some("Discovery is disabled for this preset in config.".to_string());
+        app.message_info("Discovery is disabled for this preset in config.");
         return;
     }
     let base_url = http.base_url.clone();
     let preset_name = preset.name.clone();
     app.model_picker.view.as_mut().unwrap().pending_discovery = Some(entry_index);
-    app.message = Some(format!(
+    app.message_info(format!(
         "Discover models from {}/models for preset {}? Enter confirms credential access/network; Esc cancels.",
         base_url, preset_name
     ));
@@ -325,13 +324,13 @@ fn start_discovery(app: &mut super::App, entry_index: usize) -> io::Result<()> {
                 preset_name: preset.name.clone(),
                 cache_key,
             });
-            app.message = Some(format!(
+            app.message_info(format!(
                 "Discovering models for {} from {}... Esc cancels.",
                 preset.name,
                 preset.destination()
             ));
         }
-        Err(error) => app.message = Some(format!("Could not start model discovery: {error}")),
+        Err(error) => app.message_error(format!("Could not start model discovery: {error}")),
     }
     Ok(())
 }

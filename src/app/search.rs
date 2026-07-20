@@ -33,7 +33,7 @@ pub(crate) fn open_prompt(app: &mut super::App, out: &mut dyn Write) -> io::Resu
     app.search.origin = Some(app.buffer.cursor());
     app.search.active_match = None;
     app.search.active_descriptor_position = None;
-    app.message = Some("Find: ".to_string());
+    app.message_info("Find: ");
     app.render(out)
 }
 
@@ -119,7 +119,7 @@ fn refresh_incremental_match(app: &mut super::App, out: &mut dyn Write) -> io::R
             app.buffer.set_cursor(origin);
             app.reveal_cursor();
         }
-        app.message = Some("Find: ".to_string());
+        app.message_info("Find: ");
         return app.render(out);
     }
     if let Some(source) = app.buffer.descriptor_source()? {
@@ -128,7 +128,7 @@ fn refresh_incremental_match(app: &mut super::App, out: &mut dyn Write) -> io::R
             query: query.clone(),
             task,
         });
-        app.message = Some(format!("Find: {query} (searching whole file; Esc cancels)"));
+        app.message_info(format!("Find: {query} (searching whole file; Esc cancels)"));
         return app.render(out);
     }
     let origin = app.search.origin.unwrap_or_else(|| app.buffer.cursor());
@@ -161,7 +161,7 @@ fn navigate_match(
             SearchDirection::Forward => "next",
             SearchDirection::Backward => "previous",
         };
-        app.message = Some(format!("Searching for {label} '{query}'... Esc cancels."));
+        app.message_info(format!("Searching for {label} '{query}'... Esc cancels."));
         return app.render(out);
     }
     let origin = app
@@ -186,7 +186,7 @@ fn apply_local_match(
         app.buffer.set_cursor(found.start);
         app.search.active_match = Some(found);
         app.search.active_descriptor_position = None;
-        app.message = Some(if app.screen.width < 40 {
+        app.message_info(if app.screen.width < 40 {
             super::status::format_prompt("Find", query, app.screen.width as usize)
         } else {
             format!("Found '{query}'. Enter/Down next, Up previous, Esc closes.")
@@ -194,7 +194,7 @@ fn apply_local_match(
         app.reveal_cursor();
     } else {
         app.search.active_match = None;
-        app.message = Some(if app.screen.width < 40 {
+        app.message_info(if app.screen.width < 40 {
             super::status::format_prompt("No match", query, app.screen.width as usize)
         } else {
             format!("No matches for '{query}'. Esc closes.")
@@ -223,7 +223,7 @@ pub(crate) fn poll_search(app: &mut super::App, out: &mut dyn Write) -> io::Resu
                 },
                 end_col: position.col + running.query.chars().count(),
             });
-            app.message = Some(format!(
+            app.message_info(format!(
                 "Found '{}' on file page {}.",
                 running.query, position.page_number
             ));
@@ -232,12 +232,12 @@ pub(crate) fn poll_search(app: &mut super::App, out: &mut dyn Write) -> io::Resu
         SearchResult::NotFound => {
             app.search.active_match = None;
             app.search.active_descriptor_position = None;
-            app.message = Some(format!("No matches for '{}'.", running.query));
+            app.message_info(format!("No matches for '{}'.", running.query));
         }
         SearchResult::Error(error) => {
             app.search.active_match = None;
             app.search.active_descriptor_position = None;
-            app.message = Some(format!("Search error: {error}"));
+            app.message_error(format!("Search error: {error}"));
         }
     }
     app.render(out)

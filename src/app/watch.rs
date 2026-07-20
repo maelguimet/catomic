@@ -125,7 +125,7 @@ pub(crate) fn apply_file_watch_signal(
                 ExternalFileStatus::NoPath => {
                     if app.pending_reload.is_some() {
                         app.pending_reload = None;
-                        app.message = Some("No file path.".to_string());
+                        app.message_info("No file path.");
                         true
                     } else {
                         false
@@ -152,7 +152,7 @@ pub(crate) fn apply_file_watch_signal(
                         )
                     {
                         app.pending_reload = None;
-                        app.message = Some(super::reload::reload_drift_message_for_ui(
+                        app.message_info(super::reload::reload_drift_message_for_ui(
                             &obs.status,
                             app.file.dirty,
                             super::mobile::is_enabled(app),
@@ -161,7 +161,7 @@ pub(crate) fn apply_file_watch_signal(
                         super::reload::apply_check_observation(app, &obs);
                     }
                     if matching_save_conflict {
-                        app.message = Some(super::save::save_conflict_message_for_ui(
+                        app.message_info(super::save::save_conflict_message_for_ui(
                             &obs.status,
                             super::mobile::is_enabled(app),
                         ));
@@ -171,7 +171,7 @@ pub(crate) fn apply_file_watch_signal(
             }
         }
         FileWatchSignal::Error(e) => {
-            app.message = Some(format!("File watcher error: {}", e));
+            app.message_error(format!("File watcher error: {}", e));
             // Do not mutate buffer/dirty/snapshot/history.
             // Prefer not to clear pending_reload unless a concrete reason exists.
             true

@@ -30,7 +30,7 @@ pub(crate) fn poll(app: &mut super::super::App, out: &mut dyn Write) -> io::Resu
         }
         LlmTaskResult::Error { kind, message } => {
             app.model_session.record_failure(&running.preset_name, kind);
-            render_message(app, out, &format!("LLM request failed: {message}"))
+            render_error(app, out, &format!("LLM request failed: {message}"))
         }
     }
 }
@@ -42,14 +42,14 @@ fn finish_output(
     running: RunningLlmRequest,
 ) -> io::Result<()> {
     if app.buffer.to_string() != running.source_snapshot {
-        return render_message(
+        return render_warning(
             app,
             out,
             "Buffer changed while the model was working; response was not previewed.",
         );
     }
     if app.file.path != running.file_path {
-        return render_message(
+        return render_warning(
             app,
             out,
             "Active file path changed while the model was working; response was not previewed.",
@@ -67,11 +67,28 @@ fn finish_output(
     }
 }
 
-fn render_message(
+fn render_warning(
     app: &mut super::super::App,
     out: &mut dyn Write,
     message: &str,
 ) -> io::Result<()> {
-    app.message = Some(message.to_string());
+    app.message_warning(message);
     app.render(out)
+}
+
+fn render_error(app: &mut super::super::App, out: &mut dyn Write, message: &str) -> io::Result<()> {
+    app.message_error(message);
+    app.render(out)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn network_failure_sets_error_role_at_the_emission_boundary() {
+        let mut app = super::super::super::App::new(None).unwrap();
+
+        super::render_error(&mut app, &mut Vec::new(), "LLM request failed: boom").unwrap();
+
+        assert_eq!(app.message_role, crate::terminal::render::StatusRole::Error);
+    }
 }

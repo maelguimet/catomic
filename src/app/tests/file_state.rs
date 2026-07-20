@@ -178,7 +178,7 @@ fn movement_cancels_save_conflict_and_reload_pending() {
         status: crate::file::io::ExternalFileStatus::Modified,
         snapshot: None,
     });
-    app.message = Some("armed".to_string());
+    app.message_info("armed");
 
     app.handle_key(make_key(KeyCode::Left, KeyModifiers::NONE))
         .unwrap();

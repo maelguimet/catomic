@@ -172,34 +172,50 @@ fn lists_bounded_static_identifiers_from_openai_compatible_endpoint() {
 }
 
 #[test]
-fn refuses_oversized_or_overcount_model_discovery_responses() {
+fn lists_complete_large_model_catalog_in_provider_order() {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap();
-    let entries = (0..=MAX_DISCOVERED_MODELS)
-        .map(|index| serde_json::json!({"id": format!("model-{index}")}))
+    let entries = (0..1_400)
+        .map(|index| {
+            serde_json::json!({
+                "id": format!("model-{index:04}-{}", "x".repeat(230))
+            })
+        })
         .collect::<Vec<_>>();
+    let body = serde_json::json!({"data": entries}).to_string().into_bytes();
+    assert!(body.len() > 256 * 1024);
     let (base_url, server) = fake_server(
         "200 OK",
         "application/json",
-        serde_json::json!({"data": entries})
-            .to_string()
-            .into_bytes(),
+        body,
     );
     let client = OpenAiCompatClient::new(config(base_url, None)).unwrap();
-    let result = runtime.block_on(client.list_models());
+    let models = runtime.block_on(client.list_models()).unwrap();
     server.join().unwrap();
-    assert!(matches!(result, Err(LlmError::InvalidResponse(_))));
 
+    assert_eq!(models.len(), 1_400);
+    assert!(models[0].starts_with("model-0000-"));
+    assert!(models[700].starts_with("model-0700-"));
+    assert!(models[1_399].starts_with("model-1399-"));
+}
+
+#[test]
+fn refuses_model_response_larger_than_the_hard_limit() {
     let (base_url, server) = fake_server(
         "200 OK",
         "application/json",
         vec![b'x'; MAX_MODEL_RESPONSE_BYTES + 1],
     );
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
     let client = OpenAiCompatClient::new(config(base_url, None)).unwrap();
     let result = runtime.block_on(client.list_models());
     server.join().unwrap();
+
     assert!(matches!(result, Err(LlmError::ResponseTooLarge)));
 }
 

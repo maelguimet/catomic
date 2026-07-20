@@ -1225,7 +1225,7 @@ fn pty_ctrl_k_accumulates_lines_for_internal_paste() -> TestResult {
     editor.send_keys(b"\x0b\x0b\x16\x13\x11")?;
     editor.wait_for_exit()?;
 
-    assert_eq!(fs::read_to_string(&temp.path)?, "one\ntwo\nthree");
+    assert_eq!(fs::read_to_string(&temp.path)?, "one\ntwo\nthree\n");
     Ok(())
 }
 

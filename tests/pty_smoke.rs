@@ -1538,11 +1538,11 @@ fn pty_narrow_markdown_table_preview_uses_stacked_fallback_without_mutation() ->
     editor.wait_for_output("narrow Markdown source", "Markdown showcase")?;
     editor.clear_output();
     editor.send_keys(b"\x1b[17~")?; // F6
-    editor.wait_for_output("stacked table row", "Left: short")?;
+    editor.wait_for_output("stacked table row", "Left:")?;
     editor.wait_for_output("complete narrow preview frame", "Markdown preview on")?;
 
     let initial_preview = strip_csi(&editor.output_string());
-    assert!(initial_preview.contains("- Left: short"));
+    assert!(initial_preview.contains("Left: short"));
     assert!(!initial_preview.contains('╞'));
 
     editor.clear_output();

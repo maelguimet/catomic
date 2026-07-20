@@ -69,7 +69,7 @@ fn markdown_presentation_uses_attributes_and_osc8_without_source_delimiters() {
         StyledSpan {
             start: 28,
             end: 32,
-            style: SpanStyle::PreviewCode,
+            style: SpanStyle::PreviewInlineCode,
         },
     ]];
     let links = vec![vec![HyperlinkSpan {
@@ -96,7 +96,7 @@ fn markdown_presentation_uses_attributes_and_osc8_without_source_delimiters() {
     assert!(output.contains("\x1b[35;4memphasis\x1b[0m"), "{output:?}");
     assert!(output.contains("\x1b[35;9mstrike\x1b[0m"), "{output:?}");
     assert!(output.contains("\x1b[94;4mlink\x1b[0m"), "{output:?}");
-    assert!(output.contains("\x1b[32;7mcode\x1b[0m"), "{output:?}");
+    assert!(output.contains("\x1b[32;1mcode\x1b[0m"), "{output:?}");
     assert!(output.contains("\x1b]8;;https://example.com\x1b\\"));
     assert!(output.contains("\x1b]8;;\x1b\\"));
     assert!(!output.contains("**"));
@@ -115,7 +115,51 @@ fn markdown_presentation_uses_attributes_and_osc8_without_source_delimiters() {
     assert!(monochrome.contains("\x1b[4memphasis\x1b[0m"));
     assert!(monochrome.contains("\x1b[9mstrike\x1b[0m"));
     assert!(monochrome.contains("\x1b[4mlink\x1b[0m"));
-    assert!(monochrome.contains("\x1b[7mcode\x1b[0m"));
+    assert!(monochrome.contains("\x1b[1mcode\x1b[0m"));
+}
+
+#[test]
+fn markdown_code_blocks_use_code_color_without_a_reversed_surface() {
+    let spans = vec![vec![StyledSpan {
+        start: 0,
+        end: 8,
+        style: SpanStyle::PreviewCodeBlock,
+    }]];
+    let links = vec![Vec::new()];
+    let presentation = super::super::DocumentPresentation {
+        spans: &spans,
+        links: &links,
+    };
+
+    let output = rendered(
+        "  code  ",
+        0,
+        RenderOptions {
+            presentation: Some(presentation),
+            surface: ContentSurface::Preview,
+            ..RenderOptions::default()
+        },
+    );
+
+    assert_eq!(output, "\x1b[32m  code  \x1b[0m");
+}
+
+#[test]
+fn preview_heading_levels_keep_distinct_monochrome_attributes() {
+    let theme = crate::config::theme::parse("[theme]\nname = 'mono'\n").unwrap();
+    let h1 = span_style(theme, SpanStyle::PreviewHeading1);
+    let h2 = span_style(theme, SpanStyle::PreviewHeading2);
+    let h3 = span_style(theme, SpanStyle::PreviewHeading3);
+    let h4 = span_style(theme, SpanStyle::PreviewHeading4);
+    let h5 = span_style(theme, SpanStyle::PreviewHeading5);
+    let h6 = span_style(theme, SpanStyle::PreviewHeading6);
+
+    assert_eq!((h1.bold, h1.reversed), (Some(true), Some(true)));
+    assert_eq!((h2.bold, h2.reversed), (Some(true), None));
+    assert_eq!((h3.bold, h3.reversed), (Some(false), None));
+    assert_eq!((h4.bold, h4.dim), (Some(false), None));
+    assert_eq!((h5.bold, h5.dim), (Some(false), Some(true)));
+    assert_eq!((h6.bold, h6.dim), (Some(false), Some(true)));
 }
 
 #[test]

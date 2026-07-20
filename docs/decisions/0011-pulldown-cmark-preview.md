@@ -30,10 +30,11 @@ preview is then rendered with the existing visible-window query. Semantic spans
 are kept beside the read-only preview buffer so they cannot become file content
 or alter editor coordinates.
 
-Input is capped at 10 MiB and rendered output at 32 MiB. The reading column is
-capped at 100 cells, prose and code reflow at narrower widths, and long graphemes
-degrade without splitting a cluster. Tables are accumulated in a short-lived
-intermediate model with explicit row, column, and text caps. Per-cell output is
-capped at 40 display cells and clipped grapheme-safely; a natural-width grid is
-used only when it fits, otherwise rows become wrapped label/value entries. Raw
-HTML remains inert preview text and passes through terminal-control sanitization.
+Input is capped at 10 MiB and rendered output at 32 MiB. The centered reading
+column is capped at 88 cells, prose and code reflow at narrower widths, and long
+graphemes degrade without splitting a cluster. Tables are accumulated in a
+short-lived intermediate model with explicit row, column, and text caps.
+Per-cell output is capped at 40 display cells and clipped grapheme-safely;
+aligned columns with internal separators are used only when they fit, otherwise
+rows become wrapped label/value entries. Raw HTML remains inert preview text
+and passes through terminal-control sanitization.

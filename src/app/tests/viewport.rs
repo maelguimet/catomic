@@ -88,7 +88,7 @@ fn foreground_redraw_preserves_unsaved_buffer_and_active_prompt() {
 #[test]
 fn app_cursor_down_past_visible_updates_scroll_top() {
     let mut app = App::new(None).unwrap();
-    // Small content viewport: height=6 => visible_height=5 content rows (0..4)
+    // Small content viewport: height=6 => visible_height=4 content rows (0..3)
     app.screen.height = 6;
     app.screen.scroll_top = 0;
 
@@ -102,10 +102,10 @@ fn app_cursor_down_past_visible_updates_scroll_top() {
     // Now we have 10 lines (rows 0-9), cursor at row=9, col=0 (after 9 newlines from empty start)
     assert_eq!(app.buffer.cursor().row, 9);
 
-    // With vh=5, row 9 is way below (0+5=5), so reveal must have scrolled on last Enter.
-    // scroll_top should be at least 9 +1 -5 = 5
+    // With vh=4, row 9 is way below, so reveal must have scrolled on last Enter.
+    // scroll_top should be at least 9 +1 -4 = 6
     assert!(
-        app.screen.scroll_top >= 5,
+        app.screen.scroll_top >= 6,
         "down past viewport must update scroll_top; got {}",
         app.screen.scroll_top
     );
@@ -114,7 +114,7 @@ fn app_cursor_down_past_visible_updates_scroll_top() {
 #[test]
 fn app_render_after_reveal_omits_earlier_lines_and_shows_cursor_row() {
     let mut app = App::new(None).unwrap();
-    app.screen.height = 6; // vh=5
+    app.screen.height = 6; // vh=4
     app.screen.scroll_top = 0;
 
     // Build lines with unique markers: insert "L0\nL1\n...L9"
@@ -193,7 +193,7 @@ fn app_resize_smaller_reveals_cursor_row() {
     app.screen.scroll_top = 0;
 
     // Now resize to a small height where 15 would be offscreen if not revealed.
-    // height=10 => vh=9; 15 >= 0+9 => reveal will set scroll_top = 15+1-9=7
+    // height=10 => vh=8; 15 >= 0+8 => reveal will set scroll_top = 15+1-8=8
     let mut out: Vec<u8> = Vec::new();
     app.handle_resize(40, 10, &mut out).unwrap();
 
@@ -203,7 +203,7 @@ fn app_resize_smaller_reveals_cursor_row() {
         "resize to smaller must reveal; scroll_top={}",
         app.screen.scroll_top
     );
-    // 15 should now be inside [scroll_top, scroll_top+8]
+    // 15 should now be inside the content viewport.
     let vh = app.screen.visible_height();
     assert!(
         app.screen.scroll_top <= 15 && 15 < app.screen.scroll_top + vh,
@@ -376,7 +376,7 @@ fn app_resize_to_zero_then_back_to_nonzero_typing_and_move_reveal_normally() {
     assert_eq!(app.screen.scroll_left, 0);
 
     // Back to usable size
-    app.handle_resize(10, 8, &mut sink).unwrap(); // vh=7, vw=10
+    app.handle_resize(10, 8, &mut sink).unwrap(); // vh=6, vw=10
     assert_eq!(app.screen.width, 10);
     assert_eq!(app.screen.height, 8);
 
@@ -479,7 +479,7 @@ fn app_viewport_clamp_scroll_top_to_zero_when_buffer_shorter_than_viewport() {
     app.buffer.insert_newline();
     assert_eq!(app.buffer.line_count(), 3);
 
-    app.screen.height = 11; // vh = 10
+    app.screen.height = 11; // vh = 9
     app.screen.scroll_top = 5; // push beyond valid (max should be 0)
 
     app.reveal_cursor();
@@ -501,10 +501,10 @@ fn app_viewport_clamps_scroll_top_after_manual_push_then_resize_or_reveal() {
     let lc = app.buffer.line_count();
     assert_eq!(lc, 20);
 
-    app.screen.height = 6; // vh=5
+    app.screen.height = 6; // vh=4
     let vh = app.screen.visible_height();
-    assert_eq!(vh, 5);
-    let max_valid = lc - vh; // 15
+    assert_eq!(vh, 4);
+    let max_valid = lc - vh; // 16
 
     // Manually push beyond
     app.screen.scroll_top = 99;

@@ -201,6 +201,8 @@ name = "default"
 
 [theme.colors]
 selection = { fg = "black", bg = "cyan" }
+status = "default"
+status_filename = { fg = "default", bold = true, underline = true }
 status_warning = { fg = "black", bg = "yellow" }
 
 [keybindings]

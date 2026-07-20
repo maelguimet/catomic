@@ -67,9 +67,11 @@ fn handle_status_mouse(
     out: &mut dyn Write,
     event: MouseEvent,
 ) -> io::Result<bool> {
-    let status_row = app.screen.visible_height();
-    let persistent_status_is_visible =
-        app.message.is_none() && app.screen.height > 0 && event.row as usize == status_row;
+    let persistent_status_is_visible = app.message.is_none()
+        && app
+            .screen
+            .status_row()
+            .is_some_and(|row| event.row as usize == row);
     match event.kind {
         MouseEventKind::Down(MouseButton::Left) if persistent_status_is_visible => {
             let status = super::super::render::status_line(app);

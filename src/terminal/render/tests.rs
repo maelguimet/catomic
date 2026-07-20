@@ -40,7 +40,7 @@ fn render_buffer_highlights_a_multiline_selection() {
     render_buffer(
         &mut out,
         &b,
-        RenderViewport::new(0, 0, 4, 20),
+        RenderViewport::new(0, 0, 5, 20),
         None,
         RenderOptions {
             highlight: Some(TextHighlight {
@@ -152,7 +152,7 @@ fn render_buffer_height_zero_no_bottom_pos_and_no_panic() {
 }
 
 #[test]
-fn render_buffer_height_one_reserves_only_row_for_message_no_content_lines() {
+fn render_buffer_height_one_preserves_content_and_hides_chrome() {
     let b = SimpleBuffer::from_text("L0\nL1\nL2\n");
     let mut out: Vec<u8> = Vec::new();
     render_buffer(
@@ -165,12 +165,11 @@ fn render_buffer_height_one_reserves_only_row_for_message_no_content_lines() {
     .expect("render h=1");
     let s = String::from_utf8_lossy(&out);
     assert!(
-        !s.contains("L0") && !s.contains("L1") && !s.contains("L2"),
-        "height=1 must emit no content lines: {}",
-        s
+        s.contains("L0"),
+        "height=1 must preserve one content line: {s}"
     );
-    assert!(s.contains("\x1b[1;1H"), "positions to row 1 for message");
-    assert!(s.contains("msg"), "message emitted");
+    assert!(!s.contains("L1") && !s.contains("L2"));
+    assert!(!s.contains("msg"), "chrome must yield to the editing row");
 }
 
 #[test]
@@ -213,10 +212,11 @@ fn render_buffer_clears_each_row_without_full_screen_clear() {
 
     let s = String::from_utf8(out).unwrap();
     assert!(!s.contains("\x1b[2J"));
-    for row in 1..=3 {
+    for row in 1..=2 {
         assert!(s.contains(&format!("\x1b[{row};1H\x1b[K")));
     }
-    assert!(s.contains("\x1b[4;1H\x1b[2K\x1b[0m\x1b[90m\x1b[2mstatus"));
+    assert!(s.contains("\x1b[3;1H\x1b[0m\x1b[2K"));
+    assert!(s.contains("\x1b[4;1H\x1b[2K\x1b[0m\x1b[39mstatus"));
 }
 
 #[test]

@@ -460,7 +460,7 @@ fn pty_save_undo_save_quit_writes_expected_file() -> TestResult {
     editor.wait_for_output("normal status filename", &filename)?;
     let initial = editor.output_string();
     let bar = initial
-        .find("\x1b[24;1H\x1b[2K\x1b[0m\x1b[2m")
+        .find("\x1b[24;1H\x1b[2K\x1b[0m")
         .ok_or("normal status row did not use quiet monochrome styling")?;
     let status_frame = &initial[bar..initial[bar..]
         .find("\x1b[0 q\x1b[1;1H")
@@ -1293,7 +1293,7 @@ fn pty_paragraph_navigation_and_wheel_keep_the_logical_cursor_stable() -> TestRe
                                      // SGR plus legacy X10 wheel-down encodings cover modern terminals and
                                      // multiplexers that translate the captured mouse protocol.
     editor.send_keys(b"\x1b[<65;1;1M\x1b[Ma!!")?;
-    editor.wait_for_output("wheel-only viewport movement", "wheel-row-28")?;
+    editor.wait_for_output("wheel-only viewport movement", "wheel-row-27")?;
     assert!(
         editor.output_string().contains("\x1b[?25l"),
         "an off-screen logical cursor must be hidden"

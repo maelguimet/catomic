@@ -1302,8 +1302,8 @@ background = "default"
 cursor = "default"
 selection = { fg = "black", bg = "cyan" }
 line_number = "bright-black"
-status = { fg = "bright-black", dim = true }
-status_filename = "bright-red"
+status = "default"
+status_filename = { fg = "default", bold = true, underline = true }
 message = { fg = "black", bg = "white" }
 status_warning = { fg = "black", bg = "yellow" }
 error = { fg = "bright-white", bg = "red" }
@@ -1466,6 +1466,14 @@ syntax hues. Inline roles override the named scheme. `background` has explicit
 precedence over `text.bg`. Invalid recognized colors fail the whole startup or
 `config check`; no subset is applied. Every styled segment is reset, and exit
 restores SGR attributes and the terminal's cursor color.
+
+The persistent footer uses the terminal's own default foreground/background
+pair, so its contrast follows the selected terminal theme instead of assuming a
+dark background. The basename is bold and underlined rather than assigned a
+fixed hue. At four or more rows, a cleared row separates document text from the
+footer; smaller terminals drop the separator first, then the footer, so the
+editing area never becomes zero-height. Transient messages keep their semantic
+full-row styles.
 
 ### Custom keybindings and action registry
 

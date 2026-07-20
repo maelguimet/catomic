@@ -50,8 +50,8 @@ background = "default"
 cursor = "default"
 selection = { fg = "black", bg = "cyan" }
 line_number = "bright-black"
-status = { fg = "bright-black", dim = true }
-status_filename = "bright-red"
+status = "default"
+status_filename = { fg = "default", bold = true, underline = true }
 message = { fg = "black", bg = "bright-cyan" }
 status_warning = { fg = "black", bg = "bright-yellow", bold = true }
 status_prompt = { fg = "bright-white", bg = "blue", bold = true }

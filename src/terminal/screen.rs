@@ -16,8 +16,49 @@ pub struct Screen {
     pub scroll_left: usize,
     /// Scalar column where the first visual row begins while soft wrap is active.
     pub wrap_col: usize,
-    /// Status plus optional touch action rows reserved below document content.
-    bottom_rows: u16,
+    /// Whether the touch action row is reserved below the status row.
+    action_bar: bool,
+}
+
+/// One-indexed terminal rows used by the renderer, plus the document height.
+/// Tiny terminals prefer document content over chrome; normal terminals add a
+/// blank separator without ever reducing the document below two rows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct BottomLayout {
+    pub(crate) content_height: usize,
+    pub(crate) separator_row: Option<usize>,
+    pub(crate) status_row: Option<usize>,
+    pub(crate) action_row: Option<usize>,
+}
+
+pub(crate) fn bottom_layout(height: usize, action_bar: bool) -> BottomLayout {
+    let chrome_rows = 1usize.saturating_add(usize::from(action_bar));
+    if height <= chrome_rows {
+        return BottomLayout {
+            content_height: height,
+            separator_row: None,
+            status_row: None,
+            action_row: None,
+        };
+    }
+
+    let separator_rows = usize::from(height >= chrome_rows.saturating_add(3));
+    let content_height = height
+        .saturating_sub(chrome_rows)
+        .saturating_sub(separator_rows);
+    let separator_row = (separator_rows == 1).then_some(content_height.saturating_add(1));
+    let status_row = Some(
+        content_height
+            .saturating_add(separator_rows)
+            .saturating_add(1),
+    );
+    let action_row = action_bar.then_some(height);
+    BottomLayout {
+        content_height,
+        separator_row,
+        status_row,
+        action_row,
+    }
 }
 
 impl Default for Screen {
@@ -34,7 +75,7 @@ impl Screen {
             scroll_top: 0,
             scroll_left: 0,
             wrap_col: 0,
-            bottom_rows: 1,
+            action_bar: false,
         }
     }
 
@@ -44,13 +85,23 @@ impl Screen {
     }
 
     pub(crate) fn set_action_bar(&mut self, enabled: bool) {
-        self.bottom_rows = if enabled { 2 } else { 1 };
+        self.action_bar = enabled;
         self.clamp_scroll();
     }
 
     /// How many lines we can show.
     pub fn visible_height(&self) -> usize {
-        self.height.saturating_sub(self.bottom_rows) as usize
+        self.bottom_layout().content_height
+    }
+
+    pub(crate) fn bottom_layout(&self) -> BottomLayout {
+        bottom_layout(self.height as usize, self.action_bar)
+    }
+
+    pub(crate) fn status_row(&self) -> Option<usize> {
+        self.bottom_layout()
+            .status_row
+            .map(|row| row.saturating_sub(1))
     }
 
     /// How many columns of content we can show (scalar char count for now).
@@ -123,7 +174,7 @@ mod tests {
 
     #[test]
     fn reveal_row_above_scrolls_up() {
-        let mut s = Screen::new(80, 10); // vh = 9
+        let mut s = Screen::new(80, 10); // vh = 8
         s.scroll_top = 5;
         s.reveal_row(3);
         assert_eq!(s.scroll_top, 3, "row above viewport must scroll up to it");
@@ -131,24 +182,24 @@ mod tests {
 
     #[test]
     fn reveal_row_below_scrolls_down() {
-        let mut s = Screen::new(80, 10); // vh = 9, content rows [scroll_top, scroll_top+8]
+        let mut s = Screen::new(80, 10); // vh = 8, content rows [scroll_top, scroll_top+7]
         s.scroll_top = 0;
         s.reveal_row(9);
         assert_eq!(
-            s.scroll_top, 1,
+            s.scroll_top, 2,
             "row below must scroll so it becomes last visible content row"
         );
     }
 
     #[test]
     fn reveal_row_already_visible_does_not_move() {
-        let mut s = Screen::new(80, 10); // vh=9
-        s.scroll_top = 2; // visible content: 2..10
+        let mut s = Screen::new(80, 10); // vh=8
+        s.scroll_top = 2; // visible content: 2..9
         s.reveal_row(2);
         assert_eq!(s.scroll_top, 2);
         s.reveal_row(5);
         assert_eq!(s.scroll_top, 2);
-        s.reveal_row(10); // 2 + 9 - 1 == 10 is still inside
+        s.reveal_row(9); // 2 + 8 - 1 == 9 is still inside
         assert_eq!(s.scroll_top, 2);
     }
 
@@ -159,7 +210,7 @@ mod tests {
         s.reveal_row(100);
         assert_eq!(s.scroll_top, 0);
 
-        let mut s = Screen::new(80, 1); // vh=0
+        let mut s = Screen::new(80, 1); // chrome hidden, vh=1
         s.scroll_top = 7;
         s.reveal_row(0);
         assert_eq!(s.scroll_top, 0);
@@ -275,7 +326,7 @@ mod tests {
 
     #[test]
     fn clamp_scroll_nonzero_dimensions_preserve_offsets() {
-        let mut s = Screen::new(40, 12); // vh=11, vw=40
+        let mut s = Screen::new(40, 12); // vh=10, vw=40
         s.scroll_top = 5;
         s.scroll_left = 12;
         s.clamp_scroll();
@@ -286,7 +337,7 @@ mod tests {
     #[test]
     fn reveal_row_and_col_still_satisfy_after_repeated_calls() {
         // After multiple reveals, the cursor should be inside the viewport.
-        let mut s = Screen::new(10, 6); // vh=5, vw=10
+        let mut s = Screen::new(10, 6); // vh=4, vw=10
         s.scroll_top = 0;
         s.scroll_left = 0;
 
@@ -325,14 +376,38 @@ mod tests {
     }
 
     #[test]
-    fn action_bar_reserves_a_second_bottom_row_at_tiny_sizes() {
+    fn normal_terminals_separate_footer_without_starving_tiny_views() {
         let mut screen = Screen::new(20, 6);
-        assert_eq!(screen.visible_height(), 5);
-        screen.set_action_bar(true);
         assert_eq!(screen.visible_height(), 4);
+        assert_eq!(screen.status_row(), Some(5));
+        screen.set_action_bar(true);
+        assert_eq!(screen.visible_height(), 3);
+        assert_eq!(screen.status_row(), Some(4));
         screen.update_size(20, 1);
-        assert_eq!(screen.visible_height(), 0);
+        assert_eq!(screen.visible_height(), 1);
+        assert_eq!(screen.status_row(), None);
         screen.set_action_bar(false);
-        assert_eq!(screen.visible_height(), 0);
+        assert_eq!(screen.visible_height(), 1);
+        assert_eq!(screen.status_row(), None);
+    }
+
+    #[test]
+    fn bottom_layout_uses_one_row_footer_before_adding_separation() {
+        assert_eq!(
+            bottom_layout(0, false),
+            BottomLayout {
+                content_height: 0,
+                separator_row: None,
+                status_row: None,
+                action_row: None,
+            }
+        );
+        assert_eq!(bottom_layout(1, false).content_height, 1);
+        assert_eq!(bottom_layout(1, false).status_row, None);
+        assert_eq!(bottom_layout(2, false).content_height, 1);
+        assert_eq!(bottom_layout(2, false).status_row, Some(2));
+        assert_eq!(bottom_layout(3, false).separator_row, None);
+        assert_eq!(bottom_layout(4, false).separator_row, Some(3));
+        assert_eq!(bottom_layout(4, false).status_row, Some(4));
     }
 }

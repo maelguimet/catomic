@@ -71,7 +71,7 @@ pub(super) fn begin_with_preset(
     };
     let destination = crate::llm::backend::display_destination(&preset);
     let prepared = PreparedWorkflow {
-        path: display_path(app.file.path.as_deref(), &preset),
+        path: crate::llm::current_file_identifier(app.file.path.as_deref()),
         file_path: app.file.path.clone(),
         expected_revision: app.buffer.edit_history_position(),
         request_index: 0,
@@ -139,24 +139,6 @@ fn warning_question(prepared: &PreparedWorkflow) -> String {
         prepared.destination,
         super::confirmation::sensitivity_summary(prepared),
     )
-}
-
-fn display_path(
-    path: Option<&std::path::Path>,
-    preset: &crate::config::llm::BackendPreset,
-) -> String {
-    let path = path.unwrap_or_else(|| std::path::Path::new("untitled.txt"));
-    if matches!(
-        preset.adapter,
-        crate::config::llm::BackendAdapter::Command(_)
-    ) {
-        return path
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .filter(|name| !name.is_empty())
-            .unwrap_or_else(|| "active-file.txt".to_string());
-    }
-    path.to_string_lossy().into_owned()
 }
 
 pub(crate) fn warning_prompt_message(app: &super::super::App, text: &str) -> Option<String> {

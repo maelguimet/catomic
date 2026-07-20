@@ -17,7 +17,7 @@ use crate::llm::task::LlmTask;
 mod prompt;
 mod result;
 
-use prompt::{confirmation_message, display_path, system_prompt, user_prompt, RequestPurpose};
+use prompt::{confirmation_message, system_prompt, user_prompt, RequestPurpose};
 pub(crate) use result::poll;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -91,11 +91,11 @@ fn begin_with_settings(
         }
     };
     let file_path = app.file.path.clone();
-    let path = display_path(file_path.as_deref(), &preset);
+    let path = crate::llm::current_file_identifier(file_path.as_deref());
     let destination = crate::llm::backend::display_destination(&preset);
     let replacement_target = replacement_target(app, &draft);
     let purpose = prompt::purpose(&draft);
-    app.message_info(confirmation_message(&draft, &preset, &destination));
+    app.message_info(confirmation_message(&draft, &preset, &destination, &path));
     app.pending_llm_request = Some(PendingLlmRequest {
         draft,
         preset,

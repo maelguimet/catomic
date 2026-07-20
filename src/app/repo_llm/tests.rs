@@ -7,7 +7,6 @@ mod path_identity;
 mod relevant_file;
 
 use std::fs;
-use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -76,6 +75,8 @@ fn project_preparation_reaches_confirmation_without_connecting() {
     assert!(message.contains("gitmeow focused context"));
     assert!(message.contains("at most 64 KiB"));
     assert!(message.contains("repo bytes"));
+    assert!(message.contains("repository-relative note.txt"));
+    assert!(!message.contains(&repo.0.to_string_lossy().into_owned()));
     assert!(message.contains("Enter confirms"));
 
     fs::write(repo.0.join("other.txt"), "changed before send\n").unwrap();
@@ -88,6 +89,27 @@ fn project_preparation_reaches_confirmation_without_connecting() {
     poll_until_send_checked(&mut app, &mut out);
     assert!(app.repo_llm_state.is_none());
     assert!(listener.accept().is_err());
+}
+
+#[test]
+fn repo_http_body_uses_relative_paths_and_omits_the_checkout_root() {
+    let repo = TempRepo::new();
+    let (settings, request, server) = captured_response_server(
+        "--- a/note.txt\n+++ b/note.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n",
+    );
+    let mut app = project_app(&repo);
+    let mut out = Vec::new();
+
+    begin_with_settings(&mut app, &mut out, "uppercase second line", settings).unwrap();
+    poll_until_pending(&mut app, &mut out);
+    handle_key(&mut app, &mut out, key(KeyCode::Enter)).unwrap();
+    poll_until_finished(&mut app, &mut out);
+    server.join().unwrap();
+
+    let request = request.lock().unwrap();
+    assert!(request.contains("Active path: note.txt"));
+    assert!(request.contains("Repository paths: relative to the confirmed root"));
+    assert!(!request.contains(&repo.0.to_string_lossy().into_owned()));
 }
 
 #[test]
@@ -342,29 +364,19 @@ fn patch_server() -> (BackendPreset, std::thread::JoinHandle<()>) {
 }
 
 fn response_server(patch: &str) -> (BackendPreset, std::thread::JoinHandle<()>) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    let patch = patch.to_string();
-    let server = std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        let mut request = Vec::new();
-        let mut chunk = [0_u8; 4096];
-        loop {
-            let count = stream.read(&mut chunk).unwrap();
-            request.extend_from_slice(&chunk[..count]);
-            if request.windows(4).any(|window| window == b"\r\n\r\n") {
-                break;
-            }
-        }
-        let body = serde_json::json!({"choices":[{"message":{"content":patch}}]}).to_string();
-        write!(
-            stream,
-            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        )
-        .unwrap();
-    });
-    (settings(format!("http://{address}/v1")), server)
+    let (settings, _, server) = captured_response_server(patch);
+    (settings, server)
+}
+
+fn captured_response_server(
+    patch: &str,
+) -> (
+    BackendPreset,
+    std::sync::Arc<std::sync::Mutex<String>>,
+    std::thread::JoinHandle<()>,
+) {
+    let (base_url, request, server) = crate::llm::test_support::response_server(patch);
+    (settings(base_url), request, server)
 }
 
 fn settings(base_url: String) -> BackendPreset {
@@ -386,7 +398,7 @@ impl TempRepo {
     fn new() -> Self {
         let suffix = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!(
-            "catomic-app-repo-llm-{}-{suffix}",
+            "catomic-sensitive-sentinel-repo-root-{}-{suffix}",
             std::process::id()
         ));
         fs::create_dir(&path).unwrap();

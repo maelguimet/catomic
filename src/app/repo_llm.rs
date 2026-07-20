@@ -162,7 +162,7 @@ fn finish_preparing(app: &mut super::App, prepared: PreparedRepoContext, state: 
         " SENSITIVE active-file context detected; Enter explicitly allows it."
     };
     app.message_info(format!(
-        "To {destination}: preset {} model {} via {}; send {} {} context with {} initial repo bytes + {} active-file bytes (at most {context_kib} KiB repository context total)?{sensitive} Enter confirms; Esc cancels.",
+        "To {destination}: preset {} model {} via {}; send {} {} context with {} initial repo bytes + {} active-file bytes (at most {context_kib} KiB repository context total), identifying the active file as repository-relative {relative_path}?{sensitive} Enter confirms; Esc cancels.",
         state.preset.name, state.preset.model, state.preset.adapter_label(),
         state.command.name(), state.command.profile(), prepared.initial_context.len(),
         state.draft.context.byte_count

@@ -3,7 +3,6 @@
 //! Must not: contact a live model, public endpoint, user service, or external network.
 //! Invariants: Plain startup has no request objects; model output never bypasses preview.
 
-use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::os::unix::fs::PermissionsExt;
 use std::time::{Duration, Instant};
@@ -269,6 +268,41 @@ fn confirmed_explain_response_opens_read_only_answer_instead_of_edit_preview() {
 }
 
 #[test]
+fn http_request_uses_only_the_basename_and_discloses_that_identifier() {
+    let root = std::env::temp_dir().join(format!(
+        "catomic-sensitive-sentinel-root-{}/client/private-checkout",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).unwrap();
+    let source_path = root.join("note.txt");
+    fs::write(&source_path, "one\ntwo\n").unwrap();
+    let (settings, request, server) = captured_response_server("Plain explanation.");
+    let mut app = super::super::App::new(source_path.to_str()).unwrap();
+    let mut out = Vec::new();
+
+    begin_with_settings(
+        &mut app,
+        &mut out,
+        CurrentLlmCommand::BigMeow,
+        "Explain this file.",
+        settings,
+    )
+    .unwrap();
+
+    let confirmation = app.message.as_deref().unwrap();
+    assert!(confirmation.contains("identified as basename note.txt"));
+    assert!(!confirmation.contains(&root.to_string_lossy().into_owned()));
+    handle_key(&mut app, &mut out, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+    poll_until_done(&mut app, &mut out);
+    server.join().unwrap();
+
+    let request = request.lock().unwrap();
+    assert!(request.contains("Path: note.txt"));
+    assert!(!request.contains(&root.to_string_lossy().into_owned()));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn confirmed_command_backend_uses_the_same_preview_apply_undo_and_no_save_path() {
     let suffix = NEXT_COMMAND_FIXTURE.fetch_add(1, Ordering::Relaxed);
     let root = std::env::temp_dir().join(format!(
@@ -416,27 +450,17 @@ fn patch_server() -> (BackendPreset, std::thread::JoinHandle<()>) {
 }
 
 fn response_server(content: &str) -> (BackendPreset, std::thread::JoinHandle<()>) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    let content = content.to_string();
-    let server = std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        let mut request = Vec::new();
-        let mut chunk = [0_u8; 4096];
-        loop {
-            let count = stream.read(&mut chunk).unwrap();
-            request.extend_from_slice(&chunk[..count]);
-            if request.windows(4).any(|window| window == b"\r\n\r\n") {
-                break;
-            }
-        }
-        let body = serde_json::json!({"choices":[{"message":{"content":content}}]}).to_string();
-        write!(
-            stream,
-            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        )
-        .unwrap();
-    });
-    (settings(format!("http://{address}/v1")), server)
+    let (settings, _, server) = captured_response_server(content);
+    (settings, server)
+}
+
+fn captured_response_server(
+    content: &str,
+) -> (
+    BackendPreset,
+    std::sync::Arc<std::sync::Mutex<String>>,
+    std::thread::JoinHandle<()>,
+) {
+    let (base_url, request, server) = crate::llm::test_support::response_server(content);
+    (settings(base_url), request, server)
 }

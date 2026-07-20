@@ -62,6 +62,8 @@ fn initial_context_and_retrieval_are_bounded_and_read_only() {
 
     assert!(initial.contains("Branch: main"));
     assert!(initial.contains("src/lib.rs"));
+    assert!(initial.contains("Repository paths: relative to the confirmed root"));
+    assert!(!initial.contains(&repo.0.to_string_lossy().into_owned()));
     assert_eq!(read, "pub fn cat()");
     assert!(grep.contains("src/lib.rs:2"));
     assert!(diff.contains("Changed"));

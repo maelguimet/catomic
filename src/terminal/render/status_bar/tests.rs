@@ -265,7 +265,7 @@ fn line_numbered_render_keeps_info_bar_outside_the_gutter() {
 
 #[test]
 fn preview_render_uses_the_semantic_info_bar() {
-    let buffer = SimpleBuffer::from_text("▌ Preview");
+    let buffer = SimpleBuffer::from_text("# Preview");
     let mut out = Vec::new();
     render_buffer(
         &mut out,
@@ -280,7 +280,7 @@ fn preview_render_uses_the_semantic_info_bar() {
     .unwrap();
 
     let rendered = String::from_utf8(out).unwrap();
-    assert!(rendered.contains("▌ Preview"));
+    assert!(rendered.contains("# Preview"));
     assert!(rendered.contains("\x1b[2;1H\x1b[7m\x1b[2KPreview     \x1b[0m"));
 }
 

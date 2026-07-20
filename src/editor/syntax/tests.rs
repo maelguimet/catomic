@@ -143,16 +143,24 @@ fn markdown_code_runs_match_only_equal_complete_delimiters() {
 #[test]
 fn markdown_preview_styles_rendered_headings_markers_and_code() {
     assert_eq!(
-        spans_for_line(SyntaxKind::MarkdownPreview, "▌ Heading"),
+        spans_for_line(SyntaxKind::MarkdownPreview, "# Heading"),
         vec![span(0, 9, SpanStyle::Heading)]
     );
     assert_eq!(
-        spans_for_line(SyntaxKind::MarkdownPreview, "• use ‹cat›"),
+        spans_for_line(SyntaxKind::MarkdownPreview, "- use `cat`"),
         vec![span(0, 2, SpanStyle::Marker), span(6, 11, SpanStyle::Code)]
     );
     assert_eq!(
         spans_for_line(SyntaxKind::MarkdownPreview, "12. item"),
         vec![span(0, 4, SpanStyle::Marker)]
+    );
+    assert_eq!(
+        spans_for_line(SyntaxKind::MarkdownPreview, "    let cat = 1;"),
+        vec![span(0, 16, SpanStyle::Code)]
+    );
+    assert_eq!(
+        spans_for_line(SyntaxKind::MarkdownPreview, "link <https://example.com>"),
+        vec![span(5, 26, SpanStyle::Link)]
     );
 }
 

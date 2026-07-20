@@ -27,10 +27,10 @@ fn manual_phase4_10mib_markdown_reports_samples() {
     let source = buffer.to_string();
     let (preview, preview_sample) =
         measure_sample("preview markdown 10mib", Some(MEDIUM_BYTES as u64), || {
-            crate::editor::markdown_preview::render(&source)
+            crate::editor::markdown_preview::render_with_width(&source, 80).unwrap()
         });
     print_perf_sample(&preview_sample);
-    assert!(preview.contains("• item with ‹code›"));
+    assert!(preview.contains("- item with `code`"));
     drop(preview);
     drop(source);
 

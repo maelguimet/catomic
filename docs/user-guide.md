@@ -607,29 +607,36 @@ malformed constructs remain ordinary readable text.
 | View | Key | Behavior |
 | --- | --- | --- |
 | External changes | `F5` | Toggle latest external-reload marks for all buffers and remember the choice |
-| Markdown preview | `F6` | Preview the buffer or active large-file page |
+| Markdown preview | `F6` | Render the current buffer or active large-file page as Markdown |
 | Line numbers | `F7` | Toggle line numbers for all buffers and remember the choice |
 | Visible whitespace | `F8` | Show spaces and tabs |
 | Soft wrapping | `F9` | Wrap at terminal width without inserting newlines |
 
-Press `F6` again or `Escape` to leave Markdown preview. Soft-wrapped
+`F6` is an explicit content command: it attempts Markdown rendering for
+`README`, `.txt`, extensionless, untitled, and Markdown-named buffers alike.
+The filename still chooses source highlighting defaults, but it never vetoes
+preview. Press `F6` again or `Escape` to leave Markdown preview. Soft-wrapped
 continuations preserve document coordinates and mouse mapping. Whitespace and
 soft wrapping remain per-buffer settings. F5 and F7 update the session-global
 preference used by every current buffer and buffers opened later.
 
-Markdown preview renders headings, nested quotes and lists, tasks, links,
-footnotes, rules, and fenced code with terminal-native markers. Tables retain
-their parsed column alignments, measure grapheme display cells (including wide
-characters, combining marks, and emoji), and use a heavier separator below the
-header. Inline formatting and escaped pipes stay inside their cells.
+The shared Markdown presentation layer reflows paragraphs, headings, nested
+quotes and lists, tasks, links, footnotes, rules, and padded code blocks to the
+terminal width, with a 100-cell maximum reading column on wide terminals. It
+uses familiar Markdown markers for a readable monochrome fallback while the
+active theme distinguishes headings, markers, links, emphasis, and code.
+Tables retain parsed alignment and terminal-cell measurement (including wide
+characters, combining marks, and emoji). A table uses a bordered grid when it
+fits and a wrapped label/value layout when it does not.
+An active preview is laid out again when the terminal width or line-number
+gutter changes; this never reparses during ordinary editing.
 
-To keep explicit preview construction from amplifying a single huge cell,
-individual table cells are capped at 40 terminal cells and clipped at a
-grapheme boundary with `…`. A complete table can still be wider than the
-terminal; use `Left`, `Right`, `Home`, and `End` to move the read-only preview
-cursor and pan horizontally. No source text is changed. Raw HTML is displayed
-as inert text; terminal control characters are converted to visible safe
-glyphs by the normal renderer rather than executed.
+Preview construction accepts at most 10 MiB of active source and 32 MiB of
+rendered output. Individual table cells are capped at 40 terminal cells;
+pathological table row, column, and text counts are refused with a render error.
+No source bytes, path, dirty state, selection, history, cursor, viewport, or
+line-ending format are changed. Raw HTML is displayed as inert text; terminal
+control characters become visible safe glyphs rather than executing.
 
 ## Large files
 

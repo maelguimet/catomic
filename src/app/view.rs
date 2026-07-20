@@ -23,8 +23,10 @@ pub(crate) struct ViewOptions {
 #[derive(Debug)]
 struct PreviewDocument {
     buffer: PieceTable,
+    layout_width: usize,
     source_scroll_top: usize,
     source_scroll_left: usize,
+    source_wrap_col: usize,
 }
 
 pub(crate) fn handle_key(
@@ -206,6 +208,32 @@ pub(crate) fn cancel_preview(app: &mut super::App) {
     if let Some(preview) = app.view.preview.take() {
         app.screen.scroll_top = preview.source_scroll_top;
         app.screen.scroll_left = preview.source_scroll_left;
+        app.screen.wrap_col = preview.source_wrap_col;
+    }
+}
+
+pub(crate) fn relayout_preview(app: &mut super::App) {
+    let Some(preview) = app.view.preview.as_ref() else {
+        return;
+    };
+    let width = crate::editor::markdown_preview::reading_width(content_width(app));
+    if preview.layout_width == width {
+        return;
+    }
+    let cursor = preview.buffer.cursor();
+    match crate::editor::markdown_preview::render_with_width(&app.buffer.to_string(), width) {
+        Ok(rendered) => {
+            let mut buffer = PieceTable::from_owned_text(rendered);
+            let row = cursor.row.min(buffer.line_count().saturating_sub(1));
+            let col = cursor.col.min(buffer.line_char_count(row).unwrap_or(0));
+            buffer.set_cursor(Cursor { row, col });
+            if let Some(preview) = app.view.preview.as_mut() {
+                preview.buffer = buffer;
+                preview.layout_width = width;
+                app.screen.scroll_left = 0;
+            }
+        }
+        Err(error) => app.message = Some(format!("Markdown preview failed: {error}.")),
     }
 }
 
@@ -213,22 +241,29 @@ fn toggle_preview(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool>
     if is_preview(app) {
         cancel_preview(app);
         app.message = Some("Markdown preview off.".to_string());
-        app.reveal_cursor();
-    } else if syntax::syntax_for_path(app.file.path.as_deref()) != SyntaxKind::Markdown {
-        app.message = Some("Markdown preview is available for .md files.".to_string());
-    } else {
-        let rendered = crate::editor::markdown_preview::render(&app.buffer.to_string());
-        app.view.preview = Some(PreviewDocument {
-            buffer: PieceTable::from_text(&rendered),
-            source_scroll_top: app.screen.scroll_top,
-            source_scroll_left: app.screen.scroll_left,
-        });
-        app.screen.scroll_top = 0;
-        app.screen.scroll_left = 0;
-        app.selection.clear();
-        app.message = Some("Markdown preview on (read-only; F6 or Esc to exit).".to_string());
+        app.render(out)?;
+        return Ok(true);
     }
-    reveal_display_cursor(app);
+    let width = crate::editor::markdown_preview::reading_width(content_width(app));
+    match crate::editor::markdown_preview::render_with_width(&app.buffer.to_string(), width) {
+        Ok(rendered) => {
+            app.view.preview = Some(PreviewDocument {
+                buffer: PieceTable::from_owned_text(rendered),
+                layout_width: width,
+                source_scroll_top: app.screen.scroll_top,
+                source_scroll_left: app.screen.scroll_left,
+                source_wrap_col: app.screen.wrap_col,
+            });
+            app.screen.scroll_top = 0;
+            app.screen.scroll_left = 0;
+            app.screen.wrap_col = 0;
+            app.message = Some("Markdown preview on (read-only; F6 or Esc to exit).".to_string());
+            reveal_display_cursor(app);
+        }
+        Err(error) => {
+            app.message = Some(format!("Markdown preview failed: {error}."));
+        }
+    }
     app.render(out)?;
     Ok(true)
 }
@@ -240,6 +275,25 @@ fn toggle_line_numbers(app: &mut super::App, out: &mut dyn Write) -> io::Result<
     app.message = Some(match app.view_preferences.persist() {
         Ok(()) => format!("Line numbers {state}."),
         Err(error) => format!("Line numbers {state}; preference not saved: {error}."),
+    });
+    relayout_preview(app);
+    reveal_display_cursor(app);
+    app.render(out)?;
+    Ok(true)
+}
+
+fn toggle_external_diff(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {
+    let enabled = !app.view_preferences.external_diff();
+    app.view_preferences.set_external_diff(enabled);
+    if !enabled {
+        app.clear_external_changes();
+    }
+    let state = if enabled { "on" } else { "off" };
+    app.message = Some(match app.view_preferences.persist() {
+        Ok(()) => format!("External change highlighting {state}."),
+        Err(error) => {
+            format!("External change highlighting {state}; preference not saved: {error}.")
+        }
     });
     reveal_display_cursor(app);
     app.render(out)?;
@@ -292,7 +346,6 @@ fn handle_preview_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) 
     if key.code == KeyCode::Esc {
         cancel_preview(app);
         app.message = Some("Markdown preview off.".to_string());
-        app.reveal_cursor();
         return app.render(out);
     }
     let height = app.screen.visible_height().max(1);
@@ -427,7 +480,7 @@ mod tests {
     #[test]
     fn markdown_preview_is_rendered_read_only_and_restores_source_view() {
         let mut app = super::super::App::new(None).unwrap();
-        app.file.path = Some(PathBuf::from("notes.md"));
+        app.file.path = Some(PathBuf::from("notes.txt"));
         app.buffer = Box::new(crate::buffer::PieceTable::from_text("# Title\n\n- item"));
         app.screen.width = 4;
         app.buffer.set_cursor(Cursor { row: 0, col: 7 });
@@ -437,7 +490,7 @@ mod tests {
 
         handle_key(&mut app, &mut out, key(KeyCode::F(6))).unwrap();
         assert!(is_preview(&app));
-        assert!(String::from_utf8_lossy(&out).contains('▌'));
+        assert!(String::from_utf8_lossy(&out).contains('#'));
         let source = app.buffer.to_string();
 
         handle_key(&mut app, &mut out, key(KeyCode::Char('x'))).unwrap();
@@ -450,15 +503,18 @@ mod tests {
     }
 
     #[test]
-    fn preview_rejects_non_markdown_files() {
-        let mut app = super::super::App::new(None).unwrap();
-        app.file.path = Some(PathBuf::from("notes.txt"));
-        let mut out = Vec::new();
+    fn preview_accepts_every_filename_and_untitled_buffers() {
+        for path in [None, Some("README"), Some("notes.txt"), Some("notes.md")] {
+            let mut app = super::super::App::new(None).unwrap();
+            app.file.path = path.map(PathBuf::from);
+            app.buffer = Box::new(crate::buffer::PieceTable::from_text("# Preview"));
+            let mut out = Vec::new();
 
-        handle_key(&mut app, &mut out, key(KeyCode::F(6))).unwrap();
+            handle_key(&mut app, &mut out, key(KeyCode::F(6))).unwrap();
 
-        assert!(!is_preview(&app));
-        assert!(app.message.as_deref().unwrap().contains(".md files"));
+            assert!(is_preview(&app), "path {path:?}");
+            assert!(!app.message.as_deref().unwrap().contains(".md"));
+        }
     }
 
     #[test]
@@ -476,7 +532,7 @@ mod tests {
     }
 
     #[test]
-    fn narrow_table_preview_can_pan_to_its_right_edge() {
+    fn narrow_table_preview_uses_a_wrapped_borderless_fallback() {
         let mut app = super::super::App::new(None).unwrap();
         app.file.path = Some(PathBuf::from("table.md"));
         app.buffer = Box::new(crate::buffer::PieceTable::from_text(
@@ -487,10 +543,87 @@ mod tests {
         let mut out = Vec::new();
 
         handle_key(&mut app, &mut out, key(KeyCode::F(6))).unwrap();
+        let preview_text = app.view.preview.as_ref().unwrap().buffer.to_string();
         out.clear();
         handle_key(&mut app, &mut out, key(KeyCode::End)).unwrap();
 
-        assert!(app.screen.scroll_left > 0);
-        assert!(String::from_utf8(out).unwrap().contains("2,000"));
+        assert_eq!(app.screen.scroll_left, 0);
+        assert!(preview_text.contains("- Right:"));
+        assert!(!preview_text.contains('┌'));
+    }
+
+    #[test]
+    fn preview_exit_restores_selection_cursor_viewport_and_source_metadata() {
+        let mut app = super::super::App::new(None).unwrap();
+        app.file.path = Some(PathBuf::from("README"));
+        app.file.text_format = crate::file::text_format::TextFormat {
+            utf8_bom: true,
+            line_ending: crate::file::text_format::LineEnding::Crlf,
+        };
+        app.buffer = Box::new(crate::buffer::PieceTable::from_text(
+            "first line\nsecond line is deliberately long\nthird\nfourth\nfifth\nsixth",
+        ));
+        app.buffer.insert_char('!');
+        app.file.dirty = true;
+        app.screen.width = 12;
+        app.screen.height = 4;
+        let mut out = Vec::new();
+        super::super::selection::move_to(&mut app, &mut out, Cursor { row: 1, col: 8 }, true)
+            .unwrap();
+        app.screen.scroll_top = 3;
+        app.screen.scroll_left = 5;
+        app.screen.wrap_col = 2;
+
+        let source = app.buffer.to_string();
+        let cursor = app.buffer.cursor();
+        let selection = app.selection.active();
+        let history = app.buffer.edit_history_position();
+        let path = app.file.path.clone();
+        let format = app.file.text_format;
+        let viewport = (
+            app.screen.scroll_top,
+            app.screen.scroll_left,
+            app.screen.wrap_col,
+        );
+
+        handle_key(&mut app, &mut out, key(KeyCode::F(6))).unwrap();
+        assert!(is_preview(&app));
+        assert_eq!(app.selection.active(), selection);
+        handle_key(&mut app, &mut out, key(KeyCode::Esc)).unwrap();
+
+        assert!(!is_preview(&app));
+        assert_eq!(app.buffer.to_string(), source);
+        assert_eq!(app.buffer.cursor(), cursor);
+        assert_eq!(app.selection.active(), selection);
+        assert_eq!(app.buffer.edit_history_position(), history);
+        assert_eq!(app.file.path, path);
+        assert_eq!(app.file.text_format, format);
+        assert!(app.file.dirty);
+        assert_eq!(
+            (
+                app.screen.scroll_top,
+                app.screen.scroll_left,
+                app.screen.wrap_col,
+            ),
+            viewport
+        );
+    }
+
+    #[test]
+    fn active_preview_reflows_when_the_terminal_becomes_narrower() {
+        let mut app = super::super::App::new(None).unwrap();
+        let source = "A long paragraph with Unicode 猫🐾 and a URL https://example.com/a/long/path that must reflow after resize.";
+        app.buffer = Box::new(crate::buffer::PieceTable::from_text(source));
+        app.screen.width = 60;
+        let mut out = Vec::new();
+        handle_key(&mut app, &mut out, key(KeyCode::F(6))).unwrap();
+
+        app.handle_resize(16, 10, &mut out).unwrap();
+
+        let preview = app.view.preview.as_ref().unwrap().buffer.to_string();
+        assert!(preview
+            .lines()
+            .all(|line| crate::editor::text_layout::cell_width_from(line, 0) <= 16));
+        assert_eq!(app.buffer.to_string(), source);
     }
 }

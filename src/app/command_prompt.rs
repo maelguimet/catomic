@@ -101,6 +101,13 @@ pub(super) fn clear_config_discard_confirmation(app: &mut super::App) {
     }
 }
 
+pub(super) fn config_discard_confirmation_pending(app: &super::App) -> bool {
+    app.command_prompt
+        .config_return
+        .as_ref()
+        .is_some_and(|config_return| config_return.discard_pending)
+}
+
 pub(super) fn forget_active_config_detour(app: &mut super::App) {
     let active_config = app
         .command_prompt

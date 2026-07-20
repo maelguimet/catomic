@@ -1,7 +1,7 @@
 //! Purpose: dispatch canonical normal-mode editing and movement keys.
 //! Owns: indentation, newline, insertion, deletion, and arrow movement routing.
 //! Must not: handle active surfaces, translate keybindings, save files, or decode terminal bytes.
-//! Invariants: edits use common cleanup; movement preserves pending confirmations and messages.
+//! Invariants: edits use common cleanup; movement does not mutate buffer content.
 //! Phase: bounded post-beta input-routing cleanup.
 
 use std::io::{self, Write};

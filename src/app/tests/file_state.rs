@@ -96,11 +96,11 @@ fn app_dirty_ctrl_q_first_renders_warning_immediately() {
     );
 }
 
-// Phase 2-al input hygiene: explicit coverage that content-mutating edits centralize
-// pending+message clear via the helper, while movement does not.
+// Phase 2-al input hygiene: explicit coverage that unrelated editor actions cancel
+// pending confirmations while the matching action remains armed.
 
 #[test]
-fn movement_does_not_clear_pending_quit_or_message() {
+fn movement_cancels_pending_quit_and_message() {
     let mut app = App::new(None).unwrap();
     app.handle_key(make_key(KeyCode::Char('x'), KeyModifiers::NONE))
         .unwrap();
@@ -109,23 +109,10 @@ fn movement_does_not_clear_pending_quit_or_message() {
     assert!(app.pending_quit_confirm);
     assert!(app.message.is_some());
 
-    // Arrow movement must leave pending and message untouched.
     app.handle_key(make_key(KeyCode::Left, KeyModifiers::NONE))
         .unwrap();
-    assert!(app.pending_quit_confirm, "left must not clear pending quit");
-    assert!(app.message.is_some(), "left must not clear message");
-
-    app.handle_key(make_key(KeyCode::Right, KeyModifiers::NONE))
-        .unwrap();
-    assert!(app.pending_quit_confirm);
-
-    app.handle_key(make_key(KeyCode::Up, KeyModifiers::NONE))
-        .unwrap();
-    assert!(app.pending_quit_confirm);
-
-    app.handle_key(make_key(KeyCode::Down, KeyModifiers::NONE))
-        .unwrap();
-    assert!(app.pending_quit_confirm);
+    assert!(!app.pending_quit_confirm);
+    assert!(app.message.is_none());
 }
 
 #[test]
@@ -178,9 +165,9 @@ fn undo_redo_clear_pending_and_message_even_on_noop() {
 }
 
 #[test]
-fn content_edit_clears_save_conflict_and_reload_pending() {
+fn movement_cancels_save_conflict_and_reload_pending() {
     let mut app = App::new(None).unwrap();
-    // Directly arm pendings (tests the clear path exercised by input edits, without full save/reload setup).
+    // Directly arm both to exercise the shared unrelated-action cancellation path.
     app.pending_save_conflict = Some(super::super::save::PendingSaveConflict {
         path: std::path::PathBuf::from("x"),
         status: crate::file::io::ExternalFileStatus::Modified,
@@ -193,16 +180,15 @@ fn content_edit_clears_save_conflict_and_reload_pending() {
     });
     app.message = Some("armed".to_string());
 
-    // Content edit clears both.
-    app.handle_key(make_key(KeyCode::Char('a'), KeyModifiers::NONE))
+    app.handle_key(make_key(KeyCode::Left, KeyModifiers::NONE))
         .unwrap();
     assert!(
         app.pending_save_conflict.is_none(),
-        "edit must clear save conflict pending"
+        "movement must cancel save conflict pending"
     );
     assert!(
         app.pending_reload.is_none(),
-        "edit must clear reload pending"
+        "movement must cancel reload pending"
     );
     assert!(app.message.is_none());
 }

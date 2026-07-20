@@ -325,17 +325,31 @@ fn span_style(theme: Theme, style: SpanStyle) -> Style {
         SpanStyle::Comment => theme.syntax_comment,
         SpanStyle::Number => theme.syntax_number,
         SpanStyle::Code => theme.markdown_code,
-        SpanStyle::PreviewCode => Style {
-            reversed: Some(true),
+        SpanStyle::PreviewInlineCode => Style {
+            bold: Some(true),
             ..theme.markdown_code
+        },
+        SpanStyle::PreviewCodeBlock => theme.markdown_code,
+        SpanStyle::PreviewHeading1 => Style {
+            bold: Some(true),
+            reversed: Some(true),
+            ..theme.markdown_heading
+        },
+        SpanStyle::PreviewHeading2 => Style {
+            bold: Some(true),
+            ..theme.markdown_heading
+        },
+        SpanStyle::PreviewHeading3 => Style {
+            bold: Some(false),
+            ..theme.markdown_heading
         },
         SpanStyle::PreviewHeading4 => Style {
             bold: Some(false),
-            underlined: Some(true),
             ..theme.markdown_heading
         },
         SpanStyle::PreviewHeading5 => Style {
             bold: Some(false),
+            dim: Some(true),
             ..theme.markdown_heading
         },
         SpanStyle::PreviewHeading6 => Style {

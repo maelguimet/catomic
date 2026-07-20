@@ -15,7 +15,7 @@ in `progress/phase-4-progress.md`; measurements are also retained in
 | Markdown preview | `F6` explicitly parses the active Markdown buffer or active large-file page with `pulldown-cmark` into a separate read-only PieceTable. It renders headings, lists, blockquotes, inline/code blocks, tasks, and tables without modifying source history. `F6` or Escape restores the source viewport. |
 | View indicators | `F7` toggles a fixed session-global line-number gutter and persists the explicit choice; `F8` toggles per-buffer one-cell space/tab indicators. Cursor reveal, resize, horizontal scroll, and mouse mapping account for gutter width. |
 | Read-only safety | Ordinary key input and bracketed paste cannot edit preview source; mouse selection is ignored there. External reload cancels stale preview state before replacing source. |
-| Golden preview | `golden_markdown_preview_document` compares the complete rendered preview string for heading, list, inline-code, and blockquote input while asserting the source fixture remains byte-identical. |
+| Representative preview | The complete heading, list, inline-code, and blockquote fixture asserts semantic spans, defined layout, delimiter removal, and byte-identical source without blessing decorative replacement strings. |
 | Real terminal flow | The default PTY smoke sends F6/F7/F8 to the release-shaped binary, requires rendered/read-only/toggle messages, verifies the source file is unchanged, and requires mouse, bracketed-paste, and alternate-screen teardown. |
 | Plain startup discipline | `pulldown-cmark` is invoked only by explicit F6. Startup, typing, and ordinary viewport rendering do not construct a parser or add Project/LLM/network services. Dependency scope and removal are recorded in decision 0005. |
 

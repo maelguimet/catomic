@@ -15,7 +15,9 @@ use crate::editor::text_layout;
 
 mod table;
 
-const MAX_READING_WIDTH: usize = 100;
+const MAX_READING_WIDTH: usize = 88;
+const MIN_MARGIN_WIDTH: usize = 40;
+const DOCUMENT_MARGIN: usize = 2;
 const MAX_SOURCE_BYTES: usize = 10 * 1024 * 1024;
 const MAX_OUTPUT_BYTES: usize = 32 * 1024 * 1024;
 const MAX_ANNOTATIONS: usize = 1_000_000;
@@ -61,7 +63,8 @@ pub(crate) fn render_with_width(
     if source.len() > MAX_SOURCE_BYTES {
         return Err(RenderError::OversizedSource);
     }
-    let width = reading_width(width);
+    let layout_width = layout_width(width);
+    let (width, margin) = document_layout(layout_width);
     let mut options =
         Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TABLES | Options::ENABLE_TASKLISTS;
     if source.contains("[^") {
@@ -71,11 +74,23 @@ pub(crate) fn render_with_width(
     for event in Parser::new_ext(source, options) {
         renderer.event(event);
     }
-    wrap_document(renderer.finish()?, width)
+    wrap_document(renderer.finish()?, width, margin)
 }
 
-pub(crate) fn reading_width(width: usize) -> usize {
-    width.clamp(1, MAX_READING_WIDTH)
+pub(crate) fn layout_width(width: usize) -> usize {
+    width.max(1)
+}
+
+fn document_layout(width: usize) -> (usize, usize) {
+    let minimum_margin = if width >= MIN_MARGIN_WIDTH {
+        DOCUMENT_MARGIN
+    } else {
+        0
+    };
+    let reading_width = width
+        .saturating_sub(minimum_margin.saturating_mul(2))
+        .clamp(1, MAX_READING_WIDTH);
+    (reading_width, width.saturating_sub(reading_width) / 2)
 }
 
 struct PreviewRenderer {
@@ -87,7 +102,7 @@ struct PreviewRenderer {
     width: usize,
     lists: Vec<Option<u64>>,
     quote_depth: usize,
-    code_block: bool,
+    code_block: Option<String>,
     table: Option<table::TableBuilder>,
     links: Vec<LinkTarget>,
     error: Option<RenderError>,
@@ -128,7 +143,7 @@ impl PreviewRenderer {
             width,
             lists: Vec::new(),
             quote_depth: 0,
-            code_block: false,
+            code_block: None,
             table: None,
             links: Vec::new(),
             error: None,
@@ -143,7 +158,7 @@ impl PreviewRenderer {
             Event::Start(tag) => self.start(tag),
             Event::End(tag) => self.end(tag),
             Event::Text(text) => self.text(&text),
-            Event::Code(text) => self.push_styled(&safe_text(&text), SpanStyle::PreviewCode),
+            Event::Code(text) => self.push_styled(&safe_text(&text), SpanStyle::PreviewInlineCode),
             Event::SoftBreak => self.push(" "),
             Event::HardBreak => self.line_break(),
             Event::Rule => self.rule(),
@@ -154,16 +169,23 @@ impl PreviewRenderer {
             Event::FootnoteReference(label) => {
                 self.push_styled(&format!("[^{label}]"), SpanStyle::Marker)
             }
-            Event::InlineMath(text) => self.push_styled(&safe_text(&text), SpanStyle::PreviewCode),
+            Event::InlineMath(text) => {
+                self.push_styled(&safe_text(&text), SpanStyle::PreviewInlineCode)
+            }
             Event::DisplayMath(text) => self.display_math(&text),
         }
     }
 
     fn start(&mut self, tag: Tag<'_>) {
         match tag {
+            Tag::Paragraph => self.start_paragraph(),
             Tag::Heading { level, .. } => {
-                self.block_start();
+                self.start_heading(level);
                 self.active_styles.push(heading_style(level));
+                let indent = heading_indent(level);
+                if indent > 0 {
+                    self.push(&" ".repeat(indent));
+                }
             }
             Tag::BlockQuote(_) => {
                 self.quote_depth += 1;
@@ -194,7 +216,7 @@ impl PreviewRenderer {
 
     fn end(&mut self, tag: TagEnd) {
         match tag {
-            TagEnd::Paragraph => self.blank_line(),
+            TagEnd::Paragraph => self.end_paragraph(),
             TagEnd::Heading(level) => self.end_heading(level),
             TagEnd::BlockQuote(_) => {
                 self.quote_depth = self.quote_depth.saturating_sub(1);
@@ -219,6 +241,34 @@ impl PreviewRenderer {
         }
     }
 
+    fn start_heading(&mut self, level: HeadingLevel) {
+        if self.output.is_empty() {
+            return;
+        }
+        if matches!(
+            level,
+            HeadingLevel::H1 | HeadingLevel::H2 | HeadingLevel::H3
+        ) {
+            self.blank_line();
+        } else {
+            self.newline();
+        }
+    }
+
+    fn start_paragraph(&mut self) {
+        if self.quote_depth == 0 {
+            return;
+        }
+        self.push_styled("“", SpanStyle::Marker);
+    }
+
+    fn end_paragraph(&mut self) {
+        if self.quote_depth > 0 {
+            self.push_styled("”", SpanStyle::Marker);
+        }
+        self.blank_line();
+    }
+
     fn start_item(&mut self) {
         self.block_start();
         self.push(&"  ".repeat(self.lists.len().saturating_sub(1)));
@@ -235,38 +285,47 @@ impl PreviewRenderer {
 
     fn end_heading(&mut self, level: HeadingLevel) {
         self.end_style(heading_style(level));
-        let line_width = self
-            .output
-            .rsplit('\n')
-            .next()
-            .map(|line| text_layout::cell_width_from(line, 0))
-            .unwrap_or(0);
         self.newline();
         if matches!(level, HeadingLevel::H1 | HeadingLevel::H2) {
-            let quote_width = self.quote_depth.saturating_mul(2);
-            let available = self.width.saturating_sub(quote_width).max(1);
-            let underline_width = line_width.saturating_sub(quote_width).min(available).max(1);
-            let fill = if level == HeadingLevel::H1 {
-                '═'
-            } else {
-                '─'
-            };
-            self.push_styled(&fill.to_string().repeat(underline_width), SpanStyle::Marker);
+            self.blank_line();
         }
-        self.blank_line();
     }
 
     fn start_code_block(&mut self, _kind: CodeBlockKind<'_>) {
         self.block_start();
-        self.code_block = true;
-        self.active_styles.push(SpanStyle::PreviewCode);
+        self.code_block = Some(String::new());
     }
 
     fn end_code_block(&mut self) {
-        self.newline();
-        self.end_style(SpanStyle::PreviewCode);
-        self.code_block = false;
+        let code = self.code_block.take().unwrap_or_default();
+        self.render_code_block(&code);
         self.blank_line();
+    }
+
+    fn render_code_block(&mut self, code: &str) {
+        let prefix = self.quote_prefix();
+        let prefix_width = text_layout::cell_width_from(&prefix, 0);
+        let available = self.width.saturating_sub(prefix_width).max(1);
+        let padding: usize = if available >= 6 {
+            4
+        } else if available >= 3 {
+            1
+        } else {
+            0
+        };
+        let content_width = available.saturating_sub(padding).max(1);
+        let code = code.strip_suffix('\n').unwrap_or(code);
+        for source_line in code.split('\n') {
+            let safe_line = text_layout::expand_tabs(source_line, false, 0);
+            for line in wrap_code_line(&safe_line, content_width) {
+                if !prefix.is_empty() {
+                    self.append(&prefix, Some(SpanStyle::Marker));
+                }
+                let block = format!("{}{}", " ".repeat(padding), line);
+                self.append(&block, Some(SpanStyle::PreviewCodeBlock));
+                self.append("\n", None);
+            }
+        }
     }
 
     fn start_link(&mut self, destination: String, image: bool) {
@@ -306,8 +365,13 @@ impl PreviewRenderer {
         match table.finish(available.max(1)) {
             Ok(lines) => {
                 for line in lines {
-                    self.push_table_line(&line);
-                    self.newline();
+                    let blank = line.style == table::TableLineStyle::Blank;
+                    self.push_table_line(line);
+                    if blank {
+                        self.blank_line();
+                    } else {
+                        self.newline();
+                    }
                 }
             }
             Err(()) => self.error = Some(RenderError::TableComplexity),
@@ -315,45 +379,58 @@ impl PreviewRenderer {
         self.blank_line();
     }
 
-    fn push_table_line(&mut self, line: &str) {
-        let before = self.scalar_len;
-        self.push(line);
-        let line_start = self.scalar_len.saturating_sub(line.chars().count());
-        if line.starts_with("- ") {
-            self.add_span(line_start, line_start.saturating_add(2), SpanStyle::Marker);
-            return;
-        }
-        let mut run_start = None;
-        for (offset, ch) in line.chars().chain(std::iter::once('\0')).enumerate() {
-            let marker = "┌┬┐│├┼┤╞╪╡└┴┘─═".contains(ch);
-            match (run_start, marker) {
-                (None, true) => run_start = Some(offset),
-                (Some(start), false) => {
-                    self.add_span(line_start + start, line_start + offset, SpanStyle::Marker);
-                    run_start = None;
-                }
-                _ => {}
+    fn push_table_line(&mut self, line: table::TableLine) {
+        self.push(&line.text);
+        let line_end = self.scalar_len;
+        let line_start = line_end.saturating_sub(line.text.chars().count());
+        match line.style {
+            table::TableLineStyle::Header => {
+                self.add_span(line_start, line_end, SpanStyle::PreviewStrong)
             }
+            table::TableLineStyle::Label => {
+                let label_len = line
+                    .text
+                    .split_once(':')
+                    .map_or(0, |(label, _)| label.len() + 1);
+                let label_scalars = line.text[..label_len].chars().count();
+                self.add_span(
+                    line_start,
+                    line_start.saturating_add(label_scalars),
+                    SpanStyle::PreviewStrong,
+                );
+            }
+            table::TableLineStyle::Body | table::TableLineStyle::Blank => {}
         }
-        debug_assert!(self.scalar_len >= before);
     }
 
     fn rule(&mut self) {
         self.block_start();
+        let marker = "·  ·  ·";
         let available = self
             .width
-            .saturating_sub(self.quote_depth.saturating_mul(2));
-        self.push_styled(&"─".repeat(available.max(1)), SpanStyle::Marker);
+            .saturating_sub(text_layout::cell_width_from(&self.quote_prefix(), 0));
+        let marker = if available < text_layout::cell_width_from(marker, 0) {
+            "···"
+        } else {
+            marker
+        };
+        let padding = available.saturating_sub(text_layout::cell_width_from(marker, 0)) / 2;
+        self.push(&" ".repeat(padding));
+        self.push_styled(marker, SpanStyle::Marker);
         self.blank_line();
     }
 
     fn display_math(&mut self, text: &str) {
         self.block_start();
-        self.push_styled(&safe_text(text), SpanStyle::PreviewCode);
+        self.render_code_block(text);
         self.blank_line();
     }
 
     fn text(&mut self, text: &str) {
+        if let Some(code) = self.code_block.as_mut() {
+            code.push_str(text);
+            return;
+        }
         for (index, part) in text.split('\n').enumerate() {
             if index > 0 {
                 self.line_break();
@@ -374,6 +451,10 @@ impl PreviewRenderer {
 
     fn push_with_style(&mut self, text: &str, style: Option<SpanStyle>) {
         if self.error.is_some() {
+            return;
+        }
+        if let Some(code) = self.code_block.as_mut() {
+            code.push_str(text);
             return;
         }
         if let Some(table) = self.table.as_mut() {
@@ -427,18 +508,19 @@ impl PreviewRenderer {
     }
 
     fn line_prefix(&self) -> String {
-        let mut prefix = String::new();
-        if self.quote_depth > 0 {
-            prefix.push_str(&"│ ".repeat(self.quote_depth));
-        }
-        if self.code_block {
-            prefix.push_str("  ");
-        }
-        prefix
+        self.quote_prefix()
+    }
+
+    fn quote_prefix(&self) -> String {
+        "  ".repeat(self.quote_depth)
     }
 
     fn line_break(&mut self) {
-        if let Some(table) = self.table.as_mut() {
+        if let Some(code) = self.code_block.as_mut() {
+            if !code.ends_with('\n') {
+                code.push('\n');
+            }
+        } else if let Some(table) = self.table.as_mut() {
             table.push_break();
         } else {
             self.newline();
@@ -511,11 +593,50 @@ impl PreviewRenderer {
 
 fn heading_style(level: HeadingLevel) -> SpanStyle {
     match level {
-        HeadingLevel::H1 | HeadingLevel::H2 | HeadingLevel::H3 => SpanStyle::Heading,
+        HeadingLevel::H1 => SpanStyle::PreviewHeading1,
+        HeadingLevel::H2 => SpanStyle::PreviewHeading2,
+        HeadingLevel::H3 => SpanStyle::PreviewHeading3,
         HeadingLevel::H4 => SpanStyle::PreviewHeading4,
         HeadingLevel::H5 => SpanStyle::PreviewHeading5,
         HeadingLevel::H6 => SpanStyle::PreviewHeading6,
     }
+}
+
+fn heading_indent(level: HeadingLevel) -> usize {
+    match level {
+        HeadingLevel::H1 => 2,
+        HeadingLevel::H2 => 0,
+        HeadingLevel::H3 => 2,
+        HeadingLevel::H4 | HeadingLevel::H5 => 4,
+        HeadingLevel::H6 => 6,
+    }
+}
+
+fn wrap_code_line(line: &str, width: usize) -> Vec<String> {
+    if line.is_empty() {
+        return vec![String::new()];
+    }
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    let mut cells = 0usize;
+    for grapheme in line.graphemes(true) {
+        let grapheme_width = text_layout::cell_width_from(grapheme, cells);
+        if !current.is_empty() && cells.saturating_add(grapheme_width) > width {
+            lines.push(current);
+            current = String::new();
+            cells = 0;
+        }
+        if current.is_empty() && grapheme_width > width {
+            lines.push("…".to_string());
+            continue;
+        }
+        current.push_str(grapheme);
+        cells = cells.saturating_add(text_layout::cell_width_from(grapheme, cells));
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    lines
 }
 
 fn safe_text(text: &str) -> Cow<'_, str> {
@@ -679,7 +800,11 @@ impl LineBuilder {
     }
 }
 
-fn wrap_document(raw: RawDocument, width: usize) -> Result<MarkdownDocument, RenderError> {
+fn wrap_document(
+    raw: RawDocument,
+    width: usize,
+    margin: usize,
+) -> Result<MarkdownDocument, RenderError> {
     if raw.text.is_empty() {
         return Ok(MarkdownDocument {
             text: String::new(),
@@ -707,12 +832,25 @@ fn wrap_document(raw: RawDocument, width: usize) -> Result<MarkdownDocument, Ren
     let lines = lines
         .into_iter()
         .flat_map(|line| wrap_line(line, width))
+        .map(|line| fill_heading_band(line, width))
         .collect::<Vec<_>>();
 
     let mut text = String::with_capacity(raw.text.len());
     let mut spans = Vec::with_capacity(lines.len());
     let mut links = Vec::with_capacity(lines.len());
-    for line in lines {
+    for mut line in lines {
+        if margin > 0 && !line.text.is_empty() {
+            line.text.insert_str(0, &" ".repeat(margin));
+            line.scalar_len = line.scalar_len.saturating_add(margin);
+            for span in &mut line.spans {
+                span.start = span.start.saturating_add(margin);
+                span.end = span.end.saturating_add(margin);
+            }
+            for link in &mut line.links {
+                link.start = link.start.saturating_add(margin);
+                link.end = link.end.saturating_add(margin);
+            }
+        }
         if text
             .len()
             .checked_add(line.text.len().saturating_add(1))
@@ -731,6 +869,31 @@ fn wrap_document(raw: RawDocument, width: usize) -> Result<MarkdownDocument, Ren
         links.pop();
     }
     Ok(MarkdownDocument { text, spans, links })
+}
+
+fn fill_heading_band(mut line: AnnotatedLine, width: usize) -> AnnotatedLine {
+    if !line
+        .spans
+        .iter()
+        .any(|span| span.style == SpanStyle::PreviewHeading1)
+    {
+        return line;
+    }
+    let used = text_layout::cell_width_from(&line.text, 0);
+    let padding = width.saturating_sub(used);
+    line.text.push_str(&" ".repeat(padding));
+    line.scalar_len = line.scalar_len.saturating_add(padding);
+    line.spans
+        .retain(|span| span.style != SpanStyle::PreviewHeading1);
+    line.spans.insert(
+        0,
+        StyledSpan {
+            start: 0,
+            end: line.scalar_len,
+            style: SpanStyle::PreviewHeading1,
+        },
+    );
+    line
 }
 
 fn distribute_spans(lines: &mut [AnnotatedLine], line_starts: &[usize], spans: &[GlobalSpan]) {
@@ -794,40 +957,8 @@ fn wrap_line(line: AnnotatedLine, width: usize) -> Vec<AnnotatedLine> {
     }
     let mut line = line;
     line.chars = line.text.chars().collect();
-    if line
-        .chars
-        .first()
-        .is_some_and(|ch| matches!(ch, '┌' | '╞' | '└'))
-        || (line.chars.first() == Some(&'│') && line.chars.iter().skip(1).any(|ch| *ch == '│'))
-    {
-        return vec![line];
-    }
-    let quote_end = quote_prefix_len(&line.chars);
+    let quote_end = 0;
     let rest = &line.chars[quote_end..];
-    if rest
-        .first()
-        .is_some_and(|ch| matches!(ch, '┌' | '│' | '╞' | '└'))
-        || rest.iter().all(|ch| matches!(ch, '─' | '═'))
-    {
-        return vec![line];
-    }
-
-    if rest.starts_with(&[' ', ' '])
-        && line
-            .spans
-            .iter()
-            .any(|span| span.style == SpanStyle::PreviewCode && span.end > quote_end + 2)
-    {
-        return wrap_prefixed(
-            &line,
-            quote_end + 2,
-            quote_end + 2,
-            quote_end,
-            2,
-            width,
-            true,
-        );
-    }
 
     let indent = rest.iter().take_while(|ch| **ch == ' ').count();
     let after_indent = &rest[indent..];
@@ -844,24 +975,32 @@ fn wrap_line(line: AnnotatedLine, width: usize) -> Vec<AnnotatedLine> {
         );
     }
 
-    wrap_prefixed(&line, quote_end, quote_end, quote_end, 0, width, false)
-}
-
-fn quote_prefix_len(chars: &[char]) -> usize {
-    let mut end = 0;
-    while chars.get(end..end + 2) == Some(&['│', ' ']) {
-        end += 2;
-    }
-    end
+    let content_start = quote_end + indent;
+    wrap_prefixed(
+        &line,
+        content_start,
+        content_start,
+        quote_end,
+        indent,
+        width,
+        false,
+    )
 }
 
 fn list_marker_len(chars: &[char]) -> Option<usize> {
-    if chars.starts_with(&['•', ' ']) {
-        return Some(2);
-    }
-    let digits = chars.iter().take_while(|ch| ch.is_ascii_digit()).count();
-    (digits > 0 && chars.get(digits) == Some(&'.') && chars.get(digits + 1) == Some(&' '))
-        .then_some(digits + 2)
+    let marker = if chars.starts_with(&['•', ' ']) {
+        2
+    } else {
+        let digits = chars.iter().take_while(|ch| ch.is_ascii_digit()).count();
+        if digits == 0 || chars.get(digits) != Some(&'.') || chars.get(digits + 1) != Some(&' ') {
+            return None;
+        }
+        digits + 2
+    };
+    let task = chars.get(marker..marker + 4).is_some_and(|task| {
+        task[0] == '[' && matches!(task[1], '✓' | ' ') && task[2] == ']' && task[3] == ' '
+    });
+    Some(marker + if task { 4 } else { 0 })
 }
 
 #[allow(clippy::too_many_arguments)]

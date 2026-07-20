@@ -267,9 +267,7 @@ fn refresh_inventory_text(existing: &str) -> io::Result<String> {
                 .lines()
                 .filter(|line| {
                     let line = line.trim_start();
-                    !line.is_empty()
-                        && !line.starts_with('#')
-                        && line.trim() != KEYBINDINGS_HEADER
+                    !line.is_empty() && !line.starts_with('#') && line.trim() != KEYBINDINGS_HEADER
                 })
                 .collect::<Vec<_>>();
             (format!("{prefix}{}", &existing[block_end..]), active)

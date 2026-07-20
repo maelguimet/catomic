@@ -215,11 +215,7 @@ fn partial_keybindings_table_gets_an_inventory_that_can_be_uncommented_in_place(
     assert!(inventory < view);
     assert_eq!(refreshed.matches(KEYBINDINGS_HEADER).count(), 1);
 
-    let enabled = refreshed.replacen(
-        "# paste = [\"ctrl+v\"]",
-        "paste = [\"ctrl+v\"]",
-        1,
-    );
+    let enabled = refreshed.replacen("# paste = [\"ctrl+v\"]", "paste = [\"ctrl+v\"]", 1);
     crate::config::validate_text(&enabled).unwrap();
 }
 

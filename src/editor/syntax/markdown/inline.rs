@@ -1,5 +1,5 @@
 //! Purpose: classify self-contained inline Markdown constructs on one visible line.
-//! Owns: code delimiters, emphasis pairs, source links, and preview link targets.
+//! Owns: code delimiters, emphasis pairs, and source links.
 //! Must not: retain state, inspect adjacent lines, emit ANSI, or allocate document text.
 //! Invariants: higher-priority code/link spans prevent overlapping emphasis spans.
 
@@ -17,12 +17,6 @@ pub(super) fn add_source_spans(chars: &[char], spans: &mut Vec<StyledSpan>) -> b
         }
     }
     markers.table
-}
-
-pub(super) fn add_preview_destination_spans(chars: &[char], spans: &mut Vec<StyledSpan>) {
-    if chars.contains(&'<') {
-        add_preview_link_spans(chars, spans);
-    }
 }
 
 #[derive(Default)]
@@ -105,22 +99,6 @@ fn add_delimited_spans(
         };
         push_span(spans, index, close + delimiter.len(), style);
         index = close + delimiter.len();
-    }
-}
-
-fn add_preview_link_spans(chars: &[char], spans: &mut Vec<StyledSpan>) {
-    let mut index = 0;
-    while index < chars.len() {
-        if chars[index] != '<' {
-            index += 1;
-            continue;
-        }
-        let Some(close) = chars[index + 1..].iter().position(|ch| *ch == '>') else {
-            break;
-        };
-        let end = index + close + 2;
-        push_span(spans, index, end, SpanStyle::Link);
-        index = end;
     }
 }
 

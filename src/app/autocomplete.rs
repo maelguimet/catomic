@@ -393,16 +393,12 @@ fn accept(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     }
     let cursor = app.buffer.cursor();
     app.buffer.replace_range(cursor, cursor, &suggestion.text)?;
-    super::input::finish_content_edit_with_message(
-        app,
-        out,
-        Some("Autocomplete accepted; Ctrl+Z undoes it.".to_string()),
-    )
+    super::input::finish_content_edit(app, out)
 }
 
 fn dismiss(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     invalidate(app);
-    app.message = Some("Autocomplete suggestion dismissed.".to_string());
+    app.message = None;
     app.render(out)
 }
 

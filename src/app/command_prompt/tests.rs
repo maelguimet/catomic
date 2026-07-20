@@ -60,7 +60,7 @@ fn config_command_opens_the_exact_existing_path_as_an_editable_buffer() {
     assert_eq!(app.file.path.as_deref(), Some(path.as_path()));
     assert_eq!(app.buffer.to_string(), "[editor]\ntab_size = 2\n");
     assert!(!app.buffer.is_read_only());
-    assert!(app.message.as_deref().unwrap().contains("Restart Catomic"));
+    assert!(app.message.is_none());
     std::fs::remove_dir_all(path.parent().unwrap().parent().unwrap()).unwrap();
 }
 

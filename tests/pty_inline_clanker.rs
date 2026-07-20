@@ -199,11 +199,8 @@ fn f3_queue_cancels_then_previews_applies_undoes_redoes_and_clears() -> TestResu
     })?;
     let cancelled_at = editor.offset();
     editor.send(b"\x1b")?;
-    if let Err(error) = editor.wait_for_since(
-        "active queue cancellation",
-        cancelled_at,
-        "Inline clanker request cancelled",
-    ) {
+    if let Err(error) = editor.wait_for_since("active queue cancellation", cancelled_at, "note.txt")
+    {
         return Err(format!(
             "{error}; output after Escape: {:?}",
             editor.output_since(cancelled_at)
@@ -240,8 +237,9 @@ fn f3_queue_cancels_then_previews_applies_undoes_redoes_and_clears() -> TestResu
     let redo_at = editor.offset();
     editor.send(b"\x19")?;
     editor.wait_for_since("cleanup redo", redo_at, "TWO")?;
+    let cleared_at = editor.offset();
     editor.send(b"\x1b[80;6uclear-clanker-changes\r")?;
-    editor.wait_for("highlight dismissal", "highlighting cleared")?;
+    editor.wait_for_since("highlight dismissal", cleared_at, "note.txt")?;
     editor.send(b"\x11\x11")?;
     editor.wait_for_exit()?;
     server.join().map_err(|_| "loopback server panicked")?;
@@ -276,18 +274,14 @@ fn f3_full_file_warning_requires_typed_yes_or_no() -> TestResult {
     assert!(listener.accept().is_err(), "typed yes must not connect");
     let cancelled_at = editor.offset();
     editor.send(b"\x1b")?;
-    editor.wait_for_since(
-        "confirmation cancellation",
-        cancelled_at,
-        "cancelled before sending",
-    )?;
+    editor.wait_for_since("confirmation cancellation", cancelled_at, "warning.txt")?;
 
     let warning_at = editor.offset();
     editor.send(b"\x1bOR")?;
     editor.wait_for_since("second warning", warning_at, "Type yes or no:")?;
     let refused_at = editor.offset();
     editor.send(b"no\r")?;
-    editor.wait_for_since("typed refusal", refused_at, "full-file send cancelled")?;
+    editor.wait_for_since("typed refusal", refused_at, "warning.txt")?;
     assert!(listener.accept().is_err(), "typed no must not connect");
     editor.send(b"\x11")?;
     editor.wait_for_exit()?;

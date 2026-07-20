@@ -10,7 +10,7 @@
 //!   expand Project/LLM/UI; call try_recv outside check_file_watcher_once.
 //! Invariants: signals are hints only; watcher Unchanged/NoPath observations are ignored
 //!   (no message/pending change, no render) when no pending_reload is armed (to avoid
-//!   self-save noise); when a pending_reload exists they clear it, set a status message,
+//!   self-save noise); when a pending_reload exists they clear it, restore normal status,
 //!   and return visible (so runtime renders once); Modified/Deleted/Unknown/Error remain
 //!   user-visible; clean Modified/Deleted observations auto-reload when configured;
 //!   watcher drift invalidates rather than silently re-arms confirmation;
@@ -85,7 +85,7 @@ pub(crate) fn replace_file_watcher_for_test(
 /// - Changed/Deleted + (Modified/Deleted/Unknown) => delegate to
 ///   apply_check_observation (arms pending), return true.
 /// - Changed/Deleted + Unchanged:
-///   * if pending_reload was set: clear it, set "File unchanged on disk.",
+///   * if pending_reload was set: clear it and restore normal status,
 ///     return true (stale arm resolved).
 ///   * else: ignore completely (no msg change, no render), return false.
 /// - Changed/Deleted + NoPath:
@@ -94,9 +94,7 @@ pub(crate) fn replace_file_watcher_for_test(
 /// - Error => set "File watcher error: {e}", return true. Do not clear pending
 ///   unless a future test proves a reason.
 ///
-/// Manual Ctrl+R path (reload::apply_check_observation) is NOT affected and
-/// still surfaces "File unchanged on disk." / "No file path." for those cases
-/// even without a prior pending.
+/// Manual Ctrl+R still surfaces "No file path." when there is no active path.
 pub(crate) fn apply_file_watch_signal(
     app: &mut super::App,
     signal: crate::file::watcher::FileWatchSignal,
@@ -114,13 +112,13 @@ pub(crate) fn apply_file_watch_signal(
                     if app.pending_reload.is_some() {
                         // Watcher observed resolution of a prior external change.
                         // Clear the stale pending arm (no content change occurred)
-                        // and surface a status message so the user sees the resolution.
+                        // and restore the normal status.
                         app.pending_reload = None;
-                        app.message = Some("File unchanged on disk.".to_string());
+                        app.message = None;
                         true
                     } else {
                         // No pending arm; ignore to avoid self-save noise overwriting
-                        // e.g. "Saved.". Matches Phase 2-ac behavior when nothing to clear.
+                        // an existing warning or error.
                         false
                     }
                 }
@@ -187,8 +185,7 @@ pub(crate) fn apply_file_watch_signal(
 /// If a signal is received: calls apply_file_watch_signal and returns its
 /// visible-change result. A watcher Unchanged/NoPath signal returns false
 /// (and leaves state/message untouched) when no pending_reload was armed;
-/// when a pending existed it returns true after clearing it + setting a
-/// resolution message (render will occur).
+/// when a pending existed it returns true after clearing it so normal status renders.
 ///
 /// try_recv is called ONLY from this helper (never from run/handle_key/etc.).
 /// Still at most one signal per call.
@@ -211,8 +208,8 @@ pub(crate) fn check_file_watcher_once(app: &mut super::App) -> bool {
 /// (i.e. apply returned true).
 ///
 /// Unchanged/NoPath from watcher:
-/// - when no prior pending_reload: consumed, no render, prior message intact (e.g. "Saved.").
-/// - when pending_reload existed: clears it, sets a resolution message, returns true -> renders.
+/// - when no prior pending_reload: consumed, no render, prior message intact.
+/// - when pending_reload existed: clears it and returns true -> renders normal status.
 ///
 /// Modified/Deleted/Error (and Unchanged/NoPath that clear a stale pending) render.
 ///

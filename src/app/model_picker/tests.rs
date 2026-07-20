@@ -227,11 +227,7 @@ fn narrow_terminal_clips_safely_and_discovery_requires_second_confirmation() {
         .unwrap()
         .pending_discovery
         .is_none());
-    assert!(app
-        .message
-        .as_deref()
-        .unwrap()
-        .contains("cancelled before network access"));
+    assert!(app.message.is_none());
     assert!(listener.accept().is_err());
 }
 

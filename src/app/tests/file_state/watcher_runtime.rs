@@ -54,7 +54,7 @@ fn queued_changed_external_modified_auto_reloads_and_renders() {
         .inject_signal(crate::file::watcher::FileWatchSignal::Changed);
 
     // sentinel to prove we don't clobber random prior msg
-    app.message = Some("Saved.".to_string());
+    app.message = Some("Prior warning.".to_string());
 
     let mut out: Vec<u8> = Vec::new();
     let had = crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out).unwrap();
@@ -62,7 +62,7 @@ fn queued_changed_external_modified_auto_reloads_and_renders() {
     assert!(had, "should report handled for visible Modified");
     assert!(!out.is_empty(), "must have rendered");
     assert!(app.pending_reload.is_none());
-    assert_eq!(app.message.as_deref(), Some("Reloaded from disk."));
+    assert!(app.message.is_none());
     assert_eq!(app.buffer.to_string(), "ORIGEXT");
     assert!(!app.file.dirty, "dirty must be unchanged");
 
@@ -99,10 +99,7 @@ fn queued_deleted_external_delete_auto_clears_and_renders() {
     assert!(had);
     assert!(!out.is_empty());
     assert!(app.pending_reload.is_none());
-    assert_eq!(
-        app.message.as_deref(),
-        Some("Buffer cleared (file deleted on disk).")
-    );
+    assert_eq!(app.message.as_deref(), None);
     assert_eq!(app.buffer.to_string(), "");
     assert!(!app.file.dirty);
 
@@ -126,7 +123,7 @@ fn queued_changed_on_unchanged_ignored_no_render() {
     assert!(!app.file.dirty);
 
     // sentinel that must survive
-    app.message = Some("Saved.".to_string());
+    app.message = Some("Prior warning.".to_string());
     let before_pend = app.pending_reload.clone();
 
     let path = app.file.path.clone().unwrap();
@@ -144,7 +141,7 @@ fn queued_changed_on_unchanged_ignored_no_render() {
     assert!(out.is_empty(), "must not render on ignored");
     assert_eq!(
         app.message.as_deref(),
-        Some("Saved."),
+        Some("Prior warning."),
         "must preserve prior message"
     );
     assert_eq!(app.pending_reload, before_pend);

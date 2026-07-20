@@ -123,7 +123,7 @@ fn escape_cancels_an_active_scan() {
         .unwrap();
 
     assert!(!app.project.as_ref().unwrap().is_discovery_running());
-    assert!(app.message.as_deref().unwrap_or("").contains("cancelled"));
+    assert!(app.message.is_none());
 }
 
 #[test]

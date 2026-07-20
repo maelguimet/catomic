@@ -131,7 +131,7 @@ pub(crate) fn handle_key(
     }
     if key.code == KeyCode::Esc && app.llm_task.is_some() {
         app.llm_task = None;
-        app.message = Some("LLM request cancelled.".to_string());
+        app.message = None;
         app.render(out)?;
         return Ok(true);
     }
@@ -218,7 +218,7 @@ fn confirm(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
 
 fn cancel_pending(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     app.pending_llm_request = None;
-    app.message = Some("LLM request cancelled before sending; no network call made.".to_string());
+    app.message = None;
     app.render(out)
 }
 

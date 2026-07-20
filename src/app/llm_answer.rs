@@ -48,7 +48,7 @@ pub(crate) fn handle_key(
     }
     if key.code == KeyCode::Esc {
         close(app);
-        app.message = Some("LLM explanation closed; source unchanged.".to_string());
+        app.message = None;
         app.reveal_cursor();
         app.render(out)?;
         return Ok(true);

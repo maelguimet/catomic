@@ -187,10 +187,7 @@ fn cancel(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
     app.screen.scroll_top = preview.source_scroll_top;
     app.screen.scroll_left = preview.source_scroll_left;
     app.screen.wrap_col = preview.source_wrap_col;
-    app.message = Some(
-        "Inline clanker proposal rejected; remaining queue cleared, instruction kept, and no previewed changes applied."
-            .to_string(),
-    );
+    app.message = None;
     app.reveal_cursor();
     app.render(out)
 }

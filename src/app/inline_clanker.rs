@@ -203,7 +203,7 @@ pub(crate) fn is_busy(app: &super::App) -> bool {
 
 pub(crate) fn clear_changes(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     app.clanker_changes.clear();
-    app.message = Some("Inline clanker change highlighting cleared; document unchanged.".into());
+    app.message = None;
     app.render(out)
 }
 
@@ -225,10 +225,7 @@ pub(crate) fn cancel_all(app: &mut super::App) -> bool {
 
 fn cancel_running(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     app.inline_clanker.phase = None;
-    app.message = Some(
-        "Inline clanker request cancelled; remaining queued blocks cleared and instruction kept."
-            .to_string(),
-    );
+    app.message = None;
     app.render(out)
 }
 

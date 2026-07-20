@@ -66,11 +66,7 @@ pub(super) fn finish_apply(app: &mut super::super::App, out: &mut dyn Write) -> 
     {
         return refuse(app, out, "LLM proposal makes no applicable change.");
     }
-    super::super::input::finish_content_edit_with_message(
-        app,
-        out,
-        Some("LLM proposal applied; Ctrl+Z undoes it.".to_string()),
-    )
+    super::super::input::finish_content_edit(app, out)
 }
 
 fn identity_error(app: &super::super::App) -> Option<&'static str> {

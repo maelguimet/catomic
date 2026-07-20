@@ -73,7 +73,7 @@ pub(crate) fn handle_key(
             .as_mut()
             .is_some_and(|project| project.cancel_linter())
     {
-        app.message = Some("Linter cancelled.".to_string());
+        app.message = None;
         app.render(out)?;
         return Ok(true);
     }
@@ -114,7 +114,7 @@ fn handle_view_key(
 ) -> io::Result<()> {
     if key.code == KeyCode::Esc {
         close_view(app);
-        app.message = Some("Diagnostics closed.".to_string());
+        app.message = None;
         app.reveal_cursor();
         return app.render(out);
     }

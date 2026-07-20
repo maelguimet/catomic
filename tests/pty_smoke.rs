@@ -642,7 +642,9 @@ fn pty_f1_help_wraps_and_scrolls_to_reload_reference_in_a_narrow_terminal() -> T
     }
     editor.wait_for_output("external change help", "External changes and recovery")?;
 
+    editor.clear_output();
     editor.send_keys(b"\x1bOP")?;
+    editor.wait_for_output("F1 closes help", "source remains")?;
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
 
@@ -837,24 +839,20 @@ fn pty_external_edit_confirm_reload_quit_shows_disk_content() -> TestResult {
     editor.send_keys(b"\x12")?;
     wait_until("reload arm or completion", Duration::from_secs(2), || {
         let output = editor.output_string();
-        output.contains("Reloaded from disk.")
+        output.contains("external disk content")
             || output.contains("Press Ctrl+R again to reload from disk")
     })?;
-    if !editor.output_string().contains("Reloaded from disk.") {
+    if !editor.output_string().contains("external disk content") {
         editor.send_keys(b"\x12")?;
     }
 
-    editor.wait_for_output("confirmed external reload", "Reloaded from disk.")?;
     editor.wait_for_output("reloaded external content", "external disk content")?;
     editor.wait_for_output("replacement gutter marker", "\x1b[36;1;4m~\x1b[0m ")?;
 
-    let toggle_start = editor.output_len();
+    editor.clear_output();
     editor.send_keys(b"\x1b[15~")?; // F5
-    editor.wait_for_output(
-        "external highlighting disabled",
-        "External change highlighting off.",
-    )?;
-    let toggled_frame = editor.output_since(toggle_start);
+    editor.wait_for_output("external highlighting disabled", "external disk content")?;
+    let toggled_frame = editor.output_string();
     assert!(toggled_frame.contains("external disk content"));
     assert!(!toggled_frame.contains("\x1b[36;1;4m~\x1b[0m "));
     assert!(!toggled_frame.contains("\x1b[36;4mexternal disk content"));
@@ -911,7 +909,6 @@ fn pty_saved_config_detour_closes_and_preserves_dirty_source() -> TestResult {
 
     editor.send_keys(b"yes\r")?;
     editor.wait_for_output("config template buffer", "Catomic configuration")?;
-    editor.wait_for_output("configuration edit notice", "Editing ")?;
     let created = fs::read_to_string(&config)?;
     assert!(created.contains("[theme.colors]"));
     assert!(created.contains("[keybindings]"));
@@ -1060,7 +1057,6 @@ fn pty_bare_config_and_edit_alias_open_the_resolved_file_in_catomic() -> TestRes
 
         editor.wait_for_initial_render()?;
         editor.wait_for_output("resolved config content", "exact bare config content")?;
-        editor.wait_for_output("Catomic-native config edit", "Editing ")?;
         editor.send_keys(b"\x11")?;
         editor.wait_for_exit()?;
     }
@@ -1113,7 +1109,6 @@ fn pty_bare_config_confirms_and_opens_a_missing_private_template() -> TestResult
     assert!(!project.root.join("config").exists());
     editor.send_keys(b"yes\r")?;
     editor.wait_for_output("config CLI template", "Catomic configuration")?;
-    editor.wait_for_output("config CLI editing notice", "Editing ")?;
     assert_eq!(fs::metadata(&config)?.permissions().mode() & 0o777, 0o600);
     assert_eq!(
         fs::metadata(config.parent().expect("config parent"))?
@@ -1182,11 +1177,9 @@ fn pty_help_scrolls_to_compact_model_guidance_and_closes_without_editing() -> Te
     }
     editor.wait_for_output("compact model section", "Select model")?;
     editor.wait_for_output("model safety contract", "never auto-saved")?;
-    let close_start = editor.output_len();
+    editor.clear_output();
     editor.send_keys(b"\x1bOP")?; // F1 closes help without a persistent message.
-    wait_until("help closes", Duration::from_secs(2), || {
-        editor.output_since(close_start).contains(source)
-    })?;
+    editor.wait_for_output("help closes", "source stays unchanged")?;
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
 
@@ -1387,23 +1380,27 @@ fn pty_markdown_preview_and_view_toggles_leave_source_unchanged() -> TestResult 
     let mut editor = PtyEditor::spawn(&temp.path)?;
 
     editor.wait_for_initial_render()?;
+    let startup_output = editor.output_string();
     editor.wait_for_output("Markdown source", "# PTY Heading")?;
     editor.send_keys(b"\x1b[17~")?; // F6
     editor.wait_for_output("preview enabled", "Markdown preview on")?;
 
     editor.send_keys(b"x")?;
     editor.wait_for_output("preview read-only guard", "preview is read-only")?;
+    editor.clear_output();
     editor.send_keys(b"\x1b[18~")?; // F7
-    editor.wait_for_output("line numbers enabled", "Line numbers on")?;
+    editor.wait_for_output("line numbers enabled", "\x1b[90m1 \x1b[0m")?;
+    editor.clear_output();
     editor.send_keys(b"\x1b[19~")?; // F8
-    editor.wait_for_output("whitespace enabled", "Whitespace indicators on")?;
+    editor.wait_for_output("whitespace enabled", "·")?;
+    editor.clear_output();
     editor.send_keys(b"\x1b")?;
-    editor.wait_for_output("preview disabled", "Markdown preview off")?;
+    editor.wait_for_output("preview disabled", "#·PTY·Heading")?;
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(&temp.path)?, source);
-    let output = editor.output_string();
+    let output = format!("{startup_output}{}", editor.output_string());
     assert_mouse_capture_lifecycle(&output);
     assert!(
         output.contains("\x1b[?2004l"),
@@ -1427,8 +1424,9 @@ fn pty_live_resize_redraws_at_each_new_status_row() -> TestResult {
     let mut editor = PtyEditor::spawn_sized(&temp.path, 24, 80)?;
 
     editor.wait_for_initial_render()?;
+    editor.clear_output();
     editor.send_keys(b"\x1b[18~")?; // F7
-    editor.wait_for_output("line numbers enabled", "Line numbers on")?;
+    editor.wait_for_output("line numbers enabled", "1 \x1b[0mresize line 1")?;
 
     let first_resize = editor.output_len();
     editor.resize(10, 40)?;
@@ -1464,8 +1462,9 @@ fn pty_narrow_markdown_table_preview_uses_stacked_fallback_without_mutation() ->
     assert!(initial_preview.contains("- Left: short"));
     assert!(!initial_preview.contains('╞'));
 
+    editor.clear_output();
     editor.send_keys(b"\x1b")?;
-    editor.wait_for_output("leave narrow table preview", "Markdown preview off")?;
+    editor.wait_for_output("leave narrow table preview", "# Markdown showcase")?;
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
     assert_eq!(fs::read_to_string(&temp.path)?, source);
@@ -1508,12 +1507,10 @@ fn pty_f7_persists_across_relaunch_and_applies_to_new_unicode_buffer() -> TestRe
         "startup must not write preferences"
     );
     editor.send_keys(b"\x1b[18~")?; // F7
-    editor.wait_for_output("line numbers persisted", "Line numbers on.")?;
     editor.wait_for_output("Unicode line with gutter", &format!("{gutter}猫 first"))?;
 
     editor.clear_output();
     editor.send_keys(b"\x0e")?; // Ctrl+N
-    editor.wait_for_output("new buffer", "New untitled buffer.")?;
     editor.wait_for_output("new buffer inherited gutter", gutter)?;
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
@@ -1546,8 +1543,9 @@ fn pty_project_discovery_and_path_completion_save_exact_text() -> TestResult {
     editor.send_keys(b"\x1b[80;6ufiles\r")?;
     editor.wait_for_output("Project files discovered", "Found 2 Project file(s)")?;
     editor.wait_for_output("Project file picker", "src/main.rs")?;
+    editor.clear_output();
     editor.send_keys(b"\x1b")?;
-    editor.wait_for_output("Project file picker closed", "Project files closed")?;
+    editor.wait_for_output("Project file picker closed", "src/ma")?;
 
     editor.send_keys(b"\x1b[C\x1b[C\x1b[C\x1b[C\x1b[C\x1b[C\0")?; // Right x6, Ctrl+Space.
     editor.wait_for_output("Project path completion", "Completion 1/1: src/main.rs")?;
@@ -1571,13 +1569,9 @@ fn pty_help_scrolls_through_recovery_and_model_summary_without_editing() -> Test
     editor.send_keys(&b"\x1b[6~".repeat(16))?;
     editor.wait_for_output("recovery help", "crash recovery is enabled")?;
     editor.wait_for_output("model save boundary", "never auto-saved")?;
-    let close_start = editor.output_len();
+    editor.clear_output();
     editor.send_keys(b"\x1bOP")?; // F1 closes help without a persistent message.
-    wait_until("help closes", Duration::from_secs(2), || {
-        editor
-            .output_since(close_start)
-            .contains("source remains unchanged")
-    })?;
+    editor.wait_for_output("help closed", "source remains unchanged")?;
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
 
@@ -1596,11 +1590,9 @@ fn pty_meow_stops_at_confirmation_and_escape_makes_no_network_edit() -> TestResu
     editor.send_keys(b"\x1b[80;6umeow\r")?; // Ctrl+Shift+P via CSI-u, then command.
     editor.wait_for_output("LLM send confirmation", "Enter confirms; Esc cancels")?;
     editor.wait_for_output("local default endpoint", "http://127.0.0.1:8080/v1")?;
+    editor.clear_output();
     editor.send_keys(b"\x1b")?;
-    editor.wait_for_output(
-        "LLM cancellation before send",
-        "cancelled before sending; no network call made",
-    )?;
+    editor.wait_for_output("LLM cancellation before send", "note.txt")?;
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
 
@@ -1649,11 +1641,9 @@ model = "remote-model"
         "selected endpoint confirmation",
         "https://models.example/v1",
     )?;
+    editor.clear_output();
     editor.send_keys(b"\x1b")?;
-    editor.wait_for_output(
-        "selected model cancellation before send",
-        "cancelled before sending; no network call made",
-    )?;
+    editor.wait_for_output("selected model cancellation before send", "note.txt")?;
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
 
@@ -1682,8 +1672,9 @@ fn pty_external_command_previews_before_one_confirmed_edit() -> TestResult {
     )?;
     assert_eq!(fs::read_to_string(&active)?, "cat");
 
+    editor.clear_output();
     editor.send_keys(b"\r")?;
-    editor.wait_for_output("external command apply", "applied; Ctrl+Z undoes it")?;
+    editor.wait_for_output("external command apply", "CAT")?;
     editor.send_keys(b"\x13\x11")?;
     editor.wait_for_exit()?;
 
@@ -1718,11 +1709,9 @@ fn pty_before_llm_hook_finishes_before_network_confirmation() -> TestResult {
 
     editor.send_keys(b"\r")?;
     editor.wait_for_output("post-hook LLM confirmation", "Enter confirms; Esc cancels")?;
+    editor.clear_output();
     editor.send_keys(b"\x1b")?;
-    editor.wait_for_output(
-        "post-hook cancellation before send",
-        "cancelled before sending; no network call made",
-    )?;
+    editor.wait_for_output("post-hook cancellation before send", "note.txt")?;
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
 

@@ -250,11 +250,7 @@ fn select_all(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     app.selection.clear_status();
     app.selection.range = Some(Selection::new(Cursor::default(), end));
     app.reveal_cursor();
-    app.message = Some(if app.buffer.page_info().is_some() {
-        "Selected active file page.".to_string()
-    } else {
-        "Selected all.".to_string()
-    });
+    app.message = None;
     app.render(out)
 }
 
@@ -263,11 +259,8 @@ fn copy(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         app.message = Some("No selection to copy.".to_string());
         return app.render(out);
     };
-    app.message = Some(if exported {
-        "Copied selection.".to_string()
-    } else {
-        "Copied internally; selection is too large for terminal clipboard.".to_string()
-    });
+    app.message = (!exported)
+        .then(|| "Copied internally; selection is too large for terminal clipboard.".to_string());
     app.render(out)
 }
 

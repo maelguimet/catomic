@@ -307,7 +307,7 @@ fn full_file_warning_is_typed_one_shot_and_precedes_normal_confirmation() {
     app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
         .unwrap();
     assert!(!is_busy(&app));
-    assert!(app.message.as_deref().unwrap().contains("cancelled"));
+    assert!(app.message.is_none());
     assert_eq!(accepted.load(Ordering::SeqCst), 0);
     server.join().unwrap();
 }

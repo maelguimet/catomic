@@ -206,5 +206,5 @@ fn escape_cancels_a_running_linter() {
         .unwrap();
 
     assert!(!app.project.as_ref().unwrap().is_linter_running());
-    assert!(app.message.as_deref().unwrap_or("").contains("cancelled"));
+    assert!(app.message.is_none());
 }

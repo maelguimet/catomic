@@ -21,7 +21,6 @@ impl App {
         self.inactive_buffers
             .push_front(BufferSlot::from_app(new_buffer));
         self.switch_buffer(BufferDirection::Next);
-        self.message = Some("New untitled buffer.".to_string());
         Ok(())
     }
 
@@ -56,7 +55,7 @@ impl App {
             self.active_buffer_index
         };
         self.pending_quit_confirm = false;
-        self.message = Some("Buffer closed.".to_string());
+        self.message = None;
         Ok(CloseBufferOutcome::Closed)
     }
 }

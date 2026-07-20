@@ -58,7 +58,7 @@ fn tab_triggers_and_cycles_while_escape_dismisses_without_editing() {
         .unwrap();
 
     assert_eq!(app.buffer.to_string(), original);
-    assert!(app.message.as_deref().unwrap_or("").contains("dismissed"));
+    assert!(app.message.is_none());
 }
 
 #[test]

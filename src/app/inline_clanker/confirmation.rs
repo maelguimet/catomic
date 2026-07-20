@@ -83,10 +83,7 @@ fn cancel(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
     if let Some(Phase::Confirm(confirmation)) = app.inline_clanker.phase.take() {
         restore_view(app, &confirmation);
     }
-    app.message = Some(
-        "Inline clanker cancelled before sending; no client or network call was started."
-            .to_string(),
-    );
+    app.message = None;
     app.render(out)
 }
 

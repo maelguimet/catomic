@@ -108,10 +108,7 @@ pub(super) fn answer_warning(
             Ok(true)
         }
         "no" => {
-            app.message = Some(
-                "Inline clanker full-file send cancelled; no client or network call was started."
-                    .to_string(),
-            );
+            app.message = None;
             app.render(out)?;
             Ok(true)
         }
@@ -131,10 +128,7 @@ pub(super) fn answer_warning(
 pub(crate) fn cancel_warning(app: &mut super::super::App) {
     if matches!(app.inline_clanker.phase, Some(Phase::Warning(_))) {
         app.inline_clanker.phase = None;
-        app.message = Some(
-            "Inline clanker full-file send cancelled; no client or network call was started."
-                .to_string(),
-        );
+        app.message = None;
     }
 }
 

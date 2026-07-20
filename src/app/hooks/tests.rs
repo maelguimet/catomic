@@ -227,7 +227,7 @@ fn closing_buffer_cancels_and_reaps_running_hook() {
 
     app.close_active_buffer(false).unwrap();
 
-    assert_eq!(app.message.as_deref(), Some("Buffer closed."));
+    assert!(app.message.is_none());
     assert!(!is_pending(&app));
     assert!(!super::super::external_command::is_running(&app));
     assert_reaped(pids);

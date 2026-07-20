@@ -241,28 +241,26 @@ pub(crate) fn relayout_preview(app: &mut super::App) {
 fn toggle_preview(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {
     if is_preview(app) {
         cancel_preview(app);
-        app.message = Some("Markdown preview off.".to_string());
-        app.render(out)?;
-        return Ok(true);
-    }
-    let width = crate::editor::markdown_preview::reading_width(content_width(app));
-    match crate::editor::markdown_preview::render_with_width(&app.buffer.to_string(), width) {
-        Ok(rendered) => {
-            app.view.preview = Some(PreviewDocument {
-                buffer: PieceTable::from_owned_text(rendered),
-                layout_width: width,
-                source_scroll_top: app.screen.scroll_top,
-                source_scroll_left: app.screen.scroll_left,
-                source_wrap_col: app.screen.wrap_col,
-            });
-            app.screen.scroll_top = 0;
-            app.screen.scroll_left = 0;
-            app.screen.wrap_col = 0;
-            app.message = Some("Markdown preview on (read-only; F6 or Esc to exit).".to_string());
-            reveal_display_cursor(app);
-        }
-        Err(error) => {
-            app.message = Some(format!("Markdown preview failed: {error}."));
+        app.message = None;
+    } else {
+        let width = crate::editor::markdown_preview::reading_width(content_width(app));
+        match crate::editor::markdown_preview::render_with_width(&app.buffer.to_string(), width) {
+            Ok(rendered) => {
+                app.view.preview = Some(PreviewDocument {
+                    buffer: PieceTable::from_owned_text(rendered),
+                    layout_width: width,
+                    source_scroll_top: app.screen.scroll_top,
+                    source_scroll_left: app.screen.scroll_left,
+                    source_wrap_col: app.screen.wrap_col,
+                });
+                app.screen.scroll_top = 0;
+                app.screen.scroll_left = 0;
+                app.screen.wrap_col = 0;
+                app.message =
+                    Some("Markdown preview on (read-only; F6 or Esc to exit).".to_string());
+                reveal_display_cursor(app);
+            }
+            Err(error) => app.message = Some(format!("Markdown preview failed: {error}.")),
         }
     }
     app.render(out)?;
@@ -272,11 +270,11 @@ fn toggle_preview(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool>
 fn toggle_line_numbers(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {
     let enabled = !app.view_preferences.line_numbers();
     app.view_preferences.set_line_numbers(enabled);
-    let state = if enabled { "on" } else { "off" };
-    app.message = Some(match app.view_preferences.persist() {
-        Ok(()) => format!("Line numbers {state}."),
-        Err(error) => format!("Line numbers {state}; preference not saved: {error}."),
-    });
+    app.message = app
+        .view_preferences
+        .persist()
+        .err()
+        .map(|error| format!("Line-number preference not saved: {error}."));
     relayout_preview(app);
     reveal_display_cursor(app);
     app.render(out)?;
@@ -289,13 +287,11 @@ fn toggle_external_diff(app: &mut super::App, out: &mut dyn Write) -> io::Result
     if !enabled {
         app.clear_external_changes();
     }
-    let state = if enabled { "on" } else { "off" };
-    app.message = Some(match app.view_preferences.persist() {
-        Ok(()) => format!("External change highlighting {state}."),
-        Err(error) => {
-            format!("External change highlighting {state}; preference not saved: {error}.")
-        }
-    });
+    app.message = app
+        .view_preferences
+        .persist()
+        .err()
+        .map(|error| format!("External-change preference not saved: {error}."));
     reveal_display_cursor(app);
     app.render(out)?;
     Ok(true)
@@ -303,10 +299,7 @@ fn toggle_external_diff(app: &mut super::App, out: &mut dyn Write) -> io::Result
 
 fn toggle_whitespace(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {
     app.view.whitespace = !app.view.whitespace;
-    app.message = Some(format!(
-        "Whitespace indicators {}.",
-        if app.view.whitespace { "on" } else { "off" }
-    ));
+    app.message = None;
     reveal_display_cursor(app);
     app.render(out)?;
     Ok(true)
@@ -316,10 +309,7 @@ fn toggle_soft_wrap(app: &mut super::App, out: &mut dyn Write) -> io::Result<boo
     app.view.soft_wrap = !app.view.soft_wrap;
     app.screen.scroll_left = 0;
     app.screen.wrap_col = 0;
-    app.message = Some(format!(
-        "Soft wrap {}.",
-        if app.view.soft_wrap { "on" } else { "off" }
-    ));
+    app.message = None;
     app.reveal_cursor();
     app.render(out)?;
     Ok(true)
@@ -328,7 +318,7 @@ fn toggle_soft_wrap(app: &mut super::App, out: &mut dyn Write) -> io::Result<boo
 fn handle_preview_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -> io::Result<()> {
     if key.code == KeyCode::Esc {
         cancel_preview(app);
-        app.message = Some("Markdown preview off.".to_string());
+        app.message = None;
         return app.render(out);
     }
     let height = app.screen.visible_height().max(1);

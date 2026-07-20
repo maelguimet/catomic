@@ -64,7 +64,7 @@ pub(super) fn handle_key(app: &mut super::super::App, key: KeyEvent) {
     if key.code == KeyCode::Esc {
         super::cancel_all(app);
         super::super::llm_preview::close(app);
-        app.message = Some("Repo LLM proposal cancelled; no changes applied.".to_string());
+        app.message = None;
         app.reveal_cursor();
     } else {
         app.message = Some("Final repository check running; Esc cancels the proposal.".to_string());

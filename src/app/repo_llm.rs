@@ -132,9 +132,7 @@ fn poll_preparing(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     };
     match result {
         RepoPrepareResult::Finished(prepared) => finish_preparing(app, *prepared, state),
-        RepoPrepareResult::Cancelled => {
-            app.message = Some("Repo context preparation cancelled.".to_string())
-        }
+        RepoPrepareResult::Cancelled => app.message = None,
         RepoPrepareResult::Error(error) => {
             app.message = Some(format!("Repo context error: {error}"))
         }
@@ -214,7 +212,7 @@ pub(crate) fn handle_key(
         }
         Some(RepoLlmState::Preparing(_) | RepoLlmState::Running(_)) if key.code == KeyCode::Esc => {
             cancel_all(app);
-            app.message = Some("Repo LLM request cancelled.".to_string());
+            app.message = None;
             app.render(out)?;
             Ok(true)
         }
@@ -313,7 +311,7 @@ pub(super) fn is_active(app: &super::App) -> bool {
 
 fn cancel_pending(app: &mut super::App) {
     app.repo_llm_state = None;
-    app.message = Some("Repo LLM cancelled before sending; no network call made.".to_string());
+    app.message = None;
 }
 
 fn user_prompt(pending: &Pending) -> String {

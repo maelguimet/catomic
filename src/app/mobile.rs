@@ -164,7 +164,7 @@ fn dispatch_bar_action(
         },
         BarAction::Cancel if super::selection::is_touch_selecting(app) => {
             super::selection::cancel_touch_selection(app);
-            app.message = Some("Touch selection cancelled.".to_string());
+            app.message = None;
             app.render(out)
         }
         BarAction::Cancel | BarAction::Back => dispatch_key(app, out, KeyCode::Esc),

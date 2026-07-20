@@ -50,10 +50,10 @@ fn ctrl_h_renders_curated_markdown_as_one_frame() {
     let frame = String::from_utf8_lossy(&out.writes[0]);
     let help = display_buffer(&app).unwrap().to_string();
     assert!(frame.contains("Catomic help"));
-    assert!(help.contains("▌ Catomic help"));
-    assert!(help.contains("▌ Files and buffers"));
-    assert!(help.contains("‹Ctrl+S›"));
-    assert!(help.contains("• **Save**"));
+    assert!(help.contains("# Catomic help"));
+    assert!(help.contains("## Files and buffers"));
+    assert!(help.contains("`Ctrl+S`"));
+    assert!(help.contains("- **Save**"));
     assert_eq!(
         crate::app::view::display_syntax(&app),
         SyntaxKind::MarkdownPreview

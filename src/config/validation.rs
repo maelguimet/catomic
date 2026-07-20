@@ -254,10 +254,7 @@ fn validate_theme(root: &Table) -> io::Result<()> {
 }
 
 fn reject_unknown(table: &Table, path: &str, allowed: &[&str]) -> io::Result<()> {
-    let Some(key) = table
-        .keys()
-        .find(|key| !allowed.contains(&key.as_str()))
-    else {
+    let Some(key) = table.keys().find(|key| !allowed.contains(&key.as_str())) else {
         return Ok(());
     };
     Err(io::Error::new(

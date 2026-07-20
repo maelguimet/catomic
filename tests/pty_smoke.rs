@@ -1297,11 +1297,13 @@ fn pty_ctrl_c_writes_selection_to_system_clipboard_helper() -> TestResult {
     );
 
     editor.send_keys(b"\x03")?;
-    editor.wait_for_output(
-        "system clipboard confirmation",
-        "Copied selection to system clipboard.",
-    )?;
+    wait_until("system clipboard write", Duration::from_secs(2), || {
+        fs::read_to_string(&clipboard).ok().as_deref() == Some("copy 猫🙂")
+    })?;
     assert_eq!(fs::read_to_string(&clipboard)?, "copy 猫🙂");
+    assert!(!editor
+        .output_string()
+        .contains("Copied selection to system clipboard."));
 
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;

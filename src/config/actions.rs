@@ -1,5 +1,5 @@
 //! Purpose: define every stable, user-facing shortcut action and its surface contract.
-//! Owns: action names, labels, scopes, and the default chord inventory.
+//! Owns: action names, help text, scopes, and the default chord inventory.
 //! Must not: parse user TOML, dispatch App behavior, inspect terminal events, or mutate state.
 //! Invariants: names are unique; every action has a scope and at least one default chord.
 
@@ -133,6 +133,7 @@ pub(crate) enum Action {
 pub(crate) struct Descriptor {
     pub(crate) action: Action,
     pub(crate) name: &'static str,
+    pub(crate) help: &'static str,
     pub(crate) scopes: &'static [Scope],
     pub(crate) defaults: &'static [&'static str],
     pub(crate) input: InputKind,
@@ -206,6 +207,11 @@ mod tests {
             .expect("user guide action registry text fence");
         for descriptor in REGISTRY {
             assert!(names.insert(descriptor.name), "duplicate action name");
+            assert!(
+                !descriptor.help.trim().is_empty(),
+                "{} must have help text",
+                descriptor.name
+            );
         }
         assert_eq!(inventory, registry_reference());
     }

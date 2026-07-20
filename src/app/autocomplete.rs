@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::{Buffer, Cursor, PieceTable};
+use crate::config::actions::Action;
 use crate::config::autocomplete::AutocompleteConfig;
 use crate::config::llm::{BackendAdapter, BackendPreset, LlmCatalog};
 use crate::llm::task::LlmTask;
@@ -206,6 +207,56 @@ pub(crate) fn handle_key(
             KeyCode::Esc => dismiss(app, out)?,
             _ => return Ok(false),
         }
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+pub(crate) fn dispatch_action(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<bool> {
+    if app.autocomplete.pending.is_none() {
+        return Ok(false);
+    }
+    match action {
+        Action::PreviewAccept => confirm(app, out)?,
+        Action::PreviewCancel => cancel_confirmation(app, out)?,
+        Action::MoveLeft => move_confirmation_cursor(app, KeyCode::Left),
+        Action::MoveRight => move_confirmation_cursor(app, KeyCode::Right),
+        Action::MoveUp => move_confirmation_cursor(app, KeyCode::Up),
+        Action::MoveDown => move_confirmation_cursor(app, KeyCode::Down),
+        Action::ViewportUp | Action::ViewportDown => {
+            let code = if action == Action::ViewportUp {
+                KeyCode::Up
+            } else {
+                KeyCode::Down
+            };
+            for _ in 0..app.screen.visible_height().max(1) {
+                move_confirmation_cursor(app, code);
+            }
+        }
+        _ => return Ok(false),
+    }
+    if app.autocomplete.pending.is_some() {
+        app.reveal_cursor();
+        app.render(out)?;
+    }
+    Ok(true)
+}
+
+pub(crate) fn dispatch_editor_action(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<bool> {
+    let visible = visible_text(app).is_some();
+    if app.autocomplete.suggestion.is_some() && !visible {
+        invalidate(app);
+    }
+    if visible && action == Action::Indent {
+        accept(app, out)?;
         return Ok(true);
     }
     Ok(false)

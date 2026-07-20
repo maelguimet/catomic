@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::{Buffer, Cursor, PieceTable};
+use crate::config::actions::Action;
 
 use super::{ApplyTarget, RunningCommand};
 
@@ -81,6 +82,34 @@ pub(super) fn handle_key(
         KeyCode::Home => set_line_edge(app, false),
         KeyCode::End => set_line_edge(app, true),
         _ => read_only_message(app),
+    }
+    if is_viewing(app) {
+        reveal_cursor(app);
+        app.render(out)?;
+    }
+    Ok(true)
+}
+
+pub(super) fn dispatch_action(
+    app: &mut super::super::App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<bool> {
+    if !is_viewing(app) {
+        return Ok(false);
+    }
+    match action {
+        Action::PreviewAccept => apply_or_close(app, out)?,
+        Action::PreviewCancel => cancel(app, out)?,
+        Action::MoveLeft => move_cursor(app, Move::Left),
+        Action::MoveRight => move_cursor(app, Move::Right),
+        Action::MoveUp => move_cursor(app, Move::Up),
+        Action::MoveDown => move_cursor(app, Move::Down),
+        Action::ViewportUp => move_page(app, false),
+        Action::ViewportDown => move_page(app, true),
+        Action::LineStart => set_line_edge(app, false),
+        Action::LineEnd => set_line_edge(app, true),
+        _ => return Ok(false),
     }
     if is_viewing(app) {
         reveal_cursor(app);

@@ -8,6 +8,7 @@ use std::io::{self, Write};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::{Buffer, Cursor, PieceTable};
+use crate::config::actions::Action;
 
 pub(crate) struct AnswerView {
     buffer: PieceTable,
@@ -62,6 +63,38 @@ pub(crate) fn handle_key(
         KeyCode::Home => set_line_edge(app, false),
         KeyCode::End => set_line_edge(app, true),
         _ => app.message_info("LLM explanation is read-only; Esc closes."),
+    }
+    reveal_cursor(app);
+    app.render(out)?;
+    Ok(true)
+}
+
+pub(crate) fn dispatch_action(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<bool> {
+    if !is_viewing(app) {
+        return Ok(false);
+    }
+    match action {
+        Action::PreviewCancel => {
+            close(app);
+            app.message = None;
+            app.reveal_cursor();
+            app.render(out)?;
+            return Ok(true);
+        }
+        Action::MoveLeft => move_cursor(app, Move::Left),
+        Action::MoveRight => move_cursor(app, Move::Right),
+        Action::MoveUp => move_cursor(app, Move::Up),
+        Action::MoveDown => move_cursor(app, Move::Down),
+        Action::ViewportUp => move_page(app, false),
+        Action::ViewportDown => move_page(app, true),
+        Action::LineStart => set_line_edge(app, false),
+        Action::LineEnd => set_line_edge(app, true),
+        Action::PreviewAccept => {}
+        _ => return Ok(false),
     }
     reveal_cursor(app);
     app.render(out)?;

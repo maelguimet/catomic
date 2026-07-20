@@ -8,6 +8,7 @@ use std::io::{self, Write};
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::buffer::{Buffer, PieceTable};
+use crate::config::actions::Action;
 
 use super::{ChangeSet, PendingEdit, Phase, PreparedWorkflow, ProposalPreview};
 
@@ -80,6 +81,55 @@ pub(super) fn handle_key(
             app.message_info("Inline clanker proposal is read-only. Enter applies; Esc rejects.");
             app.render(out)
         }
+    }
+}
+
+pub(super) fn dispatch_action(
+    app: &mut super::super::App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<()> {
+    match action {
+        Action::PreviewAccept => apply(app, out),
+        Action::PreviewCancel => cancel(app, out),
+        Action::MoveLeft | Action::MoveRight | Action::MoveUp | Action::MoveDown => {
+            move_action(app, action);
+            reveal(app);
+            app.render(out)
+        }
+        Action::ViewportUp | Action::ViewportDown => {
+            for _ in 0..app.screen.visible_height().max(1) {
+                move_action(
+                    app,
+                    if action == Action::ViewportUp {
+                        Action::MoveUp
+                    } else {
+                        Action::MoveDown
+                    },
+                );
+            }
+            reveal(app);
+            app.render(out)
+        }
+        _ => {
+            app.message = Some(
+                "Inline clanker proposal is read-only. Enter applies; Esc rejects.".to_string(),
+            );
+            app.render(out)
+        }
+    }
+}
+
+fn move_action(app: &mut super::super::App, action: Action) {
+    let Some(Phase::Preview(preview)) = app.inline_clanker.phase.as_mut() else {
+        return;
+    };
+    match action {
+        Action::MoveLeft => preview.buffer.move_left(),
+        Action::MoveRight => preview.buffer.move_right(),
+        Action::MoveUp => preview.buffer.move_up(),
+        Action::MoveDown => preview.buffer.move_down(),
+        _ => {}
     }
 }
 

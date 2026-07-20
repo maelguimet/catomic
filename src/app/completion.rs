@@ -8,7 +8,7 @@ use std::io::{self, Write};
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::buffer::Cursor;
-use crate::help_catalog::{self, EditorAction};
+use crate::config::actions::Action;
 mod candidates;
 use candidates::{CandidateRead, PREFIX_COLS};
 
@@ -116,6 +116,44 @@ fn open(app: &mut super::App, out: &mut dyn Write) -> io::Result<OpenOutcome> {
     Ok(OpenOutcome::Handled)
 }
 
+pub(crate) fn trigger(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    open(app, out).map(|_| ())
+}
+
+pub(crate) fn dispatch_action(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<bool> {
+    if !is_active(app) {
+        return Ok(false);
+    }
+    match action {
+        Action::CompletionNext => cycle(app, true),
+        Action::CompletionPrevious => cycle(app, false),
+        Action::CompletionAccept => return accept(app, out).map(|()| true),
+        Action::CompletionCancel => {
+            cancel(app);
+            app.message = None;
+        }
+        _ => return Ok(false),
+    }
+    update_message_unless_dismissed(app);
+    app.render(out)?;
+    Ok(true)
+}
+
+pub(crate) fn dispatch_editor_action(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<bool> {
+    if action != Action::Indent {
+        return Ok(false);
+    }
+    Ok(open(app, out)? == OpenOutcome::Handled)
+}
+
 fn handle_active_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -> io::Result<bool> {
     match key.code {
         KeyCode::Esc => {
@@ -197,7 +235,6 @@ pub(super) fn is_active(app: &super::App) -> bool {
 
 fn is_trigger(key: KeyEvent) -> bool {
     key.code == KeyCode::Tab
-        || help_catalog::default_editor_action(key) == Some(EditorAction::Complete)
 }
 
 fn is_cycle_forward(key: KeyEvent) -> bool {

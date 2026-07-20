@@ -8,6 +8,7 @@ use std::io::{self, Write};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::Cursor;
+use crate::config::actions::Action;
 use crate::editor::search::{find_match, SearchDirection};
 
 #[derive(Default)]
@@ -78,6 +79,31 @@ pub(crate) fn handle_key(
         _ => {}
     }
     app.render(out)?;
+    Ok(true)
+}
+
+pub(crate) fn dispatch_action(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<bool> {
+    if app.replace.prompt.is_none() {
+        return Ok(false);
+    }
+    match action {
+        Action::PromptCancel => {
+            cancel(app);
+            app.message = None;
+            app.render(out)?;
+        }
+        Action::PromptSubmit => advance_or_apply(app, out)?,
+        Action::PromptDeleteBackward => {
+            active_text(app.replace.prompt.as_mut().expect("replace active")).pop();
+            update_message(app);
+            app.render(out)?;
+        }
+        _ => return Ok(false),
+    }
     Ok(true)
 }
 

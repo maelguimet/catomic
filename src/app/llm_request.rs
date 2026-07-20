@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use crate::config::actions::Action;
 use crate::config::llm::BackendPreset;
 use crate::llm::backend::ConfirmedBackend;
 use crate::llm::context::{self, RequestDraft};
@@ -128,6 +129,31 @@ pub(crate) fn handle_key(
         return Ok(true);
     }
     if key.code == KeyCode::Esc && app.llm_task.is_some() {
+        app.llm_task = None;
+        app.message = None;
+        app.render(out)?;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+pub(crate) fn dispatch_action(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<bool> {
+    if app.pending_llm_request.is_some() {
+        match action {
+            Action::PreviewAccept => confirm(app, out)?,
+            Action::PreviewCancel => cancel_pending(app, out)?,
+            _ => {
+                app.message = Some("LLM send not confirmed. Enter sends; Esc cancels.".to_string());
+                app.render(out)?;
+            }
+        }
+        return Ok(true);
+    }
+    if action == Action::PreviewCancel && app.llm_task.is_some() {
         app.llm_task = None;
         app.message = None;
         app.render(out)?;

@@ -1,57 +1,12 @@
-//! Purpose: verify that public action and command lookup metadata is unambiguous.
-//! Owns: catalog uniqueness, lookup, alias, and binding regression tests.
-//! Must not: construct App, read configuration, touch disk, or dispatch editor actions.
-//! Invariants: every catalog entry is reachable through its declared spellings.
+//! Purpose: verify prompt-command lookup metadata is unambiguous.
+//! Owns: prompt command uniqueness, lookup, and alias regression tests.
+//! Must not: duplicate configurable action metadata or construct App.
+//! Invariants: every prompt command is reachable through every declared spelling.
+//! Phase: issue #171 central action inventory cleanup.
 
 use std::collections::HashSet;
 
 use super::*;
-
-#[test]
-fn editor_actions_have_unique_names_bindings_and_help() {
-    let mut names = HashSet::new();
-    let mut canonical = HashSet::new();
-    for spec in EDITOR_ACTIONS {
-        assert!(
-            names.insert(spec.name),
-            "duplicate action name: {}",
-            spec.name
-        );
-        assert!(!spec.category.is_empty());
-        assert!(!spec.default_keys.is_empty());
-        assert!(!spec.purpose.is_empty());
-        assert!(!spec.bindings.is_empty());
-        assert_eq!(editor_action(spec.name), Some(spec.action));
-        let key = canonical_key(spec.action);
-        assert_eq!(default_editor_action(key), Some(spec.action));
-        assert!(
-            canonical.insert((key.code, key.modifiers)),
-            "duplicate canonical key for {}",
-            spec.name
-        );
-    }
-}
-
-#[test]
-fn configurable_registry_defaults_match_the_canonical_dispatch_bridge() {
-    for spec in EDITOR_ACTIONS {
-        let descriptor = crate::config::actions::REGISTRY
-            .iter()
-            .find(|descriptor| descriptor.name == spec.name)
-            .unwrap_or_else(|| panic!("config registry is missing {}", spec.name));
-        let displayed = descriptor
-            .defaults
-            .iter()
-            .map(|chord| crate::config::actions::display_chord(chord))
-            .collect::<Vec<_>>()
-            .join(" / ");
-        assert_eq!(
-            displayed, spec.default_keys,
-            "default drift for {}",
-            spec.name
-        );
-    }
-}
 
 #[test]
 fn prompt_commands_and_aliases_are_unique_and_dispatchable() {
@@ -62,39 +17,5 @@ fn prompt_commands_and_aliases_are_unique_and_dispatchable() {
             assert!(names.insert(name), "duplicate prompt spelling: {name}");
             assert_eq!(prompt_command(name), Some(spec.command));
         }
-    }
-}
-
-#[test]
-fn null_and_character_forms_both_resolve_control_space() {
-    for code in [KeyCode::Char(' '), KeyCode::Null] {
-        assert_eq!(
-            default_editor_action(KeyEvent::new(code, KeyModifiers::CONTROL)),
-            Some(EditorAction::Complete)
-        );
-    }
-}
-
-#[test]
-fn default_z_history_aliases_preserve_exact_alt_and_shift_policy() {
-    assert_eq!(
-        default_editor_action(KeyEvent::new(KeyCode::Char('Z'), KeyModifiers::CONTROL)),
-        Some(EditorAction::Undo)
-    );
-    assert_eq!(
-        default_editor_action(KeyEvent::new(
-            KeyCode::Char('z'),
-            KeyModifiers::CONTROL | KeyModifiers::SHIFT
-        )),
-        Some(EditorAction::Redo)
-    );
-    for modifiers in [
-        KeyModifiers::CONTROL | KeyModifiers::ALT,
-        KeyModifiers::CONTROL | KeyModifiers::SHIFT | KeyModifiers::ALT,
-    ] {
-        assert_eq!(
-            default_editor_action(KeyEvent::new(KeyCode::Char('z'), modifiers)),
-            None
-        );
     }
 }

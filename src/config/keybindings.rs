@@ -1,5 +1,5 @@
 //! Purpose: build normalized, scoped shortcut maps from the central action registry.
-//! Owns: overrides/unbinding, scoped collision diagnostics, and key translation.
+//! Owns: overrides/unbinding, scoped collision diagnostics, and semantic key resolution.
 //! Must not: dispatch App behavior, mutate user files, spawn work, or accept printable typing.
 //! Invariants: one normalized chord maps to one action per scope; global actions win.
 
@@ -31,19 +31,18 @@ impl Default for KeyBindings {
 }
 
 impl KeyBindings {
-    pub(crate) fn translate(&self, scope: Scope, key: KeyEvent) -> Option<KeyEvent> {
+    pub(crate) fn action_for_key(&self, scope: Scope, key: KeyEvent) -> Option<Action> {
         let chord = KeyChord::from_event(key);
-        let action = self
-            .keys
+        self.keys
             .get(&(Scope::Global, chord))
             .or_else(|| self.keys.get(&(scope, chord)))
-            .copied();
-        if let Some(action) = action {
-            return Some(canonical_key(action, key));
-        }
-        let was_default = self.default_keys.contains(&(Scope::Global, chord))
-            || self.default_keys.contains(&(scope, chord));
-        (!was_default).then_some(key)
+            .copied()
+    }
+
+    pub(crate) fn is_default_key(&self, scope: Scope, key: KeyEvent) -> bool {
+        let chord = KeyChord::from_event(key);
+        self.default_keys.contains(&(Scope::Global, chord))
+            || self.default_keys.contains(&(scope, chord))
     }
 
     pub(crate) fn mouse_action(&self, scope: Scope, gesture: MouseGesture) -> Option<Action> {
@@ -61,13 +60,6 @@ impl KeyBindings {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect()
-    }
-
-    pub(crate) fn matches_keyboard(&self, action: Action, key: KeyEvent) -> bool {
-        let chord = KeyChord::from_event(key);
-        self.keys
-            .iter()
-            .any(|((_, bound_chord), bound)| *bound == action && *bound_chord == chord)
     }
 }
 
@@ -316,25 +308,6 @@ fn decode_overrides(table: toml::Table) -> io::Result<(Vec<ActionOverride>, Vec<
         });
     }
     Ok((actions_out, legacy_out))
-}
-
-fn canonical_key(action: Action, original: KeyEvent) -> KeyEvent {
-    let descriptor = actions::descriptor(action);
-    let chord = descriptor
-        .defaults
-        .iter()
-        .find_map(
-            |raw| match parse_shortcut(raw).expect("validated registry chord") {
-                ShortcutChord::Key(key) => Some(key),
-                ShortcutChord::Mouse(_) => None,
-            },
-        )
-        .expect("keyboard action requires a keyboard default");
-    KeyEvent {
-        code: chord.code,
-        modifiers: chord.modifiers,
-        ..original
-    }
 }
 
 fn validate_input(action: Action, chord: ShortcutChord, raw: &str) -> io::Result<()> {

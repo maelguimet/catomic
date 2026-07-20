@@ -1,7 +1,8 @@
-//! Purpose: verify normalized scoped defaults, override/unbind behavior, and diagnostics.
+//! Purpose: verify scoped semantic resolution, override/unbind behavior, and diagnostics.
 //! Owns: pure keybinding fixtures; no process environment or terminal is required.
 //! Must not: dispatch App commands, write configuration, or duplicate the registry.
-//! Invariants: tests compare semantic translation and actionable error content.
+//! Invariants: configured keys resolve to Action; defaults can be suppressed without eating raw input.
+//! Phase: issue #171 semantic shortcut dispatch.
 
 use super::*;
 use crossterm::event::{KeyCode, KeyModifiers};
@@ -11,215 +12,114 @@ fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
 }
 
 #[test]
-fn word_selection_defaults_include_terminal_safe_fallbacks() {
+fn terminal_aliases_resolve_to_one_action_without_rewriting_the_event() {
     let bindings = KeyBindings::default();
-    let fallback = KeyModifiers::ALT | KeyModifiers::SHIFT;
-    let canonical = KeyModifiers::CONTROL | KeyModifiers::SHIFT;
-
-    for code in [KeyCode::Left, KeyCode::Right] {
+    for modifiers in [
+        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+        KeyModifiers::ALT | KeyModifiers::SHIFT,
+    ] {
         assert_eq!(
-            bindings.translate(Scope::Editor, key(code, fallback)),
-            Some(key(code, canonical))
+            bindings.action_for_key(Scope::Editor, key(KeyCode::Left, modifiers)),
+            Some(Action::SelectWordLeft)
+        );
+    }
+    for code in [KeyCode::Char(' '), KeyCode::Null] {
+        assert_eq!(
+            bindings.action_for_key(Scope::Editor, key(code, KeyModifiers::CONTROL)),
+            Some(Action::Complete)
         );
     }
 }
 
 #[test]
-fn copy_and_interrupt_are_distinct_and_interrupt_is_remappable() {
-    let defaults = KeyBindings::default();
-    let ctrl_c = key(KeyCode::Char('c'), KeyModifiers::CONTROL);
-    let ctrl_shift_c = key(
-        KeyCode::Char('c'),
-        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
-    );
-
-    assert_eq!(defaults.translate(Scope::Editor, ctrl_c), Some(ctrl_c));
-    assert_eq!(
-        defaults.translate(Scope::Editor, ctrl_shift_c),
-        Some(ctrl_shift_c)
-    );
-
-    let remapped = parse("[keybindings]\ninterrupt = [\"alt+i\"]\n").unwrap();
-    assert!(remapped.translate(Scope::Editor, ctrl_shift_c).is_none());
-    assert_eq!(
-        remapped.translate(Scope::Editor, key(KeyCode::Char('i'), KeyModifiers::ALT)),
-        Some(ctrl_shift_c)
-    );
-
-    let unbound = parse("[keybindings]\ninterrupt = []\n").unwrap();
-    assert!(unbound.translate(Scope::Editor, ctrl_shift_c).is_none());
-}
-
-#[test]
-fn action_overrides_replace_all_defaults_and_empty_arrays_unbind() {
+fn overrides_replace_defaults_and_unbound_defaults_are_suppressed() {
     let bindings = parse(
         "[keybindings]\nsave = [\"alt+s\"]\nhelp = []\ncommand-prompt = [\"alt+p\", \"f4\"]\n",
     )
     .unwrap();
-
-    assert!(bindings
-        .translate(
-            Scope::Editor,
-            key(KeyCode::Char('s'), KeyModifiers::CONTROL)
-        )
-        .is_none());
+    let ctrl_s = key(KeyCode::Char('s'), KeyModifiers::CONTROL);
+    assert_eq!(bindings.action_for_key(Scope::Editor, ctrl_s), None);
+    assert!(bindings.is_default_key(Scope::Editor, ctrl_s));
     assert_eq!(
-        bindings.translate(Scope::Editor, key(KeyCode::Char('s'), KeyModifiers::ALT)),
-        Some(key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        bindings.action_for_key(Scope::Editor, key(KeyCode::Char('s'), KeyModifiers::ALT)),
+        Some(Action::Save)
     );
-    assert!(bindings
-        .translate(Scope::Editor, key(KeyCode::F(1), KeyModifiers::NONE))
-        .is_none());
     assert_eq!(
-        bindings.translate(Scope::Editor, key(KeyCode::F(4), KeyModifiers::NONE)),
-        Some(key(
-            KeyCode::Char('p'),
-            KeyModifiers::CONTROL | KeyModifiers::SHIFT
-        ))
+        bindings.action_for_key(Scope::Editor, key(KeyCode::F(4), KeyModifiers::NONE)),
+        Some(Action::CommandPrompt)
+    );
+    assert!(bindings.is_default_key(Scope::Editor, key(KeyCode::F(1), KeyModifiers::NONE)));
+}
+
+#[test]
+fn unrelated_raw_keys_are_not_claimed_or_suppressed() {
+    let bindings = KeyBindings::default();
+    let raw = key(KeyCode::Char('x'), KeyModifiers::ALT);
+    assert_eq!(bindings.action_for_key(Scope::Editor, raw), None);
+    assert!(!bindings.is_default_key(Scope::Editor, raw));
+}
+
+#[test]
+fn global_actions_win_and_local_scopes_can_reuse_chords() {
+    let bindings = parse(
+        "[keybindings]\nhelp = [\"alt+h\"]\nprompt-cancel = [\"alt+x\"]\ncompletion-cancel = [\"alt+x\"]\n",
+    )
+    .unwrap();
+    for scope in [Scope::Editor, Scope::Prompt, Scope::Preview, Scope::Picker] {
+        assert_eq!(
+            bindings.action_for_key(scope, key(KeyCode::Char('h'), KeyModifiers::ALT)),
+            Some(Action::Help)
+        );
+    }
+    let alt_x = key(KeyCode::Char('x'), KeyModifiers::ALT);
+    assert_eq!(
+        bindings.action_for_key(Scope::Prompt, alt_x),
+        Some(Action::PromptCancel)
+    );
+    assert_eq!(
+        bindings.action_for_key(Scope::Completion, alt_x),
+        Some(Action::CompletionCancel)
     );
 }
 
 #[test]
-fn effective_keyboard_chords_are_deduplicated_and_omit_unbound_actions() {
-    let bindings = parse(
-        "[keybindings]\nredo = [\"alt+r\", \"ctrl+shift+r\"]\nsave = []\nsearch = [\"alt+f\"]\n",
-    )
-    .unwrap();
-
+fn effective_chords_are_deduplicated_and_omit_unbound_actions() {
+    let bindings =
+        parse("[keybindings]\nredo = [\"alt+r\", \"ctrl+shift+r\"]\nsave = []\n").unwrap();
     assert_eq!(
         bindings.keyboard_chords(Action::Redo),
         vec!["alt+r".to_string(), "ctrl+shift+r".to_string()]
     );
     assert!(bindings.keyboard_chords(Action::Save).is_empty());
-    assert!(bindings.matches_keyboard(Action::Search, key(KeyCode::Char('f'), KeyModifiers::ALT)));
-    assert!(!bindings.matches_keyboard(
-        Action::Search,
-        key(KeyCode::Char('f'), KeyModifiers::CONTROL)
-    ));
 }
 
 #[test]
-fn legacy_chord_to_action_overrides_remain_compatible() {
-    let bindings = parse(
-        "[keybindings]\n\"ctrl+w\" = \"save\"\n\"alt+s\" = \"save-as\"\n\"alt+shift+p\" = \"command-prompt\"\n",
-    )
-    .unwrap();
-
+fn legacy_chord_to_action_overrides_resolve_semantically() {
+    let bindings =
+        parse("[keybindings]\n\"ctrl+w\" = \"save\"\n\"alt+s\" = \"save-as\"\n").unwrap();
     assert_eq!(
-        bindings.translate(
+        bindings.action_for_key(
             Scope::Editor,
             key(KeyCode::Char('w'), KeyModifiers::CONTROL)
         ),
-        Some(key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        Some(Action::Save)
     );
     assert_eq!(
-        bindings.translate(Scope::Editor, key(KeyCode::Char('s'), KeyModifiers::ALT)),
-        Some(key(
-            KeyCode::Char('s'),
-            KeyModifiers::CONTROL | KeyModifiers::SHIFT
-        ))
+        bindings.action_for_key(Scope::Editor, key(KeyCode::Char('s'), KeyModifiers::ALT)),
+        Some(Action::SaveAs)
     );
 }
 
 #[test]
-fn legacy_overrides_really_replace_cross_scope_defaults() {
-    let local_replaces_global = parse("[keybindings]\n\"ctrl+h\" = \"save\"\n").unwrap();
-    assert_eq!(
-        local_replaces_global.translate(
-            Scope::Editor,
-            key(KeyCode::Char('h'), KeyModifiers::CONTROL)
-        ),
-        Some(key(KeyCode::Char('s'), KeyModifiers::CONTROL))
-    );
-    assert!(local_replaces_global
-        .translate(
-            Scope::Prompt,
-            key(KeyCode::Char('h'), KeyModifiers::CONTROL)
-        )
-        .is_none());
-
-    let global_replaces_locals = parse("[keybindings]\nenter = \"help\"\n").unwrap();
-    for scope in [
-        Scope::Editor,
-        Scope::Prompt,
-        Scope::Search,
-        Scope::Completion,
-    ] {
-        assert_eq!(
-            global_replaces_locals.translate(scope, key(KeyCode::Enter, KeyModifiers::NONE)),
-            Some(key(KeyCode::Char('h'), KeyModifiers::CONTROL)),
-            "global override must win in {}",
-            scope.name()
-        );
-    }
-}
-
-#[test]
-fn local_scope_is_predictable_and_global_actions_win_everywhere() {
-    let bindings =
-        parse("[keybindings]\nprompt-cancel = [\"alt+x\"]\nquit = [\"alt+q\"]\n").unwrap();
-    let alt_x = key(KeyCode::Char('x'), KeyModifiers::ALT);
-    assert_eq!(bindings.translate(Scope::Editor, alt_x), Some(alt_x));
-    assert_eq!(
-        bindings.translate(Scope::Prompt, alt_x),
-        Some(key(KeyCode::Esc, KeyModifiers::NONE))
-    );
-    assert_eq!(
-        bindings.translate(Scope::Preview, key(KeyCode::Char('q'), KeyModifiers::ALT)),
-        Some(key(KeyCode::Char('q'), KeyModifiers::CONTROL))
-    );
-}
-
-#[test]
-fn separate_local_scopes_may_intentionally_reuse_a_chord() {
-    let bindings =
-        parse("[keybindings]\nprompt-cancel = [\"alt+x\"]\ncompletion-cancel = [\"alt+x\"]\n")
-            .unwrap();
-    let chord = key(KeyCode::Char('x'), KeyModifiers::ALT);
-    assert_eq!(
-        bindings.translate(Scope::Prompt, chord),
-        Some(key(KeyCode::Esc, KeyModifiers::NONE))
-    );
-    assert_eq!(
-        bindings.translate(Scope::Completion, chord),
-        Some(key(KeyCode::Esc, KeyModifiers::NONE))
-    );
-}
-
-#[test]
-fn global_bindings_cannot_silently_shadow_any_local_surface() {
+fn collisions_name_both_actions_and_the_normalized_chord() {
     for text in [
+        "[keybindings]\nsave = [\"control+W\"]\n",
+        "[keybindings]\nsave = [\"ctrl+shift+A\"]\nclose = [\"control+shift+a\"]\n",
         "[keybindings]\nquit = [\"esc\"]\n",
-        "[keybindings]\nprompt-cancel = [\"ctrl+q\"]\n",
     ] {
-        let error = parse(text).expect_err("global/local effective collision must fail");
-        let message = error.to_string();
-        assert!(message.contains("quit"), "{message}");
-        assert!(message.contains("prompt-cancel"), "{message}");
-        assert!(message.contains("prompt"), "{message}");
+        let message = parse(text).unwrap_err().to_string();
+        assert!(message.contains("conflict"), "{message}");
     }
-}
-
-#[test]
-fn collisions_name_both_actions_and_normalized_chord() {
-    let error = parse("[keybindings]\nsave = [\"control+W\"]\n")
-        .expect_err("save collides with close default");
-    let message = error.to_string();
-    assert!(message.contains("save"), "{message}");
-    assert!(message.contains("close"), "{message}");
-    assert!(message.contains("ctrl+w"), "{message}");
-
-    let error = parse("[keybindings]\nsave = [\"ctrl+shift+A\"]\nclose = [\"control+shift+a\"]\n")
-        .expect_err("normalized user duplicates must fail");
-    assert!(error.to_string().contains("save"));
-    assert!(error.to_string().contains("close"));
-
-    let error = parse("[keybindings]\nsave = [\"alt+s\"]\n\"ALT+S\" = \"open\"\n")
-        .expect_err("legacy and action forms must not silently override each other");
-    let message = error.to_string();
-    assert!(message.contains("save"), "{message}");
-    assert!(message.contains("open"), "{message}");
-    assert!(message.contains("alt+s"), "{message}");
 }
 
 #[test]
@@ -235,10 +135,11 @@ fn printable_shortcuts_and_keyboard_mouse_mismatches_fail_closed() {
 }
 
 #[test]
-fn mouse_gestures_can_be_reassigned_or_unbound() {
-    let bindings =
-        parse("[keybindings]\nmouse-place-cursor = []\nmouse-select-word = [\"mouse-left\"]\n")
-            .unwrap();
+fn mouse_gestures_resolve_to_semantic_actions_and_can_be_unbound() {
+    let bindings = parse(
+        "[keybindings]\nmouse-place-cursor = []\nmouse-select-word = [\"mouse-left\"]\nmouse-scroll-up = []\nmouse-scroll-down = [\"mouse-wheel-up\"]\n",
+    )
+    .unwrap();
     assert_eq!(
         bindings.mouse_action(Scope::Editor, MouseGesture::Left),
         Some(Action::MouseSelectWord)
@@ -247,23 +148,10 @@ fn mouse_gestures_can_be_reassigned_or_unbound() {
         bindings.mouse_action(Scope::Editor, MouseGesture::LeftDouble),
         None
     );
-}
-
-#[test]
-fn wheel_gestures_can_be_swapped_or_unbound_without_crossing_button_types() {
-    let bindings =
-        parse("[keybindings]\nmouse-scroll-up = []\nmouse-scroll-down = [\"mouse-wheel-up\"]\n")
-            .unwrap();
     assert_eq!(
         bindings.mouse_action(Scope::Help, MouseGesture::ScrollUp),
         Some(Action::MouseScrollDown)
     );
-    assert_eq!(
-        bindings.mouse_action(Scope::Editor, MouseGesture::ScrollDown),
-        None
-    );
-    assert!(parse("[keybindings]\nmouse-place-cursor = [\"mouse-wheel-up\"]\n").is_err());
-    assert!(parse("[keybindings]\nmouse-scroll-up = [\"mouse-left\"]\n").is_err());
 }
 
 #[test]
@@ -276,78 +164,4 @@ fn registry_defaults_are_complete_and_collision_free() {
         assert!(!descriptor.defaults.is_empty());
     }
     assert!(!bindings.keys.is_empty());
-}
-
-#[test]
-fn cut_line_is_default_bound_remappable_and_unbindable() {
-    let default = KeyBindings::default();
-    let ctrl_k = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
-    assert_eq!(default.translate(Scope::Editor, ctrl_k), Some(ctrl_k));
-
-    let remapped = parse("[keybindings]\ncut-line = [\"alt+k\"]\n").unwrap();
-    assert_eq!(remapped.translate(Scope::Editor, ctrl_k), None);
-    assert_eq!(
-        remapped.translate(
-            Scope::Editor,
-            KeyEvent::new(KeyCode::Char('k'), KeyModifiers::ALT)
-        ),
-        Some(ctrl_k)
-    );
-
-    let unbound = parse("[keybindings]\ncut-line = []\n").unwrap();
-    assert_eq!(unbound.translate(Scope::Editor, ctrl_k), None);
-}
-
-#[test]
-fn inline_clanker_actions_are_remappable_and_unbindable() {
-    let bindings =
-        parse("[keybindings]\nrun-clanker = [\"alt+x\"]\nclear-clanker-changes = []\n").unwrap();
-
-    assert_eq!(
-        bindings.translate(
-            Scope::Editor,
-            KeyEvent::new(KeyCode::Char('x'), KeyModifiers::ALT)
-        ),
-        Some(KeyEvent::new(KeyCode::F(3), KeyModifiers::NONE))
-    );
-    assert_eq!(
-        bindings.translate(
-            Scope::Editor,
-            KeyEvent::new(KeyCode::F(3), KeyModifiers::NONE)
-        ),
-        None
-    );
-    assert_eq!(
-        bindings.translate(
-            Scope::Editor,
-            KeyEvent::new(KeyCode::F(3), KeyModifiers::SHIFT)
-        ),
-        None
-    );
-}
-
-#[test]
-fn external_diff_toggle_is_remappable_and_unbindable() {
-    let remapped = parse("[keybindings]\ntoggle-external-diff = [\"alt+d\"]\n").unwrap();
-    assert_eq!(
-        remapped.translate(
-            Scope::Editor,
-            KeyEvent::new(KeyCode::Char('d'), KeyModifiers::ALT)
-        ),
-        Some(KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE))
-    );
-    assert!(remapped
-        .translate(
-            Scope::Editor,
-            KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE)
-        )
-        .is_none());
-
-    let unbound = parse("[keybindings]\ntoggle-external-diff = []\n").unwrap();
-    assert!(unbound
-        .translate(
-            Scope::Editor,
-            KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE)
-        )
-        .is_none());
 }

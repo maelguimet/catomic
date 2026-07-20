@@ -5,6 +5,7 @@
 
 use std::io::{self, Write};
 
+use crate::config::actions::{Action, Scope};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 
 mod actions;
@@ -149,7 +150,8 @@ fn dispatch_bar_action(
 ) -> io::Result<()> {
     match action {
         BarAction::Menu => {
-            super::input::prepare_editor_action(app, None);
+            let action = pending_save_as_confirmation(app).then_some(Action::SaveAs);
+            super::input::prepare_editor_action(app, action);
             overlay::open_menu(app);
             app.render(out)
         }
@@ -180,16 +182,16 @@ fn dispatch_bar_action(
             app.message = None;
             app.render(out)
         }
-        BarAction::Cancel | BarAction::Back => dispatch_unrelated_key(app, out, KeyCode::Esc),
-        BarAction::Accept => dispatch_unrelated_key(app, out, KeyCode::Enter),
-        BarAction::Up => dispatch_unrelated_key(app, out, KeyCode::Up),
-        BarAction::Down => dispatch_unrelated_key(app, out, KeyCode::Down),
-        BarAction::PageUp => dispatch_unrelated_key(app, out, KeyCode::PageUp),
-        BarAction::PageDown => dispatch_unrelated_key(app, out, KeyCode::PageDown),
-        BarAction::Save => dispatch_control(app, out, 's'),
-        BarAction::Undo => dispatch_control(app, out, 'z'),
-        BarAction::Copy => dispatch_control(app, out, 'c'),
-        BarAction::Cut => dispatch_control(app, out, 'x'),
+        BarAction::Cancel | BarAction::Back => dispatch_surface_action(app, out, false),
+        BarAction::Accept => dispatch_surface_action(app, out, true),
+        BarAction::Up => dispatch_vertical_action(app, out, false),
+        BarAction::Down => dispatch_vertical_action(app, out, true),
+        BarAction::PageUp => super::input::dispatch_action(app, out, Action::ViewportUp),
+        BarAction::PageDown => super::input::dispatch_action(app, out, Action::ViewportDown),
+        BarAction::Save => super::input::dispatch_action(app, out, Action::Save),
+        BarAction::Undo => super::input::dispatch_action(app, out, Action::Undo),
+        BarAction::Copy => super::input::dispatch_action(app, out, Action::Copy),
+        BarAction::Cut => super::input::dispatch_action(app, out, Action::Cut),
     }
 }
 
@@ -214,10 +216,7 @@ fn execute_menu_action(
             super::input::prepare_editor_action(app, None);
             super::viewport::scroll_view(app, out, 3)
         }
-        _ => match action.canonical_key() {
-            Some(key) => super::input::handle_normalized_key(app, out, key),
-            None => app.render(out),
-        },
+        MenuAction::Dispatch(action) => super::input::dispatch_action(app, out, action),
     }
 }
 
@@ -228,30 +227,62 @@ fn move_overlay(app: &mut super::App, out: &mut dyn Write, code: KeyCode) -> io:
     app.render(out)
 }
 
+fn dispatch_surface_action(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    accept: bool,
+) -> io::Result<()> {
+    let action = match (super::input::active_scope(app), accept) {
+        (Scope::Prompt, true) => Action::PromptSubmit,
+        (Scope::Prompt, false) => Action::PromptCancel,
+        (Scope::Search, true) => Action::SearchNext,
+        (Scope::Search, false) => Action::SearchCancel,
+        (Scope::Completion, true) => Action::CompletionAccept,
+        (Scope::Completion, false) => Action::CompletionCancel,
+        (Scope::Preview, true) => Action::PreviewAccept,
+        (Scope::Preview, false) => Action::PreviewCancel,
+        (Scope::Picker, true) => Action::PickerAccept,
+        (Scope::Picker, false) => Action::PickerCancel,
+        (Scope::Help, false) => Action::HelpClose,
+        (Scope::Editor, true) => Action::InsertNewline,
+        _ => return app.render(out),
+    };
+    super::input::dispatch_action(app, out, action)
+}
+
+fn dispatch_vertical_action(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    down: bool,
+) -> io::Result<()> {
+    let action = vertical_action(super::input::active_scope(app), down);
+    super::input::dispatch_action(app, out, action)
+}
+
+fn vertical_action(scope: Scope, down: bool) -> Action {
+    match (scope, down) {
+        (Scope::Search, false) => Action::SearchPrevious,
+        (Scope::Search, true) => Action::SearchNext,
+        (Scope::Completion, false) => Action::CompletionPrevious,
+        (Scope::Completion, true) => Action::CompletionNext,
+        (_, false) => Action::MoveUp,
+        (_, true) => Action::MoveDown,
+    }
+}
+
+fn pending_save_as_confirmation(app: &super::App) -> bool {
+    !app.pending_quit_confirm
+        && app.pending_reload.is_none()
+        && !super::command_prompt::config_discard_confirmation_pending(app)
+        && app
+            .pending_save_conflict
+            .as_ref()
+            .is_some_and(|pending| app.file.path.as_deref() != Some(pending.path.as_path()))
+}
+
 fn prepare_overlay_action(app: &mut super::App) {
     super::input::prepare_editor_action(app, None);
     overlay::refresh_message(app);
-}
-
-fn dispatch_key(app: &mut super::App, out: &mut dyn Write, code: KeyCode) -> io::Result<()> {
-    super::input::handle_normalized_key(app, out, KeyEvent::new(code, KeyModifiers::NONE))
-}
-
-fn dispatch_unrelated_key(
-    app: &mut super::App,
-    out: &mut dyn Write,
-    code: KeyCode,
-) -> io::Result<()> {
-    super::input::prepare_editor_action(app, None);
-    dispatch_key(app, out, code)
-}
-
-fn dispatch_control(app: &mut super::App, out: &mut dyn Write, ch: char) -> io::Result<()> {
-    super::input::handle_normalized_key(
-        app,
-        out,
-        KeyEvent::new(KeyCode::Char(ch), KeyModifiers::CONTROL),
-    )
 }
 
 fn active_surface(app: &super::App) -> Surface {

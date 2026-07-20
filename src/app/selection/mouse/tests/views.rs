@@ -60,12 +60,12 @@ fn markdown_preview_click_is_ignored_and_click_after_f6_exit_positions_source() 
     app.buffer.set_cursor(Cursor { row: 1, col: 2 });
     let mut out = Vec::new();
     let f6 = KeyEvent::new(KeyCode::F(6), KeyModifiers::NONE);
-    super::super::super::super::view::handle_key(&mut app, &mut out, f6).unwrap();
+    app.handle_key_with(&mut out, f6).unwrap();
 
     click(&mut app, 1, 0);
     assert_eq!(app.buffer.cursor(), Cursor { row: 1, col: 2 });
 
-    super::super::super::super::view::handle_key(&mut app, &mut out, f6).unwrap();
+    app.handle_key_with(&mut out, f6).unwrap();
     click(&mut app, 1, 0);
     assert_eq!(app.buffer.cursor(), Cursor { row: 0, col: 1 });
 }

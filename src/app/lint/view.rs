@@ -8,6 +8,7 @@ use std::io::{self, Write};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::{Buffer, Cursor, PieceTable};
+use crate::config::actions::Action;
 use crate::project::diagnostics::Severity;
 
 pub(crate) struct DiagnosticsView {
@@ -77,6 +78,61 @@ pub(crate) fn handle_key(
         return Ok(true);
     }
     Ok(false)
+}
+
+pub(crate) fn dispatch_action(
+    app: &mut super::super::App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<bool> {
+    if !is_viewing(app) {
+        if action == Action::PickerCancel
+            && app
+                .project
+                .as_mut()
+                .is_some_and(|project| project.cancel_linter())
+        {
+            app.message = None;
+            app.render(out)?;
+            return Ok(true);
+        }
+        return Ok(false);
+    }
+    if action == Action::PickerCancel {
+        close_view(app);
+        app.message = None;
+        app.reveal_cursor();
+        app.render(out)?;
+        return Ok(true);
+    }
+    let rows = app.screen.visible_height().max(1);
+    let buffer = &mut app
+        .surfaces
+        .diagnostics
+        .as_mut()
+        .expect("view active")
+        .buffer;
+    match action {
+        Action::MoveLeft => buffer.move_left(),
+        Action::MoveRight => buffer.move_right(),
+        Action::MoveUp => buffer.move_up(),
+        Action::MoveDown => buffer.move_down(),
+        Action::ViewportUp => move_view_rows(buffer, false, rows),
+        Action::ViewportDown => move_view_rows(buffer, true, rows),
+        Action::LineStart => buffer.set_cursor(Cursor {
+            row: buffer.cursor().row,
+            col: 0,
+        }),
+        Action::LineEnd => buffer.set_cursor(Cursor {
+            row: buffer.cursor().row,
+            col: buffer.line_char_count(buffer.cursor().row).unwrap_or(0),
+        }),
+        Action::PickerAccept => {}
+        _ => return Ok(false),
+    }
+    app.reveal_cursor();
+    app.render(out)?;
+    Ok(true)
 }
 
 pub(crate) fn handle_paste(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<bool> {

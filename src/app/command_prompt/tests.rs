@@ -154,7 +154,7 @@ fn ctrl_g_moves_to_a_one_based_line_and_clamps_past_end() {
 }
 
 #[test]
-fn command_prompt_dispatches_goto_and_preserves_dirty_quit_guard() {
+fn command_prompt_dispatches_goto_and_does_not_bypass_dirty_quit_guard() {
     let mut app = super::super::App::new(None).unwrap();
     app.buffer = Box::new(crate::buffer::PieceTable::from_text("zero\none"));
     let mut out = Vec::new();
@@ -187,6 +187,11 @@ fn command_prompt_dispatches_goto_and_preserves_dirty_quit_guard() {
     open_command_prompt(&mut app, &mut out).unwrap();
     type_text(&mut app, &mut out, "q");
     app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
+        .unwrap();
+    assert!(!app.should_quit);
+    assert!(app.pending_quit_confirm);
+
+    app.handle_key_with(&mut out, key(KeyCode::Char('q'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.should_quit);
 }
@@ -422,7 +427,14 @@ fn save_as_existing_target_requires_a_second_confirmation() {
     app.handle_key_with(&mut out, key(KeyCode::Char('x'), KeyModifiers::NONE))
         .unwrap();
 
-    open_save_as_prompt(&mut app, &mut out).unwrap();
+    app.handle_key_with(
+        &mut out,
+        key(
+            KeyCode::Char('s'),
+            KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+        ),
+    )
+    .unwrap();
     type_text(&mut app, &mut out, path.to_str().unwrap());
     app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
         .unwrap();
@@ -434,7 +446,14 @@ fn save_as_existing_target_requires_a_second_confirmation() {
         .unwrap_or_default()
         .contains("already exists"));
 
-    open_save_as_prompt(&mut app, &mut out).unwrap();
+    app.handle_key_with(
+        &mut out,
+        key(
+            KeyCode::Char('s'),
+            KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+        ),
+    )
+    .unwrap();
     type_text(&mut app, &mut out, path.to_str().unwrap());
     app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
         .unwrap();

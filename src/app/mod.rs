@@ -54,7 +54,6 @@ mod selection;
 mod startup_config;
 mod status;
 mod surfaces;
-mod undo_redo;
 mod view;
 mod viewport;
 mod watch;

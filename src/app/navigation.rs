@@ -5,15 +5,18 @@
 
 use std::io::{self, Write};
 
+#[cfg(test)]
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::{Buffer, Cursor};
+use crate::config::actions::Action;
 use crate::editor::text_layout;
 
 mod paragraph;
 
 const GRAPHEME_WINDOW: usize = 64;
 
+#[cfg(test)]
 pub(crate) fn handle_key(
     app: &mut super::App,
     out: &mut dyn Write,
@@ -55,6 +58,47 @@ pub(crate) fn handle_key(
     };
     let Some(target) = target else {
         return Ok(false);
+    };
+    super::selection::move_to(app, out, target, extend)?;
+    Ok(true)
+}
+
+pub(crate) fn dispatch_action(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<bool> {
+    let (target, extend) = match action {
+        Action::ParagraphPrevious => (
+            paragraph::target(app, paragraph::Direction::Previous)?,
+            false,
+        ),
+        Action::ParagraphNext => (paragraph::target(app, paragraph::Direction::Next)?, false),
+        Action::LineStart => (line_edge(app, false), false),
+        Action::LineEnd => (line_edge(app, true), false),
+        Action::SelectLineStart => (line_edge(app, false), true),
+        Action::SelectLineEnd => (line_edge(app, true), true),
+        Action::DocumentStart => (Cursor::default(), false),
+        Action::DocumentEnd => (document_end(app), false),
+        Action::SelectDocumentStart => (Cursor::default(), true),
+        Action::SelectDocumentEnd => (document_end(app), true),
+        Action::ViewportUp => (page_target(app, false), false),
+        Action::ViewportDown => (page_target(app, true), false),
+        Action::SelectViewportUp => (page_target(app, false), true),
+        Action::SelectViewportDown => (page_target(app, true), true),
+        Action::WordLeft => (word_left(app), false),
+        Action::WordRight => (word_right(app), false),
+        Action::SelectWordLeft => (word_left(app), true),
+        Action::SelectWordRight => (word_right(app), true),
+        Action::DeleteWordBackward => {
+            delete_to(app, out, word_left(app))?;
+            return Ok(true);
+        }
+        Action::DeleteWordForward => {
+            delete_to(app, out, word_right(app))?;
+            return Ok(true);
+        }
+        _ => return Ok(false),
     };
     super::selection::move_to(app, out, target, extend)?;
     Ok(true)

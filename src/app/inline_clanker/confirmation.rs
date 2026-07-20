@@ -8,6 +8,7 @@ use std::io::{self, Write};
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::buffer::{Buffer, PieceTable};
+use crate::config::actions::Action;
 use crate::llm::context::Sensitivity;
 use crate::llm::inline::InlineScope;
 
@@ -64,6 +65,51 @@ pub(super) fn handle_key(
         }
         _ => {
             app.message_info("Inline clanker confirmation is read-only. Enter sends; Esc cancels.");
+            app.render(out)
+        }
+    }
+}
+
+pub(super) fn dispatch_action(
+    app: &mut super::super::App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<()> {
+    match action {
+        Action::PreviewAccept => super::request::confirm(app, out),
+        Action::PreviewCancel => cancel(app, out),
+        Action::MoveLeft | Action::MoveRight | Action::MoveUp | Action::MoveDown => {
+            let Some(Phase::Confirm(confirmation)) = app.inline_clanker.phase.as_mut() else {
+                return Ok(());
+            };
+            match action {
+                Action::MoveLeft => confirmation.buffer.move_left(),
+                Action::MoveRight => confirmation.buffer.move_right(),
+                Action::MoveUp => confirmation.buffer.move_up(),
+                Action::MoveDown => confirmation.buffer.move_down(),
+                _ => unreachable!(),
+            }
+            reveal(app);
+            app.render(out)
+        }
+        Action::ViewportUp | Action::ViewportDown => {
+            for _ in 0..app.screen.visible_height().max(1) {
+                let Some(Phase::Confirm(confirmation)) = app.inline_clanker.phase.as_mut() else {
+                    break;
+                };
+                if action == Action::ViewportUp {
+                    confirmation.buffer.move_up();
+                } else {
+                    confirmation.buffer.move_down();
+                }
+            }
+            reveal(app);
+            app.render(out)
+        }
+        _ => {
+            app.message = Some(
+                "Inline clanker confirmation is read-only. Enter sends; Esc cancels.".to_string(),
+            );
             app.render(out)
         }
     }

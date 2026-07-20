@@ -13,7 +13,6 @@ use crate::config::actions::Action;
 use crate::config::keybindings::KeyBindings;
 use crate::editor::search::{self, SearchDirection, SearchMatch};
 use crate::editor::syntax::{HyperlinkSpan, StyledSpan};
-use crate::help_catalog::{self, EditorAction};
 
 pub(crate) struct HelpView {
     buffer: PieceTable,
@@ -77,14 +76,6 @@ pub(crate) fn handle_key(
     out: &mut dyn Write,
     key: KeyEvent,
 ) -> io::Result<bool> {
-    if is_toggle(key) {
-        if is_viewing(app) {
-            close_with_message(app, out)?;
-        } else {
-            show(app, out)?;
-        }
-        return Ok(true);
-    }
     if !is_viewing(app) || is_quit(key) {
         return Ok(false);
     }
@@ -93,10 +84,6 @@ pub(crate) fn handle_key(
     }
     if key.code == KeyCode::Esc {
         close_with_message(app, out)?;
-        return Ok(true);
-    }
-    if app.keybindings.matches_keyboard(Action::Search, key) {
-        open_search(app, out)?;
         return Ok(true);
     }
     match key.code {
@@ -227,8 +214,38 @@ fn reveal_cursor(app: &mut super::App) {
     app.reveal_cursor();
 }
 
-fn is_toggle(key: KeyEvent) -> bool {
-    help_catalog::default_editor_action(key) == Some(EditorAction::Help)
+pub(crate) fn toggle(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+    if is_viewing(app) {
+        close_with_message(app, out)
+    } else {
+        show(app, out)
+    }
+}
+
+pub(crate) fn dispatch_action(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<bool> {
+    if !is_viewing(app) {
+        return Ok(false);
+    }
+    match action {
+        Action::Search => return open_search(app, out).map(|()| true),
+        Action::HelpClose => return close_with_message(app, out).map(|()| true),
+        Action::MoveLeft => move_cursor(app, Move::Left),
+        Action::MoveRight => move_cursor(app, Move::Right),
+        Action::MoveUp => move_cursor(app, Move::Up),
+        Action::MoveDown => move_cursor(app, Move::Down),
+        Action::ViewportUp => return scroll_page(app, out, false),
+        Action::ViewportDown => return scroll_page(app, out, true),
+        Action::LineStart => set_line_edge(app, false),
+        Action::LineEnd => set_line_edge(app, true),
+        _ => return Ok(false),
+    }
+    reveal_cursor(app);
+    app.render(out)?;
+    Ok(true)
 }
 
 fn is_quit(key: KeyEvent) -> bool {
@@ -261,137 +278,44 @@ fn help_markdown(bindings: &KeyBindings) -> String {
 }
 
 fn push_file_actions(markdown: &mut String, bindings: &KeyBindings) {
-    push_action(
-        markdown,
-        bindings,
-        Action::Save,
-        "Save",
-        "Save the active buffer; a repeated save confirms only the same observed disk conflict.",
-    );
-    push_action(
-        markdown,
-        bindings,
-        Action::SaveAs,
-        "Save As",
-        "Choose a new path for the active buffer.",
-    );
-    push_action(
-        markdown,
-        bindings,
-        Action::Open,
-        "Open",
-        "Open a path in another buffer.",
-    );
-    push_action(
-        markdown,
-        bindings,
-        Action::New,
-        "New",
-        "Create an untitled buffer.",
-    );
-    push_action(
-        markdown,
-        bindings,
-        Action::Close,
-        "Close",
-        "Close the active clean buffer; use the `close!` command only to discard it.",
-    );
+    push_action(markdown, bindings, Action::Save, "Save");
+    push_action(markdown, bindings, Action::SaveAs, "Save As");
+    push_action(markdown, bindings, Action::Open, "Open");
+    push_action(markdown, bindings, Action::New, "New");
+    push_action(markdown, bindings, Action::Close, "Close");
     push_action(
         markdown,
         bindings,
         Action::PreviousBuffer,
         "Previous buffer",
-        "Switch without closing or saving the current buffer.",
     );
-    push_action(
-        markdown,
-        bindings,
-        Action::NextBuffer,
-        "Next buffer",
-        "Switch without closing or saving the current buffer.",
-    );
-    push_action(
-        markdown,
-        bindings,
-        Action::Quit,
-        "Quit",
-        "Quit when all buffers are clean; a second request discards all dirty buffers.",
-    );
-    push_action(
-        markdown,
-        bindings,
-        Action::Interrupt,
-        "Interrupt",
-        "Exit immediately through terminal teardown without saving.",
-    );
+    push_action(markdown, bindings, Action::NextBuffer, "Next buffer");
+    push_action(markdown, bindings, Action::Quit, "Quit");
+    push_action(markdown, bindings, Action::Interrupt, "Interrupt");
 }
 
 fn push_edit_actions(markdown: &mut String, bindings: &KeyBindings) {
-    push_action(
-        markdown,
-        bindings,
-        Action::Undo,
-        "Undo",
-        "Undo the last edit transaction.",
-    );
-    push_action(
-        markdown,
-        bindings,
-        Action::Redo,
-        "Redo",
-        "Redo the next edit transaction.",
-    );
-    push_action(
-        markdown,
-        bindings,
-        Action::CutLine,
-        "Cut line",
-        "Cut the current line as one undoable edit.",
-    );
-    push_action(
-        markdown,
-        bindings,
-        Action::Search,
-        "Find",
-        "Search incrementally; `Enter` or `Down` moves forward and `Up` moves backward.",
-    );
-    push_action(
-        markdown,
-        bindings,
-        Action::Replace,
-        "Replace",
-        "Open the two-stage Replace Next prompt.",
-    );
-    push_action(
-        markdown,
-        bindings,
-        Action::GotoLine,
-        "Go to line",
-        "Jump to a 1-based line number.",
-    );
+    push_action(markdown, bindings, Action::Undo, "Undo");
+    push_action(markdown, bindings, Action::Redo, "Redo");
+    push_action(markdown, bindings, Action::CutLine, "Cut line");
+    push_action(markdown, bindings, Action::Search, "Find");
+    push_action(markdown, bindings, Action::Replace, "Replace");
+    push_action(markdown, bindings, Action::GotoLine, "Go to line");
 }
 
 fn push_command_actions(markdown: &mut String, bindings: &KeyBindings) {
-    push_action(
-        markdown,
-        bindings,
-        Action::CommandPrompt,
-        "Command palette",
-        "Run commands such as `config`, `project`, `recover`, and `close!` without a leading colon.",
-    );
+    push_action(markdown, bindings, Action::CommandPrompt, "Command palette");
     push_action(
         markdown,
         bindings,
         Action::ToggleExternalDiff,
         "External change marks",
-        "Toggle the latest external-reload markers for every buffer.",
     );
     push_action(
         markdown,
         bindings,
         Action::MarkdownPreview,
         "Markdown preview",
-        "Toggle the rendered read-only Markdown view for the current buffer.",
     );
 }
 
@@ -407,25 +331,14 @@ fn push_external_change_help(markdown: &mut String) {
 
 fn push_model_help(markdown: &mut String, bindings: &KeyBindings) {
     markdown.push_str("\n## Models\n\n");
-    push_action(
-        markdown,
-        bindings,
-        Action::SelectModel,
-        "Select model",
-        "Choose the process-local preset without contacting a backend.",
-    );
+    push_action(markdown, bindings, Action::SelectModel, "Select model");
     markdown.push_str(
         "- Model requests show the destination and bounded context before sending. Proposals are read-only until separately applied and are never auto-saved.\n\n",
     );
 }
 
-fn push_action(
-    markdown: &mut String,
-    bindings: &KeyBindings,
-    action: Action,
-    label: &str,
-    purpose: &str,
-) {
+fn push_action(markdown: &mut String, bindings: &KeyBindings, action: Action, label: &str) {
+    let purpose = crate::config::actions::descriptor(action).help;
     let chords = display_chords(bindings, action);
     if chords.is_empty() {
         let _ = writeln!(markdown, "- **{label}** — {purpose}");

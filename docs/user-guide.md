@@ -1583,7 +1583,7 @@ open | editor | ctrl+o
 new | editor | ctrl+n
 close | editor | ctrl+w
 reload | editor | ctrl+r
-search | editor | ctrl+f
+search | editor,help | ctrl+f
 replace | editor | ctrl+shift+f
 goto-line | editor | ctrl+g
 command-prompt | editor | ctrl+shift+p, f2
@@ -1633,11 +1633,11 @@ previous-buffer | editor | alt+pageup
 next-buffer | editor | alt+pagedown
 previous-page | editor | ctrl+pageup
 next-page | editor | ctrl+pagedown
-toggle-external-diff | editor | f5
+toggle-external-diff | editor,preview | f5
 markdown-preview | editor,preview | f6
-line-numbers | editor | f7
-whitespace | editor | f8
-soft-wrap | editor | f9
+line-numbers | editor,preview | f7
+whitespace | editor,preview | f8
+soft-wrap | editor,preview | f9
 run-clanker | editor | f3
 clear-clanker-changes | editor | shift+f3
 select-model | editor | f10

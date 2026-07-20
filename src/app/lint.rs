@@ -13,8 +13,8 @@ use crate::project::linter::{LinterResult, LinterTask};
 
 mod view;
 pub(crate) use view::{
-    close_view, display_buffer, handle_key, handle_paste, is_viewing, show_diagnostics,
-    DiagnosticsView,
+    close_view, dispatch_action, display_buffer, handle_key, handle_paste, is_viewing,
+    show_diagnostics, DiagnosticsView,
 };
 
 pub(super) fn is_active(app: &super::App) -> bool {

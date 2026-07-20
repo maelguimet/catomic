@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::{Buffer, Cursor, PieceTable};
+use crate::config::actions::Action;
 use crate::project::discovery::{DiscoveryLimits, DiscoveryTask, DiscoveryTaskResult};
 
 const DISCOVERY_LIMITS: DiscoveryLimits = DiscoveryLimits {
@@ -158,6 +159,46 @@ pub(crate) fn handle_key(
         return Ok(true);
     }
     Ok(false)
+}
+
+pub(crate) fn dispatch_action(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    action: Action,
+) -> io::Result<bool> {
+    if !is_viewing(app) {
+        if action == Action::PickerCancel
+            && app
+                .project
+                .as_mut()
+                .is_some_and(|project| project.cancel_discovery())
+        {
+            app.message = None;
+            app.render(out)?;
+            return Ok(true);
+        }
+        return Ok(false);
+    }
+    match action {
+        Action::PickerCancel => {
+            close_view(app);
+            app.message = None;
+            app.reveal_cursor();
+        }
+        Action::PickerAccept => return open_selected(app, out).map(|()| true),
+        Action::MoveLeft => active_buffer(app).move_left(),
+        Action::MoveRight => active_buffer(app).move_right(),
+        Action::MoveUp => active_buffer(app).move_up(),
+        Action::MoveDown => active_buffer(app).move_down(),
+        Action::ViewportUp => move_rows(app, false),
+        Action::ViewportDown => move_rows(app, true),
+        Action::LineStart => set_line_edge(app, false),
+        Action::LineEnd => set_line_edge(app, true),
+        _ => return Ok(false),
+    }
+    app.reveal_cursor();
+    app.render(out)?;
+    Ok(true)
 }
 
 pub(crate) fn handle_paste(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {

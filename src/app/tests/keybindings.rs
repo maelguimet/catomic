@@ -1,5 +1,5 @@
 //! Purpose: verify configured normal-mode chords reuse established App action paths.
-//! Owns: save translation, chord shadowing, and active-surface precedence tests.
+//! Owns: semantic action dispatch, chord shadowing, and active-surface precedence tests.
 //! Must not: launch a terminal, run external commands, or bypass save/quit guards.
 //! Invariants: overrides apply in normal mode; active prompts retain their own text input.
 

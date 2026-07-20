@@ -1,13 +1,13 @@
 //! Purpose: this file must finish current-buffer LLM tasks against their confirmed identity.
-//! Owns: completed-task polling, source/path drift checks, and preview/answer handoff.
+//! Owns: completed-task polling, source/path drift checks, and preview handoff.
 //! Must not: construct clients, send requests, apply edits, write files, or collect context.
-//! Invariants: changed text or path discards output; edit output still enters read-only preview.
+//! Invariants: changed text or path discards output; model output enters read-only preview.
 
 use std::io::{self, Write};
 
 use crate::llm::task::LlmTaskResult;
 
-use super::{RequestPurpose, RunningLlmRequest};
+use super::RunningLlmRequest;
 
 pub(crate) fn poll(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
     let result = app
@@ -54,16 +54,13 @@ fn finish_output(
             "Active file path changed while the model was working; response was not previewed.",
         );
     }
-    match running.purpose {
-        RequestPurpose::Edit => super::super::llm_preview::show_with_region_fallback(
-            app,
-            out,
-            &output,
-            Some(&running.path),
-            running.replacement_target,
-        ),
-        RequestPurpose::Explain => super::super::llm_answer::show(app, out, &output),
-    }
+    super::super::llm_preview::show_with_region_fallback(
+        app,
+        out,
+        &output,
+        Some(&running.path),
+        running.replacement_target,
+    )
 }
 
 fn render_warning(

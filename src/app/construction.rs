@@ -147,7 +147,6 @@ mod tests {
         assert!(app.surfaces.diagnostics.is_none());
         assert!(app.surfaces.project_files.is_none());
         assert!(app.surfaces.llm_preview.is_none());
-        assert!(app.surfaces.llm_answer.is_none());
         assert!(app.pending_llm_request.is_none());
         assert!(app.llm_task.is_none());
         assert!(app.repo_llm_state.is_none());

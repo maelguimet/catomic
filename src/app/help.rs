@@ -156,7 +156,6 @@ fn close_transients(app: &mut super::App) {
     super::project_files::close_view(app);
     super::model_picker::close(app);
     super::llm_preview::close(app);
-    super::llm_answer::close(app);
     super::recovery::close(app);
     super::external_command::cancel_all(app);
     super::repo_llm::cancel_all(app);

@@ -9,9 +9,8 @@ use crate::config::actions::{Action, Scope};
 use crossterm::event::KeyEvent;
 
 use super::super::{
-    command_prompt, completion, external_command, help, inline_clanker, lint, llm_answer,
-    llm_preview, llm_request, model_picker, project_files, recovery, replace, repo_llm, search,
-    view, App,
+    command_prompt, completion, external_command, help, inline_clanker, lint, llm_preview,
+    llm_request, model_picker, project_files, recovery, replace, repo_llm, search, view, App,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -27,7 +26,6 @@ enum RawKeySurface {
     CommandPrompt,
     InlineClanker,
     LlmPreview,
-    LlmAnswer,
     Completion,
     ProjectFiles,
     Diagnostics,
@@ -46,7 +44,6 @@ const RAW_KEY_PRECEDENCE: [RawKeySurface; 16] = [
     RawKeySurface::CommandPrompt,
     RawKeySurface::InlineClanker,
     RawKeySurface::LlmPreview,
-    RawKeySurface::LlmAnswer,
     RawKeySurface::Completion,
     RawKeySurface::ProjectFiles,
     RawKeySurface::Diagnostics,
@@ -84,7 +81,6 @@ fn handle_raw_key_for(
         RawKeySurface::CommandPrompt => command_prompt::handle_active_key(app, out, key),
         RawKeySurface::InlineClanker => inline_clanker::handle_key(app, out, key),
         RawKeySurface::LlmPreview => llm_preview::handle_key(app, out, key),
-        RawKeySurface::LlmAnswer => llm_answer::handle_key(app, out, key),
         RawKeySurface::Completion => completion::handle_key(app, out, key),
         RawKeySurface::ProjectFiles => project_files::handle_key(app, out, key),
         RawKeySurface::Diagnostics => lint::handle_key(app, out, key),
@@ -119,7 +115,6 @@ pub(super) fn dispatch_action(
                 || llm_request::dispatch_action(app, out, action)?
                 || inline_clanker::dispatch_action(app, out, action)?
                 || llm_preview::dispatch_action(app, out, action)?
-                || llm_answer::dispatch_action(app, out, action)?
                 || view::dispatch_action(app, out, action)?
                 || view::dispatch_preview_action(app, out, action)?
         }
@@ -141,14 +136,13 @@ enum PasteSurface {
     LlmRequest,
     InlineClanker,
     LlmPreview,
-    LlmAnswer,
     ModelPicker,
     ProjectFiles,
     Diagnostics,
     MarkdownPreview,
 }
 
-const PASTE_PRECEDENCE: [PasteSurface; 13] = [
+const PASTE_PRECEDENCE: [PasteSurface; 12] = [
     PasteSurface::Help,
     PasteSurface::Replace,
     PasteSurface::Recovery,
@@ -157,7 +151,6 @@ const PASTE_PRECEDENCE: [PasteSurface; 13] = [
     PasteSurface::LlmRequest,
     PasteSurface::InlineClanker,
     PasteSurface::LlmPreview,
-    PasteSurface::LlmAnswer,
     PasteSurface::ModelPicker,
     PasteSurface::ProjectFiles,
     PasteSurface::Diagnostics,
@@ -175,7 +168,6 @@ pub(super) fn handle_paste(app: &mut App, out: &mut dyn Write, text: &str) -> io
             PasteSurface::LlmRequest => llm_request::handle_paste(app, out)?,
             PasteSurface::InlineClanker => inline_clanker::handle_paste(app, out)?,
             PasteSurface::LlmPreview => llm_preview::handle_paste(app, out)?,
-            PasteSurface::LlmAnswer => llm_answer::handle_paste(app, out)?,
             PasteSurface::ModelPicker => model_picker::handle_paste(app, out, text)?,
             PasteSurface::ProjectFiles => project_files::handle_paste(app, out)?,
             PasteSurface::Diagnostics => lint::handle_paste(app, out)?,
@@ -203,7 +195,7 @@ mod tests {
         assert_eq!(PASTE_PRECEDENCE[0], PasteSurface::Help);
         assert_eq!(PASTE_PRECEDENCE[1], PasteSurface::Replace);
         assert_eq!(PASTE_PRECEDENCE[6], PasteSurface::InlineClanker);
-        assert_eq!(PASTE_PRECEDENCE[9], PasteSurface::ModelPicker);
-        assert_eq!(PASTE_PRECEDENCE[12], PasteSurface::MarkdownPreview);
+        assert_eq!(PASTE_PRECEDENCE[8], PasteSurface::ModelPicker);
+        assert_eq!(PASTE_PRECEDENCE[11], PasteSurface::MarkdownPreview);
     }
 }

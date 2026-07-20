@@ -115,9 +115,9 @@ exact backup path.
   checkout as its update source.
   Catomic preserves local changes, checks the official remote revision, refuses
   non-fast-forward history, fetches without running hooks, and builds in an
-  isolated temporary worktree. The new revision must pass all tests and validate
-  the existing configuration before the executable is replaced. Only then is
-  the source checkout fast-forwarded and the local changes reapplied.
+  isolated temporary worktree. The new revision must build successfully and
+  validate the existing configuration before the executable is replaced. Only
+  then is the source checkout fast-forwarded and the local changes reapplied.
 - If that source checkout no longer exists, Catomic runs the official Cargo git
   install command itself. `--check` remains unsupported for a missing checkout
   and exits without writing.
@@ -133,7 +133,7 @@ conflicts normally.
 Managed releases and retained-checkout updates stage the new executable beside
 the installed one, sync it, and atomically rename over it. Before that rename,
 Catomic creates a sibling rollback binary containing the old bytes. A failed
-download, checksum, test, build,
+download, checksum, build,
 configuration validation, or staging step leaves the installed executable
 untouched. If final source fast-forwarding fails after replacement, Catomic
 automatically restores the old binary.
@@ -164,7 +164,7 @@ state remains untouched unless you separately choose to delete it.
 Updater exit codes are stable for automation: `0` means current, successfully
 updated, or user-cancelled; `2` is command-line usage; `3` unsupported install;
 `4` remote/checksum policy failure; `5` unsafe source state or prompt I/O; `6`
-backup failure; `7` candidate configuration failure; `8` test/build failure;
+backup failure; `7` candidate configuration failure; `8` build failure;
 and `9` install or rollback failure.
 
 If the updater is unavailable for a source install, the manual equivalent is:
@@ -1131,8 +1131,8 @@ Do not edit outside this block unless necessary.
 ```
 
 With no `bigmeow` argument, an instruction block under the cursor supplies the
-instruction. An instruction beginning with `explain` requests a read-only answer
-instead of an edit proposal.
+instruction. Every instruction follows the same proposed-edit flow; words such
+as `explain`, `ask`, or `edit` have no special command meaning.
 
 Before sending, Catomic shows the active preset, adapter, canonical endpoint or
 resolved executable, model, exact context extent, and warnings for a dotfile
@@ -1930,8 +1930,7 @@ outside Catomic when authentication or version setup needs more detail.
 
 An edit response must be a single-file unified patch for the confirmed active
 path, or the strict selected-region replacement envelope. Prose or full-file
-replacement output can be viewed as an explanation only when requested; it
-cannot bypass the edit parser.
+replacement output is rejected and cannot bypass the edit parser.
 
 ### The terminal looks broken after a crash
 

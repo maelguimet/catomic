@@ -1,7 +1,7 @@
-//! Purpose: safely update binaries built from the official Catomic source checkout.
-//! Owns: source discovery, read-only checks, fetch/worktree/build/test, and fast-forward.
+//! Purpose: safely update binaries built from the official Catomic source.
+//! Owns: checkout updates and the missing-checkout Cargo reinstall fallback.
 //! Must not: stash, reset, clean, overwrite local changes, run hooks, or edit user state.
-//! Invariants: only clean official `master` checkouts update; candidate passes tests/config first.
+//! Invariants: checkout candidates pass tests/config; Cargo fallback uses only the official remote.
 //! Phase: safe self-update workflow.
 
 use std::ffi::OsString;

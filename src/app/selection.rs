@@ -262,8 +262,15 @@ fn copy(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         app.message = Some("No selection to copy.".to_string());
         return app.render(out);
     };
-    app.message = (!exported)
-        .then(|| "Copied internally; selection is too large for terminal clipboard.".to_string());
+    let system = crate::clipboard::write_system(&app.clipboard);
+    app.message = Some(if system {
+        "Copied selection to system clipboard.".to_string()
+    } else if exported {
+        "Sent selection to terminal clipboard.".to_string()
+    } else {
+        "Copied internally; no system clipboard helper is available and the selection is too large for terminal clipboard."
+            .to_string()
+    });
     app.render(out)
 }
 
@@ -272,6 +279,7 @@ fn cut(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         app.message = Some("No selection to cut.".to_string());
         return app.render(out);
     }
+    let _ = crate::clipboard::write_system(&app.clipboard);
     let Some(selection) = app.selection.active() else {
         return app.render(out);
     };
@@ -318,6 +326,7 @@ fn cut_line(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         text
     };
     let _ = export_text(app, out, payload)?;
+    let _ = crate::clipboard::write_system(&app.clipboard);
     if app.buffer.replace_range(start, end, "")? {
         app.cut_line_append = true;
         super::input::finish_content_edit(app, out)

@@ -7,6 +7,7 @@ mod app;
 mod buffer;
 mod build_info;
 mod cli;
+mod clipboard;
 mod config;
 mod editor;
 mod external;

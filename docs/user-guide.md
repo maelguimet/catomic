@@ -361,18 +361,14 @@ before positioning the editable source cursor.
 
 Completing any Catomic selection, including keyboard selection, Select All,
 dragging, double-clicking a word, or dragging across the persistent path,
-immediately updates the process-local clipboard and emits the same bounded OSC
-52 system-clipboard write as `Ctrl+C`. An empty selection does not change either
-clipboard. This preserves click-to-position and editor selection while keeping
-the selected bytes copied even when the terminal consumes its configured
-`Ctrl+C` before Catomic can receive it.
+immediately updates the process-local clipboard and emits a bounded OSC 52
+clipboard write. An empty selection changes neither path. Explicit `Ctrl+C`
+additionally invokes the desktop system-clipboard helper described below.
 
-Ghostty's default `Shift` mouse bypass remains available for native terminal
-selection and Ghostty copy-on-select. Catomic does not override that bypass:
-hold `Shift` while selecting when terminal scrollback or text outside Catomic's
-document mapping is the intended source. A Ghostty configuration that forces
-`mouse-shift-capture = always` deliberately sends those events to Catomic and
-therefore disables the native bypass.
+Terminal-native selection remains available through the emulator's mouse
+bypass modifier, commonly `Shift`. Use it when terminal scrollback or text
+outside Catomic's document mapping is the intended source. Terminal
+configuration can change or disable that bypass; Catomic does not override it.
 
 The mouse wheel scrolls three visible rows per normalized wheel event without
 moving the document cursor or selection. With soft wrap enabled those are
@@ -391,12 +387,25 @@ cursor and selection. The status and action rows never map into document text.
 
 ### Clipboard and paste
 
-`Ctrl+C`, `Ctrl+X`, and `Ctrl+V` use Catomic's process-local clipboard. The
-clipboard is shared by all buffers in the current session. Copying also sends
-the text through bounded, ST-terminated OSC 52 when the terminal supports it,
-so the terminal or host clipboard receives the same value. Completed desktop
-and keyboard selections use this path automatically. `Ctrl+C` repeats the copy
-when Catomic receives it and never interrupts Catomic.
+`Ctrl+C` and the cut actions keep Catomic's process-local clipboard, invoke a
+real system-clipboard helper, and emit bounded, ST-terminated OSC 52. The first
+successful applicable helper is used: `wl-copy` under Wayland; `xclip` or
+`xsel` under X11; `clip.exe` under WSL; and `termux-clipboard-set` under Termux.
+Install `wl-clipboard`, `xclip`, or `xsel` when the desktop environment does not
+already provide one. Clipboard text is passed through the helper's standard
+input, never interpolated into a shell command.
+
+The helper path is terminal-emulator independent and is the normal local Linux
+copy path. OSC 52 remains useful when Catomic runs over SSH and the desired
+clipboard belongs to the local terminal. Catomic emits both transports because
+the external helper addresses the machine running Catomic while OSC 52
+addresses the terminal endpoint. `Ctrl+C` never interrupts Catomic;
+`Ctrl+Shift+C` remains the interrupt action.
+
+`Ctrl+V` pastes Catomic's process-local clipboard, which is shared by every
+buffer in the current session. Completed selections update that internal value
+and the OSC 52 path immediately; invoking the desktop helper is reserved for
+explicit copy and cut actions.
 
 `Ctrl+K` cuts the current logical line, including its terminating line break
 when present. Consecutive presses append complete lines to one clipboard payload
@@ -1860,11 +1869,15 @@ complete preference file in place when atomic replacement fails.
 ### System clipboard copy or paste does not work
 
 Catomic's internal `Ctrl+C`/`Ctrl+X`/`Ctrl+V` clipboard should still work within
-the session. System clipboard export requires OSC 52 support, and external paste
-depends on the terminal delivering bracketed paste. `Ctrl+Shift+C` is Catomic's
-default configurable `interrupt` action, not its copy key. If the terminal
-reserves that chord, Catomic cannot observe it; change either terminal or
-Catomic keybindings when an in-editor interrupt chord is required.
+the session. For local Linux copy, check that `WAYLAND_DISPLAY` or `DISPLAY` is
+present and install `wl-clipboard`, `xclip`, or `xsel` as appropriate. WSL uses
+`clip.exe`; Termux uses `termux-clipboard-set`. Over SSH, enable OSC 52 writing
+in the local terminal and any intervening multiplexer. External paste still
+depends on the terminal delivering bracketed paste.
+
+`Ctrl+Shift+C` is Catomic's default configurable `interrupt` action, not its
+copy key. If a terminal reserves `Ctrl+C`, Catomic cannot receive the copy
+action; change the terminal binding or use a remapped Catomic copy action.
 
 ### Mouse clicks do not reach Catomic
 

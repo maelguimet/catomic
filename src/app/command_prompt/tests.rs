@@ -64,6 +64,18 @@ fn config_command_opens_the_exact_existing_path_as_an_editable_buffer() {
 }
 
 #[test]
+fn invalid_config_path_sets_error_role_at_the_emission_boundary() {
+    let path = config_fixture("directory");
+    std::fs::create_dir_all(&path).unwrap();
+    let mut app = super::super::App::new(None).unwrap();
+
+    execute_config_path(&mut app, &mut Vec::new(), path.clone(), false).unwrap();
+
+    assert_eq!(app.message_role, crate::terminal::render::StatusRole::Error);
+    std::fs::remove_dir_all(path.parent().unwrap().parent().unwrap()).unwrap();
+}
+
+#[test]
 fn config_quit_returns_to_the_invoking_buffer_when_existing_config_is_not_adjacent() {
     let config = config_fixture("return_existing");
     let root = config.parent().unwrap().parent().unwrap();

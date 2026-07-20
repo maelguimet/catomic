@@ -28,7 +28,7 @@ fn apply_file_watch_signal_changed_on_unchanged_disk_ignores_to_avoid_noise() {
     assert!(!app.file.dirty);
 
     // Set a warning sentinel that must be preserved.
-    app.message = Some("Prior warning.".to_string());
+    app.message_warning("Prior warning.");
 
     // Simulate a Changed signal for our own write (unchanged vs snapshot)
     let sig = crate::file::watcher::FileWatchSignal::Changed;

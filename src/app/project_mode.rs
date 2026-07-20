@@ -23,7 +23,7 @@ pub(crate) fn switch_to_project(app: &mut super::App, out: &mut dyn Write) -> io
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(error) => {
-            app.message = Some(format!("Cannot enable Project mode: {error}"));
+            app.message_error(format!("Cannot enable Project mode: {error}"));
             return app.render(out);
         }
     };
@@ -32,7 +32,7 @@ pub(crate) fn switch_to_project(app: &mut super::App, out: &mut dyn Write) -> io
     app.mode = Mode::Project;
     app.caps = Capabilities::from_mode(app.mode);
     sync_local_completion_state(app);
-    app.message = Some(format!("Project mode enabled at {}.", root.display()));
+    app.message_info(format!("Project mode enabled at {}.", root.display()));
     app.render(out)
 }
 
@@ -51,7 +51,7 @@ pub(crate) fn switch_to_plain(app: &mut super::App, out: &mut dyn Write) -> io::
     app.mode = Mode::Plain;
     app.caps = Capabilities::from_mode(app.mode);
     sync_local_completion_state(app);
-    app.message = Some("Plain mode enabled; Project services stopped.".to_string());
+    app.message_info("Plain mode enabled; Project services stopped.");
     app.render(out)
 }
 

@@ -78,7 +78,7 @@ pub(crate) fn handle_key(
         }
         _ => {
             super::input::prepare_editor_action(app, None);
-            app.message = Some("Mobile overlay is read-only; Back returns.".to_string());
+            app.message_info("Mobile overlay is read-only; Back returns.");
             app.render(out)?;
         }
     }
@@ -90,7 +90,7 @@ pub(crate) fn handle_paste(app: &mut super::App, out: &mut dyn Write) -> io::Res
         return Ok(false);
     }
     super::input::prepare_editor_action(app, None);
-    app.message = Some("Mobile overlay is read-only; Back returns.".to_string());
+    app.message_info("Mobile overlay is read-only; Back returns.");
     app.render(out)?;
     Ok(true)
 }
@@ -203,7 +203,7 @@ fn execute_menu_action(
         MenuAction::SelectStart => {
             super::input::prepare_editor_action(app, None);
             super::selection::begin_touch_selection(app);
-            app.message = Some("Selection start marked. Tap the other end; Cancel aborts.".into());
+            app.message_info("Selection start marked. Tap the other end; Cancel aborts.");
             app.render(out)
         }
         MenuAction::ScrollUp => {

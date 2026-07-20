@@ -43,9 +43,8 @@ pub(super) fn open(
     app.screen.scroll_left = 0;
     app.screen.wrap_col = 0;
     app.selection.clear();
-    app.message = Some(
-        "Inline clanker proposal (read-only): touched ranges are red/underlined. Enter applies the complete diff; Esc rejects."
-            .to_string(),
+    app.message_info(
+        "Inline clanker proposal (read-only): touched ranges are red/underlined. Enter applies the complete diff; Esc rejects.",
     );
     app.render(out)
 }
@@ -78,9 +77,7 @@ pub(super) fn handle_key(
             app.render(out)
         }
         _ => {
-            app.message = Some(
-                "Inline clanker proposal is read-only. Enter applies; Esc rejects.".to_string(),
-            );
+            app.message_info("Inline clanker proposal is read-only. Enter applies; Esc rejects.");
             app.render(out)
         }
     }
@@ -94,9 +91,8 @@ fn apply(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
     app.screen.scroll_left = preview.source_scroll_left;
     app.screen.wrap_col = preview.source_wrap_col;
     if proposal_drifted(app, &preview) {
-        app.message = Some(
-            "Inline clanker apply refused: source, instruction, delimiter, or target drifted."
-                .to_string(),
+        app.message_warning(
+            "Inline clanker apply refused: source, instruction, delimiter, or target drifted.",
         );
         return app.render(out);
     }
@@ -121,7 +117,7 @@ fn apply(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
     cumulative.gutter_lines.sort_unstable();
     cumulative.gutter_lines.dedup();
     if app.buffer.replace_text_edits(&text_edits)? == 0 {
-        app.message = Some("Inline clanker proposal makes no applicable change.".to_string());
+        app.message_info("Inline clanker proposal makes no applicable change.");
         return app.render(out);
     }
     let after = app.buffer.edit_history_position();

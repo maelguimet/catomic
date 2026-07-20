@@ -41,15 +41,14 @@ struct PreviewDraft<'a> {
 #[cfg(test)]
 pub(crate) fn show(app: &mut super::App, out: &mut dyn Write, patch_text: &str) -> io::Result<()> {
     if app.buffer.is_read_only() || app.buffer.page_info().is_some() {
-        app.message =
-            Some("LLM patch preview requires a fully editable current buffer.".to_string());
+        app.message_info("LLM patch preview requires a fully editable current buffer.");
         return app.render(out);
     }
     let source_snapshot = app.buffer.to_string();
     let (proposal, proposed_text) = match proposal::build_patch(&source_snapshot, patch_text) {
         Ok(proposal) => proposal,
         Err(message) => {
-            app.message = Some(message);
+            app.message_error(message);
             return app.render(out);
         }
     };
@@ -95,17 +94,17 @@ pub(crate) fn show_with_region_fallback(
         );
     }
     let Some(target) = target else {
-        app.message = Some("Invalid LLM patch; no marked selection fallback was available.".into());
+        app.message_error("Invalid LLM patch; no marked selection fallback was available.");
         return app.render(out);
     };
     if app.buffer.text_range(target.start(), target.end())? != target.original() {
-        app.message = Some("Selected text changed; LLM replacement was not previewed.".into());
+        app.message_warning("Selected text changed; LLM replacement was not previewed.");
         return app.render(out);
     }
     let (region, replacement, preview_text) = match proposal::build_region(output, target) {
         Ok(proposal) => proposal,
         Err(error) => {
-            app.message = Some(error);
+            app.message_error(error);
             return app.render(out);
         }
     };
@@ -141,7 +140,7 @@ fn open(app: &mut super::App, out: &mut dyn Write, draft: PreviewDraft<'_>) -> i
     app.screen.scroll_top = 0;
     app.screen.scroll_left = 0;
     app.selection.clear();
-    app.message = Some(draft.message.to_string());
+    app.message_info(draft.message.to_string());
     app.render(out)
 }
 
@@ -164,10 +163,7 @@ pub(crate) fn handle_key(
         KeyCode::PageDown => move_page(app, true),
         KeyCode::Home => set_line_edge(app, false),
         KeyCode::End => set_line_edge(app, true),
-        _ => {
-            app.message =
-                Some("LLM patch preview is read-only. Enter applies; Esc cancels.".to_string())
-        }
+        _ => app.message_info("LLM patch preview is read-only. Enter applies; Esc cancels."),
     }
     if is_viewing(app) {
         reveal_preview_cursor(app);
@@ -180,7 +176,7 @@ pub(crate) fn handle_paste(app: &mut super::App, out: &mut dyn Write) -> io::Res
     if !is_viewing(app) {
         return Ok(false);
     }
-    app.message = Some("LLM patch preview is read-only. Enter applies; Esc cancels.".to_string());
+    app.message_info("LLM patch preview is read-only. Enter applies; Esc cancels.");
     app.render(out)?;
     Ok(true)
 }

@@ -102,7 +102,7 @@ pub(crate) fn finish_command(app: &mut super::App, succeeded: bool) -> bool {
     if !succeeded {
         app.hooks.queue.clear();
         app.hooks.continuation = None;
-        app.message = Some(format!(
+        app.message_error(format!(
             "Hook command {name} failed or was cancelled; chain stopped."
         ));
     }
@@ -123,7 +123,7 @@ fn begin_before_llm(
     continuation: Continuation,
 ) -> io::Result<()> {
     if app.hooks.continuation.is_some() {
-        app.message = Some("A before-LLM hook chain is already pending.".to_string());
+        app.message_info("A before-LLM hook chain is already pending.");
         return app.render(out);
     }
     let names = app.command_config.hooks_for(HookEvent::BeforeLlm).to_vec();
@@ -142,7 +142,7 @@ fn begin_before_llm(
     }
     app.hooks.queue.extend(names);
     app.hooks.continuation = Some(continuation);
-    app.message = Some("Before-LLM hooks queued; Escape cancels the active command.".to_string());
+    app.message_info("Before-LLM hooks queued; Escape cancels the active command.");
     app.render(out)
 }
 

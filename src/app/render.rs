@@ -78,7 +78,7 @@ fn render(app: &App, out: &mut dyn Write) -> io::Result<()> {
     let mut options = render_options(app, llm_changes, external_changes, action_bar.as_deref());
     options.window_title = Some(&window_title);
     if let Some(message) = app.message.as_deref() {
-        options.status_role = status::transient_role(app, message);
+        options.status_role = status::transient_role(app);
         return render_frame(app, out, message, options);
     }
     let status = status_line(app);

@@ -50,13 +50,14 @@ pub(super) fn finish_content_edit_with_message(
     app.external_changes
         .reconcile(app.buffer.edit_history_position());
     if app.buffer.is_read_only() {
-        app.message = Some("Large file is read-only in paged mode.".to_string());
+        app.message_warning("Large file is read-only in paged mode.");
     } else {
         command_prompt::clear_config_discard_confirmation(app);
         app.pending_quit_confirm = false;
         app.pending_save_conflict = None;
         app.pending_reload = None;
         app.message = message;
+        app.message_role = crate::terminal::render::StatusRole::Info;
     }
     app.reveal_cursor();
     app.render(out)
@@ -140,6 +141,7 @@ pub(super) fn prepare_editor_action(app: &mut super::App, action: Option<EditorA
     }
     if !keeps_confirmation {
         app.message = None;
+        app.message_role = crate::terminal::render::StatusRole::Info;
     }
 }
 
@@ -223,9 +225,8 @@ pub(super) fn handle_quit(app: &mut super::App, out: &mut dyn Write) -> io::Resu
     if let Some(request) = command_prompt::request_config_close(app) {
         match request {
             command_prompt::ConfigCloseRequest::WarnDirty => {
-                app.message = Some(
-                    "Unsaved configuration. Press Ctrl+Q again to discard it, or Ctrl+S to save."
-                        .to_string(),
+                app.message_warning(
+                    "Unsaved configuration. Press Ctrl+Q again to discard it, or Ctrl+S to save.",
                 );
                 return app.render(out);
             }
@@ -234,7 +235,7 @@ pub(super) fn handle_quit(app: &mut super::App, out: &mut dyn Write) -> io::Resu
                 discard,
             } => {
                 if let Err(error) = app.close_active_buffer(discard) {
-                    app.message = Some(format!("Close error: {error}"));
+                    app.message_error(format!("Close error: {error}"));
                     return app.render(out);
                 }
                 app.message = None;
@@ -258,7 +259,7 @@ pub(super) fn handle_quit(app: &mut super::App, out: &mut dyn Write) -> io::Resu
         return Ok(());
     }
     app.pending_quit_confirm = true;
-    app.message = Some(if mobile::is_enabled(app) && dirty_count == 1 {
+    app.message_warning(if mobile::is_enabled(app) && dirty_count == 1 {
         "Unsaved changes. Tap Menu > Quit again to discard, or tap Save.".to_string()
     } else if mobile::is_enabled(app) {
         format!("Unsaved changes in {dirty_count} buffers. Tap Menu > Quit again to discard.")

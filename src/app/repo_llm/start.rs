@@ -18,13 +18,13 @@ pub(crate) fn begin(
     instruction: &str,
 ) -> io::Result<()> {
     if !app.caps.repo_llm || app.project.is_none() {
-        app.message = Some("Repo LLM requires explicit Project mode (:project).".to_string());
+        app.message_info("Repo LLM requires explicit Project mode (:project).");
         return app.render(out);
     }
     let catalog = match crate::config::llm::load() {
         Ok(catalog) => catalog,
         Err(error) => {
-            app.message = Some(format!("LLM config error: {error}"));
+            app.message_error(format!("LLM config error: {error}"));
             return app.render(out);
         }
     };
@@ -60,22 +60,22 @@ pub(super) fn begin_with_command_and_settings(
         || app.llm_task.is_some()
         || super::super::inline_clanker::is_busy(app)
     {
-        app.message = Some("An LLM request is already pending or running.".to_string());
+        app.message_info("An LLM request is already pending or running.");
         return app.render(out);
     }
     if app.buffer.is_read_only() || app.buffer.page_info().is_some() {
-        app.message = Some("Repo LLM requires a fully editable active buffer.".to_string());
+        app.message_info("Repo LLM requires a fully editable active buffer.");
         return app.render(out);
     }
     let Some(path) = app.file.path.clone() else {
-        app.message = Some("Save the active buffer before using repo LLM.".to_string());
+        app.message_info("Save the active buffer before using repo LLM.");
         return app.render(out);
     };
     let source_snapshot = app.buffer.to_string();
     let draft = match context::for_current_file(&source_snapshot, instruction, Some(&path)) {
         Ok(draft) => draft,
         Err(error) => {
-            app.message = Some(format!("Cannot prepare repo LLM request: {error}"));
+            app.message_error(format!("Cannot prepare repo LLM request: {error}"));
             return app.render(out);
         }
     };
@@ -90,14 +90,14 @@ pub(super) fn begin_with_command_and_settings(
                 source_snapshot,
                 path,
             }));
-            app.message = Some(format!(
+            app.message_info(format!(
                 "Building {} {} repo context ({} KiB max)... Esc cancels; typing remains live.",
                 command.name(),
                 command.profile(),
                 command.context_budget() / 1024
             ));
         }
-        Err(error) => app.message = Some(format!("Could not start repo context worker: {error}")),
+        Err(error) => app.message_error(format!("Could not start repo context worker: {error}")),
     }
     app.render(out)
 }

@@ -258,20 +258,23 @@ fn select_all(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
 
 fn copy(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     let Some(exported) = capture_selection(app, out)? else {
-        app.message = Some("No selection to copy.".to_string());
+        app.message_info("No selection to copy.");
         return app.render(out);
     };
     let system = crate::clipboard::write_system(&app.clipboard);
-    app.message = (!system && !exported).then(|| {
-        "Copied internally; no system clipboard helper is available and the selection is too large for terminal clipboard."
-            .to_string()
-    });
+    if !system && !exported {
+        app.message_info(
+            "Copied internally; no system clipboard helper is available and the selection is too large for terminal clipboard.",
+        );
+    } else {
+        app.message = None;
+    }
     app.render(out)
 }
 
 fn cut(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     if capture_selection(app, out)?.is_none() {
-        app.message = Some("No selection to cut.".to_string());
+        app.message_info("No selection to cut.");
         return app.render(out);
     }
     let _ = crate::clipboard::write_system(&app.clipboard);
@@ -282,7 +285,7 @@ fn cut(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     if app.buffer.replace_range(start, end, "")? {
         super::input::finish_content_edit(app, out)
     } else {
-        app.message = Some("Current file page is read-only; selection was copied.".to_string());
+        app.message_warning("Current file page is read-only; selection was copied.");
         app.render(out)
     }
 }
@@ -308,7 +311,7 @@ fn cut_line(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     };
     let text = app.buffer.text_range(start, end)?;
     if text.is_empty() {
-        app.message = Some("Nothing to cut on this line.".to_string());
+        app.message_info("Nothing to cut on this line.");
         return app.render(out);
     }
 
@@ -326,14 +329,14 @@ fn cut_line(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         app.cut_line_append = true;
         super::input::finish_content_edit(app, out)
     } else {
-        app.message = Some("Current file page is read-only; line was copied.".to_string());
+        app.message_warning("Current file page is read-only; line was copied.");
         app.render(out)
     }
 }
 
 fn paste_internal(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     if app.clipboard.is_empty() {
-        app.message = Some("Clipboard is empty.".to_string());
+        app.message_info("Clipboard is empty.");
         return app.render(out);
     }
     let text = app.clipboard.clone();
@@ -355,7 +358,7 @@ fn replace_or_insert(app: &mut super::App, out: &mut dyn Write, text: &str) -> i
     if app.buffer.replace_range(start, end, text)? {
         super::input::finish_content_edit(app, out)
     } else {
-        app.message = Some("Current file page is read-only.".to_string());
+        app.message_warning("Current file page is read-only.");
         app.render(out)
     }
 }

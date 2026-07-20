@@ -17,7 +17,7 @@ pub(crate) struct AnswerView {
 
 pub(crate) fn show(app: &mut super::App, out: &mut dyn Write, answer: &str) -> io::Result<()> {
     if answer.trim().is_empty() {
-        app.message = Some("The model returned an empty explanation.".to_string());
+        app.message_info("The model returned an empty explanation.");
         return app.render(out);
     }
     super::view::cancel_preview(app);
@@ -33,7 +33,7 @@ pub(crate) fn show(app: &mut super::App, out: &mut dyn Write, answer: &str) -> i
     app.screen.scroll_top = 0;
     app.screen.scroll_left = 0;
     app.selection.clear();
-    app.message = Some("LLM explanation (read-only). Esc closes.".to_string());
+    app.message_info("LLM explanation (read-only). Esc closes.");
     app.render(out)
 }
 
@@ -61,7 +61,7 @@ pub(crate) fn handle_key(
         KeyCode::PageDown => move_page(app, true),
         KeyCode::Home => set_line_edge(app, false),
         KeyCode::End => set_line_edge(app, true),
-        _ => app.message = Some("LLM explanation is read-only; Esc closes.".to_string()),
+        _ => app.message_info("LLM explanation is read-only; Esc closes."),
     }
     reveal_cursor(app);
     app.render(out)?;
@@ -72,7 +72,7 @@ pub(crate) fn handle_paste(app: &mut super::App, out: &mut dyn Write) -> io::Res
     if !is_viewing(app) {
         return Ok(false);
     }
-    app.message = Some("LLM explanation is read-only; Esc closes.".to_string());
+    app.message_info("LLM explanation is read-only; Esc closes.");
     app.render(out)?;
     Ok(true)
 }

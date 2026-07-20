@@ -19,7 +19,7 @@ pub(crate) fn show_repo_patch(
         match super::proposal::build_patch_for_path(&source_snapshot, output, expected_path) {
             Ok(proposal) => proposal,
             Err(message) => {
-                app.message = Some(message);
+                app.message_error(message);
                 return app.render(out);
             }
         };

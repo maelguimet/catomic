@@ -32,9 +32,9 @@ pub(super) fn handle_page_key(
                 PageDirection::Previous => "first",
                 PageDirection::Next => "last",
             };
-            app.message = Some(format!("Already on the {edge} file page."));
+            app.message_info(format!("Already on the {edge} file page."));
         }
-        Err(error) => app.message = Some(format!("Page error: {error}")),
+        Err(error) => app.message_error(format!("Page error: {error}")),
     }
     app.reveal_cursor();
     app.render(out)
@@ -76,7 +76,7 @@ mod tests {
         std::fs::write(&path, "zero\none\ntwo").unwrap();
         let mut app = super::super::App::new(None).unwrap();
         app.buffer = Box::new(crate::buffer::LargeFileBuffer::open_paged(&path, 1).unwrap());
-        app.message = Some("initial warning".to_string());
+        app.message_warning("initial warning");
         app.screen.scroll_top = 4;
         app.screen.scroll_left = 5;
         let mut out = Vec::new();

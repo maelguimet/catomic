@@ -35,6 +35,24 @@ fn plain_start_constructs_no_command_task_or_preview() {
 }
 
 #[test]
+fn unknown_command_sets_error_role_at_the_emission_boundary() {
+    let mut app = super::super::App::new(None).unwrap();
+
+    start(&mut app, &mut Vec::new(), "missing").unwrap();
+
+    assert_eq!(app.message_role, crate::terminal::render::StatusRole::Error);
+}
+
+#[test]
+fn subprocess_failure_sets_error_role_at_the_emission_boundary() {
+    let mut app = super::super::App::new(None).unwrap();
+
+    finish_error(&mut app, &mut Vec::new(), "fixture", "failed: boom").unwrap();
+
+    assert_eq!(app.message_role, crate::terminal::render::StatusRole::Error);
+}
+
+#[test]
 fn insert_output_is_previewed_then_applied_as_one_undoable_edit() {
     let mut app = super::super::App::new(None).unwrap();
     configure(

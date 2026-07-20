@@ -243,6 +243,7 @@ fn failed_save_does_not_update_size_metadata() {
     // still dirty, message set to error; size must be unchanged
     assert!(app.file.dirty);
     assert!(app.message.as_deref().unwrap_or("").contains("Save error"));
+    assert_eq!(app.message_role, crate::terminal::render::StatusRole::Error);
     assert_eq!(app.file.size_bytes, before_size);
     assert_eq!(app.file.size_tier, before_tier);
 
@@ -270,6 +271,10 @@ fn size_metadata_does_not_alter_snapshot_or_conflict_behavior_smoke() {
         .unwrap();
     assert!(app.file.dirty);
     assert!(app.pending_save_conflict.is_some());
+    assert_eq!(
+        app.message_role,
+        crate::terminal::render::StatusRole::Warning
+    );
     assert!(app
         .message
         .as_deref()

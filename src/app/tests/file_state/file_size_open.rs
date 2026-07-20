@@ -95,6 +95,10 @@ fn large_just_over_10mib_opens_and_sets_warning_message() {
         "Large file must set warning message, got: {:?}",
         app.message
     );
+    assert_eq!(
+        app.message_role,
+        crate::terminal::render::StatusRole::Warning
+    );
 
     cleanup(&p);
 }

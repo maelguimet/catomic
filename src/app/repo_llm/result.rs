@@ -35,12 +35,12 @@ pub(super) fn poll_running(app: &mut super::super::App, out: &mut dyn Write) -> 
                 &state.relative_path,
             )
         }
-        RepoLlmTaskResult::RepositoryChanged => render_message(
+        RepoLlmTaskResult::RepositoryChanged => render_warning(
             app,
             out,
             "Repository changed while repo model worked; response discarded.",
         ),
-        RepoLlmTaskResult::RepositoryCheckFailed(error) => render_message(
+        RepoLlmTaskResult::RepositoryCheckFailed(error) => render_error(
             app,
             out,
             &format!("Could not recheck repository; response discarded: {error}"),
@@ -51,7 +51,7 @@ pub(super) fn poll_running(app: &mut super::super::App, out: &mut dyn Write) -> 
         }
         RepoLlmTaskResult::Error { kind, message } => {
             app.model_session.record_failure(&state.preset_name, kind);
-            render_message(app, out, &format!("Repo LLM request failed: {message}"))
+            render_error(app, out, &format!("Repo LLM request failed: {message}"))
         }
     }
 }
@@ -66,14 +66,14 @@ fn finish_output(
     expected_path: &str,
 ) -> io::Result<()> {
     if app.buffer.to_string() != source_snapshot {
-        return render_message(
+        return render_warning(
             app,
             out,
             "Active buffer changed while repo model worked; response discarded.",
         );
     }
     if app.file.path.as_deref() != Some(file_path) {
-        return render_message(
+        return render_warning(
             app,
             out,
             "Active file path changed while repo model worked; response discarded.",
@@ -82,11 +82,16 @@ fn finish_output(
     super::super::llm_preview::show_repo_patch(app, out, &output, expected_path, broker)
 }
 
-fn render_message(
+fn render_warning(
     app: &mut super::super::App,
     out: &mut dyn Write,
     message: &str,
 ) -> io::Result<()> {
-    app.message = Some(message.to_string());
+    app.message_warning(message);
+    app.render(out)
+}
+
+fn render_error(app: &mut super::super::App, out: &mut dyn Write, message: &str) -> io::Result<()> {
+    app.message_error(message);
     app.render(out)
 }

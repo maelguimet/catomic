@@ -121,6 +121,9 @@ pub struct App {
     /// next editor action; active surfaces own theirs, and confirmations survive only the
     /// matching action.
     pub message: Option<String>,
+    /// Semantic role supplied by the producer of `message`. Prompt and confirmation
+    /// state may override it while those states are active.
+    pub(crate) message_role: crate::terminal::render::StatusRole,
     /// When true, an immediately following quit action while dirty will force quit (no save).
     pub pending_quit_confirm: bool,
     /// When Some, records a token bound to the concrete observed disk state

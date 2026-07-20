@@ -27,6 +27,7 @@ pub(crate) struct BufferSlot {
     file: FileState,
     file_watcher: Option<FileWatcher>,
     message: Option<String>,
+    message_role: crate::terminal::render::StatusRole,
     pending_save_conflict: Option<save::PendingSaveConflict>,
     pending_reload: Option<reload::PendingReload>,
     search: search::SearchUiState,
@@ -53,6 +54,7 @@ impl BufferSlot {
             file: app.file,
             file_watcher: app.file_watcher,
             message: app.message,
+            message_role: app.message_role,
             pending_save_conflict: app.pending_save_conflict,
             pending_reload: app.pending_reload,
             search: app.search,
@@ -72,6 +74,7 @@ impl BufferSlot {
         mem::swap(&mut self.file, &mut app.file);
         mem::swap(&mut self.file_watcher, &mut app.file_watcher);
         mem::swap(&mut self.message, &mut app.message);
+        mem::swap(&mut self.message_role, &mut app.message_role);
         mem::swap(
             &mut self.pending_save_conflict,
             &mut app.pending_save_conflict,
@@ -440,9 +443,9 @@ mod tests {
         let mut app =
             App::new_with_paths_and_big_file_config(&paths, BigFileConfig::default()).unwrap();
 
-        app.message = Some("stale first message".to_string());
+        app.message_info("stale first message");
         app.switch_buffer(BufferDirection::Next);
-        app.message = Some("stale second message".to_string());
+        app.message_info("stale second message");
         app.switch_buffer(BufferDirection::Previous);
 
         assert!(app.message.is_none());
@@ -731,6 +734,10 @@ mod tests {
             .as_deref()
             .unwrap_or_default()
             .contains("also open in another buffer"));
+        assert_eq!(
+            app.message_role,
+            crate::terminal::render::StatusRole::Warning
+        );
 
         fs::remove_dir_all(root).unwrap();
     }

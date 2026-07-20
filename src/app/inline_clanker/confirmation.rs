@@ -30,9 +30,8 @@ pub(super) fn show(
     app.screen.scroll_top = 0;
     app.screen.scroll_left = 0;
     app.screen.wrap_col = 0;
-    app.message = Some(
-        "Inline clanker send confirmation (read-only): review details above; Enter sends; Esc cancels."
-            .to_string(),
+    app.message_info(
+        "Inline clanker send confirmation (read-only): review details above; Enter sends; Esc cancels.",
     );
     app.inline_clanker.phase = Some(Phase::Confirm(Box::new(confirmation)));
     app.render(out)
@@ -64,9 +63,7 @@ pub(super) fn handle_key(
             app.render(out)
         }
         _ => {
-            app.message = Some(
-                "Inline clanker confirmation is read-only. Enter sends; Esc cancels.".to_string(),
-            );
+            app.message_info("Inline clanker confirmation is read-only. Enter sends; Esc cancels.");
             app.render(out)
         }
     }

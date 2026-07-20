@@ -33,6 +33,7 @@ struct SavedSurface {
     scroll_left: usize,
     wrap_col: usize,
     message: Option<String>,
+    message_role: crate::terminal::render::StatusRole,
 }
 
 pub(super) fn is_viewing(app: &super::super::App) -> bool {
@@ -79,11 +80,16 @@ pub(super) fn open_notice(app: &mut super::super::App, text: &str) {
 }
 
 pub(super) fn refresh_message(app: &mut super::super::App) {
-    app.message = match app.mobile.overlay.as_ref() {
-        Some(Overlay::Menu(_)) => Some(MENU_MESSAGE.to_string()),
-        Some(Overlay::Notice(_)) => Some(NOTICE_MESSAGE.to_string()),
+    let message = match app.mobile.overlay.as_ref() {
+        Some(Overlay::Menu(_)) => Some(MENU_MESSAGE),
+        Some(Overlay::Notice(_)) => Some(NOTICE_MESSAGE),
         None => None,
     };
+    if let Some(message) = message {
+        app.message_info(message);
+    } else {
+        app.message = None;
+    }
 }
 
 pub(super) fn close(app: &mut super::super::App) -> bool {
@@ -97,6 +103,7 @@ pub(super) fn close(app: &mut super::super::App) -> bool {
     app.screen.scroll_left = saved.scroll_left;
     app.screen.wrap_col = saved.wrap_col;
     app.message = saved.message;
+    app.message_role = saved.message_role;
     true
 }
 
@@ -160,6 +167,7 @@ fn capture(app: &super::super::App) -> SavedSurface {
         scroll_left: app.screen.scroll_left,
         wrap_col: app.screen.wrap_col,
         message: app.message.clone(),
+        message_role: app.message_role,
     }
 }
 

@@ -55,7 +55,7 @@ pub(crate) fn begin(
     let catalog = match crate::config::llm::load() {
         Ok(catalog) => catalog,
         Err(error) => {
-            app.message = Some(format!("LLM config error: {error}"));
+            app.message_error(format!("LLM config error: {error}"));
             return app.render(out);
         }
     };
@@ -74,19 +74,18 @@ fn begin_with_settings(
         || app.llm_task.is_some()
         || super::inline_clanker::is_busy(app)
     {
-        app.message =
-            Some("An LLM request is already pending or running; Esc cancels.".to_string());
+        app.message_info("An LLM request is already pending or running; Esc cancels.");
         return app.render(out);
     }
     if app.buffer.is_read_only() || app.buffer.page_info().is_some() {
-        app.message = Some("LLM commands require a fully editable current buffer.".to_string());
+        app.message_info("LLM commands require a fully editable current buffer.");
         return app.render(out);
     }
     let source_snapshot = app.buffer.to_string();
     let draft = match collect_draft(app, command, instruction, &source_snapshot) {
         Ok(draft) => draft,
         Err(error) => {
-            app.message = Some(format!("Cannot prepare LLM request: {error}"));
+            app.message_error(format!("Cannot prepare LLM request: {error}"));
             return app.render(out);
         }
     };
@@ -95,7 +94,7 @@ fn begin_with_settings(
     let destination = crate::llm::backend::display_destination(&preset);
     let replacement_target = replacement_target(app, &draft);
     let purpose = prompt::purpose(&draft);
-    app.message = Some(confirmation_message(&draft, &preset, &destination));
+    app.message_info(confirmation_message(&draft, &preset, &destination));
     app.pending_llm_request = Some(PendingLlmRequest {
         draft,
         preset,
@@ -122,7 +121,7 @@ pub(crate) fn handle_key(
             KeyCode::Enter => confirm(app, out)?,
             KeyCode::Esc => cancel_pending(app, out)?,
             _ => {
-                app.message = Some("LLM send not confirmed. Enter sends; Esc cancels.".to_string());
+                app.message_info("LLM send not confirmed. Enter sends; Esc cancels.");
                 app.render(out)?;
             }
         }
@@ -141,7 +140,7 @@ pub(crate) fn handle_paste(app: &mut super::App, out: &mut dyn Write) -> io::Res
     if app.pending_llm_request.is_none() {
         return Ok(false);
     }
-    app.message = Some("LLM send not confirmed. Enter sends; Esc cancels.".to_string());
+    app.message_info("LLM send not confirmed. Enter sends; Esc cancels.");
     app.render(out)?;
     Ok(true)
 }
@@ -159,14 +158,11 @@ pub(super) fn is_active(app: &super::App) -> bool {
 fn confirm(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     let pending = app.pending_llm_request.take().expect("pending request");
     if app.buffer.to_string() != pending.source_snapshot {
-        app.message =
-            Some("Buffer changed before confirmation; LLM request cancelled.".to_string());
+        app.message_info("Buffer changed before confirmation; LLM request cancelled.");
         return app.render(out);
     }
     if app.file.path != pending.file_path {
-        app.message = Some(
-            "Active file path changed before confirmation; LLM request cancelled.".to_string(),
-        );
+        app.message_info("Active file path changed before confirmation; LLM request cancelled.");
         return app.render(out);
     }
     let backend = match ConfirmedBackend::resolve(&pending.preset) {
@@ -174,7 +170,7 @@ fn confirm(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         Err(error) => {
             app.model_session
                 .record_failure(&pending.preset.name, error.kind);
-            app.message = Some(format!("Could not prepare LLM backend: {error}"));
+            app.message_error(format!("Could not prepare LLM backend: {error}"));
             return app.render(out);
         }
     };
@@ -183,16 +179,15 @@ fn confirm(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
             &pending.preset.name,
             crate::llm::backend::BackendErrorKind::Unavailable,
         );
-        app.message = Some(
-            "Configured command identity changed after confirmation; request cancelled."
-                .to_string(),
+        app.message_info(
+            "Configured command identity changed after confirmation; request cancelled.",
         );
         return app.render(out);
     }
     let user = user_prompt(&pending.draft, &pending.path);
     match LlmTask::start(backend, system_prompt(pending.purpose).to_string(), user) {
         Ok(task) => {
-            app.message = Some(format!(
+            app.message_info(format!(
                 "Sending {} lines/{} bytes with preset {} model {} to {}... Esc cancels.",
                 pending.draft.context.line_count,
                 pending.draft.context.byte_count,
@@ -210,7 +205,7 @@ fn confirm(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
                 purpose: pending.purpose,
             });
         }
-        Err(error) => app.message = Some(format!("Could not start LLM request: {error}")),
+        Err(error) => app.message_error(format!("Could not start LLM request: {error}")),
     }
     app.render(out)
 }

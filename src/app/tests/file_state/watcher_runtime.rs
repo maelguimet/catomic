@@ -53,7 +53,7 @@ fn queued_changed_external_modified_auto_reloads_and_renders() {
         .inject_signal(crate::file::watcher::FileWatchSignal::Changed);
 
     // sentinel to prove we don't clobber random prior msg
-    app.message = Some("Prior warning.".to_string());
+    app.message_warning("Prior warning.");
 
     let mut out: Vec<u8> = Vec::new();
     let had = crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out).unwrap();
@@ -122,7 +122,7 @@ fn queued_changed_on_unchanged_ignored_no_render() {
     assert!(!app.file.dirty);
 
     // sentinel that must survive
-    app.message = Some("Prior warning.".to_string());
+    app.message_warning("Prior warning.");
     let before_pend = app.pending_reload.clone();
 
     let path = app.file.path.clone().unwrap();

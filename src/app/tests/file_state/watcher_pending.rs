@@ -48,7 +48,7 @@ fn watcher_unchanged_clears_stale_pending_and_restores_status() {
         app.file.disk_snapshot = Some(s);
     }
 
-    app.message = Some("Prior warning.".to_string()); // sentinel cleared on resolution
+    app.message_warning("Prior warning."); // sentinel cleared on resolution
     let before_dirty = app.file.dirty;
 
     let visible = crate::app::watch::apply_file_watch_signal(
@@ -87,7 +87,7 @@ fn watcher_unchanged_with_no_pending_ignores_and_preserves_saved() {
         .unwrap();
     assert!(!app.file.dirty);
 
-    app.message = Some("Prior warning.".to_string());
+    app.message_warning("Prior warning.");
     let before_pend = app.pending_reload.clone();
 
     // Disk is already at baseline; Changed -> observe Unchanged, no pending => ignore
@@ -129,7 +129,7 @@ fn watcher_nopath_with_pending_clears_it() {
         status: crate::file::io::ExternalFileStatus::Modified,
         snapshot: app.file.disk_snapshot.clone(),
     });
-    app.message = Some("prior".to_string());
+    app.message_warning("prior");
 
     // Now remove path (simulates transition); apply a Changed signal.
     app.file.path = None;
@@ -176,12 +176,16 @@ fn queued_changed_then_unchanged_clears_stale_pending_and_renders() {
         .expect("test watcher")
         .inject_signal(crate::file::watcher::FileWatchSignal::Changed);
 
-    app.message = Some("Prior warning.".to_string());
+    app.message_warning("Prior warning.");
 
     let mut out1: Vec<u8> = Vec::new();
     let r1 = crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out1).unwrap();
     assert!(r1, "first Changed+Modified must be visible and arm");
     assert!(app.pending_reload.is_some());
+    assert_eq!(
+        app.message_role,
+        crate::terminal::render::StatusRole::Warning
+    );
     assert!(!out1.is_empty());
 
     // Revert on disk to original content; refresh snapshot so next observe is Unchanged.

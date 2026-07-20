@@ -26,7 +26,7 @@ pub(crate) struct ProjectFilesView {
 
 pub(crate) fn start(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     if !app.caps.repo_scan || app.project.is_none() {
-        app.message = Some("File discovery requires explicit Project mode (:project).".to_string());
+        app.message_info("File discovery requires explicit Project mode (:project).");
         return app.render(out);
     }
     close_view(app);
@@ -42,12 +42,12 @@ pub(crate) fn start(app: &mut super::App, out: &mut dyn Write) -> io::Result<()>
                 .as_mut()
                 .expect("Project checked")
                 .start_discovery(task);
-            app.message = Some(format!(
+            app.message_info(format!(
                 "Discovering files under {}... Esc cancels.",
                 root.display()
             ));
         }
-        Err(error) => app.message = Some(format!("Could not start file discovery: {error}")),
+        Err(error) => app.message_error(format!("Could not start file discovery: {error}")),
     }
     app.render(out)
 }
@@ -66,7 +66,7 @@ pub(crate) fn poll(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
             app.message = None;
         }
         DiscoveryTaskResult::Error(error) => {
-            app.message = Some(format!("File discovery error: {error}"));
+            app.message_error(format!("File discovery error: {error}"));
         }
     }
     app.render(out)
@@ -85,24 +85,29 @@ fn finish_scan(
         .expect("result requires Project")
         .set_discovered(discovery);
     if count == 0 {
-        app.message = Some("No files found in the Project root.".to_string());
+        app.message_info("No files found in the Project root.");
         return app.render(out);
     }
-    app.message = Some(format_scan_message(count, partial, unreadable));
+    let message = format_scan_message(count, partial, unreadable);
+    if partial || unreadable > 0 {
+        app.message_warning(message);
+    } else {
+        app.message_info(message);
+    }
     show_files(app, out)
 }
 
 fn show_files(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     let Some(project) = app.project.as_ref() else {
-        app.message = Some("File discovery requires Project mode (:project).".to_string());
+        app.message_info("File discovery requires Project mode (:project).");
         return app.render(out);
     };
     let Some(discovery) = project.discovered() else {
-        app.message = Some("No discovered files; run :files first.".to_string());
+        app.message_info("No discovered files; run :files first.");
         return app.render(out);
     };
     if discovery.files.is_empty() {
-        app.message = Some("No files found in the Project root.".to_string());
+        app.message_info("No files found in the Project root.");
         return app.render(out);
     }
     let (buffer, paths) = build_view_document(project.root(), &discovery.files);
@@ -219,7 +224,7 @@ fn open_selected(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     close_view(app);
     match app.open_file_buffer(&path) {
         Ok(true) | Ok(false) => app.message = None,
-        Err(error) => app.message = Some(format!("Could not open {}: {error}", path.display())),
+        Err(error) => app.message_error(format!("Could not open {}: {error}", path.display())),
     }
     app.selection.clear();
     app.reveal_cursor();
@@ -259,7 +264,7 @@ fn set_line_edge(app: &mut super::App, end: bool) {
 }
 
 fn read_only_message(app: &mut super::App) {
-    app.message = Some("Project file list is read-only; Enter opens, Esc closes.".to_string());
+    app.message_info("Project file list is read-only; Enter opens, Esc closes.");
 }
 
 fn format_scan_message(count: usize, partial: bool, unreadable: usize) -> String {

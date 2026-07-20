@@ -141,30 +141,42 @@ pub(crate) fn format_prompt(label: &str, text: &str, width: usize) -> String {
     format!("{prefix}{tail}")
 }
 
-pub(crate) fn transient_role(app: &super::App, message: &str) -> StatusRole {
+pub(crate) fn transient_role(app: &super::App) -> StatusRole {
     if app.pending_quit_confirm
         || app.pending_save_conflict.is_some()
         || app.pending_reload.is_some()
+        || super::command_prompt::config_discard_confirmation_pending(app)
     {
         return StatusRole::Warning;
     }
     if prompt_is_active(app) {
         return StatusRole::Prompt;
     }
-    let normalized = message.to_ascii_lowercase();
-    if message_is_error(&normalized) {
-        return StatusRole::Error;
+    app.message_role
+}
+
+impl super::App {
+    pub(crate) fn message_info(&mut self, message: impl Into<String>) {
+        self.message = Some(message.into());
+        self.message_role = StatusRole::Info;
     }
-    if message_is_warning(&normalized) {
-        return StatusRole::Warning;
+
+    pub(crate) fn message_warning(&mut self, message: impl Into<String>) {
+        self.message = Some(message.into());
+        self.message_role = StatusRole::Warning;
     }
-    StatusRole::Info
+
+    pub(crate) fn message_error(&mut self, message: impl Into<String>) {
+        self.message = Some(message.into());
+        self.message_role = StatusRole::Error;
+    }
 }
 
 fn prompt_is_active(app: &super::App) -> bool {
     super::command_prompt::is_active(app)
         || super::search::is_active(app)
         || super::replace::is_active(app)
+        || super::help::is_searching(app)
         || app.pending_llm_request.is_some()
         || matches!(
             app.repo_llm_state.as_ref(),
@@ -175,35 +187,6 @@ fn prompt_is_active(app: &super::App) -> bool {
         || super::external_command::is_viewing(app)
         || super::project_files::is_viewing(app)
         || super::autocomplete::is_viewing(app)
-}
-
-fn message_is_error(message: &str) -> bool {
-    [
-        " error",
-        "error:",
-        "failed",
-        "could not",
-        "cannot ",
-        "invalid ",
-        "unknown ",
-        "refused",
-        "malformed",
-    ]
-    .iter()
-    .any(|marker| message.contains(marker))
-}
-
-fn message_is_warning(message: &str) -> bool {
-    [
-        "unsaved",
-        "warning",
-        "changed on disk",
-        "deleted on disk",
-        "discard local changes",
-        "large file (",
-    ]
-    .iter()
-    .any(|marker| message.contains(marker))
 }
 
 #[cfg(test)]
@@ -323,18 +306,21 @@ mod tests {
     #[test]
     fn transient_roles_cover_info_warning_error_and_prompt_states() {
         let mut app = super::super::App::new(None).unwrap();
+        app.message_info("Unknown authors are listed in the notes.");
         assert_eq!(
-            transient_role(&app, "Saved."),
+            transient_role(&app),
             crate::terminal::render::StatusRole::Info
         );
+
+        app.message_error("Save blocked.");
         assert_eq!(
-            transient_role(&app, "Save error: permission denied"),
+            transient_role(&app),
             crate::terminal::render::StatusRole::Error
         );
 
         app.pending_quit_confirm = true;
         assert_eq!(
-            transient_role(&app, "Unsaved changes. Press Ctrl+Q again."),
+            transient_role(&app),
             crate::terminal::render::StatusRole::Warning
         );
         app.pending_quit_confirm = false;
@@ -342,7 +328,7 @@ mod tests {
         let mut out = Vec::new();
         super::super::command_prompt::open_command_prompt(&mut app, &mut out).unwrap();
         assert_eq!(
-            transient_role(&app, app.message.as_deref().unwrap()),
+            transient_role(&app),
             crate::terminal::render::StatusRole::Prompt
         );
     }

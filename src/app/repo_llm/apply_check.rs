@@ -66,13 +66,13 @@ pub(super) fn handle_key(app: &mut super::super::App, key: KeyEvent) {
         app.message = None;
         app.reveal_cursor();
     } else {
-        app.message = Some("Final repository check running; Esc cancels the proposal.".to_string());
+        app.message_info("Final repository check running; Esc cancels the proposal.");
     }
 }
 
 fn refuse(app: &mut super::super::App, out: &mut dyn Write, message: &str) -> io::Result<()> {
     super::super::llm_preview::close(app);
-    app.message = Some(message.to_string());
+    app.message_warning(message);
     app.reveal_cursor();
     app.render(out)
 }

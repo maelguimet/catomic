@@ -42,10 +42,7 @@ pub(crate) struct PromptCommandSpec {
     pub(crate) names: &'static [&'static str],
 }
 
-const fn command(
-    command: PromptCommand,
-    names: &'static [&'static str],
-) -> PromptCommandSpec {
+const fn command(command: PromptCommand, names: &'static [&'static str]) -> PromptCommandSpec {
     PromptCommandSpec { command, names }
 }
 

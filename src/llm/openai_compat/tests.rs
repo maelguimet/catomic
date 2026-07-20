@@ -142,44 +142,55 @@ fn lists_bounded_static_identifiers_from_openai_compatible_endpoint() {
 }
 
 #[test]
-fn refuses_oversized_or_overcount_model_discovery_responses() {
+fn lists_complete_large_model_catalog_in_provider_order() {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap();
-    let entries = (0..=MAX_DISCOVERED_MODELS)
-        .map(|index| serde_json::json!({"id": format!("model-{index}")}))
+    let entries = (0..1_400)
+        .map(|index| {
+            serde_json::json!({
+                "id": format!("model-{index:04}-{}", "x".repeat(230))
+            })
+        })
         .collect::<Vec<_>>();
-    let (base_url, server) = fake_server(
-        "200 OK",
-        "application/json",
-        serde_json::json!({"data": entries})
-            .to_string()
-            .into_bytes(),
-    );
+    let body = serde_json::json!({"data": entries})
+        .to_string()
+        .into_bytes();
+    assert!(body.len() > 256 * 1024);
+    let (base_url, server) = fake_server("200 OK", "application/json", body);
     let client = OpenAiCompatClient::new(config(base_url, None)).unwrap();
-    let result = runtime.block_on(client.list_models());
+    let models = runtime.block_on(client.list_models()).unwrap();
     server.join().unwrap();
-    assert!(matches!(result, Err(LlmError::InvalidResponse(_))));
 
-    let (base_url, server) = fake_server(
+    assert_eq!(models.len(), 1_400);
+    assert!(models[0].starts_with("model-0000-"));
+    assert!(models[700].starts_with("model-0700-"));
+    assert!(models[1_399].starts_with("model-1399-"));
+}
+
+#[test]
+fn refuses_model_response_larger_than_the_hard_limit() {
+    let (base_url, server) = fake_server_with_declared_length(
         "200 OK",
         "application/json",
-        vec![b'x'; MAX_MODEL_RESPONSE_BYTES + 1],
+        MAX_MODEL_RESPONSE_BYTES + 1,
     );
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
     let client = OpenAiCompatClient::new(config(base_url, None)).unwrap();
     let result = runtime.block_on(client.list_models());
     server.join().unwrap();
+
     assert!(matches!(result, Err(LlmError::ResponseTooLarge)));
 }
 
 #[test]
 fn refuses_a_response_larger_than_the_hard_limit() {
-    let (base_url, server) = fake_server(
-        "200 OK",
-        "application/json",
-        vec![b'x'; MAX_RESPONSE_BYTES + 1],
-    );
+    let (base_url, server) =
+        fake_server_with_declared_length("200 OK", "application/json", MAX_RESPONSE_BYTES + 1);
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -251,6 +262,23 @@ fn fake_server(
     content_type: &'static str,
     body: Vec<u8>,
 ) -> (String, std::thread::JoinHandle<String>) {
+    fake_server_with_body(status, content_type, body.len(), body)
+}
+
+fn fake_server_with_declared_length(
+    status: &'static str,
+    content_type: &'static str,
+    content_length: usize,
+) -> (String, std::thread::JoinHandle<String>) {
+    fake_server_with_body(status, content_type, content_length, Vec::new())
+}
+
+fn fake_server_with_body(
+    status: &'static str,
+    content_type: &'static str,
+    content_length: usize,
+    body: Vec<u8>,
+) -> (String, std::thread::JoinHandle<String>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let server = std::thread::spawn(move || {
@@ -261,8 +289,7 @@ fn fake_server(
         let request = read_request(&mut stream);
         write!(
             stream,
-            "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-            body.len()
+            "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {content_length}\r\nConnection: close\r\n\r\n"
         )
         .unwrap();
         let _ = stream.write_all(&body);

@@ -11,32 +11,6 @@ Full-file replacement output is not accepted. A marked region uses only the
 strict `{"catomic_replacement":"..."}` envelope.
 
 Every patch or replacement LLM edit must be previewed, confirmed, undoable.
-Inline continuation acceptance follows the narrower exception below.
-
-## Inline autocomplete exception
-
-Inline autocomplete is the only exception to confirmation for every individual
-model call. It is disabled by default. Before its first automatic call in a
-process, Catomic displays the selected preset, adapter, canonical destination,
-model, idle delay, exact maximum before/after cursor scope, output bound, and
-the automatic-send risk. `Enter` confirms that scope; a configured default may
-open this read-only confirmation but may not bypass it. No credential is read,
-command is started, or client/network request is made before Enter.
-
-The confirmation authorizes one cancellable, serial continuation stream over a
-bounded Unicode-scalar window of the fully loaded active buffer. Autocomplete
-supplies no path, repository broker, filesystem context, or tool capability.
-A configured command adapter is still trusted user code and may contact services
-after confirmation. Non-loopback HTTP requires the separate
-`autocomplete.allow_remote` capability. Ghost output remains outside the buffer
-until `Tab` accepts one undoable edit; it is never saved automatically.
-
-Editing, navigation, selection, paste, buffer/mode changes, model selection, and
-external refresh cancel stale work. Responses pin revision, cursor, mode,
-preset, destination, model, and request generation. Requests are single-flight,
-debounced, timeout/context/output bounded, sanitized, and retried only through
-bounded backoff. This exception does not weaken per-invocation confirmation,
-preview, or apply rules for the other model workflows.
 
 ## Commands
 
@@ -101,8 +75,7 @@ and per-file diff. No command writes or runs a process other than read-only Git.
   Selection never persists configuration and never invokes the backend.
 - Network LLM clients and command processes must only be constructed after
   explicit invocation and Enter confirmation naming preset, adapter, exact
-  destination identity, model, and context extent, or after the scoped
-  inline-autocomplete session confirmation above.
+  destination identity, model, and context extent.
 - Endpoint configuration is parsed and canonicalized before confirmation;
   credentials, whitespace, queries, fragments, and non-HTTP(S) schemes fail.
 - API keys and credential headers must never cross non-loopback plaintext HTTP.

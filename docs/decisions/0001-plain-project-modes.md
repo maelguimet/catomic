@@ -23,7 +23,7 @@ Disabled by default:
 - linters
 - LSP
 - repo scanning
-- aggressive autocomplete
+- background completion
 - project diagnostics
 - background indexing
 - multi-file LLM context
@@ -38,7 +38,7 @@ Enabled (opt-in):
 - project file discovery
 - repo-aware commands (`:gitmeow`, `:megameow`)
 - diagnostics list
-- project-aware autocomplete
+- project-aware completion
 - later LSP if it earns its keep
 
 ## Rules

@@ -10,8 +10,6 @@
 //!   must pass through a read-only, explicitly confirmed preview.
 
 use std::path::Path;
-
-pub(crate) mod autocomplete;
 pub(crate) mod backend;
 pub mod broker;
 pub mod broker_protocol;

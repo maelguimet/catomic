@@ -297,7 +297,6 @@ fn active_surface(app: &super::App) -> Surface {
     }
     if app.pending_llm_request.is_some()
         || super::repo_llm::blocks_editing_input(app)
-        || super::autocomplete::is_viewing(app)
         || super::llm_preview::is_viewing(app)
         || super::model_picker::is_viewing(app)
         || super::recovery::is_viewing(app)

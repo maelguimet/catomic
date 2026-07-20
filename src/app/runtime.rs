@@ -11,9 +11,8 @@ use crossterm::event::{self, Event, KeyEvent};
 use crate::terminal as term;
 
 use super::{
-    autocomplete, command_prompt, external_command, hooks, inline_clanker, input, lint,
-    llm_request, model_picker, project_files, recovery, repo_llm, search, selection, viewport,
-    watch, App,
+    command_prompt, external_command, hooks, inline_clanker, input, lint, llm_request,
+    model_picker, project_files, recovery, repo_llm, search, selection, viewport, watch, App,
 };
 
 impl App {
@@ -38,11 +37,7 @@ impl App {
             command_prompt::open_startup_config(self, &mut stdout, path)?;
         } else {
             hooks::trigger_open(self);
-            if autocomplete::configured_default_enabled(self) {
-                autocomplete::begin_enable(self, &mut stdout)?;
-            } else {
-                self.render(&mut stdout)?;
-            }
+            self.render(&mut stdout)?;
         }
 
         while !self.should_quit && term::termination_signal().is_none() {
@@ -74,8 +69,7 @@ impl App {
         repo_llm::poll(self, out)?;
         external_command::poll(self, out)?;
         hooks::pump(self, out)?;
-        recovery::poll(self, out)?;
-        autocomplete::poll(self, out)
+        recovery::poll(self, out)
     }
 
     fn dispatch_terminal_event(&mut self, out: &mut dyn Write, event: Event) -> io::Result<()> {

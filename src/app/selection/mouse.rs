@@ -29,7 +29,6 @@ pub(crate) fn handle_mouse(
     if handle_status_mouse(app, out, event)? {
         return Ok(());
     }
-    super::super::autocomplete::invalidate(app);
     match event.kind {
         MouseEventKind::ScrollUp => {
             return dispatch_scroll(app, out, MouseGesture::ScrollUp, event)

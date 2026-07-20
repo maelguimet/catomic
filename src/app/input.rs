@@ -72,8 +72,8 @@ pub(super) fn finish_content_edit_with_message(
 ) -> io::Result<()> {
     note_content_change(&mut app.file);
     lint::invalidate(app);
-    completion::cancel(app);
     app.selection.clear();
+    completion::after_content_edit(app)?;
     refresh_dirty(&mut app.file, &*app.buffer);
     app.clanker_changes
         .reconcile(app.buffer.edit_history_position());

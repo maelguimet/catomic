@@ -15,6 +15,7 @@ use crate::terminal::cursor_style::{self, CursorShape};
 mod coherence_tests;
 #[cfg(test)]
 mod cursor_tests;
+mod emoji_picker;
 mod frame;
 mod status_bar;
 mod style;
@@ -82,6 +83,12 @@ pub(crate) struct DocumentPresentation<'a> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct EmojiPicker<'a> {
+    pub(crate) rows: &'a [String],
+    pub(crate) selected: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct RenderOptions<'a> {
     pub(crate) cursor_shape: CursorShape,
     pub(crate) highlight: Option<TextHighlight>,
@@ -100,6 +107,7 @@ pub(crate) struct RenderOptions<'a> {
     pub(crate) status_theme: StatusTheme,
     pub(crate) status_filename: Option<(usize, usize)>,
     pub(crate) status_selection: Option<(usize, usize)>,
+    pub(crate) emoji_picker: Option<EmojiPicker<'a>>,
     pub(crate) window_title: Option<&'a str>,
     /// Optional second bottom row for touch actions.
     pub(crate) action_bar: Option<&'a str>,
@@ -125,6 +133,7 @@ impl Default for RenderOptions<'_> {
             status_theme: StatusTheme::default(),
             status_filename: None,
             status_selection: None,
+            emoji_picker: None,
             window_title: None,
             action_bar: None,
         }

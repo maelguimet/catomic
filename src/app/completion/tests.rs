@@ -155,3 +155,118 @@ fn path_shaped_text_still_uses_only_local_words() {
 
     assert_eq!(app.buffer.to_string(), "main src/main");
 }
+
+fn type_text(app: &mut App, out: &mut Vec<u8>, text: &str) {
+    for character in text.chars() {
+        app.handle_key_with(out, key(KeyCode::Char(character), KeyModifiers::NONE))
+            .unwrap();
+    }
+}
+
+#[test]
+fn emoji_query_opens_visible_picker_and_accepts_one_undoable_replacement() {
+    let mut app = App::new(None).unwrap();
+    let mut out = Vec::new();
+
+    type_text(&mut app, &mut out, ":hun");
+
+    let rendered = String::from_utf8_lossy(&out);
+    assert!(rendered.contains("💯"));
+    assert!(rendered.contains("hundred points"));
+    assert_eq!(app.buffer.to_string(), ":hun");
+
+    app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
+        .unwrap();
+
+    assert_eq!(app.buffer.to_string(), "💯");
+    app.buffer.undo();
+    assert_eq!(app.buffer.to_string(), ":hun");
+}
+
+#[test]
+fn emoji_acceptance_preserves_text_outside_the_active_query() {
+    let mut app = App::new(None).unwrap();
+    let mut out = Vec::new();
+    type_text(&mut app, &mut out, "before :hun");
+    app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
+        .unwrap();
+    type_text(&mut app, &mut out, " after");
+
+    assert_eq!(app.buffer.to_string(), "before 💯 after");
+}
+
+#[test]
+fn emoji_picker_updates_with_typing_and_backspace() {
+    let mut app = App::new(None).unwrap();
+    let mut out = Vec::new();
+    type_text(&mut app, &mut out, ":hu");
+    assert_eq!(app.completion.emoji.as_ref().unwrap().query, "hu");
+
+    type_text(&mut app, &mut out, "n");
+    assert_eq!(app.completion.emoji.as_ref().unwrap().query, "hun");
+    assert_eq!(
+        app.completion.emoji.as_ref().unwrap().candidates[0].glyph,
+        "💯"
+    );
+
+    app.handle_key_with(&mut out, key(KeyCode::Backspace, KeyModifiers::NONE))
+        .unwrap();
+    assert_eq!(app.completion.emoji.as_ref().unwrap().query, "hu");
+}
+
+#[test]
+fn emoji_navigation_changes_selection_before_acceptance() {
+    let mut app = App::new(None).unwrap();
+    let mut out = Vec::new();
+    type_text(&mut app, &mut out, ":face");
+    let active = app.completion.emoji.as_ref().unwrap();
+    assert!(active.candidates.len() > 1);
+    let second = active.candidates[1].glyph;
+
+    app.handle_key_with(&mut out, key(KeyCode::Down, KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
+        .unwrap();
+
+    assert_eq!(app.buffer.to_string(), second);
+}
+
+#[test]
+fn escape_dismisses_emoji_picker_without_changing_query() {
+    let mut app = App::new(None).unwrap();
+    let mut out = Vec::new();
+    type_text(&mut app, &mut out, ":hun");
+
+    app.handle_key_with(&mut out, key(KeyCode::Esc, KeyModifiers::NONE))
+        .unwrap();
+
+    assert_eq!(app.buffer.to_string(), ":hun");
+    assert!(!super::is_active(&app));
+}
+
+#[test]
+fn cursor_movement_dismisses_emoji_picker_without_editing() {
+    let mut app = App::new(None).unwrap();
+    let mut out = Vec::new();
+    type_text(&mut app, &mut out, ":hun");
+
+    app.handle_key_with(&mut out, key(KeyCode::Left, KeyModifiers::NONE))
+        .unwrap();
+
+    assert_eq!(app.buffer.to_string(), ":hun");
+    assert_eq!(app.buffer.cursor(), Cursor { row: 0, col: 3 });
+    assert!(!super::is_active(&app));
+}
+
+#[test]
+fn colon_inside_a_token_keeps_normal_enter_behavior() {
+    let mut app = App::new(None).unwrap();
+    let mut out = Vec::new();
+    type_text(&mut app, &mut out, "word:hun");
+    assert!(!super::is_active(&app));
+
+    app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
+        .unwrap();
+
+    assert_eq!(app.buffer.to_string(), "word:hun\n");
+}

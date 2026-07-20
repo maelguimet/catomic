@@ -5,6 +5,7 @@
 //! buffer operations.
 
 pub(crate) mod completion;
+pub(crate) mod emoji;
 pub(crate) mod goto_line;
 pub(crate) mod markdown_preview;
 pub mod search;

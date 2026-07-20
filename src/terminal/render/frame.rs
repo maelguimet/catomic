@@ -50,6 +50,14 @@ pub(super) fn compose_buffer(
     )?;
     super::write_bottom_rows(out, viewport, message, options)?;
     let position = cursor_position(buffer, cursor, &visible, viewport, gutter, content_height);
+    super::emoji_picker::write(
+        out,
+        position,
+        content_height,
+        viewport.width,
+        options.emoji_picker,
+        options.theme,
+    )?;
     super::write_terminal_cursor(out, position, options.cursor_shape)
 }
 

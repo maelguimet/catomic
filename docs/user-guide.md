@@ -1775,16 +1775,27 @@ Opening and saving are deliberately conservative:
   while leaving the final symlink intact;
 - a dangling final symlink is refused;
 - Save As refuses symlinks that resolve to unsupported target types;
-- files with more than one hard link are refused; and
-- files carrying extended attributes or ACLs are refused because atomic inode
-  replacement could silently discard those semantics.
+- files with more than one hard link are staged, then updated in place so every
+  alias retains the shared inode and its mode, ownership, attributes, and ACLs;
+  and
+- single-link files carrying extended attributes or ACLs are refused because
+  atomic inode replacement could silently discard those semantics.
 
 On Linux, replacement must preserve mode, owner, and group. If the filesystem,
 mount, container, or network share cannot provide the required atomic and
 metadata behavior, saving fails with an error instead of downgrading silently.
 
-Use a different tool for a refused target. Do not remove ACLs, attributes, or
-links merely to appease the editor unless you understand why they exist.
+Single-link saves retain atomic replacement. A hard-linked file cannot be both
+atomically replaced and kept on its shared inode: Catomic fully writes and syncs
+a sibling staging file, rechecks that the target still names the inspected
+inode, then truncates, writes, and syncs that inode. If the in-place write or
+sync fails, aliases may contain partial new content; Catomic reports that risk
+and keeps the complete staged file at the path named in the error for recovery.
+Failures before the in-place update leave every alias unchanged and remove the
+staging file.
+
+Do not remove ACLs, attributes, or links merely to appease the editor unless you
+understand why they exist.
 
 ## Troubleshooting
 
@@ -1934,8 +1945,9 @@ getfacl path/to/file 2>/dev/null
 ```
 
 Commands vary by distribution. Network, FUSE, overlay, and container filesystems
-may expose weaker or different atomic-replacement behavior. Use another editor
-for a target Catomic cannot preserve safely.
+may expose weaker or different replacement and in-place durability behavior.
+For a failed hard-link update, preserve the staged path printed in the error
+until you have compared or restored its contents.
 
 ### `lint` reports no configured linter
 

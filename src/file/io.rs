@@ -10,8 +10,7 @@
 //! Invariants: atomic writes use same-dir temp + create_new + sync + rename;
 //!   ordinary saves follow a valid final symlink and refuse a dangling one;
 //!   private sidecars replace, rather than follow, a final symlink;
-//!   ordinary saves refuse non-regular targets and Unix metadata that an atomic
-//!   replacement cannot preserve safely;
+//!   ordinary saves refuse non-regular targets and preserve Unix metadata;
 //!   observations use len/mtime plus Unix identity/change time when available,
 //!   full SHA-256 through the editable full-read tier, and a fixed-size sampled
 //!   identity for paged files;
@@ -55,9 +54,10 @@ pub fn read_to_string<P: AsRef<Path>>(path: P) -> io::Result<String> {
 /// Writes to a sibling temp file (same dir), fsyncs data, renames over target,
 /// then best-effort fsyncs the parent directory on Unix.
 /// Linux/Android replacement is conditional on the exact inspected target inode.
-/// Existing mode/owner/group must be preserved; hard links and xattrs/ACLs are
-/// refused because replacing the inode cannot safely preserve their semantics.
-/// Temp is removed on any error before successful rename.
+/// Existing mode/owner/group must be preserved. Multiply-linked files use a
+/// staged in-place write so their inode, links, xattrs, and ACLs remain intact.
+/// Temp is removed on pre-commit errors. A hard-link in-place write keeps the
+/// synced temp as recovery evidence if updating or syncing the shared inode fails.
 /// Unique temp uses target filename + pid. create_new used to avoid clobber.
 /// Linux-kernel-first: directory fsync is best-effort; no new dependencies.
 #[allow(dead_code)] // Compatibility/test convenience; App uses the streaming form.

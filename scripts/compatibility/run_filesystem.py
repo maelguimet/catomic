@@ -29,7 +29,7 @@ from compatlib import (
 from filesystem_boundaries import (
     BOUNDARY_EXPECTATIONS,
     acl_refusal,
-    hard_link_refusal,
+    hard_link_save,
     non_regular_refusal,
     read_only_refusal,
     symlink_save,
@@ -51,7 +51,7 @@ SCENARIOS = (
     ("recovery-after-interruption", recovery_after_interruption),
     ("symlink-save", symlink_save),
     ("read-only-refusal", read_only_refusal),
-    ("hard-link-refusal", hard_link_refusal),
+    ("hard-link-save", hard_link_save),
     ("xattr-refusal", xattr_refusal),
     ("acl-refusal", acl_refusal),
     ("non-regular-refusal", non_regular_refusal),

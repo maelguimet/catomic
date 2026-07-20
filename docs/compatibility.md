@@ -50,16 +50,18 @@ be `unsupported` with an exact explanation; it cannot disappear from a report.
 | Deliberately frozen mtime | Required deterministic condition | Same-size in-place rewrite is detected despite restored mtime |
 | Symlink to a regular file | Supported | Final symlink remains; regular referent is atomically replaced |
 | Read-only regular file | Supported refusal | Save fails without changing bytes, inode, or mode |
-| Multiple hard links | Supported refusal | Save fails rather than breaking shared inode identity |
+| Multiple hard links | Supported | Staged in-place save updates every alias without changing inode identity or link count |
 | xattrs or POSIX ACLs | Supported refusal | Save fails rather than silently discarding metadata |
 | FIFO, directory, socket, device, other non-regular target | Supported refusal | Open/save fails without blocking or replacement |
 | overlayfs, NFS, SMB, FUSE, container bind mounts | Best effort | Record the exact mount and result; do not generalize from ext4/tmpfs |
 
 The filesystem harness creates a fresh sandbox under a user-supplied existing
 directory and never mounts anything. The ext4 and tmpfs rows are separate runs;
-the harness verifies the actual mount with `findmnt`. ACL coverage is marked
-unsupported if `setfacl`/`getfacl` or mount support is absent. User xattrs are
-tested independently through the Python standard library.
+the harness verifies the actual mount with `findmnt`. Hard-link saves always
+check inode, link count, mode, owner, and group, and also check user xattrs and
+ACLs when the mount and host tools expose them. Standalone ACL coverage is
+marked unsupported if `setfacl`/`getfacl` or mount support is absent. User
+xattrs are tested independently through the Python standard library.
 
 ## Produce evidence
 

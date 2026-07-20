@@ -1,12 +1,12 @@
-//! Purpose: make Linux-kernel atomic replacement conditional on the target inode inspected.
-//! Owns: hard-link/xattr/ownership guards and race-safe renameat2 commit/rollback.
+//! Purpose: commit staged Linux/Android saves without losing filesystem metadata.
+//! Owns: hard-link in-place writes and race-safe renameat2 commit/rollback.
 //! Must not: format text, choose App save policy, or handle private recovery sidecars.
 //! Invariants: unsafe metadata is refused; a raced target is atomically restored.
 //! Phase: post-v0.1 OSS beta file-semantics hardening.
 
 use std::ffi::CString;
 use std::fs::{self, File, Metadata, OpenOptions, Permissions};
-use std::io;
+use std::io::{self, Seek, Write};
 use std::os::fd::AsRawFd;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
@@ -20,6 +20,10 @@ pub(super) struct ExistingTarget {
 impl ExistingTarget {
     pub(super) fn permissions(&self) -> Permissions {
         Permissions::from_mode(self.baseline.mode & 0o7777)
+    }
+
+    fn is_hard_linked(&self) -> bool {
+        self.baseline.links > 1
     }
 }
 
@@ -65,6 +69,7 @@ pub(super) fn open_existing_target(path: &Path) -> io::Result<Option<ExistingTar
     };
     let file = OpenOptions::new()
         .read(true)
+        .write(path_metadata.nlink() > 1)
         .custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW)
         .open(path)?;
     let metadata = file.metadata()?;
@@ -90,17 +95,10 @@ fn validate_preservable_metadata(
             format!("refusing to replace read-only file: {}", path.display()),
         ));
     }
-    if metadata.links != 1 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!(
-                "refusing atomic save of file with {} hard links: {}",
-                metadata.links,
-                path.display()
-            ),
-        ));
+    if metadata.links == 1 {
+        ensure_no_extended_attributes(file, path)?;
     }
-    ensure_no_extended_attributes(file, path)
+    Ok(())
 }
 
 pub(super) fn validate_replacement_metadata(
@@ -111,6 +109,9 @@ pub(super) fn validate_replacement_metadata(
     let Some(existing) = existing else {
         return Ok(());
     };
+    if existing.is_hard_linked() {
+        return Ok(());
+    }
     let replacement_metadata = UnixMetadata::from(&replacement.metadata()?);
     if replacement_metadata.owner != existing.baseline.owner
         || replacement_metadata.group != existing.baseline.group
@@ -195,9 +196,57 @@ pub(super) fn commit(
     cleanup_temp: &mut bool,
 ) -> io::Result<()> {
     match existing {
+        Some(existing) if existing.is_hard_linked() => {
+            commit_hard_link(temp_path, target, existing, cleanup_temp)
+        }
         Some(existing) => commit_replacement(temp_path, target, existing, cleanup_temp),
         None => commit_new_file(temp_path, target, cleanup_temp),
     }
+}
+
+fn commit_hard_link(
+    temp_path: &Path,
+    target: &Path,
+    existing: &ExistingTarget,
+    cleanup_temp: &mut bool,
+) -> io::Result<()> {
+    validate_target_path(target, existing)?;
+    let mut staged = File::open(temp_path)?;
+    let mut destination = existing.file.try_clone()?;
+    destination.seek(io::SeekFrom::Start(0))?;
+
+    // Once the shared inode is truncated, rename-style rollback is impossible.
+    // Keep the complete, synced staged file as recovery evidence on any failure.
+    *cleanup_temp = false;
+    let write_result: io::Result<()> = (|| {
+        destination.set_len(0)?;
+        io::copy(&mut staged, &mut destination)?;
+        destination.flush()?;
+        let live_mode = destination.metadata()?.mode() & 0o7777;
+        if live_mode != existing.baseline.mode & 0o7777 {
+            destination.set_permissions(existing.permissions())?;
+        }
+        destination.sync_all()
+    })();
+    if let Err(error) = write_result {
+        return Err(io::Error::new(
+            error.kind(),
+            format!(
+                "hard-linked save may have partially updated {}; staged replacement remains at {}: {error}",
+                target.display(),
+                temp_path.display()
+            ),
+        ));
+    }
+    fs::remove_file(temp_path).map_err(|error| {
+        io::Error::new(
+            error.kind(),
+            format!(
+                "hard-linked save completed, but staged file could not be removed at {}: {error}",
+                temp_path.display()
+            ),
+        )
+    })
 }
 
 fn commit_new_file(temp_path: &Path, target: &Path, cleanup_temp: &mut bool) -> io::Result<()> {
@@ -351,10 +400,7 @@ fn non_regular_error(path: &Path) -> io::Error {
 fn changed_error(path: &Path) -> io::Error {
     io::Error::new(
         io::ErrorKind::InvalidInput,
-        format!(
-            "save target changed during atomic write: {}",
-            path.display()
-        ),
+        format!("save target changed before commit: {}", path.display()),
     )
 }
 

@@ -2,7 +2,6 @@
 //! Owns: SemVer precedence, strict checksum grammar, digest comparison, and SHA syntax.
 //! Must not: contact a network, read files, execute candidates, or choose release assets.
 //! Invariants: downgrades compare correctly and checksums bind one exact asset filename.
-//! Phase: safe self-update workflow.
 
 use std::cmp::Ordering;
 use std::fmt;

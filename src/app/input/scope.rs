@@ -2,7 +2,6 @@
 //! Owns: deterministic global/local/editor surface precedence discovery.
 //! Must not: dispatch keys, mutate App state, render, or start any service.
 //! Invariants: the foremost active transient surface wins; editor is the fallback.
-//! Phase: issue #62 complete shortcut customization.
 
 use crate::config::actions::Scope;
 

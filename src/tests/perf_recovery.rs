@@ -2,7 +2,6 @@
 //! Owns: one ignored 1 MiB atomic-sidecar acceptance sample.
 //! Must not: run by default, touch user files, enforce machine timing, or mutate sources.
 //! Invariants: fixture allocation is outside timing; cleanup removes the private sidecar.
-//! Phase: 8 recovery performance acceptance.
 
 use crate::file::recovery::{self, CatnapResult, CatnapTask};
 

@@ -2,7 +2,6 @@
 //! Owns: the final apply-check state, non-blocking polling, and guarded apply handoff.
 //! Must not: run Git on the input thread, contact endpoints, write files, or apply directly.
 //! Invariants: only an unchanged result may reach the ordinary preview transaction path.
-//! Phase: 6 acceptance hardening.
 
 use std::io::{self, Write};
 

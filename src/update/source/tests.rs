@@ -2,7 +2,6 @@
 //! Owns: discovery, dirty-change preservation, and trusted-origin rejection.
 //! Must not: contact a remote, alter the real checkout, or invoke the full updater.
 //! Invariants: each repository is unique, temporary, and removed after the assertion.
-//! Phase: safe self-update workflow.
 
 use std::fs;
 use std::path::PathBuf;

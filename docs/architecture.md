@@ -1,124 +1,90 @@
 # Architecture
 
-This document expands on rules that were condensed from AGENTS.md for Phase 0 focus.
+This document describes Catomic's current, durable system boundaries. Historical
+delivery phases and their verification records live under [`docs/progress/`](progress/)
+and are not implementation requirements.
 
-## Flow
+## Interaction flow
 
-```
-terminal event -> normalized input -> editor command -> state mutation -> render
-```
-
-Render reads state. It must not mutate state.
-
-Input must not poke buffer internals directly.
-
-## Hard Boundaries
-
-- `main.rs`: no editor logic. Tiny: args + app + run.
-- `terminal/`: owns all terminal escapes, raw mode, crossterm, events, ANSI, render, input decoding.
-- `buffer/`: owns only text + edits. No terminal, files, LLM, project, network.
-- `editor/`: owns semantic editing (commands, cursor, selection, search).
-- `file/`: io, watcher, recovery.
-- `project/`: Project mode only (git, discovery, diagnostics). Must not be constructed in Plain mode.
-- `llm/`: explicit commands plus the separately confirmed, bounded autocomplete
-  session (backend adapters, broker, patch, openai_compat). No unconfirmed calls
-  or silent writes. Patch output enters the strict proposal/preview path;
-  autocomplete has no patch, filesystem, or repository capability.
-- `config/`: keymaps and settings.
-- `src/tests/`: unit/golden/perf helpers that need crate internals.
-- root `tests/`: real binary integration smokes (for example PTY).
-
-## Folder Law (reference)
-
-```
-src/
-  main.rs                 # tiny
-  app.rs                  # goblin loop + state
-  mode.rs                 # Mode + Capabilities
-
-  terminal/
-    mod.rs input.rs render.rs screen.rs
-
-  buffer/
-    mod.rs simple.rs piece_table.rs line_index.rs undo.rs
-
-  editor/
-  file/
-  project/
-  llm/
-  config/
-  tests/
+```text
+terminal event -> normalized input -> semantic command -> state change -> render
 ```
 
-## Coding Style
+Rendering reads editor state and must not mutate it. Terminal-specific input is
+normalized at the boundary; editor commands must not reach into buffer internals.
 
-Boring Rust. Clear names. No clever wizardry.
+## Modes and construction
 
-No premature async. Blocking is fine until proven otherwise.
+Catomic has one editor core and two user-facing modes:
 
-No global mutable state.
+- Plain startup and ordinary editing perform no repository scans, background
+  indexing, configured commands or hooks, model probing, credential reads, or
+  network requests.
+- Project mode enables repository-aware features explicitly. Those features
+  remain lazy, bounded, cancellable, and absent until invoked.
 
-Panics ok in early prototypes; not in hardened core paths.
+Capabilities gate construction, not merely use. A disabled service must not be
+allocated or hidden behind a dormant global. Plain-safe facilities such as file
+watching, Markdown presentation, and current-buffer completion do not imply
+Project construction.
 
-## Comments
+Model-backed actions have an additional explicit confirmation boundary. Clients
+and command processes are transient, model output is untrusted, and edits remain
+preview-first. The complete contract is in [`llm-rules.md`](llm-rules.md); the
+accepted mode decision is in
+[`decisions/0001-plain-project-modes.md`](decisions/0001-plain-project-modes.md).
 
-Explain invariants, traps, and weirdness.
+## Ownership boundaries
 
-Good: "col is scalar index for now because...", "Plain must not construct Project services because..."
+- `src/main.rs` wires argument handling, application construction, and execution.
+  `src/cli.rs` and `src/update/` own explicit non-editor command workflows.
+- `src/app/` owns application state, the event-loop orchestration, semantic input
+  routing, temporary surfaces, and workflows that coordinate subsystems.
+- `src/terminal/` owns terminal sessions, raw-mode and protocol setup, signals,
+  ANSI presentation, screen output, and terminal capability quirks. It does not
+  implement editor commands.
+- `src/buffer/` owns text storage, queries, mutations, and edit history. It does
+  not perform terminal, filesystem, Project, or model work.
+- `src/editor/` owns pure editing concepts such as document coordinates,
+  selection, search, completion, syntax classification, and Markdown preview.
+- `src/file/` owns file identity, loading, atomic saving, text formats, size
+  policy, external-change watching, and recovery storage.
+- `src/config/` owns typed configuration, validation, defaults, and keybinding
+  translation. Loading configuration must not construct the services it names.
+- `src/project/` owns explicitly invoked repository discovery, diagnostics,
+  read-only Git context, and Project task lifetimes. Nothing in this module is
+  constructed during Plain startup.
+- `src/llm/` owns bounded context, backend adapters, request workers, brokered
+  repository reads, proposal parsing, and model-specific safety limits. It does
+  not own application state or silently write files.
+- `src/external/` owns bounded child-process execution primitives. User-facing
+  command policy, confirmation, preview, and apply state stay in `src/app/`.
+- `src/tests/` contains crate-internal golden, performance, and PTY helpers;
+  top-level `tests/` exercises the compiled binary.
 
-Bad: `// increment i`, `// save the file`
+Cross-boundary work should keep policy with its owner. Input routes semantic
+actions rather than mutating storage directly; filesystem code reports outcomes
+rather than choosing UI state; workers return bounded results rather than owning
+`App`; and rendering consumes immutable state.
 
-## File Intent Headers (Required)
+## State and lifecycle rules
 
-Every non-trivial source file must start with:
+Prefer explicit state transitions over hidden side effects. Temporary surfaces
+such as help, configuration, previews, prompts, and dialogs must define how the
+previous editor context is restored. Background tasks must have bounded inputs,
+outputs, and lifetimes, and dropping their owner must cancel or reap their work.
 
-```rust
-//! Purpose: this file must ...
-//! Owns: ...
-//! Must not: ...
-//! Invariants: ...
-//! Phase: ...
-```
+Hot typing and rendering paths must not acquire full-buffer clones, full-file
+scans, blocking subprocesses, repository work, or network access. Suspected
+performance problems should be measured before adding caches or concurrency.
 
-Example:
+## Source documentation
 
-```rust
-//! Purpose: provide the Phase 0 SimpleBuffer implementation.
-//! Owns: Vec<String> editing and cursor.
-//! Must not: know about terminal, files, git, LLMs, or Project mode.
-//! Invariants: cursor row always valid; col clamped to line length.
-//! Phase: temporary, replaced by piece table in Phase 1.
-```
+Module documentation should record real ownership, invariants, and non-obvious
+safety constraints when they help a reader. There is no mandatory header
+template. Historical phase labels, completion ledgers, and comments that merely
+narrate the code do not belong in active source files.
 
-Headers describe the contract, not current perfection.
-
-## Function Rules
-
-One thing per function.
-
-Prefer < 40 lines. Split over 80–120.
-
-Never mix layers in one function (e.g. `handle_key_and_render_and_save`).
-
-## Git Rules (moved here for reference)
-
-- Never start work with uninspected dirty state.
-- If changes exist: identify ownership, do not casually reformat or "clean up" unrelated code.
-- Before risky work: commit, branch, or `git diff > backup.patch`.
-- Use branches for real work (`phase0-goblin-loop`, `phase1-piece-table`, etc.).
-- Use `git diff` constantly.
-
-## Review Checklist (core items)
-
-- Only intended scope touched?
-- Files stayed under size limits?
-- Functions stayed reasonable?
-- No terminal logic leaked into buffer/editor?
-- No Project cost leaked into Plain?
-- No surprise dependencies?
-- No hidden full scans/clones on hot paths?
-- Names clear?
-- File headers present and accurate?
-- Tests added/updated?
-- `git diff --check` clean?
-- Diff reviewed?
+Accepted design decisions under [`docs/decisions/`](decisions/) provide detail
+for boundaries whose tradeoffs need a longer record. Engineering workflow,
+testing, naming, and review rules remain in [`AGENTS.md`](../AGENTS.md).

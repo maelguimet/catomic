@@ -2,7 +2,6 @@
 //! Owns: mobile UI enablement, contextual action dispatch, and reserved-row hit testing.
 //! Must not: duplicate editor commands, inspect file internals, start services, or write files.
 //! Invariants: actions reuse normalized key paths; status/action touches never reach content.
-//! Phase: Android/Termux mobile support.
 
 use std::io::{self, Write};
 

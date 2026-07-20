@@ -2,7 +2,6 @@
 //! Owns: completed-task polling, source/path drift checks, and preview/answer handoff.
 //! Must not: construct clients, send requests, apply edits, write files, or collect context.
 //! Invariants: changed text or path discards output; edit output still enters read-only preview.
-//! Phase: 6 acceptance hardening.
 
 use std::io::{self, Write};
 

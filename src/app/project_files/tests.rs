@@ -1,8 +1,7 @@
 //! Purpose: verify Project-only discovery invocation, picker behavior, and file opening.
-//! Owns: App-level Phase 5-d tests using bounded temporary directory trees.
+//! Owns: App-level tests using bounded temporary directory trees.
 //! Must not: load user config, run in Plain implicitly, mutate source, or network.
 //! Invariants: Plain constructs no task; Enter reuses the ordinary multi-buffer path.
-//! Phase: 5-d Project file discovery UI tests.
 
 use std::fs;
 use std::path::{Path, PathBuf};

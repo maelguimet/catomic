@@ -3,7 +3,6 @@
 //! Must not: construct watchers, open editor buffers, write config, or know UI.
 //! Invariants: missing config enables auto reload; only
 //!   `[files] auto_reload = true|false` affects this setting.
-//! Phase: 2-bx automatic external reload policy.
 
 use std::io;
 #[cfg(test)]

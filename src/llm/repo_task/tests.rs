@@ -2,7 +2,6 @@
 //! Owns: a two-round loopback dialogue and preservation of the broker safety snapshot.
 //! Must not: contact a live model, public endpoint, remote Git service, or user repository.
 //! Invariants: fake responses request only read operations and finish with a previewable patch.
-//! Phase: 6 (LLM Context Broker).
 
 use std::fs;
 use std::io::{Read, Write};

@@ -2,7 +2,6 @@
 //! Owns: `[autocomplete]` defaults, typed snapshot parsing, and validation.
 //! Must not: load LLM credentials/settings, construct clients, or contact endpoints.
 //! Invariants: automatic sending is disabled by default; all work/context limits are bounded.
-//! Phase: post-v0.1 opt-in inline autocomplete.
 
 use std::io;
 use std::time::Duration;

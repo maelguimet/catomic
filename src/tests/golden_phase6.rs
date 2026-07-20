@@ -1,8 +1,7 @@
-//! Purpose: this file must lock exact Phase 6 patch preview, apply, and undo output.
+//! Purpose: this file must lock exact patch preview, apply, and undo output.
 //! Owns: one representative multi-hunk unified-diff golden sequence.
 //! Must not: construct App services, access a model, use network, or write files.
 //! Invariants: preview bytes are exact and the applied result is one reversible edit.
-//! Phase: 6 acceptance golden coverage.
 
 #[cfg(test)]
 mod tests {

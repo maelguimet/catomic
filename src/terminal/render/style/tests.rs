@@ -2,7 +2,6 @@
 //! Owns: exact visible-line color, semantic highlights, and scalar-offset fixtures.
 //! Must not: query buffers, require a terminal, inspect files, or test syntax detection.
 //! Invariants: styled segments end with a full reset so attributes never leak.
-//! Phase: 4-a viewport-only syntax styling.
 
 use super::*;
 use crate::buffer::Cursor;

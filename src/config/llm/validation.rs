@@ -2,7 +2,6 @@
 //! Owns: URL, name, model, env, header, argv, and timeout validation.
 //! Must not: decode/load config, inspect environment values, resolve programs, spawn, or network.
 //! Invariants: validated strings are control-free and all variable-size collections are capped.
-//! Phase: post-v0.1 model/backend configuration validation.
 
 use std::collections::{BTreeMap, HashSet};
 use std::io;

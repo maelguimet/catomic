@@ -2,7 +2,6 @@
 //! Owns: temporary-repository capture, staged/unstaged drift, branches, and non-repo errors.
 //! Must not: contact remotes, alter user repositories, or depend on global Git identity.
 //! Invariants: every repository is isolated under the process temp directory.
-//! Phase: 6 (LLM Context Broker safety rail).
 
 use std::fs;
 use std::process::Command;

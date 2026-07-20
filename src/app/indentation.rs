@@ -2,7 +2,6 @@
 //! Owns: Tab/Shift+Tab edit ranges and inherited/block indentation calculation.
 //! Must not: parse whole files, infer language services, save, or run background work.
 //! Invariants: each user action is one replacement transaction; selected text is retained.
-//! Phase: post-v0.1 core usability.
 
 use std::io::{self, Write};
 

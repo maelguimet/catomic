@@ -2,7 +2,6 @@
 //! Owns: unwrapped vertical and horizontal off-screen cursor render fixtures.
 //! Must not: mutate through rendering, require a terminal, access disk, or emit network work.
 //! Invariants: an off-screen document cursor is hidden and never placed on the status row.
-//! Phase: post-v0.1 viewport-only wheel scrolling.
 
 use crate::buffer::{Buffer, Cursor, SimpleBuffer};
 

@@ -6,7 +6,6 @@
 //! Must not: run in default suite for 10 MiB+; change any non-test behavior;
 //!   introduce new deps or fixtures.
 //! Invariants: mirrors original inline tests exactly; uses super::* for access.
-//! Phase: 2-ah (split for size.rs line hygiene; no behavior change).
 
 use super::*;
 use std::fs;

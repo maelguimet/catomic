@@ -1,10 +1,9 @@
-//! Phase 2-j edit_history_position / save-point token tests (child of buffer::tests).
+//! Edit-history position and save-point token tests.
 //!
-//! Purpose: owns the history position token tests added in 2-j.
+//! Purpose: verify exact dirty-state history tokens and branching behavior.
 //! Owns: edit_history_position_basic_and_branching, edit_history_position_save_point_semantics_via_token.
 //! Must not: other parities.
 //! Invariants: names preserved.
-//! Phase: 2-k (extracted from prior catch-all).
 
 use crate::buffer::{Buffer, PieceTable};
 

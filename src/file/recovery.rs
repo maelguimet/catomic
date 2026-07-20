@@ -2,7 +2,6 @@
 //! Owns: race-safe candidate loading, identity checks, atomic 0600 writes, cleanup, and tasks.
 //! Must not: decide editor timing, mutate buffers, render UI, or recover automatically.
 //! Invariants: sidecars append `.catnap`; Unix reads are no-follow/nonblocking, retained, and capped.
-//! Phase: 8 opt-in crash recovery.
 
 use std::ffi::OsString;
 use std::fs::{File, Metadata, OpenOptions};

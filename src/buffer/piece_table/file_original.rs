@@ -4,7 +4,6 @@
 //! Must not: own logical pieces, edits, App policy, rendering, Project, or LLM work.
 //! Invariants: ranges are UTF-8 boundaries; line metadata describes the scanned
 //!   descriptor; metadata drift fails fallible reads and writes closed.
-//! Phase: 2-bj bounded file-backed PieceTable queries.
 
 use std::fs::File;
 use std::io::{self, Write};

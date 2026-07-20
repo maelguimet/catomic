@@ -7,7 +7,6 @@
 //!   construct watchers or Large-file policy changes; touch buffer content.
 //! Invariants: [untitled] represents no path; the basename span is a valid UTF-8
 //!   boundary; output is terminal-safe and never wider than the supplied width.
-//! Phase: post-v0.1 semantic status/message bar.
 
 use std::path::Path;
 

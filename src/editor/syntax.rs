@@ -2,7 +2,6 @@
 //! Owns: extension detection and pure Markdown/Rust/Python/JSON lexical spans.
 //! Must not: emit ANSI, read files/buffers, retain caches, mutate state, or scan other lines.
 //! Invariants: spans are ordered, non-overlapping, and use half-open Unicode scalar indices.
-//! Phase: 4-a viewport-only syntax foundation.
 
 use std::path::Path;
 use std::sync::Arc;

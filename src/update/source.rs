@@ -2,7 +2,6 @@
 //! Owns: checkout updates, dirty-change preservation, and missing-checkout Cargo reinstall.
 //! Must not: reset, clean, discard local changes, run hooks, or edit user state.
 //! Invariants: dirty changes survive; candidates pass tests/config; Cargo uses the official remote.
-//! Phase: safe self-update workflow.
 
 use std::ffi::OsString;
 use std::fs;

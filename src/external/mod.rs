@@ -2,7 +2,6 @@
 //! Owns: external process task module boundaries.
 //! Must not: load configuration, dispatch editor actions, or mutate buffers/files.
 //! Invariants: callers only receive bounded, polled task results.
-//! Phase: 7 external command foundation.
 
 mod task;
 

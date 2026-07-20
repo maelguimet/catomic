@@ -2,7 +2,6 @@
 //! Owns: worker lifetime, transient runtime/client construction, polling, and cancellation.
 //! Must not: collect context, load settings, retain App state, retry, or apply output.
 //! Invariants: client construction occurs inside the worker; cancellation drops the request.
-//! Phase: 6 (LLM, Powerful but Caged).
 
 use super::backend::{BackendErrorKind, BackendRunner, ConfirmedBackend};
 use std::io;

@@ -3,7 +3,6 @@
 //! Must not: decode input, interpret editor commands, render content, or mutate App state.
 //! Invariants: each negotiated keyboard mode is reset once before alternate-screen exit;
 //!   teardown first releases any interrupted synchronized render update.
-//! Phase: issue #128 synchronized-render fail-safe plus terminal keyboard compatibility.
 
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicU8, Ordering};

@@ -2,7 +2,6 @@
 //! Owns: built-in schemes, semantic roles, inline overrides, and capability selection.
 //! Must not: emit ANSI, mutate files, construct services, or partially apply malformed values.
 //! Invariants: recognized roles are typed; missing/unknown fields are safe; RGB has a fallback.
-//! Phase: issue #62 semantic color schemes.
 
 use std::collections::HashMap;
 use std::io;

@@ -2,7 +2,6 @@
 //! Owns: repo-root detection, HEAD/branch/base/status/diff summaries, and dirty fingerprinting.
 //! Must not: run in Plain mode, mutate Git state, invoke a shell, network, or accept huge output.
 //! Invariants: snapshots ignore ambient Git overrides and distinguish already-dirty states.
-//! Phase: 6 (LLM Context Broker safety rail).
 
 use std::collections::hash_map::DefaultHasher;
 use std::fmt;

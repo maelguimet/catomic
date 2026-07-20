@@ -2,7 +2,6 @@
 //! Owns: App fixtures, fake command adapters, queue/apply/highlight regression tests.
 //! Must not: contact endpoints, save files, or duplicate pure discovery coverage.
 //! Invariants: adapters stay process-local and every edit still requires two confirmations.
-//! Phase: issue #65 one-key inline clanker workflow.
 
 use std::sync::atomic::Ordering;
 use std::time::Duration;

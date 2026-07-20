@@ -4,7 +4,6 @@
 //! Owns: simple_buffer_basic_editing, simple_buffer_delete_and_join and tiny helpers if any.
 //! Must not: contain heavy parity, undo, or model logic (those live in sibling subs).
 //! Invariants: descendant of buffer::tests; uses crate::buffer items; preserves original test names.
-//! Phase: 2-k narrow cleanup (no behavior change).
 
 use crate::buffer::{Buffer, SimpleBuffer};
 

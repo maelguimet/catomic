@@ -7,7 +7,6 @@
 //!   file content was UTF-8 valid at construction; ranged reads use the same
 //!   descriptor scanned at open and fail closed if descriptor metadata changes;
 //!   cursor row/col stays clamped.
-//! Phase: 2-bl configurable paged Huge-file foundation.
 
 #[cfg(test)]
 use std::fs::File;

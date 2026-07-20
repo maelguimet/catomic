@@ -2,7 +2,6 @@
 //! Owns: cursor target calculation and Ctrl+Backspace/Delete word edits.
 //! Must not: decode terminal bytes, scan whole documents, save, or start background work.
 //! Invariants: targets are scalar-coordinate boundaries; word deletion is one undoable edit.
-//! Phase: post-v0.1 core usability.
 
 use std::io::{self, Write};
 

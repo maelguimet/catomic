@@ -2,7 +2,6 @@
 //! Owns: `[llm]` compatibility translation, preset schemas, and inline-workflow metadata.
 //! Must not: read secret values, resolve executables, construct clients, spawn, or network.
 //! Invariants: presets and inline settings are bounded; legacy config remains local-first.
-//! Phase: post-v0.1 model/backend selection and issue #65 inline workflow.
 
 use std::collections::BTreeMap;
 use std::io;

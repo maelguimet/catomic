@@ -2,7 +2,6 @@
 //! Owns: XDG/HOME precedence and the documented private template.
 //! Must not: apply settings, silently create files, overwrite config, or start an editor.
 //! Invariants: roots are absolute; creation is atomic/private; existing bytes are untouched.
-//! Phase: issue #62 configuration discovery and editing.
 
 use std::ffi::OsStr;
 use std::fs;

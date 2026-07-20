@@ -5,7 +5,6 @@
 //! Owns: make_key (no #[test] yet, as undo/key tests live primarily in buffer/goldens).
 //! Must not: runtime code.
 //! Invariants: pub for reexport from parent hub; uses minimal.
-//! Phase: 2-i cleanup.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 

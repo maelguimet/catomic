@@ -1,8 +1,7 @@
 //! Purpose: verify on-demand lint guards, polling, list view, and diagnostic navigation.
-//! Owns: Phase 5-c App-level linter behavior tests without a real terminal.
+//! Owns: App-level linter behavior tests without a real terminal.
 //! Must not: load user config, auto-run tools, scan projects, mutate disk, or network.
 //! Invariants: Plain/dirty spawn nothing; views never edit; jumps use 1-based diagnostics.
-//! Phase: 5-c linter integration tests.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};

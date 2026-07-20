@@ -2,7 +2,6 @@
 //! Owns: isolated filesystem fixtures for the issue #62 config workflow.
 //! Must not: mutate process environment, launch editors, or inspect installation files.
 //! Invariants: every fixture uses a unique directory and removes only that directory.
-//! Phase: issue #62 configuration discovery and editing.
 
 use super::*;
 use std::time::{SystemTime, UNIX_EPOCH};

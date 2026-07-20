@@ -245,6 +245,56 @@ mod tests {
         assert_eq!(inventory, registry_reference());
     }
 
+    #[test]
+    fn config_template_inventory_matches_registry_and_is_valid() {
+        let template = include_str!("config_template.toml");
+        let inventory = template
+            .split_once("# action-registry-start\n")
+            .and_then(|(_, tail)| tail.split_once("# action-registry-end"))
+            .map(|(inventory, _)| inventory)
+            .expect("config template action registry markers");
+        let entries = inventory
+            .lines()
+            .filter_map(|line| line.strip_prefix("# "))
+            .filter(|line| line.contains(" = ["))
+            .collect::<Vec<_>>();
+        let documented = format!("[keybindings]\n{}\n", entries.join("\n"));
+        let table = documented
+            .parse::<toml::Table>()
+            .expect("documented keybindings must be valid TOML")
+            .remove("keybindings")
+            .and_then(|value| value.as_table().cloned())
+            .expect("documented keybindings table");
+
+        assert_eq!(table.len(), REGISTRY.len(), "config action count");
+        for descriptor in REGISTRY {
+            let defaults = table
+                .get(descriptor.name)
+                .unwrap_or_else(|| panic!("missing config action {}", descriptor.name))
+                .as_array()
+                .expect("config action defaults must be an array")
+                .iter()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .expect("config action defaults must be strings")
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                defaults, descriptor.defaults,
+                "{} defaults",
+                descriptor.name
+            );
+        }
+        crate::config::validate_text(&documented)
+            .expect("config check must accept the complete documented inventory");
+
+        let replacement_note =
+            "Uncommenting an action replaces its complete built-in default list; [] unbinds it.";
+        assert_eq!(template.matches(replacement_note).count(), 1);
+        assert!(template.contains("# [keybindings]\n# action-registry-start\n"));
+    }
+
     fn registry_reference() -> String {
         REGISTRY
             .iter()

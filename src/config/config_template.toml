@@ -81,17 +81,120 @@ llm_changed = { fg = "red", underline = true }
 autocomplete = { fg = "bright-black", dim = true }
 preview = "default"
 
-# Action-oriented keybindings replace an action's complete default chord list.
-# An empty list unbinds an action. Plain printable keys are rejected so a typo
-# cannot turn normal typing into a command. Run `catomic config check` to verify.
+# Uncommenting an action replaces its complete built-in default list; [] unbinds it.
+# Plain printable keys are rejected so a typo cannot turn normal typing into a
+# command. Run `catomic config check` to verify changes.
 #
 # [keybindings]
-# save = ["ctrl+s", "alt+s"]
-# copy = ["ctrl+c"]
+# action-registry-start
+# Global
+# help = ["ctrl+h", "f1"]
+# quit = ["ctrl+q"]
 # interrupt = ["ctrl+shift+c"]
-# help = []
+#
+# Files and buffers
+# save = ["ctrl+s"]
+# save-as = ["ctrl+shift+s"]
+# open = ["ctrl+o"]
+# new = ["ctrl+n"]
+# close = ["ctrl+w"]
+# reload = ["ctrl+r"]
+# previous-buffer = ["alt+pageup"]
+# next-buffer = ["alt+pagedown"]
+# previous-page = ["ctrl+pageup"]
+# next-page = ["ctrl+pagedown"]
+#
+# Search, commands, and history
+# search = ["ctrl+f"]
+# replace = ["ctrl+shift+f"]
+# goto-line = ["ctrl+g"]
 # command-prompt = ["ctrl+shift+p", "f2"]
-# select-model = ["f10", "alt+m"]
+# complete = ["ctrl+space"]
+# undo = ["ctrl+z"]
+# redo = ["ctrl+y", "ctrl+shift+z"]
+#
+# Navigation
+# move-left = ["left"]
+# move-right = ["right"]
+# move-up = ["up"]
+# move-down = ["down"]
+# line-start = ["home"]
+# line-end = ["end"]
+# document-start = ["ctrl+home"]
+# document-end = ["ctrl+end"]
+# viewport-up = ["pageup"]
+# viewport-down = ["pagedown"]
+# word-left = ["ctrl+left"]
+# word-right = ["ctrl+right"]
+# paragraph-previous = ["ctrl+up"]
+# paragraph-next = ["ctrl+down"]
+#
+# Selection
+# select-left = ["shift+left"]
+# select-right = ["shift+right"]
+# select-up = ["shift+up"]
+# select-down = ["shift+down"]
+# select-line-start = ["shift+home"]
+# select-line-end = ["shift+end"]
+# select-document-start = ["ctrl+shift+home"]
+# select-document-end = ["ctrl+shift+end"]
+# select-viewport-up = ["shift+pageup"]
+# select-viewport-down = ["shift+pagedown"]
+# select-word-left = ["ctrl+shift+left", "alt+shift+left"]
+# select-word-right = ["ctrl+shift+right", "alt+shift+right"]
+# select-all = ["ctrl+a"]
+#
+# Editing and clipboard
+# delete-backward = ["backspace"]
+# delete-forward = ["delete"]
+# delete-word-backward = ["ctrl+backspace"]
+# delete-word-forward = ["ctrl+delete"]
+# insert-newline = ["enter"]
+# indent = ["tab"]
+# unindent = ["shift+tab"]
+# toggle-overwrite = ["insert"]
+# copy = ["ctrl+c"]
+# cut = ["ctrl+x"]
+# cut-line = ["ctrl+k"]
+# paste = ["ctrl+v"]
+#
+# View
+# toggle-external-diff = ["f5"]
+# markdown-preview = ["f6"]
+# line-numbers = ["f7"]
+# whitespace = ["f8"]
+# soft-wrap = ["f9"]
+#
+# Model actions
+# run-clanker = ["f3"]
+# clear-clanker-changes = ["shift+f3"]
+# select-model = ["f10"]
+#
+# Prompts and temporary surfaces
+# prompt-submit = ["enter"]
+# prompt-cancel = ["esc"]
+# prompt-delete-backward = ["backspace"]
+# search-next = ["enter", "down"]
+# search-previous = ["up"]
+# search-cancel = ["esc"]
+# completion-next = ["tab", "ctrl+space"]
+# completion-previous = ["shift+tab"]
+# completion-accept = ["enter"]
+# completion-cancel = ["esc"]
+# preview-accept = ["enter"]
+# preview-cancel = ["esc"]
+# picker-accept = ["enter"]
+# picker-cancel = ["esc"]
+# help-close = ["esc"]
+#
+# Mouse
+# mouse-place-cursor = ["mouse-left"]
+# mouse-extend-selection = ["mouse-left-drag"]
+# mouse-finish-selection = ["mouse-left-up"]
+# mouse-select-word = ["mouse-left-double"]
+# mouse-scroll-up = ["mouse-wheel-up"]
+# mouse-scroll-down = ["mouse-wheel-down"]
+# action-registry-end
 
 # Extension names are normalized and may include or omit a leading dot.
 # [languages.rs]

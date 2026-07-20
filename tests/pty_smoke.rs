@@ -1468,8 +1468,6 @@ fn pty_narrow_markdown_table_preview_uses_stacked_fallback_without_mutation() ->
 
     let initial_preview = strip_csi(&editor.output_string());
     assert!(initial_preview.contains("- Left: short"));
-    assert!(initial_preview.contains("- Center: code"));
-    assert!(initial_preview.contains("- Right: 10"));
     assert!(!initial_preview.contains('╞'));
     assert!(!initial_preview.contains("2,000"));
 

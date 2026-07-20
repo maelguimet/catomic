@@ -200,21 +200,6 @@ impl<'a> BackendRunner<'a> {
         )
     }
 
-    pub(crate) fn complete_bounded(
-        &mut self,
-        system: &str,
-        user: &str,
-        max_tokens: u32,
-    ) -> Result<String, BackendError> {
-        self.complete_messages_with_limit(
-            &[
-                BackendMessage::new(MessageRole::System, system),
-                BackendMessage::new(MessageRole::User, user),
-            ],
-            Some(max_tokens),
-        )
-    }
-
     pub(crate) fn complete_messages(
         &mut self,
         messages: &[BackendMessage],

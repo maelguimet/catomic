@@ -82,15 +82,6 @@ fn bounded_completion_sends_the_exact_output_token_cap() {
 }
 
 #[test]
-fn loopback_detection_uses_the_canonical_url_host() {
-    assert!(endpoint_is_loopback("http://127.0.0.1:8080/v1"));
-    assert!(endpoint_is_loopback("https://localhost/v1"));
-    assert!(endpoint_is_loopback("https://[::1]/v1"));
-    assert!(!endpoint_is_loopback("https://models.example/v1"));
-    assert!(!endpoint_is_loopback("not a URL"));
-}
-
-#[test]
 fn allows_unauthenticated_lan_http_endpoint() {
     let result = OpenAiCompatClient::new(config("http://192.168.1.23:8080/v1".to_string(), None));
 

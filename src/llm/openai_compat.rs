@@ -191,13 +191,6 @@ fn is_loopback_host(host: &str) -> bool {
         .is_ok_and(|address| address.is_loopback())
 }
 
-pub(crate) fn endpoint_is_loopback(base_url: &str) -> bool {
-    reqwest::Url::parse(base_url)
-        .ok()
-        .and_then(|url| url.host_str().map(str::to_string))
-        .is_some_and(|host| is_loopback_host(&host))
-}
-
 async fn read_bounded(mut response: reqwest::Response, limit: usize) -> Result<Vec<u8>, LlmError> {
     if response
         .content_length()

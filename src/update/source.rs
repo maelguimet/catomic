@@ -89,7 +89,7 @@ pub(super) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
     let backup = maybe_backup(options)?;
     let stashed = stash_changes(&install.root)?;
     let update = apply(&install, &remote_sha, &remote_version, backup.as_deref());
-    match (update, restore_changes(&install.root, stashed)) {
+    match (update, restore_changes(&install.root, stashed.as_deref())) {
         (result, Ok(())) => result,
         (Ok(()), Err(error)) => Err(UpdateError::new(EXIT_SOURCE_STATE, error)),
         (Err(update), Err(restore)) => Err(UpdateError::new(
@@ -246,11 +246,11 @@ fn ensure_checkout_unchanged(install: &SourceInstall) -> Result<(), UpdateError>
     }
 }
 
-fn stash_changes(root: &Path) -> Result<bool, UpdateError> {
+fn stash_changes(root: &Path) -> Result<Option<String>, UpdateError> {
     let status = git_text(root, &["status", "--porcelain=v1", "--untracked-files=all"])
         .map_err(|error| UpdateError::new(EXIT_SOURCE_STATE, error))?;
     if status.is_empty() {
-        return Ok(false);
+        return Ok(None);
     }
     let output = git_output(
         root,
@@ -278,21 +278,59 @@ fn stash_changes(root: &Path) -> Result<bool, UpdateError> {
             ),
         ));
     }
+    let stash = git_text(root, &["rev-parse", "--verify", "refs/stash^{commit}"])
+        .map_err(|error| UpdateError::new(EXIT_SOURCE_STATE, error))?;
     println!("source changes: stashed");
-    Ok(true)
+    Ok(Some(stash))
 }
 
-fn restore_changes(root: &Path, stashed: bool) -> Result<(), String> {
-    if !stashed {
+fn restore_changes(root: &Path, stash: Option<&str>) -> Result<(), String> {
+    let Some(stash) = stash else {
         return Ok(());
-    }
+    };
     let output = git_output(
         root,
-        &["-c", "core.hooksPath=/dev/null", "stash", "pop", "--index"],
+        &[
+            "-c",
+            "core.hooksPath=/dev/null",
+            "stash",
+            "apply",
+            "--index",
+            stash,
+        ],
     )?;
     if !output.status.success() {
         return Err(format!(
-            "could not reapply source changes: {}",
+            "could not reapply source changes from stash {}: {}",
+            short_sha(stash),
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let stashes = git_text(root, &["stash", "list", "--format=%H"])?;
+    let position = stashes
+        .lines()
+        .position(|candidate| candidate == stash)
+        .ok_or_else(|| {
+            format!(
+                "source changes were reapplied, but updater stash {} is missing",
+                short_sha(stash)
+            )
+        })?;
+    let stash_ref = format!("stash@{{{position}}}");
+    let output = git_output(
+        root,
+        &[
+            "-c",
+            "core.hooksPath=/dev/null",
+            "stash",
+            "drop",
+            &stash_ref,
+        ],
+    )?;
+    if !output.status.success() {
+        return Err(format!(
+            "source changes were reapplied, but updater stash {} could not be removed: {}",
+            short_sha(stash),
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }

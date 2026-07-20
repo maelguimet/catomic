@@ -2,7 +2,6 @@
 //! Owns: UTF-8 BOM detection, line-ending policy, normalized reads, and streaming writes.
 //! Must not: choose save paths, mutate buffers, perform atomic replacement, or know App/UI.
 //! Invariants: in-memory text uses LF; writes restore the recorded BOM and newline sequence.
-//! Phase: post-v0.1 core usability.
 
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom, Write};

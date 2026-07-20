@@ -2,7 +2,6 @@
 //! Owns: exact Markdown, Rust, Python, JSON, and Unicode fixtures.
 //! Must not: render ANSI, touch disk, construct App, or measure performance.
 //! Invariants: expected spans are ordered half-open scalar ranges.
-//! Phase: 4-a viewport-only syntax foundation.
 
 use super::*;
 

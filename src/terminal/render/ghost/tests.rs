@@ -2,7 +2,6 @@
 //! Owns: pure captured-frame fixtures over SimpleBuffer.
 //! Must not: mutate buffers, start model work, or depend on a real terminal.
 //! Invariants: ghost ANSI is dim gray and the final terminal cursor stays at document cursor.
-//! Phase: post-v0.1 opt-in inline autocomplete.
 
 use super::*;
 use crate::buffer::{Cursor, SimpleBuffer};

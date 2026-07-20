@@ -1,13 +1,13 @@
-//! Phase 0 simple buffer implementation.
+//! Simple in-memory buffer implementation.
 //!
-//! `Vec<String>` backed. Good enough for the first goblin loop.
-//! Will be replaced by piece table (see piece_table.rs).
+//! `Vec<String>` backed and retained as the reference implementation for
+//! PieceTable parity tests.
 
 use std::borrow::Cow;
 
 use super::{Buffer, Cursor, CursorContext, LineView};
 
-/// The dead-simple buffer used for Phase 0.
+/// The simple buffer used as the observable-behavior reference in parity tests.
 #[derive(Clone, Debug, Default)]
 pub struct SimpleBuffer {
     lines: Vec<String>,

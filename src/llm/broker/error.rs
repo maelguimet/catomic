@@ -2,7 +2,6 @@
 //! Owns: broker error variants, display text, and low-level error conversion.
 //! Must not: perform repository I/O, mutate broker state, write, or network.
 //! Invariants: refusals identify their boundary without exposing file contents.
-//! Phase: 6 (LLM Context Broker).
 
 use std::fmt;
 use std::path::PathBuf;

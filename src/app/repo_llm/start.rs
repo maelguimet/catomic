@@ -2,7 +2,6 @@
 //! Owns: capability checks, current-file draft validation, config load, and prepare task start.
 //! Must not: construct clients, read API keys, block for repo scans, network, or mutate buffers.
 //! Invariants: Plain returns before constructing any broker task; preparation has no client.
-//! Phase: 6 (LLM Context Broker).
 
 use std::io::{self, Write};
 

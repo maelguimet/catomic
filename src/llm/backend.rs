@@ -2,7 +2,6 @@
 //! Owns: post-confirmation secret/executable resolution, messages, and adapter dispatch.
 //! Must not: load config, collect context, persist clients, interpret proposals, or write files.
 //! Invariants: resolution occurs only after confirmation; both adapters return plain proposals.
-//! Phase: post-v0.1 common LLM backend abstraction.
 
 use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};

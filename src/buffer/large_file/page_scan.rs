@@ -3,7 +3,6 @@
 //! Must not: reopen paths, retain descriptors, render, edit, or choose App policy.
 //! Invariants: a complete non-final page ends after its configured newline count;
 //!   page metadata uses absolute descriptor offsets and retains no file content.
-//! Phase: 2-bq optimized ASCII paged-file scanning.
 
 use std::fs::File;
 use std::io;

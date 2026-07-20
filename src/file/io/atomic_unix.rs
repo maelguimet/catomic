@@ -2,7 +2,6 @@
 //! Owns: hard-link guards, xattr/ACL preservation, ownership guards, and race-safe commit.
 //! Must not: format text, choose App save policy, or handle private recovery sidecars.
 //! Invariants: metadata is copied and verified before commit; a raced target is restored.
-//! Phase: post-v0.1 OSS beta file-semantics hardening.
 
 use std::ffi::{CStr, CString};
 use std::fs::{self, File, Metadata, OpenOptions, Permissions};

@@ -2,7 +2,6 @@
 //! Owns: focused ASCII, Unicode, gutter, and viewport-start fixtures.
 //! Must not: mutate App state, access disk/network, or require a real terminal.
 //! Invariants: visual rows preserve source text and never split grapheme clusters.
-//! Phase: post-v0.1 core usability.
 
 use crate::buffer::{Buffer, Cursor, SimpleBuffer};
 use crate::config::theme::{Color, Style, Theme};

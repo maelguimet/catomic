@@ -3,7 +3,6 @@
 //! Must not: open paths, scan page metadata directly, edit content, or choose App policy.
 //! Invariants: fallible windows verify descriptor stability before and after their reads;
 //!   cursor movement remains clamped to active-page line metadata.
-//! Phase: 2-bp Huge-file render probe optimization and size-hygiene split.
 
 use std::borrow::Cow;
 use std::io::{self, Write};

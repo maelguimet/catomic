@@ -2,7 +2,6 @@
 //! Owns: local deterministic App tests for apply, cancel, and stale-source refusal.
 //! Must not: construct a network client, contact an endpoint, or access a live model.
 //! Invariants: no patch mutates text before Enter; confirmed apply is one undo step.
-//! Phase: 6 (LLM, Powerful but Caged).
 
 use super::*;
 

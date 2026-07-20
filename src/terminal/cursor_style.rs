@@ -2,7 +2,6 @@
 //! Owns: insert/default and overwrite/block ANSI command emission.
 //! Must not: inspect App/editor state, position the cursor, or mutate buffers.
 //! Invariants: terminal restoration always requests the user's default cursor shape.
-//! Phase: post-v0.1 explicit overwrite mode.
 
 use std::io::{self, Write};
 

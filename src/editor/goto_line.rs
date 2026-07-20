@@ -2,7 +2,6 @@
 //! Owns: bounded descriptor scanning, edited-page overlay accounting, and cancellation.
 //! Must not: render, mutate App/Buffer state, reopen paths, or create idle workers.
 //! Invariants: requested and reported lines are 1-based; positions retain source page identity.
-//! Phase: 3-c global goto-line completion.
 
 use std::io;
 use std::os::unix::fs::FileExt;

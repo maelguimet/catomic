@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Purpose: reject broken local file targets in tracked Markdown documentation.
-Owns: tracked Markdown discovery and relative link target validation.
+"""Purpose: reject broken local links and duplicate decision-record numbers.
+Owns: tracked Markdown discovery, relative links, and decision-record numbering.
 Must not: make network requests, validate remote URLs, or rewrite documentation.
-Invariants: every checked target stays inside the repository and exists on disk.
+Invariants: checked targets exist inside the repository; decision IDs are unique.
 Phase: post-v0.1 documentation maintenance.
 """
 
@@ -23,6 +23,7 @@ REFERENCE_DEFINITION = re.compile(
 )
 FENCE = re.compile(r"^\s{0,3}(?P<marker>`{3,}|~{3,})")
 INLINE_CODE = re.compile(r"(`+)(?:[^`]|`(?!\1))*\1")
+DECISION_RECORD = re.compile(r"^(?P<number>\d{4})-.+\.md$")
 
 
 def tracked_markdown(root: Path) -> list[Path]:
@@ -94,13 +95,34 @@ def broken_links(root: Path) -> list[str]:
     return failures
 
 
+def duplicate_decision_numbers(root: Path) -> list[str]:
+    records: dict[str, list[Path]] = {}
+    decision_dir = root / "docs" / "decisions"
+    for source in tracked_markdown(root):
+        match = DECISION_RECORD.match(source.name)
+        if source.parent != decision_dir or match is None:
+            continue
+        records.setdefault(match.group("number"), []).append(source)
+    return [
+        f"{number}: {', '.join(str(path.relative_to(root)) for path in paths)}"
+        for number, paths in sorted(records.items())
+        if len(paths) > 1
+    ]
+
+
 def main() -> int:
     root = Path(__file__).resolve().parents[1]
-    failures = broken_links(root)
-    if failures:
+    link_failures = broken_links(root)
+    duplicate_numbers = duplicate_decision_numbers(root)
+    if link_failures:
         print("Broken local Markdown links:", file=sys.stderr)
-        for failure in failures:
+        for failure in link_failures:
             print(f"  {failure}", file=sys.stderr)
+    if duplicate_numbers:
+        print("Duplicate decision-record numbers:", file=sys.stderr)
+        for duplicate in duplicate_numbers:
+            print(f"  {duplicate}", file=sys.stderr)
+    if link_failures or duplicate_numbers:
         return 1
     print(f"Checked local links in {len(tracked_markdown(root))} tracked Markdown files.")
     return 0

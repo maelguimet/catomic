@@ -2,7 +2,6 @@
 //! Owns: typed chord forms, parser aliases, printable-key safety, and display diagnostics.
 //! Must not: inspect action scopes, build binding maps, read configuration, or dispatch behavior.
 //! Invariants: equivalent terminal encodings normalize identically; unsafe printable remaps fail.
-//! Phase: issue #62 complete shortcut customization.
 
 use std::io;
 

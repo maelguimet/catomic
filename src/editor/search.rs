@@ -4,7 +4,6 @@
 //! Must not: render, mutate App/Buffer state, reopen paths, index projects, or network.
 //! Invariants: descriptor bytes are processed once with bounded memory; matches
 //!   can cross read boundaries; result positions use configured logical-line pages.
-//! Phase: 3-a incremental search foundation over the Phase 2 descriptor scanner.
 
 use std::collections::VecDeque;
 use std::io;

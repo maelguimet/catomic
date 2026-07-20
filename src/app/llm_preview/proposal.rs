@@ -2,7 +2,6 @@
 //! Owns: patch proposals, marked-region targets, synthetic previews, and one edit call.
 //! Must not: render UI, create clients, read files, write files, or skip source checks.
 //! Invariants: JSON is the only region fallback; application is one Buffer transaction.
-//! Phase: 6 (LLM, Powerful but Caged).
 
 use std::io;
 

@@ -1,6 +1,6 @@
 //! Purpose: this file must provide metadata-only file size classification and
-//!   pre-read open-size guardrails (Phase 2B). No content read in helpers, no lazy,
-//!   no mmap, no new deps.
+//!   pre-read open-size guardrails. No content read in helpers, no lazy loading,
+//!   no mmap, and no new dependencies.
 //! Owns: FileSizeTier + OpenSizeDecision, limit consts, classification, decision,
 //!   warning messages, format_file_size, file_size_bytes (metadata only).
 //! Must not: read file content (except file_size_bytes probe at call sites);
@@ -9,7 +9,6 @@
 //! Invariants: tiers binary 10/100/1024 MiB; decisions pure; size_bytes strictly
 //!   fs::metadata except documented post-save len fallback in save path only;
 //!   Huge and Extreme select paged reads before content access at call sites.
-//! Phase: 2-bm paged open policy.
 
 use std::io;
 use std::path::Path;

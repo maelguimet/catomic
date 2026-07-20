@@ -2,7 +2,6 @@
 //! Owns: managed-update reporting, confirmation, candidate validation, and install handoff.
 //! Must not: define transport policy, parse checksums, accept downgrades, or touch config.
 //! Invariants: verified candidates pass version/config checks before atomic replacement.
-//! Phase: safe self-update workflow.
 
 mod http;
 mod security;

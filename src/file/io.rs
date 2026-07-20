@@ -20,7 +20,6 @@
 //!   Absent explicitly represents missing;
 //!   read_to_string returns InvalidData for non-UTF-8; errors other than NotFound
 //!   surface as Unknown(kind) in observation helpers; single-capture observe.
-//! Phase: 2-l foundation through post-v0.1 metadata-collision hardening.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};

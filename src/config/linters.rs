@@ -2,7 +2,6 @@
 //! Owns: linter command validation, extension normalization, and lazy config-file loading.
 //! Must not: run commands, construct Project services, load during Plain startup, or write config.
 //! Invariants: every accepted command contains `{file}`; missing config yields an empty mapping.
-//! Phase: 5-c on-demand linter configuration.
 
 use std::collections::BTreeMap;
 use std::io;

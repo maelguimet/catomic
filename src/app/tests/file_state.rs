@@ -5,7 +5,6 @@
 //! Must not: runtime logic; included only under cfg(test).
 //! Invariants: all original test names preserved exactly; submodules use super::super::*;
 //!              no behavior change.
-//! Phase: 2-o narrow cleanup.
 
 use super::super::*;
 use super::make_key;

@@ -2,7 +2,6 @@
 //! Owns: `:run`, bounded input snapshots, command context, cancellation, and result handoff.
 //! Must not: choose lifecycle events, write files, apply output, block input, or spawn at startup.
 //! Invariants: only configured names run; input is capped; all output goes through preview.
-//! Phase: 7 external command execution.
 
 use std::io::{self, Write};
 use std::path::PathBuf;

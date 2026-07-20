@@ -2,7 +2,6 @@
 //! Owns: safe command construction, capped stdout capture, cancellation, timeout, and reaping.
 //! Must not: invoke a shell, inherit Git identity overrides, write repositories, or network.
 //! Invariants: every child is waited; its process group ends before output readers are joined.
-//! Phase: 6 acceptance hardening.
 
 use std::io::Read;
 use std::path::Path;

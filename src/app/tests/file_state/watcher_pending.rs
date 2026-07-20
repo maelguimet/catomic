@@ -6,7 +6,6 @@
 //!   rely on live OS notify; change any reload/save semantics; read content.
 //! Invariants: watcher signals are hints only; Unchanged/NoPath clear only when armed
 //!   (else ignored to suppress noise); no behavior change.
-//! Phase: 2-af (split hygiene; no behavior change).
 
 use super::super::super::*;
 use super::super::make_key;

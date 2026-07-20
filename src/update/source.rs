@@ -1,7 +1,7 @@
 //! Purpose: safely update binaries built from the official Catomic source.
-//! Owns: checkout updates and the missing-checkout Cargo reinstall fallback.
-//! Must not: stash, reset, clean, overwrite local changes, run hooks, or edit user state.
-//! Invariants: checkout candidates pass tests/config; Cargo fallback uses only the official remote.
+//! Owns: checkout updates, dirty-change preservation, and missing-checkout Cargo reinstall.
+//! Must not: reset, clean, discard local changes, run hooks, or edit user state.
+//! Invariants: dirty changes survive; candidates pass tests/config; Cargo uses the official remote.
 //! Phase: safe self-update workflow.
 
 use std::ffi::OsString;
@@ -56,9 +56,6 @@ pub(super) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
     if options.check {
         return check(&install);
     }
-    if install.dirty {
-        return Err(dirty_error(&install.root));
-    }
     println!("source: {OFFICIAL_REMOTE} branch {SUPPORTED_BRANCH}");
     if !confirm(
         options,
@@ -90,7 +87,16 @@ pub(super) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
         ));
     }
     let backup = maybe_backup(options)?;
-    apply(&install, &remote_sha, &remote_version, backup.as_deref())
+    let stash = stash_changes(&install.root)?;
+    let update = apply(&install, &remote_sha, &remote_version, backup.as_deref());
+    match (update, restore_changes(&install.root, stash.as_deref())) {
+        (result, Ok(())) => result,
+        (Ok(()), Err(error)) => Err(UpdateError::new(EXIT_SOURCE_STATE, error)),
+        (Err(update), Err(restore)) => Err(UpdateError::new(
+            update.exit_code(),
+            format!("{update}; additionally, {restore}"),
+        )),
+    }
 }
 
 fn cargo_install(options: UpdateOptions) -> Result<(), UpdateError> {
@@ -118,8 +124,7 @@ fn check(install: &SourceInstall) -> Result<(), UpdateError> {
     let relation = super::managed::source_relation(&install.current_sha, &remote_sha)?;
     let downgrade = super::managed::source_version_is_downgrade(&remote_version)?;
     let available = remote_sha != install.current_sha;
-    let can_apply =
-        !install.dirty && !downgrade && matches!(relation.as_str(), "ahead" | "identical");
+    let can_apply = !downgrade && matches!(relation.as_str(), "ahead" | "identical");
     println!(
         "available version: {remote_version} (commit {})",
         short_sha(&remote_sha)
@@ -128,7 +133,7 @@ fn check(install: &SourceInstall) -> Result<(), UpdateError> {
     println!("official branch relation to checkout: {relation}");
     println!("can apply: {}", if can_apply { "yes" } else { "no" });
     if install.dirty {
-        println!("reason: tracked or untracked source changes are present");
+        println!("source changes will be stashed and reapplied");
     } else if downgrade {
         println!("reason: the official branch reports an older package version");
     } else if !can_apply {
@@ -239,6 +244,100 @@ fn ensure_checkout_unchanged(install: &SourceInstall) -> Result<(), UpdateError>
             "source checkout changed while the candidate was building; the old binary remains installed",
         ))
     }
+}
+
+fn stash_changes(root: &Path) -> Result<Option<String>, UpdateError> {
+    let status = git_text(root, &["status", "--porcelain=v1", "--untracked-files=all"])
+        .map_err(|error| UpdateError::new(EXIT_SOURCE_STATE, error))?;
+    if status.is_empty() {
+        return Ok(None);
+    }
+    let previous = git_text(root, &["rev-parse", "--verify", "refs/stash"]).ok();
+    let output = git_output(
+        root,
+        &[
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "user.name=Catomic updater",
+            "-c",
+            "user.email=catomic@localhost",
+            "stash",
+            "push",
+            "--include-untracked",
+            "--message",
+            "catomic update",
+        ],
+    )
+    .map_err(|error| UpdateError::new(EXIT_SOURCE_STATE, error))?;
+    if !output.status.success() {
+        return Err(UpdateError::new(
+            EXIT_SOURCE_STATE,
+            format!(
+                "could not stash source changes: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+        ));
+    }
+    let stash = git_text(root, &["rev-parse", "--verify", "refs/stash"]).map_err(|_| {
+        UpdateError::new(
+            EXIT_SOURCE_STATE,
+            "could not stash source changes; no update attempted",
+        )
+    })?;
+    if previous.as_deref() == Some(stash.as_str()) {
+        return Err(UpdateError::new(
+            EXIT_SOURCE_STATE,
+            "Git did not create a source-change stash; no update attempted",
+        ));
+    }
+    let remaining = git_text(root, &["status", "--porcelain=v1", "--untracked-files=all"])
+        .map_err(|error| UpdateError::new(EXIT_SOURCE_STATE, error))?;
+    if !remaining.is_empty() {
+        let message = match restore_changes(root, Some(&stash)) {
+            Ok(()) => "source checkout remained dirty after stashing; original changes were reapplied"
+                .to_string(),
+            Err(error) => format!("source checkout remained dirty after stashing; {error}"),
+        };
+        return Err(UpdateError::new(EXIT_SOURCE_STATE, message));
+    }
+    println!("source changes: stashed as {}", short_sha(&stash));
+    Ok(Some(stash))
+}
+
+fn restore_changes(root: &Path, stash: Option<&str>) -> Result<(), String> {
+    let Some(stash) = stash else {
+        return Ok(());
+    };
+    let latest = git_text(root, &["rev-parse", "--verify", "refs/stash"]);
+    let (action, target) = if latest.as_deref() == Ok(stash) {
+        ("pop", "stash@{0}")
+    } else {
+        ("apply", stash)
+    };
+    let output = git_output(
+        root,
+        &[
+            "-c",
+            "core.hooksPath=/dev/null",
+            "stash",
+            action,
+            "--index",
+            target,
+        ],
+    )?;
+    if !output.status.success() {
+        return Err(format!(
+            "could not reapply source changes; stash {} was retained: {}",
+            short_sha(stash),
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    println!("source changes: reapplied");
+    if action == "apply" {
+        println!("source changes backup retained in stash {}", short_sha(stash));
+    }
+    Ok(())
 }
 
 fn discover() -> Result<Option<SourceInstall>, String> {
@@ -520,16 +619,6 @@ fn is_official_remote(remote: &str) -> bool {
 
 fn valid_sha(sha: &str) -> bool {
     matches!(sha.len(), 40 | 64) && sha.bytes().all(|byte| byte.is_ascii_hexdigit())
-}
-
-fn dirty_error(root: &Path) -> UpdateError {
-    UpdateError::new(
-        EXIT_SOURCE_STATE,
-        format!(
-            "source checkout {} has tracked or untracked changes; commit, stash, or back them up explicitly, then rerun. Nothing was discarded.",
-            root.display()
-        ),
-    )
 }
 
 fn shell_quote(path: &Path) -> String {

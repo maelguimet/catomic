@@ -201,10 +201,10 @@ fn lists_complete_large_model_catalog_in_provider_order() {
 
 #[test]
 fn refuses_model_response_larger_than_the_hard_limit() {
-    let (base_url, server) = fake_server(
+    let (base_url, server) = fake_server_with_declared_length(
         "200 OK",
         "application/json",
-        vec![b'x'; MAX_MODEL_RESPONSE_BYTES + 1],
+        MAX_MODEL_RESPONSE_BYTES + 1,
     );
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -219,10 +219,10 @@ fn refuses_model_response_larger_than_the_hard_limit() {
 
 #[test]
 fn refuses_a_response_larger_than_the_hard_limit() {
-    let (base_url, server) = fake_server(
+    let (base_url, server) = fake_server_with_declared_length(
         "200 OK",
         "application/json",
-        vec![b'x'; MAX_RESPONSE_BYTES + 1],
+        MAX_RESPONSE_BYTES + 1,
     );
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -295,6 +295,23 @@ fn fake_server(
     content_type: &'static str,
     body: Vec<u8>,
 ) -> (String, std::thread::JoinHandle<String>) {
+    fake_server_with_body(status, content_type, body.len(), body)
+}
+
+fn fake_server_with_declared_length(
+    status: &'static str,
+    content_type: &'static str,
+    content_length: usize,
+) -> (String, std::thread::JoinHandle<String>) {
+    fake_server_with_body(status, content_type, content_length, Vec::new())
+}
+
+fn fake_server_with_body(
+    status: &'static str,
+    content_type: &'static str,
+    content_length: usize,
+    body: Vec<u8>,
+) -> (String, std::thread::JoinHandle<String>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let server = std::thread::spawn(move || {
@@ -305,8 +322,7 @@ fn fake_server(
         let request = read_request(&mut stream);
         write!(
             stream,
-            "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-            body.len()
+            "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {content_length}\r\nConnection: close\r\n\r\n"
         )
         .unwrap();
         let _ = stream.write_all(&body);

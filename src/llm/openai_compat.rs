@@ -3,14 +3,14 @@
 //! Must not: load config, collect context, persist clients, retry silently, or mutate files.
 //! Invariants: clients exist only inside confirmed workers; response capture is bounded.
 
+use std::collections::HashSet;
 use std::net::IpAddr;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 const MAX_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
-const MAX_MODEL_RESPONSE_BYTES: usize = 256 * 1024;
-const MAX_DISCOVERED_MODELS: usize = 128;
+const MAX_MODEL_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Clone)]
 pub struct LlmConfig {
@@ -147,16 +147,12 @@ impl OpenAiCompatClient {
         }
         let parsed: ModelListResponse = serde_json::from_slice(&body)
             .map_err(|error| LlmError::InvalidResponse(error.to_string()))?;
-        if parsed.data.len() > MAX_DISCOVERED_MODELS {
-            return Err(LlmError::InvalidResponse(
-                "model list exceeded 128 entries".to_string(),
-            ));
-        }
         let mut models = Vec::new();
+        let mut seen = HashSet::new();
         for entry in parsed.data {
             let model = crate::config::llm::validated_model(entry.id)
                 .map_err(|_| LlmError::InvalidResponse("invalid model identifier".to_string()))?;
-            if !models.contains(&model) {
+            if seen.insert(model.clone()) {
                 models.push(model);
             }
         }

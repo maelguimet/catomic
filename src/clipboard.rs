@@ -8,7 +8,8 @@ use std::cell::Cell;
 use std::env;
 use std::ffi::OsStr;
 use std::io::{self, Write};
-use std::process::{Child, Command, Stdio};
+use std::os::fd::AsRawFd;
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -128,47 +129,79 @@ fn run_helper(program: &OsStr, args: &[&OsStr], text: &str) -> io::Result<()> {
         .stdin
         .take()
         .ok_or_else(|| io::Error::other("clipboard helper stdin was not piped"))?;
+    if let Err(error) = set_nonblocking(&stdin) {
+        terminate_and_reap(&mut child);
+        return Err(error);
+    }
+
+    let bytes = text.as_bytes();
+    let mut written = 0;
+    let mut stdin = if bytes.is_empty() { None } else { Some(stdin) };
     let deadline = Instant::now() + HELPER_TIMEOUT;
 
-    thread::scope(|scope| {
-        let writer = scope.spawn(move || {
-            let mut stdin = stdin;
-            stdin.write_all(text.as_bytes())
-        });
-        let status = loop {
-            match child.try_wait() {
-                Ok(Some(status)) => break status,
-                Ok(None) => {}
+    loop {
+        if let Some(writer) = stdin.as_mut() {
+            match writer.write(&bytes[written..]) {
+                Ok(0) => {
+                    terminate_and_reap(&mut child);
+                    return Err(io::Error::new(
+                        io::ErrorKind::WriteZero,
+                        "clipboard helper stopped accepting input",
+                    ));
+                }
+                Ok(count) => {
+                    written += count;
+                    if written == bytes.len() {
+                        stdin.take();
+                    }
+                }
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
                 Err(error) => {
                     terminate_and_reap(&mut child);
-                    let _ = writer.join();
                     return Err(error);
                 }
             }
-
-            let now = Instant::now();
-            if now >= deadline {
-                terminate_and_reap(&mut child);
-                let _ = writer.join();
-                return Err(io::Error::new(
-                    io::ErrorKind::TimedOut,
-                    "clipboard helper timed out",
-                ));
-            }
-            thread::sleep((deadline - now).min(HELPER_POLL_INTERVAL));
-        };
-
-        writer
-            .join()
-            .map_err(|_| io::Error::other("clipboard helper stdin writer panicked"))??;
-        if status.success() {
-            Ok(())
-        } else {
-            Err(io::Error::other(format!(
-                "clipboard helper exited with {status}"
-            )))
         }
-    })
+
+        match child.try_wait() {
+            Ok(Some(status)) if stdin.is_none() && status.success() => return Ok(()),
+            Ok(Some(status)) => {
+                return Err(io::Error::other(format!(
+                    "clipboard helper exited before accepting the payload: {status}"
+                )));
+            }
+            Ok(None) => {}
+            Err(error) => {
+                terminate_and_reap(&mut child);
+                return Err(error);
+            }
+        }
+
+        let now = Instant::now();
+        if now >= deadline {
+            terminate_and_reap(&mut child);
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "clipboard helper timed out",
+            ));
+        }
+        thread::sleep((deadline - now).min(HELPER_POLL_INTERVAL));
+    }
+}
+
+fn set_nonblocking(stdin: &ChildStdin) -> io::Result<()> {
+    let fd = stdin.as_raw_fd();
+    // SAFETY: fd belongs to the live ChildStdin and fcntl does not retain it.
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+    if flags == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: fd remains valid for this call and the existing flags are preserved.
+    if unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
 }
 
 fn terminate_and_reap(child: &mut Child) {

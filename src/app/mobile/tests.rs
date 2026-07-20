@@ -230,12 +230,7 @@ fn direct_touch_menu_path_preserves_only_a_save_as_confirmation() {
     assert!(app.pending_save_conflict.is_some());
     assert!(overlay::is_menu(&app));
 
-    execute_menu_action(
-        &mut app,
-        &mut out,
-        MenuAction::Dispatch(Action::SaveAs),
-    )
-    .unwrap();
+    execute_menu_action(&mut app, &mut out, MenuAction::Dispatch(Action::SaveAs)).unwrap();
     assert!(app.pending_save_conflict.is_some());
     assert!(super::super::command_prompt::is_save_as_prompt(&app));
 }

@@ -274,9 +274,10 @@ fn pending_save_as_confirmation(app: &super::App) -> bool {
     !app.pending_quit_confirm
         && app.pending_reload.is_none()
         && !super::command_prompt::config_discard_confirmation_pending(app)
-        && app.pending_save_conflict.as_ref().is_some_and(|pending| {
-            app.file.path.as_deref() != Some(pending.path.as_path())
-        })
+        && app
+            .pending_save_conflict
+            .as_ref()
+            .is_some_and(|pending| app.file.path.as_deref() != Some(pending.path.as_path()))
 }
 
 fn prepare_overlay_action(app: &mut super::App) {

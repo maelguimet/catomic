@@ -78,7 +78,10 @@ pub(super) fn is_active(app: &super::App) -> bool {
 
 pub(super) fn is_save_as_prompt(app: &super::App) -> bool {
     matches!(
-        app.command_prompt.active.as_ref().map(|prompt| &prompt.kind),
+        app.command_prompt
+            .active
+            .as_ref()
+            .map(|prompt| &prompt.kind),
         Some(PromptKind::SaveAs)
     )
 }

@@ -147,8 +147,7 @@ fn handle_raw_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -> i
 pub(super) fn prepare_editor_action(app: &mut super::App, action: Option<Action>) {
     let is_quit = matches!(action, Some(Action::Quit));
     let is_save = matches!(action, Some(Action::Save | Action::SaveAs))
-        || (matches!(action, Some(Action::PromptSubmit))
-            && command_prompt::is_save_as_prompt(app));
+        || (matches!(action, Some(Action::PromptSubmit)) && command_prompt::is_save_as_prompt(app));
     let is_reload = matches!(action, Some(Action::Reload));
     let keeps_confirmation = (is_quit
         && (app.pending_quit_confirm || command_prompt::config_discard_confirmation_pending(app)))

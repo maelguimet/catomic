@@ -245,6 +245,27 @@ fn persistent_path_selection_adds_reverse_video_only_to_the_selected_text() {
 }
 
 #[test]
+fn persistent_path_inherits_normal_status_colors() {
+    let normal = StatusStyle::colors(Color::White, Color::DarkBlue, false);
+    let path = persistent_path_style(
+        ThemeStyle {
+            underlined: Some(true),
+            ..ThemeStyle::default()
+        },
+        false,
+        normal,
+    );
+
+    assert_eq!(
+        path,
+        StatusStyle {
+            underlined: true,
+            ..normal
+        }
+    );
+}
+
+#[test]
 fn legacy_generated_filename_style_drops_the_old_bold_emphasis() {
     let legacy = ThemeStyle {
         fg: Some(ThemeColor::Default),
@@ -252,10 +273,14 @@ fn legacy_generated_filename_style_drops_the_old_bold_emphasis() {
         underlined: Some(true),
         ..ThemeStyle::default()
     };
+    let normal = StatusStyle::colors(Color::White, Color::DarkBlue, false);
 
     assert_eq!(
-        persistent_path_style(legacy, false, StatusStyle::underlined_default()),
-        StatusStyle::underlined_default()
+        persistent_path_style(legacy, false, normal),
+        StatusStyle {
+            underlined: true,
+            ..normal
+        }
     );
 }
 

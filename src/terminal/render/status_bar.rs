@@ -141,13 +141,14 @@ impl StatusTheme {
             return Self::monochrome();
         }
         let fallback = Self::default();
+        let normal = themed_status_style(
+            theme.status,
+            theme.truecolor,
+            fallback.style(StatusRole::Normal),
+        );
         Self {
-            normal: themed_status_style(
-                theme.status,
-                theme.truecolor,
-                fallback.style(StatusRole::Normal),
-            ),
-            path: persistent_path_style(theme.status_filename, theme.truecolor, fallback.path),
+            normal,
+            path: persistent_path_style(theme.status_filename, theme.truecolor, normal),
             info: themed_status_style(
                 theme.message,
                 theme.truecolor,
@@ -246,18 +247,41 @@ fn themed_status_style(style: ThemeStyle, truecolor: bool, fallback: StatusStyle
     }
 }
 
-fn persistent_path_style(style: ThemeStyle, truecolor: bool, fallback: StatusStyle) -> StatusStyle {
+fn persistent_path_style(
+    mut style: ThemeStyle,
+    truecolor: bool,
+    normal: StatusStyle,
+) -> StatusStyle {
     let legacy_generated = ThemeStyle {
         fg: Some(ThemeColor::Default),
         bold: Some(true),
         underlined: Some(true),
         ..ThemeStyle::default()
     };
-    let mut resolved = themed_status_style(style, truecolor, fallback);
     if style == legacy_generated {
-        resolved.bold = false;
+        style = ThemeStyle {
+            underlined: Some(true),
+            ..ThemeStyle::default()
+        };
     }
-    resolved
+    themed_status_overlay(style, truecolor, normal)
+}
+
+fn themed_status_overlay(style: ThemeStyle, truecolor: bool, base: StatusStyle) -> StatusStyle {
+    StatusStyle {
+        foreground: style
+            .fg
+            .map(|color| terminal_color(color, truecolor))
+            .or(base.foreground),
+        background: style
+            .bg
+            .map(|color| terminal_color(color, truecolor))
+            .or(base.background),
+        bold: style.bold.unwrap_or(base.bold),
+        dim: style.dim.unwrap_or(base.dim),
+        underlined: style.underlined.unwrap_or(base.underlined),
+        reversed: style.reversed.unwrap_or(base.reversed),
+    }
 }
 
 fn terminal_color(color: ThemeColor, truecolor: bool) -> Color {

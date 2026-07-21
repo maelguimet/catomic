@@ -1289,7 +1289,7 @@ cursor = "default"
 selection = { fg = "black", bg = "cyan" }
 line_number = "bright-black"
 status = "default"
-status_filename = { fg = "default", underline = true }
+status_filename = { underline = true }
 message = { fg = "black", bg = "white" }
 status_warning = { fg = "black", bg = "yellow" }
 error = { fg = "bright-white", bg = "red" }

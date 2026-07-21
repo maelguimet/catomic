@@ -17,7 +17,6 @@ fn defaults_and_named_schemes_are_accessible() {
         default.status_filename,
         Style {
             fg: Some(Color::Default),
-            bold: Some(true),
             underlined: Some(true),
             ..Style::default()
         }

@@ -7,6 +7,7 @@ use crossterm::style::Color;
 
 use super::*;
 use crate::buffer::SimpleBuffer;
+use crate::config::theme::{Color as ThemeColor, Style as ThemeStyle};
 use crate::editor::syntax::SyntaxKind;
 use crate::terminal::render::{render_buffer, RenderOptions, RenderViewport};
 
@@ -64,7 +65,7 @@ fn monochrome_messages_keep_a_boundary_while_normal_status_uses_default_contrast
             StatusBarPresentation {
                 role,
                 theme: StatusTheme::monochrome(),
-                filename: None,
+                path: None,
                 selection: None,
             },
         )
@@ -100,7 +101,7 @@ fn default_semantic_roles_use_distinct_basic_color_pairs() {
             StatusBarPresentation {
                 role,
                 theme: StatusTheme::default(),
-                filename: None,
+                path: None,
                 selection: None,
             },
         )
@@ -127,7 +128,7 @@ fn custom_semantic_style_is_used_without_changing_bar_logic() {
         StatusBarPresentation {
             role: StatusRole::Error,
             theme,
-            filename: None,
+            path: None,
             selection: None,
         },
     )
@@ -149,7 +150,7 @@ fn narrow_unicode_status_is_cell_clipped_and_terminal_safe() {
         StatusBarPresentation {
             role: StatusRole::Warning,
             theme: StatusTheme::monochrome(),
-            filename: None,
+            path: None,
             selection: None,
         },
     )
@@ -193,7 +194,7 @@ fn normal_status_clears_the_row_without_painting_a_full_width_background() {
 }
 
 #[test]
-fn persistent_path_uses_terminal_contrast_emphasized_filename_and_selection_reverse_video() {
+fn persistent_path_underlines_the_complete_path_without_styling_the_cat() {
     let mut out = Vec::new();
     let text = "=^..^=  /work/note.txt";
     write_status_bar(
@@ -204,17 +205,58 @@ fn persistent_path_uses_terminal_contrast_emphasized_filename_and_selection_reve
         StatusBarPresentation {
             role: StatusRole::Normal,
             theme: StatusTheme::default(),
-            filename: Some((14, 22)),
-            selection: Some((8, 22)),
+            path: Some((8, 22)),
+            selection: None,
         },
     )
     .unwrap();
     let rendered = String::from_utf8(out).unwrap();
 
     assert!(rendered.contains("\x1b[39m=^..^=  "));
-    assert!(rendered.contains("\x1b[39m\x1b[7m/work/"));
-    assert!(rendered.contains("\x1b[39m\x1b[1m\x1b[4m\x1b[7mnote.txt"));
-    assert!(!rendered.contains("note.txt                  "));
+    assert!(rendered.contains("\x1b[39m\x1b[4m/work/note.txt"));
+    assert!(!rendered.contains("\x1b[4m=^..^="));
+    assert!(!rendered.contains("\x1b[1m"));
+    assert!(!rendered.contains("\x1b[7m"));
+}
+
+#[test]
+fn persistent_path_selection_adds_reverse_video_only_to_the_selected_text() {
+    let mut out = Vec::new();
+    let text = "=^..^=  /work/note.txt";
+    write_status_bar(
+        &mut out,
+        2,
+        40,
+        text,
+        StatusBarPresentation {
+            role: StatusRole::Normal,
+            theme: StatusTheme::default(),
+            path: Some((8, 22)),
+            selection: Some((8, 14)),
+        },
+    )
+    .unwrap();
+    let rendered = String::from_utf8(out).unwrap();
+
+    assert!(rendered.contains("\x1b[39m=^..^=  "));
+    assert!(rendered.contains("\x1b[39m\x1b[4m\x1b[7m/work/"));
+    assert!(rendered.contains("\x1b[39m\x1b[4mnote.txt"));
+    assert!(!rendered.contains("\x1b[7m=^..^="));
+}
+
+#[test]
+fn legacy_generated_filename_style_drops_the_old_bold_emphasis() {
+    let legacy = ThemeStyle {
+        fg: Some(ThemeColor::Default),
+        bold: Some(true),
+        underlined: Some(true),
+        ..ThemeStyle::default()
+    };
+
+    assert_eq!(
+        persistent_path_style(legacy, false, StatusStyle::underlined_default()),
+        StatusStyle::underlined_default()
+    );
 }
 
 #[test]

@@ -1,0 +1,68 @@
+name: Finalize footer overlay
+
+on:
+  push:
+    branches:
+      - agent/footer-uniform-path-215
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/footer-uniform-path-215
+          fetch-depth: 0
+          show-progress: false
+
+      - name: Apply fix
+        shell: bash
+        run: |
+          if [ "$(git log -1 --pretty=%s)" = "Record footer overlay verification failure" ]; then
+            echo "Failure already captured."
+            exit 0
+          fi
+          python3 .github/agent-footer-overlay.py
+
+      - name: Verify
+        shell: bash
+        run: |
+          set +e
+          (
+            set -e
+            cargo fmt --all
+            cargo fmt --all -- --check
+            cargo clippy --all-targets --locked -- -D warnings
+            cargo test --all-targets --locked
+            python3 scripts/check_markdown_links.py
+            git diff --check
+          ) > /tmp/footer-overlay-verify.log 2>&1
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            cp /tmp/footer-overlay-verify.log agent-footer-overlay-error.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add agent-footer-overlay-error.txt
+            git commit -m "Record footer overlay verification failure"
+            git push origin HEAD:agent/footer-uniform-path-215
+            tail -n 250 /tmp/footer-overlay-verify.log
+            exit "$status"
+          fi
+
+      - name: Commit final fix
+        shell: bash
+        run: |
+          rm -f .ci-footer-overlay-refresh
+          rm -f agent-footer-full-test-error.txt agent-footer-overlay-error.txt
+          rm -f .github/agent-footer-overlay.py
+          rm -f .github/workflows/agent-footer-full-test.yml
+          rm -f .github/workflows/agent-footer-overlay-push.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Preserve custom status styling on the underlined path"
+          git push origin HEAD:agent/footer-uniform-path-215

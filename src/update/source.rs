@@ -363,10 +363,7 @@ fn discover() -> Result<Option<SourceInstall>, String> {
     discover_path(source)
 }
 
-fn retained_source_path<'a>(
-    explicit: Option<&'a str>,
-    manifest_dir: &'a Path,
-) -> Option<&'a Path> {
+fn retained_source_path<'a>(explicit: Option<&'a str>, manifest_dir: &'a Path) -> Option<&'a Path> {
     match explicit {
         Some("") => None,
         Some(path) => Some(Path::new(path)),
@@ -536,9 +533,9 @@ fn cargo_install_root(executable: &Path) -> Result<PathBuf, UpdateError> {
             ),
         ));
     }
-    bin.parent().map(Path::to_path_buf).ok_or_else(|| {
-        UpdateError::new(EXIT_INSTALL, "Cargo bin directory has no install root")
-    })
+    bin.parent()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| UpdateError::new(EXIT_INSTALL, "Cargo bin directory has no install root"))
 }
 
 fn cargo_install_command(revision: &str, install_root: &Path) -> Command {

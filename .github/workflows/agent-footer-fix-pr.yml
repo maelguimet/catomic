@@ -31,6 +31,9 @@ jobs:
           end = next(i for i in range(start, len(workflow)) if workflow[i].strip() == 'PY')
           script = []
           for line in workflow[start:end]:
+              if line == '':
+                  script.append('')
+                  continue
               if not line.startswith('          '):
                   raise SystemExit(f'unexpected embedded-script indentation: {line!r}')
               script.append(line[10:])

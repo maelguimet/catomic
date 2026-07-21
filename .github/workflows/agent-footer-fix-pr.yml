@@ -18,6 +18,7 @@ jobs:
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
+          show-progress: false
 
       - name: Extract and apply focused fix
         shell: bash
@@ -35,7 +36,21 @@ jobs:
               script.append(line[10:])
           Path('/tmp/agent_footer_fix.py').write_text('\n'.join(script) + '\n')
           PY
-          python3 /tmp/agent_footer_fix.py
+          set +e
+          python3 /tmp/agent_footer_fix.py > /tmp/agent-footer-fix.log 2>&1
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            cp /tmp/agent-footer-fix.log agent-footer-fix-error.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add agent-footer-fix-error.txt
+            git commit -m "Record footer fix workflow failure" || true
+            git push origin HEAD:${{ github.head_ref }} || true
+            cat /tmp/agent-footer-fix.log
+            exit "$status"
+          fi
+          rm -f agent-footer-fix-error.txt
           rm .github/workflows/agent-footer-fix-pr.yml
 
       - name: Verify focused change
@@ -47,7 +62,7 @@ jobs:
           cargo test --locked terminal::render::status_bar
           python3 scripts/check_markdown_links.py
           git diff --check
-          test -z "$(git status --short | grep -vE '^( M| D) (README.md|docs/user-guide.md|src/app/render.rs|src/app/status.rs|src/config/config_template.toml|src/config/theme.rs|src/config/theme/tests.rs|src/terminal/render.rs|src/terminal/render/status_bar.rs|src/terminal/render/status_bar/tests.rs|.github/workflows/agent-footer-fix.yml|.github/workflows/agent-footer-fix-pr.yml)$')"
+          test -z "$(git status --short | grep -vE '^( M| D|\?\?) (README.md|docs/user-guide.md|src/app/render.rs|src/app/status.rs|src/config/config_template.toml|src/config/theme.rs|src/config/theme/tests.rs|src/terminal/render.rs|src/terminal/render/status_bar.rs|src/terminal/render/status_bar/tests.rs|.github/workflows/agent-footer-fix.yml|.github/workflows/agent-footer-fix-pr.yml|agent-footer-fix-error.txt)$')"
 
       - name: Commit fix
         shell: bash

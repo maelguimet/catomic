@@ -1,0 +1,59 @@
+name: Run footer path fix
+
+on:
+  pull_request:
+    branches:
+      - master
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    if: github.head_ref == 'agent/footer-uniform-path-215'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Extract and apply focused fix
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/agent-footer-fix.yml').read_text().splitlines()
+          start = next(i for i, line in enumerate(workflow) if line.strip() == "python3 - <<'PY'") + 1
+          end = next(i for i in range(start, len(workflow)) if workflow[i].strip() == 'PY')
+          script = []
+          for line in workflow[start:end]:
+              if not line.startswith('          '):
+                  raise SystemExit(f'unexpected embedded-script indentation: {line!r}')
+              script.append(line[10:])
+          Path('/tmp/agent_footer_fix.py').write_text('\n'.join(script) + '\n')
+          PY
+          python3 /tmp/agent_footer_fix.py
+          rm .github/workflows/agent-footer-fix-pr.yml
+
+      - name: Verify focused change
+        shell: bash
+        run: |
+          cargo fmt --all -- --check
+          cargo test --locked app::status
+          cargo test --locked config::theme
+          cargo test --locked terminal::render::status_bar
+          python3 scripts/check_markdown_links.py
+          git diff --check
+          test -z "$(git status --short | grep -vE '^( M| D) (README.md|docs/user-guide.md|src/app/render.rs|src/app/status.rs|src/config/config_template.toml|src/config/theme.rs|src/config/theme/tests.rs|src/terminal/render.rs|src/terminal/render/status_bar.rs|src/terminal/render/status_bar/tests.rs|.github/workflows/agent-footer-fix.yml|.github/workflows/agent-footer-fix-pr.yml)$')"
+
+      - name: Commit fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Underline the footer path without highlighting the cat"
+          git push origin HEAD:${{ github.head_ref }}

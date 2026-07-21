@@ -1,26 +1,319 @@
-Diff in /home/runner/work/catomic/catomic/src/terminal/render/status_bar.rs:147:
-                 theme.truecolor,
-                 fallback.style(StatusRole::Normal),
-             ),
--            path: persistent_path_style(
--                theme.status_filename,
--                theme.truecolor,
--                fallback.path,
--            ),
-+            path: persistent_path_style(theme.status_filename, theme.truecolor, fallback.path),
-             info: themed_status_style(
-                 theme.message,
-                 theme.truecolor,
-Diff in /home/runner/work/catomic/catomic/src/terminal/render/status_bar.rs:250:
-     }
- }
- 
--fn persistent_path_style(
--    style: ThemeStyle,
--    truecolor: bool,
--    fallback: StatusStyle,
--) -> StatusStyle {
-+fn persistent_path_style(style: ThemeStyle, truecolor: bool, fallback: StatusStyle) -> StatusStyle {
-     let legacy_generated = ThemeStyle {
-         fg: Some(ThemeColor::Default),
-         bold: Some(true),
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded atomic-waker v1.1.2
+  Downloaded cfg_aliases v0.1.1
+  Downloaded cpufeatures v0.3.0
+  Downloaded cfg-if v1.0.4
+  Downloaded cfg_aliases v0.2.1
+  Downloaded filedescriptor v0.8.3
+  Downloaded anyhow v1.0.103
+  Downloaded stable_deref_trait v1.2.1
+  Downloaded subtle v2.6.1
+  Downloaded slab v0.4.12
+  Downloaded chacha20 v0.10.1
+  Downloaded smallvec v1.15.2
+  Downloaded socket2 v0.6.5
+  Downloaded bytes v1.12.1
+  Downloaded itoa v1.0.18
+  Downloaded notify v8.2.0
+  Downloaded bitflags v2.13.0
+  Downloaded thiserror-impl v1.0.69
+  Downloaded toml_parser v1.1.2+spec-1.1.0
+  Downloaded percent-encoding v2.3.2
+  Downloaded base64 v0.22.1
+  Downloaded cc v1.2.67
+  Downloaded icu_normalizer v2.2.0
+  Downloaded form_urlencoded v1.2.2
+  Downloaded lru-slab v0.1.2
+  Downloaded potential_utf v0.1.5
+  Downloaded signal-hook-mio v0.2.5
+  Downloaded unicode-ident v1.0.24
+  Downloaded icu_locale_core v2.2.0
+  Downloaded phf_shared v0.13.1
+  Downloaded rustc-hash v2.1.3
+  Downloaded scopeguard v1.2.0
+  Downloaded thiserror-impl v2.0.18
+  Downloaded rand_pcg v0.10.2
+  Downloaded serde_spanned v1.1.1
+  Downloaded siphasher v1.0.3
+  Downloaded idna_adapter v1.2.2
+  Downloaded shell-words v1.1.1
+  Downloaded try-lock v0.2.5
+  Downloaded zerofrom v0.1.8
+  Downloaded downcast-rs v1.2.1
+  Downloaded inotify-sys v0.1.5
+  Downloaded serde_urlencoded v0.7.1
+  Downloaded equivalent v1.0.2
+  Downloaded futures-core v0.3.32
+  Downloaded same-file v1.0.6
+  Downloaded futures-task v0.3.32
+  Downloaded http-body v1.1.0
+  Downloaded quinn-udp v0.5.15
+  Downloaded unicase v2.9.0
+  Downloaded url v2.5.8
+  Downloaded zerotrie v0.2.4
+  Downloaded inotify v0.11.2
+  Downloaded shlex v2.0.1
+  Downloaded signal-hook-registry v1.4.8
+  Downloaded displaydoc v0.2.6
+  Downloaded lock_api v0.4.14
+  Downloaded pin-project-lite v0.2.17
+  Downloaded notify-types v2.1.0
+  Downloaded errno v0.3.14
+  Downloaded portable-pty v0.9.0
+  Downloaded http-body-util v0.1.4
+  Downloaded hyper-rustls v0.27.9
+  Downloaded phf v0.13.1
+  Downloaded parking_lot_core v0.9.12
+  Downloaded serial2 v0.2.37
+  Downloaded tinyvec_macros v0.1.1
+  Downloaded yoke-derive v0.8.2
+  Downloaded proc-macro2 v1.0.106
+  Downloaded rand_core v0.10.1
+  Downloaded serde_derive v1.0.228
+  Downloaded once_cell v1.21.4
+  Downloaded parking_lot v0.12.5
+  Downloaded quote v1.0.46
+  Downloaded rustls-pki-types v1.15.0
+  Downloaded tower-service v0.3.3
+  Downloaded utf8_iter v1.0.4
+  Downloaded crossterm v0.28.1
+  Downloaded find-msvc-tools v0.1.9
+  Downloaded getrandom v0.2.17
+  Downloaded getrandom v0.4.3
+  Downloaded litemap v0.8.2
+  Downloaded log v0.4.33
+  Downloaded futures-channel v0.3.32
+  Downloaded ipnet v2.12.0
+  Downloaded signal-hook v0.3.18
+  Downloaded serde_core v1.0.228
+  Downloaded indexmap v2.14.0
+  Downloaded icu_properties v2.2.0
+  Downloaded ryu v1.0.23
+  Downloaded sync_wrapper v1.0.2
+  Downloaded tokio-macros v2.7.0
+  Downloaded want v0.3.1
+  Downloaded zerofrom-derive v0.1.7
+  Downloaded httparse v1.10.1
+  Downloaded icu_normalizer_data v2.2.0
+  Downloaded icu_provider v2.2.0
+  Downloaded memchr v2.8.3
+  Downloaded quinn v0.11.11
+  Downloaded icu_collections v2.2.0
+  Downloaded mio v1.2.1
+  Downloaded rustls-webpki v0.103.13
+  Downloaded toml_datetime v1.1.1+spec-1.1.0
+  Downloaded tower-layer v0.3.3
+  Downloaded serde v1.0.228
+  Downloaded futures-util v0.3.32
+  Downloaded http v1.4.2
+  Downloaded hyper-util v0.1.20
+  Downloaded idna v1.1.0
+  Downloaded rand v0.10.2
+  Downloaded reqwest v0.12.28
+  Downloaded emojis v0.9.0
+  Downloaded hyper v1.10.1
+  Downloaded pulldown-cmark v0.13.4
+  Downloaded serde_json v1.0.150
+  Downloaded hashbrown v0.17.1
+  Downloaded icu_properties_data v2.2.0
+  Downloaded tinystr v0.8.3
+  Downloaded toml_writer v1.1.2+spec-1.1.0
+  Downloaded zeroize v1.9.0
+  Downloaded zerovec-derive v0.11.3
+  Downloaded quinn-proto v0.11.16
+  Downloaded nix v0.28.0
+  Downloaded thiserror v2.0.18
+  Downloaded untrusted v0.9.0
+  Downloaded walkdir v2.5.0
+  Downloaded synstructure v0.13.2
+  Downloaded writeable v0.6.3
+  Downloaded rustls v0.23.42
+  Downloaded rustix v0.38.44
+  Downloaded thiserror v1.0.69
+  Downloaded tokio-rustls v0.26.4
+  Downloaded zmij v1.0.23
+  Downloaded yoke v0.8.3
+  Downloaded tracing-core v0.1.36
+  Downloaded webpki-roots v1.0.8
+  Downloaded tinyvec v1.12.0
+  Downloaded toml v1.1.3+spec-1.1.0
+  Downloaded libc v0.2.186
+  Downloaded unicode-segmentation v1.13.3
+  Downloaded tower v0.5.3
+  Downloaded ring v0.17.14
+  Downloaded tower-http v0.6.11
+  Downloaded zerovec v0.11.6
+  Downloaded linux-raw-sys v0.4.15
+  Downloaded winnow v1.0.4
+  Downloaded unicode-width v0.2.2
+  Downloaded syn v2.0.118
+  Downloaded tracing v0.1.44
+  Downloaded tokio v1.52.3
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.46
+   Compiling unicode-ident v1.0.24
+   Compiling libc v0.2.186
+   Compiling stable_deref_trait v1.2.1
+   Compiling cfg-if v1.0.4
+   Compiling log v0.4.33
+   Compiling smallvec v1.15.2
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.9
+   Compiling bytes v1.12.1
+   Compiling pin-project-lite v0.2.17
+   Compiling cc v1.2.67
+   Compiling itoa v1.0.18
+   Compiling bitflags v2.13.0
+   Compiling futures-core v0.3.32
+   Compiling serde_core v1.0.228
+   Compiling litemap v0.8.2
+   Compiling writeable v0.6.3
+   Compiling syn v2.0.118
+   Compiling icu_normalizer_data v2.2.0
+   Compiling ring v0.17.14
+   Compiling icu_properties_data v2.2.0
+   Compiling utf8_iter v1.0.4
+   Compiling mio v1.2.1
+   Compiling socket2 v0.6.5
+   Compiling http v1.4.2
+   Compiling once_cell v1.21.4
+   Compiling zeroize v1.9.0
+   Compiling percent-encoding v2.3.2
+   Compiling rustls-pki-types v1.15.0
+   Compiling http-body v1.1.0
+   Compiling getrandom v0.2.17
+   Compiling synstructure v0.13.2
+   Compiling httparse v1.10.1
+   Compiling untrusted v0.9.0
+   Compiling slab v0.4.12
+   Compiling futures-task v0.3.32
+   Compiling tower-service v0.3.3
+   Compiling futures-util v0.3.32
+   Compiling try-lock v0.2.5
+   Compiling rustls v0.23.42
+   Compiling want v0.3.1
+   Compiling zerofrom-derive v0.1.7
+   Compiling yoke-derive v0.8.2
+   Compiling zerofrom v0.1.8
+   Compiling zerovec-derive v0.11.3
+   Compiling yoke v0.8.3
+   Compiling displaydoc v0.2.6
+   Compiling tokio-macros v2.7.0
+   Compiling tokio v1.52.3
+   Compiling zerotrie v0.2.4
+   Compiling zerovec v0.11.6
+   Compiling form_urlencoded v1.2.2
+   Compiling tracing-core v0.1.36
+   Compiling tinystr v0.8.3
+   Compiling icu_locale_core v2.2.0
+   Compiling potential_utf v0.1.5
+   Compiling icu_collections v2.2.0
+   Compiling icu_provider v2.2.0
+   Compiling errno v0.3.14
+   Compiling icu_properties v2.2.0
+   Compiling icu_normalizer v2.2.0
+   Compiling futures-channel v0.3.32
+   Compiling idna_adapter v1.2.2
+   Compiling subtle v2.6.1
+   Compiling atomic-waker v1.1.2
+   Compiling signal-hook v0.3.18
+   Compiling serde v1.0.228
+   Compiling parking_lot_core v0.9.12
+   Compiling zmij v1.0.23
+   Compiling idna v1.1.0
+   Compiling signal-hook-registry v1.4.8
+   Compiling tracing v0.1.44
+   Compiling hyper v1.10.1
+   Compiling serde_derive v1.0.228
+   Compiling sync_wrapper v1.0.2
+   Compiling rustix v0.38.44
+   Compiling base64 v0.22.1
+   Compiling scopeguard v1.2.0
+   Compiling ipnet v2.12.0
+   Compiling tower-layer v0.3.3
+   Compiling memchr v2.8.3
+   Compiling siphasher v1.0.3
+   Compiling rustls-webpki v0.103.13
+   Compiling serde_json v1.0.150
+   Compiling thiserror v1.0.69
+   Compiling cfg_aliases v0.1.1
+   Compiling nix v0.28.0
+   Compiling phf_shared v0.13.1
+   Compiling tower v0.5.3
+   Compiling hyper-util v0.1.20
+   Compiling lock_api v0.4.14
+   Compiling url v2.5.8
+   Compiling thiserror-impl v1.0.69
+   Compiling webpki-roots v1.0.8
+   Compiling inotify-sys v0.1.5
+   Compiling pulldown-cmark v0.13.4
+   Compiling same-file v1.0.6
+   Compiling anyhow v1.0.103
+   Compiling linux-raw-sys v0.4.15
+   Compiling winnow v1.0.4
+   Compiling ryu v1.0.23
+   Compiling serde_urlencoded v0.7.1
+   Compiling toml_parser v1.1.2+spec-1.1.0
+   Compiling walkdir v2.5.0
+   Compiling tokio-rustls v0.26.4
+   Compiling hyper-rustls v0.27.9
+   Compiling inotify v0.11.2
+   Compiling parking_lot v0.12.5
+   Compiling tower-http v0.6.11
+   Compiling signal-hook-mio v0.2.5
+   Compiling phf v0.13.1
+   Compiling http-body-util v0.1.4
+   Compiling toml_datetime v1.1.1+spec-1.1.0
+   Compiling serde_spanned v1.1.1
+   Compiling notify-types v2.1.0
+   Compiling toml_writer v1.1.2+spec-1.1.0
+   Compiling unicase v2.9.0
+   Compiling catomic v0.1.0-beta.1 (/home/runner/work/catomic/catomic)
+   Compiling notify v8.2.0
+   Compiling toml v1.1.3+spec-1.1.0
+   Compiling reqwest v0.12.28
+   Compiling emojis v0.9.0
+   Compiling crossterm v0.28.1
+   Compiling filedescriptor v0.8.3
+   Compiling serial2 v0.2.37
+   Compiling unicode-segmentation v1.13.3
+   Compiling shell-words v1.1.1
+   Compiling downcast-rs v1.2.1
+   Compiling unicode-width v0.2.2
+   Compiling portable-pty v0.9.0
+error[E0560]: struct `status_bar::StatusBarPresentation` has no field named `filename`
+  --> src/terminal/render/status_bar/tests.rs:68:17
+   |
+68 |                 filename: None,
+   |                 ^^^^^^^^ `status_bar::StatusBarPresentation` does not have this field
+   |
+   = note: available fields are: `path`
+
+error[E0560]: struct `status_bar::StatusBarPresentation` has no field named `filename`
+   --> src/terminal/render/status_bar/tests.rs:104:17
+    |
+104 |                 filename: None,
+    |                 ^^^^^^^^ `status_bar::StatusBarPresentation` does not have this field
+    |
+    = note: available fields are: `path`
+
+error[E0560]: struct `status_bar::StatusBarPresentation` has no field named `filename`
+   --> src/terminal/render/status_bar/tests.rs:131:13
+    |
+131 |             filename: None,
+    |             ^^^^^^^^ `status_bar::StatusBarPresentation` does not have this field
+    |
+    = note: available fields are: `path`
+
+error[E0560]: struct `status_bar::StatusBarPresentation` has no field named `filename`
+   --> src/terminal/render/status_bar/tests.rs:153:13
+    |
+153 |             filename: None,
+    |             ^^^^^^^^ `status_bar::StatusBarPresentation` does not have this field
+    |
+    = note: available fields are: `path`
+
+For more information about this error, try `rustc --explain E0560`.
+error: could not compile `catomic` (bin "catomic" test) due to 4 previous errors
+warning: build failed, waiting for other jobs to finish...

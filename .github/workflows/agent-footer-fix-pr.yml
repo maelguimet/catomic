@@ -34,7 +34,17 @@ jobs:
           first = next(line for line in source if line.strip())
           indent = len(first) - len(first.lstrip())
           prefix = ' ' * indent
-          script = [line[indent:] if line.startswith(prefix) else line for line in source]
+          script = []
+          in_triple = False
+          for line in source:
+              if in_triple:
+                  script.append(line)
+              else:
+                  script.append(line[indent:] if line.startswith(prefix) else line)
+              if line.count('"""') % 2 == 1:
+                  in_triple = not in_triple
+          if in_triple:
+              raise SystemExit('unterminated triple-quoted string in embedded fix')
           script_text = '\n'.join(script) + '\n'
           old = 'path = "src/terminal/render.rs"\ntext = read(path)\nif text.count("status_filename") != 2:'
           new = old.replace('!= 2:', '!= 3:')

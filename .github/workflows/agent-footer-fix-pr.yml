@@ -33,7 +33,8 @@ jobs:
           source = workflow[start:end]
           first = next(line for line in source if line.strip())
           indent = len(first) - len(first.lstrip())
-          script = [line[indent:] if len(line) >= indent else line for line in source]
+          prefix = ' ' * indent
+          script = [line[indent:] if line.startswith(prefix) else line for line in source]
           script_text = '\n'.join(script) + '\n'
           old = 'path = "src/terminal/render.rs"\ntext = read(path)\nif text.count("status_filename") != 2:'
           new = old.replace('!= 2:', '!= 3:')

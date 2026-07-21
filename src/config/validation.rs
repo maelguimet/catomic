@@ -1,7 +1,7 @@
-//! Purpose: reject configuration keys that no current schema consumes.
+//! Purpose: reject unknown configuration keys while accepting narrow retired compatibility input.
 //! Owns: structural key validation and full TOML paths for unknown entries.
 //! Must not: apply settings, construct services, read credentials, or mutate files.
-//! Invariants: dynamic table names remain open; fields inside each entry stay explicit.
+//! Invariants: dynamic table names remain open; active and retired fields stay explicit.
 
 use std::io;
 

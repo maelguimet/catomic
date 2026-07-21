@@ -34,7 +34,15 @@ jobs:
           first = next(line for line in source if line.strip())
           indent = len(first) - len(first.lstrip())
           script = [line[indent:] if len(line) >= indent else line for line in source]
-          Path('/tmp/agent_footer_fix.py').write_text('\n'.join(script) + '\n')
+          script_text = '\n'.join(script) + '\n'
+          old = '''path = "src/terminal/render.rs"
+text = read(path)
+if text.count("status_filename") != 2:'''
+          new = old.replace('!= 2:', '!= 3:')
+          if script_text.count(old) != 1:
+              raise SystemExit('could not patch terminal render status span count')
+          script_text = script_text.replace(old, new, 1)
+          Path('/tmp/agent_footer_fix.py').write_text(script_text)
           PY
           extract_status=$?
           if [ "$extract_status" -ne 0 ]; then

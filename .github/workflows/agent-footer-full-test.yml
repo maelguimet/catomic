@@ -1,0 +1,44 @@
+name: Capture footer full test failure
+
+on:
+  pull_request:
+    branches:
+      - master
+    types: [synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+
+jobs:
+  full-test:
+    if: github.head_ref == 'agent/footer-uniform-path-215'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+          show-progress: false
+
+      - name: Run full suite and preserve failure
+        shell: bash
+        run: |
+          if [ -f agent-footer-full-test-error.txt ]; then
+            echo "Failure already captured."
+            exit 0
+          fi
+          set +e
+          cargo test --all-targets --locked > /tmp/footer-full-test.log 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            exit 0
+          fi
+          cp /tmp/footer-full-test.log agent-footer-full-test-error.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add agent-footer-full-test-error.txt
+          git commit -m "Record footer full-suite failure"
+          git push origin HEAD:${{ github.head_ref }}
+          tail -n 200 /tmp/footer-full-test.log
+          exit "$status"

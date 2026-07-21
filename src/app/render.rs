@@ -95,7 +95,7 @@ fn render(app: &App, out: &mut dyn Write) -> io::Result<()> {
         return render_frame(app, out, &message, options);
     }
     let status = status_line(app);
-    options.status_filename = Some(status.filename);
+    options.status_path = Some(status.path);
     options.status_selection = app.selection.status_range(&status.text);
     render_frame(app, out, &status.text, options)
 }
@@ -190,7 +190,7 @@ fn render_options<'a>(
         soft_wrap: view::soft_wrap_active(app),
         status_role: term::render::StatusRole::Normal,
         status_theme: app.status_theme,
-        status_filename: None,
+        status_path: None,
         status_selection: None,
         emoji_picker: emoji_picker.map(|picker| term::render::EmojiPicker {
             rows: &picker.rows,

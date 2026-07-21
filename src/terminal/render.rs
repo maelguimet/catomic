@@ -105,7 +105,7 @@ pub(crate) struct RenderOptions<'a> {
     pub(crate) soft_wrap: bool,
     pub(crate) status_role: StatusRole,
     pub(crate) status_theme: StatusTheme,
-    pub(crate) status_filename: Option<(usize, usize)>,
+    pub(crate) status_path: Option<(usize, usize)>,
     pub(crate) status_selection: Option<(usize, usize)>,
     pub(crate) emoji_picker: Option<EmojiPicker<'a>>,
     pub(crate) window_title: Option<&'a str>,
@@ -131,7 +131,7 @@ impl Default for RenderOptions<'_> {
             soft_wrap: false,
             status_role: StatusRole::Normal,
             status_theme: StatusTheme::default(),
-            status_filename: None,
+            status_path: None,
             status_selection: None,
             emoji_picker: None,
             window_title: None,
@@ -209,7 +209,7 @@ pub(super) fn write_bottom_rows(
             status_bar::StatusBarPresentation {
                 role: options.status_role,
                 theme: options.status_theme,
-                filename: options.status_filename,
+                path: options.status_path,
                 selection: options.status_selection,
             },
         )?;
@@ -223,7 +223,7 @@ pub(super) fn write_bottom_rows(
             status_bar::StatusBarPresentation {
                 role: StatusRole::Info,
                 theme: options.status_theme,
-                filename: None,
+                path: None,
                 selection: None,
             },
         )?;

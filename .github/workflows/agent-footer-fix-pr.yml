@@ -23,23 +23,31 @@ jobs:
       - name: Extract and apply focused fix
         shell: bash
         run: |
-          python3 - <<'PY'
+          set +e
+          python3 - <<'PY' > /tmp/agent-footer-extract.log 2>&1
           from pathlib import Path
 
           workflow = Path('.github/workflows/agent-footer-fix.yml').read_text().splitlines()
           start = next(i for i, line in enumerate(workflow) if line.strip() == "python3 - <<'PY'") + 1
           end = next(i for i in range(start, len(workflow)) if workflow[i].strip() == 'PY')
-          script = []
-          for line in workflow[start:end]:
-              if line == '':
-                  script.append('')
-                  continue
-              if not line.startswith('          '):
-                  raise SystemExit(f'unexpected embedded-script indentation: {line!r}')
-              script.append(line[10:])
+          source = workflow[start:end]
+          nonblank = [line for line in source if line.strip()]
+          indent = min(len(line) - len(line.lstrip()) for line in nonblank)
+          script = [line[indent:] if line else '' for line in source]
           Path('/tmp/agent_footer_fix.py').write_text('\n'.join(script) + '\n')
           PY
-          set +e
+          extract_status=$?
+          if [ "$extract_status" -ne 0 ]; then
+            cp /tmp/agent-footer-extract.log agent-footer-fix-error.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add agent-footer-fix-error.txt
+            git commit -m "Record footer fix extraction failure" || true
+            git push origin HEAD:${{ github.head_ref }} || true
+            cat /tmp/agent-footer-extract.log
+            exit "$extract_status"
+          fi
+
           python3 /tmp/agent_footer_fix.py > /tmp/agent-footer-fix.log 2>&1
           status=$?
           set -e

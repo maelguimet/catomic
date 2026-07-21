@@ -13,13 +13,7 @@ fn defaults_and_named_schemes_are_accessible() {
         Style::pair(Color::Ansi(0), Color::Ansi(6))
     );
     assert_eq!(default.status, Style::fg(Color::Default));
-    assert_eq!(
-        default.status_filename,
-        Style {
-            underlined: Some(true),
-            ..Style::default()
-        }
-    );
+    assert_eq!(default.status_filename, Style::fg(Color::Ansi(9)));
     assert_eq!(
         default.message,
         Style::pair(Color::Ansi(0), Color::Ansi(14))

@@ -66,6 +66,7 @@ fn monochrome_messages_keep_a_boundary_while_normal_status_uses_default_contrast
                 role,
                 theme: StatusTheme::monochrome(),
                 path: None,
+                filename: None,
                 selection: None,
             },
         )
@@ -102,6 +103,7 @@ fn default_semantic_roles_use_distinct_basic_color_pairs() {
                 role,
                 theme: StatusTheme::default(),
                 path: None,
+                filename: None,
                 selection: None,
             },
         )
@@ -129,6 +131,7 @@ fn custom_semantic_style_is_used_without_changing_bar_logic() {
             role: StatusRole::Error,
             theme,
             path: None,
+            filename: None,
             selection: None,
         },
     )
@@ -151,6 +154,7 @@ fn narrow_unicode_status_is_cell_clipped_and_terminal_safe() {
             role: StatusRole::Warning,
             theme: StatusTheme::monochrome(),
             path: None,
+            filename: None,
             selection: None,
         },
     )
@@ -197,6 +201,9 @@ fn normal_status_clears_the_row_without_painting_a_full_width_background() {
 fn persistent_path_underlines_the_complete_path_without_styling_the_cat() {
     let mut out = Vec::new();
     let text = "=^..^=  /work/note.txt";
+    let theme = StatusTheme::default();
+    assert_eq!(theme.path.background, None);
+    assert_eq!(theme.filename.background, None);
     write_status_bar(
         &mut out,
         2,
@@ -204,8 +211,9 @@ fn persistent_path_underlines_the_complete_path_without_styling_the_cat() {
         text,
         StatusBarPresentation {
             role: StatusRole::Normal,
-            theme: StatusTheme::default(),
+            theme,
             path: Some((8, 22)),
+            filename: Some((14, 22)),
             selection: None,
         },
     )
@@ -213,7 +221,8 @@ fn persistent_path_underlines_the_complete_path_without_styling_the_cat() {
     let rendered = String::from_utf8(out).unwrap();
 
     assert!(rendered.contains("\x1b[39m=^..^=  "));
-    assert!(rendered.contains("\x1b[39m\x1b[4m/work/note.txt"));
+    assert!(rendered.contains("\x1b[39m\x1b[4m/work/"));
+    assert!(rendered.contains("\x1b[91m\x1b[4mnote.txt"));
     assert!(!rendered.contains("\x1b[4m=^..^="));
     assert!(!rendered.contains("\x1b[1m"));
     assert!(!rendered.contains("\x1b[7m"));
@@ -232,6 +241,7 @@ fn persistent_path_selection_adds_reverse_video_only_to_the_selected_text() {
             role: StatusRole::Normal,
             theme: StatusTheme::default(),
             path: Some((8, 22)),
+            filename: Some((14, 22)),
             selection: Some((8, 14)),
         },
     )
@@ -240,20 +250,21 @@ fn persistent_path_selection_adds_reverse_video_only_to_the_selected_text() {
 
     assert!(rendered.contains("\x1b[39m=^..^=  "));
     assert!(rendered.contains("\x1b[39m\x1b[4m\x1b[7m/work/"));
-    assert!(rendered.contains("\x1b[39m\x1b[4mnote.txt"));
+    assert!(rendered.contains("\x1b[91m\x1b[4mnote.txt"));
     assert!(!rendered.contains("\x1b[7m=^..^="));
 }
 
 #[test]
 fn persistent_path_inherits_normal_status_colors() {
     let normal = StatusStyle::colors(Color::White, Color::DarkBlue, false);
-    let path = persistent_path_style(
+    let path = persistent_path_style(normal);
+    let filename = persistent_filename_style(
         ThemeStyle {
-            underlined: Some(true),
+            fg: Some(ThemeColor::Ansi(9)),
             ..ThemeStyle::default()
         },
         false,
-        normal,
+        path,
     );
 
     assert_eq!(
@@ -263,25 +274,52 @@ fn persistent_path_inherits_normal_status_colors() {
             ..normal
         }
     );
+    assert_eq!(
+        filename,
+        StatusStyle {
+            foreground: Some(Color::Red),
+            underlined: true,
+            ..normal
+        }
+    );
 }
 
 #[test]
-fn legacy_generated_filename_style_drops_the_old_bold_emphasis() {
+fn legacy_generated_status_style_uses_terminal_default_contrast() {
+    let legacy = ThemeStyle {
+        fg: Some(ThemeColor::Ansi(8)),
+        dim: Some(true),
+        ..ThemeStyle::default()
+    };
+    let fallback = StatusTheme::default().style(StatusRole::Normal);
+
+    assert_eq!(persistent_normal_style(legacy, false, fallback), fallback);
+}
+
+#[test]
+fn generated_filename_styles_resolve_to_red_without_old_bold_emphasis() {
     let legacy = ThemeStyle {
         fg: Some(ThemeColor::Default),
         bold: Some(true),
         underlined: Some(true),
         ..ThemeStyle::default()
     };
+    let broken = ThemeStyle {
+        underlined: Some(true),
+        ..ThemeStyle::default()
+    };
     let normal = StatusStyle::colors(Color::White, Color::DarkBlue, false);
 
-    assert_eq!(
-        persistent_path_style(legacy, false, normal),
-        StatusStyle {
-            underlined: true,
-            ..normal
-        }
-    );
+    for generated in [legacy, broken] {
+        assert_eq!(
+            persistent_filename_style(generated, false, persistent_path_style(normal)),
+            StatusStyle {
+                foreground: Some(Color::Red),
+                underlined: true,
+                ..normal
+            }
+        );
+    }
 }
 
 #[test]

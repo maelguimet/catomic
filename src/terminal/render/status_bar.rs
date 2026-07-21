@@ -1,5 +1,5 @@
 //! Purpose: render compact persistent identity or a semantic full-width transient message.
-//! Owns: status roles, path/selection spans, terminal fallback, and row painting.
+//! Owns: status roles, path/filename/selection spans, terminal fallback, and row painting.
 //! Must not: inspect App/buffer state, classify messages, mutate editor state, or read config files.
 //! Invariants: text is terminal-safe and cell-clipped; normal chrome stays quiet; ANSI resets last.
 
@@ -54,17 +54,6 @@ impl StatusStyle {
         }
     }
 
-    const fn underlined_default() -> Self {
-        Self {
-            foreground: Some(Color::Reset),
-            background: None,
-            bold: false,
-            dim: false,
-            underlined: true,
-            reversed: false,
-        }
-    }
-
     const fn monochrome(bold: bool, underlined: bool) -> Self {
         Self {
             foreground: None,
@@ -81,6 +70,7 @@ impl StatusStyle {
 pub(crate) struct StatusTheme {
     normal: StatusStyle,
     path: StatusStyle,
+    filename: StatusStyle,
     info: StatusStyle,
     warning: StatusStyle,
     error: StatusStyle,
@@ -92,14 +82,21 @@ pub(super) struct StatusBarPresentation {
     pub(super) role: StatusRole,
     pub(super) theme: StatusTheme,
     pub(super) path: Option<(usize, usize)>,
+    pub(super) filename: Option<(usize, usize)>,
     pub(super) selection: Option<(usize, usize)>,
 }
 
 impl Default for StatusTheme {
     fn default() -> Self {
+        let normal = StatusStyle::foreground(Color::Reset, false, false);
+        let path = persistent_path_style(normal);
         Self {
-            normal: StatusStyle::foreground(Color::Reset, false, false),
-            path: StatusStyle::underlined_default(),
+            normal,
+            path,
+            filename: StatusStyle {
+                foreground: Some(Color::Red),
+                ..path
+            },
             info: StatusStyle::colors(Color::Black, Color::Cyan, false),
             warning: StatusStyle::colors(Color::Black, Color::Yellow, true),
             error: StatusStyle::colors(Color::White, Color::DarkRed, true),
@@ -127,6 +124,14 @@ impl StatusTheme {
                 underlined: true,
                 reversed: false,
             },
+            filename: StatusStyle {
+                foreground: None,
+                background: None,
+                bold: false,
+                dim: false,
+                underlined: true,
+                reversed: false,
+            },
             info: StatusStyle::monochrome(false, false),
             warning: StatusStyle::monochrome(true, false),
             error: StatusStyle::monochrome(true, true),
@@ -141,14 +146,16 @@ impl StatusTheme {
             return Self::monochrome();
         }
         let fallback = Self::default();
-        let normal = themed_status_style(
+        let normal = persistent_normal_style(
             theme.status,
             theme.truecolor,
             fallback.style(StatusRole::Normal),
         );
+        let path = persistent_path_style(normal);
         Self {
             normal,
-            path: persistent_path_style(theme.status_filename, theme.truecolor, normal),
+            path,
+            filename: persistent_filename_style(theme.status_filename, theme.truecolor, path),
             info: themed_status_style(
                 theme.message,
                 theme.truecolor,
@@ -218,6 +225,10 @@ impl StatusTheme {
     const fn path_style(self) -> StatusStyle {
         self.path
     }
+
+    const fn filename_style(self) -> StatusStyle {
+        self.filename
+    }
 }
 
 fn terminal_is_monochrome(term: Option<&str>) -> bool {
@@ -247,10 +258,33 @@ fn themed_status_style(style: ThemeStyle, truecolor: bool, fallback: StatusStyle
     }
 }
 
-fn persistent_path_style(
+fn persistent_normal_style(
     mut style: ThemeStyle,
     truecolor: bool,
-    normal: StatusStyle,
+    fallback: StatusStyle,
+) -> StatusStyle {
+    let legacy_generated = ThemeStyle {
+        fg: Some(ThemeColor::Ansi(8)),
+        dim: Some(true),
+        ..ThemeStyle::default()
+    };
+    if style == legacy_generated {
+        style = ThemeStyle::fg(ThemeColor::Default);
+    }
+    themed_status_style(style, truecolor, fallback)
+}
+
+const fn persistent_path_style(normal: StatusStyle) -> StatusStyle {
+    StatusStyle {
+        underlined: true,
+        ..normal
+    }
+}
+
+fn persistent_filename_style(
+    mut style: ThemeStyle,
+    truecolor: bool,
+    path: StatusStyle,
 ) -> StatusStyle {
     let legacy_generated = ThemeStyle {
         fg: Some(ThemeColor::Default),
@@ -258,13 +292,14 @@ fn persistent_path_style(
         underlined: Some(true),
         ..ThemeStyle::default()
     };
-    if style == legacy_generated {
-        style = ThemeStyle {
-            underlined: Some(true),
-            ..ThemeStyle::default()
-        };
+    let broken_generated = ThemeStyle {
+        underlined: Some(true),
+        ..ThemeStyle::default()
+    };
+    if style == legacy_generated || style == broken_generated {
+        style = ThemeStyle::fg(ThemeColor::Ansi(9));
     }
-    themed_status_overlay(style, truecolor, normal)
+    themed_status_overlay(style, truecolor, path)
 }
 
 fn themed_status_overlay(style: ThemeStyle, truecolor: bool, base: StatusStyle) -> StatusStyle {
@@ -342,6 +377,7 @@ pub(super) fn write_status_bar<W: Write + ?Sized>(
             width,
             presentation.theme,
             presentation.path,
+            presentation.filename,
             presentation.selection,
         );
     }
@@ -366,6 +402,7 @@ fn write_persistent_status<W: Write + ?Sized>(
     width: usize,
     theme: StatusTheme,
     path: Option<(usize, usize)>,
+    filename: Option<(usize, usize)>,
     selection: Option<(usize, usize)>,
 ) -> io::Result<()> {
     let safe = text_layout::terminal_safe_text(text);
@@ -374,7 +411,7 @@ fn write_persistent_status<W: Write + ?Sized>(
         return write!(out, "{}\x1b[0m", clipped_status_text(&safe, width));
     }
     let mut boundaries = vec![0, text.len()];
-    for range in [path, selection].into_iter().flatten() {
+    for range in [path, filename, selection].into_iter().flatten() {
         if valid_range(text, range) {
             boundaries.extend([range.0, range.1]);
         }
@@ -387,7 +424,9 @@ fn write_persistent_status<W: Write + ?Sized>(
         if start == end {
             continue;
         }
-        let mut style = if path.is_some_and(|range| start >= range.0 && end <= range.1) {
+        let mut style = if filename.is_some_and(|range| start >= range.0 && end <= range.1) {
+            theme.filename_style()
+        } else if path.is_some_and(|range| start >= range.0 && end <= range.1) {
             theme.path_style()
         } else {
             theme.style(StatusRole::Normal)

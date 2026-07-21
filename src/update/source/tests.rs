@@ -91,15 +91,93 @@ fn missing_checkout_selects_cargo_git_install() {
     let root = fixture();
     assert!(discover_path(&root.join("missing")).unwrap().is_none());
 
-    let command = cargo_install_command();
+    let revision = "71f3cbd98484e5bb9be921d63ff1ebf9394ecafe";
+    let install_root = root.join("cargo-home");
+    let command = cargo_install_command(revision, &install_root);
     let args: Vec<_> = command
         .get_args()
         .map(|argument| argument.to_str().unwrap())
         .collect();
     assert_eq!(
         args,
-        ["install", "--git", OFFICIAL_REMOTE, "--locked", "--force"]
+        [
+            "install",
+            "--git",
+            OFFICIAL_REMOTE,
+            "--rev",
+            revision,
+            "--locked",
+            "--force",
+            "--root",
+            install_root.to_str().unwrap(),
+        ]
     );
+    let environment = command
+        .get_envs()
+        .map(|(name, value)| {
+            (
+                name.to_str().unwrap(),
+                value.and_then(|value| value.to_str()),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert!(environment.contains(&("CATOMIC_SOURCE_DIR", Some(""))));
+    assert!(environment.contains(&("CATOMIC_BUILD_COMMIT", Some(revision))));
+    assert!(environment.contains(&("CATOMIC_BUILD_DIRTY", Some("0"))));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn implicit_cargo_git_checkout_uses_cargo_install_again() {
+    let manifest = Path::new("/home/test/.cargo/git/checkouts/catomic-123456/revision");
+    assert!(is_cargo_git_checkout(manifest));
+    assert_eq!(retained_source_path(None, manifest), None);
+
+    assert_eq!(
+        retained_source_path(Some("/home/test/src/catomic"), manifest),
+        Some(Path::new("/home/test/src/catomic"))
+    );
+}
+
+#[test]
+fn cargo_install_targets_the_invoked_binary_root() {
+    assert_eq!(
+        cargo_install_root(Path::new("/home/test/.cargo/bin/catomic")).unwrap(),
+        Path::new("/home/test/.cargo")
+    );
+    assert!(cargo_install_root(Path::new("/home/test/catomic")).is_err());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn installed_version_verification_requires_the_exact_revision() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = std::env::temp_dir().join(format!(
+        "catomic-installed-version-test-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir(&root).unwrap();
+    let executable = root.join("catomic");
+    fs::write(
+        &executable,
+        "#!/bin/sh\nprintf '%s\\n' 'catomic 1.2.3 (commit 71f3cbd98484)'\n",
+    )
+    .unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+
+    let revision = "71f3cbd98484e5bb9be921d63ff1ebf9394ecafe";
+    verify_installed_version(&executable, "1.2.3", revision).unwrap();
+    let error = verify_installed_version(
+        &executable,
+        "1.2.3",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    )
+    .unwrap_err();
+    assert_eq!(error.exit_code(), EXIT_INSTALL);
+    assert!(error.to_string().contains("update not confirmed"));
+
     fs::remove_dir_all(root).unwrap();
 }
 

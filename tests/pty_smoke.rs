@@ -1,8 +1,9 @@
 //! Real PTY integration smoke tests for the catomic binary.
 //!
 //! Purpose: drive the compiled binary through a pseudo-terminal so key handling,
-//!   raw-mode setup, render, help, save, undo, search, direct linting, guarded
-//!   external commands/hooks, explicit LLM confirmation, and clean quit are exercised.
+//!   raw-mode setup, render, help, save, undo, search, inline emoji picking, direct
+//!   linting, guarded external commands/hooks, explicit LLM confirmation, and clean quit
+//!   are exercised.
 //! Owns: narrow default PTY smoke coverage for core and guarded workflows.
 //! Must not: grow into a broad UI harness, contact a live/public LLM, use ambient config,
 //!   or run large-file/perf scenarios; model tests use private loopback fakes only.
@@ -511,6 +512,27 @@ fn pty_save_undo_save_quit_writes_expected_file() -> TestResult {
     assert_eq!(sequence_count(&output, "\x1b[23;0t"), 1);
     assert_eq!(fs::read_to_string(&temp.path)?, "ab\n");
 
+    Ok(())
+}
+
+#[test]
+fn pty_emoji_picker_opens_and_accepts_ranked_match() -> TestResult {
+    let temp = TempPath::new("emoji_picker");
+    let mut editor = PtyEditor::spawn_sized(&temp.path, 12, 60)?;
+
+    editor.wait_for_initial_render()?;
+    editor.clear_output();
+    editor.send_keys(b":hun")?;
+    editor.wait_for_output("emoji picker candidate", "hundred points")?;
+    assert!(editor.output_string().contains("💯"));
+
+    editor.clear_output();
+    editor.send_keys(b"\r")?;
+    editor.wait_for_output("accepted emoji", "💯")?;
+    editor.send_keys(b"\x13\x11")?;
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(&temp.path)?, "💯\n");
     Ok(())
 }
 

@@ -1,3 +1,1 @@
-  File "/tmp/agent_footer_fix.py", line 1
-    from pathlib import Path
-IndentationError: unexpected indent
+src/terminal/render.rs: unexpected status_filename count

@@ -19,12 +19,12 @@ use super::{
     EXIT_NETWORK, EXIT_SOURCE_STATE, EXIT_UNSUPPORTED,
 };
 
-mod worktree;
+mod workspace;
 
 #[cfg(test)]
 mod tests;
 
-use self::worktree::Worktree;
+use self::workspace::UpdateWorkspace;
 
 const OFFICIAL_REMOTE: &str = "https://github.com/maelguimet/catomic.git";
 const OFFICIAL_BRANCH: &str = "master";
@@ -126,10 +126,18 @@ fn cargo_install(options: UpdateOptions) -> Result<(), UpdateError> {
     })?;
     let install_root = cargo_install_root(&executable)?;
     maybe_backup(options)?;
-    println!("running Cargo install...");
-    let mut command = cargo_install_command(&remote_sha, &install_root);
-    run_cargo(&mut command)?;
-    verify_installed_version(&executable, &remote_version, &remote_sha)?;
+    let workspace = UpdateWorkspace::clone_revision(OFFICIAL_REMOTE, OFFICIAL_BRANCH, &remote_sha)?;
+    with_workspace(workspace, |workspace| {
+        println!("running Cargo install...");
+        let mut command = cargo_install_command(
+            &workspace.checkout,
+            &install_root,
+            &workspace.target,
+            &remote_sha,
+        );
+        run_cargo(&mut command)?;
+        verify_installed_version(&executable, &remote_version, &remote_sha)
+    })?;
     println!("updated from {OFFICIAL_REMOTE}");
     println!("new version: {remote_version}");
     println!("new revision: {}", short_sha(&remote_sha));
@@ -181,51 +189,56 @@ fn apply(
         ));
     }
     require_fast_forward(&install.root, &install.current_sha, &fetched_sha)?;
-    let worktree = Worktree::create(&install.root, &fetched_sha)?;
-    println!("building release binary...");
-    cargo_with_source(
-        &worktree.checkout,
-        &RELEASE_BUILD_ARGS,
-        &install.root,
-        &fetched_sha,
-    )?;
-    let candidate = worktree.checkout.join("target/release/catomic");
-    validate_candidate_config(&candidate)?;
-    let new_version = candidate_version(&candidate)?;
-    let expected_version =
-        build_info::format_version(remote_version, Some(&fetched_sha), SourceState::Clean);
-    if new_version != expected_version {
-        return Err(UpdateError::new(
-            EXIT_BUILD,
-            format!("candidate reports {new_version:?}, expected {expected_version:?}"),
-        ));
-    }
-    let bytes = fs::read(&candidate).map_err(|error| {
-        UpdateError::new(
-            EXIT_BUILD,
-            format!("read candidate binary {}: {error}", candidate.display()),
-        )
+    let workspace = UpdateWorkspace::create_worktree(&install.root, &fetched_sha)?;
+    let receipt = with_workspace(workspace, |workspace| {
+        println!("building release binary...");
+        cargo_with_source(
+            &workspace.checkout,
+            &RELEASE_BUILD_ARGS,
+            &install.root,
+            &fetched_sha,
+            &workspace.target,
+        )?;
+        let candidate = workspace.target.join("release/catomic");
+        validate_candidate_config(&candidate)?;
+        let new_version = candidate_version(&candidate)?;
+        let expected_version =
+            build_info::format_version(remote_version, Some(&fetched_sha), SourceState::Clean);
+        if new_version != expected_version {
+            return Err(UpdateError::new(
+                EXIT_BUILD,
+                format!("candidate reports {new_version:?}, expected {expected_version:?}"),
+            ));
+        }
+        let bytes = fs::read(&candidate).map_err(|error| {
+            UpdateError::new(
+                EXIT_BUILD,
+                format!("read candidate binary {}: {error}", candidate.display()),
+            )
+        })?;
+        ensure_checkout_unchanged(install)?;
+        let receipt = super::install::replace_current(&bytes, env!("CARGO_PKG_VERSION"))
+            .map_err(|error| UpdateError::new(EXIT_INSTALL, error))?;
+        if let Err(error) = fast_forward_checkout(&install.root, &fetched_sha) {
+            let restore = receipt.restore();
+            let recovery = match restore {
+                Ok(()) => format!(
+                    "new binary was rolled back; recovery copy remains at {}",
+                    receipt.rollback_path().display()
+                ),
+                Err(rollback_error) => format!(
+                    "automatic binary rollback also failed: {rollback_error}; recovery binary: {}",
+                    receipt.rollback_path().display()
+                ),
+            };
+            return Err(UpdateError::new(
+                EXIT_INSTALL,
+                format!("could not fast-forward source checkout: {error}; {recovery}"),
+            ));
+        }
+
+        Ok(receipt)
     })?;
-    ensure_checkout_unchanged(install)?;
-    let receipt = super::install::replace_current(&bytes, env!("CARGO_PKG_VERSION"))
-        .map_err(|error| UpdateError::new(EXIT_INSTALL, error))?;
-    if let Err(error) = fast_forward_checkout(&install.root, &fetched_sha) {
-        let restore = receipt.restore();
-        let recovery = match restore {
-            Ok(()) => format!(
-                "new binary was rolled back; recovery copy remains at {}",
-                receipt.rollback_path().display()
-            ),
-            Err(rollback_error) => format!(
-                "automatic binary rollback also failed: {rollback_error}; recovery binary: {}",
-                receipt.rollback_path().display()
-            ),
-        };
-        return Err(UpdateError::new(
-            EXIT_INSTALL,
-            format!("could not fast-forward source checkout: {error}; {recovery}"),
-        ));
-    }
 
     println!("old version: {}", env!("CARGO_PKG_VERSION"));
     println!("new version: {remote_version}");
@@ -242,6 +255,22 @@ fn apply(
         shell_quote(&std::env::current_exe().unwrap_or_default())
     );
     Ok(())
+}
+
+fn with_workspace<T>(
+    workspace: UpdateWorkspace,
+    operation: impl FnOnce(&UpdateWorkspace) -> Result<T, UpdateError>,
+) -> Result<T, UpdateError> {
+    let result = operation(&workspace);
+    let cleanup = workspace.cleanup();
+    match (result, cleanup) {
+        (result, Ok(())) => result,
+        (Ok(_), Err(cleanup)) => Err(cleanup),
+        (Err(operation), Err(cleanup)) => Err(UpdateError::new(
+            operation.exit_code(),
+            format!("{operation}; additionally, {cleanup}"),
+        )),
+    }
 }
 
 fn ensure_checkout_unchanged(install: &SourceInstall) -> Result<(), UpdateError> {
@@ -538,12 +567,20 @@ fn cargo_install_root(executable: &Path) -> Result<PathBuf, UpdateError> {
         .ok_or_else(|| UpdateError::new(EXIT_INSTALL, "Cargo bin directory has no install root"))
 }
 
-fn cargo_install_command(revision: &str, install_root: &Path) -> Command {
+fn cargo_install_command(
+    checkout: &Path,
+    install_root: &Path,
+    target: &Path,
+    revision: &str,
+) -> Command {
     let mut command = Command::new("cargo");
     command
-        .args(["install", "--git", OFFICIAL_REMOTE, "--rev", revision])
+        .args(["install", "--path"])
+        .arg(checkout)
         .args(["--locked", "--force", "--root"])
         .arg(install_root)
+        .args(["--target-dir"])
+        .arg(target)
         .env("CATOMIC_SOURCE_DIR", "")
         .env("CATOMIC_BUILD_COMMIT", revision)
         .env("CATOMIC_BUILD_DIRTY", "0")
@@ -556,14 +593,27 @@ fn cargo_with_source(
     args: &[&str],
     source: &Path,
     revision: &str,
+    target: &Path,
 ) -> Result<(), UpdateError> {
+    let mut command = cargo_with_source_command(root, args, source, revision, target);
+    run_cargo(&mut command)
+}
+
+fn cargo_with_source_command(
+    root: &Path,
+    args: &[&str],
+    source: &Path,
+    revision: &str,
+    target: &Path,
+) -> Command {
     let mut command = Command::new("cargo");
     command.current_dir(root).args(args);
     command.env("CATOMIC_SOURCE_DIR", source);
     command.env("CATOMIC_BUILD_COMMIT", revision);
     command.env("CATOMIC_BUILD_DIRTY", "0");
+    command.env("CARGO_TARGET_DIR", target);
     command.env_remove("CATOMIC_MANAGED_RELEASE");
-    run_cargo(&mut command)
+    command
 }
 
 fn run_cargo(command: &mut Command) -> Result<(), UpdateError> {

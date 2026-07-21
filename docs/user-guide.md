@@ -1186,9 +1186,12 @@ Catomic reads one TOML file from:
 2. `~/.config/catomic/config.toml` when `HOME` is an absolute path.
 
 The source installer creates this file from Catomic's documented template and
-never replaces an existing path. Unknown keys are ignored for forward
-compatibility, but a malformed recognized value is a startup error for settings
-loaded at startup. Linter and model settings are loaded lazily when invoked.
+never replaces an existing path. Unknown keys are rejected with their full path,
+and a malformed recognized value is a startup error for settings loaded at
+startup. The retired `[autocomplete]` section and
+`theme.colors.autocomplete` role remain accepted as inert input so older
+Catomic-generated configurations keep working after an update. Linter and model
+settings are loaded lazily when invoked.
 
 Run `catomic config` from the shell, or `config` from the in-editor command
 prompt, to open that exact path as an ordinary editable buffer inside Catomic.

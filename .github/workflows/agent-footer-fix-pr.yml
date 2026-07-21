@@ -35,9 +35,7 @@ jobs:
           indent = len(first) - len(first.lstrip())
           script = [line[indent:] if len(line) >= indent else line for line in source]
           script_text = '\n'.join(script) + '\n'
-          old = '''path = "src/terminal/render.rs"
-text = read(path)
-if text.count("status_filename") != 2:'''
+          old = 'path = "src/terminal/render.rs"\ntext = read(path)\nif text.count("status_filename") != 2:'
           new = old.replace('!= 2:', '!= 3:')
           if script_text.count(old) != 1:
               raise SystemExit('could not patch terminal render status span count')

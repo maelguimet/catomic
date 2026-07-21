@@ -87,6 +87,7 @@ jobs:
           set +e
           (
             set -e
+            cargo fmt --all
             cargo fmt --all -- --check
             cargo test --locked app::status
             cargo test --locked config::theme

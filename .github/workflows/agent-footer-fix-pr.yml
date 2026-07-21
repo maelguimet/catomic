@@ -78,19 +78,35 @@ jobs:
             cat /tmp/agent-footer-fix.log
             exit "$status"
           fi
-          rm -f agent-footer-fix-error.txt
+          rm -f agent-footer-fix-error.txt agent-footer-fix-verify-error.txt
           rm .github/workflows/agent-footer-fix-pr.yml
 
       - name: Verify focused change
         shell: bash
         run: |
-          cargo fmt --all -- --check
-          cargo test --locked app::status
-          cargo test --locked config::theme
-          cargo test --locked terminal::render::status_bar
-          python3 scripts/check_markdown_links.py
-          git diff --check
-          test -z "$(git status --short | grep -vE '^( M| D|\?\?) (README.md|docs/user-guide.md|src/app/render.rs|src/app/status.rs|src/config/config_template.toml|src/config/theme.rs|src/config/theme/tests.rs|src/terminal/render.rs|src/terminal/render/status_bar.rs|src/terminal/render/status_bar/tests.rs|.github/workflows/agent-footer-fix.yml|.github/workflows/agent-footer-fix-pr.yml|agent-footer-fix-error.txt)$')"
+          set +e
+          (
+            set -e
+            cargo fmt --all -- --check
+            cargo test --locked app::status
+            cargo test --locked config::theme
+            cargo test --locked terminal::render::status_bar
+            python3 scripts/check_markdown_links.py
+            git diff --check
+            test -z "$(git status --short | grep -vE '^( M| D|\?\?) (README.md|docs/user-guide.md|src/app/render.rs|src/app/status.rs|src/config/config_template.toml|src/config/theme.rs|src/config/theme/tests.rs|src/terminal/render.rs|src/terminal/render/status_bar.rs|src/terminal/render/status_bar/tests.rs|.github/workflows/agent-footer-fix.yml|.github/workflows/agent-footer-fix-pr.yml|agent-footer-fix-error.txt|agent-footer-fix-verify-error.txt)$')"
+          ) > /tmp/agent-footer-verify.log 2>&1
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            cp /tmp/agent-footer-verify.log agent-footer-fix-verify-error.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add agent-footer-fix-verify-error.txt
+            git commit -m "Record footer fix verification failure" || true
+            git push origin HEAD:${{ github.head_ref }} || true
+            cat /tmp/agent-footer-verify.log
+            exit "$status"
+          fi
 
       - name: Commit fix
         shell: bash

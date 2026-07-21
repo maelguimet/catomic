@@ -1297,7 +1297,7 @@ cursor = "default"
 selection = { fg = "black", bg = "cyan" }
 line_number = "bright-black"
 status = "default"
-status_filename = { underline = true }
+status_filename = "bright-red"
 message = { fg = "black", bg = "white" }
 status_warning = { fg = "black", bg = "yellow" }
 error = { fg = "bright-white", bg = "red" }
@@ -1459,9 +1459,10 @@ restores SGR attributes and the terminal's cursor color.
 
 The persistent footer uses the terminal's own default foreground/background
 pair, so its contrast follows the selected terminal theme instead of assuming a
-dark background. The complete displayed path is underlined while the cat branding
-stays plain; the footer adds no bold, inverse video, or background to the path by
-default. The retained `status_filename` theme role styles that complete path span.
+dark background. The complete displayed path uses that normal foreground and is
+underlined while the cat branding stays plain. The filename remains bright red;
+`status_filename` customizes only that filename span. The footer adds no bold,
+inverse video, or background to the path by default.
 At four or more rows, a cleared row separates document text from the footer;
 smaller terminals drop the separator first, then the footer, so the editing area
 never becomes zero-height. Transient messages keep their semantic full-row styles.

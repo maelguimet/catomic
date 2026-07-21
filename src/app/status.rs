@@ -2,11 +2,11 @@
 //!
 //! Purpose: show a compact path when no transient app.message is present and
 //!   classify transient UI state for terminal styling.
-//! Owns: pure path formatting, displayed-path spans, and semantic status role selection.
+//! Owns: pure path formatting, path/filename spans, and semantic status role selection.
 //! Must not: mutate state; perform IO; emit terminal escapes;
 //!   construct watchers or Large-file policy changes; touch buffer content.
-//! Invariants: [untitled] represents no path; the displayed-path span is a valid UTF-8
-//!   boundary; output is terminal-safe and never wider than the supplied width.
+//! Invariants: [untitled] represents no path; path/filename spans are valid UTF-8
+//!   boundaries; output is terminal-safe and never wider than the supplied width.
 
 use std::path::Path;
 
@@ -18,6 +18,7 @@ use crate::terminal::render::StatusRole;
 pub(crate) struct StatusLine {
     pub(crate) text: String,
     pub(crate) path: (usize, usize),
+    pub(crate) filename: (usize, usize),
 }
 
 pub(crate) fn format_status_line(
@@ -32,6 +33,7 @@ pub(crate) fn format_status_line(
         return StatusLine {
             text: String::new(),
             path: (0, 0),
+            filename: (0, 0),
         };
     }
     let (parent, mut filename) = status_path_parts(path);
@@ -69,14 +71,16 @@ pub(crate) fn format_status_line(
         .saturating_sub(metadata_cells);
     let parent = text_layout::terminal_safe_tail_clipped(&parent, parent_budget);
     let mut text = brand.to_string();
-    let start = text.len();
+    let path_start = text.len();
     text.push_str(&parent);
+    let filename_start = text.len();
     text.push_str(&filename);
-    let end = text.len();
+    let filename_end = text.len();
     text.push_str(&metadata);
     StatusLine {
         text,
-        path: (start, end),
+        path: (path_start, filename_end),
+        filename: (filename_start, filename_end),
     }
 }
 
@@ -208,6 +212,10 @@ mod tests {
             &status.text[status.path.0..status.path.1],
             "/work/cats/notes.txt"
         );
+        assert_eq!(
+            &status.text[status.filename.0..status.filename.1],
+            "notes.txt"
+        );
         for slop in ["ac off", "INS", "OVR", "saved", "modified", "utf-8", "lf"] {
             assert!(!status.text.contains(slop), "status: {}", status.text);
         }
@@ -222,6 +230,10 @@ mod tests {
         assert_eq!(without_cat.text, "[untitled]");
         assert_eq!(
             &without_cat.text[without_cat.path.0..without_cat.path.1],
+            "[untitled]"
+        );
+        assert_eq!(
+            &without_cat.text[without_cat.filename.0..without_cat.filename.1],
             "[untitled]"
         );
     }
@@ -242,6 +254,10 @@ mod tests {
         assert!(
             displayed_path.ends_with("猫-notes.txt"),
             "path: {displayed_path}"
+        );
+        assert_eq!(
+            &status.text[status.filename.0..status.filename.1],
+            "猫-notes.txt"
         );
         assert!(status.text.starts_with('…'), "status: {}", status.text);
         assert!(text_layout::cell_width_from(&status.text, 0) <= 20);

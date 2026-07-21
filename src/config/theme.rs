@@ -204,10 +204,7 @@ fn named(name: &str) -> io::Result<Theme> {
         selection: Style::pair(black, Color::Ansi(6)),
         line_number: Style::fg(Color::Ansi(8)),
         status: Style::fg(Color::Default),
-        status_filename: Style {
-            underlined: Some(true),
-            ..Style::default()
-        },
+        status_filename: Style::fg(Color::Ansi(9)),
         message: Style::pair(black, Color::Ansi(14)),
         status_warning: Style {
             bold: Some(true),

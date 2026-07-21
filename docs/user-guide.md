@@ -114,21 +114,29 @@ exact backup path.
   checkout as its update source.
   Catomic preserves local changes, checks the official remote revision, refuses
   non-fast-forward history, fetches without running hooks, and builds in an
-  isolated temporary worktree. The new revision must build successfully and
-  validate the existing configuration before the executable is replaced. Only
-  then is the source checkout fast-forwarded and the local changes reapplied.
+  isolated temporary worktree and target directory. The new revision must build
+  successfully and validate the existing configuration before the executable is
+  replaced. Only then is the source checkout fast-forwarded and the local
+  changes reapplied.
 - If that source checkout no longer exists, or the binary came from Cargo's
-  detached Git checkout, Catomic runs the official Cargo git install command
-  itself. It resolves and pins the exact official `master` revision, installs
-  into the current executable's Cargo root, and verifies that executable's
-  reported revision before claiming success. `--check` remains unsupported for
-  this install method and exits without writing.
+  detached Git checkout, Catomic makes a shallow checkout of the exact official
+  `master` revision in its own temporary workspace and asks Cargo to install
+  from that path with the build target in the same workspace. It installs into
+  the current executable's Cargo root and verifies that executable's reported
+  revision before claiming success. `--check` remains unsupported for this
+  install method and exits without writing.
 - Cargo registry installs, other detached Git builds, forks, diverged branches,
   and architectures without a managed release are reported as unsupported.
 
 Dirty official source checkouts are stashed with untracked files before an
 update and popped afterward with their staged state restored. Git reports any
 conflicts normally.
+
+Source updates remove their `catomic-update-*` workspace after successful and
+failed builds without deleting persistent Cargo caches. A cleanup failure is an
+update error that reports the retained path. If the process is forcibly killed,
+the next update removes abandoned workspaces whose recorded process is no longer
+running before creating a new one.
 
 ### Atomic install and recovery
 

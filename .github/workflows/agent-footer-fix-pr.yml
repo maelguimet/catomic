@@ -31,9 +31,9 @@ jobs:
           start = next(i for i, line in enumerate(workflow) if line.strip() == "python3 - <<'PY'") + 1
           end = next(i for i in range(start, len(workflow)) if workflow[i].strip() == 'PY')
           source = workflow[start:end]
-          nonblank = [line for line in source if line.strip()]
-          indent = min(len(line) - len(line.lstrip()) for line in nonblank)
-          script = [line[indent:] if line else '' for line in source]
+          first = next(line for line in source if line.strip())
+          indent = len(first) - len(first.lstrip())
+          script = [line[indent:] if len(line) >= indent else line for line in source]
           Path('/tmp/agent_footer_fix.py').write_text('\n'.join(script) + '\n')
           PY
           extract_status=$?

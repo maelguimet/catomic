@@ -130,6 +130,25 @@ fn config_path_check_and_help_are_read_only_and_preserving() -> TestResult {
     assert!(checked.status.success());
     assert_eq!(fs::read(&config)?, before);
 
+    let retired_autocomplete = concat!(
+        "[autocomplete]\n",
+        "enabled = false\n",
+        "idle_debounce_ms = 750\n",
+        "minimum_prefix_length = 20\n",
+        "max_context_before = 2_048\n",
+        "max_context_after = 512\n",
+        "max_generated_tokens = 64\n",
+        "allow_remote = false\n",
+        "\n",
+        "[theme.colors]\n",
+        "autocomplete = { fg = \"bright-black\", dim = true }\n",
+    );
+    fs::write(&config, retired_autocomplete)?;
+    let retired_before = fs::read(&config)?;
+    let retired = run(&fixture, &["config", "check"])?;
+    assert!(retired.status.success(), "{:?}", retired.stderr);
+    assert_eq!(fs::read(&config)?, retired_before);
+
     fs::write(
         &config,
         "[theme]\nname = \"default\"\n[future]\ncat = true\n",

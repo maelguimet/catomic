@@ -122,4 +122,17 @@ mod tests {
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
         assert!(error.to_string().contains("editor.tab_szie"));
     }
+
+    #[test]
+    fn retired_generated_autocomplete_configuration_does_not_block_startup() {
+        StartupConfig::from_snapshot(
+            "[autocomplete]\nenabled = false\nidle_debounce_ms = 750\n\
+             minimum_prefix_length = 20\nmax_context_before = 2_048\n\
+             max_context_after = 512\nmax_generated_tokens = 64\n\
+             allow_remote = false\n[theme.colors]\n\
+             autocomplete = { fg = \"bright-black\", dim = true }\n",
+            None,
+        )
+        .unwrap();
+    }
 }

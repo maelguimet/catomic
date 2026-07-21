@@ -8,6 +8,8 @@ use std::io;
 use toml::{Table, Value};
 
 const ROOT_KEYS: &[&str] = &[
+    // Retained as inert input for configurations generated before autocomplete was removed.
+    "autocomplete",
     "big_files",
     "cat",
     "commands",
@@ -29,6 +31,16 @@ const FILE_KEYS: &[&str] = &["auto_reload"];
 const VIEW_KEYS: &[&str] = &["external_diff", "line_numbers"];
 const CAT_KEYS: &[&str] = &["status_messages"];
 const RECOVERY_KEYS: &[&str] = &["enabled", "interval_secs", "max_bytes"];
+const RETIRED_AUTOCOMPLETE_KEYS: &[&str] = &[
+    "enabled",
+    "idle_debounce_ms",
+    "minimum_prefix_length",
+    "max_context_before",
+    "max_context_after",
+    "max_generated_tokens",
+    "model",
+    "allow_remote",
+];
 const MOBILE_KEYS: &[&str] = &["action_bar"];
 const HOOK_KEYS: &[&str] = &["on_open", "on_save", "before_llm"];
 const LANGUAGE_KEYS: &[&str] = &["tab_size", "linter", "llm"];
@@ -125,6 +137,8 @@ const THEME_COLOR_KEYS: &[&str] = &[
     "external_deleted",
     "lint",
     "llm_changed",
+    // Retained as an inert role for configurations generated before autocomplete was removed.
+    "autocomplete",
     "preview",
 ];
 const STYLE_KEYS: &[&str] = &["fg", "bg", "bold", "dim", "underline", "reverse"];
@@ -144,6 +158,7 @@ pub(crate) fn validate_unknown_keys(text: &str) -> io::Result<()> {
     ] {
         validate_section(&root, section, keys)?;
     }
+    validate_retired_autocomplete(&root)?;
     validate_languages(&root)?;
     validate_commands(&root)?;
     validate_llm(&root)?;
@@ -156,6 +171,19 @@ fn validate_section(root: &Table, name: &str, allowed: &[&str]) -> io::Result<()
         reject_unknown(table, name, allowed)?;
     }
     Ok(())
+}
+
+fn validate_retired_autocomplete(root: &Table) -> io::Result<()> {
+    let Some(value) = root.get("autocomplete") else {
+        return Ok(());
+    };
+    let Some(table) = value.as_table() else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "configuration key autocomplete must be a table",
+        ));
+    };
+    reject_unknown(table, "autocomplete", RETIRED_AUTOCOMPLETE_KEYS)
 }
 
 fn validate_languages(root: &Table) -> io::Result<()> {
@@ -279,7 +307,11 @@ mod tests {
     fn reports_unknown_keys_with_full_paths() {
         for (text, path) in [
             ("[edtor]\ntab_size = 2\n", "edtor"),
-            ("[autocomplete]\nenabled = true\n", "autocomplete"),
+            (
+                "[autocomplete]\nenabeld = true\n",
+                "autocomplete.enabeld",
+            ),
+            ("autocomplete = true\n", "autocomplete must be a table"),
             ("[editor]\ntab_szie = 2\n", "editor.tab_szie"),
             ("[files]\nauto_relod = false\n", "files.auto_relod"),
             (
@@ -293,12 +325,12 @@ mod tests {
             ),
             ("[theme.colors]\nstatuz = \"red\"\n", "theme.colors.statuz"),
             (
-                "[theme.colors]\nautocomplete = \"bright-black\"\n",
-                "theme.colors.autocomplete",
-            ),
-            (
                 "[theme.colors]\nstatus = { fg = \"red\", blod = true }\n",
                 "theme.colors.status.blod",
+            ),
+            (
+                "[theme.colors]\nautocomplete = { blod = true }\n",
+                "theme.colors.autocomplete.blod",
             ),
         ] {
             let error = validate_unknown_keys(text).unwrap_err();
@@ -308,6 +340,30 @@ mod tests {
                 "{path:?} missing from {error}"
             );
         }
+    }
+
+    #[test]
+    fn accepts_retired_generated_autocomplete_configuration_as_inert_input() {
+        let text = r#"
+[autocomplete]
+enabled = true
+idle_debounce_ms = 750
+minimum_prefix_length = 20
+max_context_before = 2_048
+max_context_after = 512
+max_generated_tokens = 64
+model = "retired-model"
+allow_remote = true
+
+[theme.colors]
+autocomplete = { fg = "bright-black", dim = true }
+"#;
+
+        crate::config::validate_text(text).unwrap();
+        assert_eq!(
+            crate::config::theme::parse(text).unwrap(),
+            crate::config::theme::Theme::default()
+        );
     }
 
     #[test]

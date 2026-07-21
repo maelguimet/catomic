@@ -110,11 +110,29 @@ fn cargo_install(options: UpdateOptions) -> Result<(), UpdateError> {
         println!("update cancelled; no network or disk changes made");
         return Ok(());
     }
+    let remote_sha = remote_head()?;
+    let remote_version = super::managed::source_version_at(&remote_sha)?;
+    if super::managed::source_version_is_downgrade(&remote_version)? {
+        return Err(UpdateError::new(
+            EXIT_SOURCE_STATE,
+            format!(
+                "official source reports older version {remote_version}; refusing to downgrade {}",
+                env!("CARGO_PKG_VERSION")
+            ),
+        ));
+    }
+    let executable = std::env::current_exe().map_err(|error| {
+        UpdateError::new(EXIT_INSTALL, format!("locate current executable: {error}"))
+    })?;
+    let install_root = cargo_install_root(&executable)?;
     maybe_backup(options)?;
     println!("running Cargo install...");
-    let mut command = cargo_install_command();
+    let mut command = cargo_install_command(&remote_sha, &install_root);
     run_cargo(&mut command)?;
+    verify_installed_version(&executable, &remote_version, &remote_sha)?;
     println!("updated from {OFFICIAL_REMOTE}");
+    println!("new version: {remote_version}");
+    println!("new revision: {}", short_sha(&remote_sha));
     println!("user state: unchanged");
     Ok(())
 }
@@ -338,11 +356,36 @@ fn restore_changes(root: &Path, stash: Option<&str>) -> Result<(), String> {
 }
 
 fn discover() -> Result<Option<SourceInstall>, String> {
-    const SOURCE: &str = match option_env!("CATOMIC_SOURCE_DIR") {
-        Some(path) => path,
-        None => env!("CARGO_MANIFEST_DIR"),
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let Some(source) = retained_source_path(option_env!("CATOMIC_SOURCE_DIR"), manifest_dir) else {
+        return Ok(None);
     };
-    discover_path(Path::new(SOURCE))
+    discover_path(source)
+}
+
+fn retained_source_path<'a>(
+    explicit: Option<&'a str>,
+    manifest_dir: &'a Path,
+) -> Option<&'a Path> {
+    match explicit {
+        Some("") => None,
+        Some(path) => Some(Path::new(path)),
+        None if is_cargo_git_checkout(manifest_dir) => None,
+        None => Some(manifest_dir),
+    }
+}
+
+fn is_cargo_git_checkout(path: &Path) -> bool {
+    path.parent()
+        .and_then(Path::parent)
+        .and_then(Path::file_name)
+        == Some(std::ffi::OsStr::new("checkouts"))
+        && path
+            .parent()
+            .and_then(Path::parent)
+            .and_then(Path::parent)
+            .and_then(Path::file_name)
+            == Some(std::ffi::OsStr::new("git"))
 }
 
 fn discover_path(root: &Path) -> Result<Option<SourceInstall>, String> {
@@ -480,9 +523,34 @@ fn fast_forward_checkout(root: &Path, sha: &str) -> Result<(), String> {
     }
 }
 
-fn cargo_install_command() -> Command {
+fn cargo_install_root(executable: &Path) -> Result<PathBuf, UpdateError> {
+    let bin = executable.parent().ok_or_else(|| {
+        UpdateError::new(EXIT_INSTALL, "current executable has no parent directory")
+    })?;
+    if bin.file_name() != Some(std::ffi::OsStr::new("bin")) {
+        return Err(UpdateError::new(
+            EXIT_INSTALL,
+            format!(
+                "Cargo-Git update requires an executable in a Cargo bin directory; current executable is {}",
+                executable.display()
+            ),
+        ));
+    }
+    bin.parent().map(Path::to_path_buf).ok_or_else(|| {
+        UpdateError::new(EXIT_INSTALL, "Cargo bin directory has no install root")
+    })
+}
+
+fn cargo_install_command(revision: &str, install_root: &Path) -> Command {
     let mut command = Command::new("cargo");
-    command.args(["install", "--git", OFFICIAL_REMOTE, "--locked", "--force"]);
+    command
+        .args(["install", "--git", OFFICIAL_REMOTE, "--rev", revision])
+        .args(["--locked", "--force", "--root"])
+        .arg(install_root)
+        .env("CATOMIC_SOURCE_DIR", "")
+        .env("CATOMIC_BUILD_COMMIT", revision)
+        .env("CATOMIC_BUILD_DIRTY", "0")
+        .env_remove("CATOMIC_MANAGED_RELEASE");
     command
 }
 
@@ -528,6 +596,30 @@ fn candidate_version(candidate: &Path) -> Result<String, UpdateError> {
     String::from_utf8(output.stdout)
         .map(|text| text.trim().to_string())
         .map_err(|_| UpdateError::new(EXIT_BUILD, "candidate version was not UTF-8"))
+}
+
+fn verify_installed_version(
+    executable: &Path,
+    package_version: &str,
+    revision: &str,
+) -> Result<(), UpdateError> {
+    let expected = build_info::format_version(package_version, Some(revision), SourceState::Clean);
+    let actual = candidate_version(executable).map_err(|error| {
+        UpdateError::new(
+            EXIT_INSTALL,
+            format!("could not verify installed executable: {error}"),
+        )
+    })?;
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(UpdateError::new(
+            EXIT_INSTALL,
+            format!(
+                "installed executable reports {actual:?}, expected {expected:?}; update not confirmed"
+            ),
+        ))
+    }
 }
 
 fn git_text(root: &Path, args: &[&str]) -> Result<String, String> {

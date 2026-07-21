@@ -78,6 +78,15 @@ jobs:
             cat /tmp/agent-footer-fix.log
             exit "$status"
           fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/terminal/render/status_bar/tests.rs')
+          text = path.read_text()
+          text = text.replace('filename: None,', 'path: None,')
+          path.write_text(text)
+          PY
+
           rm -f agent-footer-fix-error.txt agent-footer-fix-verify-error.txt
           rm .github/workflows/agent-footer-fix-pr.yml
 

@@ -1,4 +1,4 @@
-name: Capture footer full test failure
+name: Finalize footer path styling
 
 on:
   pull_request:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  full-test:
+  finalize:
     if: github.head_ref == 'agent/footer-uniform-path-215'
     runs-on: ubuntu-latest
     steps:
@@ -20,25 +20,225 @@ jobs:
           fetch-depth: 0
           show-progress: false
 
-      - name: Run full suite and preserve failure
+      - name: Apply status overlay fix
         shell: bash
         run: |
-          if [ -f agent-footer-full-test-error.txt ]; then
-            echo "Failure already captured."
+          if [ "$(git log -1 --pretty=%s)" = "Record footer overlay verification failure" ]; then
+            echo "Failure already captured on the branch."
             exit 0
           fi
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one occurrence, found {count}: {old!r}")
+              file.write_text(text.replace(old, new, 1))
+
+          for path in ["README.md", "docs/user-guide.md", "src/config/config_template.toml"]:
+              replace_once(
+                  path,
+                  'status_filename = { fg = "default", underline = true }',
+                  'status_filename = { underline = true }',
+              )
+
+          replace_once(
+              "src/config/theme.rs",
+              """        status_filename: Style {
+            underlined: Some(true),
+            ..Style::fg(Color::Default)
+        },""",
+              """        status_filename: Style {
+            underlined: Some(true),
+            ..Style::default()
+        },""",
+          )
+
+          replace_once(
+              "src/config/theme/tests.rs",
+              """        Style {
+            fg: Some(Color::Default),
+            underlined: Some(true),
+            ..Style::default()
+        }""",
+              """        Style {
+            underlined: Some(true),
+            ..Style::default()
+        }""",
+          )
+
+          replace_once(
+              "src/terminal/render/status_bar.rs",
+              """        let fallback = Self::default();
+        Self {
+            normal: themed_status_style(
+                theme.status,
+                theme.truecolor,
+                fallback.style(StatusRole::Normal),
+            ),
+            path: persistent_path_style(theme.status_filename, theme.truecolor, fallback.path),""",
+              """        let fallback = Self::default();
+        let normal = themed_status_style(
+            theme.status,
+            theme.truecolor,
+            fallback.style(StatusRole::Normal),
+        );
+        Self {
+            normal,
+            path: persistent_path_style(theme.status_filename, theme.truecolor, normal),""",
+          )
+
+          replace_once(
+              "src/terminal/render/status_bar.rs",
+              """fn persistent_path_style(style: ThemeStyle, truecolor: bool, fallback: StatusStyle) -> StatusStyle {
+    let legacy_generated = ThemeStyle {
+        fg: Some(ThemeColor::Default),
+        bold: Some(true),
+        underlined: Some(true),
+        ..ThemeStyle::default()
+    };
+    let mut resolved = themed_status_style(style, truecolor, fallback);
+    if style == legacy_generated {
+        resolved.bold = false;
+    }
+    resolved
+}""",
+              """fn persistent_path_style(
+    mut style: ThemeStyle,
+    truecolor: bool,
+    normal: StatusStyle,
+) -> StatusStyle {
+    let legacy_generated = ThemeStyle {
+        fg: Some(ThemeColor::Default),
+        bold: Some(true),
+        underlined: Some(true),
+        ..ThemeStyle::default()
+    };
+    if style == legacy_generated {
+        style = ThemeStyle {
+            underlined: Some(true),
+            ..ThemeStyle::default()
+        };
+    }
+    themed_status_overlay(style, truecolor, normal)
+}
+
+fn themed_status_overlay(
+    style: ThemeStyle,
+    truecolor: bool,
+    base: StatusStyle,
+) -> StatusStyle {
+    StatusStyle {
+        foreground: style
+            .fg
+            .map(|color| terminal_color(color, truecolor))
+            .or(base.foreground),
+        background: style
+            .bg
+            .map(|color| terminal_color(color, truecolor))
+            .or(base.background),
+        bold: style.bold.unwrap_or(base.bold),
+        dim: style.dim.unwrap_or(base.dim),
+        underlined: style.underlined.unwrap_or(base.underlined),
+        reversed: style.reversed.unwrap_or(base.reversed),
+    }
+}""",
+          )
+
+          replace_once(
+              "src/terminal/render/status_bar/tests.rs",
+              """#[test]
+fn legacy_generated_filename_style_drops_the_old_bold_emphasis() {
+    let legacy = ThemeStyle {
+        fg: Some(ThemeColor::Default),
+        bold: Some(true),
+        underlined: Some(true),
+        ..ThemeStyle::default()
+    };
+
+    assert_eq!(
+        persistent_path_style(legacy, false, StatusStyle::underlined_default()),
+        StatusStyle::underlined_default()
+    );
+}""",
+              """#[test]
+fn persistent_path_inherits_normal_status_colors() {
+    let normal = StatusStyle::colors(Color::White, Color::DarkBlue, false);
+    let path = persistent_path_style(
+        ThemeStyle {
+            underlined: Some(true),
+            ..ThemeStyle::default()
+        },
+        false,
+        normal,
+    );
+
+    assert_eq!(
+        path,
+        StatusStyle {
+            underlined: true,
+            ..normal
+        }
+    );
+}
+
+#[test]
+fn legacy_generated_filename_style_drops_the_old_bold_emphasis() {
+    let legacy = ThemeStyle {
+        fg: Some(ThemeColor::Default),
+        bold: Some(true),
+        underlined: Some(true),
+        ..ThemeStyle::default()
+    };
+    let normal = StatusStyle::colors(Color::White, Color::DarkBlue, false);
+
+    assert_eq!(
+        persistent_path_style(legacy, false, normal),
+        StatusStyle {
+            underlined: true,
+            ..normal
+        }
+    );
+}""",
+          )
+          PY
+
+      - name: Verify complete change
+        shell: bash
+        run: |
           set +e
-          cargo test --all-targets --locked > /tmp/footer-full-test.log 2>&1
+          (
+            set -e
+            cargo fmt --all
+            cargo fmt --all -- --check
+            cargo clippy --all-targets --locked -- -D warnings
+            cargo test --all-targets --locked
+            python3 scripts/check_markdown_links.py
+            git diff --check
+          ) > /tmp/footer-overlay-verify.log 2>&1
           status=$?
           set -e
-          if [ "$status" -eq 0 ]; then
-            exit 0
+          if [ "$status" -ne 0 ]; then
+            cp /tmp/footer-overlay-verify.log agent-footer-overlay-error.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add agent-footer-overlay-error.txt
+            git commit -m "Record footer overlay verification failure"
+            git push origin HEAD:${{ github.head_ref }}
+            tail -n 250 /tmp/footer-overlay-verify.log
+            exit "$status"
           fi
-          cp /tmp/footer-full-test.log agent-footer-full-test-error.txt
+
+      - name: Commit final fix
+        shell: bash
+        run: |
+          rm -f agent-footer-full-test-error.txt agent-footer-overlay-error.txt
+          rm .github/workflows/agent-footer-full-test.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add agent-footer-full-test-error.txt
-          git commit -m "Record footer full-suite failure"
+          git add -A
+          git commit -m "Preserve custom status styling on the underlined path"
           git push origin HEAD:${{ github.head_ref }}
-          tail -n 200 /tmp/footer-full-test.log
-          exit "$status"

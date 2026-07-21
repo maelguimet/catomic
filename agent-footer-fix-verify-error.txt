@@ -1,0 +1,26 @@
+Diff in /home/runner/work/catomic/catomic/src/terminal/render/status_bar.rs:147:
+                 theme.truecolor,
+                 fallback.style(StatusRole::Normal),
+             ),
+-            path: persistent_path_style(
+-                theme.status_filename,
+-                theme.truecolor,
+-                fallback.path,
+-            ),
++            path: persistent_path_style(theme.status_filename, theme.truecolor, fallback.path),
+             info: themed_status_style(
+                 theme.message,
+                 theme.truecolor,
+Diff in /home/runner/work/catomic/catomic/src/terminal/render/status_bar.rs:250:
+     }
+ }
+ 
+-fn persistent_path_style(
+-    style: ThemeStyle,
+-    truecolor: bool,
+-    fallback: StatusStyle,
+-) -> StatusStyle {
++fn persistent_path_style(style: ThemeStyle, truecolor: bool, fallback: StatusStyle) -> StatusStyle {
+     let legacy_generated = ThemeStyle {
+         fg: Some(ThemeColor::Default),
+         bold: Some(true),

@@ -8,8 +8,8 @@ use std::io::{self, Write};
 use crate::terminal as term;
 
 use super::{
-    completion, external_command, external_diff, help, inline_clanker, lint, llm_preview, mobile,
-    model_picker, recovery, status, view, App,
+    completion, external_command, external_diff, help, lint, llm_preview, mobile, model_picker,
+    recovery, status, view, App,
 };
 
 impl App {
@@ -20,27 +20,6 @@ impl App {
 
 fn render(app: &App, out: &mut dyn Write) -> io::Result<()> {
     let window_title = status::title(app.file.path.as_deref());
-    let visible_changes = inline_clanker::preview_changes(app).or_else(|| {
-        view::source_is_displayed(app)
-            .then(|| inline_clanker::source_changes(app))
-            .flatten()
-    });
-    let change_ranges = visible_changes
-        .map(|changes| {
-            changes
-                .ranges
-                .iter()
-                .map(|range| term::render::TextHighlight {
-                    start: range.start,
-                    end: range.end,
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let llm_changes = visible_changes.map(|changes| term::render::LlmChanges {
-        ranges: &change_ranges,
-        gutter_lines: changes.gutter_lines,
-    });
     let visible_external = (app.view_preferences.external_diff() && view::source_is_displayed(app))
         .then(|| {
             app.external_changes
@@ -80,7 +59,6 @@ fn render(app: &App, out: &mut dyn Write) -> io::Result<()> {
     let mut options = render_options(
         app,
         &lint_ranges,
-        llm_changes,
         external_changes,
         action_bar.as_deref(),
         emoji_picker.as_ref(),
@@ -162,7 +140,6 @@ fn render_frame(
 fn render_options<'a>(
     app: &'a App,
     lint_ranges: &'a [term::render::TextHighlight],
-    llm_changes: Option<term::render::LlmChanges<'a>>,
     external_changes: Option<term::render::ExternalChanges<'a>>,
     action_bar: Option<&'a str>,
     emoji_picker: Option<&'a completion::EmojiPickerPresentation>,
@@ -180,7 +157,6 @@ fn render_options<'a>(
         highlight,
         highlight_kind,
         lint_ranges: (!lint_ranges.is_empty()).then_some(lint_ranges),
-        llm_changes,
         external_changes,
         syntax: view::display_syntax(app),
         presentation: view::display_presentation(app),
@@ -254,7 +230,6 @@ fn local_surface_is_open(app: &App) -> bool {
         || view::is_preview(app)
         || model_picker::is_viewing(app)
         || llm_preview::is_viewing(app)
-        || inline_clanker::is_previewing(app)
 }
 
 pub(super) fn status_line(app: &App) -> status::StatusLine {

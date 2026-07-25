@@ -87,7 +87,11 @@ fn monochrome_capability_keeps_non_color_distinctions() {
     assert_eq!(theme.external_changed.reversed, Some(true));
     assert_eq!(theme.external_deleted.fg, None);
     assert_eq!(theme.external_deleted.bold, Some(true));
-    assert_eq!(theme.llm_changed.fg, None);
-    assert_eq!(theme.llm_changed.underlined, Some(true));
-    assert_eq!(theme.llm_changed.reversed, Some(true));
+}
+
+#[test]
+fn retired_llm_changed_role_is_accepted_but_inert() {
+    let theme =
+        parse("[theme.colors]\nllm_changed = { fg = \"red\", underline = true }\n").unwrap();
+    assert_eq!(theme, Theme::default());
 }

@@ -49,7 +49,6 @@ enum PromptKind {
         path: PathBuf,
         exit_on_decline: bool,
     },
-    InlineWarning,
 }
 
 pub(crate) fn open_goto_prompt(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
@@ -66,10 +65,6 @@ pub(crate) fn open_save_as_prompt(app: &mut super::App, out: &mut dyn Write) -> 
 
 pub(crate) fn open_file_prompt(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     open_prompt(app, out, PromptKind::OpenFile)
-}
-
-pub(crate) fn open_inline_warning(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
-    open_prompt(app, out, PromptKind::InlineWarning)
 }
 
 pub(super) fn is_active(app: &super::App) -> bool {
@@ -163,18 +158,7 @@ pub(crate) fn handle_active_key(
     }
     match key.code {
         KeyCode::Esc => {
-            let inline_warning = matches!(
-                app.command_prompt
-                    .active
-                    .as_ref()
-                    .map(|prompt| &prompt.kind),
-                Some(PromptKind::InlineWarning)
-            );
-            if inline_warning {
-                super::inline_clanker::cancel_warning(app);
-            } else {
-                app.message = None;
-            }
+            app.message = None;
             app.command_prompt.active = None;
         }
         KeyCode::Enter => return submit(app, out).map(|()| true),
@@ -210,18 +194,7 @@ pub(crate) fn dispatch_action(
     }
     match action {
         Action::PromptCancel => {
-            let inline_warning = matches!(
-                app.command_prompt
-                    .active
-                    .as_ref()
-                    .map(|prompt| &prompt.kind),
-                Some(PromptKind::InlineWarning)
-            );
-            if inline_warning {
-                super::inline_clanker::cancel_warning(app);
-            } else {
-                app.message = None;
-            }
+            app.message = None;
             app.command_prompt.active = None;
             app.render(out)?;
         }
@@ -247,33 +220,18 @@ fn update_message(app: &mut super::App) {
     };
     let text = prompt.text.clone();
     let width = app.screen.width as usize;
-    let (message, inline_warning) = match &prompt.kind {
-        PromptKind::GotoLine => (
-            super::status::format_prompt("Goto line", &text, width),
-            false,
+    let message = match &prompt.kind {
+        PromptKind::GotoLine => super::status::format_prompt("Goto line", &text, width),
+        PromptKind::Command => super::status::format_prompt("Command", &text, width),
+        PromptKind::SaveAs => super::status::format_prompt("Save as", &text, width),
+        PromptKind::OpenFile => super::status::format_prompt("Open file", &text, width),
+        PromptKind::CreateConfig { path, .. } => format!(
+            "Create {} from the documented template? Type yes to confirm: {}",
+            path.display(),
+            text
         ),
-        PromptKind::Command => (super::status::format_prompt("Command", &text, width), false),
-        PromptKind::SaveAs => (super::status::format_prompt("Save as", &text, width), false),
-        PromptKind::OpenFile => (
-            super::status::format_prompt("Open file", &text, width),
-            false,
-        ),
-        PromptKind::CreateConfig { path, .. } => (
-            format!(
-                "Create {} from the documented template? Type yes to confirm: {}",
-                path.display(),
-                text
-            ),
-            false,
-        ),
-        PromptKind::InlineWarning => (String::new(), true),
     };
-    if inline_warning {
-        app.message = super::inline_clanker::warning_prompt_message(app, &text);
-        app.message_role = crate::terminal::render::StatusRole::Prompt;
-    } else {
-        app.message_info(message);
-    }
+    app.message_info(message);
 }
 
 fn submit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
@@ -291,17 +249,6 @@ fn submit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
             path,
             exit_on_decline,
         } => execute_config_create(app, out, path, exit_on_decline, &prompt.text),
-        PromptKind::InlineWarning => {
-            if super::inline_clanker::answer_warning(app, out, &prompt.text)? {
-                Ok(())
-            } else {
-                app.command_prompt.active = Some(ActivePrompt {
-                    kind: PromptKind::InlineWarning,
-                    text: String::new(),
-                });
-                Ok(())
-            }
-        }
     }
 }
 
@@ -349,8 +296,6 @@ fn execute_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> 
             super::llm_request::CurrentLlmCommand::BigMeow,
             instruction,
         ),
-        (PromptCommand::RunClanker, "") => super::hooks::before_inline_clanker(app, out),
-        (PromptCommand::ClearClankerChanges, "") => super::inline_clanker::clear_changes(app, out),
         _ => unknown_command(app, out, command),
     }
 }

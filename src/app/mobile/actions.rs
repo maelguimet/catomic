@@ -68,10 +68,6 @@ pub(super) const MENU_ENTRIES: &[MenuEntry] = &[
         MenuAction::Dispatch(Action::CommandPrompt),
     ),
     entry(
-        "Run inline clanker",
-        MenuAction::Dispatch(Action::RunClanker),
-    ),
-    entry(
         "Select model/provider",
         MenuAction::Dispatch(Action::SelectModel),
     ),
@@ -135,7 +131,6 @@ mod tests {
             "Next buffer",
             "Help",
             "Command prompt",
-            "Run inline clanker",
             "Select model/provider",
             "Markdown preview",
             "Quit",

@@ -64,6 +64,24 @@ fn unrelated_raw_keys_are_not_claimed_or_suppressed() {
 }
 
 #[test]
+fn retired_inline_actions_are_accepted_but_never_bound() {
+    let bindings = parse(
+        "[keybindings]\n\" Run-Clanker \" = [\"f3\"]\nCLEAR-CLANKER-CHANGES = [\"shift+f3\"]\n\"alt+x\" = \" Run-Clanker \"\n\"alt+y\" = \"CLEAR-CLANKER-CHANGES\"\n",
+    )
+    .unwrap();
+    for key in [
+        key(KeyCode::F(3), KeyModifiers::NONE),
+        key(KeyCode::F(3), KeyModifiers::SHIFT),
+        key(KeyCode::Char('x'), KeyModifiers::ALT),
+        key(KeyCode::Char('y'), KeyModifiers::ALT),
+    ] {
+        assert_eq!(bindings.action_for_key(Scope::Editor, key), None);
+        assert!(!bindings.is_default_key(Scope::Editor, key));
+    }
+    assert!(parse("[keybindings]\ninline-meow = []\n").is_err());
+}
+
+#[test]
 fn global_actions_win_and_local_scopes_can_reuse_chords() {
     let bindings = parse(
         "[keybindings]\nhelp = [\"alt+h\"]\nprompt-cancel = [\"alt+x\"]\ncompletion-cancel = [\"alt+x\"]\n",
@@ -161,7 +179,7 @@ fn mouse_gestures_resolve_to_semantic_actions_and_can_be_unbound() {
 #[test]
 fn registry_defaults_are_complete_and_collision_free() {
     let bindings = KeyBindings::default();
-    assert_eq!(actions::REGISTRY.len(), 89);
+    assert_eq!(actions::REGISTRY.len(), 87);
     for descriptor in actions::REGISTRY {
         assert!(!descriptor.name.is_empty());
         assert!(!descriptor.scopes.is_empty());

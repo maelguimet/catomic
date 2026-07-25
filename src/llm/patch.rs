@@ -18,14 +18,6 @@ struct Hunk {
     lines: Vec<HunkLine>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct PatchVisualization {
-    /// Zero-based half-open logical line ranges containing model-added/replaced text.
-    pub added_line_ranges: Vec<(usize, usize)>,
-    /// Zero-based proposed-document lines where removed text formerly appeared.
-    pub deleted_at_lines: Vec<usize>,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct HunkLine {
     kind: HunkLineKind,
@@ -176,39 +168,6 @@ impl Patch {
         } else {
             Err(PatchError::UnexpectedPath)
         }
-    }
-
-    pub fn visualization(&self) -> PatchVisualization {
-        let mut visualization = PatchVisualization::default();
-        for hunk in &self.hunks {
-            let mut new_line = hunk.new_start.saturating_sub(1);
-            let mut open_added = None;
-            for line in &hunk.lines {
-                if line.kind != HunkLineKind::Add {
-                    if let Some(start) = open_added.take() {
-                        visualization.added_line_ranges.push((start, new_line));
-                    }
-                }
-                match line.kind {
-                    HunkLineKind::Context => {
-                        new_line += 1;
-                    }
-                    HunkLineKind::Remove => {
-                        visualization.deleted_at_lines.push(new_line);
-                    }
-                    HunkLineKind::Add => {
-                        open_added.get_or_insert(new_line);
-                        new_line += 1;
-                    }
-                }
-            }
-            if let Some(start) = open_added {
-                visualization.added_line_ranges.push((start, new_line));
-            }
-        }
-        visualization.deleted_at_lines.sort_unstable();
-        visualization.deleted_at_lines.dedup();
-        visualization
     }
 }
 

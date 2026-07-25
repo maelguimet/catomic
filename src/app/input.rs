@@ -75,8 +75,6 @@ pub(super) fn finish_content_edit_with_message(
     app.selection.clear();
     completion::after_content_edit(app)?;
     refresh_dirty(&mut app.file, &*app.buffer);
-    app.clanker_changes
-        .reconcile(app.buffer.edit_history_position());
     app.external_changes
         .reconcile(app.buffer.edit_history_position());
     if app.buffer.is_read_only() {
@@ -233,8 +231,6 @@ pub(super) fn dispatch_action(
         | Action::LineNumbers
         | Action::Whitespace
         | Action::SoftWrap => view::dispatch_action(app, out, action).map(|_| ()),
-        Action::RunClanker => super::hooks::before_inline_clanker(app, out),
-        Action::ClearClankerChanges => super::inline_clanker::clear_changes(app, out),
         Action::SelectModel => model_picker::show(app, out),
         _ => Ok(()),
     }

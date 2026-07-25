@@ -19,8 +19,6 @@ pub(crate) enum PromptCommand {
     Run,
     Recover,
     SelectModel,
-    RunClanker,
-    ClearClankerChanges,
     Meow,
     BigMeow,
     Quit,
@@ -52,11 +50,6 @@ pub(crate) const PROMPT_COMMANDS: &[PromptCommandSpec] = &[
     command(
         PromptCommand::SelectModel,
         &["model", "models", "select-model"],
-    ),
-    command(PromptCommand::RunClanker, &["run-clanker", "inline-meow"]),
-    command(
-        PromptCommand::ClearClankerChanges,
-        &["clear-clanker-changes"],
     ),
     command(PromptCommand::Meow, &["meow"]),
     command(PromptCommand::BigMeow, &["bigmeow"]),

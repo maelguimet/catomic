@@ -157,7 +157,6 @@ fn close_transients(app: &mut super::App) {
     super::recovery::close(app);
     super::external_command::cancel_all(app);
     super::llm_request::cancel_all(app);
-    super::inline_clanker::cancel_all(app);
     super::replace::cancel(app);
     super::search::cancel_running_search(app);
     super::command_prompt::cancel_running_goto(app);

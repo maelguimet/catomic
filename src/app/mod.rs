@@ -34,7 +34,6 @@ mod external_diff;
 mod help;
 mod hooks;
 mod indentation;
-mod inline_clanker;
 mod open;
 mod overwrite;
 mod paging;
@@ -147,10 +146,6 @@ pub struct App {
     pub(crate) model_session: model_session::ModelSession,
     /// Explicit searchable picker and bounded discovery cache; idle and network-free by default.
     pub(crate) model_picker: model_picker::ModelPickerState,
-    /// One-key inline clanker phase. No client exists in warning/confirmation state.
-    pub(crate) inline_clanker: inline_clanker::InlineClankerState,
-    /// Per-buffer render-only history for the latest accepted inline-clanker changes.
-    pub(crate) clanker_changes: inline_clanker::ChangeHistory,
     /// Per-buffer render-only metadata for the exact latest external reload revision.
     pub(crate) external_changes: external_diff::ExternalChanges,
     /// External process/preview state; empty at startup and while unused.

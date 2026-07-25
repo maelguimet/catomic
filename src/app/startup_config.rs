@@ -1,6 +1,6 @@
 //! Purpose: collect inert startup settings used to construct editor buffers.
 //! Owns: typed config loading, constructor grouping, and same-session cloning.
-//! Must not: open buffers, render UI, construct linter/LLM services, or write files.
+//! Must not: open buffers, render UI, construct linter services, or write files.
 //! Invariants: every buffer in one session receives the same startup defaults.
 
 use std::io;
@@ -134,5 +134,32 @@ mod tests {
             None,
         )
         .unwrap();
+    }
+
+    #[test]
+    fn complete_retired_ai_configuration_yields_non_ai_startup_defaults() {
+        let retired = StartupConfig::from_snapshot(
+            include_str!("../../tests/fixtures/retired_ai_config.toml"),
+            None,
+        )
+        .unwrap();
+        let defaults = StartupConfig::from_snapshot("", None).unwrap();
+
+        assert_eq!(retired.big_files, defaults.big_files);
+        assert_eq!(retired.auto_reload, defaults.auto_reload);
+        assert_eq!(retired.editor, defaults.editor);
+        assert_eq!(retired.commands, defaults.commands);
+        assert_eq!(retired.cat, defaults.cat);
+        assert_eq!(retired.theme, defaults.theme);
+        assert_eq!(retired.view_preferences, defaults.view_preferences);
+        assert_eq!(retired.mobile, defaults.mobile);
+        for descriptor in crate::config::actions::REGISTRY {
+            assert_eq!(
+                retired.keybindings.keyboard_chords(descriptor.action),
+                defaults.keybindings.keyboard_chords(descriptor.action),
+                "retired AI input changed {:?}",
+                descriptor.action
+            );
+        }
     }
 }

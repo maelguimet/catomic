@@ -182,8 +182,6 @@ fn prompt_is_active(app: &super::App) -> bool {
         || super::search::is_active(app)
         || super::replace::is_active(app)
         || super::help::is_searching(app)
-        || app.pending_llm_request.is_some()
-        || super::llm_preview::is_viewing(app)
         || super::recovery::is_viewing(app)
         || super::external_command::is_viewing(app)
 }

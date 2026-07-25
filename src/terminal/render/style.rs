@@ -267,7 +267,7 @@ fn segment_style(
     let theme = options.theme;
     let mut style = match options.surface {
         ContentSurface::Normal => theme.text,
-        ContentSurface::Preview | ContentSurface::Diff => theme.text.overlay(theme.preview),
+        ContentSurface::Preview => theme.text.overlay(theme.preview),
     };
     for span in spans {
         style = style.overlay(span_style(theme, span));

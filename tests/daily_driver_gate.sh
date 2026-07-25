@@ -86,11 +86,6 @@ EOF
 - [x] Status and prompts remained understandable at narrow and normal widths.
 - [x] Markdown source and F6 preview were reviewed at both widths.
 
-## Model safety
-
-- [x] Opened a current-file model confirmation, then pressed Escape.
-- [x] Confirmed no model request or live endpoint was used.
-
 ## Defects
 
 - None observed.

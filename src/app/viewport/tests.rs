@@ -266,7 +266,7 @@ fn wheel_scrolls_help_without_moving_help_or_source_cursors() {
 }
 
 #[test]
-fn wheel_scrolls_markdown_and_proposal_views_without_source_mutation() {
+fn wheel_scrolls_markdown_view_without_source_mutation() {
     let mut markdown = App::new(None).unwrap();
     markdown.file.path = Some("notes.md".into());
     markdown.buffer = Box::new(PieceTable::from_text(
@@ -291,24 +291,6 @@ fn wheel_scrolls_markdown_and_proposal_views_without_source_mutation() {
     );
     assert_eq!(markdown.buffer.to_string(), markdown_source);
     assert_eq!(markdown.buffer.edit_history_position(), markdown_history);
-
-    let mut proposal = App::new(None).unwrap();
-    proposal.buffer = Box::new(PieceTable::from_text("one\ntwo\n"));
-    proposal.screen.height = 3;
-    let proposal_source = proposal.buffer.to_string();
-    let proposal_history = proposal.buffer.edit_history_position();
-    let patch = "--- a/note.txt\n+++ b/note.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n";
-    crate::app::llm_preview::show(&mut proposal, &mut out, patch).unwrap();
-    let diff_cursor = crate::app::view::display_buffer(&proposal).cursor();
-    handle_mouse_wheel(&mut proposal, &mut out, ScrollDirection::Down, 0).unwrap();
-    assert!(proposal.screen.scroll_top > 0);
-    assert_eq!(
-        crate::app::view::display_buffer(&proposal).cursor(),
-        diff_cursor
-    );
-    assert_eq!(proposal.buffer.to_string(), proposal_source);
-    assert_eq!(proposal.buffer.edit_history_position(), proposal_history);
-    assert!(!proposal.file.dirty);
 }
 
 #[test]

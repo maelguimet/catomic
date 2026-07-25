@@ -23,6 +23,8 @@ fn prompt_commands_and_aliases_are_unique_and_dispatchable() {
 #[test]
 fn removed_commands_are_not_available() {
     for removed in [
+        "meow",
+        "bigmeow",
         "gitmeow",
         "megameow",
         "run-clanker",

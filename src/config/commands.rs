@@ -1,7 +1,7 @@
 //! Purpose: decode named external commands and lifecycle hook references.
 //! Owns: command policies, hook order, names, timeout validation, and reference validation.
 //! Must not: spawn processes, inspect buffers, dispatch lifecycle events, or mutate files.
-//! Invariants: commands are bounded; hooks reference unique commands defined in the same file.
+//! Invariants: commands are bounded; active hooks reference unique commands defined in the same file.
 
 use std::collections::BTreeMap;
 use std::io;
@@ -48,14 +48,12 @@ pub(crate) struct CommandConfig {
 struct Hooks {
     on_open: Vec<String>,
     on_save: Vec<String>,
-    before_llm: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum HookEvent {
     Open,
     Save,
-    BeforeLlm,
 }
 
 impl CommandConfig {
@@ -67,7 +65,6 @@ impl CommandConfig {
         match event {
             HookEvent::Open => &self.hooks.on_open,
             HookEvent::Save => &self.hooks.on_save,
-            HookEvent::BeforeLlm => &self.hooks.before_llm,
         }
     }
 
@@ -115,8 +112,6 @@ struct RawHooks {
     on_open: Vec<String>,
     #[serde(default)]
     on_save: Vec<String>,
-    #[serde(default)]
-    before_llm: Vec<String>,
 }
 
 impl From<RawHooks> for Hooks {
@@ -124,7 +119,6 @@ impl From<RawHooks> for Hooks {
         Self {
             on_open: raw.on_open,
             on_save: raw.on_save,
-            before_llm: raw.before_llm,
         }
     }
 }
@@ -169,11 +163,7 @@ fn validate_name(name: &str) -> io::Result<()> {
 }
 
 fn validate_hooks(commands: &BTreeMap<String, CommandSpec>, hooks: &Hooks) -> io::Result<()> {
-    for (event, names) in [
-        ("on_open", &hooks.on_open),
-        ("on_save", &hooks.on_save),
-        ("before_llm", &hooks.before_llm),
-    ] {
+    for (event, names) in [("on_open", &hooks.on_open), ("on_save", &hooks.on_save)] {
         let mut seen = std::collections::BTreeSet::new();
         for name in names {
             if !commands.contains_key(name) {
@@ -251,8 +241,7 @@ mod tests {
     fn parses_ordered_hooks_that_reference_named_commands() {
         let config = parse(
             "[commands.first]\ncommand = \"true\"\n[commands.second]\ncommand = \"true\"\n\
-             [hooks]\non_open = [\"first\", \"second\"]\non_save = [\"second\"]\n\
-             before_llm = [\"first\"]\n",
+             [hooks]\non_open = [\"first\", \"second\"]\non_save = [\"second\"]\n",
         )
         .unwrap();
 
@@ -261,10 +250,14 @@ mod tests {
             &["first".to_string(), "second".to_string()]
         );
         assert_eq!(config.hooks_for(HookEvent::Save), &["second".to_string()]);
-        assert_eq!(
-            config.hooks_for(HookEvent::BeforeLlm),
-            &["first".to_string()]
-        );
+    }
+
+    #[test]
+    fn retired_before_llm_names_are_not_decoded_or_validated() {
+        let config =
+            parse("[hooks]\nbefore_llm = [\"missing\", \"missing\", \"bad name\"]\n").unwrap();
+
+        assert_eq!(config, CommandConfig::default());
     }
 
     #[test]

@@ -288,7 +288,7 @@ fn mobile_menu_cancels_config_discard_confirmation() {
 }
 
 #[test]
-fn command_prompt_preserves_selection_for_meow_confirmation() {
+fn retired_model_prompt_commands_are_unknown() {
     let mut app = super::super::App::new(None).unwrap();
     app.buffer = Box::new(crate::buffer::PieceTable::from_text("selected text"));
     let mut out = Vec::new();
@@ -301,9 +301,11 @@ fn command_prompt_preserves_selection_for_meow_confirmation() {
     app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
         .unwrap();
 
-    assert!(app.pending_llm_request.is_some());
-    assert!(app.llm_task.is_none());
-    assert!(app.message.as_deref().unwrap().contains("from selection"));
+    assert_eq!(
+        app.message.as_deref(),
+        Some("Unknown command: meow rewrite this")
+    );
+    assert_eq!(app.buffer.to_string(), "selected text");
 }
 
 #[test]

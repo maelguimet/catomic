@@ -18,8 +18,6 @@ pub(crate) enum PromptCommand {
     ReplaceAll,
     Run,
     Recover,
-    Meow,
-    BigMeow,
     Quit,
 }
 
@@ -46,8 +44,6 @@ pub(crate) const PROMPT_COMMANDS: &[PromptCommandSpec] = &[
     command(PromptCommand::ReplaceAll, &["replace-all", "replaceall"]),
     command(PromptCommand::Run, &["run"]),
     command(PromptCommand::Recover, &["recover"]),
-    command(PromptCommand::Meow, &["meow"]),
-    command(PromptCommand::BigMeow, &["bigmeow"]),
     command(PromptCommand::Quit, &["quit", "q"]),
 ];
 

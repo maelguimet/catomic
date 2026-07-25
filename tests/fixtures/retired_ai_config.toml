@@ -1,0 +1,65 @@
+[hooks]
+before_llm = ["missing-command", "missing-command", "bad command name"]
+
+[llm]
+default = "retired default"
+base_url = "not a URL"
+model = "legacy/model"
+api_key_env = "not an env name"
+timeout_secs = -1
+
+[llm.inline]
+instruction_prefix = ">>"
+instruction_suffix = ""
+context_open = "<catblock>"
+context_close = "</catblock>"
+warn_lines = -1
+block_mode = "retired-mode"
+queue_limit = -1
+stop_on_error = true
+remove_instruction_after_apply = false
+
+[[llm.backends]]
+type = "unknown-provider"
+name = "hosted"
+model = "provider/model"
+base_url = "also not a URL"
+api_key_env = "still not an env name"
+headers = { "X-Client" = "catomic" }
+header_envs = { "X-Key" = "not an env name" }
+models = ["provider/model", "another/model"]
+discovery = true
+timeout_secs = -2
+enabled = false
+
+[[llm.backends]]
+type = "command"
+name = "headless"
+model = "retired"
+program = ""
+args = ["--print", ""]
+input = "unknown-input-adapter"
+output = "unknown-output-adapter"
+timeout_secs = -3
+enabled = true
+
+[languages.rs.llm.inline]
+instruction_prefix = "// >>"
+instruction_suffix = ""
+context_open = "/*"
+context_close = "*/"
+warn_lines = -4
+block_mode = "retired-language-mode"
+queue_limit = -5
+stop_on_error = false
+remove_instruction_after_apply = true
+
+[keybindings]
+run-clanker = ["f3"]
+clear-clanker-changes = ["shift+f3"]
+select-model = ["f10"]
+picker-accept = ["enter"]
+picker-cancel = ["esc"]
+
+[theme.colors]
+llm_changed = { fg = "red", underline = true }

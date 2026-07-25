@@ -7,8 +7,7 @@ use crate::config::actions::Scope;
 
 pub(super) fn active(app: &super::super::App) -> Scope {
     use super::super::{
-        command_prompt, completion, external_command, help, llm_preview, llm_request, recovery,
-        replace, search, view,
+        command_prompt, completion, external_command, help, recovery, replace, search, view,
     };
 
     if help::is_viewing(app) {
@@ -19,12 +18,7 @@ pub(super) fn active(app: &super::super::App) -> Scope {
         Scope::Completion
     } else if replace::is_active(app) || command_prompt::is_active(app) {
         Scope::Prompt
-    } else if recovery::is_viewing(app)
-        || external_command::is_busy(app)
-        || llm_request::is_active(app)
-        || llm_preview::is_viewing(app)
-        || view::is_preview(app)
-    {
+    } else if recovery::is_viewing(app) || external_command::is_busy(app) || view::is_preview(app) {
         Scope::Preview
     } else {
         Scope::Editor

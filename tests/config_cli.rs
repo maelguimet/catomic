@@ -149,6 +149,21 @@ fn config_path_check_and_help_are_read_only_and_preserving() -> TestResult {
     assert!(retired.status.success(), "{:?}", retired.stderr);
     assert_eq!(fs::read(&config)?, retired_before);
 
+    fs::write(&config, include_str!("fixtures/retired_ai_config.toml"))?;
+    let retired_ai_before = fs::read(&config)?;
+    for arguments in [
+        &["config", "check"][..],
+        &["update", "--validate-config"][..],
+    ] {
+        let retired_ai = run(&fixture, arguments)?;
+        assert!(
+            retired_ai.status.success(),
+            "{arguments:?}: {}",
+            String::from_utf8_lossy(&retired_ai.stderr)
+        );
+        assert_eq!(fs::read(&config)?, retired_ai_before);
+    }
+
     fs::write(
         &config,
         "[theme]\nname = \"default\"\n[future]\ncat = true\n",

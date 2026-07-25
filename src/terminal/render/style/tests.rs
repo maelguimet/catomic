@@ -269,7 +269,7 @@ fn diff_and_preview_styles_overlay_normal_text() {
             0,
             RenderOptions {
                 syntax: SyntaxKind::Diff,
-                surface: ContentSurface::Diff,
+                surface: ContentSurface::Preview,
                 theme,
                 ..RenderOptions::default()
             }

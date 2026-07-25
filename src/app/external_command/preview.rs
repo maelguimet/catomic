@@ -40,7 +40,6 @@ pub(super) fn open(
     }
     let text = result_text(&stdout, &stderr, code, truncated);
     super::super::view::cancel_preview(app);
-    super::super::llm_preview::close(app);
     app.external_command.preview = Some(CommandPreview {
         name: running.name,
         proposed_text: stdout,

@@ -76,7 +76,6 @@ const HTTP_BACKEND_KEYS: &[&str] = &[
     "api_key_env",
     "headers",
     "header_envs",
-    // Retired picker inputs remain structurally explicit and inert.
     "models",
     "discovery",
     "timeout_secs",
@@ -159,10 +158,10 @@ pub(crate) fn validate_unknown_keys(text: &str) -> io::Result<()> {
         ("cat", CAT_KEYS),
         ("recovery", RECOVERY_KEYS),
         ("mobile", MOBILE_KEYS),
-        ("hooks", HOOK_KEYS),
     ] {
         validate_section(&root, section, keys)?;
     }
+    validate_hooks(&root)?;
     validate_retired_autocomplete(&root)?;
     validate_languages(&root)?;
     validate_commands(&root)?;
@@ -174,6 +173,17 @@ pub(crate) fn validate_unknown_keys(text: &str) -> io::Result<()> {
 fn validate_section(root: &Table, name: &str, allowed: &[&str]) -> io::Result<()> {
     if let Some(table) = root.get(name).and_then(Value::as_table) {
         reject_unknown(table, name, allowed)?;
+    }
+    Ok(())
+}
+
+fn validate_hooks(root: &Table) -> io::Result<()> {
+    let Some(hooks) = optional_table(root, "hooks", "hooks")? else {
+        return Ok(());
+    };
+    reject_unknown(hooks, "hooks", HOOK_KEYS)?;
+    if let Some(value) = hooks.get("before_llm") {
+        validate_string_array(value, "hooks.before_llm")?;
     }
     Ok(())
 }
@@ -192,14 +202,17 @@ fn validate_retired_autocomplete(root: &Table) -> io::Result<()> {
 }
 
 fn validate_languages(root: &Table) -> io::Result<()> {
-    let Some(languages) = root.get("languages").and_then(Value::as_table) else {
+    let Some(value) = root.get("languages") else {
         return Ok(());
     };
+    let languages = value
+        .as_table()
+        .ok_or_else(|| invalid("configuration key languages must be a table"))?;
     for (name, value) in languages {
-        let Some(language) = value.as_table() else {
-            continue;
-        };
         let path = dynamic_path("languages", name);
+        let language = value
+            .as_table()
+            .ok_or_else(|| invalid(format!("configuration key {path} must be a table")))?;
         reject_unknown(language, &path, LANGUAGE_KEYS)?;
         let llm_path = format!("{path}.llm");
         let Some(llm) = optional_table(language, "llm", &llm_path)? else {
@@ -230,63 +243,169 @@ fn validate_llm(root: &Table) -> io::Result<()> {
         return Ok(());
     };
     reject_unknown(llm, "llm", LLM_KEYS)?;
+    validate_optional_string(llm, "default", "llm.default")?;
+    validate_optional_string(llm, "base_url", "llm.base_url")?;
+    validate_optional_string(llm, "model", "llm.model")?;
+    validate_optional_string(llm, "api_key_env", "llm.api_key_env")?;
+    validate_optional_integer(llm, "timeout_secs", "llm.timeout_secs")?;
     if let Some(inline) = optional_table(llm, "inline", "llm.inline")? {
         validate_retired_inline(inline, "llm.inline")?;
     }
-    let Some(backends) = llm.get("backends").and_then(Value::as_array) else {
+    let Some(value) = llm.get("backends") else {
         return Ok(());
     };
+    let backends = value
+        .as_array()
+        .ok_or_else(|| invalid("configuration key llm.backends must be an array"))?;
+    if backends.len() > 128 {
+        return Err(invalid(
+            "configuration key llm.backends exceeds 128 entries",
+        ));
+    }
     for (index, value) in backends.iter().enumerate() {
-        let Some(backend) = value.as_table() else {
-            continue;
-        };
+        let path = format!("llm.backends[{index}]");
+        let backend = value
+            .as_table()
+            .ok_or_else(|| invalid(format!("configuration key {path} must be a table")))?;
         let allowed = match backend.get("type").and_then(Value::as_str) {
             Some("openai-compatible") => HTTP_BACKEND_KEYS,
             Some("command") => COMMAND_BACKEND_KEYS,
             _ => BACKEND_KEYS,
         };
-        let path = format!("llm.backends[{index}]");
         reject_unknown(backend, &path, allowed)?;
-        validate_retired_picker_inputs(backend, &path)?;
+        validate_retired_backend(backend, &path)?;
     }
     Ok(())
 }
 
 fn validate_retired_inline(table: &Table, path: &str) -> io::Result<()> {
-    reject_unknown(table, path, INLINE_KEYS)
+    reject_unknown(table, path, INLINE_KEYS)?;
+    for key in [
+        "instruction_prefix",
+        "instruction_suffix",
+        "context_open",
+        "context_close",
+        "block_mode",
+    ] {
+        validate_optional_string(table, key, &child_path(path, key))?;
+    }
+    for key in ["warn_lines", "queue_limit"] {
+        validate_optional_integer(table, key, &child_path(path, key))?;
+    }
+    for key in ["stop_on_error", "remove_instruction_after_apply"] {
+        validate_optional_boolean(table, key, &child_path(path, key))?;
+    }
+    Ok(())
 }
 
-fn validate_retired_picker_inputs(backend: &Table, path: &str) -> io::Result<()> {
+fn validate_retired_backend(backend: &Table, path: &str) -> io::Result<()> {
+    for key in [
+        "type",
+        "name",
+        "model",
+        "base_url",
+        "api_key_env",
+        "program",
+        "input",
+        "output",
+    ] {
+        validate_optional_string(backend, key, &child_path(path, key))?;
+    }
+    validate_optional_integer(backend, "timeout_secs", &child_path(path, "timeout_secs"))?;
+    for key in ["discovery", "enabled"] {
+        validate_optional_boolean(backend, key, &child_path(path, key))?;
+    }
     if let Some(value) = backend.get("models") {
-        let models = value
-            .as_array()
-            .ok_or_else(|| invalid(format!("configuration key {path}.models must be an array")))?;
-        if models.len() > 128 {
-            return Err(invalid(format!(
-                "configuration key {path}.models exceeds 128 entries"
-            )));
-        }
-        for (index, value) in models.iter().enumerate() {
-            let model = value.as_str().ok_or_else(|| {
-                invalid(format!(
-                    "configuration key {path}.models[{index}] must be a string"
-                ))
-            })?;
-            let model = model.trim();
-            if model.is_empty() || model.len() > 256 || model.chars().any(char::is_control) {
-                return Err(invalid(format!(
-                    "configuration key {path}.models[{index}] must be 1-256 printable bytes"
-                )));
-            }
+        validate_retired_models(value, &child_path(path, "models"))?;
+    }
+    if let Some(value) = backend.get("args") {
+        validate_string_array(value, &child_path(path, "args"))?;
+    }
+    for key in ["headers", "header_envs"] {
+        if let Some(value) = backend.get(key) {
+            validate_string_table(value, &child_path(path, key))?;
         }
     }
-    if backend
-        .get("discovery")
-        .is_some_and(|value| !value.is_bool())
-    {
+    Ok(())
+}
+
+fn validate_retired_models(value: &Value, path: &str) -> io::Result<()> {
+    let models = value
+        .as_array()
+        .ok_or_else(|| invalid(format!("configuration key {path} must be an array")))?;
+    if models.len() > 128 {
         return Err(invalid(format!(
-            "configuration key {path}.discovery must be a boolean"
+            "configuration key {path} exceeds 128 entries"
         )));
+    }
+    for (index, value) in models.iter().enumerate() {
+        let model = value.as_str().ok_or_else(|| {
+            invalid(format!(
+                "configuration key {path}[{index}] must be a string"
+            ))
+        })?;
+        let model = model.trim();
+        if model.is_empty() || model.len() > 256 || model.chars().any(char::is_control) {
+            return Err(invalid(format!(
+                "configuration key {path}[{index}] must be 1-256 printable bytes"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_optional_string(table: &Table, key: &str, path: &str) -> io::Result<()> {
+    if table.get(key).is_some_and(|value| !value.is_str()) {
+        return Err(invalid(format!(
+            "configuration key {path} must be a string"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_optional_integer(table: &Table, key: &str, path: &str) -> io::Result<()> {
+    if table.get(key).is_some_and(|value| !value.is_integer()) {
+        return Err(invalid(format!(
+            "configuration key {path} must be an integer"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_optional_boolean(table: &Table, key: &str, path: &str) -> io::Result<()> {
+    if table.get(key).is_some_and(|value| !value.is_bool()) {
+        return Err(invalid(format!(
+            "configuration key {path} must be a boolean"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_string_array(value: &Value, path: &str) -> io::Result<()> {
+    let values = value
+        .as_array()
+        .ok_or_else(|| invalid(format!("configuration key {path} must be an array")))?;
+    for (index, value) in values.iter().enumerate() {
+        if !value.is_str() {
+            return Err(invalid(format!(
+                "configuration key {path}[{index}] must be a string"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_string_table(value: &Value, path: &str) -> io::Result<()> {
+    let values = value
+        .as_table()
+        .ok_or_else(|| invalid(format!("configuration key {path} must be a table")))?;
+    for (key, value) in values {
+        if !value.is_str() {
+            return Err(invalid(format!(
+                "configuration key {} must be a string",
+                dynamic_path(path, key)
+            )));
+        }
     }
     Ok(())
 }
@@ -372,6 +491,19 @@ mod tests {
             ("autocomplete = true\n", "autocomplete must be a table"),
             ("[editor]\ntab_szie = 2\n", "editor.tab_szie"),
             ("[files]\nauto_relod = false\n", "files.auto_relod"),
+            ("hooks = true\n", "hooks must be a table"),
+            (
+                "[hooks]\nbefore_llm = \"guard\"\n",
+                "hooks.before_llm must be an array",
+            ),
+            (
+                "[hooks]\nbefore_llm = [\"guard\", 1]\n",
+                "hooks.before_llm[1] must be a string",
+            ),
+            (
+                "[hooks]\nbefore-llm = []\n",
+                "unknown configuration key hooks.before-llm",
+            ),
             (
                 "[commands.format]\ncommand = \"rustfmt\"\ntimeot_secs = 3\n",
                 "commands.format.timeot_secs",
@@ -380,6 +512,52 @@ mod tests {
             (
                 "[[llm.backends]]\nname = \"local\"\ntype = \"command\"\nprogram = \"codex\"\nmodel = \"codex\"\noutput = \"codex-jsonl-v1\"\ntimeot_secs = 30\n",
                 "llm.backends[0].timeot_secs",
+            ),
+            ("llm = true\n", "llm must be a table"),
+            ("[llm]\ndefault = 1\n", "llm.default must be a string"),
+            (
+                "[llm]\ntimeout_secs = \"slow\"\n",
+                "llm.timeout_secs must be an integer",
+            ),
+            (
+                "[llm]\nbackends = {}\n",
+                "llm.backends must be an array",
+            ),
+            (
+                "[llm]\nbackends = [1]\n",
+                "llm.backends[0] must be a table",
+            ),
+            (
+                "[[llm.backends]]\ntype = true\n",
+                "llm.backends[0].type must be a string",
+            ),
+            (
+                "[[llm.backends]]\nargs = [\"ok\", 1]\n",
+                "llm.backends[0].args[1] must be a string",
+            ),
+            (
+                "[[llm.backends]]\nheaders = []\n",
+                "llm.backends[0].headers must be a table",
+            ),
+            (
+                "[[llm.backends]]\nheaders = { \"X Header\" = 1 }\n",
+                "llm.backends[0].headers.\"X Header\" must be a string",
+            ),
+            (
+                "[[llm.backends]]\nheader_envs = { token = false }\n",
+                "llm.backends[0].header_envs.token must be a string",
+            ),
+            (
+                "[[llm.backends]]\nenabled = \"yes\"\n",
+                "llm.backends[0].enabled must be a boolean",
+            ),
+            (
+                "[[llm.backends]]\ntype = \"openai-compatible\"\nprogram = \"tool\"\n",
+                "unknown configuration key llm.backends[0].program",
+            ),
+            (
+                "[[llm.backends]]\ntype = \"command\"\nbase_url = \"https://example.test\"\n",
+                "unknown configuration key llm.backends[0].base_url",
             ),
             ("[theme.colors]\nstatuz = \"red\"\n", "theme.colors.statuz"),
             (
@@ -392,12 +570,33 @@ mod tests {
             ),
             ("llm.inline = true\n", "llm.inline must be a table"),
             (
+                "[llm.inline]\nwarn_lines = \"many\"\n",
+                "llm.inline.warn_lines must be an integer",
+            ),
+            (
+                "[llm.inline]\nstop_on_error = \"yes\"\n",
+                "llm.inline.stop_on_error must be a boolean",
+            ),
+            (
+                "[llm.inline]\ninstruction_prefx = \">>\"\n",
+                "llm.inline.instruction_prefx",
+            ),
+            ("languages = []\n", "languages must be a table"),
+            (
+                "[languages]\nrs = true\n",
+                "languages.rs must be a table",
+            ),
+            (
                 "[languages.rs]\nllm = true\n",
                 "languages.rs.llm must be a table",
             ),
             (
                 "[languages.rs.llm]\ninline = true\n",
                 "languages.rs.llm.inline must be a table",
+            ),
+            (
+                "[languages.rs.llm.inline]\nblock_mode = true\n",
+                "languages.rs.llm.inline.block_mode must be a string",
             ),
             (
                 "[[llm.backends]]\ntype = \"openai-compatible\"\nmodels = { typo = true }\n",
@@ -450,34 +649,13 @@ autocomplete = { fg = "bright-black", dim = true }
     }
 
     #[test]
-    fn accepts_retired_generated_inline_configuration_as_inert_input() {
-        let text = r#"
-[llm.inline]
-instruction_prefix = ">>"
-instruction_suffix = ""
-context_open = "<catblock>"
-context_close = "</catblock>"
-warn_lines = 500
-block_mode = "combined"
-queue_limit = 16
-stop_on_error = true
-remove_instruction_after_apply = true
-
-[languages.rs.llm.inline]
-instruction_prefix = "// >>"
-
-[keybindings]
-run-clanker = ["f3"]
-clear-clanker-changes = ["shift+f3"]
-
-[theme.colors]
-llm_changed = { fg = "red", underline = true }
-"#;
+    fn accepts_complete_retired_ai_configuration_as_inert_input() {
+        let text = include_str!("../../tests/fixtures/retired_ai_config.toml");
 
         crate::config::validate_text(text).unwrap();
         assert_eq!(
-            crate::config::llm::parse(text).unwrap(),
-            crate::config::llm::LlmCatalog::default()
+            crate::config::commands::parse(text).unwrap(),
+            crate::config::commands::CommandConfig::default()
         );
         assert_eq!(
             crate::config::theme::parse(text).unwrap(),
@@ -486,7 +664,7 @@ llm_changed = { fg = "red", underline = true }
     }
 
     #[test]
-    fn retired_model_list_keeps_its_previous_hard_bound() {
+    fn retired_model_list_keeps_its_previous_bounds_and_content_checks() {
         let models = (0..129)
             .map(|index| format!("\"model-{index}\""))
             .collect::<Vec<_>>()
@@ -497,6 +675,33 @@ llm_changed = { fg = "red", underline = true }
             error
                 .to_string()
                 .contains("llm.backends[0].models exceeds 128 entries"),
+            "{error}"
+        );
+        for invalid in ["[\"\"]", "[\"\\n\"]"] {
+            let text =
+                format!("[[llm.backends]]\ntype = \"openai-compatible\"\nmodels = {invalid}\n");
+            let error = validate_unknown_keys(&text).unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains("llm.backends[0].models[0] must be 1-256 printable bytes"),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn retired_backends_keep_their_previous_catalog_bound() {
+        let backends = std::iter::repeat_n("{}", 129)
+            .collect::<Vec<_>>()
+            .join(", ");
+        let text = format!("[llm]\nbackends = [{backends}]\n");
+        let error = validate_unknown_keys(&text).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("llm.backends exceeds 128 entries"),
             "{error}"
         );
     }

@@ -57,8 +57,6 @@ mod lint;
 mod llm_preview;
 mod llm_request;
 mod mobile;
-mod model_picker;
-mod model_session;
 mod navigation;
 
 use startup_config::StartupConfig;
@@ -142,10 +140,6 @@ pub struct App {
     pub(crate) pending_llm_request: Option<llm_request::PendingLlmRequest>,
     /// Present only after explicit Enter confirmation; dropping it cancels the transient client.
     pub(crate) llm_task: Option<llm_request::RunningLlmRequest>,
-    /// Process-local model override shared across buffers and never persisted implicitly.
-    pub(crate) model_session: model_session::ModelSession,
-    /// Explicit searchable picker and bounded discovery cache; idle and network-free by default.
-    pub(crate) model_picker: model_picker::ModelPickerState,
     /// Per-buffer render-only metadata for the exact latest external reload revision.
     pub(crate) external_changes: external_diff::ExternalChanges,
     /// External process/preview state; empty at startup and while unused.

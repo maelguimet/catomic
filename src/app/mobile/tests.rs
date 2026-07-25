@@ -186,7 +186,7 @@ fn touch_vertical_actions_follow_the_active_surface_semantics() {
         Action::CompletionNext
     );
     assert_eq!(vertical_action(Scope::Help, false), Action::MoveUp);
-    assert_eq!(vertical_action(Scope::Picker, true), Action::MoveDown);
+    assert_eq!(vertical_action(Scope::Preview, true), Action::MoveDown);
 }
 
 #[test]

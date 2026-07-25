@@ -21,11 +21,9 @@ Wide or multi-file patches are not accepted.
 
 ## Construction / Invocation
 
-- `F10`, `:model`, and `:models` load only validated preset metadata. Opening,
-  filtering, or selecting in the picker must not construct a client, read a
-  credential value, contact an endpoint, run a version probe, or start a child.
-- The configured default and any process-local session override are separate.
-  Selection never persists configuration and never invokes the backend.
+- The configured `llm.default` names the preset used for every request. Changing
+  it requires an explicit configuration edit; there is no picker or
+  process-local override. The catalog is read only after explicit invocation.
 - Network LLM clients and command processes must only be constructed after
   explicit invocation and Enter confirmation naming preset, adapter, exact
   destination identity, model, and context extent.
@@ -43,14 +41,9 @@ Wide or multi-file patches are not accepted.
 - Provider headers are explicit per preset. Static headers are non-secret
   metadata; credential-looking static headers are rejected in favor of named
   environment variables. Values are scoped to that preset; secret values are
-  read only after send or discovery confirmation and are never rendered or
+  read only after send confirmation and are never rendered or
   copied to another preset. Static and environment-sourced values are valid,
   bounded HTTP header values.
-- Model discovery is disabled unless configured for that HTTP preset and still
-  requires `Ctrl+D` plus Enter in the picker. It sends no file context, follows
-  no redirect, is cancellable, uses at most a ten-second timeout, and caps the
-  response at 256 KiB/128 validated identifiers before keeping a five-minute
-  process-local cache.
 - Command presets keep program and argv separate and add no implicit `/bin/sh -c`.
   Catomic resolves the executable before confirmation, writes the versioned
   prompt transcript to stdin, starts the child in a private temporary working

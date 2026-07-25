@@ -68,10 +68,6 @@ pub(super) const MENU_ENTRIES: &[MenuEntry] = &[
         MenuAction::Dispatch(Action::CommandPrompt),
     ),
     entry(
-        "Select model/provider",
-        MenuAction::Dispatch(Action::SelectModel),
-    ),
-    entry(
         "Markdown preview",
         MenuAction::Dispatch(Action::MarkdownPreview),
     ),
@@ -131,7 +127,6 @@ mod tests {
             "Next buffer",
             "Help",
             "Command prompt",
-            "Select model/provider",
             "Markdown preview",
             "Quit",
         ] {

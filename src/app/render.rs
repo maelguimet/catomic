@@ -8,8 +8,8 @@ use std::io::{self, Write};
 use crate::terminal as term;
 
 use super::{
-    completion, external_command, external_diff, help, lint, llm_preview, mobile, model_picker,
-    recovery, status, view, App,
+    completion, external_command, external_diff, help, lint, llm_preview, mobile, recovery, status,
+    view, App,
 };
 
 impl App {
@@ -228,7 +228,6 @@ fn local_surface_is_open(app: &App) -> bool {
         || recovery::is_viewing(app)
         || help::is_viewing(app)
         || view::is_preview(app)
-        || model_picker::is_viewing(app)
         || llm_preview::is_viewing(app)
 }
 

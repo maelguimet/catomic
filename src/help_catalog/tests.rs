@@ -21,13 +21,16 @@ fn prompt_commands_and_aliases_are_unique_and_dispatchable() {
 }
 
 #[test]
-fn removed_model_commands_are_not_available() {
+fn removed_commands_are_not_available() {
     for removed in [
         "gitmeow",
         "megameow",
         "run-clanker",
         "inline-meow",
         "clear-clanker-changes",
+        "model",
+        "models",
+        "select-model",
     ] {
         assert_eq!(prompt_command(removed), None);
     }

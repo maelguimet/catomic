@@ -139,10 +139,6 @@ fn close(app: &mut super::App) -> bool {
     true
 }
 
-pub(crate) fn close_for_transient(app: &mut super::App) -> bool {
-    close(app)
-}
-
 fn close_with_message(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     close(app);
     app.message = None;
@@ -152,7 +148,6 @@ fn close_with_message(app: &mut super::App, out: &mut dyn Write) -> io::Result<(
 
 fn close_transients(app: &mut super::App) {
     super::view::cancel_preview(app);
-    super::model_picker::close(app);
     super::llm_preview::close(app);
     super::recovery::close(app);
     super::external_command::cancel_all(app);
@@ -264,7 +259,7 @@ fn help_markdown(bindings: &KeyBindings) -> String {
     markdown.push_str("\n## Commands and views\n\n");
     push_command_actions(&mut markdown, bindings);
     push_external_change_help(&mut markdown);
-    push_model_help(&mut markdown, bindings);
+    push_model_help(&mut markdown);
     markdown.push_str(
         "Configuration, model setup, mobile controls, and troubleshooting live in the [user guide](https://github.com/maelguimet/catomic/blob/master/docs/user-guide.md).\n",
     );
@@ -324,11 +319,10 @@ fn push_external_change_help(markdown: &mut String) {
     ));
 }
 
-fn push_model_help(markdown: &mut String, bindings: &KeyBindings) {
+fn push_model_help(markdown: &mut String) {
     markdown.push_str("\n## Models\n\n");
-    push_action(markdown, bindings, Action::SelectModel, "Select model");
     markdown.push_str(
-        "- Model requests show the destination and bounded context before sending. Proposals are read-only until separately applied and are never auto-saved.\n\n",
+        "- Requests use `llm.default` and show the destination and bounded context before sending. Proposals are read-only until separately applied and are never auto-saved.\n\n",
     );
 }
 

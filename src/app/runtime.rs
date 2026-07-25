@@ -11,8 +11,8 @@ use crossterm::event::{self, Event, KeyEvent};
 use crate::terminal as term;
 
 use super::{
-    command_prompt, external_command, hooks, input, lint, llm_request, model_picker, recovery,
-    search, selection, viewport, watch, App,
+    command_prompt, external_command, hooks, input, lint, llm_request, recovery, search, selection,
+    viewport, watch, App,
 };
 
 impl App {
@@ -62,7 +62,6 @@ impl App {
         search::poll_search(self, out)?;
         command_prompt::poll_goto(self, out)?;
         lint::poll(self, out)?;
-        model_picker::poll(self, out)?;
         llm_request::poll(self, out)?;
         external_command::poll(self, out)?;
         hooks::pump(self, out)?;

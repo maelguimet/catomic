@@ -12,7 +12,6 @@ use std::path::Path;
 pub(crate) mod backend;
 pub(crate) mod command_adapter;
 pub mod context;
-pub(crate) mod discovery;
 pub(crate) mod executable;
 pub mod instruction;
 pub mod openai_compat;

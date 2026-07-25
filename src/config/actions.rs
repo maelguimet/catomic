@@ -11,7 +11,6 @@ pub(crate) enum Scope {
     Search,
     Completion,
     Preview,
-    Picker,
     Help,
 }
 
@@ -24,7 +23,6 @@ impl Scope {
             Self::Search => "search",
             Self::Completion => "completion",
             Self::Preview => "preview",
-            Self::Picker => "picker",
             Self::Help => "help",
         }
     }
@@ -104,7 +102,6 @@ pub(crate) enum Action {
     LineNumbers,
     Whitespace,
     SoftWrap,
-    SelectModel,
     PromptSubmit,
     PromptCancel,
     PromptDeleteBackward,
@@ -117,8 +114,6 @@ pub(crate) enum Action {
     CompletionCancel,
     PreviewAccept,
     PreviewCancel,
-    PickerAccept,
-    PickerCancel,
     HelpClose,
     MousePlaceCursor,
     MouseExtendSelection,

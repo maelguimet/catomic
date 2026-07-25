@@ -173,7 +173,6 @@ impl Builder {
             Scope::Search,
             Scope::Completion,
             Scope::Preview,
-            Scope::Picker,
             Scope::Help,
         ];
         if scope == Scope::Global {
@@ -330,14 +329,19 @@ fn decode_overrides(table: toml::Table) -> io::Result<(Vec<ActionOverride>, Vec<
 
 fn retired_action(name: &str) -> bool {
     let name = name.trim().to_ascii_lowercase();
-    matches!(name.as_str(), "run-clanker" | "clear-clanker-changes")
+    matches!(
+        name.as_str(),
+        "run-clanker"
+            | "clear-clanker-changes"
+            | "select-model"
+            | "picker-accept"
+            | "picker-cancel"
+    )
 }
 
 fn validate_retired_chord(chord: ShortcutChord, raw: &str) -> io::Result<()> {
     if !matches!(chord, ShortcutChord::Key(_)) {
-        return Err(invalid(format!(
-            "retired inline action cannot use chord {raw:?}"
-        )));
+        return Err(invalid(format!("retired action cannot use chord {raw:?}")));
     }
     validate_safe_key(chord, raw)
 }

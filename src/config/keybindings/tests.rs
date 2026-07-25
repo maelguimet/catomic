@@ -64,21 +64,46 @@ fn unrelated_raw_keys_are_not_claimed_or_suppressed() {
 }
 
 #[test]
-fn retired_inline_actions_are_accepted_but_never_bound() {
+fn retired_actions_are_accepted_but_never_bound() {
     let bindings = parse(
-        "[keybindings]\n\" Run-Clanker \" = [\"f3\"]\nCLEAR-CLANKER-CHANGES = [\"shift+f3\"]\n\"alt+x\" = \" Run-Clanker \"\n\"alt+y\" = \"CLEAR-CLANKER-CHANGES\"\n",
+        "[keybindings]\n\
+         \" Run-Clanker \" = [\"f3\"]\n\
+         CLEAR-CLANKER-CHANGES = [\"shift+f3\"]\n\
+         \" Select-Model \" = [\"f10\", \"alt+m\"]\n\
+         PICKER-ACCEPT = [\"alt+a\"]\n\
+         \" picker-Cancel \" = [\"alt+c\"]\n\
+         \"alt+x\" = \" Run-Clanker \"\n\
+         \"alt+y\" = \"CLEAR-CLANKER-CHANGES\"\n\
+         \"alt+d\" = \" Select-Model \"\n\
+         \"alt+e\" = \" PICKER-ACCEPT \"\n\
+         \"alt+f\" = \" picker-Cancel \"\n",
     )
     .unwrap();
     for key in [
         key(KeyCode::F(3), KeyModifiers::NONE),
         key(KeyCode::F(3), KeyModifiers::SHIFT),
+        key(KeyCode::F(10), KeyModifiers::NONE),
+        key(KeyCode::Char('m'), KeyModifiers::ALT),
+        key(KeyCode::Char('a'), KeyModifiers::ALT),
+        key(KeyCode::Char('c'), KeyModifiers::ALT),
         key(KeyCode::Char('x'), KeyModifiers::ALT),
         key(KeyCode::Char('y'), KeyModifiers::ALT),
+        key(KeyCode::Char('d'), KeyModifiers::ALT),
+        key(KeyCode::Char('e'), KeyModifiers::ALT),
+        key(KeyCode::Char('f'), KeyModifiers::ALT),
     ] {
         assert_eq!(bindings.action_for_key(Scope::Editor, key), None);
         assert!(!bindings.is_default_key(Scope::Editor, key));
     }
-    assert!(parse("[keybindings]\ninline-meow = []\n").is_err());
+    for rejected in [
+        "[keybindings]\ninline-meow = []\n",
+        "[keybindings]\nmodel = []\n",
+        "[keybindings]\nmodels = []\n",
+        "[keybindings]\n\"alt+z\" = \"model\"\n",
+        "[keybindings]\n\"alt+z\" = \"models\"\n",
+    ] {
+        assert!(parse(rejected).is_err(), "{rejected:?}");
+    }
 }
 
 #[test]
@@ -87,7 +112,7 @@ fn global_actions_win_and_local_scopes_can_reuse_chords() {
         "[keybindings]\nhelp = [\"alt+h\"]\nprompt-cancel = [\"alt+x\"]\ncompletion-cancel = [\"alt+x\"]\n",
     )
     .unwrap();
-    for scope in [Scope::Editor, Scope::Prompt, Scope::Preview, Scope::Picker] {
+    for scope in [Scope::Editor, Scope::Prompt, Scope::Preview, Scope::Help] {
         assert_eq!(
             bindings.action_for_key(scope, key(KeyCode::Char('h'), KeyModifiers::ALT)),
             Some(Action::Help)
@@ -179,7 +204,7 @@ fn mouse_gestures_resolve_to_semantic_actions_and_can_be_unbound() {
 #[test]
 fn registry_defaults_are_complete_and_collision_free() {
     let bindings = KeyBindings::default();
-    assert_eq!(actions::REGISTRY.len(), 87);
+    assert_eq!(actions::REGISTRY.len(), 84);
     for descriptor in actions::REGISTRY {
         assert!(!descriptor.name.is_empty());
         assert!(!descriptor.scopes.is_empty());

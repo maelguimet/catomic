@@ -2,6 +2,11 @@
 
 Status: accepted
 
+> **Historical / superseded:** Issue #222 removed the F10 picker,
+> process-local preset overrides, static model choices, and live model
+> discovery described below. Named backend presets and `llm.default` remain
+> current. This ADR is retained as the record of the earlier design.
+
 ## Context
 
 The original `[llm]` section described one OpenAI-compatible endpoint. Users

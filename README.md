@@ -109,7 +109,6 @@ troubleshooting, see the [complete user guide](docs/user-guide.md).
 | External-reload change marks | `F5` |
 | Markdown preview | `F6` |
 | Line numbers / whitespace / soft wrap | `F7` / `F8` / `F9` |
-| Select model/backend for this session | `F10` |
 | Previous / next large-file page | `Ctrl+PageUp` / `Ctrl+PageDown` |
 | Quit | `Ctrl+Q` |
 | Immediate interrupt | `Ctrl+Shift+C` |
@@ -143,7 +142,6 @@ leading `:`.
 | `goto LINE`, `replace`, `replace-all` | Navigate and edit |
 | `run NAME` | Run a configured, trusted external command |
 | `recover` | Preview and apply a newer `.catnap` sidecar |
-| `model`, `models` | Search configured model/backend presets |
 | `meow TEXT`, `bigmeow TEXT` | Ask a model about this file or selection |
 
 ## Configuration
@@ -213,7 +211,6 @@ name = "local"
 type = "openai-compatible"
 base_url = "http://127.0.0.1:8080/v1"
 model = "local-model"
-models = ["local-model-small"]
 
 [[llm.backends]]
 name = "hosted"
@@ -234,11 +231,10 @@ and are trusted user configuration; their input, output, and runtime are
 bounded, but the command itself can have effects outside Catomic.
 
 LLM presets can use an OpenAI-compatible HTTP endpoint or a configured headless
-command with a declared structured-output adapter. Press `F10` or run `models`
-to switch the process-local session preset without invoking it or rewriting
-configuration. Model actions show the preset, model, destination, and exact
-context extent before sending; edits then open read-only and
-require a second confirmation before becoming one undoable buffer change.
+command with a declared structured-output adapter. Set `llm.default` to the
+named backend that should handle requests. Model actions show the preset, model,
+destination, and exact context extent before sending; edits then open read-only
+and require a second confirmation before becoming one undoable buffer change.
 Plain HTTP is allowed for loopback models and unauthenticated LAN models. If an
 API key is present, Catomic refuses to send it over non-loopback HTTP; use HTTPS
 for authenticated remote endpoints. See

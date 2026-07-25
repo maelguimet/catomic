@@ -241,8 +241,6 @@ fn dispatch_surface_action(
         (Scope::Completion, false) => Action::CompletionCancel,
         (Scope::Preview, true) => Action::PreviewAccept,
         (Scope::Preview, false) => Action::PreviewCancel,
-        (Scope::Picker, true) => Action::PickerAccept,
-        (Scope::Picker, false) => Action::PickerCancel,
         (Scope::Help, false) => Action::HelpClose,
         (Scope::Editor, true) => Action::InsertNewline,
         _ => return app.render(out),
@@ -297,7 +295,6 @@ fn active_surface(app: &super::App) -> Surface {
     }
     if app.pending_llm_request.is_some()
         || super::llm_preview::is_viewing(app)
-        || super::model_picker::is_viewing(app)
         || super::recovery::is_viewing(app)
         || super::external_command::is_viewing(app)
     {

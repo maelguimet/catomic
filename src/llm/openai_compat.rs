@@ -3,14 +3,12 @@
 //! Must not: load config, collect context, persist clients, retry silently, or mutate files.
 //! Invariants: clients exist only inside confirmed workers; response capture is bounded.
 
-use std::collections::HashSet;
 use std::net::IpAddr;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 const MAX_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
-const MAX_MODEL_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Clone)]
 pub struct LlmConfig {
@@ -105,41 +103,6 @@ impl OpenAiCompatClient {
             .filter(|content| !content.trim().is_empty())
             .ok_or(LlmError::MissingContent)
     }
-
-    pub(crate) async fn list_models(&self) -> Result<Vec<String>, LlmError> {
-        let endpoint = format!("{}/models", self.config.base_url);
-        let mut builder = self.client.get(endpoint);
-        if let Some(key) = self.config.api_key.as_deref() {
-            builder = builder.bearer_auth(key);
-        }
-        for (name, value) in &self.config.headers {
-            builder = builder.header(name, value);
-        }
-        let response = builder
-            .send()
-            .await
-            .map_err(|error| LlmError::Request(error.to_string()))?;
-        let status = response.status();
-        let body = read_bounded(response, MAX_MODEL_RESPONSE_BYTES).await?;
-        if !status.is_success() {
-            return Err(LlmError::Http {
-                status: status.as_u16(),
-                body: String::new(),
-            });
-        }
-        let parsed: ModelListResponse = serde_json::from_slice(&body)
-            .map_err(|error| LlmError::InvalidResponse(error.to_string()))?;
-        let mut models = Vec::new();
-        let mut seen = HashSet::new();
-        for entry in parsed.data {
-            let model = crate::config::llm::validated_model(entry.id)
-                .map_err(|_| LlmError::InvalidResponse("invalid model identifier".to_string()))?;
-            if seen.insert(model.clone()) {
-                models.push(model);
-            }
-        }
-        Ok(models)
-    }
 }
 
 fn reject_insecure_credentials(config: &LlmConfig) -> Result<(), LlmError> {
@@ -231,16 +194,6 @@ struct Choice {
 #[derive(Deserialize)]
 struct ResponseMessage {
     content: String,
-}
-
-#[derive(Deserialize)]
-struct ModelListResponse {
-    data: Vec<ModelListEntry>,
-}
-
-#[derive(Deserialize)]
-struct ModelListEntry {
-    id: String,
 }
 
 #[cfg(test)]

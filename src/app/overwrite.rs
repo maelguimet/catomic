@@ -1,6 +1,6 @@
 //! Purpose: implement session-wide insert/overwrite behavior for direct typing.
 //! Owns: mode toggling, grapheme replacement selection, and overwrite-cursor eligibility.
-//! Must not: affect paste, indentation, completion, command/model apply, prompts, or read-only views.
+//! Must not: affect paste, indentation, completion, command apply, prompts, or read-only views.
 //! Invariants: overwrite replaces one same-line grapheme; line ends always insert.
 
 use std::io::{self, Write};
@@ -76,11 +76,9 @@ fn alternate_input_surface(app: &super::App) -> bool {
         || super::help::is_viewing(app)
         || super::recovery::is_viewing(app)
         || super::external_command::is_viewing(app)
-        || app.pending_llm_request.is_some()
         || super::replace::is_active(app)
         || super::search::is_active(app)
         || super::command_prompt::is_active(app)
-        || super::llm_preview::is_viewing(app)
         || super::completion::is_active(app)
         || super::view::is_preview(app)
 }

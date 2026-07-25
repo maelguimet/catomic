@@ -47,7 +47,6 @@ pub(crate) enum ContentSurface {
     #[default]
     Normal,
     Preview,
-    Diff,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

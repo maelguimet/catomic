@@ -73,6 +73,7 @@ pub(crate) fn syntax_for_path(path: Option<&Path>) -> SyntaxKind {
         Some("rs") => SyntaxKind::Rust,
         Some("py" | "pyw") => SyntaxKind::Python,
         Some("json") => SyntaxKind::Json,
+        Some("diff" | "patch") => SyntaxKind::Diff,
         _ => SyntaxKind::Plain,
     }
 }

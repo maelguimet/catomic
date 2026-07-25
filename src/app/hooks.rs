@@ -1,5 +1,5 @@
-//! Purpose: sequence configured lifecycle commands and resume deferred LLM preparation.
-//! Owns: hook queues, active-hook outcome, lifecycle triggers, and before-LLM continuation.
+//! Purpose: sequence configured lifecycle commands.
+//! Owns: hook queues, active-hook outcome, and open/save lifecycle triggers.
 //! Must not: spawn processes directly, apply output, load config, write files, or call network.
 //! Invariants: hooks run in configured order; failure/cancellation aborts the remaining chain.
 
@@ -12,14 +12,6 @@ use crate::config::commands::HookEvent;
 pub(crate) struct HookState {
     queue: VecDeque<String>,
     active: Option<String>,
-    continuation: Option<Continuation>,
-}
-
-enum Continuation {
-    CurrentLlm {
-        command: super::llm_request::CurrentLlmCommand,
-        instruction: String,
-    },
 }
 
 pub(crate) fn trigger_open(app: &mut super::App) {
@@ -30,19 +22,6 @@ pub(crate) fn trigger_open(app: &mut super::App) {
 
 pub(crate) fn trigger_save(app: &mut super::App) {
     enqueue(app, HookEvent::Save);
-}
-
-pub(crate) fn before_current_llm(
-    app: &mut super::App,
-    out: &mut dyn Write,
-    command: super::llm_request::CurrentLlmCommand,
-    instruction: &str,
-) -> io::Result<()> {
-    let continuation = Continuation::CurrentLlm {
-        command,
-        instruction: instruction.to_string(),
-    };
-    begin_before_llm(app, out, continuation)
 }
 
 pub(crate) fn pump(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
@@ -57,15 +36,7 @@ pub(crate) fn pump(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
         }
         return Ok(());
     }
-    let Some(continuation) = app.hooks.continuation.take() else {
-        return Ok(());
-    };
-    match continuation {
-        Continuation::CurrentLlm {
-            command,
-            instruction,
-        } => super::llm_request::begin(app, out, command, &instruction),
-    }
+    Ok(())
 }
 
 pub(crate) fn finish_command(app: &mut super::App, succeeded: bool) -> bool {
@@ -74,7 +45,6 @@ pub(crate) fn finish_command(app: &mut super::App, succeeded: bool) -> bool {
     };
     if !succeeded {
         app.hooks.queue.clear();
-        app.hooks.continuation = None;
         app.message_error(format!(
             "Hook command {name} failed or was cancelled; chain stopped."
         ));
@@ -85,33 +55,8 @@ pub(crate) fn finish_command(app: &mut super::App, succeeded: bool) -> bool {
 pub(crate) fn cancel_all(app: &mut super::App) -> bool {
     let active = app.hooks.active.take().is_some();
     let queued = !app.hooks.queue.is_empty();
-    let continuation = app.hooks.continuation.take().is_some();
     app.hooks.queue.clear();
-    active || queued || continuation
-}
-
-fn begin_before_llm(
-    app: &mut super::App,
-    out: &mut dyn Write,
-    continuation: Continuation,
-) -> io::Result<()> {
-    if app.hooks.continuation.is_some() {
-        app.message_info("A before-LLM hook chain is already pending.");
-        return app.render(out);
-    }
-    let names = app.command_config.hooks_for(HookEvent::BeforeLlm).to_vec();
-    if names.is_empty() {
-        return match continuation {
-            Continuation::CurrentLlm {
-                command,
-                instruction,
-            } => super::llm_request::begin(app, out, command, &instruction),
-        };
-    }
-    app.hooks.queue.extend(names);
-    app.hooks.continuation = Some(continuation);
-    app.message_info("Before-LLM hooks queued; Escape cancels the active command.");
-    app.render(out)
+    active || queued
 }
 
 fn enqueue(app: &mut super::App, event: HookEvent) {
@@ -122,7 +67,7 @@ fn enqueue(app: &mut super::App, event: HookEvent) {
 
 #[cfg(test)]
 pub(crate) fn is_pending(app: &super::App) -> bool {
-    app.hooks.active.is_some() || !app.hooks.queue.is_empty() || app.hooks.continuation.is_some()
+    app.hooks.active.is_some() || !app.hooks.queue.is_empty()
 }
 
 #[cfg(test)]

@@ -2,11 +2,11 @@
 //!
 //! Purpose: drive the compiled binary through a pseudo-terminal so key handling,
 //!   raw-mode setup, render, help, save, undo, search, inline emoji picking, direct
-//!   linting, guarded external commands/hooks, explicit LLM confirmation, and clean quit
+//!   linting, guarded external commands/hooks, retired-command handling, and clean quit
 //!   are exercised.
 //! Owns: narrow default PTY smoke coverage for core and guarded workflows.
-//! Must not: grow into a broad UI harness, contact a live/public LLM, use ambient config,
-//!   or run large-file/perf scenarios; model tests use private loopback fakes only.
+//! Must not: grow into a broad UI harness, use ambient config, or run large-file/perf
+//!   scenarios.
 //! Invariants: PTY children run serially, use temporary files, time out and are
 //!   killed on hangs, and leave idle startup behavior unchanged.
 
@@ -1223,31 +1223,6 @@ fn pty_f4_lints_active_file_and_exposes_raw_message() -> TestResult {
 }
 
 #[test]
-fn pty_help_scrolls_to_compact_model_guidance_and_closes_without_editing() -> TestResult {
-    let temp = TempPath::new("model_help");
-    let source = "source stays unchanged";
-    fs::write(&temp.path, source)?;
-    let mut editor = PtyEditor::spawn(&temp.path)?;
-
-    editor.wait_for_initial_render()?;
-    editor.send_keys(b"\x1bOP")?; // F1
-    editor.wait_for_output("built-in help", "Help; Esc closes.")?;
-    for _ in 0..16 {
-        editor.send_keys(b"\x1b[6~")?;
-    }
-    editor.wait_for_output("compact model section", "llm.default")?;
-    editor.wait_for_output("model safety contract", "never auto-saved")?;
-    editor.clear_output();
-    editor.send_keys(b"\x1bOP")?; // F1 closes help without a persistent message.
-    editor.wait_for_output("help closes", "source stays unchanged")?;
-    editor.send_keys(b"\x11")?;
-    editor.wait_for_exit()?;
-
-    assert_eq!(fs::read_to_string(&temp.path)?, source);
-    Ok(())
-}
-
-#[test]
 fn pty_encoded_sgr_and_x10_clicks_position_the_next_edits() -> TestResult {
     let temp = TempPath::new("mouse_click");
     fs::write(&temp.path, "first\nsecond\nthird")?;
@@ -1642,8 +1617,8 @@ fn pty_f7_persists_across_relaunch_and_applies_to_new_unicode_buffer() -> TestRe
 }
 
 #[test]
-fn pty_help_scrolls_through_recovery_and_model_summary_without_editing() -> TestResult {
-    let temp = TempPath::new("model_help");
+fn pty_help_scrolls_through_recovery_summary_without_editing() -> TestResult {
+    let temp = TempPath::new("recovery_help");
     let source = "source remains unchanged\n";
     fs::write(&temp.path, source)?;
     let mut editor = PtyEditor::spawn(&temp.path)?;
@@ -1653,7 +1628,6 @@ fn pty_help_scrolls_through_recovery_and_model_summary_without_editing() -> Test
     editor.wait_for_output("built-in help", "Help; Esc closes.")?;
     editor.send_keys(&b"\x1b[6~".repeat(16))?;
     editor.wait_for_output("recovery help", "crash recovery is enabled")?;
-    editor.wait_for_output("model save boundary", "never auto-saved")?;
     editor.clear_output();
     editor.send_keys(b"\x1bOP")?; // F1 closes help without a persistent message.
     editor.wait_for_output("help closed", "source remains unchanged")?;
@@ -1665,23 +1639,37 @@ fn pty_help_scrolls_through_recovery_and_model_summary_without_editing() -> Test
 }
 
 #[test]
-fn pty_meow_stops_at_confirmation_and_escape_makes_no_network_edit() -> TestResult {
-    let project = TempProject::new("llm_confirmation");
-    let source = ">>> catomic\nExplain this block without editing it.\n<<<\n";
+fn pty_retired_model_commands_are_unknown_and_before_llm_is_inert() -> TestResult {
+    let project = TempProject::new("retired_model_commands");
+    let sentinel = project.root.join("before-llm-ran");
+    project.write(
+        "catomic/config.toml",
+        &format!(
+            "[commands.guard]\ncommand = \"printf spawned > {}\"\n\
+             [hooks]\nbefore_llm = [\"guard\"]\n",
+            sentinel.display()
+        ),
+    );
+    let source = "source stays local\n";
     let active = project.write("note.txt", source);
     let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
 
     editor.wait_for_initial_render()?;
-    editor.send_keys(b"\x1b[80;6umeow\r")?; // Ctrl+Shift+P via CSI-u, then command.
-    editor.wait_for_output("LLM send confirmation", "Enter confirms; Esc cancels")?;
-    editor.wait_for_output("local default endpoint", "http://127.0.0.1:8080/v1")?;
-    editor.clear_output();
-    editor.send_keys(b"\x1b")?;
-    editor.wait_for_output("LLM cancellation before send", "note.txt")?;
+    editor.send_keys(b"\x1b[80;6umeow explain\r")?; // Ctrl+Shift+P via CSI-u.
+    editor.wait_for_output("retired meow command", "Unknown command: meow explain")?;
+    editor.send_keys(b"\x1b[80;6ubigmeow rewrite\r")?;
+    editor.wait_for_output(
+        "retired bigmeow command",
+        "Unknown command: bigmeow rewrite",
+    )?;
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(active)?, source);
+    assert!(
+        !sentinel.exists(),
+        "retired before_llm hook must never spawn its named command"
+    );
     Ok(())
 }
 
@@ -1712,43 +1700,6 @@ fn pty_external_command_previews_before_one_confirmed_edit() -> TestResult {
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(active)?, "CAT\n");
-    Ok(())
-}
-
-#[test]
-fn pty_before_llm_hook_finishes_before_network_confirmation() -> TestResult {
-    let project = TempProject::new("before_llm_hook");
-    project.write(
-        "catomic/config.toml",
-        "[commands.guard]\ncommand = \"printf checked\"\n\
-         [hooks]\nbefore_llm = [\"guard\"]\n",
-    );
-    let source = ">>> catomic\nExplain this block without editing it.\n<<<\n";
-    let active = project.write("note.txt", source);
-    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
-
-    editor.wait_for_initial_render()?;
-    editor.send_keys(b"\x1b[80;6umeow\r")?;
-    editor.wait_for_output(
-        "before-LLM hook preview",
-        "Command guard output (read-only). Enter or Esc closes.",
-    )?;
-    assert!(
-        !editor
-            .output_string()
-            .contains("Enter confirms; Esc cancels"),
-        "LLM confirmation must wait for the hook chain"
-    );
-
-    editor.send_keys(b"\r")?;
-    editor.wait_for_output("post-hook LLM confirmation", "Enter confirms; Esc cancels")?;
-    editor.clear_output();
-    editor.send_keys(b"\x1b")?;
-    editor.wait_for_output("post-hook cancellation before send", "note.txt")?;
-    editor.send_keys(b"\x11")?;
-    editor.wait_for_exit()?;
-
-    assert_eq!(fs::read_to_string(active)?, source);
     Ok(())
 }
 

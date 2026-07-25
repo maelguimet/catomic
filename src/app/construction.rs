@@ -1,7 +1,7 @@
 //! Purpose: construct App state from startup configuration and an optional initial path.
 //! Owns: open planning and zero-work transient defaults.
 //! Must not: create repository/network/process clients or start background work.
-//! Invariants: startup has no repository/LLM task; watcher failure remains non-fatal.
+//! Invariants: startup has no repository task; watcher failure remains non-fatal.
 
 use std::collections::VecDeque;
 use std::io;
@@ -99,8 +99,6 @@ impl App {
             completion,
             lint: super::lint::LintState::default(),
             surfaces: surfaces::SurfaceState::default(),
-            pending_llm_request: None,
-            llm_task: None,
             external_changes: super::external_diff::ExternalChanges::default(),
             external_command: external_command::ExternalCommandState::default(),
             hooks: hooks::HookState::default(),
@@ -129,12 +127,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ordinary_startup_constructs_no_llm_tasks() {
+    fn ordinary_startup_constructs_no_transient_surfaces() {
         let app = App::new(None).unwrap();
 
         assert!(app.surfaces.help.is_none());
-        assert!(app.surfaces.llm_preview.is_none());
-        assert!(app.pending_llm_request.is_none());
-        assert!(app.llm_task.is_none());
+        assert!(!super::super::external_command::is_busy(&app));
+        assert!(!super::super::recovery::is_viewing(&app));
     }
 }

@@ -148,10 +148,8 @@ fn close_with_message(app: &mut super::App, out: &mut dyn Write) -> io::Result<(
 
 fn close_transients(app: &mut super::App) {
     super::view::cancel_preview(app);
-    super::llm_preview::close(app);
     super::recovery::close(app);
     super::external_command::cancel_all(app);
-    super::llm_request::cancel_all(app);
     super::replace::cancel(app);
     super::search::cancel_running_search(app);
     super::command_prompt::cancel_running_goto(app);
@@ -259,9 +257,8 @@ fn help_markdown(bindings: &KeyBindings) -> String {
     markdown.push_str("\n## Commands and views\n\n");
     push_command_actions(&mut markdown, bindings);
     push_external_change_help(&mut markdown);
-    push_model_help(&mut markdown);
     markdown.push_str(
-        "Configuration, model setup, mobile controls, and troubleshooting live in the [user guide](https://github.com/maelguimet/catomic/blob/master/docs/user-guide.md).\n",
+        "\nConfiguration, mobile controls, and troubleshooting live in the [user guide](https://github.com/maelguimet/catomic/blob/master/docs/user-guide.md).\n",
     );
     markdown
 }
@@ -317,13 +314,6 @@ fn push_external_change_help(markdown: &mut String) {
         "- Saves are atomic. If the file changed on disk, the second save succeeds only while that observed state is unchanged.\n",
         "- When crash recovery is enabled, run `recover` to preview a newer `.catnap`; applying it is explicit and undoable.\n",
     ));
-}
-
-fn push_model_help(markdown: &mut String) {
-    markdown.push_str("\n## Models\n\n");
-    markdown.push_str(
-        "- Requests use `llm.default` and show the destination and bounded context before sending. Proposals are read-only until separately applied and are never auto-saved.\n\n",
-    );
 }
 
 fn push_action(markdown: &mut String, bindings: &KeyBindings, action: Action, label: &str) {

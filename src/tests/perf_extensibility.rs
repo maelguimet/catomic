@@ -19,10 +19,7 @@ fn manual_phase7_large_config_reports_sample() {
             "[commands.command-{index:03}]\ncommand = \"printf {index}\"\ntimeout_secs = 10\n"
         ));
     }
-    text.push_str(
-        "[hooks]\non_open = [\"command-000\"]\non_save = [\"command-001\"]\n\
-         before_llm = [\"command-002\"]\n",
-    );
+    text.push_str("[hooks]\non_open = [\"command-000\"]\non_save = [\"command-001\"]\n");
 
     let (config, sample) = measure_sample(
         "parse 256-command config 100x",
@@ -38,5 +35,5 @@ fn manual_phase7_large_config_reports_sample() {
     print_perf_sample(&sample);
 
     assert!(config.get("command-255").is_some());
-    assert_eq!(config.hooks_for(HookEvent::BeforeLlm), &["command-002"]);
+    assert_eq!(config.hooks_for(HookEvent::Save), &["command-001"]);
 }

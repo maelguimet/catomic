@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Purpose: run and validate the human open-beta daily-driver acceptance session.
 # Owns: clean-SHA release binding, isolated fixtures, terminal metadata, and comment schema.
-# Must not: claim human scenarios passed, contact a model, publish evidence, or overwrite a session.
+# Must not: claim human scenarios passed, publish evidence, or overwrite a session.
 # Invariants: the tested binary is copied before launch and every PASS record is complete.
 
 set -euo pipefail
@@ -121,8 +121,6 @@ Normal status remained distinct from document text.
 Prompt, warning/confirmation, and error states were visibly distinct.
 Status and prompts remained understandable at narrow and normal widths.
 Markdown source and F6 preview were reviewed at both widths.
-Opened a current-file model confirmation, then pressed Escape.
-Confirmed no model request or live endpoint was used.
 EOF
 }
 
@@ -202,7 +200,6 @@ verify_record() {
     "## Cold-use discoverability" \
     "## Sustained editing" \
     "## Visual states and widths" \
-    "## Model safety" \
     "## Defects" \
     "## Remaining limitations" \
     "## Result"; do
@@ -237,10 +234,6 @@ write_fixtures() {
 enabled = true
 interval_secs = 5
 max_bytes = 1048576
-
-[llm]
-base_url = "http://127.0.0.1:9/v1"
-model = "acceptance-no-send"
 EOF
   cat > "$workspace/notes.txt" <<'EOF'
 Daily-driver notes
@@ -361,11 +354,6 @@ EOF
 - [ ] Status and prompts remained understandable at narrow and normal widths.
 - [ ] Markdown source and F6 preview were reviewed at both widths.
 
-## Model safety
-
-- [ ] Opened a current-file model confirmation, then pressed Escape.
-- [ ] Confirmed no model request or live endpoint was used.
-
 ## Defects
 
 - TODO: replace with None observed. or one focused issue-link-and-evidence bullet per defect.
@@ -440,9 +428,8 @@ run_session() {
   [[ "$dimensions" =~ ^[1-9][0-9]*\ [1-9][0-9]*$ ]] || die "terminal dimensions are unavailable"
 
   echo "Release $release_version ($source_sha) is preserved in $session_dir/release."
-  echo "Use built-in help only for common actions. Exercise ordinary editing before model confirmations."
+  echo "Use built-in help only for common actions. Exercise ordinary editing and guarded previews."
   echo "Run $session_dir/workspace/external-change.sh from another terminal for the external-change scenario."
-  echo "Cancel every model confirmation with Escape; do not send a request."
 
   local started ended started_epoch ended_epoch editor_status terminal_after restored
   started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -450,8 +437,7 @@ run_session() {
   set +e
   (
     cd -- "$session_dir/workspace"
-    env -u OPENAI_API_KEY \
-      HOME="$session_dir/home" \
+    env HOME="$session_dir/home" \
       XDG_CONFIG_HOME="$session_dir/config" \
       "$release_binary" notes.txt sample.rs showcase.md external.txt recovery.txt
   )

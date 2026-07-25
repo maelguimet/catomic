@@ -1,6 +1,6 @@
 //! Purpose: load typed TOML user configuration with safe defaults.
 //! Owns: shared TOML decoding and focused configuration submodules.
-//! Must not: construct linter/LLM services, perform network work, or mutate files.
+//! Must not: construct linter services, perform network work, or mutate files.
 //! Invariants: no config file is required; malformed recognized values and unknown keys are errors.
 
 use std::io;
@@ -15,7 +15,6 @@ pub(crate) mod commands;
 pub(crate) mod editor;
 pub(crate) mod keybindings;
 pub(crate) mod linters;
-pub(crate) mod llm;
 pub(crate) mod mobile;
 pub(crate) mod theme;
 pub(crate) mod user_file;
@@ -42,7 +41,6 @@ pub(crate) fn validate_text(text: &str) -> io::Result<()> {
     editor::parse(text)?;
     keybindings::parse(text)?;
     linters::parse(text)?;
-    llm::parse(text)?;
     mobile::parse(text)?;
     theme::parse(text)?;
     view_preferences::validate_config(text)?;

@@ -65,6 +65,14 @@ fn markdown_styles_headings_markers_fences_and_inline_code() {
 #[test]
 fn diff_styles_only_content_additions_and_removals() {
     assert_eq!(
+        syntax_for_path(Some(std::path::Path::new("change.patch"))),
+        SyntaxKind::Diff
+    );
+    assert_eq!(
+        syntax_for_path(Some(std::path::Path::new("change.diff"))),
+        SyntaxKind::Diff
+    );
+    assert_eq!(
         spans_for_line(SyntaxKind::Diff, "+added 猫"),
         vec![span(0, 8, SpanStyle::DiffAdded)]
     );

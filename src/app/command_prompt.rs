@@ -283,18 +283,6 @@ fn execute_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> 
         (PromptCommand::Run, name) if !name.is_empty() => {
             super::external_command::start(app, out, name)
         }
-        (PromptCommand::Meow, instruction) => super::hooks::before_current_llm(
-            app,
-            out,
-            super::llm_request::CurrentLlmCommand::Meow,
-            instruction,
-        ),
-        (PromptCommand::BigMeow, instruction) => super::hooks::before_current_llm(
-            app,
-            out,
-            super::llm_request::CurrentLlmCommand::BigMeow,
-            instruction,
-        ),
         _ => unknown_command(app, out, command),
     }
 }

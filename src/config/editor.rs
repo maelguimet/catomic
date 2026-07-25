@@ -58,6 +58,9 @@ pub(crate) fn parse(text: &str) -> io::Result<EditorConfig> {
     for (raw_extension, language) in raw.languages {
         let extension = normalize_extension(&raw_extension);
         validate_language(&extension, &language)?;
+        if language.tab_size.is_none() && language.linter.is_none() {
+            continue;
+        }
         if languages
             .insert(extension.clone(), language.into())
             .is_some()

@@ -15,8 +15,8 @@ use crate::file::identity::BufferFileIdentity;
 use crate::file::watcher::FileWatcher;
 
 use super::{
-    command_prompt, completion, external_command, hooks, lint, llm_preview, llm_request, recovery,
-    reload, save, search, selection, view, App, FileState, StartupConfig,
+    command_prompt, completion, external_command, hooks, lint, recovery, reload, save, search,
+    selection, view, App, FileState, StartupConfig,
 };
 
 mod lifecycle;
@@ -156,10 +156,6 @@ impl App {
             self.message = None;
         }
         lint::invalidate(self);
-        if llm_preview::close(self) {
-            self.message = None;
-        }
-        llm_request::cancel_all(self);
         external_command::cancel_all(self);
         hooks::cancel_all(self);
         if recovery::close(self) {

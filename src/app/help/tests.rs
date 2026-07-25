@@ -78,14 +78,12 @@ fn help_is_short_task_oriented_and_excludes_registry_clutter() {
         "## Edit and navigate",
         "## Commands and views",
         "## External changes and recovery",
-        "## Models",
         "Save As",
         "Previous buffer",
         "Command palette",
         "Markdown preview",
         "Dirty buffers are never replaced automatically",
         "`.catnap`",
-        "never auto-saved",
         "[user guide](https://github.com/maelguimet/catomic/blob/master/docs/user-guide.md)",
     ] {
         assert!(markdown.contains(required), "help is missing {required:?}");
@@ -101,6 +99,8 @@ fn help_is_short_task_oriented_and_excludes_registry_clutter() {
         "[keybindings]",
         "api_key_env",
         "[[llm.backends]]",
+        "meow INSTRUCTION",
+        "bigmeow INSTRUCTION",
         "gitmeow INSTRUCTION",
         "megameow INSTRUCTION",
     ] {
@@ -172,8 +172,8 @@ fn narrow_help_soft_wraps_and_scrolls_without_horizontal_movement() {
         .unwrap()
         .to_string()
         .lines()
-        .position(|line| line.contains("llm.default"))
-        .expect("compact model guidance must be present");
+        .position(|line| line.contains("Dirty buffers"))
+        .expect("external-change guidance must be present");
     app.surfaces
         .help
         .as_mut()

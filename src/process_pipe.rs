@@ -1,5 +1,5 @@
 //! Purpose: provide interruptible pipe readers and writers for bounded subprocess runners.
-//! Owns: nonblocking pipe I/O, capture limits, overflow signals, and worker shutdown.
+//! Owns: nonblocking pipe I/O, capture limits, overflow behavior, and worker shutdown.
 //! Invariant: stopping a worker always joins its thread without waiting for peer pipe closure.
 
 use std::io::{self, Read, Write};
@@ -13,7 +13,6 @@ const POLL_MILLISECONDS: i32 = 10;
 pub(crate) enum OverflowAction {
     Drain,
     Stop,
-    Signal(Arc<AtomicBool>),
 }
 
 #[derive(Default)]
@@ -77,10 +76,6 @@ pub(crate) fn spawn_reader(
                         match &overflow {
                             OverflowAction::Drain => {}
                             OverflowAction::Stop => return Ok(output),
-                            OverflowAction::Signal(signal) => {
-                                signal.store(true, Ordering::Release);
-                                return Ok(output);
-                            }
                         }
                     }
                 }

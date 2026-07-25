@@ -13,7 +13,6 @@ mod editor;
 mod external;
 mod file;
 mod help_catalog;
-mod llm;
 mod process_pipe;
 mod terminal;
 mod update;

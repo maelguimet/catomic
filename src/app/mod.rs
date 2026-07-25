@@ -54,8 +54,6 @@ mod watch;
 
 mod input;
 mod lint;
-mod llm_preview;
-mod llm_request;
 mod mobile;
 mod navigation;
 
@@ -136,10 +134,6 @@ pub struct App {
     /// Transient read-only surfaces. New surfaces require an ownership review before
     /// adding another top-level App field; clients/workers never belong in this group.
     pub(crate) surfaces: surfaces::SurfaceState,
-    /// Local confirmation state only; contains bounded context/settings but no HTTP client.
-    pub(crate) pending_llm_request: Option<llm_request::PendingLlmRequest>,
-    /// Present only after explicit Enter confirmation; dropping it cancels the transient client.
-    pub(crate) llm_task: Option<llm_request::RunningLlmRequest>,
     /// Per-buffer render-only metadata for the exact latest external reload revision.
     pub(crate) external_changes: external_diff::ExternalChanges,
     /// External process/preview state; empty at startup and while unused.

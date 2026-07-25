@@ -1,12 +1,11 @@
 //! Purpose: group transient read-only surfaces owned by the application shell.
-//! Owns: optional help and model-preview state.
-//! Must not: construct model clients, workers, processes, or network state.
+//! Owns: optional help state.
+//! Must not: construct workers, processes, or network state.
 //! Invariants: every surface is absent at startup and created only by its explicit action.
 
-use super::{help, llm_preview};
+use super::help;
 
 #[derive(Default)]
 pub(crate) struct SurfaceState {
     pub(crate) help: Option<help::HelpView>,
-    pub(crate) llm_preview: Option<llm_preview::PatchPreview>,
 }

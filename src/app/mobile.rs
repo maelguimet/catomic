@@ -293,11 +293,7 @@ fn active_surface(app: &super::App) -> Surface {
     if super::selection::is_touch_selecting(app) {
         return Surface::TouchSelection;
     }
-    if app.pending_llm_request.is_some()
-        || super::llm_preview::is_viewing(app)
-        || super::recovery::is_viewing(app)
-        || super::external_command::is_viewing(app)
-    {
+    if super::recovery::is_viewing(app) || super::external_command::is_viewing(app) {
         return Surface::Confirmation;
     }
     if super::search::is_active(app)
@@ -310,7 +306,7 @@ fn active_surface(app: &super::App) -> Surface {
     if super::help::is_viewing(app) || super::view::is_preview(app) {
         return Surface::ReadOnly;
     }
-    if app.llm_task.is_some() || super::external_command::is_running(app) {
+    if super::external_command::is_running(app) {
         return Surface::Running;
     }
     if app.pending_save_conflict.is_some() || app.pending_reload.is_some() {

@@ -23,7 +23,8 @@ alike.
 
 ## Development setup
 
-Catomic currently targets Linux and stable Rust.
+Catomic currently targets Linux, stable Rust, and Python 3.11 or newer for the
+repository source gates.
 
 ```sh
 git clone https://github.com/maelguimet/catomic.git

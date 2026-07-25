@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Reject built-in AI runtime, commands, networking, and generated UI residue.
+"""Tripwire for known built-in-AI residue and architectural ownership seams.
 
 The compatibility parser intentionally still accepts retired configuration shapes.
 This gate therefore uses exact path, symbol, dependency, and generated-surface rules
-instead of broad words such as "model", "diff", or "preview".
+instead of broad words such as "model", "diff", or "preview". It is a
+defense-in-depth regression check, not semantic proof that arbitrary new code is
+AI-free.
 """
 
 from __future__ import annotations
@@ -141,6 +143,21 @@ NETWORK_API = re.compile(
     r"\b(?:TcpListener|TcpStream|UdpSocket)\b"
 )
 
+PROCESS_API = re.compile(
+    r"\b(?:::)?std\s*::\s*process\s*::\s*Command\s*::\s*new\b|"
+    r"\btype\s+\w+\s*=\s*(?:::)?std\s*::\s*process\s*::\s*Command\b"
+)
+
+RUST_USE_STATEMENT = re.compile(r"\buse\b[^;]*;")
+EXTERN_STD_ALIAS = re.compile(
+    r"\bextern\s+crate\s+std\s+as\s+([A-Za-z_]\w*)\s*;"
+)
+
+PROCESS_OWNER_FILES = {
+    "src/clipboard.rs",
+    "src/external/task.rs",
+}
+
 FORBIDDEN_DIRECT_DEPENDENCIES = {
     "anthropic",
     "async-openai",
@@ -244,6 +261,50 @@ def read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def rust_char_literal_end(text: str, index: int) -> int | None:
+    """Return the end of a Rust char/byte-char literal, but not a lifetime."""
+
+    quote = index + 1 if text.startswith("b'", index) else index
+    if quote >= len(text) or text[quote] != "'":
+        return None
+    cursor = quote + 1
+    if cursor >= len(text) or text[cursor] in {"\r", "\n", "'"}:
+        return None
+
+    if text[cursor] != "\\":
+        cursor += 1
+    else:
+        cursor += 1
+        if cursor >= len(text) or text[cursor] in {"\r", "\n"}:
+            return None
+        escape = text[cursor]
+        cursor += 1
+        if escape == "x":
+            digits = text[cursor : cursor + 2]
+            if len(digits) != 2 or any(
+                character not in "0123456789abcdefABCDEF" for character in digits
+            ):
+                return None
+            cursor += 2
+        elif escape == "u":
+            if cursor >= len(text) or text[cursor] != "{":
+                return None
+            close = text.find("}", cursor + 1)
+            if close < 0 or "\n" in text[cursor:close]:
+                return None
+            digits = text[cursor + 1 : close].replace("_", "")
+            if (
+                not 1 <= len(digits) <= 6
+                or any(character not in "0123456789abcdefABCDEF" for character in digits)
+            ):
+                return None
+            cursor = close + 1
+
+    if cursor >= len(text) or text[cursor] != "'":
+        return None
+    return cursor + 1
+
+
 def rust_code_only(text: str) -> str:
     """Mask Rust comments and string contents while preserving byte positions/newlines."""
 
@@ -274,6 +335,14 @@ def rust_code_only(text: str) -> str:
                 if output[position] != "\n":
                     output[position] = " "
             index = cursor
+            continue
+
+        char_end = rust_char_literal_end(text, index)
+        if char_end is not None:
+            for position in range(index, char_end):
+                if output[position] != "\n":
+                    output[position] = " "
+            index = char_end
             continue
 
         raw = re.match(r"(?:br|r)(?P<hashes>#{0,255})\"", text[index:])
@@ -309,6 +378,140 @@ def rust_code_only(text: str) -> str:
     return "".join(output)
 
 
+def rust_production_code_only(code: str) -> str:
+    """Mask inline #[cfg(test)] modules in already lexical-masked Rust code."""
+
+    output = list(code)
+    module = re.compile(
+        r"#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\]\s*"
+        r"(?:pub(?:\s*\([^)]*\))?\s+)?mod\s+[A-Za-z_]\w*\s*\{"
+    )
+    for match in module.finditer(code):
+        open_brace = code.rfind("{", match.start(), match.end())
+        depth = 0
+        end = len(code)
+        for cursor in range(open_brace, len(code)):
+            if code[cursor] == "{":
+                depth += 1
+            elif code[cursor] == "}":
+                depth -= 1
+                if depth == 0:
+                    end = cursor + 1
+                    break
+        for cursor in range(match.start(), end):
+            if output[cursor] != "\n":
+                output[cursor] = " "
+    return "".join(output)
+
+
+def rust_use_entries(statement: str) -> list[tuple[tuple[str, ...], str | None]]:
+    """Expand enough of a Rust use tree to identify std::process ownership."""
+
+    tokens = re.findall(r"::|[{},;*]|[A-Za-z_]\w*", statement)
+    if not tokens or tokens[0] != "use":
+        return []
+    index = 1
+    entries: list[tuple[tuple[str, ...], str | None]] = []
+
+    def parse_group(prefix: tuple[str, ...]) -> None:
+        nonlocal index
+        if index >= len(tokens) or tokens[index] != "{":
+            return
+        index += 1
+        while index < len(tokens) and tokens[index] != "}":
+            if tokens[index] == ",":
+                index += 1
+                continue
+            parse_tree(prefix)
+        if index < len(tokens) and tokens[index] == "}":
+            index += 1
+
+    def parse_tree(prefix: tuple[str, ...]) -> None:
+        nonlocal index
+        while index < len(tokens) and tokens[index] == "::":
+            index += 1
+        if index >= len(tokens):
+            return
+        if tokens[index] == "{":
+            parse_group(prefix)
+            return
+
+        segment = tokens[index]
+        if not re.fullmatch(r"[A-Za-z_]\w*|\*", segment):
+            index += 1
+            return
+        index += 1
+        if segment == "self":
+            path = prefix
+        else:
+            path = (*prefix, segment)
+
+        if index < len(tokens) and tokens[index] == "as":
+            index += 1
+            alias = tokens[index] if index < len(tokens) else None
+            if alias is not None:
+                index += 1
+            entries.append((path, alias))
+            return
+        if index < len(tokens) and tokens[index] == "::":
+            index += 1
+            if index < len(tokens) and tokens[index] == "{":
+                parse_group(path)
+            else:
+                parse_tree(path)
+            return
+        entries.append((path, None))
+
+    if index < len(tokens) and tokens[index] == "{":
+        parse_group(())
+    else:
+        parse_tree(())
+    return entries
+
+
+def process_api_matches(code: str) -> list[re.Match[str]]:
+    """Find direct process APIs outside the reviewed production owners."""
+
+    normalized = re.sub(r"\br#(?=[A-Za-z_])", "  ", code)
+    matches = list(PROCESS_API.finditer(normalized))
+    use_entries = [
+        (match, rust_use_entries(match.group()))
+        for match in RUST_USE_STATEMENT.finditer(normalized)
+    ]
+    std_aliases = {
+        alias
+        for _, entries in use_entries
+        for path, alias in entries
+        if path == ("std",) and alias is not None
+    }
+    std_aliases.update(EXTERN_STD_ALIAS.findall(normalized))
+    for match, entries in use_entries:
+        if any(
+            path[:2] == ("std", "process")
+            or (
+                len(path) >= 2
+                and path[0] in std_aliases
+                and path[1] == "process"
+            )
+            for path, _ in entries
+        ):
+            matches.append(match)
+    for alias in std_aliases:
+        escaped = re.escape(alias)
+        matches.extend(
+            re.finditer(
+                rf"\b(?:{escaped}\s*::\s*process\s*::\s*Command\s*::\s*new|"
+                rf"type\s+\w+\s*=\s*{escaped}\s*::\s*process\s*::\s*Command)\b",
+                normalized,
+            )
+        )
+
+    return sorted(
+        {(match.start(), match.end(), match.group()): match for match in matches}.values(),
+        key=lambda match: (match.start(), match.end()),
+    )
+
+
 def repository_files(root: Path) -> Iterable[Path]:
     for base in (root / "src", root / "tests"):
         if not base.exists():
@@ -322,6 +525,15 @@ def relative(path: Path, root: Path) -> str:
 
 def is_update_rust(path: str) -> bool:
     return path == "src/update.rs" or path.startswith("src/update/")
+
+
+def is_test_rust(path: str) -> bool:
+    return (
+        path.startswith("tests/")
+        or path.startswith("src/tests/")
+        or "/tests/" in path
+        or path.endswith("/tests.rs")
+    )
 
 
 def path_violations(root: Path) -> list[Violation]:
@@ -350,6 +562,7 @@ def rust_violations(root: Path) -> list[Violation]:
         name = relative(path, root)
         text = read_text(path)
         code = rust_code_only(text)
+        production_code = rust_production_code_only(code)
         for rule, pattern in (
             ("retired runtime symbol", RUNTIME_IDENTIFIER),
             ("retired llm module", LLM_MODULE_REFERENCE),
@@ -365,6 +578,20 @@ def rust_violations(root: Path) -> list[Violation]:
                         name,
                         line_number(text, match.start()),
                         "network API outside updater",
+                        match.group(),
+                    )
+                )
+        if (
+            not is_update_rust(name)
+            and not is_test_rust(name)
+            and name not in PROCESS_OWNER_FILES
+        ):
+            for match in process_api_matches(production_code):
+                violations.append(
+                    Violation(
+                        name,
+                        line_number(text, match.start()),
+                        "process API outside owner",
                         match.group(),
                     )
                 )
@@ -452,21 +679,30 @@ def dependency_violations(root: Path) -> list[Violation]:
         table = manifest.get(key)
         if isinstance(table, dict):
             dependency_tables.append(table)
+
+    workspace = manifest.get("workspace", {})
+    workspace_dependencies = (
+        workspace.get("dependencies", {}) if isinstance(workspace, dict) else {}
+    )
+    if not isinstance(workspace_dependencies, dict):
+        workspace_dependencies = {}
+
+    def resolved_package(alias: str, specification: object) -> str:
+        if isinstance(specification, dict) and specification.get("workspace") is True:
+            specification = workspace_dependencies.get(alias, specification)
+        if isinstance(specification, dict):
+            package = specification.get("package", alias)
+            return package if isinstance(package, str) else alias
+        return alias
+
     direct_packages = {
-        specification.get("package", alias)
-        if isinstance(specification, dict)
-        else alias
+        resolved_package(alias, specification)
         for table in dependency_tables
         for alias, specification in table.items()
     }
     for package in ("reqwest", "tokio"):
         has_disallowed_entry = any(
-            (
-                specification.get("package", alias)
-                if isinstance(specification, dict)
-                else alias
-            )
-            == package
+            resolved_package(alias, specification) == package
             and (table is not dependencies or alias != package)
             for table in dependency_tables
             for alias, specification in table.items()
@@ -601,7 +837,9 @@ def main(argv: list[str] | None = None) -> int:
         for violation in violations:
             print(f"  {violation.render()}", file=sys.stderr)
         return 1
-    print("No built-in AI runtime, command, generated UI, or network residue found.")
+    print(
+        "No known built-in-AI residue or unexpected direct network/process API found."
+    )
     return 0
 
 

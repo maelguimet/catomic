@@ -31,9 +31,10 @@ Before tagging:
    session, candidate SHA, limitations, and final issue comment to the tested
    release binary.
 4. Confirm the documented
-   [no-built-in-AI boundary](decisions/0015-no-built-in-ai-runtime.md), including
-   the static source gate, passes. The release may retain updater networking and
-   generic trusted commands/hooks, but must not regain a model/provider path.
+   [no-built-in-AI boundary](decisions/0015-no-built-in-ai-runtime.md) by source
+   review, and require the static residue/ownership regression gate to pass.
+   The release may retain updater networking and generic trusted commands/hooks,
+   but must not regain a model/provider path.
 5. Require normal `master` CI to pass for the commit that will be tagged.
 6. Create and push an annotated `v<package-version>` tag at that exact commit.
 
@@ -41,7 +42,7 @@ The release workflow then does all of the following on the tagged checkout:
 
 - verifies that the checkout, pushed tag, event SHA, and Cargo version agree;
 - records the stable and MSRV toolchains and the hosted-runner identity;
-- runs formatting, Clippy, MSRV, the no-built-in-AI source gate, default tests,
+- runs formatting, Clippy, MSRV, the AI residue/ownership source gate, default tests,
   and ignored acceptance tests;
 - lists, builds, and verifies the Cargo source package;
 - builds the managed release binary from that same checkout;

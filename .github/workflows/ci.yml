@@ -70,7 +70,7 @@ jobs:
       - name: Check documentation links
         run: python3 scripts/check_markdown_links.py
 
-      - name: Enforce no built-in AI policy
+      - name: Check AI residue and ownership seams
         run: |
           python3 scripts/check_no_builtin_ai.py
           python3 scripts/test_check_no_builtin_ai.py -v

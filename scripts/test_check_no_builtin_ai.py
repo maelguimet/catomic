@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused self-tests for the no-built-in-AI repository gate."""
+"""Focused self-tests for the built-in-AI residue and ownership gate."""
 
 from __future__ import annotations
 
@@ -14,6 +14,10 @@ VALID_MANIFEST = """\
 [package]
 name = "gate-fixture"
 version = "0.0.0"
+
+[package.metadata.dependencies]
+ureq = "metadata, not a dependency"
+# package = "ureq"
 
 [dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
@@ -151,12 +155,20 @@ struct Model;
 struct Modeless;
 struct Diff;
 struct Preview;
+struct Command;
+impl Command {
+    fn new() -> Self { Self }
+}
+fn construct_domain_command() {
+    let _command = Command::new();
+}
+use std::{fmt::Debug as process};
 const COMMENT_AND_STRINGS: &str = "reqwest tokio PendingLlmRequest";
 // reqwest::Client and RepoLlm are not live code here.
 """,
         )
         self.write(
-            "src/external/commands.rs",
+            "src/external/task.rs",
             """
 use std::process::Command;
 fn run_trusted_command(program: &str) {
@@ -226,6 +238,202 @@ fn run_trusted_command(program: &str) {
                 self.write(name, source + "\n")
                 self.assert_rule("network API outside updater")
 
+    def test_char_literals_do_not_mask_following_network_code(self) -> None:
+        source = r"""
+fn syntax<'a>(ch: char, borrowed: &'a str) {
+    let quote = '"';
+    let escaped_quote = '\'';
+    let byte_quote = b'"';
+    let byte_escaped_quote = b'\'';
+    let byte_delete = b'\x7f';
+    let delete = '\x7f';
+    let cat = '\u{1f408}';
+    'scan: loop {
+        let _client = reqwest::Client::new();
+        break 'scan;
+    }
+    let _ = (
+        ch,
+        borrowed,
+        quote,
+        escaped_quote,
+        byte_quote,
+        byte_escaped_quote,
+        byte_delete,
+        delete,
+        cat,
+    );
+}
+"""
+        self.write("src/editor/syntax/code.rs", source)
+
+        violations = self.violations()
+        self.assertTrue(
+            any(
+                violation.path == "src/editor/syntax/code.rs"
+                and violation.rule == "network API outside updater"
+                and violation.detail.startswith("reqwest")
+                for violation in violations
+            ),
+            "\n".join(violation.render() for violation in violations),
+        )
+
+    def test_process_apis_fail_outside_reviewed_owners(self) -> None:
+        cases = (
+            """
+use std::process::Command;
+fn ask() {
+    let _ = Command::new("curl")
+        .arg("https://example.test/v1/chat/completions")
+        .status();
+}
+""",
+            """
+use std::process as process_api;
+fn ask() {
+    let _ = process_api::Command::new("curl").status();
+}
+""",
+            """
+use std::process;
+fn ask() {
+    let _ = process::Command::new("curl").status();
+}
+""",
+            """
+use std::process::{self as process_api};
+fn ask() {
+    let _ = process_api::Command::new("curl").status();
+}
+""",
+            """
+use std as standard;
+fn ask() {
+    let _ = standard::process::Command::new("curl").status();
+}
+""",
+            """
+use std as standard;
+use standard::process::Command as Spawn;
+fn ask() {
+    let _ = Spawn::new("curl").status();
+}
+""",
+            """
+extern crate std as standard;
+use standard::process::Command as Spawn;
+fn ask() {
+    let _ = Spawn::new("curl").status();
+}
+""",
+            """
+use std::{self as standard};
+fn ask() {
+    let _ = standard::process::Command::new("curl").status();
+}
+""",
+            """
+type Spawn = std::process::Command;
+fn ask() {
+    let _ = Spawn::new("curl").status();
+}
+""",
+            """
+use std::{process::{Command as Spawn}};
+fn ask() {
+    let _ = Spawn::new("curl").status();
+}
+""",
+            """
+use ::std::process::Command as Spawn;
+fn ask() {
+    let _ = Spawn::new("curl").status();
+}
+""",
+            """
+use {std::process::Command as Spawn};
+fn ask() {
+    let _ = Spawn::new("curl").status();
+}
+""",
+            """
+type Spawn = ::std::process::Command;
+fn ask() {
+    let _ = Spawn::new("curl").status();
+}
+""",
+            """
+fn ask() {
+    let _ = r#std::r#process::Command::new("curl").status();
+}
+""",
+            """
+use std::{fmt, process};
+fn ask() {
+    let _ = process::Command::new("curl").status();
+}
+""",
+            """
+use std::process::{self};
+fn ask() {
+    let _ = process::Command::new("curl").status();
+}
+""",
+            """
+use std::{process::{self}};
+fn ask() {
+    let _ = process::Command::new("curl").status();
+}
+""",
+            """
+use std::{process::{id}, fmt::Debug as Command};
+fn process_id() {
+    let _ = id();
+}
+""",
+            """
+fn production_open() {
+    let _ = std::process::Command::new("curl").status();
+}
+#[cfg(test)]
+mod tests {
+    fn fifo_fixture() {
+        let _ = std::process::Command::new("mkfifo").status();
+    }
+}
+""",
+        )
+        for index, source in enumerate(cases):
+            with self.subTest(index=index, source=source):
+                self.reset_repository()
+                path = (
+                    "src/app/open.rs"
+                    if "production_open" in source
+                    else "src/app/service.rs"
+                )
+                self.write(path, source)
+                self.assert_rule("process API outside owner")
+
+    def test_inline_test_module_process_spawn_is_not_a_production_violation(self) -> None:
+        self.write(
+            "src/app/open.rs",
+            """
+#[cfg(test)]
+mod tests {
+    fn fifo_fixture() {
+        let _ = std::process::Command::new("mkfifo").status();
+    }
+}
+""",
+        )
+
+        self.assertFalse(
+            any(
+                violation.rule == "process API outside owner"
+                for violation in self.violations()
+            )
+        )
+
     def test_compatibility_tokens_fail_outside_explicit_allowances(self) -> None:
         for source, expected_rule in (
             ('const NAME: &str = "meow";', "legacy prompt name"),
@@ -277,6 +485,9 @@ http_client = { package = "reqwest", version = "0.12" }
 
 [target.'cfg(unix)'.dependencies]
 runtime = { package = "tokio", version = "1" }
+
+[build-dependencies."ollama-rs"]
+version = "0.3"
 """,
         )
         self.write(
@@ -310,11 +521,63 @@ version = "1.0.0"
             details,
         )
         self.assertIn(
+            "direct network or AI dependency is forbidden: ollama-rs",
+            details,
+        )
+        self.assertIn(
             "reqwest must appear only as the exact root [dependencies].reqwest entry",
             details,
         )
         self.assertIn(
             "tokio must appear only as the exact root [dependencies].tokio entry",
+            details,
+        )
+
+        self.write(
+            "Cargo.lock",
+            """\
+version = 4
+
+[[package]]
+name = 'tokio'
+version = '1.0.0'
+dependencies = ['tokio-macros']
+
+[[package]]
+name = 'tokio-macros'
+version = '1.0.0'
+""",
+        )
+        single_quoted_details = {
+            violation.detail for violation in self.violations()
+        }
+        self.assertIn("tokio must not depend on tokio-macros", single_quoted_details)
+        self.assertIn("tokio-macros must be absent", single_quoted_details)
+
+    def test_workspace_dependency_aliases_are_resolved(self) -> None:
+        self.write(
+            "Cargo.toml",
+            """\
+[package]
+name = "gate-fixture"
+version = "0.0.0"
+
+[workspace]
+members = []
+
+[workspace.dependencies]
+client = { package = "ureq", version = "3" }
+
+[dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+tokio = { version = "1", default-features = false, features = ["rt"] }
+client = { workspace = true }
+""",
+        )
+
+        details = {violation.detail for violation in self.violations()}
+        self.assertIn(
+            "direct network or AI dependency is forbidden: ureq",
             details,
         )
 

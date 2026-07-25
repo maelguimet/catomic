@@ -102,9 +102,9 @@ grep -Fxq "tag=$tag" "$asset_dir/source-verification.txt" || die "verification t
 grep -Fxq "source_sha=$source_sha" "$asset_dir/source-verification.txt" || \
   die "verification source SHA differs"
 grep -Fxq "python3 scripts/check_no_builtin_ai.py=success" \
-  "$asset_dir/source-verification.txt" || die "built-in AI policy verification is missing"
+  "$asset_dir/source-verification.txt" || die "AI residue/ownership verification is missing"
 grep -Fxq "python3 scripts/test_check_no_builtin_ai.py -v=success" \
-  "$asset_dir/source-verification.txt" || die "built-in AI gate self-test verification is missing"
+  "$asset_dir/source-verification.txt" || die "AI residue gate self-test verification is missing"
 
 printf 'release PTY smoke\n' > "$temp_dir/fixture.txt"
 

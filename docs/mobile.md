@@ -93,8 +93,7 @@ action_bar = "auto" # auto, always, or never
 Tap **Menu** to open the scrollable action palette. It exposes open, new,
 close, save, Save As, reload, buffer switching, undo/redo, find/replace, goto,
 selection and clipboard actions, cursor/page/scroll movement, help, the command
-prompt, model/provider selector, Markdown preview, view toggles,
-large-file pages, and guarded quit.
+prompt, Markdown preview, view toggles, large-file pages, and guarded quit.
 Contextual action rows also provide Save/Undo, Copy/Cut, Cancel/Accept,
 navigation, proposal apply/cancel, and task cancellation without an Escape key,
 function key, or hidden modifier chord.

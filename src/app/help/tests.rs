@@ -172,7 +172,7 @@ fn narrow_help_soft_wraps_and_scrolls_without_horizontal_movement() {
         .unwrap()
         .to_string()
         .lines()
-        .position(|line| line.contains("Model requests show"))
+        .position(|line| line.contains("llm.default"))
         .expect("compact model guidance must be present");
     app.surfaces
         .help

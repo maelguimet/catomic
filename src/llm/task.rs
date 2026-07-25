@@ -12,10 +12,7 @@ use std::sync::Arc;
 pub enum LlmTaskResult {
     Finished(String),
     Cancelled,
-    Error {
-        kind: BackendErrorKind,
-        message: String,
-    },
+    Error { message: String },
 }
 
 pub struct LlmTask {
@@ -62,7 +59,6 @@ impl LlmTask {
             Err(TryRecvError::Disconnected) => {
                 self.disconnected = true;
                 Some(LlmTaskResult::Error {
-                    kind: BackendErrorKind::Failed,
                     message: "LLM worker stopped without a result".to_string(),
                 })
             }
@@ -92,7 +88,6 @@ fn run_request(
         Ok(runner) => runner,
         Err(error) => {
             return LlmTaskResult::Error {
-                kind: error.kind,
                 message: error.to_string(),
             }
         }
@@ -102,7 +97,6 @@ fn run_request(
         Ok(output) => LlmTaskResult::Finished(output),
         Err(error) if error.kind == BackendErrorKind::Cancelled => LlmTaskResult::Cancelled,
         Err(error) => LlmTaskResult::Error {
-            kind: error.kind,
             message: error.to_string(),
         },
     }

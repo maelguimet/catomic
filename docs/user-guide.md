@@ -879,7 +879,7 @@ the hook is running.
 Model support is explicit, transient, and preview-first. A named preset can use
 an OpenAI-compatible Chat Completions endpoint or a headless command adapter.
 Catomic does not construct an HTTP client, read a credential value, or start a
-command until you invoke a model action and confirm its destination and context.
+command until you invoke a model command and confirm its destination and context.
 Credentials are resolved only when a confirmed request is about to start.
 
 ### Presets and HTTP configuration
@@ -897,7 +897,6 @@ name = "local"
 type = "openai-compatible"
 base_url = "http://127.0.0.1:8080/v1"
 model = "local-model"
-models = ["local-model-small", "local-model-large"]
 
 [[llm.backends]]
 name = "openrouter"
@@ -910,6 +909,9 @@ header_envs = { "X-Provider-Key" = "PROVIDER_SECONDARY_KEY" }
 timeout_secs = 120
 ```
 
+`llm.default` names the preset used by `meow` and `bigmeow`. Edit it to choose a
+different named backend; there is no process-local override.
+
 The base URL must be plain HTTP or HTTPS without embedded credentials,
 whitespace, query, or fragment. Timeouts must be 1–600 seconds.
 
@@ -921,22 +923,12 @@ endpoint.
 The client refuses redirects and ignores ambient proxy variables so context
 cannot silently leave through a destination other than the one you confirmed.
 Static non-secret metadata `headers` and credential `header_envs` are explicit
-per preset. Credential-looking static headers are rejected. Picker and status
-text never show header values. An explicit `api_key_env` or
+per preset. Credential-looking static headers are rejected. Confirmation and
+status text never show header values. An explicit `api_key_env` or
 `header_envs` variable must be present when that preset is invoked. The implicit
 legacy preset preserves the prior optional-key behavior for local servers.
 Static and environment-sourced HTTP header values are capped at 8192 bytes and
 must be valid HTTP header values.
-
-The `models` array adds static model choices for the same HTTP destination. Set
-`discovery = true` to permit model-list discovery, but this does not make it
-automatic: select that preset in the picker, press `Ctrl+D`, inspect the shown
-`BASE_URL/models` destination, then press `Enter`. Discovery sends no document
-content, is cancellable, refuses redirects/proxies, accepts at most 256 KiB and
-128 validated model identifiers, uses at most a ten-second request timeout, and
-keeps them in memory for five minutes.
-Discovered choices never become executable configuration and are never written
-to disk.
 
 ### Headless command presets
 
@@ -980,21 +972,6 @@ that can mutate the workspace. Repository-local command presets are not loaded.
 For command requests, the prompt names only the active file's basename, never
 the workspace's absolute path.
 
-### Selecting the active model
-
-Press `F10`, run `model`/`models`, or bind any normal-mode chord to the canonical
-`select-model` action. Type to filter by preset, model, adapter, destination, or
-availability. Use arrows/PageUp/PageDown and `Enter`; `Escape` cancels. Each row
-starts with `A` for the effective active choice, `S` for an explicit session
-override, and `D` for the configured default. The row also shows local/remote,
-the canonical URL or resolved executable, and availability.
-
-Selection changes subsequent `meow` and `bigmeow` requests for every buffer in
-this Catomic process. It never invokes the backend, reads credential values, or
-rewrites configuration. To persist another default, edit `llm.default` as a
-separate explicit configuration action. Reopening or filtering the picker and
-switching buffers never persists anything.
-
 ### Current-file commands
 
 These commands are available directly:
@@ -1017,10 +994,10 @@ With no `bigmeow` argument, an instruction block under the cursor supplies the
 instruction. Every instruction follows the same proposed-edit flow; words such
 as `explain`, `ask`, or `edit` have no special command meaning.
 
-Before sending, Catomic shows the active preset, adapter, canonical endpoint or
-resolved executable, model, exact context extent, and warnings for a dotfile
-path or obvious secret-like lines. `Enter` confirms the request; `Escape`
-cancels without constructing the client or starting the command.
+Before sending, Catomic shows the configured default preset, adapter, canonical
+endpoint or resolved executable, model, exact context extent, and warnings for
+a dotfile path or obvious secret-like lines. `Enter` confirms the request;
+`Escape` cancels without constructing the client or starting the command.
 
 Context is capped at 64 KiB and 2,000 lines. Oversized context fails closed
 rather than being silently truncated. A proposed edit must be either:
@@ -1223,7 +1200,6 @@ name = "local"
 type = "openai-compatible"
 base_url = "http://127.0.0.1:8080/v1"
 model = "local-model"
-models = ["local-model-small"]
 timeout_secs = 120
 
 [[llm.backends]]
@@ -1261,14 +1237,12 @@ timeout_secs = 120
 | `llm.backends[].name` | required | Unique printable name, 1–64 characters |
 | `llm.backends[].type` | required | `openai-compatible` or `command` |
 | HTTP `base_url`, `model` | required | Canonical HTTP(S) URL; printable model ID |
-| HTTP `models` | empty | At most 128 printable static model IDs |
 | HTTP `api_key_env`, `header_envs` | none | Valid environment-variable names |
 | HTTP `headers` | empty | Explicit non-secret metadata; 32 total headers max |
-| HTTP `discovery` | `false` | Boolean; still requires picker confirmation |
 | Command `program`, `args` | required / empty | Absolute or bare executable; at most 64 bounded args |
 | Command `input` | `stdin-text-v1` | Versioned stdin transcript contract |
 | Command `output` | required | `claude-json-v1` or `codex-jsonl-v1` |
-| Backend `enabled` | `true` | Boolean; disabled presets remain visible but cannot select |
+| Backend `enabled` | `true` | Boolean; a disabled preset cannot be invoked |
 | Backend `timeout_secs` | `120` | Integer `1`–`600` |
 
 Legacy `llm.base_url`, `llm.model`, `llm.api_key_env`, and `llm.timeout_secs`
@@ -1276,12 +1250,14 @@ remain valid only when `llm.backends` is absent. Mixing the two shapes is an
 error rather than an ambiguous partial migration.
 
 For upgrade compatibility, retired `[llm.inline]`,
-`[languages.EXT.llm.inline]`, `run-clanker`/`clear-clanker-changes`
-keybindings, and the `theme.colors.llm_changed` role are accepted as inert
-configuration. They do not create shortcuts, instructions, model requests,
-edits, or presentation marks and are omitted from newly generated config.
-`F3` and `Shift+F3` are unbound by default, and the retired prompt command
-spellings are unknown commands.
+`[languages.EXT.llm.inline]`, HTTP backend `models`/`discovery`,
+`run-clanker`/`clear-clanker-changes`/`select-model`/`picker-accept`/
+`picker-cancel` keybindings, and the `theme.colors.llm_changed` role are
+accepted as inert configuration. They do not create shortcuts, choices,
+discovery requests, instructions, model requests, edits, or presentation marks
+and are omitted from newly generated config. `F3`, `Shift+F3`, and `F10` are
+unbound by default. The retired prompt command spellings `model`, `models`, and
+`select-model` are unknown commands.
 
 Language extension names are case-normalized and may be written with or without
 a leading dot. Command names may contain ASCII letters, digits, `-`, and `_`.
@@ -1339,7 +1315,6 @@ save = ["ctrl+s", "alt+s"]
 help = []
 prompt-cancel = ["alt+x"]
 mouse-select-word = ["mouse-left-double"]
-select-model = ["alt+m"]
 ```
 
 The Phase 7 chord-oriented form such as `"alt+s" = "save"` remains accepted as
@@ -1357,7 +1332,7 @@ unmodified or Shift-only printable keys so a remap cannot silently capture ordin
 
 Global actions have first precedence, followed by the active local surface,
 then editor typing. A chord may therefore have a different local meaning in a
-prompt, search, completion, preview, picker, or help surface. Two actions in the
+prompt, search, completion, preview, or help surface. Two actions in the
 same effective scope cannot share a chord; global bindings overlap every local
 scope and therefore cannot shadow a local action. `config check` reports both action
 names, both input chords, the scope, and the normalized collision. `Ctrl+Space`
@@ -1389,24 +1364,24 @@ command-prompt | editor | ctrl+shift+p, f2
 complete | editor | ctrl+space
 undo | editor | ctrl+z
 redo | editor | ctrl+y, ctrl+shift+z
-move-left | editor,preview,picker,help | left
-move-right | editor,preview,picker,help | right
-move-up | editor,preview,picker,help | up
-move-down | editor,preview,picker,help | down
+move-left | editor,preview,help | left
+move-right | editor,preview,help | right
+move-up | editor,preview,help | up
+move-down | editor,preview,help | down
 select-left | editor | shift+left
 select-right | editor | shift+right
 select-up | editor | shift+up
 select-down | editor | shift+down
-line-start | editor,preview,picker,help | home
-line-end | editor,preview,picker,help | end
+line-start | editor,preview,help | home
+line-end | editor,preview,help | end
 select-line-start | editor | shift+home
 select-line-end | editor | shift+end
 document-start | editor | ctrl+home
 document-end | editor | ctrl+end
 select-document-start | editor | ctrl+shift+home
 select-document-end | editor | ctrl+shift+end
-viewport-up | editor,preview,picker,help | pageup
-viewport-down | editor,preview,picker,help | pagedown
+viewport-up | editor,preview,help | pageup
+viewport-down | editor,preview,help | pagedown
 select-viewport-up | editor | shift+pageup
 select-viewport-down | editor | shift+pagedown
 word-left | editor | ctrl+left
@@ -1437,7 +1412,6 @@ markdown-preview | editor,preview | f6
 line-numbers | editor,preview | f7
 whitespace | editor,preview | f8
 soft-wrap | editor,preview | f9
-select-model | editor | f10
 prompt-submit | prompt | enter
 prompt-cancel | prompt | esc
 prompt-delete-backward | prompt,search | backspace
@@ -1450,15 +1424,13 @@ completion-accept | completion | enter
 completion-cancel | completion | esc
 preview-accept | preview | enter
 preview-cancel | preview | esc
-picker-accept | picker | enter
-picker-cancel | picker | esc
 help-close | help | esc
 mouse-place-cursor | editor | mouse-left
 mouse-extend-selection | editor | mouse-left-drag
 mouse-finish-selection | editor | mouse-left-up
 mouse-select-word | editor | mouse-left-double
-mouse-scroll-up | editor,preview,picker,help | mouse-wheel-up
-mouse-scroll-down | editor,preview,picker,help | mouse-wheel-down
+mouse-scroll-up | editor,preview,help | mouse-wheel-up
+mouse-scroll-down | editor,preview,help | mouse-wheel-down
 ```
 
 <!-- action-registry-end -->
@@ -1498,7 +1470,6 @@ mouse-scroll-down | editor,preview,picker,help | mouse-wheel-down
 | View | Line numbers | `F7` |
 | View | Visible whitespace | `F8` |
 | View | Soft wrapping | `F9` |
-| Tools | Select model/backend for this session | `F10` |
 | Large files | Previous / next page | `Ctrl+PageUp` / `Ctrl+PageDown` |
 
 This table shows built-in defaults. The in-editor `Ctrl+H`/`F1` reference is a
@@ -1506,7 +1477,7 @@ shorter task guide whose displayed chords reflect the effective configured
 bindings; unbound actions are described without advertising a dead shortcut.
 On Android/Termux, tap **Menu** in the action row instead; its scrollable palette
 exposes essential actions normally reached through modifiers, function keys, or
-page keys, including the model/provider selector.
+page keys.
 
 ## Command reference
 
@@ -1527,7 +1498,6 @@ Open the prompt with `Ctrl+Shift+P` or `F2`. Do not add a leading colon.
 | `replace-all` | `replaceall` | Replace all in an ordinary buffer |
 | `run NAME` | — | Run a configured trusted command |
 | `recover` | — | Preview a newer `.catnap` sidecar |
-| `model` | `models`, `select-model` | Search/select a process-local model preset |
 | `meow TEXT` | — | Send selection/instruction block to configured model |
 | `bigmeow TEXT` | — | Send current ordinary file to configured model |
 | `quit` | `q` | Use the normal guarded quit path |
@@ -1745,12 +1715,13 @@ Confirm that you:
 
 ### A model command cannot connect or refuses the endpoint
 
-Open `models` and inspect the preset state and exact destination. For HTTP,
-check the base URL and whether the service implements OpenAI-compatible Chat
-Completions. Make sure `api_key_env`/`header_envs` name present environment
-variables rather than containing keys. Authenticated remote endpoints require
-HTTPS; redirects, embedded URL credentials, ambient proxies, and non-loopback
-plaintext keys are intentionally refused.
+Inspect `llm.default` and the named preset in the active configuration, then
+compare its model and destination with the confirmation shown before sending.
+For HTTP, check the base URL and whether the service implements
+OpenAI-compatible Chat Completions. Make sure `api_key_env`/`header_envs` name
+present environment variables rather than containing keys. Authenticated remote
+endpoints require HTTPS; redirects, embedded URL credentials, ambient proxies,
+and non-loopback plaintext keys are intentionally refused.
 
 For command presets, install the displayed resolved executable and verify that
 the configured CLI version emits exactly the declared structured format. A

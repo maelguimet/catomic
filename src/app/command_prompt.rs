@@ -279,7 +279,6 @@ fn execute_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> 
         (PromptCommand::Replace, "") => super::replace::open_prompt(app, out, false),
         (PromptCommand::ReplaceAll, "") => super::replace::open_prompt(app, out, true),
         (PromptCommand::Quit, "") => super::input::handle_quit(app, out),
-        (PromptCommand::SelectModel, "") => super::model_picker::show(app, out),
         (PromptCommand::Recover, "") => super::recovery::start_preview(app, out),
         (PromptCommand::Run, name) if !name.is_empty() => {
             super::external_command::start(app, out, name)

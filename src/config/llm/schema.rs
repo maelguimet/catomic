@@ -76,10 +76,6 @@ enum RawBackend {
         headers: BTreeMap<String, String>,
         #[serde(default)]
         header_envs: BTreeMap<String, String>,
-        #[serde(default)]
-        models: Vec<String>,
-        #[serde(default)]
-        discovery: bool,
         #[serde(default = "default_timeout_secs")]
         timeout_secs: u64,
         #[serde(default = "enabled_by_default")]
@@ -128,8 +124,6 @@ fn legacy_catalog(raw: RawLlm) -> io::Result<LlmCatalog> {
             credential_required: false,
             headers: BTreeMap::new(),
             header_envs: BTreeMap::new(),
-            models: Vec::new(),
-            discovery: false,
             timeout: validation::bounded_timeout(
                 raw.timeout_secs.unwrap_or(DEFAULT_TIMEOUT_SECS),
                 "llm.timeout_secs",
@@ -173,8 +167,6 @@ fn validate_backend(raw: RawBackend) -> io::Result<BackendPreset> {
             api_key_env,
             headers,
             header_envs,
-            models,
-            discovery,
             timeout_secs,
             enabled,
         } => validation::http_backend(
@@ -184,8 +176,6 @@ fn validate_backend(raw: RawBackend) -> io::Result<BackendPreset> {
             api_key_env,
             headers,
             header_envs,
-            models,
-            discovery,
             timeout_secs,
             enabled,
         ),

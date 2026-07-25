@@ -13,7 +13,6 @@ use super::{
     HttpBackend,
 };
 
-const MAX_MODELS: usize = 128;
 const MAX_HEADER_VALUE_BYTES: usize = 8_192;
 
 #[allow(clippy::too_many_arguments)]
@@ -24,8 +23,6 @@ pub(super) fn http_backend(
     api_key_env: Option<String>,
     headers: BTreeMap<String, String>,
     header_envs: BTreeMap<String, String>,
-    models: Vec<String>,
-    discovery: bool,
     timeout_secs: u64,
     enabled: bool,
 ) -> io::Result<BackendPreset> {
@@ -44,11 +41,9 @@ pub(super) fn http_backend(
             "api_key_env cannot be combined with an explicit Authorization header",
         ));
     }
-    let model = validated_model(model)?;
-    let models = validated_models(models, &model)?;
     Ok(BackendPreset {
         name: validated_name(name)?,
-        model,
+        model: validated_model(model)?,
         enabled,
         adapter: BackendAdapter::OpenAiCompatible(HttpBackend {
             base_url: canonical_base_url(&base_url)?,
@@ -56,8 +51,6 @@ pub(super) fn http_backend(
             credential_required,
             headers,
             header_envs,
-            models,
-            discovery,
             timeout: bounded_timeout(timeout_secs, "llm.backends[].timeout_secs")?,
         }),
     })
@@ -116,21 +109,6 @@ pub(super) fn validated_model(raw: String) -> io::Result<String> {
         ));
     }
     Ok(model)
-}
-
-fn validated_models(models: Vec<String>, primary: &str) -> io::Result<Vec<String>> {
-    if models.len() > MAX_MODELS {
-        return Err(invalid("llm backend models exceeds 128 entries"));
-    }
-    let mut seen = HashSet::new();
-    let mut valid = Vec::new();
-    for model in models {
-        let model = validated_model(model)?;
-        if model != primary && seen.insert(model.clone()) {
-            valid.push(model);
-        }
-    }
-    Ok(valid)
 }
 
 fn validate_program(program: &str) -> io::Result<()> {

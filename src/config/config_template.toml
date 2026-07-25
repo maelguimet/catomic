@@ -156,9 +156,6 @@ preview = "default"
 # whitespace = ["f8"]
 # soft-wrap = ["f9"]
 #
-# Model selection
-# select-model = ["f10"]
-#
 # Prompts and temporary surfaces
 # prompt-submit = ["enter"]
 # prompt-cancel = ["esc"]
@@ -172,8 +169,6 @@ preview = "default"
 # completion-cancel = ["esc"]
 # preview-accept = ["enter"]
 # preview-cancel = ["esc"]
-# picker-accept = ["enter"]
-# picker-cancel = ["esc"]
 # help-close = ["esc"]
 #
 # Mouse
@@ -205,9 +200,8 @@ on_open = []
 on_save = []
 before_llm = []
 
-# Model settings are inert until an explicit model command and confirmation.
-# F10 opens the searchable process-local selector without reading credentials,
-# contacting an endpoint, starting a command, or rewriting this file.
+# Model settings are inert until an explicit `meow` or `bigmeow` command and
+# confirmation. `llm.default` names the preset used for every request.
 # [llm]
 # default = "local"
 #
@@ -216,8 +210,6 @@ before_llm = []
 # type = "openai-compatible"
 # base_url = "http://127.0.0.1:8080/v1"
 # model = "local-model"
-# models = ["local-small", "local-large"]
-# discovery = false
 # timeout_secs = 120
 #
 # Hosted credentials must come from named environment variables and require

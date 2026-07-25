@@ -13,11 +13,10 @@ const P: &[super::Scope] = &[Prompt];
 const S: &[super::Scope] = &[Search];
 const C: &[super::Scope] = &[Completion];
 const V: &[super::Scope] = &[Preview];
-const K: &[super::Scope] = &[Picker];
 const H: &[super::Scope] = &[Help];
 const EH: &[super::Scope] = &[Editor, Help];
 const EV: &[super::Scope] = &[Editor, Preview];
-const NAV: &[super::Scope] = &[Editor, Preview, Picker, Help];
+const NAV: &[super::Scope] = &[Editor, Preview, Help];
 const PS: &[super::Scope] = &[Prompt, Search];
 
 macro_rules! key {
@@ -424,13 +423,6 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
     ),
     key!(SoftWrap, "soft-wrap", "Toggle soft wrapping", EV, ["f9"]),
     key!(
-        SelectModel,
-        "select-model",
-        "Choose the process-local preset without contacting a backend.",
-        E,
-        ["f10"]
-    ),
-    key!(
         PromptSubmit,
         "prompt-submit",
         "Submit active prompt",
@@ -512,20 +504,6 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
         "preview-cancel",
         "Cancel or close preview",
         V,
-        ["esc"]
-    ),
-    key!(
-        PickerAccept,
-        "picker-accept",
-        "Open picker selection",
-        K,
-        ["enter"]
-    ),
-    key!(
-        PickerCancel,
-        "picker-cancel",
-        "Cancel or close picker",
-        K,
         ["esc"]
     ),
     key!(HelpClose, "help-close", "Close shortcut help", H, ["esc"]),

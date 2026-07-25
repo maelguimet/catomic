@@ -46,8 +46,6 @@ pub(crate) struct HttpBackend {
     pub(crate) credential_required: bool,
     pub(crate) headers: BTreeMap<String, String>,
     pub(crate) header_envs: BTreeMap<String, String>,
-    pub(crate) models: Vec<String>,
-    pub(crate) discovery: bool,
     pub(crate) timeout: Duration,
 }
 
@@ -88,8 +86,6 @@ impl Default for LlmCatalog {
                     credential_required: false,
                     headers: BTreeMap::new(),
                     header_envs: BTreeMap::new(),
-                    models: Vec::new(),
-                    discovery: false,
                     timeout: Duration::from_secs(DEFAULT_TIMEOUT_SECS),
                 }),
             }],
@@ -104,28 +100,6 @@ impl LlmCatalog {
 
     pub(crate) fn find(&self, name: &str) -> Option<&BackendPreset> {
         self.presets.iter().find(|preset| preset.name == name)
-    }
-}
-
-impl BackendPreset {
-    pub(crate) fn with_model(&self, model: String) -> Self {
-        let mut preset = self.clone();
-        preset.model = model;
-        preset
-    }
-
-    pub(crate) fn adapter_label(&self) -> &'static str {
-        match self.adapter {
-            BackendAdapter::OpenAiCompatible(_) => "http",
-            BackendAdapter::Command(_) => "command",
-        }
-    }
-
-    pub(crate) fn destination(&self) -> &str {
-        match &self.adapter {
-            BackendAdapter::OpenAiCompatible(http) => &http.base_url,
-            BackendAdapter::Command(command) => &command.program,
-        }
     }
 }
 
@@ -146,10 +120,6 @@ pub(crate) fn load() -> io::Result<LlmCatalog> {
         Some(path) => load_from(&path),
         None => Ok(LlmCatalog::default()),
     }
-}
-
-pub(crate) fn validated_model(raw: String) -> io::Result<String> {
-    validation::validated_model(raw)
 }
 
 #[cfg(test)]

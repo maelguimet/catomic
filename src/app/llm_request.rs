@@ -38,7 +38,6 @@ pub(crate) struct PendingLlmRequest {
 
 pub(crate) struct RunningLlmRequest {
     task: LlmTask,
-    preset_name: String,
     source_snapshot: String,
     path: String,
     file_path: Option<PathBuf>,
@@ -58,7 +57,7 @@ pub(crate) fn begin(
             return app.render(out);
         }
     };
-    let preset = app.model_session.effective(&catalog);
+    let preset = catalog.default_preset().clone();
     begin_with_settings(app, out, command, instruction, preset)
 }
 
@@ -187,17 +186,11 @@ fn confirm(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     let backend = match ConfirmedBackend::resolve(&pending.preset) {
         Ok(backend) => backend,
         Err(error) => {
-            app.model_session
-                .record_failure(&pending.preset.name, error.kind);
             app.message_error(format!("Could not prepare LLM backend: {error}"));
             return app.render(out);
         }
     };
     if backend.destination() != pending.destination {
-        app.model_session.record_failure(
-            &pending.preset.name,
-            crate::llm::backend::BackendErrorKind::Unavailable,
-        );
         app.message_info(
             "Configured command identity changed after confirmation; request cancelled.",
         );
@@ -216,7 +209,6 @@ fn confirm(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
             ));
             app.llm_task = Some(RunningLlmRequest {
                 task,
-                preset_name: pending.preset.name,
                 source_snapshot: pending.source_snapshot,
                 path: pending.path,
                 file_path: pending.file_path,

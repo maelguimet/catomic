@@ -1,5 +1,5 @@
 //! Purpose: prove preset parsing, compatibility translation, and bounded validation.
-//! Owns: deterministic TOML fixtures for HTTP, command, static-model, and error cases.
+//! Owns: deterministic TOML fixtures for HTTP, command, retired compatibility, and error cases.
 //! Must not: read user config, inspect environment values, spawn commands, or network.
 //! Invariants: old `[llm]` input produces the same effective local HTTP backend.
 
@@ -48,8 +48,6 @@ name = "local llama"
 type = "openai-compatible"
 base_url = "http://127.0.0.1:11434/v1"
 model = "llama"
-models = ["small", "large", "small"]
-discovery = true
 headers = { "X-Title" = "Catomic" }
 
 [[llm.backends]]
@@ -82,11 +80,9 @@ enabled = false
 
     assert_eq!(catalog.default_preset().name, "router");
     let local = catalog.find("local llama").unwrap();
-    let BackendAdapter::OpenAiCompatible(http) = &local.adapter else {
+    let BackendAdapter::OpenAiCompatible(_) = &local.adapter else {
         panic!("expected HTTP")
     };
-    assert_eq!(http.models, ["small", "large"]);
-    assert!(http.discovery);
     let codex = catalog.find("codex").unwrap();
     assert!(!codex.enabled);
     let BackendAdapter::Command(command) = &codex.adapter else {
@@ -184,6 +180,37 @@ model = "llama"
 "#,
     )
     .unwrap();
+
+    assert_eq!(with_retired_settings, without_retired_settings);
+}
+
+#[test]
+fn retired_picker_backend_settings_are_accepted_but_inert() {
+    let with_retired_text = r#"
+[llm]
+default = "local"
+
+[[llm.backends]]
+name = "local"
+type = "openai-compatible"
+base_url = "http://127.0.0.1:11434/v1"
+model = "llama"
+models = ["small", "large", "small"]
+discovery = true
+"#;
+    let without_retired_text = r#"
+[llm]
+default = "local"
+
+[[llm.backends]]
+name = "local"
+type = "openai-compatible"
+base_url = "http://127.0.0.1:11434/v1"
+model = "llama"
+"#;
+    crate::config::validate_text(with_retired_text).unwrap();
+    let with_retired_settings = parse(with_retired_text).unwrap();
+    let without_retired_settings = parse(without_retired_text).unwrap();
 
     assert_eq!(with_retired_settings, without_retired_settings);
 }

@@ -2,9 +2,12 @@
 
 Last verified: 2026-07-16.
 
-> Historical acceptance record. The repository-aware model workflows described
-> here were removed after this phase shipped. This file preserves the evidence
-> for that retired behavior; it is not the current product specification.
+> **Retired historical acceptance record.** All current-file and
+> repository-aware model workflows described here were removed by
+> [decision 0015](decisions/0015-no-built-in-ai-runtime.md). This file preserves
+> evidence for that earlier implementation; it is not the current product
+> specification and its commands, configuration, provider, prompt, and preview
+> instructions must not be followed.
 
 This is the exit record for the Powerful-but-Caged LLM phase. Detailed commit
 history is summarized in `progress/phase-6-progress.md`; dependency rationale

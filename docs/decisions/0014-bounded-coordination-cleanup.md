@@ -4,6 +4,11 @@ Date: 2026-07-18
 
 Status: accepted
 
+> **Partially historical:** The generic App, input, and render ownership
+> decisions remain current. References below to inline clanker, model tasks, and
+> AI-specific surfaces describe code later removed by
+> [decision 0015](0015-no-built-in-ai-runtime.md).
+
 ## Context
 
 The post-beta source inventory found three coordination files crossing the

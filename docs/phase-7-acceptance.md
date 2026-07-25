@@ -2,6 +2,12 @@
 
 Last verified: 2026-07-16.
 
+> **Historical acceptance record.** Named external commands plus `on_open` and
+> `on_save` hooks remain current. The `before_llm` hook and model workflow
+> evidence below describe behavior retired by
+> [decision 0015](decisions/0015-no-built-in-ai-runtime.md); the old
+> configuration spelling is accepted only as inert upgrade data.
+
 This is the exit record for Config, Hooks & First Extensibility. Detailed
 implementation history is summarized in `progress/phase-7-progress.md`; the
 TOML dependency decision is recorded in decision 0009 and measurements are

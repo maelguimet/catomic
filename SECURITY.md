@@ -1,8 +1,8 @@
 # Security Policy
 
-Catomic edits local files, runs explicitly configured commands, and can send
-selected text to an explicitly confirmed model endpoint. A vulnerability in any
-of those boundaries may expose or destroy user data, so please report suspected
+Catomic edits local files, runs explicitly configured commands and hooks, and
+can contact GitHub through its explicit updater. A vulnerability in any of
+those boundaries may expose or destroy user data, so please report suspected
 security issues privately.
 
 ## Supported versions
@@ -27,8 +27,8 @@ Include as much of the following as you safely can:
 - the expected and observed behavior;
 - the security impact, including whether confidentiality, integrity, or
   availability is affected;
-- whether symlinks, hard links, unusual file types, external commands,
-  model-backed actions, or an LLM endpoint are involved; and
+- whether symlinks, hard links, unusual file types, external commands, hooks,
+  or the updater are involved; and
 - any proposed fix or mitigation.
 
 Please allow time to reproduce and fix the issue before public disclosure. The
@@ -45,13 +45,15 @@ and replace private content with a minimal fixture.
 
 ## Scope and security model
 
-- Catomic must not make silent network calls or silently apply LLM output.
-- LLM requests must name and confirm their endpoint and context before sending;
-  proposed edits remain preview-only until separately confirmed.
-- Linting and model-backed editing run only after their explicit actions.
-- Commands and hooks in the user's configuration are trusted local code and run
-  through `/bin/sh -c`; arbitrary side effects from a command the user configured
-  are not a sandbox escape.
-- Availability of a configured local or remote service is outside Catomic's
-  security boundary, but sending data to a different or unconfirmed endpoint is
-  in scope.
+- Editor-owned paths have no built-in networking. Catomic has no built-in model
+  provider, AI prompt/runtime, or repository-aware assistant.
+- Linting and external commands run only after their explicit actions.
+- `catomic update` may contact the documented GitHub source after an explicit
+  updater invocation. Its downloaded candidate, source identity, and checksum
+  checks are security boundaries.
+- Linters, commands, and hooks in the user's configuration are trusted local
+  code and run through `/bin/sh -c`; arbitrary side effects, including network
+  access, from code the user configured are not a sandbox escape.
+- Silent network access added to editor-owned paths, updater origin or
+  verification bypasses, and command execution without the documented explicit
+  trigger are in scope.

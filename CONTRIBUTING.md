@@ -42,15 +42,17 @@ dependencies. Every new dependency needs the justification required by
 2. Keep each commit to one coherent change; avoid drive-by formatting.
 3. Add regression tests for behavior changes. Core buffer, coordinate, and
    undo/redo work should be developed test-first.
-4. Preserve the startup boundary: no implicit repository scans, subprocesses,
-   network clients, or persistent workspace services.
-5. Never run tests against a live model or public endpoint.
+4. Preserve the construction and typing boundary: no implicit repository scans,
+   network clients, or persistent workspace services, and no subprocess except
+   after an explicit action or configured lifecycle event.
+5. Never make verification depend on a live public endpoint or credential.
 6. Update user-facing documentation when commands, configuration, safety
    behavior, or limitations change.
 
 The architecture overview is in [docs/architecture.md](docs/architecture.md),
-performance rules are in [docs/performance.md](docs/performance.md), and LLM
-boundaries are in [docs/llm-rules.md](docs/llm-rules.md).
+performance rules are in [docs/performance.md](docs/performance.md), and the
+no-built-in-AI boundary is recorded in
+[decision 0015](docs/decisions/0015-no-built-in-ai-runtime.md).
 
 ## Verify your change
 
@@ -58,6 +60,7 @@ Run the normal local gate before submitting a pull request:
 
 ```sh
 python3 scripts/check_markdown_links.py
+python3 scripts/check_no_builtin_ai.py
 cargo fmt --all -- --check
 cargo clippy --all-targets --locked -- -D warnings
 cargo test --all-targets --locked
@@ -77,8 +80,8 @@ Maintainers can also run the separate **Acceptance** GitHub Actions workflow
 manually; version-tag pushes run it automatically. Some ignored checks create
 large temporary fixtures or measure live terminal and filesystem behavior.
 Read the relevant acceptance record under `docs/` before diagnosing an
-environment-sensitive result. No verification step may contact a live model or
-public endpoint.
+environment-sensitive result. No verification step may contact a live public
+service.
 
 ## Pull requests
 

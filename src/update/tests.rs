@@ -33,7 +33,7 @@ fn backup_preserves_user_bytes_and_excludes_previous_backups() {
     let config_bytes = b"# keep this comment\nunknown_key = 'keep me'\n";
     fs::write(config.join("config.toml"), config_bytes).unwrap();
     fs::write(config.join("themes/night.toml"), b"colors = [1, 2]\n").unwrap();
-    fs::write(data.join("commands/custom.sh"), b"printf meow\n").unwrap();
+    fs::write(data.join("commands/custom.sh"), b"printf custom\n").unwrap();
     fs::write(state.join("preferences"), b"future-state\0bytes").unwrap();
     fs::write(state.join("update-backups/old/secret"), b"do not recurse").unwrap();
     let dirs = super::backup::UserDirs::new(config, data, state);
@@ -50,7 +50,7 @@ fn backup_preserves_user_bytes_and_excludes_previous_backups() {
     );
     assert_eq!(
         fs::read(backup.join("data/commands/custom.sh")).unwrap(),
-        b"printf meow\n"
+        b"printf custom\n"
     );
     assert_eq!(
         fs::read(backup.join("state/preferences")).unwrap(),

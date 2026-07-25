@@ -47,19 +47,26 @@ Profile before optimizing redraw or buffer access.
 
 Never add full-file scans, full-buffer clones, background work, or network calls to hot paths.
 
-## Bounded model context
+## Process and network boundaries
 
-Model work is absent from startup and typing. Current-file context collection is
-explicit and capped at 64 KiB/2,000 lines. Network latency is not benchmarked
-and no live endpoint is used. The relevant invariant is that context collection
-and HTTP work begin only after an explicit command and stay off the
-typing/render path.
+Editor construction and typing do not start a linter or external process.
+Explicit actions and configured `on_open`/`on_save` lifecycle events may start
+one with bounded input, output, and runtime; its child-process work stays off
+the typing/render path. User-configured linters, commands, and hooks may access
+the network because they are trusted code.
 
-## Phase 7 typed-config acceptance (2026-07-16)
+The interactive editor has no built-in network or AI/model runtime. The
+explicit updater is measured and tested as a separate command workflow; it may
+contact the documented GitHub source, but it is never constructed by an editor
+session.
+
+## Historical Phase 7 typed-config acceptance (2026-07-16)
 
 The ignored release fixture constructs a 16,363-byte TOML document containing
 256 named commands and three lifecycle hooks, then parses and validates it 100
-times. Fixture construction is outside the timed sample and no command runs.
+times. One of those hooks was the later-retired `before_llm`; the current
+fixture contains only `on_open` and `on_save` and therefore has a different byte
+count. Fixture construction was outside the timed sample and no command ran.
 
 ```text
 PERF sample: label=parse 256-command config 100x bytes=16363 elapsed_ms=23
@@ -68,9 +75,10 @@ Maximum resident set size: 61180 KiB
 
 Reference acceptance budgets on this machine are under 50 ms for the complete
 100-parse loop and under 96 MiB peak RSS for the warm release test process.
-These are recorded observations, not default-suite timing assertions. A normal
+These are dated observations retained for the historical three-hook fixture,
+not current reproduction steps or default-suite timing assertions. A normal
 startup parses a much smaller document once and external processes remain off
-the startup and typing paths.
+the typing path until an explicit command or configured lifecycle event.
 
 ## Phase 8 catnap acceptance (2026-07-16)
 

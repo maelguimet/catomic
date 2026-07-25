@@ -6,7 +6,7 @@
 //! observe_external_file.
 //! Owns: PendingReload struct, arm/perform helpers, handle_reload_key.
 //! Must not: own watcher polling, background work, snapshot capture policy,
-//!   config parsing, repository, or model work.
+//!   config parsing, repository scans, or external services.
 //! Invariants: pending is bound to concrete (path + status + live snapshot);
 //!   second press only acts on exact match; any content mutation clears it;
 //!   automatic reload is invoked only for clean buffers by caller policy;

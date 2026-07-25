@@ -1,11 +1,12 @@
 # Decision 0013: Named LLM Backend Presets
 
-Status: accepted
+Status: superseded by
+[decision 0015](0015-no-built-in-ai-runtime.md)
 
-> **Historical / superseded:** Issue #222 removed the F10 picker,
-> process-local preset overrides, static model choices, and live model
-> discovery described below. Named backend presets and `llm.default` remain
-> current. This ADR is retained as the record of the earlier design.
+> **Historical record:** The picker and discovery were removed first, and the
+> remaining provider presets, adapters, and model runtime were later removed
+> under decision 0015. Retired configuration shapes are accepted only as inert
+> upgrade compatibility data. This ADR is not current product guidance.
 
 ## Context
 

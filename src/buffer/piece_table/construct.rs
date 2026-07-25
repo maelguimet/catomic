@@ -5,7 +5,7 @@
 //!   out of the main piece_table module.
 //! Owns: PieceTable::new, text constructors, and whole-file/page-range
 //!   descriptor-backed constructors.
-//! Must not: perform edits, undo/redo, queries, UI, Project, or LLM work.
+//! Must not: perform edits, undo/redo, queries, UI, or external-service work.
 //! Invariants: CRLF/CR normalize to LF; LF-only owned input moves into original
 //!   without cloning; cursor starts at (0,0); initial piece/index/piece_starts are consistent.
 

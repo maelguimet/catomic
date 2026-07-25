@@ -1,9 +1,10 @@
 # Catomic user guide
 
-Catomic is a Linux-first, modeless terminal text editor. It does not scan
-repositories, start linters, or contact a network service during startup or
-ordinary editing. Linter and model-assisted actions run only after you invoke
-them explicitly.
+Catomic is a Linux-first, modeless terminal text editor. Its built-in editor
+paths do not scan repositories or contact network services, and construction
+and typing do not start linters or external processes. Linting and trusted
+commands run only after explicit actions; lifecycle hooks run only when
+configured for `on_open` or `on_save`.
 
 Catomic is currently open-beta software. Keep backups of important files, and
 read [File formats and save safety](#file-formats-and-save-safety) before using
@@ -24,7 +25,7 @@ it on files with unusual links, ACLs, or extended attributes.
 - [Completion](#completion)
 - [Linting](#linting)
 - [External commands and hooks](#external-commands-and-hooks)
-- [Model-assisted commands](#model-assisted-commands)
+- [Built-in AI and networking](#built-in-ai-and-networking)
 - [Crash recovery](#crash-recovery)
 - [Configuration reference](#configuration-reference)
 - [Shortcut reference](#shortcut-reference)
@@ -289,8 +290,8 @@ so ordinary typing never overwrites a newline. Each overwritten character is
 one ordinary undoable typing transaction.
 
 Overwrite mode affects direct character typing only. Selection replacement
-keeps its usual range semantics, while paste, completion, indentation, command
-output, and confirmed model edits keep their existing transactional behavior.
+keeps its usual range semantics, while paste, completion, indentation, and
+confirmed command output keep their existing transactional behavior.
 Prompts and read-only views use their own input handling and the terminal's
 default cursor shape; closing them resumes the session's insert/overwrite state.
 
@@ -334,7 +335,7 @@ navigation; it does not infer a selection-extending paragraph action from
 `Insert` toggles the session-wide overwrite mode for printable typing, and
 switching buffers preserves that shared state. The steady block cursor indicates
 overwrite mode. A typed character in overwrite mode replaces one complete
-Unicode grapheme. Newlines, paste, prompts, command/model results, and other edit
+Unicode grapheme. Newlines, paste, prompts, command results, and other edit
 paths keep their normal insert/replace semantics.
 
 Catomic requests the Kitty enhanced-keyboard protocol and xterm modified-key
@@ -389,11 +390,11 @@ wrapped visual rows; otherwise they are logical lines. Horizontal scroll is
 preserved. If the logical cursor leaves the viewport, Catomic hides the terminal
 caret until the next keyboard navigation or editing action reveals it. Wheel
 events over the status row or an active prompt do not scroll the underlying
-document. Help, Markdown preview, and proposal/result views use the same
-viewport-only scrolling without changing their source buffer.
+document. Help, Markdown preview, and command/recovery result views use the
+same viewport-only scrolling without changing their source buffer.
 
 In mobile mode, tap **Menu** for touch-accessible cursor, selection, scroll,
-page, file, view, and model-assisted actions. Termux finger drags do not emit
+page, file, view, and tool actions. Termux finger drags do not emit
 editor drag events; choose **Select: mark start, then tap end** and tap the other
 boundary. Finger scrolling moves only the viewport and preserves the current
 cursor and selection. The status and action rows never map into document text.
@@ -442,8 +443,7 @@ reports that chord without the Shift modifier, it is indistinguishable from
 remappable through `[keybindings]`.
 
 Grouped actions such as a bracketed paste, selected-line indentation, Replace
-All, a confirmed command result, or a confirmed model edit are each one undoable
-transaction.
+All, or a confirmed command result are each one undoable transaction.
 
 ### Indentation
 
@@ -708,8 +708,8 @@ unbounded scan or an immutable filesystem snapshot.
 
 Paged files support LF and CRLF endings. UTF-8-BOM and CR-only files must remain
 at or below the 100 MiB paging threshold. Replace All, full-buffer external
-command input, recovery sidecars, and whole-file model edits may refuse paged
-files because those actions require a fully loaded buffer.
+command input, and recovery sidecars may refuse paged files because those
+actions require a fully loaded buffer.
 
 To trade more page transitions for less line metadata, reduce the page size:
 
@@ -856,13 +856,9 @@ command = "file {file}"
 [commands.check]
 command = "printf 'saved: %s\n' {file}"
 
-[commands.redact-check]
-command = "./scripts/check-secrets {file}"
-
 [hooks]
 on_open = ["inspect"]
 on_save = ["check"]
-before_llm = ["redact-check"]
 ```
 
 Hook arrays may reference only configured names and may not contain duplicates.
@@ -870,148 +866,22 @@ Commands run sequentially. A failure, timeout, cancellation, stale target, or
 rejected preview stops the remainder of the chain.
 
 `on_save` begins only after a successful atomic save. If you confirm a hook edit,
-the buffer becomes dirty again. `before_llm` completes before Catomic prepares
-the endpoint/context confirmation, so there is no model client or request while
-the hook is running.
+the buffer becomes dirty again. `on_open` runs for the initial file and every
+file opened later in the session.
 
-## Model-assisted commands
+## Built-in AI and networking
 
-Model support is explicit, transient, and preview-first. A named preset can use
-an OpenAI-compatible Chat Completions endpoint or a headless command adapter.
-Catomic does not construct an HTTP client, read a credential value, or start a
-command until you invoke a model command and confirm its destination and context.
-Credentials are resolved only when a confirmed request is about to start.
+Catomic has no built-in AI/model runtime. It has no model commands, provider
+client, prompt templates, model picker, repository-context broker, or
+AI-proposed edit path. The generic command prompt and generic read-only command
+preview remain ordinary editor features; they do not imply a model integration.
 
-### Presets and HTTP configuration
-
-The no-config default remains the original local endpoint. Existing single
-`[llm]` configuration continues to work and becomes one implicit `local`
-preset. New configurations can name several presets:
-
-```toml
-[llm]
-default = "local"
-
-[[llm.backends]]
-name = "local"
-type = "openai-compatible"
-base_url = "http://127.0.0.1:8080/v1"
-model = "local-model"
-
-[[llm.backends]]
-name = "openrouter"
-type = "openai-compatible"
-base_url = "https://openrouter.ai/api/v1"
-model = "provider/model-id"
-api_key_env = "OPENROUTER_API_KEY"
-headers = { "HTTP-Referer" = "https://example.invalid/catomic" }
-header_envs = { "X-Provider-Key" = "PROVIDER_SECONDARY_KEY" }
-timeout_secs = 120
-```
-
-`llm.default` names the preset used by `meow` and `bigmeow`. Edit it to choose a
-different named backend; there is no process-local override.
-
-The base URL must be plain HTTP or HTTPS without embedded credentials,
-whitespace, query, or fragment. Timeouts must be 1–600 seconds.
-
-Loopback HTTP may use credentials. Unauthenticated LAN HTTP is also allowed for
-local models. Catomic refuses to send an API key or credential header to a
-non-loopback plaintext HTTP endpoint; use HTTPS for an authenticated remote
-endpoint.
-
-The client refuses redirects and ignores ambient proxy variables so context
-cannot silently leave through a destination other than the one you confirmed.
-Static non-secret metadata `headers` and credential `header_envs` are explicit
-per preset. Credential-looking static headers are rejected. Confirmation and
-status text never show header values. An explicit `api_key_env` or
-`header_envs` variable must be present when that preset is invoked. The implicit
-legacy preset preserves the prior optional-key behavior for local servers.
-Static and environment-sourced HTTP header values are capped at 8192 bytes and
-must be valid HTTP header values.
-
-### Headless command presets
-
-A command preset is an argv adapter, not a shell string:
-
-```toml
-[[llm.backends]]
-name = "local-headless"
-type = "command"
-program = "/usr/local/bin/my-headless-model"
-args = ["--structured-output"]
-model = "friendly-model-id"
-input = "stdin-text-v1"
-output = "claude-json-v1"
-timeout_secs = 120
-```
-
-`program` must be an absolute path or a bare name resolved through absolute
-`PATH` entries. Arguments are passed exactly, including spaces and Unicode;
-Catomic adds no implicit `/bin/sh -c`. `stdin-text-v1` writes a transcript beginning
-with `Catomic model request v1`, followed by `[system]` and `[user]` sections.
-
-Two output contracts are supported:
-
-- `claude-json-v1`: one successful JSON result object with `type = "result"`,
-  `is_error = false`, and a non-empty string `result`;
-- `codex-jsonl-v1`: JSONL lifecycle events ending in `turn.completed`, with one
-  or more `item.completed` agent-message items. Reasoning items are ignored;
-  tool, command, file-change, or unknown items fail closed.
-
-Vendor CLI flags and event schemas change. Catomic deliberately does not append
-illustrative Claude, Codex, Grok, or other flags. Configure and test the
-non-interactive text/proposal mode for the exact installed version. The child
-runs with a private temporary working directory, bounded stdin/stdout/stderr and
-runtime, and a dedicated process group that is killed while its direct child is
-reaped on cancellation.
-Stderr is suppressed from errors. A configured executable is still trusted user
-code with your OS permissions and inherited authentication environment after
-confirmation; Catomic is not an OS sandbox. Never configure an agent/tool mode
-that can mutate the workspace. Repository-local command presets are not loaded.
-For command requests, the prompt names only the active file's basename, never
-the workspace's absolute path.
-
-### Current-file commands
-
-These commands are available directly:
-
-- `meow INSTRUCTION` sends the active selection.
-- `bigmeow INSTRUCTION` sends the current file.
-
-If `meow` has no selection, place the cursor inside an instruction block. Its
-text supplies both the instruction and bounded context:
-
-```text
->>> catomic
-Refactor this function.
-Keep behavior identical.
-Do not edit outside this block unless necessary.
-<<<
-```
-
-With no `bigmeow` argument, an instruction block under the cursor supplies the
-instruction. Every instruction follows the same proposed-edit flow; words such
-as `explain`, `ask`, or `edit` have no special command meaning.
-
-Before sending, Catomic shows the configured default preset, adapter, canonical
-endpoint or resolved executable, model, exact context extent, and warnings for
-a dotfile path or obvious secret-like lines. `Enter` confirms the request;
-`Escape` cancels without constructing the client or starting the command.
-
-Context is capped at 64 KiB and 2,000 lines. Oversized context fails closed
-rather than being silently truncated. A proposed edit must be either:
-
-- a validated single-file unified patch whose headers name the confirmed active
-  path; or
-- for a selected region, a strict `catomic_replacement` JSON envelope.
-
-The result opens in a read-only preview. A second `Enter` applies it as one
-undoable buffer change. The model command itself never saves the file. If the
-active path or source revision changes during the request or before apply, the
-proposal is discarded or refused.
-
-For the complete security contract, read [LLM rules](llm-rules.md).
+Startup and interactive editing make no Catomic-owned network requests. The
+explicit `catomic update` workflow is the exception and contacts the documented
+GitHub source when checking or applying an update. A configured linter, trusted
+command, or hook may also access the network because it runs user-configured
+shell code with the user's OS permissions. Catomic bounds that process's input,
+output, and runtime, but it is not a network or OS sandbox.
 
 ## Crash recovery
 
@@ -1050,8 +920,8 @@ never replaces an existing path. Unknown keys are rejected with their full path,
 and a malformed recognized value is a startup error for settings loaded at
 startup. The retired `[autocomplete]` section and
 `theme.colors.autocomplete` role remain accepted as inert input so older
-Catomic-generated configurations keep working after an update. Linter and model
-settings are loaded lazily when invoked.
+Catomic-generated configurations keep working after an update. Linter and
+external-command settings are loaded only for their explicit actions.
 
 Run `catomic config` from the shell, or `config` from the in-editor command
 prompt, to open that exact path as an ordinary editable buffer inside Catomic.
@@ -1190,27 +1060,6 @@ timeout_secs = 10
 [hooks]
 on_open = []
 on_save = []
-before_llm = []
-
-[llm]
-default = "local"
-
-[[llm.backends]]
-name = "local"
-type = "openai-compatible"
-base_url = "http://127.0.0.1:8080/v1"
-model = "local-model"
-timeout_secs = 120
-
-[[llm.backends]]
-name = "headless"
-type = "command"
-program = "/usr/local/bin/my-headless-model"
-args = ["--structured-output"]
-model = "headless-model"
-input = "stdin-text-v1"
-output = "claude-json-v1"
-timeout_secs = 120
 ```
 
 ### Setting limits and defaults
@@ -1233,31 +1082,23 @@ timeout_secs = 120
 | `commands.NAME.input` | `none` | `none`, `selection`, `buffer` |
 | `commands.NAME.output` | `preview` | `preview`, `insert`, `replace-input` |
 | `commands.NAME.timeout_secs` | `10` | Integer `1`–`300` |
-| `llm.default` | first backend / implicit `local` | Existing backend name |
-| `llm.backends[].name` | required | Unique printable name, 1–64 characters |
-| `llm.backends[].type` | required | `openai-compatible` or `command` |
-| HTTP `base_url`, `model` | required | Canonical HTTP(S) URL; printable model ID |
-| HTTP `api_key_env`, `header_envs` | none | Valid environment-variable names |
-| HTTP `headers` | empty | Explicit non-secret metadata; 32 total headers max |
-| Command `program`, `args` | required / empty | Absolute or bare executable; at most 64 bounded args |
-| Command `input` | `stdin-text-v1` | Versioned stdin transcript contract |
-| Command `output` | required | `claude-json-v1` or `codex-jsonl-v1` |
-| Backend `enabled` | `true` | Boolean; a disabled preset cannot be invoked |
-| Backend `timeout_secs` | `120` | Integer `1`–`600` |
 
-Legacy `llm.base_url`, `llm.model`, `llm.api_key_env`, and `llm.timeout_secs`
-remain valid only when `llm.backends` is absent. Mixing the two shapes is an
-error rather than an ambiguous partial migration.
-
-For upgrade compatibility, retired `[llm.inline]`,
-`[languages.EXT.llm.inline]`, HTTP backend `models`/`discovery`,
+For upgrade compatibility, Catomic still accepts the retired `[llm]`,
+`[[llm.backends]]`, and `[llm.inline]` containers,
+`[languages.EXT.llm.inline]`, `hooks.before_llm`, backend
+`models`/`discovery`, the
 `run-clanker`/`clear-clanker-changes`/`select-model`/`picker-accept`/
-`picker-cancel` keybindings, and the `theme.colors.llm_changed` role are
-accepted as inert configuration. They do not create shortcuts, choices,
-discovery requests, instructions, model requests, edits, or presentation marks
-and are omitted from newly generated config. `F3`, `Shift+F3`, and `F10` are
-unbound by default. The retired prompt command spellings `model`, `models`, and
-`select-model` are unknown commands.
+`picker-cancel` action names, and the `theme.colors.llm_changed` role. Their
+documented container shapes and unknown-key checks remain fail-closed so a
+malformed configuration is not silently reinterpreted.
+
+Every retired AI field and action is inert: Catomic does not resolve providers
+or credentials, start commands, create requests, add shortcuts, discover
+models, prepare prompts, mark edits, or render an AI surface from them. Newly
+generated configuration omits them. `F3`, `Shift+F3`, and `F10` are unbound by
+default. The retired prompt spellings `meow`, `bigmeow`, `gitmeow`,
+`megameow`, `inline-meow`, `model`, `models`, and `select-model` are unknown
+commands, not compatibility aliases.
 
 Language extension names are case-normalized and may be written with or without
 a leading dot. Command names may contain ASCII letters, digits, `-`, and `_`.
@@ -1498,8 +1339,6 @@ Open the prompt with `Ctrl+Shift+P` or `F2`. Do not add a leading colon.
 | `replace-all` | `replaceall` | Replace all in an ordinary buffer |
 | `run NAME` | — | Run a configured trusted command |
 | `recover` | — | Preview a newer `.catnap` sidecar |
-| `meow TEXT` | — | Send selection/instruction block to configured model |
-| `bigmeow TEXT` | — | Send current ordinary file to configured model |
 | `quit` | `q` | Use the normal guarded quit path |
 
 ## File formats and save safety
@@ -1713,27 +1552,6 @@ Confirm that you:
 3. included `{file}` in the command; and
 4. installed the linter in the environment where Catomic runs.
 
-### A model command cannot connect or refuses the endpoint
-
-Inspect `llm.default` and the named preset in the active configuration, then
-compare its model and destination with the confirmation shown before sending.
-For HTTP, check the base URL and whether the service implements
-OpenAI-compatible Chat Completions. Make sure `api_key_env`/`header_envs` name
-present environment variables rather than containing keys. Authenticated remote
-endpoints require HTTPS; redirects, embedded URL credentials, ambient proxies,
-and non-loopback plaintext keys are intentionally refused.
-
-For command presets, install the displayed resolved executable and verify that
-the configured CLI version emits exactly the declared structured format. A
-missing binary, timeout, oversized output, non-UTF-8/malformed/partial JSON,
-non-zero exit, or tool event fails closed. Raw stderr and provider response
-bodies are intentionally not printed; use the CLI's own safe diagnostic command
-outside Catomic when authentication or version setup needs more detail.
-
-An edit response must be a single-file unified patch for the confirmed active
-path, or the strict selected-region replacement envelope. Prose or full-file
-replacement output is rejected and cannot bypass the edit parser.
-
 ### The terminal looks broken after a crash
 
 Catomic installs teardown guards and signal/panic restoration, but a hard kill or
@@ -1753,6 +1571,7 @@ fixture.
   supported targets.
 - There is no tree-sitter parser, full LSP client, split view, embedded scripting
   API, or plugin ABI.
+- There is no built-in AI/model runtime or repository-aware assistant.
 - Highlighting is lexical and viewport-only.
 - Terminal clipboard and modified-key behavior vary by emulator and multiplexer.
 

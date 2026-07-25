@@ -5,7 +5,7 @@
 //! are ever received here.
 //! Owns: pure ctor and post-assign lifecycle assertions using temp paths.
 //! Must not: consume try_recv, drive any reload, add live OS event waits,
-//!   mutate behavior of save conflict, use set_current_dir, or touch repo/LLM work.
+//!   mutate save-conflict behavior, use set_current_dir, or touch unrelated services.
 //! Invariants: watcher presence only; construction non-fatal; uses existing
 //!   tests the helper directly for the "after save assign" case
 //!   to avoid hardcoded "untitled.txt" cwd writes in potentially parallel runs.

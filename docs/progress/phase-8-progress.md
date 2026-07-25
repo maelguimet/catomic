@@ -1,5 +1,9 @@
 # Phase 8 Progress
 
+> **Historical progress record.** Cat status, panic handling, and `.catnap`
+> recovery remain current. The model-backed `meow` item below was retired by
+> [decision 0015](../decisions/0015-no-built-in-ai-runtime.md).
+
 Phase 8 is complete. Its exit evidence is in
 [`../phase-8-acceptance.md`](../phase-8-acceptance.md).
 

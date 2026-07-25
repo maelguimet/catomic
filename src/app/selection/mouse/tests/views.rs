@@ -1,6 +1,6 @@
 //! Purpose: verify mouse clicks never reposition a source hidden by a read-only view.
 //! Owns: representative view-open, click, close, and resumed-source interaction fixtures.
-//! Must not: contact a model, start a process, write files, or inspect private view buffers.
+//! Must not: contact a network service, start a process, write files, or inspect private view buffers.
 //! Invariants: hidden source text and cursor remain stable until the view is explicitly closed.
 
 use super::*;

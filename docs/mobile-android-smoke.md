@@ -3,8 +3,8 @@
 Use this checklist for every Android configuration that Catomic claims as
 validated. Run it on non-sensitive fixtures in Termux private storage
 and, separately, probe shared storage only to verify clear fail-closed behavior.
-Never exercise model steps against a live endpoint; cancel at the confirmation
-or use an explicitly configured local fake server.
+Never configure a smoke-test command or hook to contact a public service; use
+deterministic local fixtures.
 
 ## Current reference record
 
@@ -89,15 +89,15 @@ from a screenshot or retried after that safety stop.
       warning was reached before an emulator OOM kill; normal clean touch quit
       was observed after recovery.
 
-## Narrow views and model safety
+## Narrow views and explicit tools
 
 - [ ] At 20x6, scroll/dismiss help, every prompt, overwrite/reload warnings,
       recovery preview, command output, and Markdown preview.
-- [ ] Configure a loopback fake endpoint or stop before send. Verify endpoint and
-      context confirmation Info/No/Yes, proposal preview scrolling, apply, cancel,
-      task cancellation, and undo—never a live model or public endpoint.
+- [ ] Configure a deterministic local command. Verify output preview scrolling,
+      apply, cancel, task cancellation, and undo without contacting a public
+      service.
 - [ ] Rotate portrait/landscape with dirty text, an active selection, every
-      prompt stage, a scrolled preview, and a proposal. Confirm state survives.
+      prompt stage, a scrolled preview, and a running task. Confirm state survives.
 - [ ] Background and foreground Termux in each state; confirm coherent redraw.
 
 ## Filesystem, watcher, and recovery
@@ -132,6 +132,6 @@ from a screenshot or retried after that safety stop.
 The device record is intentionally not a substitute for the automated matrix.
 The reviewed tree also exercises 20x6 layouts, Unicode grapheme/wrap/gutter hit
 testing, inert chrome rows, two-tap and SGR-drag selection, OSC 52 bounds,
-prompt/preview/proposal scrolling and accept/cancel, resize/focus redraw,
+prompt/preview/result scrolling and accept/cancel, resize/focus redraw,
 terminal teardown, and a touch-only edit/focus/resize/undo/save/menu/quit flow.
 The final PR evidence record names the exact commands and fresh CI run.

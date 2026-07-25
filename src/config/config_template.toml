@@ -67,7 +67,6 @@ external_added = { fg = "green", underline = true }
 external_changed = { fg = "cyan", underline = true }
 external_deleted = { fg = "red", bold = true }
 lint = { fg = "red", underline = true }
-llm_changed = { fg = "red", underline = true }
 preview = "default"
 
 # Uncommenting an action replaces its complete built-in default list; [] unbinds it.
@@ -157,9 +156,7 @@ preview = "default"
 # whitespace = ["f8"]
 # soft-wrap = ["f9"]
 #
-# Model actions
-# run-clanker = ["f3"]
-# clear-clanker-changes = ["shift+f3"]
+# Model selection
 # select-model = ["f10"]
 #
 # Prompts and temporary surfaces
@@ -247,16 +244,3 @@ before_llm = []
 # input = "stdin-text-v1"
 # output = "claude-json-v1" # or "codex-jsonl-v1"
 # timeout_secs = 120
-#
-# F3 uses the active selection, then explicit context blocks, then a bounded
-# retained file. Every send and every apply still requires Enter confirmation.
-# [llm.inline]
-# instruction_prefix = ">>"
-# instruction_suffix = ""
-# context_open = "<catblock>"
-# context_close = "</catblock>"
-# warn_lines = 500
-# block_mode = "combined" # or "queued"
-# queue_limit = 16
-# stop_on_error = true
-# remove_instruction_after_apply = true

@@ -12,9 +12,9 @@ use crate::config::big_files::BigFileConfig;
 use crate::terminal as term;
 
 use super::{
-    command_prompt, completion, external_command, hooks, inline_clanker, mobile, model_picker,
-    model_session, open, overwrite, recovery, replace, search, selection,
-    startup_config::StartupConfig, surfaces, view, watch, App, FileState,
+    command_prompt, completion, external_command, hooks, mobile, model_picker, model_session, open,
+    overwrite, recovery, replace, search, selection, startup_config::StartupConfig, surfaces, view,
+    watch, App, FileState,
 };
 
 impl App {
@@ -103,8 +103,6 @@ impl App {
             llm_task: None,
             model_session: model_session::ModelSession::default(),
             model_picker: model_picker::ModelPickerState::default(),
-            inline_clanker: inline_clanker::InlineClankerState::default(),
-            clanker_changes: inline_clanker::ChangeHistory::default(),
             external_changes: super::external_diff::ExternalChanges::default(),
             external_command: external_command::ExternalCommandState::default(),
             hooks: hooks::HookState::default(),
@@ -141,6 +139,5 @@ mod tests {
         assert!(app.pending_llm_request.is_none());
         assert!(app.llm_task.is_none());
         assert!(!model_picker::is_viewing(&app));
-        assert!(!inline_clanker::is_busy(&app));
     }
 }

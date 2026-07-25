@@ -272,6 +272,20 @@ fn decode_overrides(table: toml::Table) -> io::Result<(Vec<ActionOverride>, Vec<
     let mut actions_out = Vec::new();
     let mut legacy_out = Vec::new();
     for (raw_name, value) in table {
+        if retired_action(&raw_name) {
+            let values = value.as_array().ok_or_else(|| {
+                invalid(format!(
+                    "keybindings.{raw_name} must be an array of chords; use [] to unbind"
+                ))
+            })?;
+            for value in values {
+                let raw = value.as_str().ok_or_else(|| {
+                    invalid(format!("keybindings.{raw_name} chords must be strings"))
+                })?;
+                validate_retired_chord(parse_shortcut(raw)?, raw)?;
+            }
+            continue;
+        }
         if let Some(action) = actions::parse_action(&raw_name) {
             let values = value.as_array().ok_or_else(|| {
                 invalid(format!(
@@ -296,6 +310,10 @@ fn decode_overrides(table: toml::Table) -> io::Result<(Vec<ActionOverride>, Vec<
                 "unknown keybinding action {raw_name:?}; legacy chord keys require a string action"
             ))
         })?;
+        if retired_action(raw_action) {
+            validate_retired_chord(parse_shortcut(&raw_name)?, &raw_name)?;
+            continue;
+        }
         let action = actions::parse_action(raw_action)
             .ok_or_else(|| invalid(format!("unknown keybinding action {raw_action:?}")))?;
         let chord = parse_shortcut(&raw_name)?;
@@ -308,6 +326,20 @@ fn decode_overrides(table: toml::Table) -> io::Result<(Vec<ActionOverride>, Vec<
         });
     }
     Ok((actions_out, legacy_out))
+}
+
+fn retired_action(name: &str) -> bool {
+    let name = name.trim().to_ascii_lowercase();
+    matches!(name.as_str(), "run-clanker" | "clear-clanker-changes")
+}
+
+fn validate_retired_chord(chord: ShortcutChord, raw: &str) -> io::Result<()> {
+    if !matches!(chord, ShortcutChord::Key(_)) {
+        return Err(invalid(format!(
+            "retired inline action cannot use chord {raw:?}"
+        )));
+    }
+    validate_safe_key(chord, raw)
 }
 
 fn validate_input(action: Action, chord: ShortcutChord, raw: &str) -> io::Result<()> {

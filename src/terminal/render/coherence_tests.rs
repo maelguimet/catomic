@@ -49,11 +49,10 @@ fn final_cursor_uses_cells_across_unicode_tabs_styles_gutters_and_scrolling() {
         assert_final_cursor(&frame, 1, terminal_col);
     }
 
-    let ranges = [TextHighlight {
-        start: Cursor { row: 0, col: 0 },
-        end: Cursor { row: 0, col: 1 },
+    let markers = [ExternalLineMarker {
+        line: 0,
+        kind: ExternalChangeKind::Changed,
     }];
-    let gutter_lines = [0];
     let frame = render(
         "#",
         Cursor { row: 0, col: 1 },
@@ -61,9 +60,10 @@ fn final_cursor_uses_cells_across_unicode_tabs_styles_gutters_and_scrolling() {
         RenderOptions {
             syntax: SyntaxKind::Markdown,
             line_numbers: true,
-            llm_changes: Some(LlmChanges {
-                ranges: &ranges,
-                gutter_lines: &gutter_lines,
+            external_changes: Some(ExternalChanges {
+                added_ranges: &[],
+                changed_ranges: &[],
+                markers: &markers,
             }),
             ..RenderOptions::default()
         },

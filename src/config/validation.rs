@@ -44,6 +44,7 @@ const RETIRED_AUTOCOMPLETE_KEYS: &[&str] = &[
 const MOBILE_KEYS: &[&str] = &["action_bar"];
 const HOOK_KEYS: &[&str] = &["on_open", "on_save", "before_llm"];
 const LANGUAGE_KEYS: &[&str] = &["tab_size", "linter", "llm"];
+// Retained as inert input for configurations generated with inline clanker support.
 const LANGUAGE_LLM_KEYS: &[&str] = &["inline"];
 const COMMAND_KEYS: &[&str] = &["command", "input", "output", "timeout_secs"];
 const LLM_KEYS: &[&str] = &[
@@ -55,6 +56,7 @@ const LLM_KEYS: &[&str] = &[
     "inline",
     "backends",
 ];
+// Retired inline fields remain structurally explicit so typos do not become silent config.
 const INLINE_KEYS: &[&str] = &[
     "instruction_prefix",
     "instruction_suffix",
@@ -136,6 +138,7 @@ const THEME_COLOR_KEYS: &[&str] = &[
     "external_changed",
     "external_deleted",
     "lint",
+    // Retained as an inert role for configurations generated with inline clanker support.
     "llm_changed",
     // Retained as an inert role for configurations generated before autocomplete was removed.
     "autocomplete",
@@ -196,13 +199,13 @@ fn validate_languages(root: &Table) -> io::Result<()> {
         };
         let path = dynamic_path("languages", name);
         reject_unknown(language, &path, LANGUAGE_KEYS)?;
-        let Some(llm) = language.get("llm").and_then(Value::as_table) else {
+        let llm_path = format!("{path}.llm");
+        let Some(llm) = optional_table(language, "llm", &llm_path)? else {
             continue;
         };
-        let llm_path = format!("{path}.llm");
         reject_unknown(llm, &llm_path, LANGUAGE_LLM_KEYS)?;
-        if let Some(inline) = llm.get("inline").and_then(Value::as_table) {
-            validate_inline(inline, &format!("{llm_path}.inline"))?;
+        if let Some(inline) = optional_table(llm, "inline", &format!("{llm_path}.inline"))? {
+            validate_retired_inline(inline, &format!("{llm_path}.inline"))?;
         }
     }
     Ok(())
@@ -221,12 +224,12 @@ fn validate_commands(root: &Table) -> io::Result<()> {
 }
 
 fn validate_llm(root: &Table) -> io::Result<()> {
-    let Some(llm) = root.get("llm").and_then(Value::as_table) else {
+    let Some(llm) = optional_table(root, "llm", "llm")? else {
         return Ok(());
     };
     reject_unknown(llm, "llm", LLM_KEYS)?;
-    if let Some(inline) = llm.get("inline").and_then(Value::as_table) {
-        validate_inline(inline, "llm.inline")?;
+    if let Some(inline) = optional_table(llm, "inline", "llm.inline")? {
+        validate_retired_inline(inline, "llm.inline")?;
     }
     let Some(backends) = llm.get("backends").and_then(Value::as_array) else {
         return Ok(());
@@ -245,8 +248,20 @@ fn validate_llm(root: &Table) -> io::Result<()> {
     Ok(())
 }
 
-fn validate_inline(table: &Table, path: &str) -> io::Result<()> {
+fn validate_retired_inline(table: &Table, path: &str) -> io::Result<()> {
     reject_unknown(table, path, INLINE_KEYS)
+}
+
+fn optional_table<'a>(parent: &'a Table, key: &str, path: &str) -> io::Result<Option<&'a Table>> {
+    let Some(value) = parent.get(key) else {
+        return Ok(None);
+    };
+    value.as_table().map(Some).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("configuration key {path} must be a table"),
+        )
+    })
 }
 
 fn validate_theme(root: &Table) -> io::Result<()> {
@@ -332,6 +347,15 @@ mod tests {
                 "[theme.colors]\nautocomplete = { blod = true }\n",
                 "theme.colors.autocomplete.blod",
             ),
+            ("llm.inline = true\n", "llm.inline must be a table"),
+            (
+                "[languages.rs]\nllm = true\n",
+                "languages.rs.llm must be a table",
+            ),
+            (
+                "[languages.rs.llm]\ninline = true\n",
+                "languages.rs.llm.inline must be a table",
+            ),
         ] {
             let error = validate_unknown_keys(text).unwrap_err();
             assert_eq!(error.kind(), io::ErrorKind::InvalidData);
@@ -360,6 +384,42 @@ autocomplete = { fg = "bright-black", dim = true }
 "#;
 
         crate::config::validate_text(text).unwrap();
+        assert_eq!(
+            crate::config::theme::parse(text).unwrap(),
+            crate::config::theme::Theme::default()
+        );
+    }
+
+    #[test]
+    fn accepts_retired_generated_inline_configuration_as_inert_input() {
+        let text = r#"
+[llm.inline]
+instruction_prefix = ">>"
+instruction_suffix = ""
+context_open = "<catblock>"
+context_close = "</catblock>"
+warn_lines = 500
+block_mode = "combined"
+queue_limit = 16
+stop_on_error = true
+remove_instruction_after_apply = true
+
+[languages.rs.llm.inline]
+instruction_prefix = "// >>"
+
+[keybindings]
+run-clanker = ["f3"]
+clear-clanker-changes = ["shift+f3"]
+
+[theme.colors]
+llm_changed = { fg = "red", underline = true }
+"#;
+
+        crate::config::validate_text(text).unwrap();
+        assert_eq!(
+            crate::config::llm::parse(text).unwrap(),
+            crate::config::llm::LlmCatalog::default()
+        );
         assert_eq!(
             crate::config::theme::parse(text).unwrap(),
             crate::config::theme::Theme::default()

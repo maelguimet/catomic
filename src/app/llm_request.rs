@@ -69,10 +69,7 @@ fn begin_with_settings(
     instruction: &str,
     preset: BackendPreset,
 ) -> io::Result<()> {
-    if app.pending_llm_request.is_some()
-        || app.llm_task.is_some()
-        || super::inline_clanker::is_busy(app)
-    {
+    if app.pending_llm_request.is_some() || app.llm_task.is_some() {
         app.message_info("An LLM request is already pending or running; Esc cancels.");
         return app.render(out);
     }

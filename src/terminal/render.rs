@@ -51,12 +51,6 @@ pub(crate) enum ContentSurface {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct LlmChanges<'a> {
-    pub(crate) ranges: &'a [TextHighlight],
-    pub(crate) gutter_lines: &'a [usize],
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ExternalChangeKind {
     Added,
     Changed,
@@ -94,7 +88,6 @@ pub(crate) struct RenderOptions<'a> {
     pub(crate) highlight: Option<TextHighlight>,
     pub(crate) highlight_kind: HighlightKind,
     pub(crate) lint_ranges: Option<&'a [TextHighlight]>,
-    pub(crate) llm_changes: Option<LlmChanges<'a>>,
     pub(crate) external_changes: Option<ExternalChanges<'a>>,
     pub(crate) syntax: SyntaxKind,
     pub(crate) presentation: Option<DocumentPresentation<'a>>,
@@ -121,7 +114,6 @@ impl Default for RenderOptions<'_> {
             highlight: None,
             highlight_kind: HighlightKind::Selection,
             lint_ranges: None,
-            llm_changes: None,
             external_changes: None,
             syntax: SyntaxKind::Plain,
             presentation: None,
@@ -311,22 +303,6 @@ pub(super) fn write_line_number<W: Write + ?Sized>(
         theme.text.overlay(theme.line_number),
         theme.truecolor,
     )
-}
-
-pub(super) fn write_change_gutter<W: Write + ?Sized>(
-    out: &mut W,
-    row: usize,
-    changes: Option<LlmChanges<'_>>,
-    theme: Theme,
-) -> std::io::Result<()> {
-    let Some(changes) = changes else {
-        return write!(out, "  ");
-    };
-    if changes.gutter_lines.contains(&row) {
-        style::write_semantic_gutter(out, theme.llm_changed, theme.truecolor)
-    } else {
-        write!(out, "  ")
-    }
 }
 
 pub(super) fn write_external_change_gutter<W: Write + ?Sized>(

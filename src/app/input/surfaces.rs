@@ -9,8 +9,8 @@ use crate::config::actions::{Action, Scope};
 use crossterm::event::KeyEvent;
 
 use super::super::{
-    command_prompt, completion, external_command, help, inline_clanker, lint, llm_preview,
-    llm_request, model_picker, recovery, replace, search, view, App,
+    command_prompt, completion, external_command, help, lint, llm_preview, llm_request,
+    model_picker, recovery, replace, search, view, App,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -24,13 +24,12 @@ enum RawKeySurface {
     Replace,
     Search,
     CommandPrompt,
-    InlineClanker,
     LlmPreview,
     Completion,
     MarkdownPreview,
 }
 
-const RAW_KEY_PRECEDENCE: [RawKeySurface; 13] = [
+const RAW_KEY_PRECEDENCE: [RawKeySurface; 12] = [
     RawKeySurface::Lint,
     RawKeySurface::ModelPicker,
     RawKeySurface::Help,
@@ -40,7 +39,6 @@ const RAW_KEY_PRECEDENCE: [RawKeySurface; 13] = [
     RawKeySurface::Replace,
     RawKeySurface::Search,
     RawKeySurface::CommandPrompt,
-    RawKeySurface::InlineClanker,
     RawKeySurface::LlmPreview,
     RawKeySurface::Completion,
     RawKeySurface::MarkdownPreview,
@@ -75,7 +73,6 @@ fn handle_raw_key_for(
         RawKeySurface::Replace => replace::handle_key(app, out, key),
         RawKeySurface::Search => search::handle_active_key(app, out, key),
         RawKeySurface::CommandPrompt => command_prompt::handle_active_key(app, out, key),
-        RawKeySurface::InlineClanker => inline_clanker::handle_key(app, out, key),
         RawKeySurface::LlmPreview => llm_preview::handle_key(app, out, key),
         RawKeySurface::Completion => completion::handle_key(app, out, key),
         RawKeySurface::MarkdownPreview if view::is_preview(app) => view::handle_key(app, out, key),
@@ -102,7 +99,6 @@ pub(super) fn dispatch_action(
             recovery::dispatch_action(app, out, action)?
                 || external_command::dispatch_action(app, out, action)?
                 || llm_request::dispatch_action(app, out, action)?
-                || inline_clanker::dispatch_action(app, out, action)?
                 || llm_preview::dispatch_action(app, out, action)?
                 || view::dispatch_action(app, out, action)?
                 || view::dispatch_preview_action(app, out, action)?
@@ -122,19 +118,17 @@ enum PasteSurface {
     Recovery,
     ExternalCommand,
     LlmRequest,
-    InlineClanker,
     LlmPreview,
     ModelPicker,
     MarkdownPreview,
 }
 
-const PASTE_PRECEDENCE: [PasteSurface; 9] = [
+const PASTE_PRECEDENCE: [PasteSurface; 8] = [
     PasteSurface::Help,
     PasteSurface::Replace,
     PasteSurface::Recovery,
     PasteSurface::ExternalCommand,
     PasteSurface::LlmRequest,
-    PasteSurface::InlineClanker,
     PasteSurface::LlmPreview,
     PasteSurface::ModelPicker,
     PasteSurface::MarkdownPreview,
@@ -148,7 +142,6 @@ pub(super) fn handle_paste(app: &mut App, out: &mut dyn Write, text: &str) -> io
             PasteSurface::Recovery => recovery::handle_paste(app, out)?,
             PasteSurface::ExternalCommand => external_command::handle_paste(app, out)?,
             PasteSurface::LlmRequest => llm_request::handle_paste(app, out)?,
-            PasteSurface::InlineClanker => inline_clanker::handle_paste(app, out)?,
             PasteSurface::LlmPreview => llm_preview::handle_paste(app, out)?,
             PasteSurface::ModelPicker => model_picker::handle_paste(app, out, text)?,
             PasteSurface::MarkdownPreview => view::handle_paste(app, out)?,
@@ -171,12 +164,10 @@ mod tests {
         assert_eq!(RAW_KEY_PRECEDENCE[6], RawKeySurface::Replace);
         assert_eq!(RAW_KEY_PRECEDENCE[7], RawKeySurface::Search);
         assert_eq!(RAW_KEY_PRECEDENCE[8], RawKeySurface::CommandPrompt);
-        assert_eq!(RAW_KEY_PRECEDENCE[9], RawKeySurface::InlineClanker);
-        assert_eq!(RAW_KEY_PRECEDENCE[12], RawKeySurface::MarkdownPreview);
+        assert_eq!(RAW_KEY_PRECEDENCE[11], RawKeySurface::MarkdownPreview);
         assert_eq!(PASTE_PRECEDENCE[0], PasteSurface::Help);
         assert_eq!(PASTE_PRECEDENCE[1], PasteSurface::Replace);
-        assert_eq!(PASTE_PRECEDENCE[5], PasteSurface::InlineClanker);
-        assert_eq!(PASTE_PRECEDENCE[7], PasteSurface::ModelPicker);
-        assert_eq!(PASTE_PRECEDENCE[8], PasteSurface::MarkdownPreview);
+        assert_eq!(PASTE_PRECEDENCE[6], PasteSurface::ModelPicker);
+        assert_eq!(PASTE_PRECEDENCE[7], PasteSurface::MarkdownPreview);
     }
 }

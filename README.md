@@ -105,7 +105,6 @@ troubleshooting, see the [complete user guide](docs/user-guide.md).
 | Cut current line; repeated cuts append | `Ctrl+K` |
 | Local completion | `Ctrl+Space` |
 | Command prompt | `Ctrl+Shift+P` or `F2` |
-| Inline clanker / clear its change marks | `F3` / `Shift+F3` |
 | Lint the saved active file | `F4` |
 | External-reload change marks | `F5` |
 | Markdown preview | `F6` |
@@ -145,8 +144,6 @@ leading `:`.
 | `run NAME` | Run a configured, trusted external command |
 | `recover` | Preview and apply a newer `.catnap` sidecar |
 | `model`, `models` | Search configured model/backend presets |
-| `run-clanker`, `inline-meow` | Run the inline instruction (`selection → catblocks → bounded full file`) |
-| `clear-clanker-changes` | Dismiss applied-model highlighting without editing text |
 | `meow TEXT`, `bigmeow TEXT` | Ask a model about this file or selection |
 
 ## Configuration
@@ -224,16 +221,6 @@ type = "openai-compatible"
 base_url = "https://openrouter.ai/api/v1"
 model = "provider/model-id"
 api_key_env = "OPENROUTER_API_KEY"
-
-[llm.inline]
-instruction_prefix = ">>"
-context_open = "<catblock>"
-context_close = "</catblock>"
-warn_lines = 500
-block_mode = "combined"
-queue_limit = 16
-stop_on_error = true
-remove_instruction_after_apply = true
 ```
 
 `F5` changes external-reload highlighting and `F7` changes line numbers for the
@@ -252,9 +239,6 @@ to switch the process-local session preset without invoking it or rewriting
 configuration. Model actions show the preset, model, destination, and exact
 context extent before sending; edits then open read-only and
 require a second confirmation before becoming one undoable buffer change.
-`F3` discovers a one-line inline instruction, then chooses the active selection,
-delimited catblocks, or a bounded full file in that order. Applied model output
-remains visibly marked until dismissed, superseded, undone, or invalidated.
 Plain HTTP is allowed for loopback models and unauthenticated LAN models. If an
 API key is present, Catomic refuses to send it over non-loopback HTTP; use HTTPS
 for authenticated remote endpoints. See

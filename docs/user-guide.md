@@ -995,102 +995,6 @@ rewrites configuration. To persist another default, edit `llm.default` as a
 separate explicit configuration action. Reopening or filtering the picker and
 switching buffers never persists anything.
 
-### One-key inline clanker
-
-Press `F3`, or run `run-clanker` / `inline-meow`, to use an instruction written
-in the active document. The default one-line form is:
-
-```text
->> Refactor this code without changing its behavior.
-```
-
-The context and editable target precedence is:
-
-```text
-selection → catblocks → bounded full file
-```
-
-An active selection is sent alone and only its exact captured bytes may be
-replaced. With no selection, one or more blocks expose only their interiors:
-
-```text
->> Rename the concept consistently.
-
-<catblock>
-first relevant section
-</catblock>
-
-private text that is not sent
-
-<catblock>
-second relevant section
-</catblock>
-```
-
-Delimiter lines remain byte-identical. Nested, overlapping, mismatched, empty,
-or unclosed blocks fail closed with line-numbered errors. Combined mode sends
-numbered, independently bounded blocks in one request and previews/applies every
-replacement atomically. Queued mode sends exactly one block at a time, waits for
-that block's review, applies accepted blocks as separate undo steps, and
-revalidates the next captured block before sending it. `Escape` cancels the
-active request and clears the remaining queue. Errors stop the queue by default.
-
-With no selection or catblock, F3 uses the fully retained current file. Above
-`warn_lines` (500 by default), the F2 prompt asks for a typed one-time `yes` or
-`no` before the normal endpoint/context confirmation. Neither answer can bypass
-the absolute 2,000-line / 64-KiB hard context limit. Paged files are refused.
-
-The instruction chosen is the unique nearest marker at or before the cursor (or
-selection start), and its line and exact text appear in confirmation. A marker
-matches when the trimmed line starts with `instruction_prefix` followed by
-whitespace; a configured suffix must then close the line. The older
-`>>> catomic ... <<<` instruction block remains supported. Customize syntax
-globally or by normalized file extension:
-
-```toml
-[llm.inline]
-instruction_prefix = ">>"
-instruction_suffix = ""
-context_open = "<catblock>"
-context_close = "</catblock>"
-warn_lines = 500
-block_mode = "combined" # or "queued"
-queue_limit = 16
-stop_on_error = true
-remove_instruction_after_apply = true
-
-[languages.rs.llm.inline]
-instruction_prefix = "// >>"
-context_open = "// <catblock>"
-context_close = "// </catblock>"
-
-[languages.html.llm.inline]
-instruction_prefix = "<!-- >>"
-instruction_suffix = "-->"
-```
-
-Required marker strings are non-empty, no more than 64 bytes, free of control
-characters and outer whitespace, and may not overlap one another. The optional
-instruction suffix has the same bounds. `warn_lines` is 1–2,000;
-`queue_limit` is 1–64.
-
-Successful apply removes only the confirmed instruction by default. Cleanup is
-shown in the proposal and belongs to the accepted edit transaction: one undo
-restores both content and instruction in combined mode. Cleanup removes the
-instruction's terminating newline when present; for a final unterminated marker
-it removes the preceding newline, preserving the document's line-ending style
-and final-newline state. Failed, cancelled, rejected, stale, or partial queued
-runs keep the instruction byte-identical.
-
-After apply, inserted/replaced graphemes use the semantic `llm_changed` role
-(red and underlined by default); changed/deleted lines have a red gutter mark.
-These marks mean locally applied model output, not selection or an error, and
-never become file content. They survive scrolling, wrapping, resize, undo/redo,
-tabs, and Unicode layout. `Shift+F3` or `clear-clanker-changes` dismisses them
-without editing the document. The next clanker apply, buffer close, or an
-ordinary edit that invalidates a marked range also clears them. With `NO_COLOR`
-set, reverse/underline and gutter markers provide the non-color fallback.
-
 ### Current-file commands
 
 These commands are available directly:
@@ -1287,7 +1191,6 @@ external_added = { fg = "green", underline = true }
 external_changed = { fg = "cyan", underline = true }
 external_deleted = { fg = "red", bold = true }
 lint = { fg = "red", underline = true }
-llm_changed = { fg = "red", underline = true }
 preview = "default"
 
 [languages.rs]
@@ -1332,17 +1235,6 @@ model = "headless-model"
 input = "stdin-text-v1"
 output = "claude-json-v1"
 timeout_secs = 120
-
-[llm.inline]
-instruction_prefix = ">>"
-instruction_suffix = ""
-context_open = "<catblock>"
-context_close = "</catblock>"
-warn_lines = 500
-block_mode = "combined"
-queue_limit = 16
-stop_on_error = true
-remove_instruction_after_apply = true
 ```
 
 ### Setting limits and defaults
@@ -1382,15 +1274,14 @@ remove_instruction_after_apply = true
 Legacy `llm.base_url`, `llm.model`, `llm.api_key_env`, and `llm.timeout_secs`
 remain valid only when `llm.backends` is absent. Mixing the two shapes is an
 error rather than an ambiguous partial migration.
-| `llm.inline.instruction_prefix` | `>>` | Non-empty unambiguous marker, at most 64 bytes |
-| `llm.inline.instruction_suffix` | empty | Empty or bounded suffix, at most 64 bytes |
-| `llm.inline.context_open` | `<catblock>` | Non-empty unambiguous marker, at most 64 bytes |
-| `llm.inline.context_close` | `</catblock>` | Non-empty unambiguous marker, at most 64 bytes |
-| `llm.inline.warn_lines` | `500` | Integer `1`–`2000` |
-| `llm.inline.block_mode` | `combined` | `combined`, `queued` |
-| `llm.inline.queue_limit` | `16` | Integer `1`–`64` |
-| `llm.inline.stop_on_error` | `true` | Boolean |
-| `llm.inline.remove_instruction_after_apply` | `true` | Boolean |
+
+For upgrade compatibility, retired `[llm.inline]`,
+`[languages.EXT.llm.inline]`, `run-clanker`/`clear-clanker-changes`
+keybindings, and the `theme.colors.llm_changed` role are accepted as inert
+configuration. They do not create shortcuts, instructions, model requests,
+edits, or presentation marks and are omitted from newly generated config.
+`F3` and `Shift+F3` are unbound by default, and the retired prompt command
+spellings are unknown commands.
 
 Language extension names are case-normalized and may be written with or without
 a leading dot. Command names may contain ASCII letters, digits, `-`, and `_`.
@@ -1404,8 +1295,7 @@ surface. The complete role inventory is `text`, `background`, `cursor`,
 `markdown_heading`, `markdown_emphasis`, `markdown_code`, `markdown_marker`,
 `markdown_link`, `syntax_keyword`, `syntax_string`, `syntax_comment`, `syntax_number`,
 `search_match`, `diff_added`, `diff_removed`, `external_added`,
-`external_changed`, `external_deleted`, `lint`, `llm_changed`, and `preview`.
-External-reload and model-change roles remain independent. The syntax roles
+`external_changed`, `external_deleted`, `lint`, and `preview`. The syntax roles
 apply consistently to the built-in Rust, Python, and JSON highlighters.
 
 A role may be `"default"`, one of the standard 16 names (`black` through
@@ -1423,7 +1313,7 @@ and search matches.
 The built-in `default` scheme preserves terminal-default text/background while
 keeping selection, search, warnings, and errors distinguishable. Use
 `high-contrast` for explicit black/bright-white base colors or `mono` to remove
-syntax hues. Inline roles override the named scheme. `background` has explicit
+syntax hues. Role overrides replace the named scheme. `background` has explicit
 precedence over `text.bg`. Invalid recognized colors fail the whole startup or
 `config check`; no subset is applied. Every styled segment is reset, and exit
 restores SGR attributes and the terminal's cursor color.
@@ -1547,8 +1437,6 @@ markdown-preview | editor,preview | f6
 line-numbers | editor,preview | f7
 whitespace | editor,preview | f8
 soft-wrap | editor,preview | f9
-run-clanker | editor | f3
-clear-clanker-changes | editor | shift+f3
 select-model | editor | f10
 prompt-submit | prompt | enter
 prompt-cancel | prompt | esc
@@ -1604,8 +1492,6 @@ mouse-scroll-down | editor,preview,picker,help | mouse-wheel-down
 | Search | Go to line | `Ctrl+G` |
 | Tools | Command prompt | `Ctrl+Shift+P` or `F2` |
 | Tools | Completion | `Ctrl+Space` |
-| Tools | Inline clanker | `F3` |
-| Tools | Clear clanker change marks | `Shift+F3` |
 | Tools | Lint saved active file | `F4` |
 | View | External-reload change marks | `F5` |
 | View | Markdown preview | `F6` |
@@ -1620,7 +1506,7 @@ shorter task guide whose displayed chords reflect the effective configured
 bindings; unbound actions are described without advertising a dead shortcut.
 On Android/Termux, tap **Menu** in the action row instead; its scrollable palette
 exposes essential actions normally reached through modifiers, function keys, or
-page keys, including the inline clanker and model/provider selector.
+page keys, including the model/provider selector.
 
 ## Command reference
 
@@ -1642,8 +1528,6 @@ Open the prompt with `Ctrl+Shift+P` or `F2`. Do not add a leading colon.
 | `run NAME` | — | Run a configured trusted command |
 | `recover` | — | Preview a newer `.catnap` sidecar |
 | `model` | `models`, `select-model` | Search/select a process-local model preset |
-| `run-clanker` | `inline-meow` | Run document instruction with automatic bounded scope |
-| `clear-clanker-changes` | — | Dismiss applied-model marks without editing text |
 | `meow TEXT` | — | Send selection/instruction block to configured model |
 | `bigmeow TEXT` | — | Send current ordinary file to configured model |
 | `quit` | `q` | Use the normal guarded quit path |

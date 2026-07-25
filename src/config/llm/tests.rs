@@ -144,8 +144,8 @@ fn malformed_toml_error_does_not_echo_source_values() {
 }
 
 #[test]
-fn parses_inline_defaults_and_language_overrides_with_named_backends() {
-    let catalog = parse(
+fn retired_inline_settings_are_accepted_but_inert() {
+    let with_retired_settings = parse(
         r#"
 [llm]
 default = "local"
@@ -171,36 +171,19 @@ instruction_suffix = "-->"
 "#,
     )
     .unwrap();
+    let without_retired_settings = parse(
+        r#"
+[llm]
+default = "local"
 
-    assert_eq!(catalog.inline.warn_lines, 700);
-    assert_eq!(catalog.inline.block_mode, InlineBlockMode::Queued);
-    assert_eq!(catalog.inline.queue_limit, 8);
-    assert!(!catalog.inline.remove_instruction_after_apply);
-    let rust = catalog.inline_for_path(Some(Path::new("main.RS"))).unwrap();
-    assert_eq!(rust.instruction_prefix, "// >>");
-    assert_eq!(rust.context_open, "<catblock>");
-    let html = catalog
-        .inline_for_path(Some(Path::new("index.html")))
-        .unwrap();
-    assert_eq!(html.instruction_prefix, "<!-- >>");
-    assert_eq!(html.instruction_suffix, "-->");
-}
+[[llm.backends]]
+name = "local"
+type = "openai-compatible"
+base_url = "http://127.0.0.1:11434/v1"
+model = "llama"
+"#,
+    )
+    .unwrap();
 
-#[test]
-fn rejects_unsafe_inline_markers_and_unbounded_limits() {
-    for text in [
-        "[llm.inline]\ninstruction_prefix = \"\"\n",
-        "[llm.inline]\ncontext_open = \"same\"\ncontext_close = \"same\"\n",
-        "[llm.inline]\ninstruction_prefix = \"<cat\"\ncontext_open = \"<catblock>\"\n",
-        "[llm.inline]\ninstruction_suffix = \"<catblock>\"\n",
-        "[llm.inline]\ncontext_close = \" bad\"\n",
-        "[llm.inline]\nwarn_lines = 0\n",
-        "[llm.inline]\nwarn_lines = 2001\n",
-        "[llm.inline]\nqueue_limit = 0\n",
-        "[llm.inline]\nqueue_limit = 65\n",
-        "[llm.inline]\nblock_mode = \"parallel\"\n",
-    ] {
-        let error = parse(text).expect_err("invalid inline settings must fail closed");
-        assert_eq!(error.kind(), io::ErrorKind::InvalidData, "{text}");
-    }
+    assert_eq!(with_retired_settings, without_retired_settings);
 }

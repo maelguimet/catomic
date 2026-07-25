@@ -15,9 +15,8 @@ use crate::file::identity::BufferFileIdentity;
 use crate::file::watcher::FileWatcher;
 
 use super::{
-    command_prompt, completion, external_command, hooks, inline_clanker, lint, llm_preview,
-    llm_request, model_picker, recovery, reload, save, search, selection, view, App, FileState,
-    StartupConfig,
+    command_prompt, completion, external_command, hooks, lint, llm_preview, llm_request,
+    model_picker, recovery, reload, save, search, selection, view, App, FileState, StartupConfig,
 };
 
 mod lifecycle;
@@ -34,7 +33,6 @@ pub(crate) struct BufferSlot {
     recovery: recovery::RecoveryState,
     selection: selection::SelectionUiState,
     view: view::ViewOptions,
-    clanker_changes: inline_clanker::ChangeHistory,
     external_changes: super::external_diff::ExternalChanges,
     scroll_top: usize,
     scroll_left: usize,
@@ -61,7 +59,6 @@ impl BufferSlot {
             recovery: app.recovery,
             selection: app.selection,
             view: app.view,
-            clanker_changes: app.clanker_changes,
             external_changes: app.external_changes,
             scroll_top: app.screen.scroll_top,
             scroll_left: app.screen.scroll_left,
@@ -84,7 +81,6 @@ impl BufferSlot {
         mem::swap(&mut self.recovery, &mut app.recovery);
         mem::swap(&mut self.selection, &mut app.selection);
         mem::swap(&mut self.view, &mut app.view);
-        mem::swap(&mut self.clanker_changes, &mut app.clanker_changes);
         mem::swap(&mut self.external_changes, &mut app.external_changes);
         mem::swap(&mut self.scroll_top, &mut app.screen.scroll_top);
         mem::swap(&mut self.scroll_left, &mut app.screen.scroll_left);
@@ -165,7 +161,6 @@ impl App {
             self.message = None;
         }
         llm_request::cancel_all(self);
-        inline_clanker::cancel_all(self);
         external_command::cancel_all(self);
         hooks::cancel_all(self);
         if recovery::close(self) {

@@ -140,9 +140,6 @@ pub(crate) fn display_buffer(app: &super::App) -> &dyn Buffer {
     if let Some(buffer) = super::llm_preview::display_buffer(app) {
         return buffer;
     }
-    if let Some(buffer) = super::inline_clanker::display_buffer(app) {
-        return buffer;
-    }
     if let Some(buffer) = super::model_picker::display_buffer(app) {
         return buffer;
     }
@@ -169,7 +166,6 @@ pub(crate) fn display_syntax(app: &super::App) -> SyntaxKind {
         || super::recovery::is_viewing(app)
         || super::external_command::is_viewing(app)
         || super::llm_preview::is_viewing(app)
-        || super::inline_clanker::is_previewing(app)
         || super::model_picker::is_viewing(app)
     {
         SyntaxKind::Plain
@@ -207,11 +203,6 @@ pub(crate) fn gutter_width(app: &super::App) -> usize {
         0
     };
     let source_is_visible = source_is_displayed(app);
-    let changes = super::inline_clanker::preview_changes(app).or_else(|| {
-        source_is_visible
-            .then(|| super::inline_clanker::source_changes(app))
-            .flatten()
-    });
     let external_changes = (source_is_visible && app.view_preferences.external_diff())
         .then(|| {
             app.external_changes
@@ -221,9 +212,6 @@ pub(crate) fn gutter_width(app: &super::App) -> usize {
     line_numbers
         + crate::terminal::render::change_gutter_width(
             external_changes.is_some_and(|changes| !changes.markers.is_empty()),
-        )
-        + crate::terminal::render::change_gutter_width(
-            changes.is_some_and(|changes| !changes.gutter_lines.is_empty()),
         )
 }
 
@@ -239,7 +227,6 @@ pub(crate) fn soft_wrap_active(app: &super::App) -> bool {
                 && !super::recovery::is_viewing(app)
                 && !super::external_command::is_viewing(app)
                 && !super::llm_preview::is_viewing(app)
-                && !super::inline_clanker::is_previewing(app)
                 && !super::model_picker::is_viewing(app)))
 }
 

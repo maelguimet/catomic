@@ -10,8 +10,8 @@ use crate::buffer::{Buffer, Cursor};
 use crate::editor::text_layout;
 
 use super::{
-    change_gutter_width, line_number_gutter, write_change_gutter, write_external_change_gutter,
-    write_line_number, RenderOptions, RenderViewport,
+    change_gutter_width, line_number_gutter, write_external_change_gutter, write_line_number,
+    RenderOptions, RenderViewport,
 };
 
 #[derive(Clone, Debug)]
@@ -212,20 +212,7 @@ pub(super) fn compose_buffer(
             .is_some_and(|changes| !changes.markers.is_empty()),
     )
     .min(viewport.width.saturating_sub(line_gutter));
-    let llm_gutter = change_gutter_width(
-        options
-            .llm_changes
-            .is_some_and(|changes| !changes.gutter_lines.is_empty()),
-    )
-    .min(
-        viewport
-            .width
-            .saturating_sub(line_gutter)
-            .saturating_sub(external_gutter),
-    );
-    let gutter = line_gutter
-        .saturating_add(external_gutter)
-        .saturating_add(llm_gutter);
+    let gutter = line_gutter.saturating_add(external_gutter);
     let content_width = viewport.width.saturating_sub(gutter);
     let rows = visible_rows(
         buffer,
@@ -239,7 +226,7 @@ pub(super) fn compose_buffer(
         &rows,
         content_height,
         content_width,
-        (line_gutter, external_gutter, llm_gutter),
+        (line_gutter, external_gutter),
         options,
     )?;
     super::write_bottom_rows(out, viewport, message, options)?;
@@ -302,10 +289,10 @@ fn write_rows<W: Write + ?Sized>(
     rows: &[WrappedRow],
     height: usize,
     width: usize,
-    gutters: (usize, usize, usize),
+    gutters: (usize, usize),
     options: RenderOptions<'_>,
 ) -> io::Result<()> {
-    let (line_gutter, external_gutter, llm_gutter) = gutters;
+    let (line_gutter, external_gutter) = gutters;
     for screen_row in 1..=height {
         super::style::write_row_start(
             out,
@@ -325,11 +312,6 @@ fn write_rows<W: Write + ?Sized>(
             )?;
         } else if external_gutter > 0 {
             write!(out, "{:external_gutter$}", "")?;
-        }
-        if llm_gutter > 0 && row.start_col == 0 {
-            write_change_gutter(out, row.document_row, options.llm_changes, options.theme)?;
-        } else if llm_gutter > 0 {
-            write!(out, "{:llm_gutter$}", "")?;
         }
         if line_gutter > 0 && row.start_col == 0 {
             write_line_number(out, row.document_row, line_gutter, options.theme)?;

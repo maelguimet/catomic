@@ -424,20 +424,6 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
     ),
     key!(SoftWrap, "soft-wrap", "Toggle soft wrapping", EV, ["f9"]),
     key!(
-        RunClanker,
-        "run-clanker",
-        "Run the confirmed inline clanker workflow",
-        E,
-        ["f3"]
-    ),
-    key!(
-        ClearClankerChanges,
-        "clear-clanker-changes",
-        "Clear inline clanker change highlighting",
-        E,
-        ["shift+f3"]
-    ),
-    key!(
         SelectModel,
         "select-model",
         "Choose the process-local preset without contacting a backend.",

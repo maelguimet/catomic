@@ -16,35 +16,8 @@ Every patch or replacement LLM edit must be previewed, confirmed, undoable.
 
 - `:meow` — selection/block
 - `:bigmeow` — current file
-- `F3` / `run-clanker` / `inline-meow` — inline instruction with automatic
-  `selection → catblocks → bounded full file` scope
 
 Wide or multi-file patches are not accepted.
-
-## Inline clanker
-
-An inline instruction is control metadata, never an editable target. The
-default is a trimmed line starting with `>>` followed by whitespace. Delimiters
-must occupy their own trimmed lines. Configured markers are bounded and
-non-ambiguous; nested, mismatched, overlapping, or unclosed context blocks fail
-closed with line numbers. Existing `>>> catomic ... <<<` instruction blocks are
-also valid.
-
-An active selection has precedence and is the only content sent or replaceable.
-Otherwise only `<catblock>` interiors are sent; combined replacements are one
-atomic transaction, while queued replacements run strictly serially and are
-separately undoable. Without either, F3 uses the whole retained file: more than
-the configured soft line threshold requires a typed one-time `yes`, while the
-2,000-line / 64-KiB hard ceiling cannot be overridden.
-
-Instruction cleanup defaults on and is part of the visible proposal and the
-same accepted transaction. Failures, cancellation, rejection, drift, or a
-partial queue keep the instruction. Applied content receives semantic
-`llm_changed` presentation metadata; deleted and cleanup lines retain a gutter
-marker. The metadata never changes file bytes and is cleared by undo, an
-invalidating ordinary edit, the next clanker apply, buffer close, or the
-`clear-clanker-changes` action. Color-disabled rendering uses underline/reverse
-video plus the gutter marker.
 
 ## Construction / Invocation
 
@@ -84,7 +57,7 @@ video plus the gutter marker.
   directory, caps stdout at 2 MiB and stderr at 64 KiB, enforces the configured
   timeout, and kills the complete child process group while reaping its direct
   child on cancellation.
-- Current-buffer and inline prompts use only the active-file basename. Neither
+- Current-buffer prompts use only the active-file basename. Neither
   HTTP nor command payloads include Catomic's absolute workspace path, and
   command children do not inherit Catomic's cwd.
 - Command stdout must match exactly `claude-json-v1` or `codex-jsonl-v1`.
@@ -98,8 +71,4 @@ video plus the gutter marker.
 - All patches go through `llm/patch.rs` and the read-only preview path.
 - Current-buffer requests pin the active path through confirmation and response;
   path drift discards the request/output and patch headers must match that path.
-- Inline requests also pin the exact instruction, selected ranges, block
-  delimiters, revision, and path before send, preview, and apply. Queued work
-  revalidates before every request and Escape cancels the active request and all
-  remaining work.
 - Tests use loopback fake HTTP only; never test against a live endpoint.

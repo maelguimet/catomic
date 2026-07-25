@@ -39,7 +39,6 @@ pub(crate) fn handle_mouse(
         _ => {}
     }
     if !super::super::view::source_is_displayed(app)
-        || super::super::inline_clanker::is_busy(app)
         || super::super::search::is_active(app)
         || super::super::command_prompt::is_active(app)
     {

@@ -49,12 +49,6 @@ pub(super) fn write_content_line<W: Write + ?Sized>(
     });
     let selected = visible_highlight(options.highlight, row, start_col, chars.len());
     let lint = visible_ranges(options.lint_ranges, row, start_col, chars.len());
-    let llm_changed = visible_ranges(
-        options.llm_changes.map(|changes| changes.ranges),
-        row,
-        start_col,
-        chars.len(),
-    );
     let external_added = visible_ranges(
         options.external_changes.map(|changes| changes.added_ranges),
         row,
@@ -73,7 +67,7 @@ pub(super) fn write_content_line<W: Write + ?Sized>(
         &content,
         &spans,
         selected,
-        &[&lint, &llm_changed, &external_added, &external_changed],
+        &[&lint, &external_added, &external_changed],
         &links,
     );
     let mut cell = 0;
@@ -93,9 +87,6 @@ pub(super) fn write_content_line<W: Write + ?Sized>(
             .map(|link| link.destination.as_ref());
         let highlighted = selected.is_some_and(|(from, to)| start >= from && start < to);
         let lint = lint.iter().any(|(from, to)| start >= *from && start < *to);
-        let llm_changed = llm_changed
-            .iter()
-            .any(|(from, to)| start >= *from && start < *to);
         let external_added = external_added
             .iter()
             .any(|(from, to)| start >= *from && start < *to);
@@ -109,7 +100,6 @@ pub(super) fn write_content_line<W: Write + ?Sized>(
             SegmentRoles {
                 highlighted,
                 lint,
-                llm_changed,
                 external_added,
                 external_changed,
             },
@@ -265,7 +255,6 @@ fn write_segment<W: Write + ?Sized>(
 struct SegmentRoles {
     highlighted: bool,
     lint: bool,
-    llm_changed: bool,
     external_added: bool,
     external_changed: bool,
 }
@@ -291,9 +280,6 @@ fn segment_style(
     }
     if roles.lint {
         style = style.overlay(theme.lint);
-    }
-    if roles.llm_changed {
-        style = style.overlay(theme.llm_changed);
     }
     if roles.highlighted {
         style = style.overlay(match options.highlight_kind {
@@ -498,24 +484,6 @@ fn color_rgb(color: Color) -> (u8, u8, u8) {
             (level, level, level)
         }
     }
-}
-
-pub(super) fn write_semantic_gutter<W: Write + ?Sized>(
-    out: &mut W,
-    style: Style,
-    truecolor: bool,
-) -> io::Result<()> {
-    let marker = if style.fg.is_some() || style.bg.is_some() {
-        "┃"
-    } else {
-        "!"
-    };
-    let style = style.overlay(Style {
-        bold: Some(true),
-        ..Style::default()
-    });
-    write_styled_text(out, marker, style, truecolor)?;
-    write!(out, " ")
 }
 
 #[cfg(test)]

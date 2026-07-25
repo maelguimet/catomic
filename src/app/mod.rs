@@ -42,7 +42,6 @@ mod recovery;
 mod reload;
 mod render;
 mod replace;
-mod repo_llm;
 mod runtime;
 mod save;
 mod search;
@@ -154,8 +153,6 @@ pub struct App {
     pub(crate) clanker_changes: inline_clanker::ChangeHistory,
     /// Per-buffer render-only metadata for the exact latest external reload revision.
     pub(crate) external_changes: external_diff::ExternalChanges,
-    /// Explicit request-local repo-context preparation, confirmation, or network task.
-    pub(crate) repo_llm_state: Option<repo_llm::RepoLlmState>,
     /// External process/preview state; empty at startup and while unused.
     pub(crate) external_command: external_command::ExternalCommandState,
     /// Lifecycle command queue; contains no process and is empty without configured events.

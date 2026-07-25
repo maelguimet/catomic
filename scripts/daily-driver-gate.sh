@@ -121,7 +121,7 @@ Normal status remained distinct from document text.
 Prompt, warning/confirmation, and error states were visibly distinct.
 Status and prompts remained understandable at narrow and normal widths.
 Markdown source and F6 preview were reviewed at both widths.
-Opened current-file and repository model confirmations, then pressed Escape.
+Opened a current-file model confirmation, then pressed Escape.
 Confirmed no model request or live endpoint was used.
 EOF
 }
@@ -363,7 +363,7 @@ EOF
 
 ## Model safety
 
-- [ ] Opened current-file and repository model confirmations, then pressed Escape.
+- [ ] Opened a current-file model confirmation, then pressed Escape.
 - [ ] Confirmed no model request or live endpoint was used.
 
 ## Defects

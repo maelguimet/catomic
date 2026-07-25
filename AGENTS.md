@@ -35,7 +35,7 @@ section:
 
 - Startup and ordinary editing perform no repository scan, background indexing,
   configured command or hook, model probing, credential read, or network request.
-- Linter, repository, and model actions are explicit, lazy, bounded, and killable.
+- Linter and model actions are explicit, lazy, bounded, and killable.
 - Model output is untrusted and preview-first. It never silently edits or saves.
 - Rendering reads editor state and does not mutate it.
 - Ordinary editing remains responsive and correct for Unicode graphemes,

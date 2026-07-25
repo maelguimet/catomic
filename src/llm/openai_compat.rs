@@ -216,13 +216,6 @@ impl ChatMessage {
             content: content.to_string(),
         }
     }
-
-    pub fn assistant(content: &str) -> Self {
-        Self {
-            role: "assistant",
-            content: content.to_string(),
-        }
-    }
 }
 
 #[derive(Deserialize)]

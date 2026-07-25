@@ -140,7 +140,6 @@ fn mouse_wheel_is_blocked(app: &App) -> bool {
         || super::completion::is_active(app)
         || app.pending_llm_request.is_some()
         || app.llm_task.is_some()
-        || app.repo_llm_state.is_some()
         || super::external_command::is_running(app)
 }
 

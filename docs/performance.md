@@ -47,27 +47,13 @@ Profile before optimizing redraw or buffer access.
 
 Never add full-file scans, full-buffer clones, background work, or network calls to hot paths.
 
-## Phase 6 bounded broker sample (2026-07-16)
+## Bounded model context
 
-Phase 6 adds no LLM work to startup or typing. Current-file context collection
-is explicit and capped at 64 KiB/2,000 lines. Repository context preparation is an
-explicit cancellable worker capped at 4,096 files, 65,536 entries, depth 64,
-and a selected 64 KiB (`gitmeow`) or 128 KiB (`megameow`) returned-context
-budget. Network latency is not benchmarked and no live endpoint is used.
-
-Warm debug test-process samples on the local acceptance machine:
-
-```text
-/usr/bin/time -f ... cargo test --quiet llm::broker
-4 tests, 0.12 s wall, 58,364 KiB peak RSS
-
-/usr/bin/time -f ... cargo test --quiet llm::repo_task
-1 loopback dialogue test, 0.12 s wall, 58,476 KiB peak RSS
-```
-
-These are observational samples, not latency gates. The relevant invariant is
-that all repository scanning, Git capture, and HTTP work begins only after an
-explicit command and stays off the typing/render path.
+Model work is absent from startup and typing. Current-file context collection is
+explicit and capped at 64 KiB/2,000 lines. Network latency is not benchmarked
+and no live endpoint is used. The relevant invariant is that context collection
+and HTTP work begin only after an explicit command and stay off the
+typing/render path.
 
 ## Phase 7 typed-config acceptance (2026-07-16)
 

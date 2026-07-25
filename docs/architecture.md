@@ -20,9 +20,8 @@ Catomic has one editor mode:
 - Startup and ordinary editing perform no repository scans, background
   indexing, configured commands or hooks, model probing, credential reads, or
   network requests.
-- Linting is a direct editor action. Repository-aware model context is detected
-  and prepared afresh for each explicit request. Both remain bounded,
-  cancellable, and absent until invoked.
+- Linting and model-backed editing are direct editor actions. Both remain
+  bounded, cancellable, and absent until invoked.
 
 There is no persistent workspace, project session, or global capability bouncer.
 File watching, Markdown presentation, syntax, and completion remain local to
@@ -49,9 +48,9 @@ preview-first. The complete contract is in [`llm-rules.md`](llm-rules.md).
   policy, external-change watching, and recovery storage.
 - `src/config/` owns typed configuration, validation, defaults, and keybinding
   translation. Loading configuration must not construct the services it names.
-- `src/llm/` owns bounded context, backend adapters, request workers, brokered
-  request-local repository reads, proposal parsing, and model-specific safety
-  limits. It does not own application state or silently write files.
+- `src/llm/` owns bounded active-file context, backend adapters, request workers,
+  proposal parsing, and model-specific safety limits. It does not own
+  application state or silently write files.
 - `src/external/` owns bounded child-process execution primitives. User-facing
   command policy, confirmation, preview, and apply state stay in `src/app/`.
 - `src/tests/` contains crate-internal golden, performance, and PTY helpers;

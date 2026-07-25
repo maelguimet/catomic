@@ -152,7 +152,6 @@ fn busy(app: &super::super::App) -> bool {
     app.inline_clanker.phase.is_some()
         || app.pending_llm_request.is_some()
         || app.llm_task.is_some()
-        || app.repo_llm_state.is_some()
 }
 
 fn render_error(

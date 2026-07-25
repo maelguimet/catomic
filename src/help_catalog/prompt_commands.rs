@@ -23,8 +23,6 @@ pub(crate) enum PromptCommand {
     ClearClankerChanges,
     Meow,
     BigMeow,
-    GitMeow,
-    MegaMeow,
     Quit,
 }
 
@@ -62,8 +60,6 @@ pub(crate) const PROMPT_COMMANDS: &[PromptCommandSpec] = &[
     ),
     command(PromptCommand::Meow, &["meow"]),
     command(PromptCommand::BigMeow, &["bigmeow"]),
-    command(PromptCommand::GitMeow, &["gitmeow"]),
-    command(PromptCommand::MegaMeow, &["megameow"]),
     command(PromptCommand::Quit, &["quit", "q"]),
 ];
 

@@ -106,7 +106,6 @@ impl App {
             inline_clanker: inline_clanker::InlineClankerState::default(),
             clanker_changes: inline_clanker::ChangeHistory::default(),
             external_changes: super::external_diff::ExternalChanges::default(),
-            repo_llm_state: None,
             external_command: external_command::ExternalCommandState::default(),
             hooks: hooks::HookState::default(),
             recovery: recovery::RecoveryState::default(),
@@ -134,14 +133,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ordinary_startup_constructs_no_repository_or_model_tasks() {
+    fn ordinary_startup_constructs_no_model_tasks() {
         let app = App::new(None).unwrap();
 
         assert!(app.surfaces.help.is_none());
         assert!(app.surfaces.llm_preview.is_none());
         assert!(app.pending_llm_request.is_none());
         assert!(app.llm_task.is_none());
-        assert!(app.repo_llm_state.is_none());
         assert!(!model_picker::is_viewing(&app));
         assert!(!inline_clanker::is_busy(&app));
     }

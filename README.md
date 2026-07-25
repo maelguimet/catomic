@@ -148,7 +148,6 @@ leading `:`.
 | `run-clanker`, `inline-meow` | Run the inline instruction (`selection → catblocks → bounded full file`) |
 | `clear-clanker-changes` | Dismiss applied-model highlighting without editing text |
 | `meow TEXT`, `bigmeow TEXT` | Ask a model about this file or selection |
-| `gitmeow TEXT`, `megameow TEXT` | Ask a model using repository context |
 
 ## Configuration
 

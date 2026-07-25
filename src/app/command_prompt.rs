@@ -349,18 +349,6 @@ fn execute_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> 
             super::llm_request::CurrentLlmCommand::BigMeow,
             instruction,
         ),
-        (PromptCommand::GitMeow, instruction) => super::hooks::before_repo_llm(
-            app,
-            out,
-            super::repo_llm::RepoLlmCommand::GitMeow,
-            instruction,
-        ),
-        (PromptCommand::MegaMeow, instruction) => super::hooks::before_repo_llm(
-            app,
-            out,
-            super::repo_llm::RepoLlmCommand::MegaMeow,
-            instruction,
-        ),
         (PromptCommand::RunClanker, "") => super::hooks::before_inline_clanker(app, out),
         (PromptCommand::ClearClankerChanges, "") => super::inline_clanker::clear_changes(app, out),
         _ => unknown_command(app, out, command),

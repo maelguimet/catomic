@@ -45,10 +45,9 @@ normal width and inspect normal status, prompts, warnings/confirmations, errors,
 Markdown source, and F6 preview. The generated `external-change.sh` is an
 explicit second-terminal helper for the external-change scenario.
 
-Open current-file and repository model confirmations only far enough to inspect
-their destination/context text, then press Escape. Repository context must be
-prepared only by that explicit command. Never confirm a send and never use a
-live model or endpoint.
+Open a current-file model confirmation only far enough to inspect its
+destination/context text, then press Escape. Never confirm a send and never use
+a live model or endpoint.
 
 ## Record and validate
 

@@ -76,7 +76,6 @@ fn alternate_input_surface(app: &super::App) -> bool {
         || super::help::is_viewing(app)
         || super::recovery::is_viewing(app)
         || super::external_command::is_viewing(app)
-        || super::repo_llm::blocks_editing_input(app)
         || app.pending_llm_request.is_some()
         || super::replace::is_active(app)
         || super::search::is_active(app)

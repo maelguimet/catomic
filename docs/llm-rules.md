@@ -1,6 +1,6 @@
 # LLM Rules
 
-No silent writes. No blind full-file replacement. No hidden network. No automatic repo upload.
+No silent writes. No blind full-file replacement. No hidden network. No automatic workspace upload.
 
 ## Output Preference Order
 
@@ -16,13 +16,10 @@ Every patch or replacement LLM edit must be previewed, confirmed, undoable.
 
 - `:meow` — selection/block
 - `:bigmeow` — current file
-- `:gitmeow` — focused repo-aware request, capped at 64 KiB of broker context
-- `:megameow` — broader repo-aware request, capped at 128 KiB of broker context
 - `F3` / `run-clanker` / `inline-meow` — inline instruction with automatic
   `selection → catblocks → bounded full file` scope
 
-`:feralmeow` remains unimplemented: Phase 6 does not accept wide or multi-file
-patches.
+Wide or multi-file patches are not accepted.
 
 ## Inline clanker
 
@@ -49,23 +46,6 @@ invalidating ordinary edit, the next clanker apply, buffer close, or the
 `clear-clanker-changes` action. Color-disabled rendering uses underline/reverse
 video plus the gutter marker.
 
-## Repo LLM
-
-Repo LLM must use a broker with context budget + read-only access.
-
-Snapshot HEAD + branch + dirty state before calls.
-
-If files change during thinking or before preview apply, refuse blind apply.
-
-Read-only Git capture must disable pagers, fsmonitor, external diff, and
-textconv helpers so repository configuration cannot launch child helpers. It
-must strip inherited `GIT_*` variables before applying its safe settings. Git
-stdin is closed; every child has a ten-second timeout and is killed and reaped
-when its owning preparation, request, or drift-check worker is cancelled.
-
-Broker commands are limited to list files, bounded ranged reads, bounded grep,
-and per-file diff. No command writes or runs a process other than read-only Git.
-
 ## Construction / Invocation
 
 - `F10`, `:model`, and `:models` load only validated preset metadata. Opening,
@@ -85,8 +65,8 @@ and per-file diff. No command writes or runs a process other than read-only Git.
   endpoint; every 3xx response is an error.
 - Ambient proxy environment variables must not reroute context. Proxy support
   requires future explicit configuration and confirmation.
-- Startup and ordinary editing must not gain repository LLM machinery or
-  unconfirmed network work.
+- Startup and ordinary editing must not gain model machinery or unconfirmed
+  network work.
 - Provider headers are explicit per preset. Static headers are non-secret
   metadata; credential-looking static headers are rejected in favor of named
   environment variables. Values are scoped to that preset; secret values are
@@ -104,10 +84,9 @@ and per-file diff. No command writes or runs a process other than read-only Git.
   directory, caps stdout at 2 MiB and stderr at 64 KiB, enforces the configured
   timeout, and kills the complete child process group while reaping its direct
   child on cancellation.
-- Current-buffer and inline prompts use only the active-file basename; repo
-  prompts use only confirmed repo-relative paths. Neither HTTP nor command
-  payloads include Catomic's absolute workspace path, and command children do
-  not inherit Catomic's cwd.
+- Current-buffer and inline prompts use only the active-file basename. Neither
+  HTTP nor command payloads include Catomic's absolute workspace path, and
+  command children do not inherit Catomic's cwd.
 - Command stdout must match exactly `claude-json-v1` or `codex-jsonl-v1`.
   Malformed/partial output and Codex tool/item events fail closed. Stderr and
   HTTP error bodies are suppressed rather than copied into terminal errors.
@@ -123,24 +102,4 @@ and per-file diff. No command writes or runs a process other than read-only Git.
   delimiters, revision, and path before send, preview, and apply. Queued work
   revalidates before every request and Escape cancels the active request and all
   remaining work.
-- Repo requests pin the active path through context preparation, confirmation,
-  response, and final preview apply; path drift cancels or discards fail closed.
-- The confirmed repo pre-send drift check runs on a pollable worker; Enter and
-  ordinary editor polling must never run Git on the input thread.
-- The repo request worker rechecks drift after the final response before handing
-  output back to the editor; response polling must never run Git.
-- Final Enter on a repo preview starts another pollable drift worker. The preview
-  stays read-only, and only an unchanged result reaches the undoable apply path.
-- Repo preparation fingerprints the active file on disk even when it is
-  untracked, so byte drift hidden from Git status is refused at every send/apply gate.
-- The first relevant-file fingerprint is immutable for the request; later
-  broker reads or grep cannot refresh a drifted baseline.
-- Broker reads hash and expose one bounded opened-file snapshot, with canonical
-  in-repo path and pre/post file-revision checks; they never hash then reopen.
-- The repo broker omits dot paths, refuses direct reads or diffs containing
-  obvious secret-like content, and makes grep skip and count sensitive files.
-  An explicitly confirmed active dotfile remains governed by active-context
-  sensitivity confirmation rather than broker retrieval.
-- Repo patch headers must name the exact active repo-relative file; patches for
-  another file and rename-shaped patches fail before preview.
 - Tests use loopback fake HTTP only; never test against a live endpoint.

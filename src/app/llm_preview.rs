@@ -1,6 +1,6 @@
 //! Purpose: this file must preview and explicitly confirm validated LLM edit proposals.
 //! Owns: patch/marked-region preview state, stale-source checks, and confirmed apply.
-//! Must not: construct clients, call endpoints, read repos, write files, or auto-apply.
+//! Must not: construct clients, call endpoints, write files, or auto-apply.
 //! Invariants: Enter is the only apply action; apply is one undoable buffer transaction.
 
 use std::io::{self, Write};
@@ -9,22 +9,18 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::{Buffer, Cursor, PieceTable};
 use crate::config::actions::Action;
-use crate::llm::broker::ContextBroker;
 
 mod confirm;
 mod proposal;
-mod repo;
 
 use proposal::Proposal;
 pub(crate) use proposal::RegionTarget;
-pub(crate) use repo::show_repo_patch;
 
 pub(crate) struct PatchPreview {
     proposal: Proposal,
     proposed_text: String,
     source_snapshot: String,
     source_path: Option<std::path::PathBuf>,
-    repo_guard: Option<ContextBroker>,
     buffer: PieceTable,
     source_scroll_top: usize,
     source_scroll_left: usize,
@@ -36,7 +32,6 @@ struct PreviewDraft<'a> {
     source_snapshot: String,
     preview_text: &'a str,
     message: &'static str,
-    repo_guard: Option<ContextBroker>,
 }
 
 #[cfg(test)]
@@ -63,7 +58,6 @@ pub(crate) fn show(app: &mut super::App, out: &mut dyn Write, patch_text: &str) 
             source_snapshot,
             preview_text: patch_text,
             message: "LLM patch preview (read-only). Enter applies; Esc cancels.",
-            repo_guard: None,
         },
     )
 }
@@ -90,7 +84,6 @@ pub(crate) fn show_with_region_fallback(
                 source_snapshot,
                 preview_text: output,
                 message: "LLM patch preview (read-only). Enter applies; Esc cancels.",
-                repo_guard: None,
             },
         );
     }
@@ -118,7 +111,6 @@ pub(crate) fn show_with_region_fallback(
             source_snapshot,
             preview_text: &preview_text,
             message: "LLM marked-region preview (read-only). Enter applies; Esc cancels.",
-            repo_guard: None,
         },
     )
 }
@@ -131,7 +123,6 @@ fn open(app: &mut super::App, out: &mut dyn Write, draft: PreviewDraft<'_>) -> i
         proposed_text: draft.proposed_text,
         source_snapshot: draft.source_snapshot,
         source_path: app.file.path.clone(),
-        repo_guard: draft.repo_guard,
         buffer: PieceTable::from_text(draft.preview_text),
         source_scroll_top: app.screen.scroll_top,
         source_scroll_left: app.screen.scroll_left,
@@ -227,10 +218,6 @@ pub(crate) fn close(app: &mut super::App) -> bool {
     } else {
         false
     }
-}
-
-pub(super) fn finish_repo_apply(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
-    confirm::finish_apply(app, out)
 }
 
 fn cancel(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {

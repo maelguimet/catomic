@@ -102,6 +102,7 @@ fn help_is_short_task_oriented_and_excludes_registry_clutter() {
         "api_key_env",
         "[[llm.backends]]",
         "gitmeow INSTRUCTION",
+        "megameow INSTRUCTION",
     ] {
         assert!(
             !markdown.contains(forbidden),

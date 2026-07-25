@@ -34,7 +34,6 @@ pub(crate) struct BackendMessage {
 pub(crate) enum MessageRole {
     System,
     User,
-    Assistant,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -261,7 +260,6 @@ impl MessageRole {
         match self {
             Self::System => "system",
             Self::User => "user",
-            Self::Assistant => "assistant",
         }
     }
 }
@@ -289,7 +287,6 @@ fn to_chat_message(message: &BackendMessage) -> ChatMessage {
     match message.role {
         MessageRole::System => ChatMessage::system(&message.content),
         MessageRole::User => ChatMessage::user(&message.content),
-        MessageRole::Assistant => ChatMessage::assistant(&message.content),
     }
 }
 

@@ -16,8 +16,8 @@ use crate::file::watcher::FileWatcher;
 
 use super::{
     command_prompt, completion, external_command, hooks, inline_clanker, lint, llm_preview,
-    llm_request, model_picker, recovery, reload, repo_llm, save, search, selection, view, App,
-    FileState, StartupConfig,
+    llm_request, model_picker, recovery, reload, save, search, selection, view, App, FileState,
+    StartupConfig,
 };
 
 mod lifecycle;
@@ -166,7 +166,6 @@ impl App {
         }
         llm_request::cancel_all(self);
         inline_clanker::cancel_all(self);
-        repo_llm::cancel_all(self);
         external_command::cancel_all(self);
         hooks::cancel_all(self);
         if recovery::close(self) {

@@ -2,6 +2,10 @@
 
 Last verified: 2026-07-16.
 
+> Historical acceptance record. The repository-aware model workflows described
+> here were removed after this phase shipped. This file preserves the evidence
+> for that retired behavior; it is not the current product specification.
+
 This is the exit record for the Powerful-but-Caged LLM phase. Detailed commit
 history is summarized in `progress/phase-6-progress.md`; dependency rationale
 is in decision 0008 and measurements are retained in `performance.md`.

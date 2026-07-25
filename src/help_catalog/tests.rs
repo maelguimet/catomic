@@ -19,3 +19,9 @@ fn prompt_commands_and_aliases_are_unique_and_dispatchable() {
         }
     }
 }
+
+#[test]
+fn repository_model_commands_are_not_available() {
+    assert_eq!(prompt_command("gitmeow"), None);
+    assert_eq!(prompt_command("megameow"), None);
+}

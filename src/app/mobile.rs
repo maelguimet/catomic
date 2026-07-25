@@ -296,7 +296,6 @@ fn active_surface(app: &super::App) -> Surface {
         return Surface::TouchSelection;
     }
     if app.pending_llm_request.is_some()
-        || super::repo_llm::blocks_editing_input(app)
         || super::llm_preview::is_viewing(app)
         || super::model_picker::is_viewing(app)
         || super::recovery::is_viewing(app)
@@ -314,10 +313,7 @@ fn active_surface(app: &super::App) -> Surface {
     if super::help::is_viewing(app) || super::view::is_preview(app) {
         return Surface::ReadOnly;
     }
-    if app.llm_task.is_some()
-        || super::repo_llm::is_active(app)
-        || super::external_command::is_running(app)
-    {
+    if app.llm_task.is_some() || super::external_command::is_running(app) {
         return Surface::Running;
     }
     if app.pending_save_conflict.is_some() || app.pending_reload.is_some() {

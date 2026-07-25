@@ -88,7 +88,7 @@ EOF
 
 ## Model safety
 
-- [x] Opened current-file and repository model confirmations, then pressed Escape.
+- [x] Opened a current-file model confirmation, then pressed Escape.
 - [x] Confirmed no model request or live endpoint was used.
 
 ## Defects

@@ -957,8 +957,7 @@ timeout_secs = 120
 `program` must be an absolute path or a bare name resolved through absolute
 `PATH` entries. Arguments are passed exactly, including spaces and Unicode;
 Catomic adds no implicit `/bin/sh -c`. `stdin-text-v1` writes a transcript beginning
-with `Catomic model request v1`, followed by `[system]`, `[user]`, and (for repo
-broker rounds) `[assistant]` sections.
+with `Catomic model request v1`, followed by `[system]` and `[user]` sections.
 
 Two output contracts are supported:
 
@@ -978,8 +977,8 @@ Stderr is suppressed from errors. A configured executable is still trusted user
 code with your OS permissions and inherited authentication environment after
 confirmation; Catomic is not an OS sandbox. Never configure an agent/tool mode
 that can mutate the workspace. Repository-local command presets are not loaded.
-For command requests, the prompt names only the active file's basename (or the
-confirmed repository-relative path), never the workspace's absolute path.
+For command requests, the prompt names only the active file's basename, never
+the workspace's absolute path.
 
 ### Selecting the active model
 
@@ -990,11 +989,11 @@ starts with `A` for the effective active choice, `S` for an explicit session
 override, and `D` for the configured default. The row also shows local/remote,
 the canonical URL or resolved executable, and availability.
 
-Selection changes subsequent `meow`, `bigmeow`, `gitmeow`, and `megameow`
-requests for every buffer in this Catomic process. It never invokes the backend,
-reads credential values, or rewrites configuration. To persist another default,
-edit `llm.default` as a separate explicit configuration action. Reopening or
-filtering the picker and switching buffers never persists anything.
+Selection changes subsequent `meow` and `bigmeow` requests for every buffer in
+this Catomic process. It never invokes the backend, reads credential values, or
+rewrites configuration. To persist another default, edit `llm.default` as a
+separate explicit configuration action. Reopening or filtering the picker and
+switching buffers never persists anything.
 
 ### One-key inline clanker
 
@@ -1130,34 +1129,6 @@ The result opens in a read-only preview. A second `Enter` applies it as one
 undoable buffer change. The model command itself never saves the file. If the
 active path or source revision changes during the request or before apply, the
 proposal is discarded or refused.
-
-### Repository-aware commands
-
-`gitmeow INSTRUCTION` asks about a focused task with at most 64 KiB of
-repository-broker context. `megameow INSTRUCTION` asks with a broader, still
-bounded 128 KiB repository budget. The active-file context remains separately
-capped at 64 KiB for either command. Both commands require a saved active file
-inside a Git repository and a stable repository and active-file snapshot
-throughout the request. Catomic detects and validates the Git root for each
-invocation; it does not retain a workspace or repository session between
-requests.
-
-After invocation, Catomic captures bounded Git state and a bounded file map on a
-cancellable worker, then presents a separate send confirmation. The model can
-make at most eight read-only broker requests to list files, read a bounded range,
-grep, or show a file diff. Initial and subsequently retrieved repository context
-share the selected command's 64 or 128 KiB total budget.
-
-The broker omits dot paths from its map, refuses path escapes, symlinks, unknown
-or oversized files, and obvious secret-like direct reads. Grep skips sensitive
-files and reports how many were omitted. Git capture disables pagers, fsmonitor,
-external diff, and textconv helpers and strips inherited `GIT_*` variables that
-could redirect repository identity.
-
-HEAD, branch, status, tracked diff, the active file, and retrieved files are
-checked for drift after the response and again before preview apply. Any drift
-fails closed. Repository commands still accept only a single-file edit to the
-confirmed active file. Multi-file apply and `feralmeow` are not implemented.
 
 For the complete security contract, read [LLM rules](llm-rules.md).
 
@@ -1675,8 +1646,6 @@ Open the prompt with `Ctrl+Shift+P` or `F2`. Do not add a leading colon.
 | `clear-clanker-changes` | — | Dismiss applied-model marks without editing text |
 | `meow TEXT` | — | Send selection/instruction block to configured model |
 | `bigmeow TEXT` | — | Send current ordinary file to configured model |
-| `gitmeow TEXT` | — | Detect Git and use focused bounded repository context |
-| `megameow TEXT` | — | Detect Git and use broader bounded repository context |
 | `quit` | `q` | Use the normal guarded quit path |
 
 ## File formats and save safety
@@ -1930,7 +1899,6 @@ fixture.
 - There is no tree-sitter parser, full LSP client, split view, embedded scripting
   API, or plugin ABI.
 - Highlighting is lexical and viewport-only.
-- Repository model edits remain single-file and preview-first.
 - Terminal clipboard and modified-key behavior vary by emulator and multiplexer.
 
 For a reproducible non-sensitive bug, use the

@@ -1,6 +1,6 @@
 //! Purpose: this file must parse explicit `>>> catomic` instruction blocks.
 //! Owns: block delimiter recognition, source line ranges, and parse errors.
-//! Must not: read buffers, collect repo context, construct clients, or mutate text.
+//! Must not: read buffers, construct clients, or mutate text.
 //! Invariants: delimiters occupy whole trimmed lines; returned ranges are zero-based.
 
 #[derive(Clone, Debug, PartialEq, Eq)]

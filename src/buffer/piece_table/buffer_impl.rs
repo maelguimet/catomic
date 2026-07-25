@@ -1,6 +1,6 @@
 //! Purpose: implement the stable Buffer contract for PieceTable.
 //! Owns: PieceTable query, mutation, movement, history, and streaming adapters.
-//! Must not: own storage layout, file opening, App policy, rendering, Project, or LLM work.
+//! Must not: own storage layout, file opening, App policy, rendering, or external services.
 //! Invariants: all edits preserve piece/index/cursor consistency; file-backed
 //!   render and save paths propagate descriptor errors through fallible seams.
 

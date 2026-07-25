@@ -2,6 +2,12 @@
 
 Status: accepted for Phase 7
 
+> **Partially historical:** The TOML parser decision remains current. Later
+> configuration work tightened unknown-field handling to fail closed, and the
+> repository/model settings mentioned below were removed. Retired AI shapes are
+> recognized only as inert upgrade data under
+> [decision 0015](0015-no-built-in-ai-runtime.md).
+
 ## Context
 
 Catomic already documents `config.toml`, but completed phases accumulated four

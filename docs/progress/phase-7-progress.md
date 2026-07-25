@@ -1,5 +1,10 @@
 # Phase 7 Progress
 
+> **Historical progress record.** Named external commands plus `on_open` and
+> `on_save` hooks remain current. References below to `before_llm` and
+> hook-before-model ordering describe behavior retired by
+> [decision 0015](../decisions/0015-no-built-in-ai-runtime.md).
+
 Phase 7 is complete. Its exit evidence is in
 [`../phase-7-acceptance.md`](../phase-7-acceptance.md).
 

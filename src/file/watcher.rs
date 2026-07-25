@@ -6,7 +6,7 @@
 //! Owns: the notify RecommendedWatcher (kept alive), normalized lexical and
 //!   resolved target paths,
 //!   and mpsc receiver for events (notify manages its internal polling thread).
-//! Must not: imply or construct repository services (linters, scans, LLM, etc.).
+//! Must not: imply or construct unrelated project or external services.
 //! Invariants: watches the lexical target parent plus a distinct resolved referent parent (non-recursive);
 //!   events filter to either exact target path; try_recv drains at most one.
 //!   best-effort lifecycle and consumes via app/watch helper (hints only).

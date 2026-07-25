@@ -95,7 +95,7 @@ close, save, Save As, reload, buffer switching, undo/redo, find/replace, goto,
 selection and clipboard actions, cursor/page/scroll movement, help, the command
 prompt, Markdown preview, view toggles, large-file pages, and guarded quit.
 Contextual action rows also provide Save/Undo, Copy/Cut, Cancel/Accept,
-navigation, proposal apply/cancel, and task cancellation without an Escape key,
+navigation, preview apply/cancel, and task cancellation without an Escape key,
 function key, or hidden modifier chord.
 
 Termux translates a tap into terminal mouse press/release events while Catomic's
@@ -107,8 +107,8 @@ direct drag selection. Termux long-press invokes its own terminal-text selector;
 it does not change Catomic's editor selection.
 
 Wheel/finger scrolling moves the viewport without moving the cursor or
-discarding a selection. Menu, help, preview, confirmation, and
-model proposal surfaces use the same wheel events for navigation. Line-number
+discarding a selection. Menu, help, preview, confirmation, and command-result
+surfaces use the same wheel events for navigation. Line-number
 gutters, tabs, soft wrapping, wide characters, combining sequences, and emoji
 are included in coordinate mapping.
 
@@ -129,7 +129,7 @@ The action row is hideable with `action_bar = "never"`, but doing so removes the
 guaranteed touch-only path.
 
 Rotation/resize reflows from editor state without changing the buffer, cursor,
-selection, prompt, preview, or proposal. Focus return re-queries terminal size
+selection, prompt, preview, or running task. Focus return re-queries terminal size
 and redraws a coherent frame. Normal quit, `SIGINT`, `SIGTERM`, and `SIGHUP`
 restore focus, mouse, bracketed-paste, raw, and alternate-screen modes. Android
 force-stop, low-memory kills, and Termux's Android 12+ phantom-process limits can

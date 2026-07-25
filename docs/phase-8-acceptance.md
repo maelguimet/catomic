@@ -2,6 +2,11 @@
 
 Last verified: 2026-07-16.
 
+> **Historical acceptance record.** Cat status, panic handling, and `.catnap`
+> recovery remain current. The `meow` command and no-live-model evidence below
+> describe behavior retired by
+> [decision 0015](decisions/0015-no-built-in-ai-runtime.md).
+
 This is the exit record for Cat Features & Polish. Detailed implementation
 history is summarized in `progress/phase-8-progress.md`; recovery measurements
 are retained in `performance.md`.

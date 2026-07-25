@@ -5,7 +5,9 @@
 > criteria, and implementation record. It is historical evidence, not the
 > current roadmap. See the
 > [GitHub issue queue](https://github.com/maelguimet/catomic/issues) for active
-> work and priorities.
+> work and priorities. Its model/provider/repository-AI plans describe features
+> later removed by [decision 0015](../decisions/0015-no-built-in-ai-runtime.md);
+> preserve them here as roadmap history rather than current product guidance.
 
 # Catomic Build Plan
 

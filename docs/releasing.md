@@ -30,14 +30,20 @@ Before tagging:
    [daily-driver polish gate](open-beta-daily-driver-gate.md) to bind the human
    session, candidate SHA, limitations, and final issue comment to the tested
    release binary.
-4. Require normal `master` CI to pass for the commit that will be tagged.
-5. Create and push an annotated `v<package-version>` tag at that exact commit.
+4. Confirm the documented
+   [no-built-in-AI boundary](decisions/0015-no-built-in-ai-runtime.md) by source
+   review, and require the static residue/ownership regression gate to pass.
+   The release may retain updater networking and generic trusted commands/hooks,
+   but must not regain a model/provider path.
+5. Require normal `master` CI to pass for the commit that will be tagged.
+6. Create and push an annotated `v<package-version>` tag at that exact commit.
 
 The release workflow then does all of the following on the tagged checkout:
 
 - verifies that the checkout, pushed tag, event SHA, and Cargo version agree;
 - records the stable and MSRV toolchains and the hosted-runner identity;
-- runs formatting, Clippy, MSRV, default tests, and ignored acceptance tests;
+- runs formatting, Clippy, MSRV, the AI residue/ownership source gate, default tests,
+  and ignored acceptance tests;
 - lists, builds, and verifies the Cargo source package;
 - builds the managed release binary from that same checkout;
 - emits per-binary and complete SHA-256 manifests;

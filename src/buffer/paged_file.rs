@@ -1,6 +1,6 @@
 //! Purpose: provide editable logical-line pages over one stable file descriptor.
 //! Owns: active/retained page lifetime, stable page loading, and cross-page history.
-//! Must not: own App policy, path replacement, terminal input/rendering, Project, or LLM.
+//! Must not: own App policy, path replacement, terminal input/rendering, or external services.
 //! Invariants: only pages with edit history are retained; original page byte ranges
 //!   never overlap; descriptor drift fails page loads and whole-file writes closed.
 

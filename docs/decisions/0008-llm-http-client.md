@@ -2,7 +2,13 @@
 
 Date: 2026-07
 
-Status: accepted for Phase 6
+Status: superseded by
+[decision 0015](0015-no-built-in-ai-runtime.md)
+
+> **Historical record:** Catomic no longer contains the model HTTP client,
+> request worker, or editor-to-model data path described below. This file
+> preserves the dependency decision for the retired Phase 6 implementation; it
+> is not current product guidance.
 
 ## Decision
 

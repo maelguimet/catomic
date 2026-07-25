@@ -10,15 +10,15 @@ acceptance evidence owned by child issues #64, #63, #56, #57, #54, and #55.
 Run the gate only when every listed child issue has either a merged closing PR
 or a written deferral rationale suitable for the final issue comment. Use a
 clean checkout at the exact release-candidate SHA. Do not use a debug build,
-`cargo run`, an ambient Catomic configuration, or a live model endpoint.
+`cargo run`, an ambient Catomic configuration, or a command that contacts a
+public service.
 
 The harness builds with `--release --locked` in a checkout-local target
 directory (ignoring any shared ambient `CARGO_TARGET_DIR`), copies those exact
 bytes into a new private session directory, hashes them, creates several real
 text/code files in an isolated Git repository, and launches that preserved
-binary. The isolated configuration enables local catnap recovery and points
-model commands at a closed loopback port. Model confirmations must still be
-cancelled with Escape before any request.
+binary. The isolated configuration enables local catnap recovery and contains
+no named commands or hooks.
 
 ## Run the session
 
@@ -44,10 +44,6 @@ Save As, external-change handling, and recovery. Resize to both a narrow and a
 normal width and inspect normal status, prompts, warnings/confirmations, errors,
 Markdown source, and F6 preview. The generated `external-change.sh` is an
 explicit second-terminal helper for the external-change scenario.
-
-Open a current-file model confirmation only far enough to inspect its
-destination/context text, then press Escape. Never confirm a send and never use
-a live model or endpoint.
 
 ## Record and validate
 

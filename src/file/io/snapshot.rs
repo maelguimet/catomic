@@ -1,6 +1,6 @@
 //! Purpose: capture and compare bounded on-disk identities for external-edit safety.
 //! Owns: FileSnapshot, content identities, observations, and pure comparison.
-//! Must not: own save/reload policy, watchers, buffers, UI, Project, or LLM state.
+//! Must not: own save/reload policy, watchers, buffers, UI, or external-service state.
 //! Invariants: ordinary editable files receive a full SHA-256; paged files hash
 //!   fixed start/middle/end samples; capture drift fails closed; snapshot capture
 //!   uses fixed memory; pinned full reads are limited to the full-read tier.

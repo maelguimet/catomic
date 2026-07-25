@@ -1,7 +1,7 @@
 //! Purpose: provide immutable descriptor-backed original bytes for PieceTable.
 //! Owns: descriptor snapshot checks, positioned range reads, original-line
 //!   scalar metadata, checkpoint-assisted cursor mapping, and streamed ranges.
-//! Must not: own logical pieces, edits, App policy, rendering, Project, or LLM work.
+//! Must not: own logical pieces, edits, App policy, rendering, or external services.
 //! Invariants: ranges are UTF-8 boundaries; line metadata describes the scanned
 //!   descriptor; metadata drift fails fallible reads and writes closed.
 

@@ -28,9 +28,9 @@ making it your only editor.
   read-only Markdown preview.
 - Direct, configured linting with `F4`: it runs only when asked, remains
   cancellable, and marks findings in the active buffer without a Problems view.
-- Cat-themed model commands, because of course. They are explicit and
-  preview-first: nothing is sent until you invoke a command and confirm where it
-  is going and what context it gets.
+- No built-in AI runtime, model provider, prompt machinery, or repository-aware
+  assistant. Catomic keeps editing local and leaves optional automation to
+  explicit, trusted commands configured by the user.
 
 ## Install from source
 
@@ -142,7 +142,6 @@ leading `:`.
 | `goto LINE`, `replace`, `replace-all` | Navigate and edit |
 | `run NAME` | Run a configured, trusted external command |
 | `recover` | Preview and apply a newer `.catnap` sidecar |
-| `meow TEXT`, `bigmeow TEXT` | Ask a model about this file or selection |
 
 ## Configuration
 
@@ -202,22 +201,6 @@ tab_size = 4
 
 [languages.py]
 linter = "ruff check {file}"
-
-[llm]
-default = "local"
-
-[[llm.backends]]
-name = "local"
-type = "openai-compatible"
-base_url = "http://127.0.0.1:8080/v1"
-model = "local-model"
-
-[[llm.backends]]
-name = "hosted"
-type = "openai-compatible"
-base_url = "https://openrouter.ai/api/v1"
-model = "provider/model-id"
-api_key_env = "OPENROUTER_API_KEY"
 ```
 
 `F5` changes external-reload highlighting and `F7` changes line numbers for the
@@ -225,20 +208,17 @@ whole session. Both atomically remember the explicit choice under the XDG state
 directory for later launches. Saved choices take precedence over their `[view]`
 defaults; Catomic never rewrites `config.toml`.
 
-Recovery is disabled by default. Named commands and hooks invoke the platform's
-POSIX shell (`$PREFIX/bin/sh` on Android/Termux, normally `/bin/sh` on Linux)
-and are trusted user configuration; their input, output, and runtime are
-bounded, but the command itself can have effects outside Catomic.
+Recovery is disabled by default. Configured linters, named commands, and hooks
+invoke the platform's POSIX shell (`$PREFIX/bin/sh` on Android/Termux, normally
+`/bin/sh` on Linux) and are trusted user configuration; their input, output,
+and runtime are bounded, but the subprocess itself can have effects outside
+Catomic and may access the network.
 
-LLM presets can use an OpenAI-compatible HTTP endpoint or a configured headless
-command with a declared structured-output adapter. Set `llm.default` to the
-named backend that should handle requests. Model actions show the preset, model,
-destination, and exact context extent before sending; edits then open read-only
-and require a second confirmation before becoming one undoable buffer change.
-Plain HTTP is allowed for loopback models and unauthenticated LAN models. If an
-API key is present, Catomic refuses to send it over non-loopback HTTP; use HTTPS
-for authenticated remote endpoints. See
-[the LLM safety rules](docs/llm-rules.md) for the full boundary.
+The interactive editor has no built-in network or AI/model path. The explicit
+`catomic update` command is the exception: checking or applying an update
+contacts the documented GitHub source. See
+[Updating, backup, and rollback](docs/user-guide.md#updating-backup-and-rollback)
+for its confirmation, verification, and rollback behavior.
 
 ## Limitations
 
@@ -268,8 +248,9 @@ for authenticated remote endpoints. See
   OSC 52 support. Some environments intercept `Ctrl`/`Ctrl+Shift` chords.
 - Syntax highlighting is deliberately lexical and viewport-only. Catomic does
   not provide tree-sitter, a full LSP client, split views, or a plugin ABI.
-- LLM edits are limited to the confirmed active file. Wide multi-file proposals
-  and `:feralmeow` are not implemented.
+- Catomic has no built-in model commands, provider clients, prompt templates,
+  repository-aware assistant, or AI-proposed edit path. Generic trusted
+  commands remain available for user-chosen automation.
 
 If Catomic crashes, corrupts content, or behaves differently on a particular
 filesystem, please use the [bug report form](https://github.com/maelguimet/catomic/issues/new?template=bug_report.yml).
@@ -283,7 +264,7 @@ Security-sensitive findings should follow [SECURITY.md](SECURITY.md).
 - [Design decisions](docs/decisions/)
 - [Performance discipline and measurements](docs/performance.md)
 - [Linux terminal and filesystem compatibility](docs/compatibility.md)
-- [LLM safety rules](docs/llm-rules.md)
+- [No built-in AI runtime decision](docs/decisions/0015-no-built-in-ai-runtime.md)
 - [Active bugs, features, and priorities](https://github.com/maelguimet/catomic/issues)
 - [Historical roadmap, research, and design record](docs/progress/roadmap-history.md)
 - [Release process and artifact verification](docs/releasing.md)

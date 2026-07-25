@@ -101,6 +101,10 @@ grep -Fq 'cargo ' "$asset_dir/toolchain.txt" || die "toolchain record omits carg
 grep -Fxq "tag=$tag" "$asset_dir/source-verification.txt" || die "verification tag differs"
 grep -Fxq "source_sha=$source_sha" "$asset_dir/source-verification.txt" || \
   die "verification source SHA differs"
+grep -Fxq "python3 scripts/check_no_builtin_ai.py=success" \
+  "$asset_dir/source-verification.txt" || die "AI residue/ownership verification is missing"
+grep -Fxq "python3 scripts/test_check_no_builtin_ai.py -v=success" \
+  "$asset_dir/source-verification.txt" || die "AI residue gate self-test verification is missing"
 
 printf 'release PTY smoke\n' > "$temp_dir/fixture.txt"
 

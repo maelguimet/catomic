@@ -73,6 +73,8 @@ jobs:
 
       - name: Verify tagged source
         run: |
+          python3 scripts/check_no_builtin_ai.py
+          python3 scripts/test_check_no_builtin_ai.py -v
           cargo +stable fmt --all -- --check
           cargo +stable clippy --all-targets --locked -- -D warnings
           cargo +1.87.0 check --all-targets --locked
@@ -105,6 +107,8 @@ jobs:
           tag=$TAG
           source_sha=$SOURCE_SHA
           source_kind=tagged source
+          python3 scripts/check_no_builtin_ai.py=success
+          python3 scripts/test_check_no_builtin_ai.py -v=success
           cargo +stable fmt --all -- --check=success
           cargo +stable clippy --all-targets --locked -- -D warnings=success
           cargo +1.87.0 check --all-targets --locked=success

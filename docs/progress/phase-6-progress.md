@@ -1,5 +1,11 @@
 # Phase 6 Progress
 
+> **Retired historical record.** The model, provider, prompt, repository broker,
+> and proposal workflows described below were removed by
+> [decision 0015](../decisions/0015-no-built-in-ai-runtime.md). This progress
+> journal preserves what was implemented and tested at the time; it is not
+> current product guidance.
+
 Phase 6 is complete. Its exit evidence is in
 [`../phase-6-acceptance.md`](../phase-6-acceptance.md).
 

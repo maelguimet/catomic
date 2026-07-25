@@ -1,6 +1,6 @@
 //! Purpose: maintain PieceTable index, piece-prefix, and cursor-state helpers.
 //! Owns: index rebuild/incremental updates, piece coalescing, and history cursor capture.
-//! Must not: LLM/project/config, UI expansion.
+//! Must not: external-service/config policy or UI expansion.
 //! Invariants:
 //! - Pieces UTF-8 char-boundary safe, cover logical doc.
 //! - index consistent after edit (rebuild bridge first; incremental later).

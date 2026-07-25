@@ -5,7 +5,7 @@
 //!   FileSnapshot, ExternalFileStatus, ExternalFileObservation, capture/compare/observe
 //!   helpers, and streaming content identities for fully editable file tiers.
 //! Must not: construct watchers or use notify; fully scan content above the
-//!   full-read file tier; know App, Project, LLM, or UI; perform reload/save-
+//!   full-read file tier; know App, external-service, or UI policy; perform reload/save-
 //!   conflict policy.
 //! Invariants: atomic writes use same-dir temp + create_new + sync + rename;
 //!   ordinary saves follow a valid final symlink and refuse a dangling one;

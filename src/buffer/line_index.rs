@@ -4,7 +4,7 @@
 //!          line queries and efficient cursor mapping.
 //! Owns: line_starts vec + total_bytes.
 //! Must not: depend on PieceTable internals (Piece/Source live in piece_table).
-//!           UI, LLM, or Project code.
+//!           UI or external-service code.
 //! Invariants:
 //! - line_starts[0] == 0 (or doc empty)
 //! - line_starts are strictly increasing, last may equal total_bytes (for trailing nl or end)

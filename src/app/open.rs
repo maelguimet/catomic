@@ -290,6 +290,27 @@ mod tests {
         cleanup(&target);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn dangling_final_symlink_is_refused_instead_of_planning_a_missing_buffer() {
+        let target = temp_path("dangling-target.txt");
+        let link = temp_path("dangling-symlink.txt");
+        cleanup(&target);
+        cleanup(&link);
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        let error = prepare_open_file_meta(Some(&link.to_string_lossy()))
+            .expect_err("dangling final symlink must not become a missing buffer");
+
+        assert_eq!(error.kind(), ErrorKind::InvalidInput);
+        assert!(error.to_string().contains("dangling symlink"));
+        assert!(fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        cleanup(&link);
+    }
+
     #[test]
     fn huge_path_plans_editable_pages_from_snapshot() {
         let meta = OpenFileMeta {

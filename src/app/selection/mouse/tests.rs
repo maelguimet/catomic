@@ -355,6 +355,7 @@ fn touch_endpoint_cancels_every_unrelated_editor_confirmation() {
         path: "reload.txt".into(),
         status: crate::file::io::ExternalFileStatus::Modified,
         snapshot: None,
+        is_explicitly_armed: true,
     });
     app.message = Some("armed confirmation".to_string());
     let mut out = Vec::new();

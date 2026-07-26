@@ -4,14 +4,15 @@
 //! Owns: direct apply + simple check seam tests.
 //! Must not: rely on live OS notify delivery or change manual Ctrl+R semantics.
 //! Invariants: clean Modified/Deleted reload immediately when enabled; dirty buffers
-//!   arm; Unchanged/NoPath observations are ignored when no pending exists.
+//!   retain a passive observation; Unchanged/NoPath observations are ignored when no
+//!   pending exists.
 
 use super::super::super::*;
 use super::super::make_key;
 use crossterm::event::{KeyCode, KeyModifiers};
 
 // Phase 2-aa: apply_file_watch_signal deterministic tests (signals are hints only).
-// Always use fresh observe_external_file + apply_check_observation (same as Ctrl+R).
+// Always use fresh observe_external_file; watcher observations do not count as Ctrl+R.
 // Never trust signal variant for content action; no reload, no dirty/snapshot changes.
 
 #[test]
@@ -73,7 +74,7 @@ fn apply_file_watch_signal_changed_clean_buffer_auto_reloads() {
 }
 
 #[test]
-fn apply_file_watch_signal_changed_dirty_external_arms_with_discard_warning() {
+fn apply_file_watch_signal_changed_dirty_external_warns_without_explicit_arm() {
     let mut tmp = std::env::temp_dir();
     tmp.push(format!(
         "catomic_2aa_sig_mod_dirty_{}.txt",
@@ -100,7 +101,13 @@ fn apply_file_watch_signal_changed_dirty_external_arms_with_discard_warning() {
         "dirty external Modified must warn about discard: got {:?}",
         app.message
     );
-    assert!(app.pending_reload.is_some());
+    assert!(
+        !app.pending_reload
+            .as_ref()
+            .expect("watcher must retain the observed revision")
+            .is_explicitly_armed,
+        "passive watcher warning must not arm destructive reload"
+    );
     assert!(app.file.dirty, "must not clear dirty");
     assert_eq!(app.buffer.to_string(), "xBASE"); // local edit preserved
 
@@ -138,7 +145,12 @@ fn watcher_does_not_hide_matching_save_overwrite_confirmation() {
 
     assert!(visible);
     assert!(app.pending_save_conflict.is_some());
-    assert!(app.pending_reload.is_some());
+    assert!(
+        !app.pending_reload
+            .as_ref()
+            .expect("watcher must retain the observed revision")
+            .is_explicitly_armed
+    );
     assert_eq!(
         app.message.as_deref(),
         Some("File changed on disk. Press Ctrl+S again to overwrite."),
@@ -263,7 +275,7 @@ fn check_file_watcher_once_with_watcher_no_signal_returns_false_no_mutation() {
 // Phase 2-ab: deterministic runtime seam tests for the check-and-render helper.
 // These exercise the loop integration point without live notify or event injection.
 // A real queued Changed/Deleted from the OS would cause the helper to return true,
-// render, and arm (via the existing apply path); that delivery path is integration-only
+// render, and retain a passive observation; that delivery path is integration-only
 // rather than part of the default deterministic suite. We cover the stable no-signal
 // cases and assert that they do not spuriously render.
 

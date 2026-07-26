@@ -181,6 +181,7 @@ fn movement_cancels_save_conflict_and_reload_pending() {
         path: std::path::PathBuf::from("x"),
         status: crate::file::io::ExternalFileStatus::Modified,
         snapshot: None,
+        is_explicitly_armed: true,
     });
     app.message_warning("armed");
 

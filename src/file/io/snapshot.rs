@@ -69,7 +69,15 @@ impl PinnedFile {
     pub(crate) fn open(path: impl AsRef<Path>) -> io::Result<Option<Self>> {
         let path = path.as_ref();
         let Some(mut file) = open_nonblocking(path)? else {
-            return Ok(None);
+            return match fs::symlink_metadata(path) {
+                Ok(metadata) if metadata.file_type().is_symlink() => Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("refusing to open dangling symlink: {}", path.display()),
+                )),
+                Ok(_) => Err(snapshot_drift_error(path)),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+                Err(error) => Err(error),
+            };
         };
         let metadata = file.metadata()?;
         if !metadata.is_file() {

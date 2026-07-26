@@ -58,6 +58,44 @@ SCENARIOS = (
 )
 
 
+def run_filesystem_scenarios(
+    candidate: Path,
+    sandbox: Path,
+    failure_issue: str | None,
+) -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    for index, (identifier, runner) in enumerate(SCENARIOS):
+        try:
+            scenario_root = sandbox / f"s{index}"
+            scenario_root.mkdir()
+            records.append(runner(candidate, scenario_root))
+        except Exception as error:
+            if failure_issue is None:
+                raise EvidenceError(
+                    f"{identifier} failed: {error}; create a focused issue, then rerun with --failure-issue"
+                ) from error
+            if identifier in CORE_FILESYSTEM_SCENARIOS:
+                expected = CORE_FILESYSTEM_SCENARIOS[identifier]
+            else:
+                expected = BOUNDARY_EXPECTATIONS[identifier]
+            records.append(
+                scenario(
+                    identifier,
+                    expected,
+                    "fail",
+                    exit_status=None,
+                    before_sha256=None,
+                    after_sha256=None,
+                    evidence=[
+                        f"scenario exception: {type(error).__name__}: {error}"
+                    ],
+                    focused_issue=failure_issue,
+                    notes="Filesystem compatibility scenario failed.",
+                )
+            )
+    return records
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, required=True)
@@ -83,35 +121,7 @@ def main() -> int:
     try:
         candidate = stage_artifact(args.binary, sandbox)
         artifact_record = artifact(candidate, args.commit, args.release)
-        records = []
-        for index, (identifier, runner) in enumerate(SCENARIOS):
-            try:
-                scenario_root = sandbox / f"s{index}"
-                scenario_root.mkdir()
-                records.append(runner(candidate, scenario_root))
-            except Exception as error:
-                if args.failure_issue is None:
-                    raise EvidenceError(
-                        f"{identifier} failed: {error}; create a focused issue, then rerun with --failure-issue"
-                    ) from error
-                expected = CORE_FILESYSTEM_SCENARIOS.get(
-                    identifier, BOUNDARY_EXPECTATIONS[identifier]
-                )
-                records.append(
-                    scenario(
-                        identifier,
-                        expected,
-                        "fail",
-                        exit_status=None,
-                        before_sha256=None,
-                        after_sha256=None,
-                        evidence=[
-                            f"scenario exception: {type(error).__name__}: {error}"
-                        ],
-                        focused_issue=args.failure_issue,
-                        notes="Filesystem compatibility scenario failed.",
-                    )
-                )
+        records = run_filesystem_scenarios(candidate, sandbox, args.failure_issue)
         environment = {
             "kind": "filesystem",
             "id": args.environment_id,

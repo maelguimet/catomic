@@ -5,8 +5,8 @@
 //! Must not: change manual Ctrl+R or save conflict behavior; depend on live notify
 //!   event timing; discard dirty content; introduce flakiness.
 //! Invariants: clean default-on buffers reload immediately; dirty buffers never do;
-//!   second Ctrl+R performs only on exact pending match; retarget coverage inspects
-//!   watcher identities directly.
+//!   passive warnings do not count as Ctrl+R; second explicit Ctrl+R performs only on
+//!   exact pending match; retarget coverage inspects watcher identities directly.
 
 use super::super::super::*;
 use super::super::make_key;
@@ -185,7 +185,7 @@ fn watcher_deleted_clean_buffer_auto_clears() {
 }
 
 #[test]
-fn watcher_changed_dirty_external_arms_discard_warning_then_ctrl_r_reloads() {
+fn watcher_changed_dirty_requires_two_explicit_ctrl_r_actions() {
     let mut tmp = std::env::temp_dir();
     tmp.push(format!(
         "catomic_2ae_w_dirty_discard_{}.txt",
@@ -215,16 +215,38 @@ fn watcher_changed_dirty_external_arms_discard_warning_then_ctrl_r_reloads() {
 
     let msg = app.message.as_deref().unwrap_or("");
     assert!(
-        msg.contains("changed on disk") && msg.contains("discard"),
-        "watcher arm on dirty must include discard warning: got {:?}",
+        msg.contains("changed on disk") && msg.contains("Ctrl+R twice") && msg.contains("discard"),
+        "passive dirty watcher warning must describe both explicit actions: got {:?}",
         app.message
     );
-    assert!(app.pending_reload.is_some());
+    assert!(
+        !app.pending_reload
+            .as_ref()
+            .expect("watcher must retain the observed revision")
+            .is_explicitly_armed,
+        "watcher warning must not count as the first reload action"
+    );
 
-    // second R reloads, discards local
+    // First explicit Ctrl+R arms the exact revision and preserves local edits.
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
+    assert_eq!(app.buffer.to_string(), "xBASE");
+    assert!(app.file.dirty);
+    assert!(
+        app.pending_reload
+            .as_ref()
+            .expect("first explicit action must arm")
+            .is_explicitly_armed
+    );
+    assert!(app
+        .message
+        .as_deref()
+        .unwrap_or("")
+        .contains("Press Ctrl+R again"));
 
+    // The second unchanged explicit Ctrl+R may discard and reload.
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
     assert_eq!(app.buffer.to_string(), "BASEEXT");
     assert!(!app.file.dirty);
     assert!(app.pending_reload.is_none());
@@ -251,7 +273,21 @@ fn watcher_drift_invalidates_dirty_reload_confirmation() {
         &mut app,
         crate::file::watcher::FileWatchSignal::Changed,
     );
-    assert!(app.pending_reload.is_some());
+    assert!(
+        !app.pending_reload
+            .as_ref()
+            .expect("watcher must retain external-A")
+            .is_explicitly_armed
+    );
+
+    app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(
+        app.pending_reload
+            .as_ref()
+            .expect("explicit action must arm external-A")
+            .is_explicitly_armed
+    );
 
     std::fs::write(&p, "external-B").unwrap();
     crate::app::watch::apply_file_watch_signal(
@@ -277,7 +313,7 @@ fn watcher_drift_invalidates_dirty_reload_confirmation() {
 }
 
 #[test]
-fn watcher_armed_pending_local_edit_clears_then_next_ctrl_r_rearms() {
+fn watcher_observation_local_edit_clears_then_next_ctrl_r_arms() {
     let mut tmp = std::env::temp_dir();
     tmp.push(format!(
         "catomic_2ae_w_edit_clears_pend_{}.txt",
@@ -294,7 +330,7 @@ fn watcher_armed_pending_local_edit_clears_then_next_ctrl_r_rearms() {
 
     std::fs::write(&p, "EMOD").unwrap();
 
-    // watcher arms
+    // watcher records a passive observation
     let path = app.file.path.clone().unwrap();
     let (tw, _tx) = crate::file::watcher::FileWatcher::new_for_test(path);
     crate::app::watch::replace_file_watcher_for_test(&mut app, tw);
@@ -305,7 +341,12 @@ fn watcher_armed_pending_local_edit_clears_then_next_ctrl_r_rearms() {
 
     let mut out: Vec<u8> = Vec::new();
     let _ = crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out).unwrap();
-    assert!(app.pending_reload.is_some());
+    assert!(
+        !app.pending_reload
+            .as_ref()
+            .expect("watcher must retain the revision")
+            .is_explicitly_armed
+    );
 
     // local edit clears pending (no reload)
     app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::NONE))
@@ -317,7 +358,7 @@ fn watcher_armed_pending_local_edit_clears_then_next_ctrl_r_rearms() {
         .unwrap();
     assert!(
         app.pending_reload.is_some(),
-        "after local edit clears watcher-pending, next Ctrl+R must re-arm"
+        "after local edit clears the watcher observation, next Ctrl+R must arm"
     );
     // buffer still has the 'z' edit, not external
     assert!(app.buffer.to_string().contains('z') || app.buffer.to_string().contains("EBASE"));
@@ -325,6 +366,6 @@ fn watcher_armed_pending_local_edit_clears_then_next_ctrl_r_rearms() {
     let _ = std::fs::remove_file(&p);
 }
 
-// (watcher-armed + successful save clear of pending_reload is exercised at code level in
+// (watcher-observed + successful save clear of pending_reload is exercised at code level in
 // save.rs:do_atomic_save and is not required as a new acceptance case here per "add only if
 // not already covered"; save-conflict semantics are untouched.)

@@ -164,6 +164,75 @@ fn source_edit_during_preview_refuses_recovery() {
     cleanup(&original);
 }
 
+#[test]
+fn source_disk_drift_with_auto_reload_disabled_refuses_recovery() {
+    let original = path("external_stale.txt");
+    cleanup(&original);
+    std::fs::write(&original, "disk\n").unwrap();
+    let mut app = super::super::App::new(original.to_str()).unwrap();
+    app.auto_reload = false;
+    enabled(&mut app, 1024);
+    crate::file::io::atomic_write_private_string(
+        crate::file::recovery::catnap_path(&original),
+        "recovered\n",
+    )
+    .unwrap();
+    let mut out = Vec::new();
+
+    start_preview(&mut app, &mut out).unwrap();
+    let source_history = app.buffer.edit_history_position();
+    std::fs::write(&original, "external\n").unwrap();
+    handle_key(
+        &mut app,
+        &mut out,
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+    )
+    .unwrap();
+
+    assert!(!is_viewing(&app));
+    assert_eq!(app.buffer.to_string(), "disk\n");
+    assert_eq!(app.buffer.edit_history_position(), source_history);
+    assert!(!app.file.dirty);
+    assert_eq!(std::fs::read_to_string(&original).unwrap(), "external\n");
+    assert!(app.message.as_deref().unwrap().contains("Source changed"));
+    cleanup(&original);
+}
+
+#[cfg(unix)]
+#[test]
+fn source_replacement_with_matching_bytes_during_preview_refuses_recovery() {
+    let original = path("source_replaced.txt");
+    let replacement = path("source_replaced_replacement.txt");
+    cleanup(&original);
+    let _ = std::fs::remove_file(&replacement);
+    std::fs::write(&original, "disk\n").unwrap();
+    let mut app = super::super::App::new(original.to_str()).unwrap();
+    enabled(&mut app, 1024);
+    crate::file::io::atomic_write_private_string(
+        crate::file::recovery::catnap_path(&original),
+        "recovered\n",
+    )
+    .unwrap();
+    let mut out = Vec::new();
+
+    start_preview(&mut app, &mut out).unwrap();
+    std::fs::write(&replacement, "disk\n").unwrap();
+    std::fs::rename(&replacement, &original).unwrap();
+    handle_key(
+        &mut app,
+        &mut out,
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+    )
+    .unwrap();
+
+    assert_eq!(app.buffer.to_string(), "disk\n");
+    assert!(!app.file.dirty);
+    assert_eq!(std::fs::read_to_string(&original).unwrap(), "disk\n");
+    assert!(app.message.as_deref().unwrap().contains("Source changed"));
+    cleanup(&original);
+    let _ = std::fs::remove_file(replacement);
+}
+
 #[cfg(unix)]
 #[test]
 fn sidecar_replacement_after_startup_offer_refuses_preview() {
@@ -177,7 +246,10 @@ fn sidecar_replacement_after_startup_offer_refuses_preview() {
     let sidecar = crate::file::recovery::catnap_path(&original);
     crate::file::io::atomic_write_private_string(&sidecar, "recovered").unwrap();
     initialize(&mut app);
-    assert!(app.message.as_deref().unwrap().contains("recovery found"));
+    assert_eq!(
+        app.message.as_deref(),
+        Some("Catnap recovery found. Run recover to preview it.")
+    );
 
     std::fs::write(&replacement, "recovered").unwrap();
     std::fs::rename(&replacement, &sidecar).unwrap();

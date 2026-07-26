@@ -464,6 +464,36 @@ fn sequence_count(output: &str, sequence: &str) -> usize {
 }
 
 #[test]
+fn pty_dangling_final_symlink_is_refused_before_terminal_setup() -> TestResult {
+    let project = TempProject::new("dangling_symlink_startup");
+    let target = project.root.join("missing-target.txt");
+    let link = project.root.join("dangling.txt");
+    std::os::unix::fs::symlink(&target, &link)?;
+    let mut editor = PtyEditor::spawn(&link)?;
+
+    editor.wait_for_output(
+        "dangling symlink startup refusal",
+        "refusing to open dangling symlink",
+    )?;
+    editor.wait_for_exit_code(1)?;
+
+    let output = editor.output_string();
+    assert!(
+        !output.contains("\x1b[?1049h"),
+        "dangling symlink refusal must precede alternate-screen setup"
+    );
+    assert!(
+        fs::symlink_metadata(&link)?.file_type().is_symlink(),
+        "startup refusal must leave the symlink entry intact"
+    );
+    assert!(
+        !target.exists(),
+        "startup refusal must not create the missing referent"
+    );
+    Ok(())
+}
+
+#[test]
 fn pty_save_undo_save_quit_writes_expected_file() -> TestResult {
     let temp = TempPath::new("save_undo");
     let mut editor = PtyEditor::spawn_monochrome(&temp.path)?;
@@ -865,21 +895,22 @@ fn pty_external_edit_confirm_reload_quit_shows_disk_content() -> TestResult {
 
     editor.wait_for_initial_render()?;
     editor.wait_for_output("initial file content", "original")?;
+    editor.send_keys(b"LOCAL-")?;
+    editor.wait_for_output("dirty local content", "LOCAL-original")?;
     fs::write(&temp.path, "external disk content")?;
 
-    // If notify already armed the reload, this press performs it. Otherwise it
-    // is the manual first confirmation press. Either route must converge on the
-    // same explicit Ctrl+R confirmation behavior.
-    editor.send_keys(b"\x12")?;
-    wait_until("reload arm or completion", Duration::from_secs(2), || {
-        let output = editor.output_string();
-        output.contains("external disk content")
-            || output.contains("Press Ctrl+R again to reload from disk")
-    })?;
-    if !editor.output_string().contains("external disk content") {
-        editor.send_keys(b"\x12")?;
-    }
+    editor.wait_for_output("passive watcher warning", "Press Ctrl+R twice")?;
+    editor.clear_output();
 
+    // The watcher notification is passive: the first explicit action only arms.
+    editor.send_keys(b"\x12")?;
+    editor.wait_for_output("first explicit reload arms", "Press Ctrl+R again")?;
+    let armed_frame = editor.output_string();
+    assert!(armed_frame.contains("LOCAL-original"));
+    assert!(!armed_frame.contains("external disk content"));
+
+    editor.clear_output();
+    editor.send_keys(b"\x12")?;
     editor.wait_for_output("reloaded external content", "external disk content")?;
     editor.wait_for_output("replacement gutter marker", "\x1b[36;1;4m~\x1b[0m ")?;
 
@@ -1714,7 +1745,7 @@ fn pty_catnap_recovery_previews_then_saves_explicitly() -> TestResult {
 
     editor.wait_for_output(
         "recovery offer",
-        "Catnap recovery found. Run :recover to preview it.",
+        "Catnap recovery found. Run recover to preview it.",
     )?;
     editor.send_keys(b"\x1b[80;6urecover\r")?;
     editor.wait_for_output(
@@ -1731,5 +1762,40 @@ fn pty_catnap_recovery_previews_then_saves_explicitly() -> TestResult {
 
     assert_eq!(fs::read_to_string(active)?, "recovered");
     assert!(!sidecar.exists(), "successful save must remove the catnap");
+    Ok(())
+}
+
+#[test]
+fn pty_catnap_recovery_refuses_external_source_drift_without_auto_reload() -> TestResult {
+    let project = TempProject::new("catnap_recovery_drift");
+    project.write(
+        "catomic/config.toml",
+        "[files]\nauto_reload = false\n\
+         [recovery]\nenabled = true\ninterval_secs = 30\nmax_bytes = 1024\n",
+    );
+    let active = project.write("note.txt", "disk\n");
+    let sidecar = active.with_file_name("note.txt.catnap");
+    fs::write(&sidecar, "recovered\n")?;
+    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
+
+    editor.wait_for_output("recovery drift offer", "Catnap recovery found.")?;
+    editor.send_keys(b"\x1b[80;6urecover\r")?;
+    editor.wait_for_output(
+        "recovery drift preview",
+        "Catnap preview (read-only). Enter recovers; Esc cancels.",
+    )?;
+
+    fs::write(&active, "external\n")?;
+    editor.clear_output();
+    editor.send_keys(b"\r")?;
+    editor.wait_for_output(
+        "recovery source drift refusal",
+        "Source changed during recovery preview; nothing applied.",
+    )?;
+    assert_eq!(fs::read_to_string(&active)?, "external\n");
+
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+    assert_eq!(fs::read_to_string(active)?, "external\n");
     Ok(())
 }

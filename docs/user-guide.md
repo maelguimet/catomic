@@ -514,9 +514,9 @@ Opening an already-open file switches to or reports the existing buffer rather
 than creating a duplicate. On Linux, Catomic follows symlinks and identifies an
 existing regular file by device and inode, so relative/absolute spellings,
 `.`/`..` aliases, symlinks, and hard links select the first buffer that opened
-the file. That buffer keeps its original path spelling. A hard-linked file still
-cannot be saved because the atomic-save safety policy refuses targets with more
-than one link.
+the file. That buffer keeps its original path spelling. Saving a hard-linked
+file stages the new contents and then updates the shared inode in place,
+preserving every alias, the inode and link count, and the file's metadata.
 
 For a missing path, Catomic resolves the deepest existing parent directory and
 then compares the remaining normalized path. It does not assume that different

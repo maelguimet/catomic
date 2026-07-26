@@ -1764,3 +1764,38 @@ fn pty_catnap_recovery_previews_then_saves_explicitly() -> TestResult {
     assert!(!sidecar.exists(), "successful save must remove the catnap");
     Ok(())
 }
+
+#[test]
+fn pty_catnap_recovery_refuses_external_source_drift_without_auto_reload() -> TestResult {
+    let project = TempProject::new("catnap_recovery_drift");
+    project.write(
+        "catomic/config.toml",
+        "[files]\nauto_reload = false\n\
+         [recovery]\nenabled = true\ninterval_secs = 30\nmax_bytes = 1024\n",
+    );
+    let active = project.write("note.txt", "disk\n");
+    let sidecar = active.with_file_name("note.txt.catnap");
+    fs::write(&sidecar, "recovered\n")?;
+    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
+
+    editor.wait_for_output("recovery drift offer", "Catnap recovery found.")?;
+    editor.send_keys(b"\x1b[80;6urecover\r")?;
+    editor.wait_for_output(
+        "recovery drift preview",
+        "Catnap preview (read-only). Enter recovers; Esc cancels.",
+    )?;
+
+    fs::write(&active, "external\n")?;
+    editor.clear_output();
+    editor.send_keys(b"\r")?;
+    editor.wait_for_output(
+        "recovery source drift refusal",
+        "Source changed during recovery preview; nothing applied.",
+    )?;
+    assert_eq!(fs::read_to_string(&active)?, "external\n");
+
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+    assert_eq!(fs::read_to_string(active)?, "external\n");
+    Ok(())
+}

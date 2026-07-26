@@ -10,15 +10,16 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::{Buffer, Cursor, PieceTable};
 use crate::config::actions::Action;
-use crate::file::io::FileSnapshot;
+use crate::file::io::{ensure_path_matches_snapshot, FileSnapshot};
 use crate::file::recovery::RecoveryCandidate;
 
 pub(super) struct RecoveryPreview {
     buffer: PieceTable,
     candidate: RecoveryCandidate,
-    source_path: Option<PathBuf>,
+    source_path: PathBuf,
     source_history: u64,
-    source_disk_snapshot: Option<FileSnapshot>,
+    source_file_state_snapshot: Option<FileSnapshot>,
+    source_snapshot: FileSnapshot,
     source_scroll_top: usize,
     source_scroll_left: usize,
 }
@@ -73,13 +74,26 @@ fn open(
     out: &mut dyn Write,
     candidate: RecoveryCandidate,
 ) -> io::Result<()> {
+    let Some(source_path) = app.file.path.clone() else {
+        app.message_warning("Source file is missing; recovery preview was not opened.");
+        return app.render(out);
+    };
+    let source_snapshot = match crate::file::io::capture_file_snapshot(&source_path) {
+        Ok(snapshot @ FileSnapshot::Present { .. }) => snapshot,
+        Ok(FileSnapshot::Absent) => {
+            app.message_warning("Source file is missing; recovery preview was not opened.");
+            return app.render(out);
+        }
+        Err(error) => return preview_error(app, out, error),
+    };
     super::super::view::cancel_preview(app);
     app.recovery.preview = Some(RecoveryPreview {
         buffer: PieceTable::from_text(candidate.text()),
         candidate,
-        source_path: app.file.path.clone(),
+        source_path,
         source_history: app.buffer.edit_history_position(),
-        source_disk_snapshot: app.file.disk_snapshot.clone(),
+        source_file_state_snapshot: app.file.disk_snapshot.clone(),
+        source_snapshot,
         source_scroll_top: app.screen.scroll_top,
         source_scroll_left: app.screen.scroll_left,
     });
@@ -150,17 +164,17 @@ pub(crate) fn handle_paste(app: &mut super::super::App, out: &mut dyn Write) -> 
 fn apply(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
     let mut preview = app.recovery.preview.take().expect("recovery preview");
     restore_scroll(app, &preview);
-    if app.file.path != preview.source_path
+    if app.file.path.as_ref() != Some(&preview.source_path)
         || app.buffer.edit_history_position() != preview.source_history
-        || app.file.disk_snapshot != preview.source_disk_snapshot
+        || app.file.disk_snapshot != preview.source_file_state_snapshot
+        || ensure_path_matches_snapshot(&preview.source_path, &preview.source_snapshot).is_err()
     {
         app.message_warning("Source changed during recovery preview; nothing applied.");
         return app.render(out);
     }
     let candidate_is_current = preview
-        .source_path
-        .as_deref()
-        .map(|path| preview.candidate.is_current(path).unwrap_or(false))
+        .candidate
+        .is_current(&preview.source_path)
         .unwrap_or(false);
     if !candidate_is_current {
         app.message_warning("Catnap changed during recovery preview; nothing applied.");

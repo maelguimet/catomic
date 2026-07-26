@@ -1,11 +1,11 @@
 //! Focused tests for watcher-observed stale pending cleanup only.
 //!
-//! Purpose: exercise Unchanged/NoPath watcher signals clearing armed pending_reload.
+//! Purpose: exercise Unchanged/NoPath watcher signals clearing retained reload observations.
 //! Owns: stale-pending resolution via watcher path (deterministic seams only).
 //! Must not: contain acceptance/manual-ctrl-r follow-up tests (see watcher_acceptance);
 //!   rely on live OS notify; change any reload/save semantics; read content.
-//! Invariants: watcher signals are hints only; Unchanged/NoPath clear only when armed
-//!   (else ignored to suppress noise); no behavior change.
+//! Invariants: watcher signals are hints only; Unchanged/NoPath clear only when an
+//!   observed revision exists (else ignored to suppress noise).
 
 use super::super::super::*;
 use super::super::make_key;
@@ -14,8 +14,8 @@ use crossterm::event::{KeyCode, KeyModifiers};
 // Stale pending cleanup via watcher observations (Unchanged/NoPath).
 // These were originally in watcher_signal.rs under 2-ad.
 
-// When a prior watcher Changed armed pending, and disk reverts to match baseline,
-// a subsequent watcher Changed observes Unchanged and clears the stale pending.
+// When a prior watcher Changed recorded a revision and disk reverts to match baseline,
+// a subsequent watcher Changed observes Unchanged and clears the stale observation.
 #[test]
 fn watcher_unchanged_clears_stale_pending_and_restores_status() {
     let mut tmp = std::env::temp_dir();
@@ -33,11 +33,16 @@ fn watcher_unchanged_clears_stale_pending_and_restores_status() {
         .unwrap();
     assert!(!app.file.dirty);
 
-    // Simulate prior external mod arm (as if a watcher Changed had armed)
+    // Simulate a prior passive external observation.
     std::fs::write(&p, "EXT").unwrap();
     let sig = crate::file::watcher::FileWatchSignal::Changed;
     let _ = crate::app::watch::apply_file_watch_signal(&mut app, sig);
-    assert!(app.pending_reload.is_some(), "precondition: pending armed");
+    assert!(
+        !app.pending_reload
+            .as_ref()
+            .expect("precondition: watcher observation retained")
+            .is_explicitly_armed
+    );
 
     // Revert disk content to match baseline snapshot's len; update snapshot mtime
     // so next observe sees Unchanged vs the *current known baseline state*.
@@ -128,6 +133,7 @@ fn watcher_nopath_with_pending_clears_it() {
         path: app.file.path.clone().unwrap(),
         status: crate::file::io::ExternalFileStatus::Modified,
         snapshot: app.file.disk_snapshot.clone(),
+        is_explicitly_armed: true,
     });
     app.message_warning("prior");
 
@@ -180,8 +186,16 @@ fn queued_changed_then_unchanged_clears_stale_pending_and_renders() {
 
     let mut out1: Vec<u8> = Vec::new();
     let r1 = crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out1).unwrap();
-    assert!(r1, "first Changed+Modified must be visible and arm");
-    assert!(app.pending_reload.is_some());
+    assert!(
+        r1,
+        "first Changed+Modified must record a visible observation"
+    );
+    assert!(
+        !app.pending_reload
+            .as_ref()
+            .expect("watcher observation retained")
+            .is_explicitly_armed
+    );
     assert_eq!(
         app.message_role,
         crate::terminal::render::StatusRole::Warning

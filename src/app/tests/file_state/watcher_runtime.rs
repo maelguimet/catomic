@@ -25,7 +25,7 @@ fn make_modify_event(p: &std::path::Path) -> notify::Event {
     }
 }
 
-// queued Changed + externally modified => visible arm + render
+// queued Changed + externally modified => visible reload + render
 #[test]
 fn queued_changed_external_modified_auto_reloads_and_renders() {
     let mut tmp = std::env::temp_dir();
@@ -195,7 +195,7 @@ fn queued_error_is_visible_and_does_not_mutate() {
 // one call processes at most one queued signal (even if two are present).
 // Deterministic mpsc seam: two visible Modified signals must each be
 // consumed by a separate call (at most one per call). Both produce visible
-// outcome (arm/refresh message + render) because watcher path does not
+// outcome (passive warning + render) because watcher path does not
 // update the disk_snapshot used by observe.
 #[test]
 fn one_call_processes_at_most_one_signal() {
@@ -210,7 +210,7 @@ fn one_call_processes_at_most_one_signal() {
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
     // external mod makes observe report Modified for both signals
-    // (disk_snapshot is not mutated by the watcher arm path)
+    // (disk_snapshot is not mutated by the passive watcher path)
     std::fs::write(&p, "ONEEXT").unwrap();
 
     let path = app.file.path.clone().unwrap();
@@ -240,7 +240,7 @@ fn one_call_processes_at_most_one_signal() {
     // State remains sane; no content mutation; both signals were observable.
     assert_eq!(app.buffer.to_string(), "ONE\n", "buffer content unchanged");
     assert!(!app.file.dirty, "dirty state sane");
-    // pending may be set (or re-set); message from arm path is present.
+    // The passive observation may be set (or re-set); its warning is present.
     let msg = app.message.as_deref().unwrap_or("");
     assert!(
         msg.contains("changed on disk") || msg.contains("Ctrl+R"),

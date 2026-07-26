@@ -115,8 +115,9 @@ pub struct App {
     /// Cleared on content edits, successful save, and path changes.
     /// Any unrelated editor action cancels it; resize/render must not touch it.
     pub pending_save_conflict: Option<save::PendingSaveConflict>,
-    /// Pending reload confirmation (Phase 2-s). Armed by first Ctrl+R on Modified/Deleted
-    /// when status indicates disk differs. Second Ctrl+R reloads only on exact snapshot match.
+    /// Pending reload observation and confirmation. Watcher notifications record the exact
+    /// Modified/Deleted revision without arming it. The first explicit Ctrl+R arms that
+    /// revision; the second reloads only on an exact snapshot match.
     /// Cleared by content edits (insert/delete/undo/redo), successful save, path changes.
     /// Any unrelated editor action cancels it; resize/render do not clear.
     /// NoPath/Unchanged/Unknown do not arm.

@@ -87,6 +87,7 @@ fn unstable_snapshot_capture_never_matches_force_save_confirmation() {
         path: std::path::PathBuf::from("unstable.txt"),
         status: status.clone(),
         snapshot: None,
+        is_command_prompt_save_as: false,
     };
     let observation = crate::file::io::ExternalFileObservation {
         status,

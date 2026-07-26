@@ -81,6 +81,14 @@ pub(super) fn is_save_as_prompt(app: &super::App) -> bool {
     )
 }
 
+pub(super) fn submits_pending_command_save_as(app: &super::App) -> bool {
+    let Some(prompt) = app.command_prompt.active.as_ref() else {
+        return false;
+    };
+    matches!(&prompt.kind, PromptKind::Command)
+        && command_matches_pending_save_as(app, prompt.text.trim())
+}
+
 pub(super) fn request_config_close(app: &mut super::App) -> Option<ConfigCloseRequest> {
     let config_return = app.command_prompt.config_return.as_mut()?;
     if app.file.path.as_deref() != Some(config_return.config_path.as_path()) {
@@ -160,6 +168,7 @@ pub(crate) fn handle_active_key(
         KeyCode::Esc => {
             app.message = None;
             app.command_prompt.active = None;
+            app.pending_save_conflict = None;
         }
         KeyCode::Enter => return submit(app, out).map(|()| true),
         KeyCode::Backspace => {
@@ -253,6 +262,13 @@ fn submit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
 }
 
 fn execute_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> io::Result<()> {
+    let keeps_pending_save_as = command_matches_pending_save_as(app, command);
+    if !keeps_pending_save_as {
+        app.pending_save_conflict = None;
+    }
+    if let Some(path) = command_save_as_argument(command) {
+        return super::save::handle_command_prompt_save_as(app, out, path);
+    }
     let (name, argument) = command
         .split_once(char::is_whitespace)
         .map_or((command, ""), |(name, argument)| (name, argument.trim()));
@@ -263,12 +279,6 @@ fn execute_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> 
         (PromptCommand::Goto, line) if !line.is_empty() => execute_goto(app, out, line),
         (PromptCommand::Save, "") => super::save::handle_save(app, out),
         (PromptCommand::Save, "as") | (PromptCommand::SaveAs, "") => open_save_as_prompt(app, out),
-        (PromptCommand::Save, argument) if argument.starts_with("as ") => {
-            super::save::handle_save_as(app, out, argument[3..].trim())
-        }
-        (PromptCommand::SaveAs, path) if !path.is_empty() => {
-            super::save::handle_save_as(app, out, path)
-        }
         (PromptCommand::Open, "") => open_file_prompt(app, out),
         (PromptCommand::Open, path) => execute_open(app, out, path),
         (PromptCommand::New, "") => execute_new(app, out),
@@ -285,6 +295,34 @@ fn execute_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> 
         }
         _ => unknown_command(app, out, command),
     }
+}
+
+fn command_save_as_argument(command: &str) -> Option<&str> {
+    let (name, argument) = command
+        .split_once(char::is_whitespace)
+        .map_or((command, ""), |(name, argument)| (name, argument.trim()));
+    match (help_catalog::prompt_command(name)?, argument) {
+        (PromptCommand::Save, argument) => argument
+            .strip_prefix("as ")
+            .map(str::trim)
+            .filter(|path| !path.is_empty()),
+        (PromptCommand::SaveAs, path) if !path.is_empty() => Some(path),
+        _ => None,
+    }
+}
+
+fn command_matches_pending_save_as(app: &super::App, command: &str) -> bool {
+    let Some(pending) = app.pending_save_conflict.as_ref() else {
+        return false;
+    };
+    if !pending.is_command_prompt_save_as {
+        return false;
+    }
+    command_save_as_argument(command)
+        .and_then(|input| {
+            super::save::expand_user_path(input, std::env::var_os("HOME").as_deref()).ok()
+        })
+        .is_some_and(|path| path == pending.path)
 }
 
 fn unknown_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> io::Result<()> {

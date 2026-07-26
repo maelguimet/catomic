@@ -24,6 +24,14 @@ fn type_text(app: &mut super::super::App, out: &mut Vec<u8>, text: &str) {
     }
 }
 
+fn submit_command(app: &mut super::super::App, out: &mut Vec<u8>, command: &str) {
+    app.handle_key_with(out, key(KeyCode::F(2), KeyModifiers::NONE))
+        .unwrap();
+    type_text(app, out, command);
+    app.handle_key_with(out, key(KeyCode::Enter, KeyModifiers::NONE))
+        .unwrap();
+}
+
 fn poll_until_done(app: &mut super::super::App, out: &mut Vec<u8>) {
     for _ in 0..10_000 {
         poll_goto(app, out).unwrap();
@@ -371,6 +379,110 @@ fn command_prompt_accepts_save_as_with_a_path() {
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "x");
     assert_eq!(app.file.path.as_deref(), Some(path.as_path()));
     let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn command_prompt_save_as_overwrites_existing_target_on_second_identical_submission() {
+    let path = config_fixture("command_save_as_confirm");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "existing\n").unwrap();
+    let mut app = super::super::App::new(None).unwrap();
+    let mut out = Vec::new();
+    app.handle_key_with(&mut out, key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
+    let command = format!("save as {}", path.display());
+
+    submit_command(&mut app, &mut out, &command);
+
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "existing\n");
+    assert!(app
+        .pending_save_conflict
+        .as_ref()
+        .is_some_and(|pending| pending.is_command_prompt_save_as));
+
+    submit_command(&mut app, &mut out, &command);
+
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "x");
+    assert_eq!(app.file.path.as_deref(), Some(path.as_path()));
+    assert!(app.pending_save_conflict.is_none());
+    std::fs::remove_dir_all(path.parent().unwrap().parent().unwrap()).unwrap();
+}
+
+#[test]
+fn command_prompt_save_as_rearms_when_existing_target_drifts() {
+    let path = config_fixture("command_save_as_state_drift");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "existing\n").unwrap();
+    let mut app = super::super::App::new(None).unwrap();
+    let mut out = Vec::new();
+    app.handle_key_with(&mut out, key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
+    let command = format!("save as {}", path.display());
+
+    submit_command(&mut app, &mut out, &command);
+    let first_snapshot = app.pending_save_conflict.as_ref().unwrap().snapshot.clone();
+    std::fs::write(&path, "external state changed\n").unwrap();
+
+    submit_command(&mut app, &mut out, &command);
+
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "external state changed\n"
+    );
+    assert!(app.file.dirty);
+    let pending = app.pending_save_conflict.as_ref().unwrap();
+    assert!(pending.is_command_prompt_save_as);
+    assert_ne!(pending.snapshot, first_snapshot);
+    std::fs::remove_dir_all(path.parent().unwrap().parent().unwrap()).unwrap();
+}
+
+#[test]
+fn command_prompt_save_as_rearms_for_a_different_existing_path() {
+    let first = config_fixture("command_save_as_first_path");
+    let second = config_fixture("command_save_as_second_path");
+    std::fs::create_dir_all(first.parent().unwrap()).unwrap();
+    std::fs::create_dir_all(second.parent().unwrap()).unwrap();
+    std::fs::write(&first, "first\n").unwrap();
+    std::fs::write(&second, "second\n").unwrap();
+    let mut app = super::super::App::new(None).unwrap();
+    let mut out = Vec::new();
+    app.handle_key_with(&mut out, key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
+
+    submit_command(&mut app, &mut out, &format!("save as {}", first.display()));
+    submit_command(&mut app, &mut out, &format!("save as {}", second.display()));
+
+    assert_eq!(std::fs::read_to_string(&first).unwrap(), "first\n");
+    assert_eq!(std::fs::read_to_string(&second).unwrap(), "second\n");
+    assert_eq!(
+        app.pending_save_conflict
+            .as_ref()
+            .map(|pending| pending.path.as_path()),
+        Some(second.as_path())
+    );
+    assert!(app.file.dirty);
+    std::fs::remove_dir_all(first.parent().unwrap().parent().unwrap()).unwrap();
+    std::fs::remove_dir_all(second.parent().unwrap().parent().unwrap()).unwrap();
+}
+
+#[test]
+fn command_prompt_save_as_confirmation_is_cancelled_by_an_unrelated_command() {
+    let path = config_fixture("command_save_as_unrelated");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "existing\n").unwrap();
+    let mut app = super::super::App::new(None).unwrap();
+    let mut out = Vec::new();
+    app.handle_key_with(&mut out, key(KeyCode::Char('x'), KeyModifiers::NONE))
+        .unwrap();
+
+    submit_command(&mut app, &mut out, &format!("save as {}", path.display()));
+    assert!(app.pending_save_conflict.is_some());
+
+    submit_command(&mut app, &mut out, "help");
+
+    assert!(app.pending_save_conflict.is_none());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "existing\n");
+    std::fs::remove_dir_all(path.parent().unwrap().parent().unwrap()).unwrap();
 }
 
 #[test]

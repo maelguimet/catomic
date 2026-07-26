@@ -146,17 +146,25 @@ fn handle_raw_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -> i
 pub(super) fn prepare_editor_action(app: &mut super::App, action: Option<Action>) {
     let is_quit = matches!(action, Some(Action::Quit));
     let is_save = matches!(action, Some(Action::Save | Action::SaveAs))
-        || (matches!(action, Some(Action::PromptSubmit)) && command_prompt::is_save_as_prompt(app));
+        || (matches!(action, Some(Action::PromptSubmit))
+            && (command_prompt::is_save_as_prompt(app)
+                || command_prompt::submits_pending_command_save_as(app)));
+    let reopens_pending_command_save_as = matches!(action, Some(Action::CommandPrompt))
+        && app
+            .pending_save_conflict
+            .as_ref()
+            .is_some_and(|pending| pending.is_command_prompt_save_as);
     let is_reload = matches!(action, Some(Action::Reload));
     let keeps_confirmation = (is_quit
         && (app.pending_quit_confirm || command_prompt::config_discard_confirmation_pending(app)))
         || (is_save && app.pending_save_conflict.is_some())
+        || reopens_pending_command_save_as
         || (is_reload && app.pending_reload.is_some());
     if !is_quit {
         app.pending_quit_confirm = false;
         command_prompt::clear_config_discard_confirmation(app);
     }
-    if !is_save {
+    if !is_save && !reopens_pending_command_save_as {
         app.pending_save_conflict = None;
     }
     if !is_reload {
@@ -282,6 +290,7 @@ mod tests {
             path: "save.txt".into(),
             status: crate::file::io::ExternalFileStatus::Modified,
             snapshot: None,
+            is_command_prompt_save_as: false,
         });
         app.pending_reload = Some(super::super::reload::PendingReload {
             path: "reload.txt".into(),

@@ -349,6 +349,7 @@ fn touch_endpoint_cancels_every_unrelated_editor_confirmation() {
         path: "save.txt".into(),
         status: crate::file::io::ExternalFileStatus::Modified,
         snapshot: None,
+        is_command_prompt_save_as: false,
     });
     app.pending_reload = Some(super::super::super::reload::PendingReload {
         path: "reload.txt".into(),

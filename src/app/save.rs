@@ -23,6 +23,9 @@ pub(crate) struct PendingSaveConflict {
     /// Live snapshot observed when we refused. For Modified this distinguishes
     /// different external states; for Deleted/Unknown kind-matching suffices.
     pub snapshot: Option<FileSnapshot>,
+    /// Only command-prompt Save As confirmations may survive reopening the
+    /// command prompt. Other save routes keep their existing cancellation rules.
+    pub is_command_prompt_save_as: bool,
 }
 
 impl PendingSaveConflict {
@@ -155,6 +158,7 @@ pub(crate) fn handle_save(app: &mut super::App, out: &mut dyn Write) -> io::Resu
             path: target_path,
             status: obs.status.clone(),
             snapshot: obs.live_snapshot,
+            is_command_prompt_save_as: false,
         });
         app.message_warning(save_conflict_message_for_ui(
             &obs.status,
@@ -172,6 +176,23 @@ pub(crate) fn handle_save_as(
     app: &mut super::App,
     out: &mut dyn Write,
     input: &str,
+) -> io::Result<()> {
+    handle_save_as_with_route(app, out, input, false)
+}
+
+pub(crate) fn handle_command_prompt_save_as(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    input: &str,
+) -> io::Result<()> {
+    handle_save_as_with_route(app, out, input, true)
+}
+
+fn handle_save_as_with_route(
+    app: &mut super::App,
+    out: &mut dyn Write,
+    input: &str,
+    is_command_prompt_save_as: bool,
 ) -> io::Result<()> {
     let target = match expand_user_path(input, std::env::var_os("HOME").as_deref()) {
         Ok(path) => path,
@@ -227,6 +248,7 @@ pub(crate) fn handle_save_as(
         pending.path == target
             && pending.status == obs.status
             && pending.snapshot == obs.live_snapshot
+            && pending.is_command_prompt_save_as == is_command_prompt_save_as
             && obs.status != ExternalFileStatus::Unknown(io::ErrorKind::Interrupted)
     });
     if should_force {
@@ -237,6 +259,7 @@ pub(crate) fn handle_save_as(
         path: target,
         status: obs.status.clone(),
         snapshot: obs.live_snapshot,
+        is_command_prompt_save_as,
     });
     app.message_warning(save_as_conflict_message(
         &obs.status,

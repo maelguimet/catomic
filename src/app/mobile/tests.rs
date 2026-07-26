@@ -27,6 +27,7 @@ fn arm_editor_confirmations(app: &mut super::super::App) {
         path: "save.txt".into(),
         status: crate::file::io::ExternalFileStatus::Modified,
         snapshot: None,
+        is_command_prompt_save_as: false,
     });
     app.pending_reload = Some(super::super::reload::PendingReload {
         path: "reload.txt".into(),
@@ -204,6 +205,7 @@ fn direct_touch_menu_path_preserves_only_a_save_as_confirmation() {
         path: "save-as.txt".into(),
         status: crate::file::io::ExternalFileStatus::Modified,
         snapshot: None,
+        is_command_prompt_save_as: false,
     });
 
     dispatch_bar_action(&mut app, &mut out, BarAction::Menu).unwrap();

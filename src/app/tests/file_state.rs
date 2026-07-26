@@ -175,6 +175,7 @@ fn movement_cancels_save_conflict_and_reload_pending() {
         path: std::path::PathBuf::from("x"),
         status: crate::file::io::ExternalFileStatus::Modified,
         snapshot: None,
+        is_command_prompt_save_as: false,
     });
     app.pending_reload = Some(super::super::reload::PendingReload {
         path: std::path::PathBuf::from("x"),

@@ -195,6 +195,19 @@ class PtyDriverTests(unittest.TestCase):
             with self.assertRaisesRegex(PtyError, "timed out waiting"):
                 child.wait_for(b"absent", timeout=0.2)
 
+    def test_wait_for_occurrences_requires_fresh_behavioral_output(self):
+        environment = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
+        with PtyProcess(
+            ["/bin/sh", "-c", "printf marker; read ignored; printf marker"],
+            environment,
+        ) as child:
+            child.wait_for_occurrences(b"marker", 1)
+            with self.assertRaisesRegex(PtyError, "2 occurrences"):
+                child.wait_for_occurrences(b"marker", 2, timeout=0.1)
+            child.send(b"\n")
+            child.wait_for_occurrences(b"marker", 2)
+            self.assertEqual(child.finish(), 0)
+
     def test_transcript_size_is_bounded(self):
         environment = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
         with PtyProcess(

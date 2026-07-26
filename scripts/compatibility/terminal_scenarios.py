@@ -8,6 +8,7 @@ Phase: post-v0.1 Linux compatibility matrix.
 
 from __future__ import annotations
 
+import base64
 import os
 import signal
 import time
@@ -78,13 +79,32 @@ def _core_session(launcher: TerminalLauncher, root: Path) -> list[dict[str, obje
     fixture.write_text("CORE_BASE", encoding="utf-8")
     before = sha256_file(fixture)
     marker = "SHIFTED !@# ÅΩ中🙂"
+    rendered_marker = marker.encode()
+    osc52_frame = (
+        b"\x1b]52;c;" + base64.b64encode(rendered_marker + b"CORE_BASE") + b"\x1b\\"
+    )
     child = launcher.spawn("core", fixture, isolated_environment(root / "core"))
     try:
         child.wait_for(b"CORE_BASE", timeout=10)
-        child.send(b"\x1b[200~" + marker.encode() + b"\x1b[201~")
-        child.wait_for(marker.encode())
-        child.send(b"\x01\x03")
-        child.wait_for(b"Copied selection.")
+        child.send(b"\x1b[200~" + rendered_marker + b"\x1b[201~")
+        child.wait_for(rendered_marker)
+
+        select_marker_count = child.output.count(rendered_marker)
+        select_osc52_count = child.output.count(osc52_frame)
+        child.send(b"\x01")
+        if launcher.path_id == "direct-pty":
+            child.wait_for_occurrences(osc52_frame, select_osc52_count + 1)
+        else:
+            child.wait_for_occurrences(rendered_marker, select_marker_count + 1)
+
+        copy_marker_count = child.output.count(rendered_marker)
+        copy_osc52_count = child.output.count(osc52_frame)
+        child.send(b"\x03")
+        if launcher.path_id == "direct-pty":
+            child.wait_for_occurrences(osc52_frame, copy_osc52_count + 1)
+        else:
+            child.wait_for_occurrences(rendered_marker, copy_marker_count + 1)
+
         child.send(b"\x1a\x19\x13\x11")
         exit_status = child.finish()
         output = bytes(child.output)
@@ -114,7 +134,7 @@ def _core_session(launcher: TerminalLauncher, root: Path) -> list[dict[str, obje
             "terminal-restoration",
         )
     ]
-    if b"\x1b]52;c;" in output and b"\x1b\\" in output:
+    if osc52_frame in output:
         records.append(
             scenario(
                 "osc52",
@@ -149,19 +169,22 @@ def _fallback_session(
     launcher: TerminalLauncher, root: Path
 ) -> list[dict[str, object]]:
     fixture = root / "terminal-fallback.txt"
-    fixture.write_text("fallback", encoding="utf-8")
+    source_marker = b"FALLBACK_SOURCE_MARKER"
+    fixture.write_bytes(source_marker)
     before = sha256_file(fixture)
     child = launcher.spawn("fallback", fixture, isolated_environment(root / "fallback"))
     try:
-        child.wait_for(b"fallback")
+        child.wait_for(source_marker)
         child.send(b"\x1bOP")
         child.wait_for(b"Catomic help")
+        source_render_count = child.output.count(source_marker)
         child.send(b"\x1b")
-        child.wait_for(b"Help closed.")
+        child.wait_for_occurrences(source_marker, source_render_count + 1)
         child.send(b"\x1bOQ")
         child.wait_for(b"Command:")
+        source_render_count = child.output.count(source_marker)
         child.send(b"\x1b")
-        child.wait_for(b"Prompt cancelled.")
+        child.wait_for_occurrences(source_marker, source_render_count + 1)
         child.send(b"\x11")
         exit_status = child.finish()
     finally:

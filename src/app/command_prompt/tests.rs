@@ -354,7 +354,7 @@ fn ctrl_shift_s_saves_to_a_relative_filename() {
         .unwrap();
 
     assert_eq!(app.file.path.as_deref(), Some(path));
-    assert_eq!(std::fs::read_to_string(path).unwrap(), "x\n");
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "x");
     assert!(!app.file.dirty);
     let _ = std::fs::remove_file(path);
 }
@@ -376,7 +376,7 @@ fn command_prompt_accepts_save_as_with_a_path() {
     app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
         .unwrap();
 
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), "x\n");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "x");
     assert_eq!(app.file.path.as_deref(), Some(path.as_path()));
     let _ = std::fs::remove_file(path);
 }
@@ -402,7 +402,7 @@ fn command_prompt_save_as_overwrites_existing_target_on_second_identical_submiss
 
     submit_command(&mut app, &mut out, &command);
 
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), "x\n");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "x");
     assert_eq!(app.file.path.as_deref(), Some(path.as_path()));
     assert!(app.pending_save_conflict.is_none());
     std::fs::remove_dir_all(path.parent().unwrap().parent().unwrap()).unwrap();
@@ -571,7 +571,7 @@ fn save_as_existing_target_requires_a_second_confirmation() {
     type_text(&mut app, &mut out, path.to_str().unwrap());
     app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
         .unwrap();
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), "x\n");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "x");
     assert_eq!(app.file.path.as_deref(), Some(path.as_path()));
     let _ = std::fs::remove_file(path);
 }

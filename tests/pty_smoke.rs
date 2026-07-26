@@ -1717,7 +1717,7 @@ fn pty_catnap_recovery_previews_then_saves_explicitly() -> TestResult {
 
     editor.wait_for_output(
         "recovery offer",
-        "Catnap recovery found. Run :recover to preview it.",
+        "Catnap recovery found. Run recover to preview it.",
     )?;
     editor.send_keys(b"\x1b[80;6urecover\r")?;
     editor.wait_for_output(

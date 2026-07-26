@@ -177,7 +177,10 @@ fn sidecar_replacement_after_startup_offer_refuses_preview() {
     let sidecar = crate::file::recovery::catnap_path(&original);
     crate::file::io::atomic_write_private_string(&sidecar, "recovered").unwrap();
     initialize(&mut app);
-    assert!(app.message.as_deref().unwrap().contains("recovery found"));
+    assert_eq!(
+        app.message.as_deref(),
+        Some("Catnap recovery found. Run recover to preview it.")
+    );
 
     std::fs::write(&replacement, "recovered").unwrap();
     std::fs::rename(&replacement, &sidecar).unwrap();

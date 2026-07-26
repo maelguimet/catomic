@@ -1,5 +1,5 @@
 //! Purpose: coordinate opt-in `.catnap` autosave and explicit recovery preview.
-//! Owns: per-buffer timer/task state, `:recover`, preview input, apply, and save cleanup.
+//! Owns: per-buffer timer/task state, `recover`, preview input, apply, and save cleanup.
 //! Must not: overwrite source files, run when disabled, autosave unbounded buffers, or block typing.
 //! Invariants: offers retain the opened candidate; Enter applies one edit; drift refuses apply.
 
@@ -43,7 +43,7 @@ pub(crate) fn initialize(app: &mut super::App) {
         Ok(Some(candidate)) => {
             app.recovery.offered_candidate = Some(candidate);
             if app.message.is_none() {
-                app.message_info("Catnap recovery found. Run :recover to preview it.");
+                app.message_info("Catnap recovery found. Run recover to preview it.");
             }
         }
         Err(error) if app.message.is_none() => {

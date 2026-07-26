@@ -20,9 +20,9 @@ are retained in `performance.md`.
 | Panic handling | The panic hook restores terminal state first, prints one short cat-themed notice that promises only the last explicit save, then chains to ordinary Rust panic details. The prior hook is restored when the guard drops. |
 | Opt-in recovery | `[recovery]` defaults to disabled, so startup and typing create no files or worker. Enabled intervals are restricted to 5–3,600 seconds and content to at most 16 MiB; the default enabled workload cap is 1 MiB. Untitled, oversized, and paged buffers are skipped. |
 | Private bounded sidecars | `notes.txt` maps to `notes.txt.catnap`. Writes run on a named worker, use same-directory atomic replacement, and force Unix mode 0600. Reads cap bytes before allocation, validate UTF-8, and refuse directories and symlinks. |
-| Recovery safety | A newer sidecar only offers `:recover`; it never overwrites source automatically. Recovery is read-only until Enter, Escape leaves source unchanged, and path/history/disk-snapshot drift refuses apply. A confirmed replacement is one ordinary undoable buffer transaction and remains dirty until explicit save. |
+| Recovery safety | A newer sidecar only offers `recover`; it never overwrites source automatically. Recovery is read-only until Enter, Escape leaves source unchanged, and path/history/disk-snapshot drift refuses apply. A confirmed replacement is one ordinary undoable buffer transaction and remains dirty until explicit save. |
 | Save and multi-buffer lifecycle | Successful save waits for an in-flight bounded catnap write before atomically saving source, then removes the sidecar so a stale worker cannot recreate it. Failed saves retain recovery. Timer/task/preview state follows its buffer through the existing ring. |
-| Real terminal flow | The 80x24 PTY sees the startup recovery offer, opens `:recover`, proves disk is unchanged through preview and apply, explicitly saves, verifies exact recovered bytes, and verifies sidecar removal. |
+| Real terminal flow | The 80x24 PTY sees the startup recovery offer, opens `recover`, proves disk is unchanged through preview and apply, explicitly saves, verifies exact recovered bytes, and verifies sidecar removal. |
 | No live services | Recovery is local file I/O only. The full suite retains the no-live-model/no-public-endpoint rule. |
 
 ## Measurement

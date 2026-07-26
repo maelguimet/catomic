@@ -101,6 +101,26 @@ class PtyProcess:
         excerpt = bytes(self.output[-1000:]).decode("utf-8", errors="replace")
         raise PtyError(f"timed out waiting for {expected!r}; output tail: {excerpt!r}")
 
+    def wait_for_occurrences(
+        self, expected: bytes, minimum: int, timeout: float = 5.0
+    ) -> None:
+        if not expected:
+            raise PtyError("expected PTY output must not be empty")
+        if minimum <= 0:
+            raise PtyError("minimum PTY output occurrences must be positive")
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self.output.count(expected) >= minimum:
+                return
+            self.read_available(min(0.05, max(0.0, deadline - time.monotonic())))
+            if self.wait_status is not None and self.output.count(expected) < minimum:
+                break
+        excerpt = bytes(self.output[-1000:]).decode("utf-8", errors="replace")
+        raise PtyError(
+            f"timed out waiting for {minimum} occurrences of {expected!r}; "
+            f"output tail: {excerpt!r}"
+        )
+
     def wait_for_more_output(self, previous_length: int, timeout: float = 5.0) -> None:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:

@@ -66,7 +66,7 @@ fn watcher_unchanged_clears_stale_pending_and_restores_status() {
     );
     assert_eq!(app.message.as_deref(), None, "must restore normal status");
     assert_eq!(app.file.dirty, before_dirty);
-    assert_eq!(app.buffer.to_string(), "BASE\n"); // no reload of content
+    assert_eq!(app.buffer.to_string(), "BASE"); // no reload of content
 
     let _ = std::fs::remove_file(&p);
 }
@@ -212,7 +212,7 @@ fn queued_changed_then_unchanged_clears_stale_pending_and_renders() {
     assert!(!out2.is_empty(), "must render on resolution");
     assert_eq!(
         app.buffer.to_string(),
-        "ORIG\n",
+        "ORIG",
         "content must not have reloaded"
     );
 

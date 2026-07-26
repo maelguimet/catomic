@@ -20,15 +20,23 @@ fn temp_path(name: &str) -> std::path::PathBuf {
 }
 
 #[test]
-fn save_adds_only_a_missing_final_newline() {
-    for before in ["", "abc\n", "abc"] {
-        let after = if before == "abc" { "abc\n" } else { before };
+fn edited_save_preserves_final_newline_presence() {
+    for (before, after) in [
+        (b"".as_slice(), b"X".as_slice()),
+        (b"abc\n".as_slice(), b"Xabc\n".as_slice()),
+        (b"abc".as_slice(), b"Xabc".as_slice()),
+    ] {
         let path = temp_path(&before.len().to_string());
         fs::write(&path, before).unwrap();
         let mut app = App::new(Some(&path.to_string_lossy())).unwrap();
+        app.handle_key_with(
+            &mut Vec::new(),
+            make_key(KeyCode::Char('X'), KeyModifiers::NONE),
+        )
+        .unwrap();
         super::super::super::save::do_atomic_save(&mut app, &mut Vec::new()).unwrap();
-        assert_eq!(fs::read_to_string(&path).unwrap(), after);
-        assert_eq!(app.buffer.to_string(), after);
+        assert_eq!(fs::read(&path).unwrap(), after);
+        assert_eq!(app.buffer.to_string().as_bytes(), after);
         let _ = fs::remove_file(path);
     }
 }
@@ -111,9 +119,9 @@ fn external_reload_adopts_the_new_disk_format() {
 #[test]
 fn cut_line_save_preserves_lf_crlf_and_cr_bytes() {
     let cases: [(&str, &[u8], &[u8]); 3] = [
-        ("lf", b"one\ntwo\nthree", b"one\nthree\n"),
-        ("crlf", b"one\r\ntwo\r\nthree", b"one\r\nthree\r\n"),
-        ("cr", b"one\rtwo\rthree", b"one\rthree\r"),
+        ("lf", b"one\ntwo\nthree", b"one\nthree"),
+        ("crlf", b"one\r\ntwo\r\nthree", b"one\r\nthree"),
+        ("cr", b"one\rtwo\rthree", b"one\rthree"),
     ];
     for (label, source, expected) in cases {
         let path = temp_path(label);

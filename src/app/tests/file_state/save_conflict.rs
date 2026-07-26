@@ -230,7 +230,7 @@ fn app_file_state_second_ctrl_s_force_saves_after_same_modified_conflict() {
         Some(crate::file::io::FileSnapshot::Present { len, .. }) => {
             assert_eq!(
                 *len,
-                expected.len() as u64 + 1,
+                expected.len() as u64,
                 "force save must update snapshot len"
             );
         }
@@ -239,8 +239,7 @@ fn app_file_state_second_ctrl_s_force_saves_after_same_modified_conflict() {
 
     let on_disk = std::fs::read_to_string(&p).unwrap();
     assert_eq!(
-        on_disk,
-        format!("{expected}\n"),
+        on_disk, expected,
         "disk after force must contain buffer text"
     );
 
@@ -550,10 +549,7 @@ fn app_file_state_third_ctrl_s_force_saves_after_drift_refusals_when_snapshot_st
 
     assert!(!app.file.dirty, "third S with stable snapshot must force");
     assert!(app.pending_save_conflict.is_none());
-    assert_eq!(
-        std::fs::read_to_string(&p).unwrap(),
-        format!("{expected}\n")
-    );
+    assert_eq!(std::fs::read_to_string(&p).unwrap(), expected);
 
     let _ = std::fs::remove_file(&p);
 }
@@ -758,10 +754,7 @@ fn app_file_state_regression_same_modified_snapshot_still_force_saves_on_second_
 
     assert!(!app.file.dirty);
     assert!(app.pending_save_conflict.is_none());
-    assert_eq!(
-        std::fs::read_to_string(&p).unwrap(),
-        format!("{expected}\n")
-    );
+    assert_eq!(std::fs::read_to_string(&p).unwrap(), expected);
 
     let _ = std::fs::remove_file(&p);
 }

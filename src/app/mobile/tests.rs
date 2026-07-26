@@ -32,6 +32,7 @@ fn arm_editor_confirmations(app: &mut super::super::App) {
         path: "reload.txt".into(),
         status: crate::file::io::ExternalFileStatus::Modified,
         snapshot: None,
+        is_explicitly_armed: true,
     });
     app.message = Some("armed confirmation".to_string());
 }
@@ -155,6 +156,12 @@ fn mobile_warning_chrome_exposes_full_details_and_touch_instructions() {
         true,
     )
     .contains("Tap Menu > Check / reload file"));
+    assert!(super::super::reload::reload_watch_message_for_ui(
+        &crate::file::io::ExternalFileStatus::Modified,
+        true,
+        true,
+    )
+    .contains("twice"));
     app.message_warning(warning.clone());
     assert_eq!(action_bar_text(&app).as_deref(), Some("[Menu][Info][Save]"));
 

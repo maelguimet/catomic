@@ -895,21 +895,22 @@ fn pty_external_edit_confirm_reload_quit_shows_disk_content() -> TestResult {
 
     editor.wait_for_initial_render()?;
     editor.wait_for_output("initial file content", "original")?;
+    editor.send_keys(b"LOCAL-")?;
+    editor.wait_for_output("dirty local content", "LOCAL-original")?;
     fs::write(&temp.path, "external disk content")?;
 
-    // If notify already armed the reload, this press performs it. Otherwise it
-    // is the manual first confirmation press. Either route must converge on the
-    // same explicit Ctrl+R confirmation behavior.
-    editor.send_keys(b"\x12")?;
-    wait_until("reload arm or completion", Duration::from_secs(2), || {
-        let output = editor.output_string();
-        output.contains("external disk content")
-            || output.contains("Press Ctrl+R again to reload from disk")
-    })?;
-    if !editor.output_string().contains("external disk content") {
-        editor.send_keys(b"\x12")?;
-    }
+    editor.wait_for_output("passive watcher warning", "Press Ctrl+R twice")?;
+    editor.clear_output();
 
+    // The watcher notification is passive: the first explicit action only arms.
+    editor.send_keys(b"\x12")?;
+    editor.wait_for_output("first explicit reload arms", "Press Ctrl+R again")?;
+    let armed_frame = editor.output_string();
+    assert!(armed_frame.contains("LOCAL-original"));
+    assert!(!armed_frame.contains("external disk content"));
+
+    editor.clear_output();
+    editor.send_keys(b"\x12")?;
     editor.wait_for_output("reloaded external content", "external disk content")?;
     editor.wait_for_output("replacement gutter marker", "\x1b[36;1;4m~\x1b[0m ")?;
 

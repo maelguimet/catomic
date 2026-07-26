@@ -4,11 +4,13 @@
 //! and the Ctrl+R decision + perform logic (extracted in 2-t for mod.rs hygiene).
 //! Uses bounded on-disk identities (ExternalFileStatus + FileSnapshot) via
 //! observe_external_file.
-//! Owns: PendingReload struct, arm/perform helpers, handle_reload_key.
+//! Owns: PendingReload struct, passive watcher observations, arm/perform helpers,
+//!   handle_reload_key.
 //! Must not: own watcher polling, background work, snapshot capture policy,
 //!   config parsing, repository scans, or external services.
 //! Invariants: pending is bound to concrete (path + status + live snapshot);
-//!   second press only acts on exact match; any content mutation clears it;
+//!   watcher observations never arm destructive confirmation; second explicit
+//!   press only acts on an explicitly armed exact match; any content mutation clears it;
 //!   automatic reload is invoked only for clean buffers by caller policy;
 //!   successful reloads refresh watcher path identities;
 //!   input routing cancels it before any unrelated editor action.
@@ -22,18 +24,21 @@ use crate::file::io::{
 };
 use crate::file::size::{self, FileSizeTier, OpenSizeDecision};
 
-/// Token recorded on first Ctrl+R when reload would change buffer state.
-/// Binds to the specific observed disk state so that drift between presses
-/// refuses the reload (similar to PendingSaveConflict).
+/// Exact disk revision recorded for watcher display and explicit confirmation.
+/// Once explicitly armed, drift before the second press refuses the reload
+/// (similar to PendingSaveConflict).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct PendingReload {
     /// Target path at arm time.
     pub path: PathBuf,
     pub status: ExternalFileStatus,
-    /// Live snapshot (or None) at the time first Ctrl+R armed the confirmation.
-    /// For Modified: must match exactly on second press.
+    /// Live snapshot (or None) recorded by the watcher or explicit action.
+    /// For Modified: must match exactly before an armed second press may reload.
     /// For Deleted: kind match sufficient.
     pub snapshot: Option<FileSnapshot>,
+    /// Watcher observations record the revision without counting as the user's
+    /// first destructive reload action.
+    pub is_explicitly_armed: bool,
 }
 
 /// Returns the message for first Ctrl+R press that arms a reload confirmation.
@@ -78,6 +83,47 @@ pub(crate) fn reload_arm_message_for_ui(
             "File deleted on disk. Tap Menu > Check / reload file again to clear the buffer",
             dirty,
         ),
+        _ => reload_arm_message(status, dirty),
+    }
+}
+
+/// Returns the warning for a passive watcher observation. Unlike the explicit
+/// arm message, this tells the user that two actions are still required.
+pub(crate) fn reload_watch_message_for_ui(
+    status: &ExternalFileStatus,
+    dirty: bool,
+    mobile: bool,
+) -> String {
+    if mobile {
+        return match status {
+            ExternalFileStatus::Modified => mobile_reload_message(
+                "File changed on disk. Tap Menu > Check / reload file twice to reload from disk",
+                dirty,
+            ),
+            ExternalFileStatus::Deleted => mobile_reload_message(
+                "File deleted on disk. Tap Menu > Check / reload file twice to clear the buffer",
+                dirty,
+            ),
+            _ => reload_arm_message(status, dirty),
+        };
+    }
+    match status {
+        ExternalFileStatus::Modified => {
+            if dirty {
+                "File changed on disk. Press Ctrl+R twice to reload from disk (discard local changes)."
+                    .to_string()
+            } else {
+                "File changed on disk. Press Ctrl+R twice to reload from disk.".to_string()
+            }
+        }
+        ExternalFileStatus::Deleted => {
+            if dirty {
+                "File deleted on disk. Press Ctrl+R twice to clear buffer (discard local changes)."
+                    .to_string()
+            } else {
+                "File deleted on disk. Press Ctrl+R twice to clear buffer.".to_string()
+            }
+        }
         _ => reload_arm_message(status, dirty),
     }
 }
@@ -339,12 +385,25 @@ fn finish_reload(app: &mut super::App, message: Option<String>) {
     app.reveal_cursor();
 }
 
-/// Apply a single ExternalFileObservation to update status and arm/clear pending_reload.
+/// Apply a single ExternalFileObservation from an explicit reload action.
 /// This is the single-source status+arm path for manual checks.
 /// NoPath/Unknown report a problem; Unchanged restores normal status; all clear pending.
 /// Modified/Deleted: arm pending bound to obs.live_snapshot (for drift), set arm message.
 /// Does not mutate buffer, dirty, disk_snapshot, or history.
 pub(crate) fn apply_check_observation(app: &mut super::App, obs: &ExternalFileObservation) {
+    apply_observation(app, obs, true);
+}
+
+/// Record a passive watcher observation without arming destructive reload.
+pub(crate) fn apply_watch_observation(app: &mut super::App, obs: &ExternalFileObservation) {
+    apply_observation(app, obs, false);
+}
+
+fn apply_observation(
+    app: &mut super::App,
+    obs: &ExternalFileObservation,
+    is_explicit_action: bool,
+) {
     match obs.status {
         ExternalFileStatus::NoPath => {
             app.message_info("No file path.");
@@ -359,18 +418,29 @@ pub(crate) fn apply_check_observation(app: &mut super::App, obs: &ExternalFileOb
             app.pending_reload = None;
         }
         ExternalFileStatus::Modified | ExternalFileStatus::Deleted => {
+            let was_explicitly_armed = pending_matches_observation(app, obs)
+                && app
+                    .pending_reload
+                    .as_ref()
+                    .is_some_and(|pending| pending.is_explicitly_armed);
+            let is_explicitly_armed = is_explicit_action || was_explicitly_armed;
             if let Some(ref p) = app.file.path {
                 app.pending_reload = Some(PendingReload {
                     path: p.clone(),
                     status: obs.status.clone(),
                     snapshot: obs.live_snapshot.clone(),
+                    is_explicitly_armed,
                 });
             } else {
                 app.pending_reload = None;
             }
             let dirty = app.file.dirty;
-            let text =
-                reload_arm_message_for_ui(&obs.status, dirty, super::mobile::is_enabled(app));
+            let mobile = super::mobile::is_enabled(app);
+            let text = if is_explicitly_armed {
+                reload_arm_message_for_ui(&obs.status, dirty, mobile)
+            } else {
+                reload_watch_message_for_ui(&obs.status, dirty, mobile)
+            };
             app.message_warning(text);
         }
     }
@@ -385,7 +455,11 @@ pub(crate) fn handle_reload_key(app: &mut super::App, out: &mut dyn Write) -> io
     let baseline = app.file.disk_snapshot.as_ref();
     let obs = observe_external_file(current_path.as_deref(), baseline);
 
-    let should_perform = pending_matches_observation(app, &obs);
+    let should_perform = app
+        .pending_reload
+        .as_ref()
+        .is_some_and(|pending| pending.is_explicitly_armed)
+        && pending_matches_observation(app, &obs);
 
     if should_perform {
         perform_observed_reload(app, &obs);

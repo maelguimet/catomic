@@ -287,6 +287,7 @@ mod tests {
             path: "reload.txt".into(),
             status: crate::file::io::ExternalFileStatus::Modified,
             snapshot: None,
+            is_explicitly_armed: true,
         });
 
         dispatch_action(&mut app, &mut out, Action::Help).unwrap();

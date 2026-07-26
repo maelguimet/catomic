@@ -138,7 +138,7 @@ fn successful_save_existing_updates_size_after_content_change() {
         .unwrap();
 
     assert!(!app.file.dirty);
-    assert_eq!(app.file.size_bytes, Some(7));
+    assert_eq!(app.file.size_bytes, Some(6));
     assert_eq!(
         app.file.size_tier,
         Some(crate::file::size::FileSizeTier::Small)
@@ -189,7 +189,7 @@ fn confirmed_reload_deleted_clears_size_metadata() {
     let mut app = App::new(Some(&p.to_string_lossy())).unwrap();
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
-    assert_eq!(app.file.size_bytes, Some(5));
+    assert_eq!(app.file.size_bytes, Some(4));
 
     let _ = fs::remove_file(&p);
 

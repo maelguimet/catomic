@@ -464,6 +464,36 @@ fn sequence_count(output: &str, sequence: &str) -> usize {
 }
 
 #[test]
+fn pty_dangling_final_symlink_is_refused_before_terminal_setup() -> TestResult {
+    let project = TempProject::new("dangling_symlink_startup");
+    let target = project.root.join("missing-target.txt");
+    let link = project.root.join("dangling.txt");
+    std::os::unix::fs::symlink(&target, &link)?;
+    let mut editor = PtyEditor::spawn(&link)?;
+
+    editor.wait_for_output(
+        "dangling symlink startup refusal",
+        "refusing to open dangling symlink",
+    )?;
+    editor.wait_for_exit_code(1)?;
+
+    let output = editor.output_string();
+    assert!(
+        !output.contains("\x1b[?1049h"),
+        "dangling symlink refusal must precede alternate-screen setup"
+    );
+    assert!(
+        fs::symlink_metadata(&link)?.file_type().is_symlink(),
+        "startup refusal must leave the symlink entry intact"
+    );
+    assert!(
+        !target.exists(),
+        "startup refusal must not create the missing referent"
+    );
+    Ok(())
+}
+
+#[test]
 fn pty_save_undo_save_quit_writes_expected_file() -> TestResult {
     let temp = TempPath::new("save_undo");
     let mut editor = PtyEditor::spawn_monochrome(&temp.path)?;

@@ -5,9 +5,7 @@
 
 use crate::buffer::{Buffer, PagedFileBuffer};
 
-use super::helpers::{
-    cleanup_perf, measure_allocated_sample, print_perf_sample, temp_perf_path,
-};
+use super::helpers::{cleanup_perf, measure_allocated_sample, print_perf_sample, temp_perf_path};
 
 const VIEWPORT_READS: usize = 1_000;
 
@@ -48,17 +46,14 @@ fn manual_paged_viewport_and_retained_pages_report_samples() {
     print_perf_sample(&open_sample);
 
     let before_read = buffer.perf_stats();
-    let (last_lines, viewport_sample) = measure_allocated_sample(
-        "read 1000 paged viewports",
-        Some(bytes),
-        || {
+    let (last_lines, viewport_sample) =
+        measure_allocated_sample("read 1000 paged viewports", Some(bytes), || {
             let mut lines = Vec::new();
             for _ in 0..VIEWPORT_READS {
                 lines = buffer.try_visible_lines_window(0, 2, 0, 80).unwrap();
             }
             lines
-        },
-    );
+        });
     let after_read = buffer.perf_stats();
     let viewport_sample = viewport_sample
         .with_metric(

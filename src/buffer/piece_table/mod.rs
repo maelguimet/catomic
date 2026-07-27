@@ -166,8 +166,7 @@ impl PieceTable {
         let row = self.index.row_for_byte(at_byte);
         #[cfg(test)]
         {
-            self.line_index_shifted_entries +=
-                self.index.line_starts.len().saturating_sub(row + 1);
+            self.line_index_shifted_entries += self.index.line_starts.len().saturating_sub(row + 1);
         }
         let dpos = delta.unsigned_abs();
         if delta > 0 {
@@ -189,8 +188,7 @@ impl PieceTable {
         let row = self.index.row_for_byte(at_byte);
         #[cfg(test)]
         {
-            self.line_index_shifted_entries +=
-                self.index.line_starts.len().saturating_sub(row + 1);
+            self.line_index_shifted_entries += self.index.line_starts.len().saturating_sub(row + 1);
         }
         // Shift subsequent line starts for the added byte.
         for ls in &mut self.index.line_starts[(row + 1)..] {

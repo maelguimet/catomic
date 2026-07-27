@@ -73,12 +73,15 @@ fn manual_typing_after_fragmentation_reports_sample() {
     buffer.set_cursor(Cursor { row: 0, col: 0 });
     let before = buffer.perf_stats();
 
-    let (_, sample) =
-        measure_allocated_sample("type 1000 chars after fragmentation", Some(bytes as u64), || {
+    let (_, sample) = measure_allocated_sample(
+        "type 1000 chars after fragmentation",
+        Some(bytes as u64),
+        || {
             for _ in 0..TYPED_CHARS {
                 buffer.insert_char('z');
             }
-        });
+        },
+    );
     let mut after = buffer.perf_stats();
     after.line_index_scanned_bytes = after
         .line_index_scanned_bytes
@@ -86,8 +89,8 @@ fn manual_typing_after_fragmentation_reports_sample() {
     after.line_index_shifted_entries = after
         .line_index_shifted_entries
         .saturating_sub(before.line_index_shifted_entries);
-    let sample = add_piece_table_metrics(sample, &after)
-        .with_metric("fragmented_pieces", fragmented_pieces);
+    let sample =
+        add_piece_table_metrics(sample, &after).with_metric("fragmented_pieces", fragmented_pieces);
     print_perf_sample(&sample);
 
     assert!(fragmented_pieces > 400);
@@ -97,7 +100,8 @@ fn manual_typing_after_fragmentation_reports_sample() {
 #[test]
 #[ignore = "manual allocation baseline for movement near the end of a minified long line"]
 fn manual_cursor_movement_on_long_line_reports_sample() {
-    let unit = "{\"ascii\":1,\"utf8\":\"é\",\"grapheme\":\"e\u{301}\",\"emoji\":\"👩🏽‍💻\",\"tab\":\"\\t\"}";
+    let unit =
+        "{\"ascii\":1,\"utf8\":\"é\",\"grapheme\":\"e\u{301}\",\"emoji\":\"👩🏽‍💻\",\"tab\":\"\\t\"}";
     let mut text = String::with_capacity(256 * 1024);
     while text.len() + unit.len() <= text.capacity() {
         text.push_str(unit);
@@ -110,12 +114,15 @@ fn manual_cursor_movement_on_long_line_reports_sample() {
         col: line_chars - TYPED_CHARS,
     });
 
-    let (_, sample) =
-        measure_allocated_sample("move 1000 cols on minified long line", Some(bytes as u64), || {
+    let (_, sample) = measure_allocated_sample(
+        "move 1000 cols on minified long line",
+        Some(bytes as u64),
+        || {
             for _ in 0..TYPED_CHARS {
                 buffer.move_right();
             }
-        });
+        },
+    );
     let sample = sample
         .with_metric("document_lines", buffer.line_count())
         .with_metric("line_chars", line_chars)

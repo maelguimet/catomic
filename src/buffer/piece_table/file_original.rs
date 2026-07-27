@@ -302,8 +302,7 @@ impl FileOriginal {
         self.metadata.newline_offsets.capacity() * std::mem::size_of::<usize>()
             + self.metadata.line_char_counts.capacity() * std::mem::size_of::<usize>()
             + self.metadata.line_is_ascii.capacity().div_ceil(8)
-            + self.metadata.line_checkpoints.capacity()
-                * std::mem::size_of::<LineCheckpoint>()
+            + self.metadata.line_checkpoints.capacity() * std::mem::size_of::<LineCheckpoint>()
             + self.metadata.line_checkpoint_starts.capacity() * std::mem::size_of::<usize>()
     }
 }

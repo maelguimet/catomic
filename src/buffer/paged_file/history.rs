@@ -58,4 +58,9 @@ impl PageHistory {
     pub(super) fn position(&self) -> u64 {
         self.current_id
     }
+
+    #[cfg(test)]
+    pub(super) fn retained_bytes(&self) -> usize {
+        (self.undo.capacity() + self.redo.capacity()) * std::mem::size_of::<PageTransaction>()
+    }
 }

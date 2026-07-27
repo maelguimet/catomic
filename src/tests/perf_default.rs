@@ -13,8 +13,78 @@ use crate::buffer::{Buffer, PieceTable, SimpleBuffer};
 use crate::terminal::render::{render_buffer, RenderOptions, RenderViewport};
 
 use super::helpers::{
-    cleanup_perf, generate_dense_ascii_file, generate_line_heavy_ascii_file, temp_perf_path,
+    cleanup_perf, format_perf_sample, generate_dense_ascii_file, generate_line_heavy_ascii_file,
+    measure_sample, mixed_text_fixture, temp_perf_path,
 };
+
+#[test]
+fn perf_sample_format_keeps_ordered_machine_readable_metrics() {
+    let (_, sample) = measure_sample("format proof", Some(7), || ());
+    let line = format_perf_sample(
+        &sample
+            .with_metric("allocations", 3)
+            .with_metric("allocated_bytes", 11),
+    );
+
+    assert!(line.starts_with("PERF sample: label=format proof bytes=7 elapsed_ms="));
+    assert!(line.ends_with(" allocations=3 allocated_bytes=11"));
+}
+
+#[test]
+fn perf_mixed_fixture_covers_editor_text_shapes() {
+    let fixture = mixed_text_fixture(4 * 1024);
+
+    assert_eq!(fixture.len(), 4 * 1024);
+    assert!(fixture.contains("ASCII"));
+    assert!(fixture.contains('\t'));
+    assert!(fixture.contains('é'));
+    assert!(fixture.contains("e\u{301}"));
+    assert!(fixture.contains("👩🏽‍💻"));
+    assert!(fixture.contains("\r\n"));
+    assert!(fixture.lines().count() > 100);
+}
+
+#[test]
+fn perf_structural_stats_track_index_and_history_work() {
+    let mut buffer = PieceTable::from_text("first\nsecond\nthird");
+    let before = buffer.perf_stats();
+    buffer.insert_char('x');
+    let after = buffer.perf_stats();
+
+    assert_eq!(after.document_lines, 3);
+    assert_eq!(after.history_transactions, 1);
+    assert_eq!(after.add_buffer_bytes, 1);
+    assert_eq!(
+        after.line_index_shifted_entries - before.line_index_shifted_entries,
+        2
+    );
+    assert!(after.retained_bytes >= after.add_buffer_bytes + after.history_bytes);
+}
+
+#[test]
+fn perf_paged_stats_track_descriptor_reads_and_retained_edits() {
+    let path = temp_perf_path("stats_paged.txt");
+    cleanup_perf(&path);
+    fs::write(&path, "one\r\ntwo\r\nthree\r\nfour").unwrap();
+    let mut buffer = crate::buffer::PagedFileBuffer::open(&path, 2).unwrap();
+    let before = buffer.perf_stats();
+
+    let lines = buffer.try_visible_lines_window(0, 2, 0, 80).unwrap();
+    let after_read = buffer.perf_stats();
+    assert_eq!(lines.len(), 2);
+    assert!(after_read.descriptor_read_bytes > before.descriptor_read_bytes);
+    assert!(after_read.descriptor_metadata_checks > before.descriptor_metadata_checks);
+
+    buffer.insert_char('X');
+    assert!(buffer.next_page().unwrap());
+    buffer.insert_char('Y');
+    let edited = buffer.perf_stats();
+    assert_eq!(edited.active_pages, 1);
+    assert_eq!(edited.edited_retained_pages, 1);
+    assert!(edited.retained_page_metadata_bytes > 0);
+
+    cleanup_perf(&path);
+}
 
 #[test]
 fn phase0_small_file_key_to_render_smoke() {

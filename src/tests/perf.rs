@@ -1,7 +1,7 @@
 //! Purpose: this file must act as the tiny hub for the split perf harness.
 //!   It declares the helpers/default/manual submodules (no logic here).
 //! Owns: module declarations only. All behavior lives in siblings (see their headers).
-//! Must not: contain test bodies, generators, or timing logic; grow beyond ~30 lines.
+//! Must not: contain test bodies, generators, or timing logic.
 //! Invariants: same test names and discovery via `cargo test tests::perf` and bare fn names;
 //!   split produces identical observable test behavior (first split commit has zero changes).
 
@@ -30,6 +30,14 @@ mod search;
 #[cfg(test)]
 #[path = "perf_render.rs"]
 mod render;
+
+#[cfg(test)]
+#[path = "perf_editing.rs"]
+mod editing;
+
+#[cfg(test)]
+#[path = "perf_paged.rs"]
+mod paged;
 
 #[cfg(test)]
 #[path = "perf_extensibility.rs"]

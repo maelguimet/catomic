@@ -52,6 +52,10 @@ impl PieceTable {
             piece_starts,
             undo_stack: crate::buffer::undo::UndoStack::new(),
             recording: true,
+            #[cfg(test)]
+            line_index_scanned_bytes: 0,
+            #[cfg(test)]
+            line_index_shifted_entries: 0,
         }
     }
 
@@ -181,6 +185,10 @@ impl PieceTable {
             piece_starts,
             undo_stack: crate::buffer::undo::UndoStack::new(),
             recording: true,
+            #[cfg(test)]
+            line_index_scanned_bytes: 0,
+            #[cfg(test)]
+            line_index_shifted_entries: 0,
         }
     }
 
@@ -217,6 +225,10 @@ impl PieceTable {
             piece_starts,
             undo_stack: crate::buffer::undo::UndoStack::new(),
             recording: true,
+            #[cfg(test)]
+            line_index_scanned_bytes: 0,
+            #[cfg(test)]
+            line_index_shifted_entries: 0,
         }
     }
 }

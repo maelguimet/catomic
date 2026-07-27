@@ -41,6 +41,7 @@ struct LintResults {
     buffer_id: u64,
     content_generation: u64,
     findings: Vec<LintFinding>,
+    highlights: Vec<crate::terminal::render::TextHighlight>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -199,12 +200,40 @@ fn finish(
             message: finding.message,
         })
         .collect::<Vec<_>>();
+    let mut highlights: Vec<crate::terminal::render::TextHighlight> = findings
+        .iter()
+        .filter_map(|finding| {
+            let line_len = app.buffer.line_char_count(finding.row)?;
+            (line_len > 0).then(|| {
+                let col = finding.col.min(line_len - 1);
+                crate::terminal::render::TextHighlight {
+                    start: crate::buffer::Cursor {
+                        row: finding.row,
+                        col,
+                    },
+                    end: crate::buffer::Cursor {
+                        row: finding.row,
+                        col: col + 1,
+                    },
+                }
+            })
+        })
+        .collect();
+    highlights.sort_by_key(|range: &crate::terminal::render::TextHighlight| {
+        (
+            range.start.row,
+            range.start.col,
+            range.end.row,
+            range.end.col,
+        )
+    });
     let count = findings.len();
     app.lint.results = Some(LintResults {
         source: running.source.clone(),
         buffer_id: running.buffer_id,
         content_generation: running.content_generation,
         findings,
+        highlights,
     });
     if count > 0 {
         app.message_info(format!(
@@ -260,6 +289,17 @@ pub(crate) fn visible_findings(app: &super::App) -> Option<&[LintFinding]> {
         && app.file.content_generation == results.content_generation
         && !results.findings.is_empty())
     .then_some(results.findings.as_slice())
+}
+
+pub(crate) fn visible_highlights(
+    app: &super::App,
+) -> Option<&[crate::terminal::render::TextHighlight]> {
+    let results = app.lint.results.as_ref()?;
+    (current_absolute_path(app).as_deref() == Some(results.source.as_path())
+        && app.file.buffer_id == results.buffer_id
+        && app.file.content_generation == results.content_generation
+        && !results.highlights.is_empty())
+    .then_some(results.highlights.as_slice())
 }
 
 pub(crate) fn message_at_cursor(app: &super::App) -> Option<String> {

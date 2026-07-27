@@ -64,6 +64,10 @@ fn finding_renders_in_buffer_and_exposes_raw_message_at_cursor() {
             col: 1,
             message: "raw compiler wording".to_string(),
         }],
+        highlights: vec![crate::terminal::render::TextHighlight {
+            start: Cursor { row: 0, col: 1 },
+            end: Cursor { row: 0, col: 2 },
+        }],
     });
     app.buffer.set_cursor(Cursor { row: 0, col: 1 });
     let mut out = Vec::new();
@@ -229,6 +233,10 @@ fn buffer_identity_change_hides_results_even_at_same_path_and_history() {
             row: 0,
             col: 0,
             message: "old buffer".to_string(),
+        }],
+        highlights: vec![crate::terminal::render::TextHighlight {
+            start: Cursor { row: 0, col: 0 },
+            end: Cursor { row: 0, col: 1 },
         }],
     });
 

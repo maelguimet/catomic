@@ -310,13 +310,16 @@ pub(super) fn write_external_change_gutter<W: Write + ?Sized>(
     changes: Option<ExternalChanges<'_>>,
     theme: Theme,
 ) -> std::io::Result<()> {
-    let Some(marker) = changes
-        .into_iter()
-        .flat_map(|changes| changes.markers.iter())
-        .find(|marker| marker.line == row)
+    let Some(changes) = changes else {
+        return write!(out, "  ");
+    };
+    let Ok(marker) = changes
+        .markers
+        .binary_search_by_key(&row, |marker| marker.line)
     else {
         return write!(out, "  ");
     };
+    let marker = &changes.markers[marker];
     let (symbol, style) = match marker.kind {
         ExternalChangeKind::Added => ("+", theme.external_added),
         ExternalChangeKind::Changed => ("~", theme.external_changed),

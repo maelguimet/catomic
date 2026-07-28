@@ -5,7 +5,7 @@
 
 use std::io;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Color {
     Default,
     Ansi(u8),

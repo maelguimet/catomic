@@ -4,7 +4,7 @@
 //! Invariants: hooks run in configured order; failure/cancellation aborts the remaining chain.
 
 use std::collections::VecDeque;
-use std::io::{self, Write};
+use std::io;
 
 use crate::config::commands::HookEvent;
 
@@ -24,7 +24,10 @@ pub(crate) fn trigger_save(app: &mut super::App) {
     enqueue(app, HookEvent::Save);
 }
 
-pub(crate) fn pump(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+pub(crate) fn pump(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     if app.hooks.active.is_some() || super::external_command::is_busy(app) {
         return Ok(());
     }

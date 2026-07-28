@@ -3,7 +3,7 @@
 //! Must not: scan projects/buffers, start discovery, spawn work/processes, or emit terminal codes.
 //! Invariants: no content changes before Enter; accepted text is one undoable replacement.
 
-use std::io::{self, Write};
+use std::io;
 
 use crossterm::event::{KeyCode, KeyEvent};
 
@@ -48,7 +48,7 @@ enum OpenOutcome {
 
 pub(crate) fn handle_key(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
     if is_active(app) {
@@ -67,7 +67,10 @@ pub(crate) fn cancel(app: &mut super::App) -> bool {
     cancelled_word || cancelled_emoji
 }
 
-fn open(app: &mut super::App, out: &mut dyn Write) -> io::Result<OpenOutcome> {
+fn open(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<OpenOutcome> {
     if super::view::is_preview(app) || app.buffer.is_read_only() {
         app.message_info("Local completion requires an editable source buffer.");
         app.render(out)?;
@@ -114,13 +117,16 @@ fn open(app: &mut super::App, out: &mut dyn Write) -> io::Result<OpenOutcome> {
     Ok(OpenOutcome::Handled)
 }
 
-pub(crate) fn trigger(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+pub(crate) fn trigger(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     open(app, out).map(|_| ())
 }
 
 pub(crate) fn dispatch_action(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     action: Action,
 ) -> io::Result<bool> {
     if !is_active(app) {
@@ -143,7 +149,7 @@ pub(crate) fn dispatch_action(
 
 pub(crate) fn dispatch_editor_action(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     action: Action,
 ) -> io::Result<bool> {
     if action != Action::Indent {
@@ -152,7 +158,11 @@ pub(crate) fn dispatch_editor_action(
     Ok(open(app, out)? == OpenOutcome::Handled)
 }
 
-fn handle_active_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -> io::Result<bool> {
+fn handle_active_key(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    key: KeyEvent,
+) -> io::Result<bool> {
     if app.completion.emoji.is_some() {
         return handle_emoji_key(app, out, key);
     }
@@ -187,7 +197,7 @@ fn cycle(app: &mut super::App, forward: bool) {
     active.selected = cycled_index(active.selected, count, forward);
 }
 
-fn accept(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+fn accept(app: &mut super::App, out: &mut dyn crate::terminal::TerminalOutput) -> io::Result<()> {
     if app.completion.emoji.is_some() {
         return accept_emoji(app, out);
     }
@@ -292,7 +302,11 @@ fn emoji_picker_at_cursor(app: &super::App) -> io::Result<Option<ActiveEmojiPick
     }))
 }
 
-fn handle_emoji_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -> io::Result<bool> {
+fn handle_emoji_key(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    key: KeyEvent,
+) -> io::Result<bool> {
     match key.code {
         KeyCode::Esc => {
             cancel(app);
@@ -311,7 +325,10 @@ fn handle_emoji_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) ->
     Ok(true)
 }
 
-fn accept_emoji(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+fn accept_emoji(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     let active = app.completion.emoji.take().expect("active emoji picker");
     let original = format!(":{}", active.query);
     let unchanged = app.buffer.cursor() == active.end

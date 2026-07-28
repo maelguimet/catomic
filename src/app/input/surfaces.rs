@@ -3,7 +3,7 @@
 //! Must not: edit buffer content, translate keybindings, decode bytes, or start background work.
 //! Invariants: active surfaces precede editor actions.
 
-use std::io::{self, Write};
+use std::io;
 
 use crate::config::actions::{Action, Scope};
 use crossterm::event::KeyEvent;
@@ -39,7 +39,7 @@ const RAW_KEY_PRECEDENCE: [RawKeySurface; 9] = [
 
 pub(super) fn handle_raw_key(
     app: &mut App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
     for surface in RAW_KEY_PRECEDENCE {
@@ -53,7 +53,7 @@ pub(super) fn handle_raw_key(
 fn handle_raw_key_for(
     surface: RawKeySurface,
     app: &mut App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
     match surface {
@@ -72,7 +72,7 @@ fn handle_raw_key_for(
 
 pub(super) fn dispatch_action(
     app: &mut App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     scope: Scope,
     action: Action,
 ) -> io::Result<()> {
@@ -115,7 +115,11 @@ const PASTE_PRECEDENCE: [PasteSurface; 5] = [
     PasteSurface::MarkdownPreview,
 ];
 
-pub(super) fn handle_paste(app: &mut App, out: &mut dyn Write, text: &str) -> io::Result<bool> {
+pub(super) fn handle_paste(
+    app: &mut App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    text: &str,
+) -> io::Result<bool> {
     for surface in PASTE_PRECEDENCE {
         let handled = match surface {
             PasteSurface::Help => help::handle_paste(app, out)?,

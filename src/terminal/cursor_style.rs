@@ -7,7 +7,7 @@ use std::io::{self, Write};
 
 use crossterm::cursor::SetCursorStyle;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub(crate) enum CursorShape {
     #[default]
     Default,

@@ -11,7 +11,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use crate::config::theme::{Color as ThemeColor, Style as ThemeStyle, Theme};
 use crate::editor::text_layout;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub(crate) enum StatusRole {
     #[default]
     Normal,
@@ -21,7 +21,7 @@ pub(crate) enum StatusRole {
     Prompt,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct StatusStyle {
     foreground: Option<Color>,
     background: Option<Color>,
@@ -66,7 +66,7 @@ impl StatusStyle {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct StatusTheme {
     normal: StatusStyle,
     path: StatusStyle,

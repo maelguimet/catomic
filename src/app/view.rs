@@ -4,7 +4,7 @@
 //! Invariants: preview is explicit/read-only; F5/F7 are session-global and persisted;
 //!   F8/F9 and source viewports remain per buffer.
 
-use std::io::{self, Write};
+use std::io;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -46,7 +46,7 @@ pub(crate) fn display_presentation(
 
 pub(crate) fn handle_key(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
     if !is_preview(app) || is_quit(key) {
@@ -58,7 +58,7 @@ pub(crate) fn handle_key(
 
 pub(crate) fn dispatch_action(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     action: Action,
 ) -> io::Result<bool> {
     match action {
@@ -73,7 +73,7 @@ pub(crate) fn dispatch_action(
 
 pub(crate) fn dispatch_preview_action(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     action: Action,
 ) -> io::Result<bool> {
     if !is_preview(app) {
@@ -110,7 +110,10 @@ pub(crate) fn dispatch_preview_action(
     Ok(true)
 }
 
-pub(crate) fn handle_paste(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {
+pub(crate) fn handle_paste(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<bool> {
     if !is_preview(app) {
         return Ok(false);
     }
@@ -245,7 +248,10 @@ pub(crate) fn relayout_preview(app: &mut super::App) {
     }
 }
 
-fn toggle_preview(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {
+fn toggle_preview(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<bool> {
     if is_preview(app) {
         cancel_preview(app);
         app.message = None;
@@ -275,7 +281,10 @@ fn toggle_preview(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool>
     Ok(true)
 }
 
-fn toggle_line_numbers(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {
+fn toggle_line_numbers(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<bool> {
     let enabled = !app.view_preferences.line_numbers();
     app.view_preferences.set_line_numbers(enabled);
     match app.view_preferences.persist() {
@@ -288,7 +297,10 @@ fn toggle_line_numbers(app: &mut super::App, out: &mut dyn Write) -> io::Result<
     Ok(true)
 }
 
-fn toggle_external_diff(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {
+fn toggle_external_diff(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<bool> {
     let enabled = !app.view_preferences.external_diff();
     app.view_preferences.set_external_diff(enabled);
     if !enabled {
@@ -303,7 +315,10 @@ fn toggle_external_diff(app: &mut super::App, out: &mut dyn Write) -> io::Result
     Ok(true)
 }
 
-fn toggle_whitespace(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {
+fn toggle_whitespace(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<bool> {
     app.view.whitespace = !app.view.whitespace;
     app.message = None;
     reveal_display_cursor(app);
@@ -311,7 +326,10 @@ fn toggle_whitespace(app: &mut super::App, out: &mut dyn Write) -> io::Result<bo
     Ok(true)
 }
 
-fn toggle_soft_wrap(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {
+fn toggle_soft_wrap(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<bool> {
     app.view.soft_wrap = !app.view.soft_wrap;
     app.screen.scroll_left = 0;
     app.screen.wrap_col = 0;
@@ -321,7 +339,11 @@ fn toggle_soft_wrap(app: &mut super::App, out: &mut dyn Write) -> io::Result<boo
     Ok(true)
 }
 
-fn handle_preview_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -> io::Result<()> {
+fn handle_preview_key(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    key: KeyEvent,
+) -> io::Result<()> {
     if key.code == KeyCode::Esc {
         cancel_preview(app);
         app.message = None;
@@ -387,7 +409,11 @@ mod tests {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
-    fn press(app: &mut super::super::App, out: &mut dyn Write, code: KeyCode) {
+    fn press(
+        app: &mut super::super::App,
+        out: &mut dyn crate::terminal::TerminalOutput,
+        code: KeyCode,
+    ) {
         app.handle_key_with(out, key(code)).unwrap();
     }
 

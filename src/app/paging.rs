@@ -4,7 +4,7 @@
 //! Invariants: successful page changes reset both scroll axes; this module does not mutate
 //!   confirmation state itself; non-paged buffers ignore page commands.
 
-use std::io::{self, Write};
+use std::io;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum PageDirection {
@@ -14,7 +14,7 @@ pub(super) enum PageDirection {
 
 pub(super) fn handle_page_key(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     direction: PageDirection,
 ) -> io::Result<()> {
     if app.buffer.page_info().is_none() {

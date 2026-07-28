@@ -205,7 +205,7 @@ fn visible_ranges(
 /// Stored render annotations are sorted by their single-line coordinates at
 /// installation. This returns only ranges that can overlap `row`; end-column
 /// zero remains half-open and therefore does not paint its ending row.
-fn ranges_for_row(ranges: &[TextHighlight], row: usize) -> &[TextHighlight] {
+pub(super) fn ranges_for_row(ranges: &[TextHighlight], row: usize) -> &[TextHighlight] {
     let first = ranges.partition_point(|range| {
         range.end.row < row || (range.end.row == row && range.end.col == 0)
     });
@@ -213,7 +213,7 @@ fn ranges_for_row(ranges: &[TextHighlight], row: usize) -> &[TextHighlight] {
     &ranges[first..end]
 }
 
-fn visible_highlight(
+pub(super) fn visible_highlight(
     highlight: Option<TextHighlight>,
     row: usize,
     start_col: usize,
@@ -499,6 +499,18 @@ pub(super) fn write_styled_text<W: Write + ?Sized>(
     let mut style_state = StyleState::default();
     style_state.transition(out, style, truecolor)?;
     write!(out, "{text}")?;
+    style_state.reset(out)
+}
+
+pub(super) fn write_styled_padding<W: Write + ?Sized>(
+    out: &mut W,
+    width: usize,
+    style: Style,
+    truecolor: bool,
+) -> io::Result<()> {
+    let mut style_state = StyleState::default();
+    style_state.transition(out, style, truecolor)?;
+    write!(out, "{:width$}", "", width = width)?;
     style_state.reset(out)
 }
 

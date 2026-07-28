@@ -3,7 +3,7 @@
 //! Must not: implement buffer storage, terminal event polling, mouse decoding, or network.
 //! Invariants: selections are half-open scalar ranges; replacement is one Buffer edit.
 
-use std::io::{self, Write};
+use std::io;
 
 use crossterm::event::KeyCode;
 #[cfg(test)]
@@ -134,7 +134,7 @@ pub(super) fn cancel_touch_selection(app: &mut super::App) {
 
 pub(crate) fn move_to(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     cursor: Cursor,
     extend: bool,
 ) -> io::Result<()> {
@@ -158,7 +158,7 @@ pub(crate) fn move_to(
 #[cfg(test)]
 pub(crate) fn handle_shortcut(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
     if is_shift_arrow(key) {
@@ -184,7 +184,7 @@ pub(crate) fn handle_shortcut(
 
 pub(crate) fn dispatch_action(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     action: Action,
 ) -> io::Result<bool> {
     match action {
@@ -216,7 +216,7 @@ pub(crate) fn replace_active(app: &mut super::App, text: &str) -> io::Result<boo
 
 pub(crate) fn handle_external_paste(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     text: &str,
 ) -> io::Result<()> {
     let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
@@ -235,7 +235,11 @@ fn is_shift_arrow(key: KeyEvent) -> bool {
         )
 }
 
-fn extend_with_arrow(app: &mut super::App, out: &mut dyn Write, code: KeyCode) -> io::Result<()> {
+fn extend_with_arrow(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    code: KeyCode,
+) -> io::Result<()> {
     let before = app.buffer.cursor();
     let anchor = app
         .selection
@@ -261,7 +265,10 @@ fn extend_with_arrow(app: &mut super::App, out: &mut dyn Write, code: KeyCode) -
     app.render(out)
 }
 
-fn select_all(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+fn select_all(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     let last_row = app.buffer.line_count().saturating_sub(1);
     let end = Cursor {
         row: last_row,
@@ -276,7 +283,7 @@ fn select_all(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     app.render(out)
 }
 
-fn copy(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+fn copy(app: &mut super::App, out: &mut dyn crate::terminal::TerminalOutput) -> io::Result<()> {
     let Some(exported) = capture_selection(app, out)? else {
         app.message_info("No selection to copy.");
         return app.render(out);
@@ -292,7 +299,7 @@ fn copy(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     app.render(out)
 }
 
-fn cut(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+fn cut(app: &mut super::App, out: &mut dyn crate::terminal::TerminalOutput) -> io::Result<()> {
     if capture_selection(app, out)?.is_none() {
         app.message_info("No selection to cut.");
         return app.render(out);
@@ -310,7 +317,7 @@ fn cut(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     }
 }
 
-fn cut_line(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+fn cut_line(app: &mut super::App, out: &mut dyn crate::terminal::TerminalOutput) -> io::Result<()> {
     if app.selection.active().is_some() || app.selection.status_text().is_some() {
         end_cut_line_chain(app);
         return cut(app, out);
@@ -354,7 +361,10 @@ fn cut_line(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     }
 }
 
-fn paste_internal(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+fn paste_internal(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     if app.clipboard.is_empty() {
         app.message_info("Clipboard is empty.");
         return app.render(out);
@@ -363,7 +373,11 @@ fn paste_internal(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     replace_or_insert(app, out, &text)
 }
 
-fn replace_or_insert(app: &mut super::App, out: &mut dyn Write, text: &str) -> io::Result<()> {
+fn replace_or_insert(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    text: &str,
+) -> io::Result<()> {
     if text.is_empty() {
         return app.render(out);
     }
@@ -383,7 +397,10 @@ fn replace_or_insert(app: &mut super::App, out: &mut dyn Write, text: &str) -> i
     }
 }
 
-fn capture_selection(app: &mut super::App, out: &mut dyn Write) -> io::Result<Option<bool>> {
+fn capture_selection(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<Option<bool>> {
     if let Some(text) = app.selection.status_text().map(str::to_owned) {
         return export_text(app, out, text);
     }
@@ -397,7 +414,7 @@ fn capture_selection(app: &mut super::App, out: &mut dyn Write) -> io::Result<Op
 
 fn export_text(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     text: String,
 ) -> io::Result<Option<bool>> {
     let exported = if text.len() <= OSC52_MAX_BYTES {

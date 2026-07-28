@@ -3,19 +3,20 @@
 //! Must not: mutate App/buffers, perform terminal setup, load config, or own input dispatch.
 //! Invariants: messages replace status; local read-only surfaces never show edit highlights.
 
-use std::io::{self, Write};
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::io;
 
 use crate::terminal as term;
 
 use super::{completion, external_command, help, lint, mobile, recovery, status, view, App};
 
 impl App {
-    pub(crate) fn render(&self, out: &mut dyn Write) -> io::Result<()> {
+    pub(crate) fn render(&self, out: &mut dyn crate::terminal::TerminalOutput) -> io::Result<()> {
         render(self, out)
     }
 }
 
-fn render(app: &App, out: &mut dyn Write) -> io::Result<()> {
+fn render(app: &App, out: &mut dyn crate::terminal::TerminalOutput) -> io::Result<()> {
     let window_title = status::title(app.file.path.as_deref());
     let visible_external = (app.view_preferences.external_diff() && view::source_is_displayed(app))
         .then(|| app.external_changes.visible(app.buffer.content_revision()))
@@ -53,12 +54,11 @@ fn render(app: &App, out: &mut dyn Write) -> io::Result<()> {
 
 fn render_frame(
     app: &App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     annotation: &str,
     options: term::render::RenderOptions<'_>,
 ) -> io::Result<()> {
-    term::render::render_buffer(
-        out,
+    out.present_buffer(
         view::display_buffer(app),
         term::render::RenderViewport::new(
             app.screen.scroll_top,
@@ -84,6 +84,8 @@ fn render_options<'a>(
         |(range, kind)| (Some(range), kind),
     );
     term::render::RenderOptions {
+        document_id: display_buffer_id(app),
+        document_revision: display_document_revision(app),
         cursor_shape: if super::overwrite::uses_overwrite_cursor(app) {
             term::cursor_style::CursorShape::Overwrite
         } else {
@@ -112,6 +114,33 @@ fn render_options<'a>(
         window_title: None,
         action_bar,
     }
+}
+
+fn display_document_revision(app: &App) -> u64 {
+    if view::source_is_displayed(app) {
+        app.file.content_generation
+    } else {
+        view::display_buffer(app).content_revision()
+    }
+}
+
+fn display_buffer_id(app: &App) -> u64 {
+    let buffer = view::display_buffer(app);
+    if !view::source_is_displayed(app) {
+        let identity = buffer
+            .presentation_identity()
+            .expect("transient display buffers must expose a stable presentation identity");
+        return identity.wrapping_shl(1) | 1;
+    }
+
+    let mut hash = DefaultHasher::new();
+    app.file.buffer_id.hash(&mut hash);
+    if let Some(page) = buffer.page_info() {
+        page.page_number.hash(&mut hash);
+        page.start_byte.hash(&mut hash);
+        page.end_byte.hash(&mut hash);
+    }
+    hash.finish().wrapping_shl(1)
 }
 
 fn active_highlight(
@@ -185,4 +214,94 @@ pub(super) fn status_line(app: &App) -> status::StatusLine {
         app.cat_config.status_messages,
         app.screen.width as usize,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::buffer::PieceTable;
+    use crate::terminal::RuntimeOutput;
+
+    #[test]
+    fn source_display_identity_is_stable_across_content_revisions() {
+        let mut app = App::new(None).unwrap();
+        let identity = display_buffer_id(&app);
+        let revision = display_document_revision(&app);
+
+        app.buffer.insert_char('x');
+        super::super::file_state::note_content_change(&mut app.file);
+
+        assert_eq!(display_buffer_id(&app), identity);
+        assert_ne!(app.buffer.content_revision(), 0);
+        assert!(display_document_revision(&app) > revision);
+        assert_eq!(display_document_revision(&app), app.file.content_generation);
+    }
+
+    #[test]
+    fn same_shape_source_reloads_rebuild_layout_from_file_generation() {
+        let mut app = App::new(None).unwrap();
+        app.screen.update_size(12, 4);
+        app.buffer = Box::new(PieceTable::from_text("猫"));
+        let identity = display_buffer_id(&app);
+        let mut output = RuntimeOutput::new(Vec::new());
+        app.render(&mut output).unwrap();
+
+        let update_start = output.writer().len();
+        app.buffer = Box::new(PieceTable::from_text("abcd"));
+        assert_eq!(app.buffer.content_revision(), 0);
+        super::super::file_state::note_content_change(&mut app.file);
+        assert_eq!(display_buffer_id(&app), identity);
+        app.render(&mut output).unwrap();
+
+        assert!(output.writer()[update_start..]
+            .windows(4)
+            .any(|window| window == b"abcd"));
+        assert_eq!(output.presentation().metrics().rows_composed, 1);
+        assert_eq!(output.presentation().metrics().rows_emitted, 1);
+
+        let deleted_start = output.writer().len();
+        app.buffer = Box::new(PieceTable::new());
+        assert_eq!(app.buffer.content_revision(), 0);
+        super::super::file_state::note_content_change(&mut app.file);
+        app.render(&mut output).unwrap();
+
+        assert!(output.writer()[deleted_start..]
+            .windows(6)
+            .any(|window| window == b"\x1b[1;1H"));
+        assert_eq!(output.presentation().metrics().rows_composed, 1);
+        assert_eq!(output.presentation().metrics().rows_emitted, 1);
+    }
+
+    #[test]
+    fn same_shape_transient_surface_cannot_reuse_source_layout() {
+        let mut app = App::new(None).unwrap();
+        app.screen.update_size(12, 4);
+        app.buffer = Box::new(PieceTable::from_text("猫"));
+        let source_identity = display_buffer_id(&app);
+        assert_eq!(source_identity & 1, 0);
+        let mut output = RuntimeOutput::new(Vec::new());
+        app.render(&mut output).unwrap();
+
+        super::super::mobile::open_notice_for_test(&mut app, "abcd");
+        let transient_identity = display_buffer_id(&app);
+        assert_ne!(transient_identity, source_identity);
+        assert_eq!(transient_identity & 1, 1);
+        assert_eq!(view::display_buffer(&app).content_revision(), 0);
+        let transient_start = output.writer().len();
+        app.render(&mut output).unwrap();
+        assert!(output.writer()[transient_start..]
+            .windows(4)
+            .any(|window| window == b"abcd"));
+
+        assert!(super::super::mobile::close_overlay_for_test(&mut app));
+        let source_start = output.writer().len();
+        app.render(&mut output).unwrap();
+        assert_eq!(display_buffer_id(&app), source_identity);
+        assert!(output.writer()[source_start..]
+            .windows("猫".len())
+            .any(|window| window == "猫".as_bytes()));
+
+        super::super::mobile::open_notice_for_test(&mut app, "wxyz");
+        assert_ne!(display_buffer_id(&app), transient_identity);
+    }
 }

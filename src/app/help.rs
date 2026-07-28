@@ -4,7 +4,7 @@
 //! Invariants: Ctrl+H/F1 toggle the view; Escape closes it; all content is read-only.
 
 use std::fmt::Write as _;
-use std::io::{self, Write};
+use std::io;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -30,7 +30,10 @@ struct HelpSearch {
     active_match: Option<SearchMatch>,
 }
 
-pub(crate) fn show(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+pub(crate) fn show(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     close_transients(app);
     let source_scroll_top = app.screen.scroll_top;
     let source_scroll_left = app.screen.scroll_left;
@@ -71,7 +74,7 @@ pub(crate) fn presentation(
 
 pub(crate) fn handle_key(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
     if !is_viewing(app) || is_quit(key) {
@@ -100,7 +103,10 @@ pub(crate) fn handle_key(
     Ok(true)
 }
 
-pub(crate) fn handle_paste(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {
+pub(crate) fn handle_paste(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<bool> {
     if !is_viewing(app) {
         return Ok(false);
     }
@@ -137,7 +143,10 @@ fn close(app: &mut super::App) -> bool {
     true
 }
 
-fn close_with_message(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+fn close_with_message(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     close(app);
     app.message = None;
     app.reveal_cursor();
@@ -172,7 +181,11 @@ fn move_cursor(app: &mut super::App, movement: Move) {
     }
 }
 
-fn scroll_page(app: &mut super::App, out: &mut dyn Write, forward: bool) -> io::Result<bool> {
+fn scroll_page(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    forward: bool,
+) -> io::Result<bool> {
     let direction = if forward {
         super::viewport::ScrollDirection::Down
     } else {
@@ -199,7 +212,10 @@ fn reveal_cursor(app: &mut super::App) {
     app.reveal_cursor();
 }
 
-pub(crate) fn toggle(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+pub(crate) fn toggle(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     if is_viewing(app) {
         close_with_message(app, out)
     } else {
@@ -209,7 +225,7 @@ pub(crate) fn toggle(app: &mut super::App, out: &mut dyn Write) -> io::Result<()
 
 pub(crate) fn dispatch_action(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     action: Action,
 ) -> io::Result<bool> {
     if !is_viewing(app) {
@@ -343,7 +359,10 @@ pub(crate) fn is_searching(app: &super::App) -> bool {
         .is_some_and(|view| view.search.prompt.is_some())
 }
 
-fn open_search(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+fn open_search(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     let view = app.surfaces.help.as_mut().expect("help active");
     view.search.prompt = Some(String::new());
     view.search.origin = Some(view.buffer.cursor());
@@ -352,7 +371,11 @@ fn open_search(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     app.render(out)
 }
 
-fn handle_search_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -> io::Result<bool> {
+fn handle_search_key(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    key: KeyEvent,
+) -> io::Result<bool> {
     match key.code {
         KeyCode::Esc => cancel_search(app),
         KeyCode::Enter | KeyCode::Down => find_help_match(app, SearchDirection::Forward, false),

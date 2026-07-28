@@ -4,7 +4,7 @@
 //! Invariants: search workers exist only while an explicit non-empty prompt is active;
 //!   Escape clears the highlight; descriptor matches switch page before reveal.
 
-use std::io::{self, Write};
+use std::io;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -38,7 +38,10 @@ enum RunningSearchTask {
     Local(Box<LocalSearchTask>),
 }
 
-pub(crate) fn open_prompt(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+pub(crate) fn open_prompt(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     cancel_running(&mut app.search);
     app.selection.clear();
     app.search.prompt = Some(String::new());
@@ -61,7 +64,7 @@ pub(super) fn is_active(app: &super::App) -> bool {
 
 pub(crate) fn handle_active_key(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
     if matches!(key.code, KeyCode::Char('q')) && key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -82,7 +85,7 @@ pub(crate) fn handle_active_key(
 
 pub(crate) fn dispatch_action(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     action: Action,
 ) -> io::Result<bool> {
     if app.search.prompt.is_none() {
@@ -111,7 +114,11 @@ pub(crate) fn dispatch_action(
     Ok(true)
 }
 
-fn handle_prompt_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -> io::Result<()> {
+fn handle_prompt_key(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    key: KeyEvent,
+) -> io::Result<()> {
     match key.code {
         KeyCode::Esc => {
             cancel_running(&mut app.search);
@@ -152,7 +159,10 @@ fn handle_prompt_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -
     app.render(out)
 }
 
-fn refresh_incremental_match(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+fn refresh_incremental_match(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     let query = app.search.prompt.clone().unwrap_or_default();
     cancel_running(&mut app.search);
     app.search.active_match = None;
@@ -202,7 +212,7 @@ fn refresh_incremental_match(app: &mut super::App, out: &mut dyn Write) -> io::R
 
 fn navigate_match(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     direction: SearchDirection,
 ) -> io::Result<()> {
     let query = app.search.prompt.clone().unwrap_or_default();
@@ -284,7 +294,10 @@ fn apply_local_match(
     }
 }
 
-pub(crate) fn poll_search(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+pub(crate) fn poll_search(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     let result = match app.search.running.as_mut() {
         Some(RunningSearch {
             task: RunningSearchTask::Descriptor(task),

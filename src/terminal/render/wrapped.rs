@@ -24,6 +24,22 @@ pub(crate) struct WrappedRow<'a> {
     layout: text_layout::VisibleLineLayout,
 }
 
+struct PlannedRow {
+    document_row: usize,
+    start_col: usize,
+    content_fingerprint: u64,
+    line_end: bool,
+    layout: text_layout::VisibleLineLayout,
+}
+
+pub(super) struct RowPlan {
+    rows: Vec<PlannedRow>,
+    pub(super) content_height: usize,
+    content_width: usize,
+    line_gutter: usize,
+    external_gutter: usize,
+}
+
 impl WrappedRow<'_> {
     pub(crate) fn end_col(&self) -> usize {
         self.start_col
@@ -298,6 +314,51 @@ pub(super) fn compose_buffer(
     super::write_terminal_cursor(out, cursor, options.cursor_shape)
 }
 
+pub(super) fn plan_buffer(
+    buffer: &dyn Buffer,
+    viewport: RenderViewport,
+    options: RenderOptions<'_>,
+) -> io::Result<RowPlan> {
+    let content_height = super::content_height(viewport.height, options.action_bar);
+    let line_gutter = if options.line_numbers {
+        line_number_gutter(buffer.line_count())
+    } else {
+        0
+    }
+    .min(viewport.width);
+    let external_gutter = change_gutter_width(
+        options
+            .external_changes
+            .is_some_and(|changes| !changes.markers.is_empty()),
+    )
+    .min(viewport.width.saturating_sub(line_gutter));
+    let gutter = line_gutter.saturating_add(external_gutter);
+    let content_width = viewport.width.saturating_sub(gutter);
+    let rows = visible_rows(
+        buffer,
+        viewport.start_row,
+        viewport.wrap_col,
+        content_height,
+        content_width,
+    )?
+    .into_iter()
+    .map(|row| PlannedRow {
+        document_row: row.document_row,
+        start_col: row.start_col,
+        content_fingerprint: super::presentation::content_fingerprint(&row.content),
+        line_end: row.line_end,
+        layout: row.layout,
+    })
+    .collect();
+    Ok(RowPlan {
+        rows,
+        content_height,
+        content_width,
+        line_gutter,
+        external_gutter,
+    })
+}
+
 pub(super) fn append_line_rows<'a>(
     buffer: &'a dyn Buffer,
     document_row: usize,
@@ -372,6 +433,128 @@ fn wrapped_row_end(
     Ok((end_col, end_col >= line_len))
 }
 
+pub(super) fn compose_row<W: Write + ?Sized>(
+    out: &mut W,
+    buffer: &dyn Buffer,
+    plan: &RowPlan,
+    row_index: usize,
+    options: RenderOptions<'_>,
+    boundaries: &mut Vec<usize>,
+) -> io::Result<()> {
+    super::style::write_row_start(
+        out,
+        row_index.saturating_add(1),
+        options.theme.text,
+        options.theme.truecolor,
+    )?;
+    let Some(row) = plan.rows.get(row_index) else {
+        return super::style::write_reset(out);
+    };
+    if plan.external_gutter > 0 && row.start_col == 0 {
+        write_external_change_gutter(
+            out,
+            row.document_row,
+            options.external_changes,
+            options.theme,
+        )?;
+    } else if plan.external_gutter > 0 {
+        write!(out, "{:width$}", "", width = plan.external_gutter)?;
+    }
+    if plan.line_gutter > 0 && row.start_col == 0 {
+        write_line_number(out, row.document_row, plan.line_gutter, options.theme)?;
+    } else if plan.line_gutter > 0 {
+        super::style::write_styled_padding(
+            out,
+            plan.line_gutter,
+            options.theme.text.overlay(options.theme.line_number),
+            options.theme.truecolor,
+        )?;
+    }
+    let content = planned_content(buffer, row)?;
+    super::style::write_content_line_from_layout(
+        out,
+        &content,
+        row.document_row,
+        row.start_col,
+        options,
+        &row.layout,
+        boundaries,
+    )?;
+    super::style::write_reset(out)
+}
+
+pub(super) fn row_fingerprint(plan: &RowPlan, row_index: usize, options: RenderOptions<'_>) -> u64 {
+    let Some(row) = plan.rows.get(row_index) else {
+        return super::presentation::empty_row_fingerprint(options);
+    };
+    super::presentation::row_fingerprint(
+        options,
+        row.document_row,
+        row.start_col,
+        Some(row.content_fingerprint),
+        row.layout.byte_len(),
+        row.layout.scalar_len(),
+        true,
+        row.line_end,
+    )
+}
+
+impl RowPlan {
+    pub(super) fn cursor_position(&self, cursor: Cursor) -> Option<(usize, usize)> {
+        let (index, row) = self
+            .rows
+            .iter()
+            .enumerate()
+            .find(|(_, row)| row_contains_planned_cursor(row, cursor))?;
+        let cell = row
+            .layout
+            .scalar_to_cell(cursor.col.saturating_sub(row.start_col));
+        if self.content_width == 0
+            || cell > self.content_width
+            || (cell == self.content_width && !row.line_end)
+        {
+            return None;
+        }
+        let gutter = self.line_gutter.saturating_add(self.external_gutter);
+        Some((
+            index.saturating_add(1),
+            gutter
+                .saturating_add(cell)
+                .saturating_add(1)
+                .min(gutter.saturating_add(self.content_width).max(1)),
+        ))
+    }
+}
+
+fn row_contains_planned_cursor(row: &PlannedRow, cursor: Cursor) -> bool {
+    let end_col = row.start_col.saturating_add(row.layout.source_scalar_len());
+    cursor.row == row.document_row
+        && cursor.col >= row.start_col
+        && (cursor.col < end_col || (row.line_end && cursor.col == end_col))
+}
+
+fn planned_content<'a>(buffer: &'a dyn Buffer, row: &PlannedRow) -> io::Result<Cow<'a, str>> {
+    let content = buffer
+        .try_visible_lines_window(
+            row.document_row,
+            1,
+            row.start_col,
+            row.layout.source_scalar_len(),
+        )?
+        .into_iter()
+        .next()
+        .map(|line| line.content)
+        .unwrap_or_default();
+    let byte_len = row.layout.source_byte_len();
+    if content.len() < byte_len || !content.is_char_boundary(byte_len) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "buffer changed while composing retained wrapped row",
+        ));
+    }
+    Ok(cow_prefix(content, byte_len))
+}
+
 fn write_rows<W: Write + ?Sized>(
     out: &mut W,
     rows: &[WrappedRow<'_>],
@@ -404,15 +587,14 @@ fn write_rows<W: Write + ?Sized>(
                 options.theme,
             )?;
         } else if external_gutter > 0 {
-            write!(out, "{:external_gutter$}", "")?;
+            write!(out, "{:width$}", "", width = external_gutter)?;
         }
         if line_gutter > 0 && row.start_col == 0 {
             write_line_number(out, row.document_row, line_gutter, options.theme)?;
         } else if line_gutter > 0 {
-            let blank = " ".repeat(line_gutter);
-            super::style::write_styled_text(
+            super::style::write_styled_padding(
                 out,
-                &blank,
+                line_gutter,
                 options.theme.text.overlay(options.theme.line_number),
                 options.theme.truecolor,
             )?;

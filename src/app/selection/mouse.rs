@@ -4,7 +4,7 @@
 //! Invariants: persistent status selection never maps into document coordinates;
 //!   mapped document cursors stay within the active page.
 
-use std::io::{self, Write};
+use std::io;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
@@ -19,7 +19,7 @@ const DOUBLE_CLICK_WINDOW: Duration = Duration::from_millis(500);
 
 pub(crate) fn handle_mouse(
     app: &mut super::super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     event: MouseEvent,
 ) -> io::Result<()> {
     super::end_cut_line_chain(app);
@@ -61,7 +61,7 @@ pub(crate) fn handle_mouse(
 
 fn handle_status_mouse(
     app: &mut super::super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     event: MouseEvent,
 ) -> io::Result<bool> {
     let persistent_status_is_visible = app.message.is_none()
@@ -96,7 +96,7 @@ fn handle_status_mouse(
 
 fn dispatch_scroll(
     app: &mut super::super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     gesture: MouseGesture,
     event: MouseEvent,
 ) -> io::Result<()> {
@@ -115,7 +115,7 @@ fn dispatch_scroll(
 
 fn mouse_down(
     app: &mut super::super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     event: MouseEvent,
 ) -> io::Result<()> {
     let Some(cursor) = map_mouse_cursor(app, event, false)? else {
@@ -151,7 +151,7 @@ fn mouse_down(
 
 fn dispatch_gesture(
     app: &mut super::super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     event: MouseEvent,
     gesture: MouseGesture,
     clamp_status_row: bool,
@@ -164,7 +164,7 @@ fn dispatch_gesture(
 
 fn dispatch_action(
     app: &mut super::super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     cursor: Cursor,
     gesture: MouseGesture,
     now: Instant,

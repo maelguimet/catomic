@@ -63,6 +63,7 @@ impl PieceTable {
         }
     }
 
+    #[cfg(test)]
     pub fn from_text(text: &str) -> Self {
         let normalized = if text.as_bytes().contains(&b'\r') {
             text.replace("\r\n", "\n").replace('\r', "\n")

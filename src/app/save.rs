@@ -5,7 +5,7 @@
 //!             and watcher change only after a successful write.
 
 use std::ffi::OsStr;
-use std::io::{self, Write};
+use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::file;
@@ -101,7 +101,10 @@ pub(crate) fn save_conflict_message_for_ui(status: &ExternalFileStatus, mobile: 
 /// Keeps the match arm in mod.rs to a single obvious call.
 /// Phase 2-p: decision uses ExternalFileObservation (status + live snapshot) so that
 /// a pending confirmation is bound to the specific disk state seen on first refusal.
-pub(crate) fn handle_save(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+pub(crate) fn handle_save(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     if app.file.path.is_none() {
         app.pending_save_conflict = None;
         return super::command_prompt::open_save_as_prompt(app, out);
@@ -174,7 +177,7 @@ pub(crate) fn handle_save(app: &mut super::App, out: &mut dyn Write) -> io::Resu
 /// submitted twice, and the remembered path changes only after a successful write.
 pub(crate) fn handle_save_as(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     input: &str,
 ) -> io::Result<()> {
     handle_save_as_with_route(app, out, input, false)
@@ -182,7 +185,7 @@ pub(crate) fn handle_save_as(
 
 pub(crate) fn handle_command_prompt_save_as(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     input: &str,
 ) -> io::Result<()> {
     handle_save_as_with_route(app, out, input, true)
@@ -190,7 +193,7 @@ pub(crate) fn handle_command_prompt_save_as(
 
 fn handle_save_as_with_route(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     input: &str,
     is_command_prompt_save_as: bool,
 ) -> io::Result<()> {
@@ -337,7 +340,10 @@ fn paths_refer_to_same_file(current: &Path, target: &Path) -> bool {
 /// Factor of the atomic write + post-success bookkeeping (used for both normal
 /// and force-save). Extracted here; identical side effects on FileState, snapshot,
 /// pendings, message, and dirty as before.
-pub(crate) fn do_atomic_save(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+pub(crate) fn do_atomic_save(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     let target = app
         .file
         .path
@@ -346,7 +352,11 @@ pub(crate) fn do_atomic_save(app: &mut super::App, out: &mut dyn Write) -> io::R
     do_atomic_save_to(app, out, target)
 }
 
-fn do_atomic_save_to(app: &mut super::App, out: &mut dyn Write, target: PathBuf) -> io::Result<()> {
+fn do_atomic_save_to(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    target: PathBuf,
+) -> io::Result<()> {
     super::recovery::finish_before_save(app);
     app.buffer.finish_undo_group();
     let path_changed = app.file.path.as_ref() != Some(&target);

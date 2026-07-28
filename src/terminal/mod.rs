@@ -4,12 +4,14 @@
 //! Invariants: every enabled terminal mode has a best-effort inverse on all exit paths.
 
 pub(crate) mod cursor_style;
+mod output;
 pub mod render;
 pub mod screen;
 mod session;
 mod signal;
 mod title;
 
+pub(crate) use output::{RuntimeOutput, TerminalOutput};
 pub(crate) use session::TerminalGuard;
 pub(crate) use signal::{
     install_process_handlers, request_interrupt, take_resize_pending, termination_signal,

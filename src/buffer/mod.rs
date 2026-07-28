@@ -33,7 +33,7 @@ pub use simple::SimpleBuffer;
 
 /// Core cursor position.
 /// For Phase 0: row = line index, col = char index within the line.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub struct Cursor {
     pub row: usize,
     pub col: usize,
@@ -129,6 +129,11 @@ pub trait Buffer {
         false
     }
     fn page_info(&self) -> Option<PageInfo> {
+        None
+    }
+    /// Stable process-local identity for generated display buffers that do not
+    /// have an App-owned file identity.
+    fn presentation_identity(&self) -> Option<u64> {
         None
     }
     /// Exact logical byte length when the backend can answer without scanning or

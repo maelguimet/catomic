@@ -3,7 +3,7 @@
 //! Must not: affect paste, indentation, completion, command apply, prompts, or read-only views.
 //! Invariants: overwrite replaces one same-line grapheme; line ends always insert.
 
-use std::io::{self, Write};
+use std::io;
 
 use crate::editor::text_layout;
 
@@ -20,7 +20,10 @@ impl TypingMode {
     }
 }
 
-pub(crate) fn toggle(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+pub(crate) fn toggle(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     app.typing_mode = match app.typing_mode {
         TypingMode::Insert => TypingMode::Overwrite,
         TypingMode::Overwrite => TypingMode::Insert,

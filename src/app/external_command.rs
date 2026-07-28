@@ -3,7 +3,7 @@
 //! Must not: choose lifecycle events, write files, apply output, block input, or spawn at startup.
 //! Invariants: only configured names run; input is capped; all output goes through preview.
 
-use std::io::{self, Write};
+use std::io;
 use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent};
@@ -46,7 +46,11 @@ struct PreparedCommand {
     source_snapshot: Option<String>,
 }
 
-pub(crate) fn start(app: &mut super::App, out: &mut dyn Write, name: &str) -> io::Result<()> {
+pub(crate) fn start(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    name: &str,
+) -> io::Result<()> {
     if app.external_command.running.is_some() || preview::is_viewing(app) {
         app.message_info("An external command is already running or previewed.");
         return app.render(out);
@@ -117,7 +121,10 @@ fn prepare_command(app: &super::App, spec: &CommandSpec) -> io::Result<PreparedC
     })
 }
 
-pub(crate) fn poll(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+pub(crate) fn poll(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     let Some(result) = app
         .external_command
         .running
@@ -148,7 +155,7 @@ pub(crate) fn poll(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
 
 pub(crate) fn handle_key(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
     if app.external_command.running.is_some() && key.code == KeyCode::Esc {
@@ -163,7 +170,7 @@ pub(crate) fn handle_key(
 
 pub(crate) fn dispatch_action(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     action: Action,
 ) -> io::Result<bool> {
     if action == Action::PreviewCancel && app.external_command.running.is_some() {
@@ -176,7 +183,10 @@ pub(crate) fn dispatch_action(
     preview::dispatch_action(app, out, action)
 }
 
-pub(crate) fn handle_paste(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {
+pub(crate) fn handle_paste(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<bool> {
     preview::handle_paste(app, out)
 }
 
@@ -194,7 +204,7 @@ pub(crate) fn is_busy(app: &super::App) -> bool {
 
 pub(crate) fn start_hook(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     name: &str,
 ) -> io::Result<bool> {
     start(app, out, name)?;
@@ -264,7 +274,11 @@ fn command_context(app: &super::App) -> io::Result<(PathBuf, Option<PathBuf>)> {
     Ok((cwd, file))
 }
 
-fn input_error(app: &mut super::App, out: &mut dyn Write, error: io::Error) -> io::Result<()> {
+fn input_error(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    error: io::Error,
+) -> io::Result<()> {
     app.message_error(format!("Cannot run command: {error}."));
     app.render(out)
 }
@@ -275,7 +289,7 @@ fn invalid_input(message: &str) -> io::Error {
 
 fn finish_error(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     name: &str,
     error: &str,
 ) -> io::Result<()> {

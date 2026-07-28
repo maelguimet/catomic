@@ -3,7 +3,7 @@
 //! Must not: duplicate editor commands, inspect file internals, start services, or write files.
 //! Invariants: actions reuse normalized key paths; status/action touches never reach content.
 
-use std::io::{self, Write};
+use std::io;
 
 use crate::config::actions::{Action, Scope};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -36,6 +36,16 @@ pub(crate) fn display_buffer(app: &super::App) -> Option<&dyn crate::buffer::Buf
     overlay::display_buffer(app)
 }
 
+#[cfg(test)]
+pub(crate) fn open_notice_for_test(app: &mut super::App, text: &str) {
+    overlay::open_notice(app, text);
+}
+
+#[cfg(test)]
+pub(crate) fn close_overlay_for_test(app: &mut super::App) -> bool {
+    overlay::close(app)
+}
+
 fn action_bar(app: &super::App) -> Option<ActionBar> {
     app.mobile
         .enabled
@@ -48,7 +58,7 @@ pub(crate) fn action_bar_text(app: &super::App) -> Option<String> {
 
 pub(crate) fn handle_key(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
     if !overlay::is_viewing(app) || is_quit(key) {
@@ -86,7 +96,10 @@ pub(crate) fn handle_key(
     Ok(true)
 }
 
-pub(crate) fn handle_paste(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {
+pub(crate) fn handle_paste(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<bool> {
     if !overlay::is_viewing(app) {
         return Ok(false);
     }
@@ -98,7 +111,7 @@ pub(crate) fn handle_paste(app: &mut super::App, out: &mut dyn Write) -> io::Res
 
 pub(crate) fn handle_mouse(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     event: MouseEvent,
 ) -> io::Result<bool> {
     if !app.mobile.enabled {
@@ -145,7 +158,7 @@ pub(crate) fn handle_mouse(
 
 fn dispatch_bar_action(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     action: BarAction,
 ) -> io::Result<()> {
     match action {
@@ -197,7 +210,7 @@ fn dispatch_bar_action(
 
 fn execute_menu_action(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     action: MenuAction,
 ) -> io::Result<()> {
     overlay::close(app);
@@ -220,7 +233,11 @@ fn execute_menu_action(
     }
 }
 
-fn move_overlay(app: &mut super::App, out: &mut dyn Write, code: KeyCode) -> io::Result<()> {
+fn move_overlay(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    code: KeyCode,
+) -> io::Result<()> {
     prepare_overlay_action(app);
     overlay::move_cursor(app, code);
     app.reveal_cursor();
@@ -229,7 +246,7 @@ fn move_overlay(app: &mut super::App, out: &mut dyn Write, code: KeyCode) -> io:
 
 fn dispatch_surface_action(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     accept: bool,
 ) -> io::Result<()> {
     let action = match (super::input::active_scope(app), accept) {
@@ -250,7 +267,7 @@ fn dispatch_surface_action(
 
 fn dispatch_vertical_action(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     down: bool,
 ) -> io::Result<()> {
     let action = vertical_action(super::input::active_scope(app), down);

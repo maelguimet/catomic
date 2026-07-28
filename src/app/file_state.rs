@@ -66,7 +66,10 @@ pub(crate) fn next_buffer_id() -> u64 {
 }
 
 pub(crate) fn note_content_change(file: &mut FileState) {
-    file.content_generation = file.content_generation.wrapping_add(1);
+    file.content_generation = file
+        .content_generation
+        .checked_add(1)
+        .expect("content generation exhausted");
 }
 
 /// Refresh dirty from exact buffer history position vs last saved token.

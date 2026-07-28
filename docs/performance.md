@@ -30,6 +30,55 @@ Soft-wrap cursor reveal computes only wrap boundaries through the cursor. It
 does not materialize viewport row strings; terminal frame composition remains
 the sole owner of those visible fragments.
 
+## Retained terminal rows
+
+The interactive terminal runtime owns the last successfully published visual
+rows, their exact input fingerprints, retained grapheme layouts, and reusable
+frame/row capacity. `App` and `Buffer` remain free of terminal cache state.
+Unchanged cursor-only frames reuse the row plan without fetching or copying
+buffer text. When content changes, the bounded viewport plan is rebuilt and
+only damaged rows refetch their exact boundary-complete `Cow` slice for
+composition; borrowed preview and contiguous piece-table slices remain
+borrowed.
+
+Source plans bind a stable file/page identity to the App's monotonic content
+generation, so replacement buffers installed by reload cannot collide with a
+fresh backend revision. Every transient read-only document uses a distinct,
+stable generated-buffer identity. The runtime routes keyboard, paste, mouse,
+resize, focus, and background redraws through the same presentation state.
+
+Resize, scroll origin, theme/view/syntax/surface/buffer changes, focus/resume,
+and explicit invalidation deterministically repaint the required rows.
+Fingerprints include visible text and wrap boundaries, sparse Markdown styles
+and hyperlink destinations, indexed lint/external ranges and markers,
+highlights, gutters, and render options. Range and annotation coordinates are
+clamped to each visible wrapped segment, so moving one endpoint does not damage
+unchanged intermediate segments. Off-viewport line-count changes rebuild the
+bounded plan without repainting visible rows unless line-number gutter geometry
+changes. Emoji overlays conservatively repaint content rows while active and
+after closing.
+
+Candidate bytes and metadata stay separate from the published cache.
+Publication happens only after the complete synchronized update is written and
+flushed. Composition or transport errors leave published state unchanged and
+force the next update to repaint all content rows.
+
+Run the ignored measurement with:
+
+```sh
+cargo test --locked --bin catomic manual_retained_row_render_reports_damage_samples -- --ignored --nocapture
+```
+
+Warm debug-profile evidence captured on 2026-07-28 for a 24-by-80 styled
+viewport (22 content rows):
+
+```text
+PERF retained-render: sample=cursor allocations=0 rows_composed=0 rows_emitted=0 output_bytes=52
+PERF retained-render: sample=one-line-edit allocations=148 rows_composed=1 rows_emitted=1 output_bytes=115
+PERF retained-render: sample=scroll allocations=358 rows_composed=22 rows_emitted=22 output_bytes=1416
+PERF retained-render: sample=invalidated allocations=135 rows_composed=22 rows_emitted=22 output_bytes=1416
+```
+
 When adding expensive work, document:
 
 - when it runs

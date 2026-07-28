@@ -24,7 +24,7 @@
 //! Callers of refresh after a successful path state change keep the watcher in sync.
 //! Future path transitions must also refresh/clear via this helper.
 
-use std::io::{self, Write};
+use std::io;
 use std::path::PathBuf;
 
 use crate::file;
@@ -217,7 +217,7 @@ pub(crate) fn check_file_watcher_once(app: &mut super::App) -> bool {
 /// Must not be called from handle_key, save, reload, or render.
 pub(crate) fn check_file_watcher_once_and_render(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
 ) -> io::Result<bool> {
     if check_file_watcher_once(app) {
         app.render(out)?;

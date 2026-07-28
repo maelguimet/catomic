@@ -175,6 +175,11 @@ pub trait Buffer {
     }
     fn set_cursor(&mut self, cursor: Cursor);
 
+    /// End the current coalesced undo run without changing content or history.
+    /// Semantic boundaries such as Save and buffer switching use this so a later
+    /// scalar edit cannot be folded into an earlier typing/deletion burst.
+    fn finish_undo_group(&mut self) {}
+
     /// Return the text in a half-open scalar-coordinate range on the active
     /// logical document/page. Newlines between selected rows are included.
     fn text_range(&self, start: Cursor, end: Cursor) -> io::Result<String> {
@@ -256,6 +261,15 @@ pub trait Buffer {
     /// Tokens are equal only when at the exact same point in undo/redo history.
     /// No content comparison; based on undo stack position for PieceTable.
     fn edit_history_position(&self) -> u64;
+
+    /// Monotonic token for the current buffer contents.
+    ///
+    /// Unlike `edit_history_position`, this advances for every mutation inside
+    /// a coalesced undo transaction. Consumers that cache content-derived state
+    /// must bind it to this revision rather than to an undo/save-point token.
+    fn content_revision(&self) -> u64 {
+        self.edit_history_position()
+    }
 
     // TODO later:
     // fn move_to(&mut self, row: usize, col: usize);

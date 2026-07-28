@@ -64,7 +64,7 @@ fn watcher_changed_clean_buffer_auto_reloads() {
     assert!(app.pending_reload.is_none());
     let external = app
         .external_changes
-        .visible(app.buffer.edit_history_position())
+        .visible(app.buffer.content_revision())
         .expect("automatic reload must retain visible external changes");
     assert!(!external.changed_ranges.is_empty());
     let rendered = String::from_utf8(out).unwrap();

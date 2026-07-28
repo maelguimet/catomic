@@ -128,15 +128,19 @@ pub(crate) fn delete_grapheme(
         previous_grapheme_cursor(&*app.buffer)?
     };
     let current = app.buffer.cursor();
-    if target.row != current.row || target.col.abs_diff(current.col) == 1 {
+    let scalar_count = if target.row == current.row {
+        target.col.abs_diff(current.col).max(1)
+    } else {
+        1
+    };
+    for _ in 0..scalar_count {
         if forward {
             app.buffer.delete_forward();
         } else {
             app.buffer.delete_back();
         }
-        return super::input::finish_content_edit(app, out);
     }
-    delete_to(app, out, target)
+    super::input::finish_content_edit(app, out)
 }
 
 pub(crate) fn snap_current_grapheme(app: &mut super::App) -> io::Result<()> {
@@ -497,5 +501,32 @@ mod tests {
         assert_eq!(app.buffer.to_string(), "one ");
         app.buffer.undo();
         assert_eq!(app.buffer.to_string(), "one a\u{301}");
+    }
+
+    #[test]
+    fn repeated_grapheme_deletions_share_one_undo_run() {
+        let source = "a\u{301}b\u{301}c";
+        let mut backspace = app(source);
+        let mut out = Vec::new();
+        backspace.buffer.set_cursor(Cursor { row: 0, col: 5 });
+
+        for _ in 0..2 {
+            backspace
+                .handle_key_with(&mut out, key(KeyCode::Backspace, KeyModifiers::NONE))
+                .unwrap();
+        }
+        assert_eq!(backspace.buffer.to_string(), "a\u{301}");
+        backspace.buffer.undo();
+        assert_eq!(backspace.buffer.to_string(), source);
+
+        let mut forward = app(source);
+        for _ in 0..2 {
+            forward
+                .handle_key_with(&mut out, key(KeyCode::Delete, KeyModifiers::NONE))
+                .unwrap();
+        }
+        assert_eq!(forward.buffer.to_string(), "c");
+        forward.buffer.undo();
+        assert_eq!(forward.buffer.to_string(), source);
     }
 }

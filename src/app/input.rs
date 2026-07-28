@@ -76,7 +76,7 @@ pub(super) fn finish_content_edit_with_message(
     completion::after_content_edit(app)?;
     refresh_dirty(&mut app.file, &*app.buffer);
     app.external_changes
-        .reconcile(app.buffer.edit_history_position());
+        .reconcile(app.buffer.content_revision());
     if app.buffer.is_read_only() {
         app.message_warning("Large file is read-only in paged mode.");
     } else {
@@ -144,6 +144,13 @@ fn handle_raw_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -> i
 }
 
 pub(super) fn prepare_editor_action(app: &mut super::App, action: Option<Action>) {
+    // Any explicit editor action is a semantic boundary for scalar typing or
+    // deletion runs except the Backspace/Delete actions that can extend the
+    // current deletion run. This also covers touch/mouse actions, which call
+    // this helper with no keyboard action before changing selection state.
+    if !matches!(action, Some(Action::DeleteBackward | Action::DeleteForward)) {
+        app.buffer.finish_undo_group();
+    }
     let is_quit = matches!(action, Some(Action::Quit));
     let is_save = matches!(action, Some(Action::Save | Action::SaveAs))
         || (matches!(action, Some(Action::PromptSubmit))
@@ -305,6 +312,21 @@ mod tests {
         assert!(app.pending_save_conflict.is_none());
         assert!(app.pending_reload.is_none());
         assert!(super::super::help::is_viewing(&app));
+    }
+
+    #[test]
+    fn semantic_editor_action_ends_the_active_typing_run() {
+        let mut app = super::super::App::new(None).unwrap();
+        app.buffer.insert_char('a');
+        app.buffer.insert_char('b');
+
+        prepare_editor_action(&mut app, Some(Action::Help));
+        app.buffer.insert_char('c');
+
+        app.buffer.undo();
+        assert_eq!(app.buffer.to_string(), "ab");
+        app.buffer.undo();
+        assert_eq!(app.buffer.to_string(), "");
     }
 }
 

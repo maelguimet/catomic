@@ -94,7 +94,7 @@ fn autosave_is_due(app: &super::App) -> bool {
         && app.file.path.is_some()
         && app.recovery.task.is_none()
         && app.recovery.preview.is_none()
-        && app.recovery.last_written_history != Some(app.buffer.edit_history_position())
+        && app.recovery.last_written_history != Some(app.buffer.content_revision())
         && app.recovery.last_attempt.elapsed() >= Duration::from_secs(config.interval_secs)
 }
 
@@ -111,7 +111,7 @@ fn start_autosave(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
         return Ok(());
     }
     let path = app.file.path.as_deref().expect("due autosave has a path");
-    match CatnapTask::start(path, content, app.buffer.edit_history_position()) {
+    match CatnapTask::start(path, content, app.buffer.content_revision()) {
         Ok(task) => app.recovery.task = Some(task),
         Err(error) => {
             app.message_error(format!("Could not start catnap autosave: {error}"));

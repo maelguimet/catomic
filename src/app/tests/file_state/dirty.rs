@@ -235,6 +235,85 @@ fn app_file_state_insert_then_save_then_undo_redo_exact_dirty() {
 }
 
 #[test]
+fn app_save_ends_a_typing_run_before_capturing_the_clean_token() {
+    let path = std::env::temp_dir().join(format!(
+        "catomic_undo_run_save_boundary_{}.txt",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    let mut app = App::new(path.to_str()).unwrap();
+
+    app.handle_key(make_key(KeyCode::Char('h'), KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key(make_key(KeyCode::Char('i'), KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    let saved = app.file.saved_history_position;
+
+    app.handle_key(make_key(KeyCode::Char('!'), KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert_eq!(app.buffer.to_string(), "hi");
+    assert_eq!(app.buffer.edit_history_position(), saved);
+    assert!(!app.file.dirty, "undo returns exactly to the saved token");
+
+    app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert_eq!(app.buffer.to_string(), "");
+    assert!(
+        app.file.dirty,
+        "the saved typing run remains independently undoable"
+    );
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn app_grouped_deletion_undo_redo_tracks_the_saved_token_exactly() {
+    let path = std::env::temp_dir().join(format!(
+        "catomic_delete_run_save_boundary_{}.txt",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, "abcd").unwrap();
+    let mut app = App::new(path.to_str()).unwrap();
+    app.buffer
+        .set_cursor(crate::buffer::Cursor { row: 0, col: 4 });
+
+    for _ in 0..2 {
+        app.handle_key(make_key(KeyCode::Backspace, KeyModifiers::NONE))
+            .unwrap();
+    }
+    assert_eq!(app.buffer.to_string(), "ab");
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    let saved = app.file.saved_history_position;
+    assert!(!app.file.dirty);
+
+    for _ in 0..2 {
+        app.handle_key(make_key(KeyCode::Backspace, KeyModifiers::NONE))
+            .unwrap();
+    }
+    let dirty = app.buffer.edit_history_position();
+    assert_eq!(app.buffer.to_string(), "");
+    assert!(app.file.dirty);
+
+    app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert_eq!(app.buffer.to_string(), "ab");
+    assert_eq!(app.buffer.edit_history_position(), saved);
+    assert!(!app.file.dirty);
+
+    app.handle_key(make_key(KeyCode::Char('y'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert_eq!(app.buffer.to_string(), "");
+    assert_eq!(app.buffer.edit_history_position(), dirty);
+    assert!(app.file.dirty);
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
 fn app_file_state_undo_to_clean_then_redo_makes_dirty_again() {
     let mut tmp = std::env::temp_dir();
     tmp.push(format!(

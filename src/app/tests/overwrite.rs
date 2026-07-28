@@ -123,6 +123,26 @@ fn end_of_line_newline_end_of_file_and_empty_buffer_insert() {
 }
 
 #[test]
+fn end_of_line_overwrite_typing_and_combining_marks_share_one_undo_run() {
+    let mut app = app_with("x");
+    app.buffer.set_cursor(Cursor { row: 0, col: 1 });
+    let mut out = Vec::new();
+    toggle_overwrite(&mut app, &mut out);
+
+    for ch in "e\u{301}猫".chars() {
+        send(&mut app, &mut out, KeyCode::Char(ch), KeyModifiers::NONE);
+    }
+
+    assert_eq!(app.buffer.to_string(), "xe\u{301}猫");
+    app.buffer.undo();
+    assert_eq!(
+        app.buffer.to_string(),
+        "x",
+        "no-op grapheme snapping must not split overwrite-mode EOL typing"
+    );
+}
+
+#[test]
 fn selection_replacement_wins_over_overwrite_mode() {
     let mut app = app_with("abc");
     let mut out = Vec::new();

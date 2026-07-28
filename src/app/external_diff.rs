@@ -145,7 +145,7 @@ pub(crate) fn compare(old: &dyn Buffer, new: &dyn Buffer) -> DiffOutcome {
     for block in changed_blocks(&old_lines, &new_lines) {
         compare_block(&old_lines, &new_lines, block, &mut changes);
     }
-    DiffOutcome::Compared(changes.finish(new.edit_history_position()))
+    DiffOutcome::Compared(changes.finish(new.content_revision()))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -15,6 +15,7 @@ pub(super) struct PageHistory {
     redo: Vec<PageTransaction>,
     next_id: u64,
     current_id: u64,
+    revision: u64,
 }
 
 impl PageHistory {
@@ -34,6 +35,17 @@ impl PageHistory {
         self.current_id = transaction.id;
         self.undo.push(transaction);
         self.redo.clear();
+    }
+
+    pub(super) fn extend_current(&mut self, page_start: usize) {
+        let Some(transaction) = self.undo.last_mut() else {
+            self.record(page_start);
+            return;
+        };
+        debug_assert_eq!(transaction.page_start, page_start);
+        transaction.id = self.next_id;
+        self.next_id += 1;
+        self.current_id = transaction.id;
     }
 
     pub(super) fn pop_undo(&mut self) -> Option<PageTransaction> {
@@ -62,5 +74,13 @@ impl PageHistory {
     #[cfg(test)]
     pub(super) fn retained_bytes(&self) -> usize {
         (self.undo.capacity() + self.redo.capacity()) * std::mem::size_of::<PageTransaction>()
+    }
+
+    pub(super) fn note_content_change(&mut self) {
+        self.revision = self.revision.wrapping_add(1);
+    }
+
+    pub(super) fn content_revision(&self) -> u64 {
+        self.revision
     }
 }

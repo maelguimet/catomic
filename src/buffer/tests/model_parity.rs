@@ -176,14 +176,19 @@ fn seeded_random_edit_plus_undo_redo_against_dumb_model() {
                     pt.insert_char(ch);
                     model.insert_char(ch);
                 }
+                // This storage/index parity model records one transaction per
+                // operation. Grouping behavior has focused coverage elsewhere.
+                pt.finish_undo_group();
             }
             45..=52 => {
                 pt.delete_back();
                 model.delete_back();
+                pt.finish_undo_group();
             }
             53..=58 => {
                 pt.delete_forward();
                 model.delete_forward();
+                pt.finish_undo_group();
             }
             59..=66 => {
                 pt.move_left();
@@ -214,6 +219,7 @@ fn seeded_random_edit_plus_undo_redo_against_dumb_model() {
                 let ch = seeded_char_for_model(&mut seed);
                 pt.insert_char(ch);
                 model.insert_char(ch);
+                pt.finish_undo_group();
             }
         }
         let model_text = model.text();

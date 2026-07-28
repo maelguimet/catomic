@@ -42,6 +42,10 @@ impl PieceTable {
         self.undo_stack.has_history()
     }
 
+    pub(crate) fn undo_transaction_count(&self) -> usize {
+        self.undo_stack.undo_transaction_count()
+    }
+
     fn capture_cursor_state(&self) -> CursorState {
         CursorState {
             cursor: self.cursor,
@@ -57,6 +61,15 @@ impl PieceTable {
     #[cfg(test)]
     pub(crate) fn last_piece_mutation(&self) -> types::PieceMutationMetrics {
         self.last_piece_mutation
+    }
+
+    #[cfg(test)]
+    pub(crate) fn undo_history_metrics(&self) -> (usize, usize, usize) {
+        (
+            self.undo_stack.undo_transaction_count(),
+            self.undo_stack.history_container_count(),
+            self.undo_stack.retained_history_bytes(),
+        )
     }
 
     #[cfg(test)]

@@ -18,8 +18,9 @@ fn edit_history_position_basic_and_branching() {
     pt.insert_char('a');
     let p1 = pt.edit_history_position();
     assert!(p1 != origin, "first edit must advance history position");
+    pt.finish_undo_group();
 
-    // Another edit further advances.
+    // Another independent transaction further advances.
     pt.insert_char('b');
     let p2 = pt.edit_history_position();
     assert!(p2 != p1, "second edit advances again");

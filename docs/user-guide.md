@@ -442,6 +442,11 @@ reports that chord without the Shift modifier, it is indistinguishable from
 `Ctrl+Z`, so Catomic performs undo. The `undo` and `redo` actions remain
 remappable through `[keybindings]`.
 
+An uninterrupted run of ordinary typing, Backspace, or Delete undoes as one
+step. Newlines, cursor or selection changes, paste and replacement actions,
+completion or emoji acceptance, switching buffers, saving, and undo or redo
+end that run, so unrelated edits remain separate undo steps.
+
 Grouped actions such as a bracketed paste, selected-line indentation, Replace
 All, or a confirmed command result are each one undoable transaction.
 

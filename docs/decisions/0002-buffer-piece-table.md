@@ -54,3 +54,18 @@ Big-file considerations:
 - Do not parse the whole file constantly
 - Keep line indexing lazy or incremental
 - Offer "large file mode" when needed
+
+## Bounded History and Reclamation
+
+Undo retains the newest 10,000 transactions within a 64 MiB byte-aware
+transaction budget. A single newest transaction remains usable even if it
+exceeds the byte budget. Pruning advances an explicit retained base token so
+dirty tracking never treats an unreachable saved state as clean, and a branch
+edit invalidates redo consistently across ordinary and paged PieceTables.
+
+PieceTable add storage is rebased only after discarded add ranges make
+reclamation material: at least 8 MiB and at least one quarter of the add store.
+The rebase copies reachable add ranges and remaps current/history descriptors;
+it neither materializes nor rewrites the original backing. Paged buffers apply
+the retention budget in global edit order and may release an inactive page only
+when it has no current edits or retained local history.

@@ -140,6 +140,14 @@ impl PieceTree {
         try_for_each_node(&self.root, &mut visit)
     }
 
+    pub(crate) fn for_each(&self, mut visit: impl FnMut(&Piece)) {
+        for_each_node(&self.root, &mut visit);
+    }
+
+    pub(crate) fn for_each_mut(&mut self, mut visit: impl FnMut(&mut Piece)) {
+        for_each_node_mut(&mut self.root, &mut visit);
+    }
+
     pub(crate) fn try_for_each_from<E>(
         &self,
         index: usize,
@@ -355,6 +363,25 @@ fn try_for_each_node<E>(
     try_for_each_node(&node.left, visit)?;
     visit(&node.piece)?;
     try_for_each_node(&node.right, visit)
+}
+
+fn for_each_node(node: &Option<Box<PieceNode>>, visit: &mut impl FnMut(&Piece)) {
+    let Some(node) = node.as_deref() else {
+        return;
+    };
+    for_each_node(&node.left, visit);
+    visit(&node.piece);
+    for_each_node(&node.right, visit);
+}
+
+fn for_each_node_mut(node: &mut Option<Box<PieceNode>>, visit: &mut impl FnMut(&mut Piece)) {
+    let Some(node) = node.as_mut() else {
+        return;
+    };
+    for_each_node_mut(&mut node.left, visit);
+    visit(&mut node.piece);
+    for_each_node_mut(&mut node.right, visit);
+    node.update_summary();
 }
 
 fn for_each_from_node(

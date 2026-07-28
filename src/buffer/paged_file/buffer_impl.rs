@@ -164,11 +164,7 @@ impl Buffer for PagedFileBuffer {
         let after_transactions = self.active().buffer.undo_transaction_count();
         let after_revision = self.active().buffer.content_revision();
         if changed && after_revision != before_revision {
-            if after_transactions != before_transactions {
-                self.history.record(page_start);
-            } else {
-                self.history.extend_current(page_start);
-            }
+            self.record_page_transaction(page_start, after_transactions == before_transactions);
             self.history.note_content_change();
         }
         Ok(changed)
@@ -266,5 +262,9 @@ impl Buffer for PagedFileBuffer {
 
     fn content_revision(&self) -> u64 {
         self.history.content_revision()
+    }
+
+    fn is_history_position_retained(&self, position: u64) -> bool {
+        self.history.is_position_retained(position)
     }
 }

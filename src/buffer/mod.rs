@@ -257,7 +257,7 @@ pub trait Buffer {
     fn redo(&mut self);
 
     /// Returns a token representing current position in the edit history.
-    /// Used for exact dirty tracking: dirty iff position != saved token.
+    /// Used with `is_history_position_retained` for exact dirty tracking.
     /// Tokens are equal only when at the exact same point in undo/redo history.
     /// No content comparison; based on undo stack position for PieceTable.
     fn edit_history_position(&self) -> u64;
@@ -269,6 +269,13 @@ pub trait Buffer {
     /// must bind it to this revision rather than to an undo/save-point token.
     fn content_revision(&self) -> u64 {
         self.edit_history_position()
+    }
+
+    /// Whether a history token can still be reached by undo/redo. Saved-state
+    /// tracking latches an unreachable token as pruned so it cannot later be
+    /// mistaken for a clean state.
+    fn is_history_position_retained(&self, position: u64) -> bool {
+        self.edit_history_position() == position
     }
 
     // TODO later:

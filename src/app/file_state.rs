@@ -19,7 +19,8 @@ use crate::file::text_format::TextFormat;
 
 /// Minimal explicit file state (Phase 2-a / 2-j / 2B size metadata).
 /// path: target for save (None until first save or Save As succeeds).
-/// dirty: true if current edit_history_position() != saved_history_position.
+/// dirty: true if current edit_history_position() != saved_history_position or
+///   the saved history token has been pruned from the reachable undo window.
 /// saved_history_position: token from buffer at last successful open/save.
 /// disk_snapshot: captured bounded disk identity at last open or successful save.
 /// size_bytes / size_tier: metadata-first (fs::metadata len) captured on open for
@@ -43,6 +44,9 @@ pub struct FileState {
     pub(crate) content_generation: u64,
     /// History position token captured at last open or successful save.
     pub saved_history_position: u64,
+    /// Durable latch preventing a pruned save point from ever comparing clean.
+    /// Reset only when open/reload/save establishes a new saved position.
+    pub(crate) saved_history_pruned: bool,
     /// On-disk snapshot captured at open or after successful save.
     /// None only when no path remembered. Absent explicitly represents missing-at-capture.
     pub disk_snapshot: Option<FileSnapshot>,
@@ -69,12 +73,16 @@ pub(crate) fn note_content_change(file: &mut FileState) {
 /// Call after any content mutation (edit, undo, redo). Movement must not call.
 pub(crate) fn refresh_dirty(file: &mut FileState, buffer: &dyn Buffer) {
     let pos = buffer.edit_history_position();
-    file.dirty = pos != file.saved_history_position;
+    if !buffer.is_history_position_retained(file.saved_history_position) {
+        file.saved_history_pruned = true;
+    }
+    file.dirty = file.saved_history_pruned || pos != file.saved_history_position;
 }
 
 /// Mark the current history position as the clean save point (after successful save).
 pub(crate) fn mark_saved(file: &mut FileState, buffer: &dyn Buffer) {
     file.saved_history_position = buffer.edit_history_position();
+    file.saved_history_pruned = false;
     file.dirty = false;
 }
 

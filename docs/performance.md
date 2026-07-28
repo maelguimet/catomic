@@ -49,6 +49,7 @@ Perf harness is split (for size hygiene):
 - src/tests/perf_paged.rs (#[ignore] descriptor-read and retained-page baselines)
 - src/tests/perf_render.rs (#[ignore] plain/styled viewport allocation baselines)
 - src/tests/perf_search.rs (#[ignore] incremental Large-buffer search baseline)
+- src/tests/perf_history.rs (#[ignore] repeated large-edit retained-memory coverage)
 - src/tests/perf_extensibility.rs (#[ignore] oversized typed-config acceptance)
 - src/tests/perf_recovery.rs (#[ignore] maximum-default catnap write/read acceptance)
 
@@ -117,6 +118,37 @@ The interactive editor has no built-in network or AI/model runtime. The
 explicit updater is measured and tested as a separate command workflow; it may
 contact the documented GitHub source, but it is never constructed by an editor
 session.
+
+## Undo Retention and Add-Store Reclamation (2026-07-27)
+
+Undo retention is capped at the newest 10,000 transactions and 64 MiB of
+estimated transaction storage. The estimate includes logical edit bytes and
+descriptor/vector storage; it deliberately overcounts shared ranges rather than
+understating retained work. One newest oversized transaction is always kept.
+Active typing or deletion runs count as one compact transaction; their cached
+weight is updated from each scalar delta without rescanning the growing run.
+Paged files apply the same caps to the global cross-page transaction order and
+refresh that newest global weight when a page-local run extends.
+
+Pruning itself is descriptor-local. PieceTable considers an add-store rebase
+only after discarded history has referenced at least 8 MiB of add ranges, then
+compacts only when at least 8 MiB and 25% of the add store are unreachable.
+That rare synchronous pass scans current and bounded-history descriptors and
+copies only reachable add ranges. It never reads or materializes original
+backing, runs in the background, or performs per-key full-buffer work.
+
+The ignored deterministic regression can be reproduced with:
+
+```text
+cargo test manual_undo_retention_large_paste_delete_cycles -- --ignored --nocapture
+```
+
+Its retained-size assertions are deterministic policy evidence; elapsed time is
+observational output, not a timing gate. A default test separately applies
+12,000 deliberately independent one-byte edits and verifies that exactly the
+newest 10,000 transactions remain undoable. Other default regressions cover
+active grouped-run pruning, fragmented deletion accounting, compaction with an
+active or redo transaction, and the no-scan threshold below 8 MiB.
 
 ## Historical Phase 7 typed-config acceptance (2026-07-16)
 

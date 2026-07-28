@@ -17,6 +17,8 @@ mod model_parity;
 #[cfg(test)]
 mod range_edit;
 #[cfg(test)]
+mod retention;
+#[cfg(test)]
 mod storage_parity;
 #[cfg(test)]
 mod undo_redo;

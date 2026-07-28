@@ -26,6 +26,10 @@ Render annotations (lint and external-reload overlays) are validated and sorted
 when installed. A frame borrows those immutable slices and narrows them by row;
 it neither clones the complete annotation set nor rescans off-screen findings.
 
+Soft-wrap cursor reveal computes only wrap boundaries through the cursor. It
+does not materialize viewport row strings; terminal frame composition remains
+the sole owner of those visible fragments.
+
 When adding expensive work, document:
 
 - when it runs

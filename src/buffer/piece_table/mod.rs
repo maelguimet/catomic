@@ -21,6 +21,21 @@ use crate::buffer::undo::CursorState;
 pub use types::PieceTable;
 use types::{OriginalBacking, Piece, Source};
 
+#[cfg(test)]
+pub(crate) struct PieceTablePerfStats {
+    pub(crate) pieces: usize,
+    pub(crate) document_lines: usize,
+    pub(crate) add_buffer_bytes: usize,
+    pub(crate) history_transactions: usize,
+    pub(crate) history_bytes: usize,
+    pub(crate) retained_bytes: usize,
+    pub(crate) retained_metadata_bytes: usize,
+    pub(crate) line_index_scanned_bytes: usize,
+    pub(crate) line_index_shifted_entries: usize,
+    pub(crate) descriptor_read_bytes: usize,
+    pub(crate) descriptor_metadata_checks: usize,
+}
+
 impl PieceTable {
     pub(crate) fn has_edit_history(&self) -> bool {
         self.undo_stack.has_history()
@@ -59,6 +74,11 @@ impl PieceTable {
     }
 
     pub(crate) fn rebuild_index(&mut self) {
+        #[cfg(test)]
+        {
+            self.line_index_scanned_bytes +=
+                self.pieces.iter().map(|piece| piece.len).sum::<usize>();
+        }
         self.index = Self::build_index(&self.original, &self.add, &self.pieces);
         // Re-sync byte offset from current (row,col) using the fresh index
         self.cursor_byte_offset = self.byte_offset_at(self.cursor.row, self.cursor.col);
@@ -113,6 +133,30 @@ impl PieceTable {
         self.pieces.len()
     }
 
+    #[cfg(test)]
+    pub(crate) fn perf_stats(&self) -> PieceTablePerfStats {
+        let (history_transactions, history_bytes) = self.undo_stack.perf_stats();
+        let retained_bytes = self.original.retained_bytes()
+            + self.add.capacity()
+            + self.pieces.capacity() * std::mem::size_of::<Piece>()
+            + self.index.line_starts.capacity() * std::mem::size_of::<usize>()
+            + self.piece_starts.capacity() * std::mem::size_of::<usize>()
+            + history_bytes;
+        PieceTablePerfStats {
+            pieces: self.pieces.len(),
+            document_lines: self.index.line_count(),
+            add_buffer_bytes: self.add.len(),
+            history_transactions,
+            history_bytes,
+            retained_bytes,
+            retained_metadata_bytes: self.original.retained_metadata_bytes(),
+            line_index_scanned_bytes: self.line_index_scanned_bytes,
+            line_index_shifted_entries: self.line_index_shifted_entries,
+            descriptor_read_bytes: self.original.file_read_bytes(),
+            descriptor_metadata_checks: self.original.metadata_check_count(),
+        }
+    }
+
     /// Incremental update for index when edit does not add/remove a '\n'.
     /// Shifts subsequent line starts and total_bytes.
     fn adjust_index_for_simple_delta(&mut self, at_byte: usize, delta: isize) {
@@ -120,6 +164,10 @@ impl PieceTable {
             return;
         }
         let row = self.index.row_for_byte(at_byte);
+        #[cfg(test)]
+        {
+            self.line_index_shifted_entries += self.index.line_starts.len().saturating_sub(row + 1);
+        }
         let dpos = delta.unsigned_abs();
         if delta > 0 {
             for ls in &mut self.index.line_starts[(row + 1)..] {
@@ -138,6 +186,10 @@ impl PieceTable {
     /// Inserts the new line boundary and shifts tail. Does not rescan text.
     fn adjust_index_for_newline_insert(&mut self, at_byte: usize) {
         let row = self.index.row_for_byte(at_byte);
+        #[cfg(test)]
+        {
+            self.line_index_shifted_entries += self.index.line_starts.len().saturating_sub(row + 1);
+        }
         // Shift subsequent line starts for the added byte.
         for ls in &mut self.index.line_starts[(row + 1)..] {
             *ls += 1;
@@ -167,6 +219,10 @@ impl PieceTable {
                 return;
             }
         };
+        #[cfg(test)]
+        {
+            self.line_index_shifted_entries += self.index.line_starts.len().saturating_sub(idx);
+        }
         // Shift the boundary and tail down by 1 for removed byte.
         for ls in &mut self.index.line_starts[idx..] {
             *ls = ls.saturating_sub(1);

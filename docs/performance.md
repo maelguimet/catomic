@@ -34,14 +34,49 @@ When adding expensive work, document:
 
 Perf harness is split (for size hygiene):
 - src/tests/perf.rs (tiny hub with #[path] declarations)
-- src/tests/perf_helpers.rs (no-deps generators, measure/print sample)
+- src/tests/perf_helpers.rs (no-deps generators, allocator counters, measure/print sample)
 - src/tests/perf_default.rs (cheap non-ignored smokes + functional asserts only)
 - src/tests/perf_manual.rs (#[ignore] 10/100 MiB + sparse extreme for baselines)
+- src/tests/perf_editing.rs (#[ignore] typing, fragmentation, cursor, undo baselines)
+- src/tests/perf_paged.rs (#[ignore] descriptor-read and retained-page baselines)
+- src/tests/perf_render.rs (#[ignore] plain/styled viewport allocation baselines)
+- src/tests/perf_search.rs (#[ignore] incremental Large-buffer search baseline)
 - src/tests/perf_extensibility.rs (#[ignore] oversized typed-config acceptance)
 - src/tests/perf_recovery.rs (#[ignore] maximum-default catnap write/read acceptance)
 
 Use `cargo test tests::perf -- --nocapture` (defaults) and the manual ignored commands
 (see Phase 2B baseline section below).
+
+Allocation and retained-memory samples are test-only. The test binary wraps the
+system allocator with requested-allocation counters; release builds contain
+neither the wrapper nor the counter increments. Because allocator counters are
+process-wide, capture ignored baselines serially:
+
+```sh
+cargo test tests::perf -- --ignored --test-threads=1 --nocapture
+```
+
+Every allocation-aware line keeps the stable
+`PERF sample: label=... bytes=... elapsed_ms=...` prefix and appends ordered
+integer `key=value` metrics. `allocations` and `allocated_bytes` count allocator
+requests made inside the measured closure. Repeated render samples separately
+report `frame_output_bytes`, so terminal output size is not confused with
+temporary allocation volume.
+
+The PieceTable test seam reports document lines, pieces, add-buffer bytes, undo
+transactions, retained history capacity, and exact line-index work as bytes
+rescanned or line-start entries shifted. The paged-file seam reports active and
+edited retained page counts, descriptor bytes read, descriptor metadata
+validations, and accounted retained heap capacity. `retained_bytes` is the sum
+of owned text/add buffers, piece and line-index vectors, file-page metadata
+vectors, and undo/history allocations; it intentionally excludes allocator
+headers and opaque standard-library container-node overhead. These structural
+figures are reproducible comparisons, not process RSS.
+
+Normal CI exercises sample formatting and the small mixed-content fixture only.
+The ignored scenarios cover ASCII, multibyte UTF-8, combining graphemes, emoji,
+tabs, CRLF, line-heavy text, and a minified long line. No elapsed-time,
+allocation, or retained-memory threshold is asserted.
 
 Profile before optimizing redraw or buffer access.
 

@@ -27,6 +27,18 @@ pub(crate) struct PagedFileBuffer {
     active: Option<EditablePage>,
     retained: BTreeMap<usize, EditablePage>,
     history: PageHistory,
+    #[cfg(test)]
+    metadata_check_count: std::cell::Cell<usize>,
+}
+
+#[cfg(test)]
+pub(crate) struct PagedFilePerfStats {
+    pub(crate) active_pages: usize,
+    pub(crate) edited_retained_pages: usize,
+    pub(crate) retained_bytes: usize,
+    pub(crate) retained_page_metadata_bytes: usize,
+    pub(crate) descriptor_read_bytes: usize,
+    pub(crate) descriptor_metadata_checks: usize,
 }
 
 pub(super) struct EditablePage {
@@ -79,6 +91,8 @@ impl PagedFileBuffer {
             active: Some(first),
             retained: BTreeMap::new(),
             history: PageHistory::new(),
+            #[cfg(test)]
+            metadata_check_count: std::cell::Cell::new(0),
         })
     }
 
@@ -125,6 +139,9 @@ impl PagedFileBuffer {
     }
 
     pub(super) fn ensure_unchanged(&self) -> io::Result<()> {
+        #[cfg(test)]
+        self.metadata_check_count
+            .set(self.metadata_check_count.get() + 1);
         if DescriptorSnapshot::capture(&self.file)? == self.snapshot {
             Ok(())
         } else {
@@ -215,6 +232,30 @@ impl PagedFileBuffer {
         );
         self.active_mut().buffer.redo();
         self.history.finish_redo(transaction);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn perf_stats(&self) -> PagedFilePerfStats {
+        let pages = self.retained.values().chain(std::iter::once(self.active()));
+        let mut retained_bytes = self.history.retained_bytes();
+        let mut retained_page_metadata_bytes = 0;
+        let mut descriptor_read_bytes = 0;
+        let mut descriptor_metadata_checks = self.metadata_check_count.get();
+        for page in pages {
+            let stats = page.buffer.perf_stats();
+            retained_bytes += stats.retained_bytes;
+            retained_page_metadata_bytes += stats.retained_metadata_bytes;
+            descriptor_read_bytes += stats.descriptor_read_bytes;
+            descriptor_metadata_checks += stats.descriptor_metadata_checks;
+        }
+        PagedFilePerfStats {
+            active_pages: if self.active.is_some() { 1 } else { 0 },
+            edited_retained_pages: self.retained.len(),
+            retained_bytes,
+            retained_page_metadata_bytes,
+            descriptor_read_bytes,
+            descriptor_metadata_checks,
+        }
     }
 }
 

@@ -46,6 +46,8 @@ pub(crate) struct FileOriginal {
     metadata: FileOriginalMetadata,
     #[cfg(test)]
     read_bytes: std::sync::atomic::AtomicUsize,
+    #[cfg(test)]
+    metadata_check_count: std::sync::atomic::AtomicUsize,
 }
 
 impl FileOriginal {
@@ -60,10 +62,15 @@ impl FileOriginal {
             metadata,
             #[cfg(test)]
             read_bytes: std::sync::atomic::AtomicUsize::new(0),
+            #[cfg(test)]
+            metadata_check_count: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 
     fn ensure_unchanged(&self) -> io::Result<()> {
+        #[cfg(test)]
+        self.metadata_check_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if FileMetadataSnapshot::capture(&self.file)? == self.snapshot {
             Ok(())
         } else {
@@ -282,6 +289,21 @@ impl FileOriginal {
     #[cfg(test)]
     pub(crate) fn read_bytes(&self) -> usize {
         self.read_bytes.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn metadata_check_count(&self) -> usize {
+        self.metadata_check_count
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn retained_metadata_bytes(&self) -> usize {
+        self.metadata.newline_offsets.capacity() * std::mem::size_of::<usize>()
+            + self.metadata.line_char_counts.capacity() * std::mem::size_of::<usize>()
+            + self.metadata.line_is_ascii.capacity().div_ceil(8)
+            + self.metadata.line_checkpoints.capacity() * std::mem::size_of::<LineCheckpoint>()
+            + self.metadata.line_checkpoint_starts.capacity() * std::mem::size_of::<usize>()
     }
 }
 

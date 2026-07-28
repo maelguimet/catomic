@@ -115,4 +115,21 @@ impl UndoStack {
     pub(crate) fn has_history(&self) -> bool {
         !self.undo.is_empty() || !self.redo.is_empty()
     }
+
+    #[cfg(test)]
+    pub(crate) fn perf_stats(&self) -> (usize, usize) {
+        let transactions = self.undo.len() + self.redo.len();
+        let mut retained_bytes = self.undo.capacity() * std::mem::size_of::<Transaction>()
+            + self.redo.capacity() * std::mem::size_of::<Transaction>();
+        for transaction in self.undo.iter().chain(&self.redo) {
+            retained_bytes += transaction.edits.capacity() * std::mem::size_of::<PieceEdit>();
+            for edit in &transaction.edits {
+                let pieces = match edit {
+                    PieceEdit::Insert { pieces, .. } | PieceEdit::Delete { pieces, .. } => pieces,
+                };
+                retained_bytes += pieces.capacity() * std::mem::size_of::<Piece>();
+            }
+        }
+        (transactions, retained_bytes)
+    }
 }

@@ -137,6 +137,32 @@ impl OriginalBacking {
             Self::File(file) => file.read_bytes(),
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn metadata_check_count(&self) -> usize {
+        match self {
+            Self::Owned(_) => 0,
+            Self::File(file) => file.metadata_check_count(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn retained_bytes(&self) -> usize {
+        match self {
+            Self::Owned(text) => text.capacity(),
+            Self::File(file) => {
+                std::mem::size_of::<FileOriginal>() + file.retained_metadata_bytes()
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn retained_metadata_bytes(&self) -> usize {
+        match self {
+            Self::Owned(_) => 0,
+            Self::File(file) => file.retained_metadata_bytes(),
+        }
+    }
 }
 
 // LineIndex lives in crate::buffer::line_index (single definition, no duplicate).
@@ -160,4 +186,8 @@ pub struct PieceTable {
     pub(crate) undo_stack: crate::buffer::undo::UndoStack,
     /// If false, structural edits do not record transactions (suppress during apply).
     pub(crate) recording: bool,
+    #[cfg(test)]
+    pub(crate) line_index_scanned_bytes: usize,
+    #[cfg(test)]
+    pub(crate) line_index_shifted_entries: usize,
 }

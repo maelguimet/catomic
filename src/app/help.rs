@@ -8,16 +8,15 @@ use std::io::{self, Write};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::buffer::{Buffer, Cursor, PieceTable};
+use crate::buffer::{Buffer, Cursor, PreviewBuffer};
 use crate::config::actions::Action;
 use crate::config::keybindings::KeyBindings;
+use crate::editor::markdown_preview::MarkdownAnnotations;
 use crate::editor::search::{self, SearchDirection, SearchMatch};
-use crate::editor::syntax::{HyperlinkSpan, StyledSpan};
 
 pub(crate) struct HelpView {
-    buffer: PieceTable,
-    spans: Vec<Vec<StyledSpan>>,
-    links: Vec<Vec<HyperlinkSpan>>,
+    buffer: PreviewBuffer,
+    annotations: MarkdownAnnotations,
     search: HelpSearch,
     source_scroll_top: usize,
     source_scroll_left: usize,
@@ -42,10 +41,10 @@ pub(crate) fn show(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
         super::view::content_width(app),
     )
     .map_err(|error| io::Error::other(error.to_string()))?;
+    let (buffer, annotations) = rendered.into_buffer_and_annotations();
     app.surfaces.help = Some(HelpView {
-        buffer: PieceTable::from_owned_text(rendered.text),
-        spans: rendered.spans,
-        links: rendered.links,
+        buffer,
+        annotations,
         search: HelpSearch::default(),
         source_scroll_top,
         source_scroll_left,
@@ -66,8 +65,7 @@ pub(crate) fn presentation(
         .help
         .as_ref()
         .map(|view| crate::terminal::render::DocumentPresentation {
-            spans: &view.spans,
-            links: &view.links,
+            annotations: &view.annotations,
         })
 }
 

@@ -4,12 +4,15 @@
 //! Invariants: conversion is explicit; every produced line is bounded to the reading width.
 
 use std::borrow::Cow;
+#[cfg(test)]
+use std::collections::HashSet;
 use std::fmt;
 use std::sync::Arc;
 
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use unicode_segmentation::UnicodeSegmentation;
 
+use crate::buffer::{CompactLineStarts, PreviewBuffer};
 use crate::editor::syntax::{HyperlinkSpan, SpanStyle, StyledSpan};
 use crate::editor::text_layout;
 
@@ -26,8 +29,456 @@ const MAX_LINK_BYTES: usize = 4096;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct MarkdownDocument {
     pub(crate) text: String,
-    pub(crate) spans: Vec<Vec<StyledSpan>>,
-    pub(crate) links: Vec<Vec<HyperlinkSpan>>,
+    line_starts: CompactLineStarts,
+    pub(crate) annotations: MarkdownAnnotations,
+}
+
+impl MarkdownDocument {
+    pub(crate) fn into_buffer_and_annotations(self) -> (PreviewBuffer, MarkdownAnnotations) {
+        (
+            PreviewBuffer::from_parts(self.text, self.line_starts),
+            self.annotations,
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn retained_bytes(&self) -> usize {
+        self.text
+            .capacity()
+            .saturating_add(self.line_starts.retained_bytes())
+            .saturating_add(self.annotations.retained_bytes())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct CompactSpan {
+    start: u32,
+    end: u32,
+    style: SpanStyle,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct CompactLink {
+    start: u32,
+    end: u32,
+    destination: Arc<str>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CompactAnnotationRow {
+    row: u32,
+    span_start: u32,
+    span_end: u32,
+    link_start: u32,
+    link_end: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct WideAnnotationRow {
+    row: usize,
+    span_start: usize,
+    span_end: usize,
+    link_start: usize,
+    link_end: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum AnnotationStorage {
+    Compact {
+        rows: Vec<CompactAnnotationRow>,
+        spans: Vec<CompactSpan>,
+        links: Vec<CompactLink>,
+    },
+    Wide {
+        rows: Vec<WideAnnotationRow>,
+        spans: Vec<StyledSpan>,
+        links: Vec<HyperlinkSpan>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct MarkdownAnnotations {
+    storage: AnnotationStorage,
+}
+
+impl Default for MarkdownAnnotations {
+    fn default() -> Self {
+        Self {
+            storage: AnnotationStorage::Compact {
+                rows: Vec::new(),
+                spans: Vec::new(),
+                links: Vec::new(),
+            },
+        }
+    }
+}
+
+impl MarkdownAnnotations {
+    pub(crate) fn spans(&self, row: usize) -> RowSpans<'_> {
+        match &self.storage {
+            AnnotationStorage::Compact { rows, spans, .. } => {
+                let Some(annotation_row) = rows
+                    .binary_search_by_key(&row, |candidate| candidate.row as usize)
+                    .ok()
+                    .and_then(|index| rows.get(index))
+                else {
+                    return RowSpans::Empty;
+                };
+                RowSpans::Compact(
+                    spans[annotation_row.span_start as usize..annotation_row.span_end as usize]
+                        .iter(),
+                )
+            }
+            AnnotationStorage::Wide { rows, spans, .. } => {
+                let Some(annotation_row) = rows
+                    .binary_search_by_key(&row, |candidate| candidate.row)
+                    .ok()
+                    .and_then(|index| rows.get(index))
+                else {
+                    return RowSpans::Empty;
+                };
+                RowSpans::Wide(spans[annotation_row.span_start..annotation_row.span_end].iter())
+            }
+        }
+    }
+
+    pub(crate) fn links(&self, row: usize) -> RowLinks<'_> {
+        match &self.storage {
+            AnnotationStorage::Compact { rows, links, .. } => {
+                let Some(annotation_row) = rows
+                    .binary_search_by_key(&row, |candidate| candidate.row as usize)
+                    .ok()
+                    .and_then(|index| rows.get(index))
+                else {
+                    return RowLinks::Empty;
+                };
+                RowLinks::Compact(
+                    links[annotation_row.link_start as usize..annotation_row.link_end as usize]
+                        .iter(),
+                )
+            }
+            AnnotationStorage::Wide { rows, links, .. } => {
+                let Some(annotation_row) = rows
+                    .binary_search_by_key(&row, |candidate| candidate.row)
+                    .ok()
+                    .and_then(|index| rows.get(index))
+                else {
+                    return RowLinks::Empty;
+                };
+                RowLinks::Wide(links[annotation_row.link_start..annotation_row.link_end].iter())
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_rows(
+        span_rows: &[Vec<StyledSpan>],
+        link_rows: &[Vec<HyperlinkSpan>],
+    ) -> Self {
+        let mut builder = AnnotationBuilder::default();
+        let row_count = span_rows.len().max(link_rows.len());
+        for row in 0..row_count {
+            builder
+                .push_row(
+                    row,
+                    span_rows.get(row).cloned().unwrap_or_default(),
+                    link_rows.get(row).cloned().unwrap_or_default(),
+                )
+                .expect("test annotations fit configured cap");
+        }
+        builder.finish()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn annotated_row_count(&self) -> usize {
+        match &self.storage {
+            AnnotationStorage::Compact { rows, .. } => rows.len(),
+            AnnotationStorage::Wide { rows, .. } => rows.len(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn annotation_count(&self) -> usize {
+        match &self.storage {
+            AnnotationStorage::Compact { spans, links, .. } => spans.len() + links.len(),
+            AnnotationStorage::Wide { spans, links, .. } => spans.len() + links.len(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn retained_bytes(&self) -> usize {
+        self.container_retained_bytes()
+            .saturating_add(self.link_destination_retained_bytes())
+    }
+
+    #[cfg(test)]
+    fn container_retained_bytes(&self) -> usize {
+        match &self.storage {
+            AnnotationStorage::Compact { rows, spans, links } => rows
+                .capacity()
+                .saturating_mul(std::mem::size_of::<CompactAnnotationRow>())
+                .saturating_add(
+                    spans
+                        .capacity()
+                        .saturating_mul(std::mem::size_of::<CompactSpan>()),
+                )
+                .saturating_add(
+                    links
+                        .capacity()
+                        .saturating_mul(std::mem::size_of::<CompactLink>()),
+                ),
+            AnnotationStorage::Wide { rows, spans, links } => rows
+                .capacity()
+                .saturating_mul(std::mem::size_of::<WideAnnotationRow>())
+                .saturating_add(
+                    spans
+                        .capacity()
+                        .saturating_mul(std::mem::size_of::<StyledSpan>()),
+                )
+                .saturating_add(
+                    links
+                        .capacity()
+                        .saturating_mul(std::mem::size_of::<HyperlinkSpan>()),
+                ),
+        }
+    }
+
+    #[cfg(test)]
+    fn link_destination_retained_bytes(&self) -> usize {
+        match &self.storage {
+            AnnotationStorage::Compact { links, .. } => {
+                unique_arc_str_retained_bytes(links.iter().map(|link| &link.destination))
+            }
+            AnnotationStorage::Wide { links, .. } => {
+                unique_arc_str_retained_bytes(links.iter().map(|link| &link.destination))
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+fn unique_arc_str_retained_bytes<'a>(destinations: impl Iterator<Item = &'a Arc<str>>) -> usize {
+    let mut seen = HashSet::new();
+    destinations.fold(0usize, |bytes, destination| {
+        let allocation = Arc::as_ptr(destination) as *const u8 as usize;
+        if seen.insert(allocation) {
+            bytes.saturating_add(arc_str_allocation_bytes(destination))
+        } else {
+            bytes
+        }
+    })
+}
+
+#[cfg(test)]
+fn arc_str_allocation_bytes(destination: &Arc<str>) -> usize {
+    let alignment = std::mem::align_of::<usize>();
+    let allocation = std::mem::size_of::<usize>()
+        .saturating_mul(2)
+        .saturating_add(destination.len());
+    allocation.saturating_add(alignment.saturating_sub(1)) / alignment * alignment
+}
+
+pub(crate) enum RowSpans<'a> {
+    Empty,
+    Compact(std::slice::Iter<'a, CompactSpan>),
+    Wide(std::slice::Iter<'a, StyledSpan>),
+}
+
+impl Iterator for RowSpans<'_> {
+    type Item = StyledSpan;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Empty => None,
+            Self::Compact(spans) => spans.next().map(|span| StyledSpan {
+                start: span.start as usize,
+                end: span.end as usize,
+                style: span.style,
+            }),
+            Self::Wide(spans) => spans.next().copied(),
+        }
+    }
+}
+
+pub(crate) enum RowLinks<'a> {
+    Empty,
+    Compact(std::slice::Iter<'a, CompactLink>),
+    Wide(std::slice::Iter<'a, HyperlinkSpan>),
+}
+
+impl Iterator for RowLinks<'_> {
+    type Item = HyperlinkSpan;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Empty => None,
+            Self::Compact(links) => links.next().map(|link| HyperlinkSpan {
+                start: link.start as usize,
+                end: link.end as usize,
+                destination: Arc::clone(&link.destination),
+            }),
+            Self::Wide(links) => links.next().cloned(),
+        }
+    }
+}
+
+#[derive(Default)]
+struct AnnotationBuilder {
+    annotations: MarkdownAnnotations,
+}
+
+impl AnnotationBuilder {
+    fn push_row(
+        &mut self,
+        row: usize,
+        spans: Vec<StyledSpan>,
+        links: Vec<HyperlinkSpan>,
+    ) -> Result<(), RenderError> {
+        if spans.is_empty() && links.is_empty() {
+            return Ok(());
+        }
+        let current = self.annotations.annotation_count_for_build();
+        if current
+            .checked_add(spans.len())
+            .and_then(|count| count.checked_add(links.len()))
+            .is_none_or(|count| count > MAX_ANNOTATIONS)
+        {
+            return Err(RenderError::OutputExpansion);
+        }
+        if self.can_push_compact(row, &spans, &links) {
+            self.push_compact(row, spans, links);
+        } else {
+            self.promote();
+            self.push_wide(row, spans, links);
+        }
+        Ok(())
+    }
+
+    fn can_push_compact(&self, row: usize, spans: &[StyledSpan], links: &[HyperlinkSpan]) -> bool {
+        let AnnotationStorage::Compact {
+            rows,
+            spans: stored_spans,
+            links: stored_links,
+        } = &self.annotations.storage
+        else {
+            return false;
+        };
+        u32::try_from(row).is_ok()
+            && u32::try_from(rows.len()).is_ok()
+            && u32::try_from(stored_spans.len().saturating_add(spans.len())).is_ok()
+            && u32::try_from(stored_links.len().saturating_add(links.len())).is_ok()
+            && spans
+                .iter()
+                .all(|span| u32::try_from(span.start).is_ok() && u32::try_from(span.end).is_ok())
+            && links
+                .iter()
+                .all(|link| u32::try_from(link.start).is_ok() && u32::try_from(link.end).is_ok())
+    }
+
+    fn push_compact(
+        &mut self,
+        row: usize,
+        new_spans: Vec<StyledSpan>,
+        new_links: Vec<HyperlinkSpan>,
+    ) {
+        let AnnotationStorage::Compact { rows, spans, links } = &mut self.annotations.storage
+        else {
+            unreachable!("compact eligibility checked before insertion");
+        };
+        let span_start = spans.len() as u32;
+        spans.extend(new_spans.into_iter().map(|span| CompactSpan {
+            start: span.start as u32,
+            end: span.end as u32,
+            style: span.style,
+        }));
+        let link_start = links.len() as u32;
+        links.extend(new_links.into_iter().map(|link| CompactLink {
+            start: link.start as u32,
+            end: link.end as u32,
+            destination: link.destination,
+        }));
+        rows.push(CompactAnnotationRow {
+            row: row as u32,
+            span_start,
+            span_end: spans.len() as u32,
+            link_start,
+            link_end: links.len() as u32,
+        });
+    }
+
+    fn promote(&mut self) {
+        if matches!(self.annotations.storage, AnnotationStorage::Wide { .. }) {
+            return;
+        }
+        let AnnotationStorage::Compact { rows, spans, links } = std::mem::replace(
+            &mut self.annotations.storage,
+            AnnotationStorage::Wide {
+                rows: Vec::new(),
+                spans: Vec::new(),
+                links: Vec::new(),
+            },
+        ) else {
+            unreachable!("wide storage returned before compact promotion");
+        };
+        self.annotations.storage = AnnotationStorage::Wide {
+            rows: rows
+                .into_iter()
+                .map(|row| WideAnnotationRow {
+                    row: row.row as usize,
+                    span_start: row.span_start as usize,
+                    span_end: row.span_end as usize,
+                    link_start: row.link_start as usize,
+                    link_end: row.link_end as usize,
+                })
+                .collect(),
+            spans: spans
+                .into_iter()
+                .map(|span| StyledSpan {
+                    start: span.start as usize,
+                    end: span.end as usize,
+                    style: span.style,
+                })
+                .collect(),
+            links: links
+                .into_iter()
+                .map(|link| HyperlinkSpan {
+                    start: link.start as usize,
+                    end: link.end as usize,
+                    destination: link.destination,
+                })
+                .collect(),
+        };
+    }
+
+    fn push_wide(&mut self, row: usize, new_spans: Vec<StyledSpan>, new_links: Vec<HyperlinkSpan>) {
+        let AnnotationStorage::Wide { rows, spans, links } = &mut self.annotations.storage else {
+            unreachable!("wide storage created before insertion");
+        };
+        let span_start = spans.len();
+        spans.extend(new_spans);
+        let link_start = links.len();
+        links.extend(new_links);
+        rows.push(WideAnnotationRow {
+            row,
+            span_start,
+            span_end: spans.len(),
+            link_start,
+            link_end: links.len(),
+        });
+    }
+
+    fn finish(self) -> MarkdownAnnotations {
+        self.annotations
+    }
+}
+
+impl MarkdownAnnotations {
+    fn annotation_count_for_build(&self) -> usize {
+        match &self.storage {
+            AnnotationStorage::Compact { spans, links, .. } => spans.len() + links.len(),
+            AnnotationStorage::Wide { spans, links, .. } => spans.len() + links.len(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -583,6 +1034,8 @@ impl PreviewRenderer {
         for link in &mut self.hyperlinks {
             link.end = link.end.min(self.scalar_len);
         }
+        self.spans.sort_by_key(|span| span.start);
+        self.hyperlinks.sort_by_key(|link| link.start);
         Ok(RawDocument {
             text: self.output,
             spans: self.spans,
@@ -655,37 +1108,6 @@ fn safe_link_destination(destination: String) -> Option<Arc<str>> {
     .then(|| Arc::from(destination))
 }
 
-#[derive(Clone)]
-struct AnnotatedLine {
-    text: String,
-    chars: Vec<char>,
-    scalar_len: usize,
-    spans: Vec<StyledSpan>,
-    links: Vec<HyperlinkSpan>,
-}
-
-impl AnnotatedLine {
-    fn empty() -> Self {
-        Self {
-            text: String::new(),
-            chars: Vec::new(),
-            scalar_len: 0,
-            spans: Vec::new(),
-            links: Vec::new(),
-        }
-    }
-
-    fn len(&self) -> usize {
-        self.scalar_len
-    }
-
-    fn slice_text(&self, start: usize, end: usize) -> String {
-        self.chars[start.min(self.len())..end.min(self.len())]
-            .iter()
-            .collect()
-    }
-}
-
 struct LineBuilder {
     text: String,
     len: usize,
@@ -703,36 +1125,28 @@ impl LineBuilder {
         }
     }
 
-    fn push_slice(&mut self, source: &AnnotatedLine, start: usize, end: usize) {
+    fn push_slice(&mut self, source: &WrappedSourceLine<'_>, start: usize, end: usize) {
         let start = start.min(source.len());
         let end = end.min(source.len());
         if start >= end {
             return;
         }
         let target = self.len;
-        self.text.push_str(&source.slice_text(start, end));
+        self.text.push_str(source.slice_text(start, end));
         self.len += end - start;
-        for span in &source.spans {
-            let overlap_start = span.start.max(start);
-            let overlap_end = span.end.min(end);
-            if overlap_start < overlap_end {
-                self.spans.push(StyledSpan {
-                    start: target + overlap_start - start,
-                    end: target + overlap_end - start,
-                    style: span.style,
-                });
-            }
+        for span in source.spans(start, end) {
+            self.spans.push(StyledSpan {
+                start: target + span.start - start,
+                end: target + span.end - start,
+                style: span.style,
+            });
         }
-        for link in &source.links {
-            let overlap_start = link.start.max(start);
-            let overlap_end = link.end.min(end);
-            if overlap_start < overlap_end {
-                self.links.push(HyperlinkSpan {
-                    start: target + overlap_start - start,
-                    end: target + overlap_end - start,
-                    destination: link.destination.clone(),
-                });
-            }
+        for link in source.links(start, end) {
+            self.links.push(HyperlinkSpan {
+                start: target + link.start - start,
+                end: target + link.end - start,
+                destination: link.destination,
+            });
         }
     }
 
@@ -741,30 +1155,22 @@ impl LineBuilder {
         self.len += text.chars().count();
     }
 
-    fn push_replacement(&mut self, source: &AnnotatedLine, col: usize, text: &str) {
+    fn push_replacement(&mut self, source: &WrappedSourceLine<'_>, col: usize, text: &str) {
         let start = self.len;
         self.push_plain(text);
         let end = self.len;
-        for span in source
-            .spans
-            .iter()
-            .filter(|span| col >= span.start && col < span.end)
-        {
+        for span in source.spans(col, col.saturating_add(1)) {
             self.spans.push(StyledSpan {
                 start,
                 end,
                 style: span.style,
             });
         }
-        if let Some(link) = source
-            .links
-            .iter()
-            .find(|link| col >= link.start && col < link.end)
-        {
+        if let Some(link) = source.links(col, col.saturating_add(1)).next() {
             self.links.push(HyperlinkSpan {
                 start,
                 end,
-                destination: link.destination.clone(),
+                destination: link.destination,
             });
         }
     }
@@ -788,11 +1194,10 @@ impl LineBuilder {
         }
     }
 
-    fn finish(mut self) -> AnnotatedLine {
+    fn finish(mut self) -> BuiltLine {
         self.trim_end();
-        AnnotatedLine {
+        BuiltLine {
             text: self.text,
-            chars: Vec::new(),
             scalar_len: self.len,
             spans: self.spans,
             links: self.links,
@@ -800,168 +1205,313 @@ impl LineBuilder {
     }
 }
 
+struct BuiltLine {
+    text: String,
+    scalar_len: usize,
+    spans: Vec<StyledSpan>,
+    links: Vec<HyperlinkSpan>,
+}
+
+struct SourceLine<'a> {
+    text: &'a str,
+    global_start: usize,
+    scalar_len: usize,
+    spans: &'a [GlobalSpan],
+    links: &'a [GlobalHyperlink],
+}
+
+impl SourceLine<'_> {
+    fn local_spans(&self, start: usize, end: usize) -> impl Iterator<Item = StyledSpan> + '_ {
+        let global_start = self.global_start.saturating_add(start.min(self.scalar_len));
+        let global_end = self.global_start.saturating_add(end.min(self.scalar_len));
+        self.spans.iter().filter_map(move |span| {
+            let overlap_start = span.start.max(global_start);
+            let overlap_end = span.end.min(global_end);
+            (overlap_start < overlap_end).then_some(StyledSpan {
+                start: overlap_start - self.global_start,
+                end: overlap_end - self.global_start,
+                style: span.style,
+            })
+        })
+    }
+
+    fn local_links(&self, start: usize, end: usize) -> impl Iterator<Item = HyperlinkSpan> + '_ {
+        let global_start = self.global_start.saturating_add(start.min(self.scalar_len));
+        let global_end = self.global_start.saturating_add(end.min(self.scalar_len));
+        self.links.iter().filter_map(move |link| {
+            let overlap_start = link.start.max(global_start);
+            let overlap_end = link.end.min(global_end);
+            (overlap_start < overlap_end).then_some(HyperlinkSpan {
+                start: overlap_start - self.global_start,
+                end: overlap_end - self.global_start,
+                destination: Arc::clone(&link.destination),
+            })
+        })
+    }
+}
+
+struct WrappedSourceLine<'a> {
+    source: SourceLine<'a>,
+    scalar_bytes: CompactLineStarts,
+}
+
+impl<'a> WrappedSourceLine<'a> {
+    fn new(source: SourceLine<'a>) -> Self {
+        let mut scalar_bytes = CompactLineStarts::new();
+        for (byte, ch) in source.text.char_indices() {
+            scalar_bytes.push(byte.saturating_add(ch.len_utf8()));
+        }
+        Self {
+            source,
+            scalar_bytes,
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.source.scalar_len
+    }
+
+    fn slice_text(&self, start: usize, end: usize) -> &'a str {
+        let start = self
+            .scalar_bytes
+            .get(start.min(self.len()))
+            .unwrap_or(self.source.text.len());
+        let end = self
+            .scalar_bytes
+            .get(end.min(self.len()))
+            .unwrap_or(self.source.text.len());
+        &self.source.text[start..end]
+    }
+
+    fn spans(&self, start: usize, end: usize) -> impl Iterator<Item = StyledSpan> + '_ {
+        self.source.local_spans(start, end)
+    }
+
+    fn links(&self, start: usize, end: usize) -> impl Iterator<Item = HyperlinkSpan> + '_ {
+        self.source.local_links(start, end)
+    }
+}
+
+struct DocumentBuilder {
+    text: String,
+    line_starts: CompactLineStarts,
+    annotations: AnnotationBuilder,
+    row: usize,
+    width: usize,
+    margin: usize,
+}
+
+impl DocumentBuilder {
+    fn new(capacity: usize, width: usize, margin: usize) -> Self {
+        Self {
+            text: String::with_capacity(capacity.min(MAX_OUTPUT_BYTES)),
+            line_starts: CompactLineStarts::new(),
+            annotations: AnnotationBuilder::default(),
+            row: 0,
+            width,
+            margin,
+        }
+    }
+
+    fn push_source_line(&mut self, source: &SourceLine<'_>) -> Result<(), RenderError> {
+        let margin = usize::from(!source.text.is_empty()).saturating_mul(self.margin);
+        let mut spans = source.local_spans(0, source.scalar_len).collect::<Vec<_>>();
+        let links = source.local_links(0, source.scalar_len).collect::<Vec<_>>();
+        let heading = spans
+            .iter()
+            .any(|span| span.style == SpanStyle::PreviewHeading1);
+        let padding = if heading {
+            self.width
+                .saturating_sub(text_layout::cell_width_from(source.text, 0))
+        } else {
+            0
+        };
+        let scalar_len = source.scalar_len.saturating_add(padding);
+        if heading {
+            spans.retain(|span| span.style != SpanStyle::PreviewHeading1);
+            spans.insert(
+                0,
+                StyledSpan {
+                    start: 0,
+                    end: scalar_len,
+                    style: SpanStyle::PreviewHeading1,
+                },
+            );
+        }
+        shift_annotations(&mut spans, margin);
+        let mut links = links;
+        shift_links(&mut links, margin);
+        self.ensure_room(
+            margin
+                .checked_add(source.text.len())
+                .and_then(|length| length.checked_add(padding))
+                .and_then(|length| length.checked_add(1))
+                .ok_or(RenderError::OutputExpansion)?,
+        )?;
+        push_spaces(&mut self.text, margin);
+        self.text.push_str(source.text);
+        push_spaces(&mut self.text, padding);
+        self.finish_row(spans, links)
+    }
+
+    fn push_built_line(&mut self, mut line: BuiltLine) -> Result<(), RenderError> {
+        let heading = line
+            .spans
+            .iter()
+            .any(|span| span.style == SpanStyle::PreviewHeading1);
+        if heading {
+            let padding = self
+                .width
+                .saturating_sub(text_layout::cell_width_from(&line.text, 0));
+            push_spaces(&mut line.text, padding);
+            line.scalar_len = line.scalar_len.saturating_add(padding);
+            line.spans
+                .retain(|span| span.style != SpanStyle::PreviewHeading1);
+            line.spans.insert(
+                0,
+                StyledSpan {
+                    start: 0,
+                    end: line.scalar_len,
+                    style: SpanStyle::PreviewHeading1,
+                },
+            );
+        }
+        let margin = usize::from(!line.text.is_empty()).saturating_mul(self.margin);
+        shift_annotations(&mut line.spans, margin);
+        shift_links(&mut line.links, margin);
+        self.ensure_room(
+            margin
+                .checked_add(line.text.len())
+                .and_then(|length| length.checked_add(1))
+                .ok_or(RenderError::OutputExpansion)?,
+        )?;
+        push_spaces(&mut self.text, margin);
+        self.text.push_str(&line.text);
+        self.finish_row(line.spans, line.links)
+    }
+
+    fn ensure_room(&self, additional: usize) -> Result<(), RenderError> {
+        if self
+            .text
+            .len()
+            .checked_add(additional)
+            .is_none_or(|length| length > MAX_OUTPUT_BYTES)
+        {
+            Err(RenderError::OutputExpansion)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn finish_row(
+        &mut self,
+        spans: Vec<StyledSpan>,
+        links: Vec<HyperlinkSpan>,
+    ) -> Result<(), RenderError> {
+        self.annotations.push_row(self.row, spans, links)?;
+        self.text.push('\n');
+        self.row = self.row.saturating_add(1);
+        self.line_starts.push(self.text.len());
+        Ok(())
+    }
+
+    fn finish(mut self) -> MarkdownDocument {
+        while self.text.ends_with("\n\n") {
+            self.text.pop();
+            self.line_starts.pop();
+        }
+        MarkdownDocument {
+            text: self.text,
+            line_starts: self.line_starts,
+            annotations: self.annotations.finish(),
+        }
+    }
+}
+
+fn shift_annotations(spans: &mut [StyledSpan], amount: usize) {
+    for span in spans {
+        span.start = span.start.saturating_add(amount);
+        span.end = span.end.saturating_add(amount);
+    }
+}
+
+fn shift_links(links: &mut [HyperlinkSpan], amount: usize) {
+    for link in links {
+        link.start = link.start.saturating_add(amount);
+        link.end = link.end.saturating_add(amount);
+    }
+}
+
+fn push_spaces(text: &mut String, count: usize) {
+    text.extend(std::iter::repeat_n(' ', count));
+}
+
 fn wrap_document(
-    raw: RawDocument,
+    document: RawDocument,
     width: usize,
     margin: usize,
 ) -> Result<MarkdownDocument, RenderError> {
-    if raw.text.is_empty() {
+    if document.text.is_empty() {
         return Ok(MarkdownDocument {
             text: String::new(),
-            spans: Vec::new(),
-            links: Vec::new(),
+            line_starts: CompactLineStarts::new(),
+            annotations: MarkdownAnnotations::default(),
         });
     }
-    let mut lines = Vec::new();
-    let mut line_starts = Vec::new();
+    let mut output = DocumentBuilder::new(document.text.len(), width, margin);
     let mut global_start = 0usize;
-    for text in raw.text.split('\n') {
-        let len = text.chars().count();
-        line_starts.push(global_start);
-        lines.push(AnnotatedLine {
-            text: text.to_string(),
-            chars: Vec::new(),
-            scalar_len: len,
-            spans: Vec::new(),
-            links: Vec::new(),
-        });
-        global_start = global_start.saturating_add(len).saturating_add(1);
-    }
-    distribute_spans(&mut lines, &line_starts, &raw.spans);
-    distribute_links(&mut lines, &line_starts, &raw.hyperlinks);
-    let lines = lines
-        .into_iter()
-        .flat_map(|line| wrap_line(line, width))
-        .map(|line| fill_heading_band(line, width))
-        .collect::<Vec<_>>();
-
-    let mut text = String::with_capacity(raw.text.len());
-    let mut spans = Vec::with_capacity(lines.len());
-    let mut links = Vec::with_capacity(lines.len());
-    for mut line in lines {
-        if margin > 0 && !line.text.is_empty() {
-            line.text.insert_str(0, &" ".repeat(margin));
-            line.scalar_len = line.scalar_len.saturating_add(margin);
-            for span in &mut line.spans {
-                span.start = span.start.saturating_add(margin);
-                span.end = span.end.saturating_add(margin);
-            }
-            for link in &mut line.links {
-                link.start = link.start.saturating_add(margin);
-                link.end = link.end.saturating_add(margin);
-            }
-        }
-        if text
-            .len()
-            .checked_add(line.text.len().saturating_add(1))
-            .is_none_or(|length| length > MAX_OUTPUT_BYTES)
+    let mut span_start = 0usize;
+    let mut link_start = 0usize;
+    // The builder already terminates every emitted row. Omitting the synthetic
+    // empty item after a trailing newline avoids crossing capacity by one byte
+    // and doubling the canonical output allocation for newline-dense documents.
+    for text in document.text.split_terminator('\n') {
+        let scalar_len = text.chars().count();
+        let global_end = global_start.saturating_add(scalar_len);
+        while document
+            .spans
+            .get(span_start)
+            .is_some_and(|span| span.end <= global_start)
         {
-            return Err(RenderError::OutputExpansion);
+            span_start += 1;
         }
-        text.push_str(&line.text);
-        text.push('\n');
-        spans.push(line.spans);
-        links.push(line.links);
-    }
-    while text.ends_with("\n\n") {
-        text.pop();
-        spans.pop();
-        links.pop();
-    }
-    Ok(MarkdownDocument { text, spans, links })
-}
-
-fn fill_heading_band(mut line: AnnotatedLine, width: usize) -> AnnotatedLine {
-    if !line
-        .spans
-        .iter()
-        .any(|span| span.style == SpanStyle::PreviewHeading1)
-    {
-        return line;
-    }
-    let used = text_layout::cell_width_from(&line.text, 0);
-    let padding = width.saturating_sub(used);
-    line.text.push_str(&" ".repeat(padding));
-    line.scalar_len = line.scalar_len.saturating_add(padding);
-    line.spans
-        .retain(|span| span.style != SpanStyle::PreviewHeading1);
-    line.spans.insert(
-        0,
-        StyledSpan {
-            start: 0,
-            end: line.scalar_len,
-            style: SpanStyle::PreviewHeading1,
-        },
-    );
-    line
-}
-
-fn distribute_spans(lines: &mut [AnnotatedLine], line_starts: &[usize], spans: &[GlobalSpan]) {
-    for span in spans {
-        let mut row = line_for_offset(line_starts, span.start);
-        while let Some(line) = lines.get_mut(row) {
-            let line_start = line_starts[row];
-            let line_end = line_start.saturating_add(line.len());
-            let start = span.start.max(line_start);
-            let end = span.end.min(line_end);
-            if start < end {
-                line.spans.push(StyledSpan {
-                    start: start - line_start,
-                    end: end - line_start,
-                    style: span.style,
-                });
-            }
-            if span.end <= line_end.saturating_add(1) {
-                break;
-            }
-            row += 1;
+        while document
+            .hyperlinks
+            .get(link_start)
+            .is_some_and(|link| link.end <= global_start)
+        {
+            link_start += 1;
         }
+        let span_end = span_start
+            + document.spans[span_start..].partition_point(|span| span.start < global_end);
+        let link_end = link_start
+            + document.hyperlinks[link_start..].partition_point(|link| link.start < global_end);
+        let source = SourceLine {
+            text,
+            global_start,
+            scalar_len,
+            spans: &document.spans[span_start..span_end],
+            links: &document.hyperlinks[link_start..link_end],
+        };
+        wrap_line(source, width, &mut output)?;
+        global_start = global_end.saturating_add(1);
     }
+    Ok(output.finish())
 }
 
-fn distribute_links(lines: &mut [AnnotatedLine], line_starts: &[usize], links: &[GlobalHyperlink]) {
-    for link in links {
-        let mut row = line_for_offset(line_starts, link.start);
-        while let Some(line) = lines.get_mut(row) {
-            let line_start = line_starts[row];
-            let line_end = line_start.saturating_add(line.len());
-            let start = link.start.max(line_start);
-            let end = link.end.min(line_end);
-            if start < end {
-                line.links.push(HyperlinkSpan {
-                    start: start - line_start,
-                    end: end - line_start,
-                    destination: Arc::clone(&link.destination),
-                });
-            }
-            if link.end <= line_end.saturating_add(1) {
-                break;
-            }
-            row += 1;
-        }
+fn wrap_line(
+    line: SourceLine<'_>,
+    width: usize,
+    output: &mut DocumentBuilder,
+) -> Result<(), RenderError> {
+    if line.text.is_empty() || text_layout::cell_width_from(line.text, 0) <= width {
+        return output.push_source_line(&line);
     }
-}
-
-fn line_for_offset(line_starts: &[usize], offset: usize) -> usize {
-    line_starts
-        .partition_point(|line_start| *line_start <= offset)
-        .saturating_sub(1)
-}
-
-fn wrap_line(line: AnnotatedLine, width: usize) -> Vec<AnnotatedLine> {
-    if line.text.is_empty() {
-        return vec![AnnotatedLine::empty()];
-    }
-    if text_layout::cell_width_from(&line.text, 0) <= width {
-        return vec![line];
-    }
-    let mut line = line;
-    line.chars = line.text.chars().collect();
+    let line = WrappedSourceLine::new(line);
     let quote_end = 0;
-    let rest = &line.chars[quote_end..];
-
-    let indent = rest.iter().take_while(|ch| **ch == ' ').count();
-    let after_indent = &rest[indent..];
+    let rest = line.slice_text(quote_end, line.len());
+    let indent = rest.chars().take_while(|ch| *ch == ' ').count();
+    let after_indent = line.slice_text(quote_end.saturating_add(indent), line.len());
     if let Some(marker_len) = list_marker_len(after_indent) {
         let content_start = quote_end + indent + marker_len;
         return wrap_prefixed(
@@ -971,7 +1521,7 @@ fn wrap_line(line: AnnotatedLine, width: usize) -> Vec<AnnotatedLine> {
             quote_end,
             indent + marker_len,
             width,
-            false,
+            output,
         );
     }
 
@@ -983,53 +1533,52 @@ fn wrap_line(line: AnnotatedLine, width: usize) -> Vec<AnnotatedLine> {
         quote_end,
         indent,
         width,
-        false,
+        output,
     )
 }
 
-fn list_marker_len(chars: &[char]) -> Option<usize> {
-    let marker = if chars.starts_with(&['•', ' ']) {
+fn list_marker_len(text: &str) -> Option<usize> {
+    let marker = if text.starts_with("• ") {
         2
     } else {
-        let digits = chars.iter().take_while(|ch| ch.is_ascii_digit()).count();
-        if digits == 0 || chars.get(digits) != Some(&'.') || chars.get(digits + 1) != Some(&' ') {
+        let digits = text.chars().take_while(char::is_ascii_digit).count();
+        let mut tail = text.chars().skip(digits);
+        if digits == 0 || tail.next() != Some('.') || tail.next() != Some(' ') {
             return None;
         }
         digits + 2
     };
-    let task = chars.get(marker..marker + 4).is_some_and(|task| {
-        task[0] == '[' && matches!(task[1], '✓' | ' ') && task[2] == ']' && task[3] == ' '
-    });
+    let mut task = text.chars().skip(marker);
+    let task = task.next() == Some('[')
+        && matches!(task.next(), Some('✓' | ' '))
+        && task.next() == Some(']')
+        && task.next() == Some(' ');
     Some(marker + if task { 4 } else { 0 })
 }
 
 #[allow(clippy::too_many_arguments)]
 fn wrap_prefixed(
-    source: &AnnotatedLine,
+    source: &WrappedSourceLine<'_>,
     content_start: usize,
     first_prefix_end: usize,
     quote_end: usize,
     continuation_spaces: usize,
     width: usize,
-    preserve_spacing: bool,
-) -> Vec<AnnotatedLine> {
+    output: &mut DocumentBuilder,
+) -> Result<(), RenderError> {
     let first = prefixed_line(source, first_prefix_end, 0, width);
     let continuation = || prefixed_line(source, quote_end, continuation_spaces, width);
-    if preserve_spacing {
-        wrap_preserved(source, content_start, width, first, continuation)
-    } else {
-        wrap_words(source, content_start, width, first, continuation)
-    }
+    wrap_words(source, content_start, width, first, continuation, output)
 }
 
 fn prefixed_line(
-    source: &AnnotatedLine,
+    source: &WrappedSourceLine<'_>,
     source_prefix_end: usize,
     extra_spaces: usize,
     width: usize,
 ) -> LineBuilder {
     let prefix = source.slice_text(0, source_prefix_end);
-    let prefix_width = text_layout::cell_width_from(&prefix, 0).saturating_add(extra_spaces);
+    let prefix_width = text_layout::cell_width_from(prefix, 0).saturating_add(extra_spaces);
     let mut line = LineBuilder::new();
     if prefix_width < width {
         line.push_slice(source, 0, source_prefix_end);
@@ -1039,102 +1588,106 @@ fn prefixed_line(
 }
 
 fn wrap_words(
-    source: &AnnotatedLine,
+    source: &WrappedSourceLine<'_>,
     content_start: usize,
     width: usize,
-    mut current: LineBuilder,
+    current: LineBuilder,
     continuation: impl Fn() -> LineBuilder,
-) -> Vec<AnnotatedLine> {
-    let words = word_ranges(&source.chars, content_start);
-    if words.is_empty() {
-        return vec![current.finish()];
-    }
-    let mut output = Vec::new();
+    output: &mut DocumentBuilder,
+) -> Result<(), RenderError> {
+    let mut current = Some(current);
     let mut has_content = false;
-    for (word_start, word_end) in words {
-        let word = source.slice_text(word_start, word_end);
-        let separator = usize::from(has_content);
-        let needed = text_layout::cell_width_from(&word, 0).saturating_add(separator);
-        if has_content && needed > width.saturating_sub(current.width()) {
-            output.push(current.finish());
-            current = continuation();
-            has_content = false;
-        }
-        if has_content {
-            current.push_plain(" ");
-        }
-        let mut start = word_start;
-        while start < word_end {
-            let available = width.saturating_sub(current.width());
-            let end = fitting_end(source, start, word_end, available);
-            if end == start {
-                let consumed = next_grapheme_end(source, start, word_end);
-                current.push_replacement(source, start, "…");
-                start = consumed;
-            } else {
-                current.push_slice(source, start, end);
-                start = end;
-            }
-            has_content = true;
-            if start < word_end {
-                output.push(current.finish());
-                current = continuation();
-                has_content = false;
-            }
-        }
-    }
-    output.push(current.finish());
-    output
-}
-
-fn wrap_preserved(
-    source: &AnnotatedLine,
-    content_start: usize,
-    width: usize,
-    mut current: LineBuilder,
-    continuation: impl Fn() -> LineBuilder,
-) -> Vec<AnnotatedLine> {
-    let mut output = Vec::new();
-    let mut start = content_start;
-    while start < source.len() {
-        let available = width.saturating_sub(current.width());
-        let end = fitting_end(source, start, source.len(), available);
-        if end == start {
-            let consumed = next_grapheme_end(source, start, source.len());
-            current.push_replacement(source, start, "…");
-            start = consumed;
-        } else {
-            current.push_slice(source, start, end);
-            start = end;
-        }
-        if start < source.len() {
-            output.push(current.finish());
-            current = continuation();
-        }
-    }
-    output.push(current.finish());
-    output
-}
-
-fn word_ranges(chars: &[char], start: usize) -> Vec<(usize, usize)> {
-    let mut words = Vec::new();
     let mut word_start = None;
-    for (index, ch) in chars.iter().enumerate().skip(start) {
+    for (index, ch) in source.source.text.chars().enumerate().skip(content_start) {
         if ch.is_whitespace() {
-            if let Some(start) = word_start.take() {
-                words.push((start, index));
+            if let Some(word_start) = word_start.take() {
+                push_word(
+                    source,
+                    word_start,
+                    index,
+                    width,
+                    &mut current,
+                    &mut has_content,
+                    &continuation,
+                    output,
+                )?;
             }
         } else if word_start.is_none() {
             word_start = Some(index);
         }
     }
-    if let Some(start) = word_start {
-        words.push((start, chars.len()));
+    if let Some(word_start) = word_start {
+        push_word(
+            source,
+            word_start,
+            source.len(),
+            width,
+            &mut current,
+            &mut has_content,
+            &continuation,
+            output,
+        )?;
     }
-    words
+    output.push_built_line(current.take().unwrap_or_else(LineBuilder::new).finish())
 }
 
-fn fitting_end(source: &AnnotatedLine, start: usize, end: usize, max_cells: usize) -> usize {
+#[allow(clippy::too_many_arguments)]
+fn push_word(
+    source: &WrappedSourceLine<'_>,
+    word_start: usize,
+    word_end: usize,
+    width: usize,
+    current: &mut Option<LineBuilder>,
+    has_content: &mut bool,
+    continuation: &impl Fn() -> LineBuilder,
+    output: &mut DocumentBuilder,
+) -> Result<(), RenderError> {
+    let word = source.slice_text(word_start, word_end);
+    let separator = usize::from(*has_content);
+    let needed = text_layout::cell_width_from(word, 0).saturating_add(separator);
+    let remaining = width.saturating_sub(current.as_ref().map_or(0, LineBuilder::width));
+    if *has_content && needed > remaining {
+        output.push_built_line(current.take().unwrap_or_else(LineBuilder::new).finish())?;
+        *current = Some(continuation());
+        *has_content = false;
+    }
+    if *has_content {
+        current
+            .as_mut()
+            .unwrap_or_else(|| unreachable!("line builder is always present"))
+            .push_plain(" ");
+    }
+    let mut start = word_start;
+    while start < word_end {
+        let line = current
+            .as_mut()
+            .unwrap_or_else(|| unreachable!("line builder is always present"));
+        let available = width.saturating_sub(line.width());
+        let end = fitting_end(source, start, word_end, available);
+        if end == start {
+            let consumed = next_grapheme_end(source, start, word_end);
+            line.push_replacement(source, start, "…");
+            start = consumed;
+        } else {
+            line.push_slice(source, start, end);
+            start = end;
+        }
+        *has_content = true;
+        if start < word_end {
+            output.push_built_line(current.take().unwrap_or_else(LineBuilder::new).finish())?;
+            *current = Some(continuation());
+            *has_content = false;
+        }
+    }
+    Ok(())
+}
+
+fn fitting_end(
+    source: &WrappedSourceLine<'_>,
+    start: usize,
+    end: usize,
+    max_cells: usize,
+) -> usize {
     if max_cells == 0 {
         return start;
     }
@@ -1152,7 +1705,7 @@ fn fitting_end(source: &AnnotatedLine, start: usize, end: usize, max_cells: usiz
     start + scalars
 }
 
-fn next_grapheme_end(source: &AnnotatedLine, start: usize, end: usize) -> usize {
+fn next_grapheme_end(source: &WrappedSourceLine<'_>, start: usize, end: usize) -> usize {
     let text = source.slice_text(start, end);
     start
         + text

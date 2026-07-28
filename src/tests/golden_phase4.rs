@@ -16,13 +16,12 @@ mod tests {
         assert!(preview.text.contains("  • item code"));
         assert!(preview.text.contains("“quote”"));
         assert!(!preview.text.chars().any(|ch| matches!(ch, '#' | '═' | '─')));
-        assert!(preview.spans[0]
-            .iter()
-            .any(|span| { span.style == crate::editor::syntax::SpanStyle::PreviewHeading1 }));
         assert!(preview
-            .spans
-            .iter()
-            .flatten()
+            .annotations
+            .spans(0)
+            .any(|span| { span.style == crate::editor::syntax::SpanStyle::PreviewHeading1 }));
+        assert!((0..preview.text.lines().count())
+            .flat_map(|row| preview.annotations.spans(row))
             .any(|span| { span.style == crate::editor::syntax::SpanStyle::PreviewInlineCode }));
         assert_eq!(source, "# Heading\n\n- item `code`\n\n> quote");
     }
@@ -59,7 +58,9 @@ mod tests {
             .text
             .lines()
             .all(|line| { crate::editor::text_layout::cell_width_from(line, 0) <= 80 }));
-        let links = preview.links.iter().flatten().collect::<Vec<_>>();
+        let links = (0..preview.text.lines().count())
+            .flat_map(|row| preview.annotations.links(row))
+            .collect::<Vec<_>>();
         assert!(!links.is_empty());
         assert!(links
             .iter()

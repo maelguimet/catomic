@@ -8,9 +8,10 @@ use std::io::{self, Write};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::buffer::{Buffer, Cursor, PieceTable};
+use crate::buffer::{Buffer, Cursor, PreviewBuffer};
 use crate::config::actions::Action;
-use crate::editor::syntax::{self, HyperlinkSpan, StyledSpan, SyntaxKind};
+use crate::editor::markdown_preview::MarkdownAnnotations;
+use crate::editor::syntax::{self, SyntaxKind};
 
 #[derive(Debug, Default)]
 pub(crate) struct ViewOptions {
@@ -21,9 +22,8 @@ pub(crate) struct ViewOptions {
 
 #[derive(Debug)]
 struct PreviewDocument {
-    buffer: PieceTable,
-    spans: Vec<Vec<StyledSpan>>,
-    links: Vec<Vec<HyperlinkSpan>>,
+    buffer: PreviewBuffer,
+    annotations: MarkdownAnnotations,
     layout_width: usize,
     source_scroll_top: usize,
     source_scroll_left: usize,
@@ -40,8 +40,7 @@ pub(crate) fn display_presentation(
         .preview
         .as_ref()
         .map(|preview| crate::terminal::render::DocumentPresentation {
-            spans: &preview.spans,
-            links: &preview.links,
+            annotations: &preview.annotations,
         })
 }
 
@@ -231,14 +230,13 @@ pub(crate) fn relayout_preview(app: &mut super::App) {
     let cursor = preview.buffer.cursor();
     match crate::editor::markdown_preview::render_with_width(&app.buffer.to_string(), width) {
         Ok(rendered) => {
-            let mut buffer = PieceTable::from_owned_text(rendered.text);
+            let (mut buffer, annotations) = rendered.into_buffer_and_annotations();
             let row = cursor.row.min(buffer.line_count().saturating_sub(1));
             let col = cursor.col.min(buffer.line_char_count(row).unwrap_or(0));
             buffer.set_cursor(Cursor { row, col });
             if let Some(preview) = app.view.preview.as_mut() {
                 preview.buffer = buffer;
-                preview.spans = rendered.spans;
-                preview.links = rendered.links;
+                preview.annotations = annotations;
                 preview.layout_width = width;
                 app.screen.scroll_left = 0;
             }
@@ -255,10 +253,10 @@ fn toggle_preview(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool>
         let width = crate::editor::markdown_preview::layout_width(content_width(app));
         match crate::editor::markdown_preview::render_with_width(&app.buffer.to_string(), width) {
             Ok(rendered) => {
+                let (buffer, annotations) = rendered.into_buffer_and_annotations();
                 app.view.preview = Some(PreviewDocument {
-                    buffer: PieceTable::from_owned_text(rendered.text),
-                    spans: rendered.spans,
-                    links: rendered.links,
+                    buffer,
+                    annotations,
                     layout_width: width,
                     source_scroll_top: app.screen.scroll_top,
                     source_scroll_left: app.screen.scroll_left,
@@ -352,7 +350,7 @@ fn handle_preview_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) 
     app.render(out)
 }
 
-fn move_rows(buffer: &mut PieceTable, forward: bool, count: usize) {
+fn move_rows(buffer: &mut dyn Buffer, forward: bool, count: usize) {
     for _ in 0..count {
         if forward {
             buffer.move_down();

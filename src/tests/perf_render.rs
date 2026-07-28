@@ -1,16 +1,118 @@
-//! Purpose: measure explicit preview construction plus repeated plain/styled rendering.
-//! Owns: ignored 10 MiB Markdown preview and allocation-aware viewport samples.
+//! Purpose: measure explicit preview construction and repeated styled viewport rendering.
+//! Owns: ignored Markdown preview time/allocation samples and near-cap newline coverage.
 //! Must not: run by default, enforce machine timing, touch disk, add dependencies, or network.
-//! Invariants: preview is built once; repeated renders request only the final 23 source rows.
+//! Invariants: fixture allocation is unmeasured; repeated renders request only the final 23 rows.
 
 use crate::buffer::{Buffer, PieceTable};
 use crate::editor::syntax::SyntaxKind;
 use crate::terminal::render::{render_buffer, RenderOptions, RenderViewport};
 
-use super::helpers::{measure_allocated_sample, measure_sample, print_perf_sample};
+use super::helpers::{
+    measure_allocated_sample, measure_live_allocations, measure_sample, print_perf_sample,
+};
 
 const MEDIUM_BYTES: usize = 10 * 1024 * 1024;
+const SHAPE_BYTES: usize = 1024 * 1024;
 const RENDERS: usize = 1_000;
+
+fn repeating_fixture(pattern: &str, bytes: usize) -> String {
+    let mut fixture = String::with_capacity(bytes);
+    while fixture.len().saturating_add(pattern.len()) <= bytes {
+        fixture.push_str(pattern);
+    }
+    fixture
+}
+
+#[test]
+#[ignore = "manual Markdown preview allocation-shape baseline"]
+fn manual_markdown_preview_reports_allocation_shapes() {
+    let fixtures = [
+        (
+            "prose-heavy",
+            repeating_fixture(
+                "plain prose with several ordinary words and punctuation ",
+                SHAPE_BYTES,
+            ),
+        ),
+        ("newline-dense", repeating_fixture("x  \n", SHAPE_BYTES)),
+        (
+            "style-heavy",
+            repeating_fixture("**bold** *emphasis* ~~strike~~  \n", SHAPE_BYTES),
+        ),
+        (
+            "link-heavy",
+            repeating_fixture("[link](https://example.com/path)  \n", SHAPE_BYTES),
+        ),
+        (
+            "table-heavy",
+            repeating_fixture(
+                "| Name | Value |\n| --- | ---: |\n| alpha | 123 |\n\n",
+                SHAPE_BYTES,
+            ),
+        ),
+        (
+            "code-heavy",
+            repeating_fixture("    let value = compute(input);  \n", SHAPE_BYTES),
+        ),
+        (
+            "unicode-heavy",
+            repeating_fixture("猫 🐾 é Unicode prose  \n", SHAPE_BYTES),
+        ),
+    ];
+
+    for (label, source) in fixtures {
+        let (preview, sample) = measure_live_allocations(|| {
+            crate::editor::markdown_preview::render_with_width(&source, 80)
+        });
+        let preview = preview.unwrap();
+        eprintln!(
+            "PERF preview-memory: shape={label} source_bytes={} output_bytes={} \
+             elapsed_ms={} allocations={} peak_bytes={} retained_bytes={} structural_bytes={}",
+            source.len(),
+            preview.text.len(),
+            sample.elapsed.as_millis(),
+            sample.allocations,
+            sample.peak_bytes,
+            sample.retained_bytes,
+            preview.retained_bytes(),
+        );
+        assert!(!preview.text.is_empty());
+        assert!(sample.peak_bytes >= sample.retained_bytes);
+        assert!(sample.retained_bytes >= preview.retained_bytes());
+    }
+}
+
+#[test]
+#[ignore = "manual near-cap newline-dense Markdown preview memory coverage"]
+fn manual_near_cap_newline_dense_preview_stays_sparse() {
+    let source = repeating_fixture("x  \n", MEDIUM_BYTES);
+    let (preview, sample) = measure_live_allocations(|| {
+        crate::editor::markdown_preview::render_with_width(&source, 80)
+    });
+    let preview = preview.unwrap();
+
+    eprintln!(
+        "PERF preview-memory: shape=newline-dense-near-cap source_bytes={} output_bytes={} \
+         elapsed_ms={} allocations={} peak_bytes={} retained_bytes={} structural_bytes={}",
+        source.len(),
+        preview.text.len(),
+        sample.elapsed.as_millis(),
+        sample.allocations,
+        sample.peak_bytes,
+        sample.retained_bytes,
+        preview.retained_bytes(),
+    );
+    assert_eq!(preview.annotations.annotated_row_count(), 0);
+    assert_eq!(preview.annotations.annotation_count(), 0);
+    assert!(preview.retained_bytes() <= MEDIUM_BYTES.saturating_mul(3));
+    assert!(sample.peak_bytes >= sample.retained_bytes);
+    let (buffer, _) = preview.into_buffer_and_annotations();
+    assert!(buffer.line_count() > 1_000_000);
+    assert!(matches!(
+        buffer.line(buffer.line_count() - 1),
+        Some(std::borrow::Cow::Borrowed(""))
+    ));
+}
 
 #[test]
 #[ignore = "manual visible-line temporary allocation report"]

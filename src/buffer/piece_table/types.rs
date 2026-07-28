@@ -187,8 +187,4 @@ pub struct PieceTable {
     pub(crate) undo_stack: crate::buffer::undo::UndoStack,
     /// If false, structural edits do not record transactions (suppress during apply).
     pub(crate) recording: bool,
-    #[cfg(test)]
-    pub(crate) line_index_scanned_bytes: usize,
-    #[cfg(test)]
-    pub(crate) line_index_shifted_entries: usize,
 }

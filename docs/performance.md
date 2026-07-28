@@ -68,19 +68,27 @@ report `frame_output_bytes`, so terminal output size is not confused with
 temporary allocation volume.
 
 The PieceTable test seam reports document lines, pieces, add-buffer bytes, undo
-transactions, retained history capacity, and exact line-index work as bytes
-rescanned or line-start entries shifted. The paged-file seam reports active and
-edited retained page counts, descriptor bytes read, descriptor metadata
-validations, and accounted retained heap capacity. `retained_bytes` is the sum
-of owned text/add buffers, piece and line-index vectors, file-page metadata
-vectors, and undo/history allocations; it intentionally excludes allocator
-headers and opaque standard-library container-node overhead. These structural
-figures are reproducible comparisons, not process RSS.
+transactions, retained history capacity, and exact line-index work. Legacy
+bytes-rescanned and line-start-shifted counters remain zero with the block-local
+index; block touches and summary-node updates expose its bounded mutation work.
+The paged-file seam reports active and edited retained page counts, descriptor
+bytes read, descriptor metadata validations, and accounted retained heap
+capacity. `retained_bytes` is the sum of owned text/add buffers, piece and
+line-index storage, file-page metadata, and undo/history allocations; it
+intentionally excludes allocator headers and opaque standard-library
+container-node overhead. These structural figures are reproducible comparisons,
+not process RSS.
 
 Normal CI exercises sample formatting and the small mixed-content fixture only.
 The ignored scenarios cover ASCII, multibyte UTF-8, combining graphemes, emoji,
 tabs, CRLF, line-heavy text, and a minified long line. No elapsed-time,
 allocation, or retained-memory threshold is asserted.
+
+The ignored `manual_line_index_top_bottom_edit_work` comparison performs the
+same one-byte insertion and deletion near the top and bottom of equally sized
+100,000-line buffers. Run it with `--ignored --nocapture`; its stable
+`PERF index-work` records report blocks touched and summary nodes updated, so
+tail-dependent index work is visible independently of wall-clock noise.
 
 Profile before optimizing redraw or buffer access.
 

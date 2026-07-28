@@ -23,6 +23,11 @@ fn add_piece_table_metrics(
             "line_index_shifted_entries",
             stats.line_index_shifted_entries,
         )
+        .with_metric("line_index_blocks_touched", stats.line_index_blocks_touched)
+        .with_metric(
+            "line_index_summary_nodes_updated",
+            stats.line_index_summary_nodes_updated,
+        )
         .with_metric("history_transactions", stats.history_transactions)
         .with_metric("add_buffer_bytes", stats.add_buffer_bytes)
         .with_metric("history_bytes", stats.history_bytes)
@@ -51,6 +56,12 @@ fn manual_typing_near_line_heavy_start_reports_sample() {
     after.line_index_shifted_entries = after
         .line_index_shifted_entries
         .saturating_sub(before.line_index_shifted_entries);
+    after.line_index_blocks_touched = after
+        .line_index_blocks_touched
+        .saturating_sub(before.line_index_blocks_touched);
+    after.line_index_summary_nodes_updated = after
+        .line_index_summary_nodes_updated
+        .saturating_sub(before.line_index_summary_nodes_updated);
     print_perf_sample(&add_piece_table_metrics(sample, &after));
 
     assert_eq!(buffer.cursor().col, TYPED_CHARS);
@@ -89,6 +100,12 @@ fn manual_typing_after_fragmentation_reports_sample() {
     after.line_index_shifted_entries = after
         .line_index_shifted_entries
         .saturating_sub(before.line_index_shifted_entries);
+    after.line_index_blocks_touched = after
+        .line_index_blocks_touched
+        .saturating_sub(before.line_index_blocks_touched);
+    after.line_index_summary_nodes_updated = after
+        .line_index_summary_nodes_updated
+        .saturating_sub(before.line_index_summary_nodes_updated);
     let sample =
         add_piece_table_metrics(sample, &after).with_metric("fragmented_pieces", fragmented_pieces);
     print_perf_sample(&sample);

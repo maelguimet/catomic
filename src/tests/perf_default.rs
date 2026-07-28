@@ -54,10 +54,13 @@ fn perf_structural_stats_track_index_and_history_work() {
     assert_eq!(after.document_lines, 3);
     assert_eq!(after.history_transactions, 1);
     assert_eq!(after.add_buffer_bytes, 1);
+    assert_eq!(after.line_index_scanned_bytes, 0);
+    assert_eq!(after.line_index_shifted_entries, 0);
     assert_eq!(
-        after.line_index_shifted_entries - before.line_index_shifted_entries,
-        2
+        after.line_index_blocks_touched - before.line_index_blocks_touched,
+        1
     );
+    assert!(after.line_index_summary_nodes_updated > before.line_index_summary_nodes_updated);
     assert!(after.retained_bytes >= after.add_buffer_bytes + after.history_bytes);
 }
 

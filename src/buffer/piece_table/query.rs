@@ -217,34 +217,22 @@ impl PieceTable {
 
     /// Char length of a logical line using per-source scalar metadata.
     pub(crate) fn current_line_char_len(&self, row: usize) -> usize {
-        let n = self.index.line_starts.len();
-        if n == 0 {
-            return 0;
-        }
-        let row = row.min(n.saturating_sub(1));
-        let start = self.index.line_starts[row];
-        let end = if row + 1 < n {
-            self.index.line_starts[row + 1].saturating_sub(1)
-        } else {
-            self.index.total_bytes
-        };
+        let row = row.min(self.index.line_count().saturating_sub(1));
+        let start = self.index.line_start_byte(row);
+        let end = self.index.line_end_byte(row);
         self.try_char_count(start, end).unwrap_or(0)
     }
 
     /// Byte offset from (row, char-col) using the line index + local scan.
     /// Much cheaper than full logical_text for large docs.
     pub(crate) fn byte_offset_at(&self, mut row: usize, mut col: usize) -> usize {
-        let n = self.index.line_starts.len();
-        if n == 0 || self.index.total_bytes == 0 {
+        let n = self.index.line_count();
+        if self.index.total_bytes() == 0 {
             return 0;
         }
         row = row.min(n.saturating_sub(1));
-        let line_start = self.index.line_starts[row];
-        let line_end = if row + 1 < n {
-            self.index.line_starts[row + 1].saturating_sub(1)
-        } else {
-            self.index.total_bytes
-        };
+        let line_start = self.index.line_start_byte(row);
+        let line_end = self.index.line_end_byte(row);
         let n_chars = self.try_char_count(line_start, line_end).unwrap_or(0);
         col = col.min(n_chars);
         self.try_byte_offset_after_chars(line_start, line_end, col)

@@ -19,6 +19,8 @@ mod range_edit;
 #[cfg(test)]
 mod retention;
 #[cfg(test)]
+mod scalar_coordinates;
+#[cfg(test)]
 mod storage_parity;
 #[cfg(test)]
 mod undo_redo;

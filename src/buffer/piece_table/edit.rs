@@ -11,12 +11,15 @@ impl PieceTable {
         self.reset_piece_mutation_metrics();
         let insert_byte = self.cursor_byte_offset;
         let add_start = self.add.len();
+        let mut encoded = [0; 4];
+        self.add_scalars.append(ch.encode_utf8(&mut encoded));
         self.add.push(ch);
         let added_len = ch.len_utf8();
         let inserted = Piece {
             source: Source::Add,
             start: add_start,
             len: added_len,
+            char_len: Some(1),
         };
 
         let (piece_index, local) = self.split_point(insert_byte);
@@ -24,6 +27,7 @@ impl PieceTable {
             source: Source::Original,
             start: 0,
             len: 0,
+            char_len: Some(0),
         });
 
         if current.source == Source::Add
@@ -32,6 +36,7 @@ impl PieceTable {
         {
             let mut extended = current;
             extended.len += added_len;
+            extended.char_len = extended.char_len.map(|count| count + 1);
             self.pieces.set(piece_index, extended);
             self.record_piece_mutation(1, 0);
         } else if local == 0
@@ -45,15 +50,18 @@ impl PieceTable {
                 .get(piece_index - 1)
                 .expect("checked predecessor exists");
             previous.len += added_len;
+            previous.char_len = previous.char_len.map(|count| count + 1);
             self.pieces.set(piece_index - 1, previous);
             self.record_piece_mutation(2, 0);
         } else {
+            let (left_chars, right_chars) = self.split_piece_char_len(&current, local);
             let mut replacement = Vec::with_capacity(3);
             if local > 0 {
                 replacement.push(Piece {
                     source: current.source,
                     start: current.start,
                     len: local,
+                    char_len: left_chars,
                 });
             }
             replacement.push(inserted);
@@ -63,6 +71,7 @@ impl PieceTable {
                     source: current.source,
                     start: current.start + local,
                     len: right_len,
+                    char_len: right_chars,
                 });
             }
             self.replace_piece_run(piece_index..piece_index + 1, replacement);
@@ -94,12 +103,14 @@ impl PieceTable {
             .pieces
             .get(piece_index)
             .expect("non-empty piece tree has located piece");
+        let (left_chars, right_chars) = self.split_piece_char_len(&current, local);
         let mut replacement = Vec::with_capacity(to_insert.len() + 2);
         if local > 0 {
             replacement.push(Piece {
                 source: current.source,
                 start: current.start,
                 len: local,
+                char_len: left_chars,
             });
         }
         replacement.extend_from_slice(to_insert);
@@ -109,6 +120,7 @@ impl PieceTable {
                 source: current.source,
                 start: current.start + local,
                 len: right_len,
+                char_len: right_chars,
             });
         }
         self.replace_piece_run(piece_index..piece_index + 1, replacement);
@@ -145,6 +157,7 @@ impl PieceTable {
                         source: p.source,
                         start: p.start,
                         len: left_len,
+                        char_len: self.partial_piece_char_len(&p, 0, left_len),
                     });
                 }
             }
@@ -155,6 +168,11 @@ impl PieceTable {
                     source: p.source,
                     start: p.start + deleted_start - acc,
                     len: deleted_end - deleted_start,
+                    char_len: self.partial_piece_char_len(
+                        &p,
+                        deleted_start - acc,
+                        deleted_end - acc,
+                    ),
                 });
             }
             if p_end > end {
@@ -165,6 +183,11 @@ impl PieceTable {
                         source: p.source,
                         start: p.start + right_start,
                         len: right_len,
+                        char_len: self.partial_piece_char_len(
+                            &p,
+                            right_start,
+                            right_start + right_len,
+                        ),
                     });
                 }
             }
@@ -204,6 +227,10 @@ impl PieceTable {
             if let Some(previous) = coalesced.last_mut() {
                 if previous.source == piece.source && previous.start + previous.len == piece.start {
                     previous.len += piece.len;
+                    previous.char_len = previous
+                        .char_len
+                        .zip(piece.char_len)
+                        .map(|(left, right)| left + right);
                     continue;
                 }
             }
@@ -214,6 +241,7 @@ impl PieceTable {
                 source: Source::Original,
                 start: 0,
                 len: 0,
+                char_len: Some(0),
             });
         }
 
@@ -273,5 +301,35 @@ impl PieceTable {
             let len = self.current_line_char_len(self.cursor.row);
             self.cursor.col = self.cursor.col.min(len);
         }
+    }
+
+    fn split_piece_char_len(
+        &self,
+        piece: &Piece,
+        local_byte: usize,
+    ) -> (Option<usize>, Option<usize>) {
+        let Some(total) = piece.char_len else {
+            return (None, None);
+        };
+        let left = self
+            .source_char_count(piece.source, piece.start..piece.start + local_byte)
+            .expect("cached scalar source must be readable");
+        (Some(left), Some(total.saturating_sub(left)))
+    }
+
+    fn partial_piece_char_len(
+        &self,
+        piece: &Piece,
+        local_start: usize,
+        local_end: usize,
+    ) -> Option<usize> {
+        piece.char_len?;
+        Some(
+            self.source_char_count(
+                piece.source,
+                piece.start + local_start..piece.start + local_end,
+            )
+            .expect("cached scalar source must be readable"),
+        )
     }
 }

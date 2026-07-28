@@ -343,6 +343,10 @@ impl UndoStack {
             return false;
         }
         previous_piece.len += piece.len;
+        previous_piece.char_len = previous_piece
+            .char_len
+            .zip(piece.char_len)
+            .map(|(left, right)| left + right);
         *previous_after = after;
         transaction.retained_bytes = transaction.retained_bytes.saturating_add(piece.len);
         if piece.source == Source::Add {
@@ -669,6 +673,10 @@ fn merge_history_piece_boundary(pieces: &mut Vec<Piece>, right_index: usize) {
     let right = pieces[right_index];
     if left.source == right.source && left.start + left.len == right.start {
         pieces[right_index - 1].len += right.len;
+        pieces[right_index - 1].char_len = left
+            .char_len
+            .zip(right.char_len)
+            .map(|(left_chars, right_chars)| left_chars + right_chars);
         pieces.remove(right_index);
     }
 }

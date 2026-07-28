@@ -106,6 +106,39 @@ Profile before optimizing redraw or buffer access.
 
 Never add full-file scans, full-buffer clones, background work, or network calls to hot paths.
 
+## Owned long-line cursor structural work (2026-07-27)
+
+Owned PieceTables keep cached scalar lengths on pieces and sparse scalar/byte
+checkpoints on their immutable original and append-only add sources. Immutable
+ASCII sources use direct byte arithmetic. Checkpoints are source-relative, so
+piece splits do not invalidate them and appending edit text updates only the add
+source metadata.
+
+The ignored release fixture below creates dense 10 and 100 MiB single lines,
+then sets and moves the cursor near the beginning, middle, and end. Its
+instrumentation counts source bytes visited by scalar/byte coordinate mapping;
+it also counts PieceTree nodes visited so fragmented owned lines cannot hide
+descriptor traversal behind a zero-byte source scan. It does not use wall time
+as a correctness assertion.
+
+```text
+cargo test --release --locked manual_owned_long_line_cursor_work_is_checkpoint_bounded -- --ignored --nocapture
+
+PERF structural: label=owned cursor beginning bytes=10485760 scalars_visited_bytes=3691 piece_nodes_visited=...
+PERF structural: label=owned cursor middle bytes=10485760 scalars_visited_bytes=5552 piece_nodes_visited=...
+PERF structural: label=owned cursor end bytes=10485760 scalars_visited_bytes=7379 piece_nodes_visited=...
+PERF structural: label=owned cursor beginning bytes=104857600 scalars_visited_bytes=3073 piece_nodes_visited=...
+PERF structural: label=owned cursor middle bytes=104857600 scalars_visited_bytes=7986 piece_nodes_visited=...
+PERF structural: label=owned cursor end bytes=104857600 scalars_visited_bytes=6143 piece_nodes_visited=...
+```
+
+The fixture asserts 32 KiB and 256 PieceTree-node structural-work ceilings per
+sampled movement.
+Default regressions use a tighter 16 KiB ceiling for Unicode mapping and edited
+source transitions, and assert that owned ASCII mapping visits zero source
+bytes. These are deterministic work bounds, not machine-specific latency
+budgets.
+
 ## Process and network boundaries
 
 Editor construction and typing do not start a linter or external process.

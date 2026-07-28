@@ -214,6 +214,7 @@ fn compaction_preserves_utf8_line_index_and_batched_history() {
         )
         .unwrap();
     assert_eq!(buffer.lines(), vec!["Ωβ", "猫Ω", "last"]);
+    assert_sampled_scalar_mapping(&mut buffer, &["Ωβ", "猫Ω", "last"]);
     assert!(
         buffer.pieces_len() > 3,
         "batched edits fragment the PieceTree"
@@ -222,6 +223,7 @@ fn compaction_preserves_utf8_line_index_and_batched_history() {
     let changed_token = buffer.edit_history_position();
     buffer.undo();
     assert_eq!(buffer.lines(), vec!["αβ", "猫犬", "last"]);
+    assert_sampled_scalar_mapping(&mut buffer, &["αβ", "猫犬", "last"]);
     let undo_token = buffer.edit_history_position();
     let undo_revision = buffer.content_revision();
     let logical_bytes = buffer.logical_byte_len();
@@ -233,15 +235,124 @@ fn compaction_preserves_utf8_line_index_and_batched_history() {
     assert_eq!(buffer.line_char_count(0), Some(2));
     assert_eq!(buffer.line_char_count(1), Some(2));
     assert_eq!(buffer.lines(), vec!["αβ", "猫犬", "last"]);
+    assert_sampled_scalar_mapping(&mut buffer, &["αβ", "猫犬", "last"]);
     let mut streamed = Vec::new();
     buffer.write_to(&mut streamed).unwrap();
     assert_eq!(streamed, "αβ\n猫犬\nlast".as_bytes());
 
     buffer.redo();
     assert_eq!(buffer.lines(), vec!["Ωβ", "猫Ω", "last"]);
+    assert_sampled_scalar_mapping(&mut buffer, &["Ωβ", "猫Ω", "last"]);
     assert_eq!(buffer.edit_history_position(), changed_token);
     buffer.undo();
     assert_eq!(buffer.lines(), vec!["αβ", "猫犬", "last"]);
+    assert_sampled_scalar_mapping(&mut buffer, &["αβ", "猫犬", "last"]);
+}
+
+#[test]
+fn compaction_rebuilds_sparse_add_coordinates_for_windows_and_future_appends() {
+    let mut buffer = PieceTable::from_text("seed");
+    buffer.set_history_retention_for_test(1, usize::MAX);
+    let unit = "a\u{301}👩\u{200d}💻\t猫";
+    let final_text = unit.repeat(1024);
+    for text in [
+        "β".repeat(final_text.len()),
+        "犬".repeat(final_text.len()),
+        final_text.clone(),
+    ] {
+        let end = buffer.line_char_count(0).unwrap();
+        buffer
+            .replace_range(
+                Cursor { row: 0, col: 0 },
+                Cursor { row: 0, col: end },
+                &text,
+            )
+            .unwrap();
+    }
+
+    assert!(buffer.compact_add_buffer_for_test() > 0);
+    let middle = final_text.chars().count() / 2;
+    let expected_window = final_text.chars().skip(middle).take(8).collect::<String>();
+    assert_eq!(
+        buffer
+            .try_window_to_string(0, buffer.logical_byte_len().unwrap(), middle, 8)
+            .unwrap(),
+        expected_window
+    );
+
+    buffer.set_cursor(Cursor {
+        row: 0,
+        col: middle,
+    });
+    buffer.insert_char('🙂');
+    assert_eq!(
+        buffer
+            .text_range(
+                Cursor {
+                    row: 0,
+                    col: middle,
+                },
+                Cursor {
+                    row: 0,
+                    col: middle + 1,
+                },
+            )
+            .unwrap(),
+        "🙂"
+    );
+    assert_eq!(
+        buffer.line_char_count(0),
+        Some(final_text.chars().count() + 1)
+    );
+}
+
+#[test]
+fn non_ascii_append_after_ascii_compaction_keeps_scalar_mapping_bounded() {
+    const ASCII_BYTES: usize = 512 * 1024;
+    const MAX_VISITED_BYTES: usize = 16 * 1024;
+    let mut buffer = PieceTable::new();
+    buffer.set_history_retention_for_test(1, usize::MAX);
+    for ch in ['a', 'b', 'c'] {
+        let end = buffer.line_char_count(0).unwrap();
+        buffer
+            .replace_range(
+                Cursor { row: 0, col: 0 },
+                Cursor { row: 0, col: end },
+                &ch.to_string().repeat(ASCII_BYTES),
+            )
+            .unwrap();
+    }
+
+    assert!(buffer.compact_add_buffer_for_test() > 0);
+    buffer.set_cursor(Cursor {
+        row: 0,
+        col: ASCII_BYTES,
+    });
+    buffer.insert_char('é');
+    for col in [0, ASCII_BYTES / 2, ASCII_BYTES, ASCII_BYTES + 1] {
+        buffer.set_cursor(Cursor { row: 0, col });
+        let visited = buffer.take_scalar_visited_bytes();
+        assert!(
+            visited <= MAX_VISITED_BYTES,
+            "column {col} visited {visited} bytes after ASCII compaction"
+        );
+    }
+    assert_eq!(buffer.line_char_count(0), Some(ASCII_BYTES + 1));
+    assert_eq!(
+        buffer
+            .text_range(
+                Cursor {
+                    row: 0,
+                    col: ASCII_BYTES,
+                },
+                Cursor {
+                    row: 0,
+                    col: ASCII_BYTES + 1,
+                },
+            )
+            .unwrap(),
+        "é"
+    );
 }
 
 #[test]
@@ -330,4 +441,20 @@ fn default_independent_typing_history_has_a_bounded_transaction_count() {
         buffer.logical_byte_len(),
         Some(edits - DEFAULT_UNDO_MAX_TRANSACTIONS)
     );
+}
+
+fn assert_sampled_scalar_mapping(buffer: &mut PieceTable, expected_lines: &[&str]) {
+    for (row, expected) in expected_lines.iter().enumerate() {
+        let line_len = expected.chars().count();
+        for col in [0, line_len / 2, line_len] {
+            buffer.set_cursor(Cursor { row, col });
+            assert_eq!(buffer.cursor(), Cursor { row, col });
+            assert_eq!(
+                buffer
+                    .text_range(Cursor { row, col: 0 }, Cursor { row, col })
+                    .unwrap(),
+                expected.chars().take(col).collect::<String>()
+            );
+        }
+    }
 }

@@ -15,6 +15,7 @@ mod file_original;
 mod piece_tree;
 mod query;
 mod retention;
+mod scalar_index;
 pub(crate) mod types;
 
 use crate::buffer::undo::CursorState;
@@ -83,6 +84,7 @@ impl PieceTable {
         let line_index_work = self.index.work();
         let retained_bytes = self.original.retained_bytes()
             + self.add.capacity()
+            + self.add_scalars.retained_bytes()
             + self.pieces.retained_bytes()
             + self.index.retained_bytes()
             + history_bytes;

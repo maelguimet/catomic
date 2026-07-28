@@ -65,3 +65,31 @@ fn bottom_up_range_replacements_are_one_transaction() {
     buffer.redo();
     assert_eq!(buffer.to_string(), "x x x x");
 }
+
+#[test]
+fn multi_piece_utf8_replacement_undo_redo_and_streaming_reuse_sources() {
+    let mut buffer = PieceTable::from_text("aé猫🙂z");
+    let first_split = Cursor { row: 0, col: 1 };
+    let second_split = Cursor { row: 0, col: 4 };
+    buffer.replace_range(first_split, first_split, "X").unwrap();
+    buffer
+        .replace_range(second_split, second_split, "Y")
+        .unwrap();
+    assert_eq!(buffer.to_string(), "aXé猫Y🙂z");
+
+    buffer
+        .replace_range(Cursor { row: 0, col: 1 }, Cursor { row: 0, col: 6 }, "β\nγ")
+        .unwrap();
+    assert_eq!(buffer.to_string(), "aβ\nγz");
+    let add_len = buffer.add.len();
+
+    let mut written = Vec::new();
+    buffer.write_to(&mut written).unwrap();
+    assert_eq!(written, "aβ\nγz".as_bytes());
+
+    buffer.undo();
+    assert_eq!(buffer.to_string(), "aXé猫Y🙂z");
+    buffer.redo();
+    assert_eq!(buffer.to_string(), "aβ\nγz");
+    assert_eq!(buffer.add.len(), add_len);
+}

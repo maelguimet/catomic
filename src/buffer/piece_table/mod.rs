@@ -1,9 +1,9 @@
-//! Purpose: maintain PieceTable index metadata, piece-prefix, and cursor-state helpers.
-//! Owns: inserted-piece line metadata, piece coalescing, and history cursor capture.
+//! Purpose: maintain PieceTable line-index and cursor-state helpers.
+//! Owns: inserted-piece line metadata, mutation metrics, and history cursor capture.
 //! Must not: external-service/config policy or UI expansion.
 //! Invariants:
 //! - Pieces UTF-8 char-boundary safe, cover logical doc.
-//! - index remains consistent through local edit deltas.
+//! - line and piece indexes remain consistent after every edit.
 //! - cursor_byte_offset always matches (row, col) position.
 //! - Buffer adaptation and mutation orchestration live in focused submodules.
 //!
@@ -12,6 +12,7 @@ mod buffer_impl;
 mod construct;
 mod edit;
 mod file_original;
+mod piece_tree;
 mod query;
 pub(crate) mod types;
 
@@ -41,43 +42,6 @@ impl PieceTable {
         self.undo_stack.has_history()
     }
 
-    /// Coalesce adjacent same-source contiguous pieces. Call after edit.
-    /// Rule: if same Source and p1.start + p1.len == p2.start then merge.
-    pub(crate) fn coalesce(&mut self) {
-        if self.pieces.len() < 2 {
-            self.sync_piece_starts();
-            return;
-        }
-        let mut i = 0;
-        while i + 1 < self.pieces.len() {
-            let p1 = &self.pieces[i];
-            let p2 = &self.pieces[i + 1];
-            if p1.source == p2.source && p1.start + p1.len == p2.start {
-                let merged = Piece {
-                    source: p1.source,
-                    start: p1.start,
-                    len: p1.len + p2.len,
-                };
-                self.pieces[i] = merged;
-                self.pieces.remove(i + 1);
-                // stay at i to check further merges
-            } else {
-                i += 1;
-            }
-        }
-        self.sync_piece_starts();
-    }
-
-    /// Keep piece_starts parallel to pieces after any structural mutation.
-    fn sync_piece_starts(&mut self) {
-        self.piece_starts.clear();
-        let mut acc = 0usize;
-        for p in &self.pieces {
-            self.piece_starts.push(acc);
-            acc += p.len;
-        }
-    }
-
     fn capture_cursor_state(&self) -> CursorState {
         CursorState {
             cursor: self.cursor,
@@ -91,14 +55,18 @@ impl PieceTable {
     }
 
     #[cfg(test)]
+    pub(crate) fn last_piece_mutation(&self) -> types::PieceMutationMetrics {
+        self.last_piece_mutation
+    }
+
+    #[cfg(test)]
     pub(crate) fn perf_stats(&self) -> PieceTablePerfStats {
         let (history_transactions, history_bytes) = self.undo_stack.perf_stats();
         let line_index_work = self.index.work();
         let retained_bytes = self.original.retained_bytes()
             + self.add.capacity()
-            + self.pieces.capacity() * std::mem::size_of::<Piece>()
+            + self.pieces.retained_bytes()
             + self.index.retained_bytes()
-            + self.piece_starts.capacity() * std::mem::size_of::<usize>()
             + history_bytes;
         PieceTablePerfStats {
             pieces: self.pieces.len(),

@@ -262,6 +262,36 @@ fn coalescing_prevents_piece_explosion_on_appends() {
 }
 
 #[test]
+fn sequential_insert_extends_local_add_piece_in_fragmented_document() {
+    let mut pt = PieceTable::new();
+    for _ in 0..512 {
+        pt.insert_char('x');
+        pt.move_left();
+    }
+    pt.insert_char('y');
+    let pieces_before = pt.pieces_len();
+
+    pt.insert_char('z');
+
+    assert_eq!(pt.pieces_len(), pieces_before);
+    assert_eq!(pt.to_string().chars().take(2).collect::<String>(), "yz");
+    assert_eq!(pt.last_piece_mutation().pieces_touched, 2);
+    assert_eq!(pt.last_piece_mutation().pieces_allocated, 0);
+}
+
+#[test]
+fn split_insert_only_replaces_the_local_descriptor_run() {
+    let mut pt = PieceTable::from_text("aé猫🙂z");
+    pt.set_cursor(crate::buffer::Cursor { row: 0, col: 3 });
+
+    pt.insert_char('X');
+
+    assert_eq!(pt.to_string(), "aé猫X🙂z");
+    assert_eq!(pt.last_piece_mutation().pieces_touched, 1);
+    assert_eq!(pt.last_piece_mutation().pieces_allocated, 3);
+}
+
+#[test]
 fn multibyte_utf8_parity_and_boundary_edits() {
     // Explicit coverage for non-ASCII using from_text (starts at top-left).
     // Tests forward-delete, backspace, newline-join, insert around multibyte.

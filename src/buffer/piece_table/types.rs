@@ -21,6 +21,7 @@ use crate::buffer::line_index::LineIndex;
 use crate::buffer::Cursor;
 
 use super::file_original::{FileMetadataSnapshot, FileOriginal, FileOriginalMetadata};
+use super::piece_tree::PieceTree;
 
 /// Source buffer for a piece.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,7 +31,7 @@ pub(crate) enum Source {
 }
 
 /// A contiguous byte range in one of the sources.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Piece {
     pub(crate) source: Source,
     /// Logical byte offset into the source. File originals map these normalized
@@ -194,17 +195,23 @@ impl OriginalBacking {
 pub struct PieceTable {
     pub(crate) original: OriginalBacking,
     pub(crate) add: String,
-    pub(crate) pieces: Vec<Piece>,
+    pub(crate) pieces: PieceTree,
     pub(crate) index: LineIndex,
     pub(crate) cursor: Cursor,
     /// Cached global logical byte offset for the cursor.
     /// Avoids full rebuild on every edit for offset calculation.
     pub(crate) cursor_byte_offset: usize,
-    /// Prefix sums of piece lengths (parallel to pieces). Enables fast
-    /// piece lookup for queries/edits without head scans on every op.
-    pub(crate) piece_starts: Vec<usize>,
     /// Undo/redo history (piece deltas only; no full snapshots).
     pub(crate) undo_stack: crate::buffer::undo::UndoStack,
     /// If false, structural edits do not record transactions (suppress during apply).
     pub(crate) recording: bool,
+    #[cfg(test)]
+    pub(crate) last_piece_mutation: PieceMutationMetrics,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct PieceMutationMetrics {
+    pub(crate) pieces_touched: usize,
+    pub(crate) pieces_allocated: usize,
 }

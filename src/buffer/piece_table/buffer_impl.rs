@@ -89,6 +89,10 @@ impl Buffer for PieceTable {
         Some(self.index.total_bytes)
     }
 
+    fn search_text_segment(&self, byte_offset: usize, max_bytes: usize) -> Option<Cow<'_, str>> {
+        self.search_text_segment(byte_offset, max_bytes)
+    }
+
     fn set_cursor(&mut self, cursor: Cursor) {
         let row = cursor.row.min(self.line_count().saturating_sub(1));
         let col = cursor.col.min(self.current_line_char_len(row));

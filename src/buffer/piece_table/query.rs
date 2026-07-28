@@ -8,6 +8,35 @@ use super::types::{PieceTable, Source};
 use std::io;
 
 impl PieceTable {
+    /// Borrow a bounded logical source range for streaming search when possible.
+    pub(crate) fn search_text_segment(
+        &self,
+        byte_offset: usize,
+        max_bytes: usize,
+    ) -> Option<std::borrow::Cow<'_, str>> {
+        if byte_offset >= self.index.total_bytes || max_bytes == 0 {
+            return None;
+        }
+        let (index, local) = self.split_point(byte_offset);
+        let piece = self.pieces.get(index)?;
+        let source_start = piece.start + local;
+        match piece.source {
+            Source::Original => self
+                .original
+                .search_text_segment(source_start..piece.start + piece.len, max_bytes)
+                .ok(),
+            Source::Add => {
+                let mut source_end = source_start + (piece.len - local).min(max_bytes);
+                while source_end < piece.start + piece.len && !self.add.is_char_boundary(source_end)
+                {
+                    source_end += 1;
+                }
+                Some(std::borrow::Cow::Borrowed(
+                    &self.add[source_start..source_end],
+                ))
+            }
+        }
+    }
     /// Return the logical text for the byte range [start, end).
     /// Uses piece_starts for bounded lookup of start piece (no full head scan).
     pub(crate) fn slice_to_string(&self, start: usize, end: usize) -> String {

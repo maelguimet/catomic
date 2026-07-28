@@ -132,6 +132,35 @@ pub trait Buffer {
     fn logical_byte_len(&self) -> Option<usize> {
         None
     }
+    /// Return a bounded logical UTF-8 prefix beginning at `byte_offset`.
+    /// Implementations may include up to three bytes beyond `max_bytes` to
+    /// finish one UTF-8 scalar. Storage backends with ranged text can borrow
+    /// source slices here so search need not allocate one String per logical line.
+    fn search_text_segment(&self, byte_offset: usize, max_bytes: usize) -> Option<Cow<'_, str>> {
+        if max_bytes == 0 {
+            return Some(Cow::Borrowed(""));
+        }
+        let mut remaining = byte_offset;
+        for row in 0..self.line_count() {
+            let line = self.line(row)?;
+            let bytes = line.len() + usize::from(row + 1 < self.line_count());
+            if remaining >= bytes {
+                remaining -= bytes;
+                continue;
+            }
+            let mut text = line.into_owned();
+            if row + 1 < self.line_count() {
+                text.push('\n');
+            }
+            let start = remaining.min(text.len());
+            let mut end = (start + max_bytes).min(text.len());
+            while end > start && !text.is_char_boundary(end) {
+                end -= 1;
+            }
+            return Some(Cow::Owned(text[start..end].to_string()));
+        }
+        None
+    }
     fn next_page(&mut self) -> io::Result<bool> {
         Ok(false)
     }

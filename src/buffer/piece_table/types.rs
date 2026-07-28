@@ -12,6 +12,7 @@
 //! - cursor_byte_offset always matches the byte position of (cursor.row, cursor.col).
 //!
 
+use std::borrow::Cow;
 use std::ops::Range;
 use std::sync::Arc;
 use std::{io, io::Write};
@@ -70,6 +71,25 @@ impl OriginalBacking {
                 Ok(())
             }
             Self::File(file) => file.push_range(range, out),
+        }
+    }
+
+    /// Read a prefix that ends on a scalar boundary. The returned text may use
+    /// up to three bytes beyond `max_bytes` to avoid splitting a UTF-8 scalar.
+    pub(crate) fn search_text_segment(
+        &self,
+        range: Range<usize>,
+        max_bytes: usize,
+    ) -> io::Result<Cow<'_, str>> {
+        match self {
+            Self::Owned(text) => {
+                let mut end = range.start + range.len().min(max_bytes);
+                while end < range.end && !text.is_char_boundary(end) {
+                    end += 1;
+                }
+                Ok(Cow::Borrowed(&text[range.start..end]))
+            }
+            Self::File(file) => file.search_text_segment(range, max_bytes).map(Cow::Owned),
         }
     }
 

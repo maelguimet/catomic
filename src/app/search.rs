@@ -10,7 +10,12 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::Cursor;
 use crate::config::actions::Action;
-use crate::editor::search::{self, SearchDirection, SearchMatch, SearchResult, SearchTask};
+use crate::editor::search::{
+    self, LocalSearchTask, SearchDirection, SearchMatch, SearchResult, SearchTask,
+};
+
+const LOCAL_SEARCH_POLL_BYTES: usize = 64 * 1024;
+const STREAMING_SEARCH_THRESHOLD_BYTES: usize = crate::file::size::SMALL_FILE_LIMIT_BYTES as usize;
 
 #[derive(Default)]
 pub(crate) struct SearchUiState {
@@ -23,7 +28,14 @@ pub(crate) struct SearchUiState {
 
 struct RunningSearch {
     query: String,
-    task: SearchTask,
+    task: RunningSearchTask,
+    buffer_id: u64,
+    content_generation: u64,
+}
+
+enum RunningSearchTask {
+    Descriptor(SearchTask),
+    Local(Box<LocalSearchTask>),
 }
 
 pub(crate) fn open_prompt(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
@@ -157,12 +169,33 @@ fn refresh_incremental_match(app: &mut super::App, out: &mut dyn Write) -> io::R
         let task = search::start_descriptor_search(source, query.clone());
         app.search.running = Some(RunningSearch {
             query: query.clone(),
-            task,
+            task: RunningSearchTask::Descriptor(task),
+            buffer_id: app.file.buffer_id,
+            content_generation: app.file.content_generation,
         });
         app.message_info(format!("Find: {query} (searching whole file; Esc cancels)"));
         return app.render(out);
     }
     let origin = app.search.origin.unwrap_or_else(|| app.buffer.cursor());
+    if app
+        .buffer
+        .logical_byte_len()
+        .is_some_and(|bytes| bytes > STREAMING_SEARCH_THRESHOLD_BYTES)
+    {
+        app.search.running = Some(RunningSearch {
+            query: query.clone(),
+            task: RunningSearchTask::Local(Box::new(LocalSearchTask::new(
+                &query,
+                origin,
+                SearchDirection::Forward,
+                true,
+            ))),
+            buffer_id: app.file.buffer_id,
+            content_generation: app.file.content_generation,
+        });
+        app.message_info(format!("Find: {query} (searching; Esc cancels)"));
+        return app.render(out);
+    }
     apply_local_match(app, &query, origin, SearchDirection::Forward, true);
     app.render(out)
 }
@@ -186,7 +219,9 @@ fn navigate_match(
         };
         app.search.running = Some(RunningSearch {
             query: query.clone(),
-            task,
+            task: RunningSearchTask::Descriptor(task),
+            buffer_id: app.file.buffer_id,
+            content_generation: app.file.content_generation,
         });
         let label = match direction {
             SearchDirection::Forward => "next",
@@ -201,6 +236,22 @@ fn navigate_match(
         .map(|found| found.start)
         .or(app.search.origin)
         .unwrap_or_else(|| app.buffer.cursor());
+    if app
+        .buffer
+        .logical_byte_len()
+        .is_some_and(|bytes| bytes > STREAMING_SEARCH_THRESHOLD_BYTES)
+    {
+        app.search.running = Some(RunningSearch {
+            query: query.clone(),
+            task: RunningSearchTask::Local(Box::new(LocalSearchTask::new(
+                &query, origin, direction, false,
+            ))),
+            buffer_id: app.file.buffer_id,
+            content_generation: app.file.content_generation,
+        });
+        app.message_info(format!("Searching for '{query}'... Esc cancels."));
+        return app.render(out);
+    }
     apply_local_match(app, &query, origin, direction, false);
     app.render(out)
 }
@@ -234,15 +285,26 @@ fn apply_local_match(
 }
 
 pub(crate) fn poll_search(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
-    let Some(result) = app
-        .search
-        .running
-        .as_ref()
-        .and_then(|running| running.task.try_result())
-    else {
+    let result = match app.search.running.as_mut() {
+        Some(RunningSearch {
+            task: RunningSearchTask::Descriptor(task),
+            ..
+        }) => task.try_result(),
+        Some(RunningSearch {
+            task: RunningSearchTask::Local(task),
+            ..
+        }) => task.poll(&*app.buffer, LOCAL_SEARCH_POLL_BYTES),
+        None => None,
+    };
+    let Some(result) = result else {
         return Ok(());
     };
     let running = app.search.running.take().expect("running search exists");
+    if running.buffer_id != app.file.buffer_id
+        || running.content_generation != app.file.content_generation
+    {
+        return Ok(());
+    }
     match result {
         SearchResult::Found(position) => {
             app.buffer.set_descriptor_position(position)?;
@@ -257,6 +319,16 @@ pub(crate) fn poll_search(app: &mut super::App, out: &mut dyn Write) -> io::Resu
             app.message_info(format!(
                 "Found '{}' on file page {}.",
                 running.query, position.page_number
+            ));
+            app.reveal_cursor();
+        }
+        SearchResult::LocalFound(found) => {
+            app.buffer.set_cursor(found.start);
+            app.search.active_match = Some(found);
+            app.search.active_descriptor_position = None;
+            app.message_info(format!(
+                "Found '{}'. Enter/Down next, Up previous, Esc closes.",
+                running.query
             ));
             app.reveal_cursor();
         }
@@ -276,7 +348,10 @@ pub(crate) fn poll_search(app: &mut super::App, out: &mut dyn Write) -> io::Resu
 
 fn cancel_running(state: &mut SearchUiState) {
     if let Some(running) = state.running.take() {
-        running.task.cancel();
+        match running.task {
+            RunningSearchTask::Descriptor(task) => task.cancel(),
+            RunningSearchTask::Local(mut task) => task.cancel(),
+        }
     }
 }
 
@@ -314,6 +389,30 @@ mod tests {
         }
         app.handle_key_with(out, key(KeyCode::Enter, KeyModifiers::NONE))
             .unwrap();
+    }
+
+    #[test]
+    fn late_local_search_result_does_not_install_on_a_new_content_generation() {
+        let mut app = super::super::App::new(None).unwrap();
+        app.buffer = Box::new(crate::buffer::PieceTable::from_text("target"));
+        app.search.running = Some(RunningSearch {
+            query: "target".to_string(),
+            task: RunningSearchTask::Local(Box::new(LocalSearchTask::new(
+                "target",
+                crate::buffer::Cursor::default(),
+                SearchDirection::Forward,
+                true,
+            ))),
+            buffer_id: app.file.buffer_id,
+            content_generation: app.file.content_generation,
+        });
+        app.file.content_generation = app.file.content_generation.wrapping_add(1);
+
+        poll_search(&mut app, &mut Vec::new()).unwrap();
+
+        assert!(app.search.running.is_none());
+        assert!(app.search.active_match.is_none());
+        assert_eq!(app.buffer.cursor(), crate::buffer::Cursor::default());
     }
 
     #[test]

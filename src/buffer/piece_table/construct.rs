@@ -6,8 +6,10 @@
 //! Owns: PieceTable::new, text constructors, and whole-file/page-range
 //!   descriptor-backed constructors.
 //! Must not: perform edits, undo/redo, queries, UI, or external-service work.
-//! Invariants: CRLF/CR normalize to LF; LF-only owned input moves into original
-//!   without cloning; cursor starts at (0,0); initial piece/index/piece_starts are consistent.
+//! Invariants: CRLF/CR normalize to LF; file-backed CRLF elision stays in
+//!   original metadata rather than fragmenting pieces; LF-only owned input
+//!   moves into original without cloning; cursor starts at (0,0); initial
+//!   piece/index/piece_starts are consistent.
 
 use std::fs::File;
 use std::io;
@@ -144,7 +146,7 @@ impl PieceTable {
         range_start: usize,
         range_end: usize,
     ) -> Self {
-        let local_line_starts = scan
+        let local_line_starts: Vec<usize> = scan
             .line_starts
             .iter()
             .map(|start| {
@@ -152,26 +154,31 @@ impl PieceTable {
                 start - range_start - removed
             })
             .collect();
-        let newline_offsets = scan
-            .line_starts
+        let newline_offsets = local_line_starts
             .iter()
             .skip(1)
             .map(|start| start - 1)
             .collect();
+        let crlf_offsets = scan.crlf_offsets;
+        let logical_len = range_end
+            .saturating_sub(range_start)
+            .saturating_sub(crlf_offsets.len());
         let original_metadata = FileOriginalMetadata {
             range_start,
             range_end,
+            logical_len,
             newline_offsets,
+            crlf_offsets,
             line_char_counts: scan.line_char_counts,
             line_is_ascii: scan.line_is_ascii,
             line_checkpoints: scan.line_checkpoints,
             line_checkpoint_starts: scan.line_checkpoint_starts,
         };
-        let pieces = normalized_file_pieces(range_start, range_end, &scan.crlf_offsets);
-        let piece_starts = piece_starts(&pieces);
-        let logical_len = range_end
-            .saturating_sub(range_start)
-            .saturating_sub(scan.crlf_offsets.len());
+        let pieces = vec![Piece {
+            source: Source::Original,
+            start: 0,
+            len: logical_len,
+        }];
         Self {
             original: OriginalBacking::from_file(file, snapshot, original_metadata),
             add: String::new(),
@@ -182,7 +189,7 @@ impl PieceTable {
             },
             cursor: Cursor { row: 0, col: 0 },
             cursor_byte_offset: 0,
-            piece_starts,
+            piece_starts: vec![0],
             undo_stack: crate::buffer::undo::UndoStack::new(),
             recording: true,
             #[cfg(test)]
@@ -231,39 +238,4 @@ impl PieceTable {
             line_index_shifted_entries: 0,
         }
     }
-}
-
-fn normalized_file_pieces(range_start: usize, range_end: usize, crlf: &[usize]) -> Vec<Piece> {
-    let mut pieces = Vec::with_capacity(crlf.len().saturating_add(1));
-    let mut start = range_start;
-    for &carriage_return in crlf {
-        if carriage_return > start {
-            pieces.push(Piece {
-                source: Source::Original,
-                start,
-                len: carriage_return - start,
-            });
-        }
-        start = carriage_return.saturating_add(1);
-    }
-    if start < range_end || pieces.is_empty() {
-        pieces.push(Piece {
-            source: Source::Original,
-            start,
-            len: range_end.saturating_sub(start),
-        });
-    }
-    pieces
-}
-
-fn piece_starts(pieces: &[Piece]) -> Vec<usize> {
-    let mut offset = 0usize;
-    pieces
-        .iter()
-        .map(|piece| {
-            let start = offset;
-            offset = offset.saturating_add(piece.len);
-            start
-        })
-        .collect()
 }

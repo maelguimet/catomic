@@ -32,7 +32,8 @@ pub(crate) enum Source {
 #[derive(Clone, Debug)]
 pub(crate) struct Piece {
     pub(crate) source: Source,
-    /// Byte offset into the source String.
+    /// Logical byte offset into the source. File originals map these normalized
+    /// coordinates back to descriptor bytes through their CRLF elision table.
     pub(crate) start: usize,
     /// Byte length.
     pub(crate) len: usize,

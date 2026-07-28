@@ -1,9 +1,12 @@
 //! Purpose: provide immutable descriptor-backed original bytes for PieceTable.
 //! Owns: descriptor snapshot checks, positioned range reads, original-line
-//!   scalar metadata, checkpoint-assisted cursor mapping, and streamed ranges.
+//!   scalar metadata, compact CRLF source mapping, checkpoint-assisted cursor
+//!   mapping, and streamed ranges.
 //! Must not: own logical pieces, edits, App policy, rendering, or external services.
-//! Invariants: ranges are UTF-8 boundaries; line metadata describes the scanned
-//!   descriptor; metadata drift fails fallible reads and writes closed.
+//! Invariants: Piece ranges use normalized logical coordinates; mapped source
+//!   ranges are UTF-8 boundaries; CR bytes belonging to CRLF never enter logical
+//!   text; line metadata describes the scanned descriptor; metadata drift fails
+//!   fallible reads and writes closed.
 
 use std::fs::File;
 use std::io::{self, Write};
@@ -32,7 +35,11 @@ impl FileMetadataSnapshot {
 pub(crate) struct FileOriginalMetadata {
     pub(crate) range_start: usize,
     pub(crate) range_end: usize,
+    pub(crate) logical_len: usize,
+    /// Logical offsets of normalized LF bytes.
     pub(crate) newline_offsets: Vec<usize>,
+    /// Absolute descriptor offsets of CR bytes elided from CRLF.
+    pub(crate) crlf_offsets: Vec<usize>,
     pub(crate) line_char_counts: Vec<usize>,
     pub(crate) line_is_ascii: Vec<bool>,
     pub(crate) line_checkpoints: Vec<LineCheckpoint>,
@@ -109,18 +116,65 @@ impl FileOriginal {
         Ok(bytes)
     }
 
-    pub(crate) fn push_range(&self, range: Range<usize>, out: &mut String) -> io::Result<()> {
-        let bytes = self.read_range(range)?;
-        out.push_str(as_utf8(&bytes)?);
+    pub(crate) fn push_range(
+        &self,
+        logical_range: Range<usize>,
+        out: &mut String,
+    ) -> io::Result<()> {
+        let source_range = self.source_range(logical_range)?;
+        let bytes = self.read_range(source_range.clone())?;
+        let mut source_start = source_range.start;
+        self.for_each_crlf_offset(source_range.clone(), |carriage_return| {
+            let relative_start = source_start - source_range.start;
+            let relative_end = carriage_return - source_range.start;
+            if relative_start < relative_end {
+                out.push_str(as_utf8(&bytes[relative_start..relative_end])?);
+            }
+            source_start = carriage_return + 1;
+            Ok(())
+        })?;
+        let relative_start = source_start - source_range.start;
+        if relative_start < bytes.len() {
+            out.push_str(as_utf8(&bytes[relative_start..])?);
+        }
         Ok(())
     }
 
-    pub(crate) fn write_range(&self, range: Range<usize>, out: &mut dyn Write) -> io::Result<()> {
+    pub(crate) fn write_range(
+        &self,
+        logical_range: Range<usize>,
+        out: &mut dyn Write,
+    ) -> io::Result<()> {
+        let range = self.source_range(logical_range)?;
         self.ensure_unchanged()?;
         let mut offset = range.start;
         while offset < range.end {
             let end = offset.saturating_add(64 * 1024).min(range.end);
-            out.write_all(&self.read_range_unchecked(offset..end)?)?;
+            let bytes = self.read_range_unchecked(offset..end)?;
+            let first_cr = self
+                .metadata
+                .crlf_offsets
+                .partition_point(|carriage_return| *carriage_return < offset);
+            let crlf = &self.metadata.crlf_offsets[first_cr..];
+            if crlf
+                .first()
+                .is_none_or(|carriage_return| *carriage_return >= end)
+            {
+                out.write_all(&bytes)?;
+            } else {
+                let mut normalized = Vec::with_capacity(bytes.len());
+                let mut source_start = offset;
+                for &carriage_return in crlf {
+                    if carriage_return >= end {
+                        break;
+                    }
+                    normalized
+                        .extend_from_slice(&bytes[source_start - offset..carriage_return - offset]);
+                    source_start = carriage_return + 1;
+                }
+                normalized.extend_from_slice(&bytes[source_start - offset..]);
+                out.write_all(&normalized)?;
+            }
             offset = end;
         }
         self.ensure_unchanged()
@@ -172,17 +226,16 @@ impl FileOriginal {
         let window_end_col = window_start_col.saturating_add(take).min(end_col);
         let start = self.byte_offset_at_line_col(row, window_start_col)?;
         let end = self.byte_offset_at_line_col(row, window_end_col)?;
-        let bytes = self.read_range_unchecked(start..end)?;
-        out.push_str(as_utf8(&bytes)?);
+        self.push_range(start..end, out)?;
         self.ensure_unchanged()?;
         Ok(window_end_col - window_start_col)
     }
 
     fn range_columns(&self, range: &Range<usize>) -> io::Result<(usize, usize, usize)> {
-        if range.start > range.end {
+        if range.start > range.end || range.end > self.metadata.logical_len {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "reversed range",
+                "file-original logical range is invalid",
             ));
         }
         let row = self.row_for_byte(range.start);
@@ -206,7 +259,7 @@ impl FileOriginal {
     fn line_start(&self, row: usize) -> usize {
         row.checked_sub(1)
             .and_then(|previous| self.metadata.newline_offsets.get(previous))
-            .map_or(self.metadata.range_start, |newline| newline + 1)
+            .map_or(0, |newline| newline + 1)
     }
 
     fn line_end(&self, row: usize) -> usize {
@@ -214,7 +267,7 @@ impl FileOriginal {
             .newline_offsets
             .get(row)
             .copied()
-            .unwrap_or(self.metadata.range_end)
+            .unwrap_or(self.metadata.logical_len)
     }
 
     fn line_checkpoints(&self, row: usize) -> &[LineCheckpoint] {
@@ -239,12 +292,16 @@ impl FileOriginal {
         {
             return Ok(byte.saturating_sub(self.line_start(row)));
         }
+        let source_byte = self.logical_to_source_end(byte);
         let checkpoints = self.line_checkpoints(row);
-        let idx = checkpoints.partition_point(|checkpoint| checkpoint.byte_offset <= byte);
+        let idx = checkpoints.partition_point(|checkpoint| checkpoint.byte_offset <= source_byte);
         let checkpoint = idx.checked_sub(1).map(|i| checkpoints[i]);
-        let start = checkpoint.map_or(self.line_start(row), |item| item.byte_offset);
+        let start = checkpoint.map_or_else(
+            || self.logical_to_source_start(self.line_start(row)),
+            |item| item.byte_offset,
+        );
         let col = checkpoint.map_or(0, |item| item.col);
-        let bytes = self.read_range_unchecked(start..byte)?;
+        let bytes = self.read_range_unchecked(start..source_byte)?;
         Ok(col + as_utf8(&bytes)?.chars().count())
     }
 
@@ -268,22 +325,106 @@ impl FileOriginal {
         let checkpoints = self.line_checkpoints(row);
         let idx = checkpoints.partition_point(|checkpoint| checkpoint.col <= col);
         let checkpoint = idx.checked_sub(1).map(|i| checkpoints[i]);
-        let start = checkpoint.map_or(self.line_start(row), |item| item.byte_offset);
+        let start = checkpoint.map_or_else(
+            || self.logical_to_source_start(self.line_start(row)),
+            |item| item.byte_offset,
+        );
         let start_col = checkpoint.map_or(0, |item| item.col);
         let remaining = col - start_col;
         if remaining == 0 {
-            return Ok(start);
+            return Ok(self.source_to_logical(start));
         }
         let read_end = start
             .saturating_add(remaining.saturating_mul(4))
-            .min(self.line_end(row));
+            .min(self.logical_to_source_end(self.line_end(row)));
         let bytes = self.read_range_unchecked(start..read_end)?;
         let text = utf8_valid_prefix(&bytes)?;
         let relative = text
             .char_indices()
             .nth(remaining)
             .map_or(text.len(), |(offset, _)| offset);
-        Ok(start + relative)
+        Ok(self.source_to_logical(start + relative))
+    }
+
+    fn source_range(&self, logical: Range<usize>) -> io::Result<Range<usize>> {
+        if logical.start > logical.end || logical.end > self.metadata.logical_len {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "file-original logical range is invalid",
+            ));
+        }
+        if logical.is_empty() {
+            let source = self.logical_to_source_start(logical.start);
+            return Ok(source..source);
+        }
+        Ok(self.logical_to_source_start(logical.start)..self.logical_to_source_end(logical.end))
+    }
+
+    /// Map a logical range start after any CR elided at that position, so a
+    /// slice beginning on a normalized newline begins on its LF byte.
+    fn logical_to_source_start(&self, logical: usize) -> usize {
+        let removed = self.crlf_count_at_logical(logical, true);
+        self.metadata
+            .range_start
+            .saturating_add(logical)
+            .saturating_add(removed)
+            .min(self.metadata.range_end)
+    }
+
+    /// Map a logical range end before any CR elided at that position, so a
+    /// slice ending before a normalized newline excludes the CR as well.
+    fn logical_to_source_end(&self, logical: usize) -> usize {
+        let removed = self.crlf_count_at_logical(logical, false);
+        self.metadata
+            .range_start
+            .saturating_add(logical)
+            .saturating_add(removed)
+            .min(self.metadata.range_end)
+    }
+
+    fn source_to_logical(&self, source: usize) -> usize {
+        let removed = self
+            .metadata
+            .crlf_offsets
+            .partition_point(|offset| *offset < source);
+        source
+            .saturating_sub(self.metadata.range_start)
+            .saturating_sub(removed)
+    }
+
+    fn crlf_count_at_logical(&self, logical: usize, include_equal: bool) -> usize {
+        let mut left = 0usize;
+        let mut right = self.metadata.crlf_offsets.len();
+        while left < right {
+            let middle = (left + right) / 2;
+            let elision = self.metadata.crlf_offsets[middle]
+                .saturating_sub(self.metadata.range_start)
+                .saturating_sub(middle);
+            if elision < logical || (include_equal && elision == logical) {
+                left = middle + 1;
+            } else {
+                right = middle;
+            }
+        }
+        left
+    }
+
+    fn for_each_crlf_offset(
+        &self,
+        range: Range<usize>,
+        mut visit: impl FnMut(usize) -> io::Result<()>,
+    ) -> io::Result<()> {
+        let start = self
+            .metadata
+            .crlf_offsets
+            .partition_point(|offset| *offset < range.start);
+        for &offset in &self.metadata.crlf_offsets[start..] {
+            if offset >= range.end {
+                break;
+            }
+            visit(offset)?;
+        }
+        Ok(())
     }
 
     #[cfg(test)]

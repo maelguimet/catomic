@@ -128,3 +128,28 @@ fn detects_crlf_split_after_the_first_scan_chunk() {
 
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn paged_crlf_save_combines_raw_ranges_and_normalized_edited_pages_exactly() {
+    let path = std::env::temp_dir().join(format!(
+        "catomic_text_format_paged_crlf_{}.txt",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, "zero\r\né\r\n\r\n猫\r\nlast").unwrap();
+
+    let format = detect_file_format(&path).unwrap();
+    assert_eq!(format.line_ending, LineEnding::Crlf);
+    let mut buffer = PagedFileBuffer::open(&path, 2).unwrap();
+    assert!(buffer.next_page().unwrap());
+    assert_eq!(buffer.lines(), vec!["", "猫"]);
+    buffer.insert_char('中');
+    assert!(buffer.next_page().unwrap());
+    assert_eq!(buffer.lines(), vec!["last"]);
+
+    let mut out = Vec::new();
+    write_buffer(&buffer, &mut out, format).unwrap();
+
+    assert_eq!(out, "zero\r\né\r\n中\r\n猫\r\nlast".as_bytes());
+    let _ = std::fs::remove_file(path);
+}

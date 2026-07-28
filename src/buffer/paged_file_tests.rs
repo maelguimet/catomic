@@ -130,3 +130,28 @@ fn range_replacement_is_one_paged_history_transaction() {
     assert_eq!(buffer.cursor(), Cursor { row: 1, col: 1 });
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn crlf_page_navigation_hides_synthetic_rows_at_source_boundaries() {
+    let path = temp_path("crlf_navigation");
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, "zero\r\n\r\ntwo\r\n猫").unwrap();
+
+    let mut buffer = PagedFileBuffer::open(&path, 2).unwrap();
+    assert_eq!(buffer.lines(), vec!["zero", ""]);
+    let first = buffer.page_info().unwrap();
+    assert_eq!(first.start_byte, 0);
+    assert_eq!(first.end_byte, b"zero\r\n\r\n".len() as u64);
+    assert!(first.has_next);
+
+    assert!(buffer.next_page().unwrap());
+    assert_eq!(buffer.lines(), vec!["two", "猫"]);
+    let second = buffer.page_info().unwrap();
+    assert_eq!(second.start_byte, first.end_byte);
+    assert!(!second.has_next);
+
+    assert!(buffer.previous_page().unwrap());
+    assert_eq!(buffer.lines(), vec!["zero", ""]);
+
+    let _ = std::fs::remove_file(path);
+}

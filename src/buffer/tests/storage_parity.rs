@@ -6,6 +6,8 @@
 //! Must not: edit parity (insert/delete/move), undo, random model, or history token tests.
 //! Invariants: descendant of buffer::tests; preserves original test names and behavior.
 
+use std::io::Write;
+
 use crate::buffer::{Buffer, PieceTable, SimpleBuffer};
 
 /// Run identical from_text cases against SimpleBuffer (oracle) and PieceTable.
@@ -207,25 +209,135 @@ fn file_backed_page_normalizes_crlf_split_across_scan_chunks() {
     let prefix = "a".repeat(crate::buffer::large_file::SCAN_CHUNK_BYTES - 1);
     std::fs::write(&path, format!("{prefix}\r\ntail")).unwrap();
 
-    let page = PieceTable::from_file_page(std::fs::File::open(&path).unwrap(), 0, 2)
+    let page = PieceTable::from_file_page(std::fs::File::open(&path).unwrap(), 0, 1)
         .expect("file-backed CRLF page");
 
     assert_eq!(page.buffer.line_count(), 2);
+    assert_eq!(page.buffer.pieces_len(), 1);
     assert_eq!(page.buffer.line_char_count(0), Some(prefix.len()));
     assert_eq!(
         page.buffer.visible_lines_window(0, 1, prefix.len() - 1, 2)[0].content,
         "a"
     );
-    assert_eq!(page.buffer.line(1).as_deref(), Some("tail"));
-    assert_eq!(page.buffer.to_string(), format!("{prefix}\ntail"));
+    assert_eq!(page.buffer.line(1).as_deref(), Some(""));
+    assert_eq!(page.buffer.to_string(), format!("{prefix}\n"));
+
+    let next_start = page.next_page_start.expect("tail page");
+    assert_eq!(next_start, prefix.len() + 2);
+    let tail = PieceTable::from_file_page(std::fs::File::open(&path).unwrap(), next_start, 1)
+        .expect("tail after split CRLF page boundary");
+    assert_eq!(tail.buffer.pieces_len(), 1);
+    assert_eq!(tail.buffer.to_string(), "tail");
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn file_backed_crlf_pages_preserve_empty_final_and_non_final_rows() {
+    for (label, source, logical, lines) in [
+        ("non_final", "\r\né\r\n\r\n猫", "\né\n\n猫", 4),
+        ("final", "\r\né\r\n\r\n猫\r\n", "\né\n\n猫\n", 5),
+    ] {
+        let path = std::env::temp_dir().join(format!(
+            "catomic_file_piece_table_crlf_{label}_{}.txt",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        std::fs::write(&path, source).unwrap();
+
+        let page = PieceTable::from_file_page(std::fs::File::open(&path).unwrap(), 0, 20_000)
+            .expect("file-backed CRLF page");
+
+        assert_eq!(page.buffer.pieces_len(), 1);
+        assert_eq!(page.buffer.line_count(), lines);
+        assert_eq!(page.buffer.to_string(), logical);
+        assert_eq!(page.buffer.lines(), logical.split('\n').collect::<Vec<_>>());
+        let mut streamed = Vec::new();
+        page.buffer.write_to(&mut streamed).unwrap();
+        assert_eq!(streamed, logical.as_bytes());
+
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+#[test]
+fn file_backed_crlf_edits_around_boundaries_are_utf8_safe_and_undoable() {
+    let path = std::env::temp_dir().join(format!(
+        "catomic_file_piece_table_crlf_edits_{}.txt",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, "é\r\n\r\n猫\r\nlast").unwrap();
+
+    let mut pt = PieceTable::from_file(&path).expect("file-backed CRLF piece table");
+    assert_eq!(pt.pieces_len(), 1);
+
+    pt.set_cursor(crate::buffer::Cursor { row: 0, col: 1 });
+    pt.insert_char('界');
+    pt.set_cursor(crate::buffer::Cursor { row: 1, col: 0 });
+    pt.insert_char('中');
+    pt.set_cursor(crate::buffer::Cursor { row: 3, col: 0 });
+    pt.insert_char('ß');
+    assert_eq!(pt.to_string(), "é界\n中\n猫\nßlast");
+
+    pt.undo();
+    pt.undo();
+    pt.undo();
+    assert_eq!(pt.to_string(), "é\n\n猫\nlast");
+    pt.redo();
+    pt.redo();
+    pt.redo();
+    assert_eq!(pt.to_string(), "é界\n中\n猫\nßlast");
+
+    pt.set_cursor(crate::buffer::Cursor { row: 2, col: 0 });
+    pt.delete_back();
+    assert_eq!(pt.to_string(), "é界\n中猫\nßlast");
+    pt.undo();
+    assert_eq!(pt.to_string(), "é界\n中\n猫\nßlast");
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn file_backed_twenty_thousand_line_crlf_page_has_one_initial_piece() {
+    const LINE_COUNT: usize = 20_000;
+    let path = std::env::temp_dir().join(format!(
+        "catomic_file_piece_table_crlf_20k_{}.txt",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    let file = std::fs::File::create(&path).unwrap();
+    let mut writer = std::io::BufWriter::new(file);
+    for row in 0..LINE_COUNT {
+        if row > 0 {
+            write!(writer, "\r\n").unwrap();
+        }
+        write!(writer, "row-{row}").unwrap();
+    }
+    writer.flush().unwrap();
+
+    let source_bytes = std::fs::metadata(&path).unwrap().len();
+    let page = PieceTable::from_file_page(std::fs::File::open(&path).unwrap(), 0, LINE_COUNT)
+        .expect("20,000-line file-backed CRLF page");
+    let pieces = page.buffer.pieces_len();
+
+    eprintln!(
+        "PERF sample: label=file-backed CRLF 20000-line initial descriptors \
+         bytes={source_bytes} lines={LINE_COUNT} pieces={pieces}"
+    );
+    assert_eq!(pieces, 1);
+    assert_eq!(page.buffer.line_count(), LINE_COUNT);
+    assert_eq!(page.buffer.line(0).as_deref(), Some("row-0"));
+    assert_eq!(
+        page.buffer.line(LINE_COUNT - 1).as_deref(),
+        Some("row-19999")
+    );
 
     let _ = std::fs::remove_file(path);
 }
 
 #[test]
 fn file_backed_piece_table_fails_closed_after_descriptor_drift() {
-    use std::io::Write;
-
     let path = std::env::temp_dir().join(format!(
         "catomic_file_piece_table_drift_{}.txt",
         std::process::id()

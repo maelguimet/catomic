@@ -408,6 +408,13 @@ the same 2026-07-16 ignored one-line 100 MiB smoke, `App::new` dropped from
 the whole logical line; this is a scan-path optimization, not a byte cap or a
 new timing gate.
 
+File-backed CRLF pages now keep one initial Piece descriptor and map normalized
+logical offsets through compact CRLF elision metadata collected by the existing
+page scan. The default structural regression emits a stable `PERF sample` line
+for a 20,000-line CRLF page and asserts `pieces=1`; this is descriptor-count
+evidence, not a timing gate. Page open performs no additional scan and retains
+only the existing per-line/scalar metadata plus one offset per elided CR.
+
 An ignored sparse exact-1-GiB Huge smoke now validates the limited read-only
 open + simple navigation/render path without writing a dense fixture:
 ```
@@ -435,7 +442,7 @@ Clarifications:
 - App open now has an explicit content plan from the single initial metadata snapshot: untitled/missing paths open empty, Small/Large present paths full-read into editable PieceTable, and Huge/Extreme paths open through editable PagedFileBuffer pages.
 - Automatic or confirmed Ctrl+R Modified reload reapplies the same size policy: Small/Large read into editable PieceTable; Huge/Extreme reopen configured editable pages.
 - `file::text_format::read_text_file` is now the App open/reload full-read helper for editable paths; it validates UTF-8, strips an optional BOM, records the document newline style, and moves LF-normalized text into PieceTable. `file::io::read_to_string` remains only for compatibility and performance harnesses. Full-read paths still fully materialize content.
-- PagedFileBuffer builds each active/edited page as a file-backed PieceTable. Page scans validate UTF-8, normalize CRLF at the piece boundary, and record line/scalar metadata; visible windows use positioned reads, ASCII direct offsets, and non-ASCII sparse checkpoints. It avoids full content residency for untouched pages, keeps path replacement from retargeting reads, and fails closed on descriptor drift; a single logical line can still require a correspondingly long page scan.
+- PagedFileBuffer builds each active/edited page as a file-backed PieceTable. Page scans validate UTF-8, record line/scalar metadata, and compactly map CRLF source bytes to LF-only logical coordinates without one Piece per line; visible windows use positioned reads, ASCII direct offsets, and non-ASCII sparse checkpoints. It avoids full content residency for untouched pages, keeps path replacement from retargeting reads, and fails closed on descriptor drift; a single logical line can still require a correspondingly long page scan.
 - Line-heavy manual smokes use a streamed ASCII fixture with frequent newlines to keep the default suite cheap while measuring LineIndex-heavy open behavior manually.
 - `App::new` remains the end-to-end open measurement for the selected policy (PieceTable for Small/Large, PagedFileBuffer for Huge/Extreme).
 - After the owned-open change and before newline-search, `PieceTable::from_owned_text` was still the dominant measured subphase. Compared with the pre-optimization baseline, that step improved `App::new` from ~1247 ms to ~620 ms for 100 MiB on this hardware.

@@ -14,7 +14,7 @@ impl PieceTable {
         byte_offset: usize,
         max_bytes: usize,
     ) -> Option<std::borrow::Cow<'_, str>> {
-        if byte_offset >= self.index.total_bytes || max_bytes == 0 {
+        if byte_offset >= self.index.total_bytes() || max_bytes == 0 {
             return None;
         }
         let (index, local) = self.split_point(byte_offset);
@@ -38,7 +38,7 @@ impl PieceTable {
         }
     }
     /// Return the logical text for the byte range [start, end).
-    /// Uses piece_starts for bounded lookup of start piece (no full head scan).
+    /// Uses subtree byte summaries for bounded lookup of the start piece.
     pub(crate) fn slice_to_string(&self, start: usize, end: usize) -> String {
         self.try_slice_to_string(start, end).unwrap_or_default()
     }
@@ -49,17 +49,17 @@ impl PieceTable {
         }
         let mut out = String::new();
         let i = self.find_piece_for_byte(start);
-        let mut acc = self.piece_starts.get(i).copied().unwrap_or(0);
-        for p in &self.pieces[i..] {
+        let mut acc = self.pieces.logical_start(i);
+        self.pieces.try_for_each_from(i, |p| -> io::Result<bool> {
             let p_end = acc + p.len;
 
             if acc >= end {
-                break;
+                return Ok(false);
             }
 
             if p_end <= start {
                 acc = p_end;
-                continue;
+                return Ok(true);
             }
 
             // overlap
@@ -73,7 +73,8 @@ impl PieceTable {
                 }
             }
             acc = p_end;
-        }
+            Ok(true)
+        })?;
         Ok(out)
     }
 
@@ -146,22 +147,24 @@ impl PieceTable {
             return Ok(());
         }
         let first = self.find_piece_for_byte(start);
-        let mut piece_start = self.piece_starts.get(first).copied().unwrap_or(0);
-        for piece in &self.pieces[first..] {
-            let piece_end = piece_start + piece.len;
-            if piece_start >= end {
-                break;
-            }
-            let local_start = start.saturating_sub(piece_start).min(piece.len);
-            let local_end = end.saturating_sub(piece_start).min(piece.len);
-            if local_start < local_end {
-                let source_range = piece.start + local_start..piece.start + local_end;
-                if !visit(piece.source, source_range, piece_start + local_start)? {
-                    break;
+        let mut piece_start = self.pieces.logical_start(first);
+        self.pieces
+            .try_for_each_from(first, |piece| -> io::Result<bool> {
+                let piece_end = piece_start + piece.len;
+                if piece_start >= end {
+                    return Ok(false);
                 }
-            }
-            piece_start = piece_end;
-        }
+                let local_start = start.saturating_sub(piece_start).min(piece.len);
+                let local_end = end.saturating_sub(piece_start).min(piece.len);
+                if local_start < local_end {
+                    let source_range = piece.start + local_start..piece.start + local_end;
+                    if !visit(piece.source, source_range, piece_start + local_start)? {
+                        return Ok(false);
+                    }
+                }
+                piece_start = piece_end;
+                Ok(true)
+            })?;
         Ok(())
     }
 
@@ -211,25 +214,9 @@ impl PieceTable {
         }
     }
 
-    /// Binary search on piece_starts for the piece containing or nearest before off.
-    /// Returns index clamped to last piece.
+    /// Bounded lookup through subtree byte summaries.
     fn find_piece_for_byte(&self, off: usize) -> usize {
-        let ps = &self.piece_starts;
-        let np = ps.len();
-        if np == 0 {
-            return 0;
-        }
-        let mut lo = 0usize;
-        let mut hi = np;
-        while lo < hi {
-            let mid = (lo + hi) / 2;
-            if ps[mid] <= off {
-                lo = mid + 1;
-            } else {
-                hi = mid;
-            }
-        }
-        lo.saturating_sub(1).min(np - 1)
+        self.pieces.locate(off).0
     }
 
     /// Find (piece_index, local_byte_offset) for a global logical byte offset.
@@ -237,11 +224,7 @@ impl PieceTable {
         if self.pieces.is_empty() {
             return (0, 0);
         }
-        let i = self.find_piece_for_byte(off);
-        let pstart = self.piece_starts[i];
-        let plen = self.pieces[i].len;
-        let local = off.saturating_sub(pstart).min(plen);
-        (i, local)
+        self.pieces.locate(off)
     }
 
     /// Char length of a logical line using per-source scalar metadata.

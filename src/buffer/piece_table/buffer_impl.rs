@@ -117,9 +117,9 @@ impl Buffer for PieceTable {
         }
 
         let before = self.capture_cursor_state();
+        self.reset_piece_mutation_metrics();
         self.replace_index_range(start_byte, end_byte, text);
         let (removed, inserted) = self.splice_replacement(start_byte, end_byte, text);
-        self.coalesce();
         self.cursor = cursor_after_text(start, text);
         self.cursor_byte_offset = start_byte + text.len();
         self.record_replacement(before, start_byte, removed, inserted);
@@ -128,6 +128,7 @@ impl Buffer for PieceTable {
 
     fn replace_ranges(&mut self, ranges: &[(Cursor, Cursor)], text: &str) -> io::Result<usize> {
         let before = self.capture_cursor_state();
+        self.reset_piece_mutation_metrics();
         let mut edits = Vec::with_capacity(ranges.len().saturating_mul(2));
         let mut changed = 0;
         for &(start, end) in ranges {
@@ -151,7 +152,6 @@ impl Buffer for PieceTable {
                     pieces: inserted,
                 });
             }
-            self.coalesce();
             self.cursor = cursor_after_text(start, text);
             self.cursor_byte_offset = start_byte + text.len();
             changed += 1;
@@ -172,14 +172,14 @@ impl Buffer for PieceTable {
     }
 
     fn write_to(&self, out: &mut dyn Write) -> io::Result<()> {
-        for piece in &self.pieces {
+        self.pieces.try_for_each(|piece| {
             let range = piece.start..piece.start + piece.len;
             match piece.source {
                 Source::Original => self.original.write_slice(range, out)?,
                 Source::Add => out.write_all(self.add[range].as_bytes())?,
             }
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
     #[cfg(test)]
@@ -198,7 +198,6 @@ impl Buffer for PieceTable {
         let before = self.capture_cursor_state();
         let at = self.cursor_byte_offset;
         let inserted = self.insert_at_cursor(ch);
-        self.coalesce();
         if ch == '\n' {
             self.index.insert_newline(at);
         } else {
@@ -222,7 +221,6 @@ impl Buffer for PieceTable {
         let before = self.capture_cursor_state();
         let at = self.cursor_byte_offset;
         let inserted = self.insert_at_cursor('\n');
-        self.coalesce();
         self.index.insert_newline(at);
         if self.recording && !inserted.is_empty() {
             let after = self.capture_cursor_state();
@@ -243,8 +241,6 @@ impl Buffer for PieceTable {
             self.delete_previous_char();
         } else if self.cursor.row > 0 {
             self.join_with_previous_line();
-        } else {
-            self.coalesce();
         }
     }
 
@@ -254,8 +250,6 @@ impl Buffer for PieceTable {
             self.delete_next_char();
         } else if self.cursor.row + 1 < self.line_count() {
             self.join_with_next_line();
-        } else {
-            self.coalesce();
         }
     }
 
@@ -283,10 +277,10 @@ impl Buffer for PieceTable {
         if let Some(tx) = self.undo_stack.pop_undo() {
             let was_recording = self.recording;
             self.recording = false;
+            self.reset_piece_mutation_metrics();
             for edit in tx.edits.iter().rev() {
                 self.apply_inverse_edit(edit);
             }
-            self.coalesce();
             self.cursor = tx.before.cursor;
             self.cursor_byte_offset = tx.before.byte_offset;
             self.undo_stack.push_redo(tx);
@@ -298,10 +292,10 @@ impl Buffer for PieceTable {
         if let Some(tx) = self.undo_stack.pop_redo() {
             let was_recording = self.recording;
             self.recording = false;
+            self.reset_piece_mutation_metrics();
             for edit in &tx.edits {
                 self.apply_edit(edit);
             }
-            self.coalesce();
             self.cursor = tx.after.cursor;
             self.cursor_byte_offset = tx.after.byte_offset;
             self.undo_stack.push_undo(tx);
@@ -402,10 +396,10 @@ impl PieceTable {
         let end = self.byte_offset_at(self.cursor.row, self.cursor.col);
         let start = self.byte_offset_at(self.cursor.row, self.cursor.col - 1);
         let before = self.capture_cursor_state();
+        self.reset_piece_mutation_metrics();
         let removed = self.delete_byte_range(start, end);
         self.cursor.col -= 1;
         self.cursor_byte_offset = start;
-        self.coalesce();
         self.index.delete_bytes(start, end - start);
         self.record_delete(before, start, removed);
     }
@@ -414,8 +408,8 @@ impl PieceTable {
         let start = self.byte_offset_at(self.cursor.row, self.cursor.col);
         let end = self.byte_offset_at(self.cursor.row, self.cursor.col + 1);
         let before = self.capture_cursor_state();
+        self.reset_piece_mutation_metrics();
         let removed = self.delete_byte_range(start, end);
-        self.coalesce();
         self.index.delete_bytes(start, end - start);
         self.record_delete(before, start, removed);
     }
@@ -423,16 +417,15 @@ impl PieceTable {
     fn join_with_previous_line(&mut self) {
         let next_start = self.byte_offset_at(self.cursor.row, 0);
         if next_start == 0 {
-            self.coalesce();
             return;
         }
         let previous_len = self.current_line_char_len(self.cursor.row - 1);
         let before = self.capture_cursor_state();
+        self.reset_piece_mutation_metrics();
         let removed = self.delete_byte_range(next_start - 1, next_start);
         self.cursor.row -= 1;
         self.cursor.col = previous_len;
         self.sync_cursor_byte_offset();
-        self.coalesce();
         let _ = self.index.delete_newline(next_start - 1);
         self.record_delete(before, next_start - 1, removed);
     }
@@ -440,13 +433,12 @@ impl PieceTable {
     fn join_with_next_line(&mut self) {
         let next_start = self.byte_offset_at(self.cursor.row + 1, 0);
         if next_start == 0 {
-            self.coalesce();
             return;
         }
         let newline = next_start - 1;
         let before = self.capture_cursor_state();
+        self.reset_piece_mutation_metrics();
         let removed = self.delete_byte_range(newline, next_start);
-        self.coalesce();
         let _ = self.index.delete_newline(newline);
         self.record_delete(before, newline, removed);
     }

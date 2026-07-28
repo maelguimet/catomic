@@ -9,7 +9,7 @@
 //! Invariants: CRLF/CR normalize to LF; file-backed CRLF elision stays in
 //!   original metadata rather than fragmenting pieces; LF-only owned input
 //!   moves into original without cloning; cursor starts at (0,0); initial
-//!   piece/index/piece_starts are consistent.
+//!   piece/index summaries are consistent.
 
 use std::fs::File;
 use std::io;
@@ -23,6 +23,7 @@ use crate::buffer::line_index::LineIndex;
 use crate::buffer::Cursor;
 
 use super::file_original::{FileMetadataSnapshot, FileOriginalMetadata};
+use super::piece_tree::PieceTree;
 use super::types::{OriginalBacking, Piece, PieceTable, Source};
 
 pub(crate) struct FileBackedPage {
@@ -36,14 +37,13 @@ pub(crate) struct FileBackedPage {
 
 impl PieceTable {
     pub fn new() -> Self {
-        let pieces = vec![Piece {
+        let pieces = PieceTree::from_pieces(vec![Piece {
             source: Source::Original,
             start: 0,
             len: 0,
-        }];
+        }]);
         let original = OriginalBacking::empty();
         let index = LineIndex::from_text("");
-        let piece_starts = vec![0];
         Self {
             original,
             add: String::new(),
@@ -51,9 +51,10 @@ impl PieceTable {
             index,
             cursor: Cursor { row: 0, col: 0 },
             cursor_byte_offset: 0,
-            piece_starts,
             undo_stack: crate::buffer::undo::UndoStack::new(),
             recording: true,
+            #[cfg(test)]
+            last_piece_mutation: Default::default(),
         }
     }
 
@@ -170,11 +171,11 @@ impl PieceTable {
             line_checkpoints: scan.line_checkpoints,
             line_checkpoint_starts: scan.line_checkpoint_starts,
         };
-        let pieces = vec![Piece {
+        let pieces = PieceTree::from_pieces(vec![Piece {
             source: Source::Original,
             start: 0,
             len: logical_len,
-        }];
+        }]);
         Self {
             original: OriginalBacking::from_file(file, snapshot, original_metadata),
             add: String::new(),
@@ -182,9 +183,10 @@ impl PieceTable {
             index: LineIndex::from_line_starts(local_line_starts, logical_len),
             cursor: Cursor { row: 0, col: 0 },
             cursor_byte_offset: 0,
-            piece_starts: vec![0],
             undo_stack: crate::buffer::undo::UndoStack::new(),
             recording: true,
+            #[cfg(test)]
+            last_piece_mutation: Default::default(),
         }
     }
 
@@ -210,17 +212,17 @@ impl PieceTable {
                 }],
             )
         };
-        let piece_starts = vec![0];
         Self {
             original,
             add: String::new(),
-            pieces,
+            pieces: PieceTree::from_pieces(pieces),
             index,
             cursor: Cursor { row: 0, col: 0 },
             cursor_byte_offset: 0,
-            piece_starts,
             undo_stack: crate::buffer::undo::UndoStack::new(),
             recording: true,
+            #[cfg(test)]
+            last_piece_mutation: Default::default(),
         }
     }
 }

@@ -1,8 +1,8 @@
 //! Purpose: this file must contain only cheap, default-run (non-ignored) perf harness
 //!   smokes: small generated files, harness proof (exact size, App metadata capture),
 //!   no-panic open/render, and minimal render coverage. No timing pass/fail gates.
-//! Owns: perf_harness_* default tests, render_buffer_with_message, and
-//!   small-file key-to-render functional smokes.
+//! Owns: perf_harness_* default tests, local PieceTable edit-work samples,
+//!   render_buffer_with_message, and small-file key-to-render functional smokes.
 //! Must not: read > small sizes in default; assert on elapsed; depend on ignore; add deps.
 //! Invariants: all use generated temps <=1 MiB; assert deterministic outcomes only
 //!   (size match, tier, non-empty output or no panic, App fields populated).
@@ -176,6 +176,35 @@ fn phase1b_piecetable_small_file_key_to_render_smoke() {
     assert!(
         s.contains('!') && s.contains('X'),
         "PT edits must be present"
+    );
+}
+
+#[test]
+fn piece_table_fragmented_sequential_edit_reports_local_work() {
+    let mut samples = Vec::new();
+    for fragment_count in [64usize, 4_096] {
+        let mut buffer = PieceTable::new();
+        for _ in 0..fragment_count {
+            buffer.insert_char('x');
+            buffer.move_left();
+        }
+        buffer.insert_char('y');
+        let unrelated_pieces = buffer.pieces_len();
+
+        buffer.insert_char('z');
+        let metrics = buffer.last_piece_mutation();
+        eprintln!(
+            "PERF sample: label=piece-table local insert pieces={} pieces_touched={} pieces_allocated={}",
+            unrelated_pieces, metrics.pieces_touched, metrics.pieces_allocated
+        );
+        assert_eq!(buffer.pieces_len(), unrelated_pieces);
+        assert_eq!(metrics.pieces_touched, 2);
+        assert_eq!(metrics.pieces_allocated, 0);
+        samples.push(metrics);
+    }
+    assert_eq!(
+        samples[0], samples[1],
+        "unrelated fragmentation must not change sequential edit work"
     );
 }
 

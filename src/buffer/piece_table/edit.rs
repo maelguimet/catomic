@@ -1,6 +1,6 @@
 //! Mutation logic for PieceTable: insert, delete, basic movement, and undo/redo splicing.
 //!
-//! Coalescing and index maintenance will be wired here. History deltas returned for tx recording.
+//! Local coalescing is part of each splice. History deltas reuse source ranges.
 
 use super::types::{Piece, PieceTable, Source};
 
@@ -9,71 +9,67 @@ impl PieceTable {
     /// Returns the piece descriptor(s) that were spliced in for this insert
     /// (used by history recording; single-char inserts yield one piece).
     pub(crate) fn insert_at_cursor(&mut self, ch: char) -> Vec<Piece> {
-        // 1B: prefer the cached byte offset
+        self.reset_piece_mutation_metrics();
         let insert_byte = self.cursor_byte_offset;
         let add_start = self.add.len();
         self.add.push(ch);
         let added_len = ch.len_utf8();
-
-        if self.pieces.is_empty() {
-            let p = Piece {
-                source: Source::Add,
-                start: add_start,
-                len: added_len,
-            };
-            self.pieces.push(p.clone());
-            self.sync_piece_starts();
-            self.cursor_byte_offset = added_len;
-            if ch == '\n' {
-                self.cursor.row += 1;
-                self.cursor.col = 0;
-            } else {
-                self.cursor.col += 1;
-            }
-            return vec![p];
-        }
-
-        let (pidx, local) = self.split_point(insert_byte);
-        let pc = self.pieces[pidx].clone();
-
-        let mut new_pieces: Vec<Piece> = Vec::with_capacity(self.pieces.len() + 2);
-        for (i, p) in self.pieces.iter().enumerate() {
-            if i == pidx {
-                if local > 0 {
-                    new_pieces.push(Piece {
-                        source: pc.source,
-                        start: pc.start,
-                        len: local,
-                    });
-                }
-                new_pieces.push(Piece {
-                    source: Source::Add,
-                    start: add_start,
-                    len: added_len,
-                });
-                let rlen = pc.len - local;
-                if rlen > 0 {
-                    new_pieces.push(Piece {
-                        source: pc.source,
-                        start: pc.start + local,
-                        len: rlen,
-                    });
-                }
-            } else {
-                new_pieces.push(p.clone());
-            }
-        }
-        self.pieces = new_pieces;
-        self.sync_piece_starts();
-
-        // Coalesce will be called by caller after index work in full 1B
-        self.cursor_byte_offset = insert_byte + added_len;
-
         let inserted = Piece {
             source: Source::Add,
             start: add_start,
             len: added_len,
         };
+
+        let (piece_index, local) = self.split_point(insert_byte);
+        let current = self.pieces.get(piece_index).copied().unwrap_or(Piece {
+            source: Source::Original,
+            start: 0,
+            len: 0,
+        });
+
+        if current.source == Source::Add
+            && local == current.len
+            && current.start + current.len == add_start
+        {
+            let mut extended = current;
+            extended.len += added_len;
+            self.pieces.set(piece_index, extended);
+            self.record_piece_mutation(1, 0);
+        } else if local == 0
+            && piece_index > 0
+            && self.pieces.get(piece_index - 1).is_some_and(|piece| {
+                piece.source == Source::Add && piece.start + piece.len == add_start
+            })
+        {
+            let mut previous = *self
+                .pieces
+                .get(piece_index - 1)
+                .expect("checked predecessor exists");
+            previous.len += added_len;
+            self.pieces.set(piece_index - 1, previous);
+            self.record_piece_mutation(2, 0);
+        } else {
+            let mut replacement = Vec::with_capacity(3);
+            if local > 0 {
+                replacement.push(Piece {
+                    source: current.source,
+                    start: current.start,
+                    len: local,
+                });
+            }
+            replacement.push(inserted);
+            let right_len = current.len - local;
+            if right_len > 0 {
+                replacement.push(Piece {
+                    source: current.source,
+                    start: current.start + local,
+                    len: right_len,
+                });
+            }
+            self.replace_piece_run(piece_index..piece_index + 1, replacement);
+        }
+
+        self.cursor_byte_offset = insert_byte + added_len;
         if ch == '\n' {
             self.cursor.row += 1;
             self.cursor.col = 0;
@@ -91,43 +87,32 @@ impl PieceTable {
             return;
         }
         if self.pieces.is_empty() {
-            for p in to_insert {
-                self.pieces.push(p.clone());
-            }
-            self.sync_piece_starts();
+            self.replace_piece_run(0..0, to_insert.to_vec());
             return;
         }
-        let (pidx, local) = self.split_point(at);
-        let pc = self.pieces[pidx].clone();
-
-        let mut new_pieces: Vec<Piece> =
-            Vec::with_capacity(self.pieces.len() + to_insert.len() + 1);
-        for (i, p) in self.pieces.iter().enumerate() {
-            if i == pidx {
-                if local > 0 {
-                    new_pieces.push(Piece {
-                        source: pc.source,
-                        start: pc.start,
-                        len: local,
-                    });
-                }
-                for ins in to_insert {
-                    new_pieces.push(ins.clone());
-                }
-                let rlen = pc.len - local;
-                if rlen > 0 {
-                    new_pieces.push(Piece {
-                        source: pc.source,
-                        start: pc.start + local,
-                        len: rlen,
-                    });
-                }
-            } else {
-                new_pieces.push(p.clone());
-            }
+        let (piece_index, local) = self.split_point(at);
+        let current = *self
+            .pieces
+            .get(piece_index)
+            .expect("non-empty piece tree has located piece");
+        let mut replacement = Vec::with_capacity(to_insert.len() + 2);
+        if local > 0 {
+            replacement.push(Piece {
+                source: current.source,
+                start: current.start,
+                len: local,
+            });
         }
-        self.pieces = new_pieces;
-        self.sync_piece_starts();
+        replacement.extend_from_slice(to_insert);
+        let right_len = current.len - local;
+        if right_len > 0 {
+            replacement.push(Piece {
+                source: current.source,
+                start: current.start + local,
+                len: right_len,
+            });
+        }
+        self.replace_piece_run(piece_index..piece_index + 1, replacement);
     }
 
     /// Delete [start, end) logical bytes. May span pieces.
@@ -137,59 +122,56 @@ impl PieceTable {
         if start >= end {
             return vec![];
         }
-        let mut new_pieces: Vec<Piece> = Vec::new();
+        let end = end.min(self.pieces.byte_len());
+        if start >= end {
+            return vec![];
+        }
+        let (first_piece, _) = self.split_point(start);
+        let (end_piece, end_local) = self.split_point(end);
+        let piece_end = if end_local == 0 {
+            end_piece
+        } else {
+            end_piece + 1
+        };
+        let affected = self.pieces.collect_range(first_piece..piece_end);
+        let mut replacement = Vec::with_capacity(2);
         let mut removed: Vec<Piece> = Vec::new();
-        let mut acc = 0usize;
-        for p in &self.pieces {
+        let mut acc = self.pieces.logical_start(first_piece);
+        for p in affected {
             let p_end = acc + p.len;
-            if p_end <= start || acc >= end {
-                new_pieces.push(p.clone());
-            } else {
-                if acc < start {
-                    let l = start - acc;
-                    if l > 0 {
-                        new_pieces.push(Piece {
-                            source: p.source,
-                            start: p.start,
-                            len: l,
-                        });
-                    }
-                }
-                // Record the excised part(s) of this piece.
-                let del_start = if acc < start { start } else { acc };
-                let del_end = if p_end > end { end } else { p_end };
-                if del_end > del_start {
-                    let r_local = del_start - acc;
-                    let rlen = del_end - del_start;
-                    removed.push(Piece {
+            if acc < start {
+                let left_len = start - acc;
+                if left_len > 0 {
+                    replacement.push(Piece {
                         source: p.source,
-                        start: p.start + r_local,
-                        len: rlen,
+                        start: p.start,
+                        len: left_len,
                     });
                 }
-                if p_end > end {
-                    let r_local = end - acc;
-                    let rlen = p.len - (end - acc);
-                    if rlen > 0 {
-                        new_pieces.push(Piece {
-                            source: p.source,
-                            start: p.start + r_local,
-                            len: rlen,
-                        });
-                    }
+            }
+            let deleted_start = start.max(acc);
+            let deleted_end = end.min(p_end);
+            if deleted_start < deleted_end {
+                removed.push(Piece {
+                    source: p.source,
+                    start: p.start + deleted_start - acc,
+                    len: deleted_end - deleted_start,
+                });
+            }
+            if p_end > end {
+                let right_start = end - acc;
+                let right_len = p.len - right_start;
+                if right_len > 0 {
+                    replacement.push(Piece {
+                        source: p.source,
+                        start: p.start + right_start,
+                        len: right_len,
+                    });
                 }
             }
             acc = p_end;
         }
-        if new_pieces.is_empty() {
-            new_pieces.push(Piece {
-                source: Source::Original,
-                start: 0,
-                len: 0,
-            });
-        }
-        self.pieces = new_pieces;
-        self.sync_piece_starts();
+        self.replace_piece_run(first_piece..piece_end, replacement);
 
         // Adjust cursor byte
         if self.cursor_byte_offset > end {
@@ -198,6 +180,63 @@ impl PieceTable {
             self.cursor_byte_offset = start;
         }
         removed
+    }
+
+    /// Replace one local descriptor run and coalesce it with its immediate
+    /// neighbors in the same tree splice.
+    fn replace_piece_run(&mut self, range: std::ops::Range<usize>, replacement: Vec<Piece>) {
+        let existing_len = self.pieces.len();
+        let local_start = range.start.saturating_sub(1);
+        let local_end = range.end.saturating_add(1).min(existing_len);
+        let mut local = Vec::with_capacity(
+            range.start.saturating_sub(local_start)
+                + replacement.len()
+                + local_end.saturating_sub(range.end),
+        );
+        local.extend(self.pieces.collect_range(local_start..range.start));
+        local.extend(replacement);
+        local.extend(self.pieces.collect_range(range.end..local_end));
+
+        let mut coalesced: Vec<Piece> = Vec::with_capacity(local.len().max(1));
+        for piece in local {
+            if piece.len == 0 {
+                continue;
+            }
+            if let Some(previous) = coalesced.last_mut() {
+                if previous.source == piece.source && previous.start + previous.len == piece.start {
+                    previous.len += piece.len;
+                    continue;
+                }
+            }
+            coalesced.push(piece);
+        }
+        if coalesced.is_empty() {
+            coalesced.push(Piece {
+                source: Source::Original,
+                start: 0,
+                len: 0,
+            });
+        }
+
+        self.record_piece_mutation(local_end.saturating_sub(local_start), coalesced.len());
+        self.pieces.replace_range(local_start..local_end, coalesced);
+    }
+
+    pub(super) fn reset_piece_mutation_metrics(&mut self) {
+        #[cfg(test)]
+        {
+            self.last_piece_mutation = Default::default();
+        }
+    }
+
+    fn record_piece_mutation(&mut self, pieces_touched: usize, pieces_allocated: usize) {
+        #[cfg(test)]
+        {
+            self.last_piece_mutation.pieces_touched += pieces_touched;
+            self.last_piece_mutation.pieces_allocated += pieces_allocated;
+        }
+        #[cfg(not(test))]
+        let _ = (pieces_touched, pieces_allocated);
     }
 
     // Movement methods keep simple row/col updates. Byte offset is synced on demand or after edits.

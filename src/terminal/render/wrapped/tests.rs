@@ -25,6 +25,16 @@ fn visible_rows_wrap_without_changing_document_coordinates() {
 }
 
 #[test]
+fn cursor_visibility_stops_at_the_cursor_without_materializing_the_viewport() {
+    let buffer = SimpleBuffer::from_text("abc\ndef\nghi\njkl");
+
+    let visibility = cursor_visibility(&buffer, 0, 0, 4, 3).unwrap();
+
+    assert!(visibility.visible);
+    assert_eq!(visibility.rows_examined, 1);
+}
+
+#[test]
 fn wrapped_cursor_uses_the_continuation_row_and_cell_width() {
     let mut buffer = SimpleBuffer::from_text("ab猫x");
     buffer.set_cursor(Cursor { row: 0, col: 3 });

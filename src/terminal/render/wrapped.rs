@@ -60,9 +60,62 @@ pub(crate) fn cursor_is_visible(
     height: usize,
     width: usize,
 ) -> io::Result<bool> {
+    Ok(cursor_visibility(buffer, start_row, wrap_col, height, width)?.visible)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CursorVisibility {
+    visible: bool,
+    #[cfg(test)]
+    rows_examined: usize,
+}
+
+/// Determine cursor visibility without materializing the rendered viewport.
+/// Reveal only needs scalar boundaries through the cursor, whereas composition
+/// owns the visible `String` fragments required for terminal output.
+fn cursor_visibility(
+    buffer: &dyn Buffer,
+    start_row: usize,
+    wrap_col: usize,
+    height: usize,
+    width: usize,
+) -> io::Result<CursorVisibility> {
+    if height == 0 || width == 0 {
+        return Ok(CursorVisibility {
+            visible: false,
+            #[cfg(test)]
+            rows_examined: 0,
+        });
+    }
     let cursor = buffer.cursor();
-    let rows = visible_rows(buffer, start_row, wrap_col, height, width)?;
-    Ok(wrapped_cursor_position(cursor, &rows, 0, width).is_some())
+    let mut document_row = start_row;
+    let mut start_col = wrap_col;
+    let mut examined = 0;
+    while examined < height && document_row < buffer.line_count() {
+        let (end_col, line_end) = wrapped_row_end(buffer, document_row, start_col, width)?;
+        examined += 1;
+        if cursor.row == document_row
+            && cursor.col >= start_col
+            && (cursor.col < end_col || (line_end && cursor.col == end_col))
+        {
+            return Ok(CursorVisibility {
+                visible: true,
+                #[cfg(test)]
+                rows_examined: examined,
+            });
+        }
+        if line_end {
+            document_row = document_row.saturating_add(1);
+            start_col = 0;
+        } else {
+            start_col = end_col;
+        }
+    }
+    Ok(CursorVisibility {
+        visible: false,
+        #[cfg(test)]
+        rows_examined: examined,
+    })
 }
 
 pub(crate) fn scroll_origin(
@@ -282,6 +335,26 @@ pub(super) fn append_line_rows(
         }
     }
     Ok(())
+}
+
+fn wrapped_row_end(
+    buffer: &dyn Buffer,
+    document_row: usize,
+    start_col: usize,
+    width: usize,
+) -> io::Result<(usize, bool)> {
+    let line_len = buffer.line_char_count(document_row).unwrap_or(0);
+    if start_col >= line_len {
+        return Ok((start_col.min(line_len), true));
+    }
+    let fetch = width.saturating_mul(4).saturating_add(32);
+    let text = line_window(buffer, document_row, start_col, fetch)?;
+    let mut take = text_layout::clipped_scalar_len(&text, width);
+    if take == 0 {
+        take = text_layout::next_grapheme_col(&text, 0);
+    }
+    let end_col = start_col.saturating_add(take);
+    Ok((end_col, end_col >= line_len))
 }
 
 fn write_rows<W: Write + ?Sized>(

@@ -12,6 +12,12 @@ use crate::buffer::{Buffer, Cursor, LineView};
 
 use super::types::{Piece, PieceTable, Source};
 
+struct SnapshotRange {
+    start: Cursor,
+    start_byte: usize,
+    end_byte: usize,
+}
+
 impl Buffer for PieceTable {
     fn line_count(&self) -> usize {
         self.index.line_count()
@@ -127,35 +133,45 @@ impl Buffer for PieceTable {
     }
 
     fn replace_ranges(&mut self, ranges: &[(Cursor, Cursor)], text: &str) -> io::Result<usize> {
+        let mut ranges = self.snapshot_ranges(ranges)?;
+        ranges.retain(|range| range.start_byte != range.end_byte || !text.is_empty());
+        if ranges.is_empty() {
+            return Ok(0);
+        }
+
         let before = self.capture_cursor_state();
         self.reset_piece_mutation_metrics();
+        #[cfg(test)]
+        self.reset_line_index_work();
         let mut edits = Vec::with_capacity(ranges.len().saturating_mul(2));
-        let mut changed = 0;
-        for &(start, end) in ranges {
-            let (start, end) = self.clamped_ordered_range(start, end);
-            let start_byte = self.byte_offset_at(start.row, start.col);
-            let end_byte = self.byte_offset_at(end.row, end.col);
-            if start_byte == end_byte && text.is_empty() {
-                continue;
-            }
-            self.replace_index_range(start_byte, end_byte, text);
-            let (removed, inserted) = self.splice_replacement(start_byte, end_byte, text);
+        // Descending snapshot offsets remain valid as higher ranges change.
+        // Each mutation stays local in both the PieceTree and block LineIndex,
+        // so the batch needs no document-wide coalesce or index rebuild.
+        for range in &ranges {
+            self.replace_index_range(range.start_byte, range.end_byte, text);
+            let (removed, inserted) =
+                self.splice_replacement(range.start_byte, range.end_byte, text);
             if !removed.is_empty() {
                 edits.push(PieceEdit::Delete {
-                    at: start_byte,
+                    at: range.start_byte,
                     pieces: removed,
                 });
             }
             if !inserted.is_empty() {
                 edits.push(PieceEdit::Insert {
-                    at: start_byte,
+                    at: range.start_byte,
                     pieces: inserted,
                 });
             }
-            self.cursor = cursor_after_text(start, text);
-            self.cursor_byte_offset = start_byte + text.len();
-            changed += 1;
         }
+        let cursor_range = ranges.last().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "replacement batch unexpectedly has no ranges",
+            )
+        })?;
+        self.cursor = cursor_after_text(cursor_range.start, text);
+        self.cursor_byte_offset = cursor_range.start_byte + text.len();
         if self.recording {
             self.undo_stack.record(Transaction {
                 before,
@@ -164,7 +180,7 @@ impl Buffer for PieceTable {
                 id: 0,
             });
         }
-        Ok(changed)
+        Ok(ranges.len())
     }
 
     fn to_string(&self) -> String {
@@ -324,6 +340,62 @@ fn cursor_after_text(start: Cursor, text: &str) -> Cursor {
 }
 
 impl PieceTable {
+    /// Validate snapshot coordinates before mutation, reject ambiguous overlap,
+    /// and return the ranges from the document end toward its start.
+    fn snapshot_ranges(&self, ranges: &[(Cursor, Cursor)]) -> io::Result<Vec<SnapshotRange>> {
+        let mut snapshot_ranges = Vec::with_capacity(ranges.len());
+        for &(first, second) in ranges {
+            let first = self.valid_snapshot_cursor(first)?;
+            let second = self.valid_snapshot_cursor(second)?;
+            let (start, end) = if (first.row, first.col) <= (second.row, second.col) {
+                (first, second)
+            } else {
+                (second, first)
+            };
+            snapshot_ranges.push(SnapshotRange {
+                start,
+                start_byte: self.byte_offset_at(start.row, start.col),
+                end_byte: self.byte_offset_at(end.row, end.col),
+            });
+        }
+
+        snapshot_ranges.sort_by(|left, right| {
+            left.start_byte
+                .cmp(&right.start_byte)
+                .then(left.end_byte.cmp(&right.end_byte))
+        });
+        for pair in snapshot_ranges.windows(2) {
+            let [left, right] = pair else {
+                continue;
+            };
+            if left.end_byte > right.start_byte || left.start_byte == right.start_byte {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "replacement ranges must be non-overlapping snapshot ranges",
+                ));
+            }
+        }
+        snapshot_ranges.reverse();
+        Ok(snapshot_ranges)
+    }
+
+    fn valid_snapshot_cursor(&self, cursor: Cursor) -> io::Result<Cursor> {
+        if cursor.row >= self.line_count() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "replacement range row exceeds the snapshot",
+            ));
+        }
+        let line_len = self.current_line_char_len(cursor.row);
+        if cursor.col > line_len {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "replacement range column exceeds the snapshot",
+            ));
+        }
+        Ok(cursor)
+    }
+
     fn clamped_ordered_range(&self, start: Cursor, end: Cursor) -> (Cursor, Cursor) {
         let clamp = |cursor: Cursor| {
             let row = cursor.row.min(self.line_count().saturating_sub(1));

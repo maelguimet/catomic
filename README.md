@@ -2,13 +2,13 @@
 
 [![CI](https://github.com/maelguimet/catomic/actions/workflows/ci.yml/badge.svg)](https://github.com/maelguimet/catomic/actions/workflows/ci.yml)
 
-Catomic is the editor I wanted when Nano felt too bare and everything else felt
-like moving into somebody else's operating system. It is Linux-first, modeless,
-quick to open, and full of shortcuts that already make sense.
+I removed a lot of IDE-shaped bloat I was not using, including all of Catomic's
+built-in AI features. Some of it may return later; for now, I am focusing on
+making Catomic run before it walks.
 
-It is also in open beta. Use it, break it, tell me what got weird. But back up
-anything precious and read the [file-semantics limitations](#limitations) before
-making it your only editor.
+This beta should be stable enough for daily use. It is also, by the technical
+measurement of “a gazillion,” much faster than before: 6.72× across the
+benchmark suite, with several pathological cases improving by 76× to 2,229×.
 
 ![Catomic terminal text editor open on a Rust source file](docs/assets/catomic.jpg)
 
@@ -32,22 +32,29 @@ making it your only editor.
   assistant. Catomic keeps editing local and leaves optional automation to
   explicit, trusted commands configured by the user.
 
-## Install from source
+## Install
 
-Catomic currently targets Linux and stable Rust. Clone the repository, then
-build an optimized binary:
+Catomic currently publishes a verified x86-64 Linux binary. Download it, verify
+its checksum, and install it somewhere on your `PATH`:
+
+```sh
+version=0.2.0-beta.1
+curl -fLO "https://github.com/maelguimet/catomic/releases/download/v$version/catomic-x86_64-unknown-linux-gnu"
+curl -fLO "https://github.com/maelguimet/catomic/releases/download/v$version/catomic-x86_64-unknown-linux-gnu.sha256"
+sha256sum --check --strict catomic-x86_64-unknown-linux-gnu.sha256
+install -Dm755 catomic-x86_64-unknown-linux-gnu "$HOME/.local/bin/catomic"
+```
+
+The release also includes the packaged Cargo source, complete checksums,
+toolchain details, build provenance, and fresh-download verification evidence.
+
+To build from source instead, clone the repository and run the installer. It
+builds an optimized binary into Cargo's binary directory and creates a private,
+commented user configuration:
 
 ```sh
 git clone https://github.com/maelguimet/catomic.git
 cd catomic
-cargo build --release --locked
-./target/release/catomic
-```
-
-To install `catomic` into Cargo's binary directory and create its private,
-commented user configuration:
-
-```sh
 ./scripts/install.sh
 ```
 

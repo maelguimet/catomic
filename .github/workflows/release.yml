@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Version tag matching Cargo.toml (for example v0.2.0-beta.1)
+        required: true
+        type: string
 
 concurrency:
   group: release-${{ github.ref }}
@@ -30,10 +36,27 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Create immutable tag for a dispatched release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          test "$GITHUB_REF" = "refs/heads/master"
+          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
+          test "$TAG" = "v$version"
+          if git rev-parse --verify --quiet "refs/tags/$TAG"; then
+            echo "Tag already exists: $TAG" >&2
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag --annotate "$TAG" --message "Catomic $TAG"
+          git push origin "refs/tags/$TAG"
+
       - name: Bind the run to the tag and package version
         id: identity
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           source_sha="$(git rev-parse HEAD)"
           tagged_sha="$(git rev-parse "${TAG}^{commit}")"
@@ -52,6 +75,8 @@ jobs:
 
       - name: Install verification toolchains
         run: |
+          sudo apt-get update
+          sudo apt-get install --yes acl tmux
           rustup toolchain install stable --profile minimal --component clippy,rustfmt
           rustup toolchain install 1.87.0 --profile minimal
 
@@ -101,7 +126,7 @@ jobs:
           BINARY: ${{ steps.identity.outputs.binary_name }}
           PACKAGE: ${{ steps.identity.outputs.package_name }}
           SOURCE_SHA: ${{ steps.identity.outputs.source_sha }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           cat > source-verification.txt <<EOF
           tag=$TAG
@@ -148,15 +173,30 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PACKAGE: ${{ steps.identity.outputs.package_name }}
           SOURCE_SHA: ${{ steps.identity.outputs.source_sha }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           run_url="https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           evidence_url="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/release-evidence.md"
           source_url="https://github.com/$GITHUB_REPOSITORY/tree/$SOURCE_SHA"
-          manual_url="https://github.com/$GITHUB_REPOSITORY/blob/$SOURCE_SHA/docs/v0.1-acceptance.md"
           attestation_url="${{ steps.attest.outputs.attestation-url }}"
+          curated_notes="docs/releases/${TAG#v}.md"
+          curated_title="docs/releases/${TAG#v}.title"
+          release_reference_url="https://github.com/$GITHUB_REPOSITORY/blob/$SOURCE_SHA/$curated_notes"
+          release_title="Catomic $TAG"
+          generated_notes=(--generate-notes)
 
-          cat > release-notes.md <<EOF
+          : > release-notes.md
+          if [[ -f "$curated_notes" ]]; then
+            cat "$curated_notes" >> release-notes.md
+            printf '\n\n' >> release-notes.md
+            generated_notes=()
+          fi
+          if [[ -f "$curated_title" ]]; then
+            IFS= read -r release_title < "$curated_title"
+            test -n "$release_title"
+          fi
+
+          cat >> release-notes.md <<EOF
           ## Artifact-bound verification
 
           This release is built from [$TAG at $SOURCE_SHA]($source_url), not from a branch head.
@@ -164,7 +204,7 @@ jobs:
           - [Release acceptance evidence]($evidence_url) is uploaded only after a fresh runner downloads and verifies the public assets.
           - [Release workflow and job conclusions]($run_url)
           - [Build provenance attestation]($attestation_url)
-          - [Historical/manual roadmap acceptance]($manual_url)
+          - [Tagged release notes]($release_reference_url)
 
           The public binary, packaged Cargo source, package file list, toolchain record,
           source-verification result, and checksum manifests are attached below. Build
@@ -188,16 +228,16 @@ jobs:
             dist/toolchain.txt \
             dist/SHA256SUMS \
             --verify-tag \
-            --generate-notes \
+            "${generated_notes[@]}" \
             --notes-file release-notes.md \
-            --title "Catomic $TAG" \
+            --title "$release_title" \
             "${prerelease[@]}"
 
       - name: Mark a public release if publication fails
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             marker="VERIFICATION-FAILED-$GITHUB_RUN_ID.md"
@@ -233,7 +273,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PACKAGE: ${{ needs.publish.outputs.package_name }}
           SOURCE_SHA: ${{ needs.publish.outputs.source_sha }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = "false"
@@ -254,7 +294,7 @@ jobs:
         env:
           BINARY: ${{ needs.publish.outputs.binary_name }}
           SOURCE_SHA: ${{ needs.publish.outputs.source_sha }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: scripts/verify-release.sh public-assets "$TAG" "$SOURCE_SHA" "$BINARY" | tee public-verification.txt
 
       - name: Verify public build provenance
@@ -280,11 +320,11 @@ jobs:
           BINARY: ${{ needs.publish.outputs.binary_name }}
           PACKAGE: ${{ needs.publish.outputs.package_name }}
           SOURCE_SHA: ${{ needs.publish.outputs.source_sha }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           run_url="https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           source_url="https://github.com/$GITHUB_REPOSITORY/tree/$SOURCE_SHA"
-          manual_url="https://github.com/$GITHUB_REPOSITORY/blob/$SOURCE_SHA/docs/v0.1-acceptance.md"
+          release_notes_url="https://github.com/$GITHUB_REPOSITORY/blob/$SOURCE_SHA/docs/releases/${TAG#v}.md"
           limitations_url="https://github.com/$GITHUB_REPOSITORY/blob/$SOURCE_SHA/README.md#limitations"
 
           cat > release-evidence.md <<EOF
@@ -364,13 +404,12 @@ jobs:
           This workflow does not deploy Catomic elsewhere. The temporary installed smoke
           copy is the only installed binary in scope, and cmp verified it byte-for-byte.
 
-          ## Manual acceptance and limitations
+          ## Release scope and limitations
 
-          - [Historical/manual roadmap acceptance at the tagged source]($manual_url)
+          - [Curated release notes at the tagged source]($release_notes_url)
           - [Known limitations at the tagged source]($limitations_url)
 
-          The roadmap record is historical evidence for its own named candidate SHA. This
-          release record is the artifact-bound evidence for $TAG.
+          This release record is the artifact-bound evidence for $TAG.
 
           ## Replacement policy
 
@@ -382,7 +421,7 @@ jobs:
       - name: Publish and redownload the final evidence
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           gh release upload "$TAG" release-evidence.md
           mkdir evidence-redownload
@@ -393,7 +432,7 @@ jobs:
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           marker="VERIFICATION-FAILED-$GITHUB_RUN_ID.md"
           cat > "$marker" <<EOF

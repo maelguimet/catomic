@@ -36,7 +36,11 @@ Before tagging:
    The release may retain updater networking and generic trusted commands/hooks,
    but must not regain a model/provider path.
 5. Require normal `master` CI to pass for the commit that will be tagged.
-6. Create and push an annotated `v<package-version>` tag at that exact commit.
+6. On the exact `master` commit, run **Publish managed release** from GitHub
+   Actions with `v<package-version>` as its `tag` input. The dispatch refuses a
+   non-`master` ref, a tag that does not match `Cargo.toml`, or an existing tag,
+   then creates and pushes the annotated tag. Maintainers may instead create and
+   push the same annotated tag locally.
 
 The release workflow then does all of the following on the tagged checkout:
 

@@ -11,6 +11,7 @@ use std::ops::Range;
 use crate::buffer::undo::UndoRetentionPolicy;
 use crate::buffer::undo::{CursorState, Transaction, UndoRun, ADD_COMPACTION_MIN_RECLAIM_BYTES};
 
+use super::scalar_index::ScalarIndex;
 use super::types::{Piece, PieceTable, Source};
 
 impl PieceTable {
@@ -115,7 +116,9 @@ impl PieceTable {
             .for_each_mut(|piece| remap_add_piece(piece, &mappings));
         self.undo_stack
             .for_each_piece_mut(|piece| remap_add_piece(piece, &mappings));
+        let rebased_scalars = ScalarIndex::for_appendable_text(&rebased);
         self.add = rebased;
+        self.add_scalars = rebased_scalars;
         self.undo_stack.shrink_to_fit();
         reclaimable
     }

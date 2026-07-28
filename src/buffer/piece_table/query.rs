@@ -82,58 +82,70 @@ impl PieceTable {
         if start >= end || self.pieces.is_empty() {
             return Ok(0);
         }
-        let mut count = 0usize;
-        self.for_each_piece_overlap(start, end, |source, range, _logical_start| {
-            count += self.source_char_count(source, range)?;
-            Ok(true)
-        })?;
-        Ok(count)
+        self.pieces
+            .try_char_count_in(start..end, |piece, local_range| {
+                self.source_char_count(
+                    piece.source,
+                    piece.start + local_range.start..piece.start + local_range.end,
+                )
+            })
     }
 
     pub(crate) fn try_byte_offset_after_chars(
         &self,
         start: usize,
         end: usize,
-        mut chars: usize,
+        chars: usize,
     ) -> io::Result<usize> {
-        let mut result = end;
-        self.for_each_piece_overlap(start, end, |source, range, logical_start| {
-            let count = self.source_char_count(source, range.clone())?;
-            if chars <= count {
-                let source_offset =
-                    self.source_byte_offset_at_char(source, range.clone(), chars)?;
-                result = logical_start + (source_offset - range.start);
-                return Ok(false);
-            }
-            chars -= count;
-            Ok(true)
-        })?;
-        Ok(result)
+        self.pieces.try_byte_offset_after_chars(
+            start..end,
+            chars,
+            |piece, local_range| {
+                self.source_char_count(
+                    piece.source,
+                    piece.start + local_range.start..piece.start + local_range.end,
+                )
+            },
+            |piece, local_range, scalar| {
+                let source_start = piece.start + local_range.start;
+                let source_end = piece.start + local_range.end;
+                self.source_byte_offset_at_char(piece.source, source_start..source_end, scalar)
+                    .map(|source_byte| source_byte - piece.start)
+            },
+        )
     }
 
     pub(crate) fn try_window_to_string(
         &self,
         start: usize,
         end: usize,
-        mut skip: usize,
+        skip: usize,
         width: usize,
     ) -> io::Result<String> {
         if width == 0 || start >= end {
             return Ok(String::new());
         }
+        let window_start = self.try_byte_offset_after_chars(start, end, skip)?;
+        if window_start >= end {
+            return Ok(String::new());
+        }
         let mut out = String::new();
         let mut remaining = width;
-        self.for_each_piece_overlap(start, end, |source, range, _logical_start| {
-            let count = self.source_char_count(source, range.clone())?;
-            if skip >= count {
-                skip -= count;
-                return Ok(true);
-            }
-            let taken = self.source_push_char_window(source, range, skip, remaining, &mut out)?;
-            skip = 0;
-            remaining -= taken;
-            Ok(remaining > 0)
-        })?;
+        self.for_each_piece_overlap(
+            window_start,
+            end,
+            |source, range, _logical_start, cached_char_len| {
+                let taken = if cached_char_len.is_some_and(|count| count <= remaining) {
+                    let count = cached_char_len.expect("checked cached scalar count");
+                    self.source_push_slice(source, range, &mut out)?;
+                    count
+                } else {
+                    self.source_push_char_window(source, range, 0, remaining, &mut out)?
+                };
+                remaining -= taken;
+                Ok(remaining > 0)
+            },
+        )?;
         Ok(out)
     }
 
@@ -141,7 +153,7 @@ impl PieceTable {
         &self,
         start: usize,
         end: usize,
-        mut visit: impl FnMut(Source, std::ops::Range<usize>, usize) -> io::Result<bool>,
+        mut visit: impl FnMut(Source, std::ops::Range<usize>, usize, Option<usize>) -> io::Result<bool>,
     ) -> io::Result<()> {
         if start >= end || self.pieces.is_empty() {
             return Ok(());
@@ -158,7 +170,17 @@ impl PieceTable {
                 let local_end = end.saturating_sub(piece_start).min(piece.len);
                 if local_start < local_end {
                     let source_range = piece.start + local_start..piece.start + local_end;
-                    if !visit(piece.source, source_range, piece_start + local_start)? {
+                    let cached_char_len = if local_start == 0 && local_end == piece.len {
+                        piece.char_len
+                    } else {
+                        None
+                    };
+                    if !visit(
+                        piece.source,
+                        source_range,
+                        piece_start + local_start,
+                        cached_char_len,
+                    )? {
                         return Ok(false);
                     }
                 }
@@ -168,14 +190,14 @@ impl PieceTable {
         Ok(())
     }
 
-    fn source_char_count(
+    pub(crate) fn source_char_count(
         &self,
         source: Source,
         range: std::ops::Range<usize>,
     ) -> io::Result<usize> {
         match source {
             Source::Original => self.original.try_char_count(range),
-            Source::Add => Ok(self.add[range].chars().count()),
+            Source::Add => Ok(self.add_scalars.scalar_count(&self.add, range)),
         }
     }
 
@@ -187,11 +209,7 @@ impl PieceTable {
     ) -> io::Result<usize> {
         match source {
             Source::Original => self.original.try_byte_offset_at_char(range, col),
-            Source::Add => Ok(range.start
-                + self.add[range.clone()]
-                    .char_indices()
-                    .nth(col)
-                    .map_or(range.len(), |(offset, _)| offset)),
+            Source::Add => Ok(self.add_scalars.byte_at_scalar_in(&self.add, range, col)),
         }
     }
 
@@ -206,10 +224,31 @@ impl PieceTable {
         match source {
             Source::Original => self.original.try_push_char_window(range, skip, take, out),
             Source::Add => {
-                let window: String = self.add[range].chars().skip(skip).take(take).collect();
+                let start = self
+                    .add_scalars
+                    .byte_at_scalar_in(&self.add, range.clone(), skip);
+                let end = self
+                    .add_scalars
+                    .byte_at_scalar_in(&self.add, start..range.end, take);
+                let window = &self.add[start..end];
                 let taken = window.chars().count();
-                out.push_str(&window);
+                out.push_str(window);
                 Ok(taken)
+            }
+        }
+    }
+
+    fn source_push_slice(
+        &self,
+        source: Source,
+        range: std::ops::Range<usize>,
+        out: &mut String,
+    ) -> io::Result<()> {
+        match source {
+            Source::Original => self.original.try_push_slice(range, out),
+            Source::Add => {
+                out.push_str(&self.add[range]);
+                Ok(())
             }
         }
     }
@@ -254,5 +293,15 @@ impl PieceTable {
     #[cfg(test)]
     pub(crate) fn file_original_read_bytes(&self) -> usize {
         self.original.file_read_bytes()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn take_scalar_visited_bytes(&self) -> usize {
+        self.original.take_scalar_visited_bytes() + self.add_scalars.take_visited_bytes()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn take_scalar_piece_visits(&self) -> usize {
+        self.pieces.take_coordinate_node_visits()
     }
 }

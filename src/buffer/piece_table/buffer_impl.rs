@@ -449,7 +449,9 @@ impl PieceTable {
             source: Source::Add,
             start: self.add.len(),
             len: text.len(),
+            char_len: Some(text.chars().count()),
         };
+        self.add_scalars.append(text);
         self.add.push_str(text);
         self.insert_pieces_at(start, std::slice::from_ref(&piece));
         (removed, vec![piece])

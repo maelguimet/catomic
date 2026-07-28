@@ -267,7 +267,7 @@ fn paged_active_run_growth_refreshes_and_prunes_only_older_transactions() {
     assert_eq!(transactions, 3);
     buffer.set_history_retention_for_test(10, retained_bytes + 128);
 
-    for _ in 0..512 {
+    for _ in 0..retained_bytes.saturating_add(1024) {
         buffer.insert_char('x');
     }
 

@@ -24,6 +24,7 @@ use crate::buffer::Cursor;
 
 use super::file_original::{FileMetadataSnapshot, FileOriginalMetadata};
 use super::piece_tree::PieceTree;
+use super::scalar_index::ScalarIndex;
 use super::types::{OriginalBacking, Piece, PieceTable, Source};
 
 pub(crate) struct FileBackedPage {
@@ -41,12 +42,14 @@ impl PieceTable {
             source: Source::Original,
             start: 0,
             len: 0,
+            char_len: Some(0),
         }]);
         let original = OriginalBacking::empty();
         let index = LineIndex::from_text("");
         Self {
             original,
             add: String::new(),
+            add_scalars: ScalarIndex::empty_appendable(),
             pieces,
             index,
             cursor: Cursor { row: 0, col: 0 },
@@ -177,10 +180,12 @@ impl PieceTable {
             source: Source::Original,
             start: 0,
             len: logical_len,
+            char_len: None,
         }]);
         Self {
             original: OriginalBacking::from_file(file, snapshot, original_metadata),
             add: String::new(),
+            add_scalars: ScalarIndex::empty_appendable(),
             pieces,
             index: LineIndex::from_line_starts(local_line_starts, logical_len),
             cursor: Cursor { row: 0, col: 0 },
@@ -203,22 +208,27 @@ impl PieceTable {
                     source: Source::Original,
                     start: 0,
                     len: 0,
+                    char_len: Some(0),
                 }],
             )
         } else {
             let len = normalized.len();
+            let original = OriginalBacking::from_owned(normalized);
+            let char_len = original.owned_scalar_len().unwrap_or(0);
             (
-                OriginalBacking::from_owned(normalized),
+                original,
                 vec![Piece {
                     source: Source::Original,
                     start: 0,
                     len,
+                    char_len: Some(char_len),
                 }],
             )
         };
         Self {
             original,
             add: String::new(),
+            add_scalars: ScalarIndex::empty_appendable(),
             pieces: PieceTree::from_pieces(pieces),
             index,
             cursor: Cursor { row: 0, col: 0 },

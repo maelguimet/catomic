@@ -22,6 +22,7 @@ use crate::buffer::Cursor;
 
 use super::file_original::{FileMetadataSnapshot, FileOriginal, FileOriginalMetadata};
 use super::piece_tree::PieceTree;
+use super::scalar_index::ScalarIndex;
 
 /// Source buffer for a piece.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,22 +40,36 @@ pub(crate) struct Piece {
     pub(crate) start: usize,
     /// Byte length.
     pub(crate) len: usize,
+    /// Cached scalar length for owned/add sources. File-backed pieces retain
+    /// `None` and use their descriptor metadata for partial logical lines.
+    pub(crate) char_len: Option<usize>,
 }
 
 /// Original file/input storage behind Piece ranges.
 #[derive(Clone, Debug)]
 pub(crate) enum OriginalBacking {
-    Owned(String),
+    Owned { text: String, scalars: ScalarIndex },
     File(Arc<FileOriginal>),
 }
 
 impl OriginalBacking {
     pub(crate) fn empty() -> Self {
-        Self::Owned(String::new())
+        Self::Owned {
+            text: String::new(),
+            scalars: ScalarIndex::for_immutable_text(""),
+        }
     }
 
     pub(crate) fn from_owned(text: String) -> Self {
-        Self::Owned(text)
+        let scalars = ScalarIndex::for_immutable_text(&text);
+        Self::Owned { text, scalars }
+    }
+
+    pub(crate) fn owned_scalar_len(&self) -> Option<usize> {
+        match self {
+            Self::Owned { scalars, .. } => Some(scalars.scalar_len()),
+            Self::File(_) => None,
+        }
     }
 
     pub(crate) fn from_file(
@@ -67,7 +82,7 @@ impl OriginalBacking {
 
     pub(crate) fn try_push_slice(&self, range: Range<usize>, out: &mut String) -> io::Result<()> {
         match self {
-            Self::Owned(text) => {
+            Self::Owned { text, .. } => {
                 out.push_str(&text[range]);
                 Ok(())
             }
@@ -83,7 +98,7 @@ impl OriginalBacking {
         max_bytes: usize,
     ) -> io::Result<Cow<'_, str>> {
         match self {
-            Self::Owned(text) => {
+            Self::Owned { text, .. } => {
                 let mut end = range.start + range.len().min(max_bytes);
                 while end < range.end && !text.is_char_boundary(end) {
                     end += 1;
@@ -96,14 +111,14 @@ impl OriginalBacking {
 
     pub(crate) fn write_slice(&self, range: Range<usize>, out: &mut dyn Write) -> io::Result<()> {
         match self {
-            Self::Owned(text) => out.write_all(text[range].as_bytes()),
+            Self::Owned { text, .. } => out.write_all(text[range].as_bytes()),
             Self::File(file) => file.write_range(range, out),
         }
     }
 
     pub(crate) fn for_each_newline(&self, range: Range<usize>, mut f: impl FnMut(usize)) {
         match self {
-            Self::Owned(text) => {
+            Self::Owned { text, .. } => {
                 for (i, _) in text[range.clone()].match_indices('\n') {
                     f(range.start + i);
                 }
@@ -114,7 +129,7 @@ impl OriginalBacking {
 
     pub(crate) fn try_char_count(&self, range: Range<usize>) -> io::Result<usize> {
         match self {
-            Self::Owned(text) => Ok(text[range].chars().count()),
+            Self::Owned { text, scalars } => Ok(scalars.scalar_count(text, range)),
             Self::File(file) => file.char_count(range),
         }
     }
@@ -125,11 +140,7 @@ impl OriginalBacking {
         col: usize,
     ) -> io::Result<usize> {
         match self {
-            Self::Owned(text) => Ok(range.start
-                + text[range.clone()]
-                    .char_indices()
-                    .nth(col)
-                    .map_or(range.len(), |(offset, _)| offset)),
+            Self::Owned { text, scalars } => Ok(scalars.byte_at_scalar_in(text, range, col)),
             Self::File(file) => file.byte_offset_at_char(range, col),
         }
     }
@@ -142,10 +153,12 @@ impl OriginalBacking {
         out: &mut String,
     ) -> io::Result<usize> {
         match self {
-            Self::Owned(text) => {
-                let window: String = text[range].chars().skip(skip).take(take).collect();
+            Self::Owned { text, scalars } => {
+                let start = scalars.byte_at_scalar_in(text, range.clone(), skip);
+                let end = scalars.byte_at_scalar_in(text, start..range.end, take);
+                let window = &text[start..end];
                 let taken = window.chars().count();
-                out.push_str(&window);
+                out.push_str(window);
                 Ok(taken)
             }
             Self::File(file) => file.push_char_window(range, skip, take, out),
@@ -155,7 +168,7 @@ impl OriginalBacking {
     #[cfg(test)]
     pub(crate) fn file_read_bytes(&self) -> usize {
         match self {
-            Self::Owned(_) => 0,
+            Self::Owned { .. } => 0,
             Self::File(file) => file.read_bytes(),
         }
     }
@@ -163,7 +176,7 @@ impl OriginalBacking {
     #[cfg(test)]
     pub(crate) fn metadata_check_count(&self) -> usize {
         match self {
-            Self::Owned(_) => 0,
+            Self::Owned { .. } => 0,
             Self::File(file) => file.metadata_check_count(),
         }
     }
@@ -171,7 +184,7 @@ impl OriginalBacking {
     #[cfg(test)]
     pub(crate) fn retained_bytes(&self) -> usize {
         match self {
-            Self::Owned(text) => text.capacity(),
+            Self::Owned { text, scalars } => text.capacity() + scalars.retained_bytes(),
             Self::File(file) => {
                 std::mem::size_of::<FileOriginal>() + file.retained_metadata_bytes()
             }
@@ -181,8 +194,16 @@ impl OriginalBacking {
     #[cfg(test)]
     pub(crate) fn retained_metadata_bytes(&self) -> usize {
         match self {
-            Self::Owned(_) => 0,
+            Self::Owned { .. } => 0,
             Self::File(file) => file.retained_metadata_bytes(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn take_scalar_visited_bytes(&self) -> usize {
+        match self {
+            Self::Owned { scalars, .. } => scalars.take_visited_bytes(),
+            Self::File(_) => 0,
         }
     }
 }
@@ -195,6 +216,7 @@ impl OriginalBacking {
 pub struct PieceTable {
     pub(crate) original: OriginalBacking,
     pub(crate) add: String,
+    pub(crate) add_scalars: ScalarIndex,
     pub(crate) pieces: PieceTree,
     pub(crate) index: LineIndex,
     pub(crate) cursor: Cursor,

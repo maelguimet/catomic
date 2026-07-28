@@ -431,6 +431,26 @@ mod tests {
     }
 
     #[test]
+    fn search_match_cursor_mapping_is_exact_near_a_long_unicode_line_end() {
+        let prefix = "é".repeat(512 * 1024);
+        let mut app = super::super::App::new(None).unwrap();
+        app.buffer = Box::new(crate::buffer::PieceTable::from_owned_text(format!(
+            "{prefix} target"
+        )));
+        let mut out = Vec::new();
+
+        enter_query(&mut app, "target", &mut out);
+
+        assert_eq!(
+            app.buffer.cursor(),
+            crate::buffer::Cursor {
+                row: 0,
+                col: prefix.chars().count() + 1
+            }
+        );
+    }
+
+    #[test]
     fn typing_in_search_moves_and_highlights_incrementally() {
         let mut app = super::super::App::new(None).unwrap();
         app.buffer = Box::new(crate::buffer::PieceTable::from_text(

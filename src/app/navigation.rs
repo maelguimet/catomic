@@ -15,6 +15,7 @@ use crate::editor::text_layout;
 mod paragraph;
 
 const GRAPHEME_WINDOW: usize = 64;
+const WORD_WINDOW: usize = 256;
 
 #[cfg(test)]
 pub(crate) fn handle_key(
@@ -41,17 +42,17 @@ pub(crate) fn handle_key(
         KeyCode::PageUp if no_extra => Some(page_target(app, false)),
         KeyCode::PageDown if no_extra => Some(page_target(app, true)),
         KeyCode::Left if command && !key.modifiers.contains(KeyModifiers::ALT) => {
-            Some(word_left(app))
+            Some(word_left(app)?)
         }
         KeyCode::Right if command && !key.modifiers.contains(KeyModifiers::ALT) => {
-            Some(word_right(app))
+            Some(word_right(app)?)
         }
         KeyCode::Backspace if command && !extend => {
-            delete_to(app, out, word_left(app))?;
+            delete_to(app, out, word_left(app)?)?;
             return Ok(true);
         }
         KeyCode::Delete if command && !extend => {
-            delete_to(app, out, word_right(app))?;
+            delete_to(app, out, word_right(app)?)?;
             return Ok(true);
         }
         _ => None,
@@ -86,16 +87,16 @@ pub(crate) fn dispatch_action(
         Action::ViewportDown => (page_target(app, true), false),
         Action::SelectViewportUp => (page_target(app, false), true),
         Action::SelectViewportDown => (page_target(app, true), true),
-        Action::WordLeft => (word_left(app), false),
-        Action::WordRight => (word_right(app), false),
-        Action::SelectWordLeft => (word_left(app), true),
-        Action::SelectWordRight => (word_right(app), true),
+        Action::WordLeft => (word_left(app)?, false),
+        Action::WordRight => (word_right(app)?, false),
+        Action::SelectWordLeft => (word_left(app)?, true),
+        Action::SelectWordRight => (word_right(app)?, true),
         Action::DeleteWordBackward => {
-            delete_to(app, out, word_left(app))?;
+            delete_to(app, out, word_left(app)?)?;
             return Ok(true);
         }
         Action::DeleteWordForward => {
-            delete_to(app, out, word_right(app))?;
+            delete_to(app, out, word_right(app)?)?;
             return Ok(true);
         }
         _ => return Ok(false),
@@ -279,84 +280,115 @@ fn page_target(app: &super::App, down: bool) -> Cursor {
     }
 }
 
-fn word_left(app: &super::App) -> Cursor {
+fn word_left(app: &super::App) -> io::Result<Cursor> {
     let current = app.buffer.cursor();
     if current.col == 0 {
         if current.row == 0 {
-            return current;
+            return Ok(current);
         }
         let row = current.row - 1;
-        return Cursor {
+        return Ok(Cursor {
             row,
             col: app.buffer.line_char_count(row).unwrap_or(0),
-        };
+        });
     }
-    let chars: Vec<char> = app
-        .buffer
-        .line(current.row)
-        .unwrap_or_default()
-        .chars()
-        .collect();
-    let mut col = current.col.min(chars.len());
-    while col > 0 && chars[col - 1].is_whitespace() {
-        col -= 1;
-    }
-    if col > 0 {
-        let class = word_class(chars[col - 1]);
-        while col > 0 && word_class(chars[col - 1]) == class {
+
+    let line_len = app.buffer.line_char_count(current.row).unwrap_or(0);
+    let mut col = current.col.min(line_len);
+    let mut class = None;
+    'chunks: while col > 0 {
+        let start = col.saturating_sub(WORD_WINDOW);
+        let text = line_window(&*app.buffer, current.row, start, col - start)?;
+        for ch in text.chars().rev() {
+            if class.is_none() && ch.is_whitespace() {
+                col -= 1;
+                continue;
+            }
+            let ch_class = word_class(ch);
+            match class {
+                None => class = Some(ch_class),
+                Some(expected) if expected != ch_class => break 'chunks,
+                Some(_) => {}
+            }
             col -= 1;
         }
+        if start == 0 {
+            break;
+        }
     }
-    let col = text_layout::snap_to_grapheme_col(&chars.iter().collect::<String>(), col);
-    Cursor {
+    let col = snap_buffer_col(&*app.buffer, current.row, col)?;
+    Ok(Cursor {
         row: current.row,
         col,
-    }
+    })
 }
 
-fn word_right(app: &super::App) -> Cursor {
+fn word_right(app: &super::App) -> io::Result<Cursor> {
     let current = app.buffer.cursor();
-    let chars: Vec<char> = app
-        .buffer
-        .line(current.row)
-        .unwrap_or_default()
-        .chars()
-        .collect();
-    let mut col = current.col.min(chars.len());
-    if col == chars.len() {
+    let line_len = app.buffer.line_char_count(current.row).unwrap_or(0);
+    let mut col = current.col.min(line_len);
+    if col == line_len {
         let last = app.buffer.line_count().saturating_sub(1);
-        return if current.row < last {
+        return Ok(if current.row < last {
             Cursor {
                 row: current.row + 1,
                 col: 0,
             }
         } else {
             current
-        };
+        });
     }
-    if chars[col].is_whitespace() {
-        while col < chars.len() && chars[col].is_whitespace() {
-            col += 1;
-        }
-    } else {
-        let class = word_class(chars[col]);
-        while col < chars.len() && word_class(chars[col]) == class {
-            col += 1;
-        }
-        while col < chars.len() && chars[col].is_whitespace() {
-            col += 1;
-        }
-    }
-    let text: String = chars.iter().collect();
-    let floor = text_layout::snap_to_grapheme_col(&text, col);
-    let col = if floor < col {
-        text_layout::next_grapheme_col(&text, floor)
-    } else {
-        floor
+
+    let first = line_window(&*app.buffer, current.row, col, 1)?
+        .chars()
+        .next();
+    let Some(first) = first else {
+        return Ok(current);
     };
-    Cursor {
+    let starts_in_whitespace = first.is_whitespace();
+    let class = word_class(first);
+    let mut reached_whitespace = false;
+    'chunks: while col < line_len {
+        let take = WORD_WINDOW.min(line_len - col);
+        let text = line_window(&*app.buffer, current.row, col, take)?;
+        for ch in text.chars() {
+            if (starts_in_whitespace || reached_whitespace) && !ch.is_whitespace() {
+                break 'chunks;
+            } else if word_class(ch) != class {
+                if ch.is_whitespace() {
+                    reached_whitespace = true;
+                } else {
+                    break 'chunks;
+                }
+            }
+            col += 1;
+        }
+        if take == 0 {
+            break;
+        }
+    }
+    let col = ceil_buffer_col(&*app.buffer, current.row, col)?;
+    Ok(Cursor {
         row: current.row,
         col,
+    })
+}
+
+fn ceil_buffer_col(buffer: &dyn Buffer, row: usize, col: usize) -> io::Result<usize> {
+    let floor = snap_buffer_col(buffer, row, col)?;
+    if floor == col {
+        return Ok(floor);
+    }
+    let line_len = buffer.line_char_count(row).unwrap_or(0);
+    let remaining = line_len.saturating_sub(floor);
+    let mut width = GRAPHEME_WINDOW.min(remaining);
+    loop {
+        let text = line_window(buffer, row, floor, width)?;
+        let next = text_layout::next_grapheme_col(&text, 0);
+        if next < text.chars().count() || width == remaining {
+            return Ok(floor.saturating_add(next));
+        }
+        width = width.saturating_mul(2).min(remaining);
     }
 }
 
@@ -462,6 +494,83 @@ mod tests {
         assert_eq!(app.buffer.cursor(), Cursor::default());
         app.buffer.undo();
         assert_eq!(app.buffer.to_string(), "a\u{301}猫x");
+    }
+
+    #[test]
+    fn movement_keeps_zwj_emoji_combining_marks_and_tabs_on_scalar_boundaries() {
+        let mut app = app("a\u{301}\t👩\u{200d}💻x");
+
+        move_grapheme(&mut app, true).unwrap();
+        assert_eq!(app.buffer.cursor().col, 2);
+        move_grapheme(&mut app, true).unwrap();
+        assert_eq!(app.buffer.cursor().col, 3);
+        move_grapheme(&mut app, true).unwrap();
+        assert_eq!(app.buffer.cursor().col, 6);
+        move_grapheme(&mut app, false).unwrap();
+        assert_eq!(app.buffer.cursor().col, 3);
+    }
+
+    #[test]
+    fn crlf_normalization_keeps_word_and_grapheme_navigation_exact() {
+        let mut app = app("a\u{301}\t👩\u{200d}💻 x\r\nnext");
+        assert_eq!(app.buffer.line_count(), 2);
+
+        for expected_col in [2, 3, 7] {
+            let target = word_right(&app).unwrap();
+            app.buffer.set_cursor(target);
+            assert_eq!(
+                app.buffer.cursor(),
+                Cursor {
+                    row: 0,
+                    col: expected_col
+                }
+            );
+        }
+        let target = word_left(&app).unwrap();
+        app.buffer.set_cursor(target);
+        assert_eq!(app.buffer.cursor(), Cursor { row: 0, col: 3 });
+        app.buffer.set_cursor(Cursor { row: 0, col: 8 });
+        let target = word_right(&app).unwrap();
+        assert_eq!(target, Cursor { row: 1, col: 0 });
+    }
+
+    #[test]
+    fn word_movement_streams_across_long_lines_and_snaps_graphemes() {
+        let word = "x".repeat(1024 * 1024);
+        let mut app = app(&format!("{word}  a\u{301} 👩\u{200d}💻"));
+        let mut out = Vec::new();
+
+        handle_key(
+            &mut app,
+            &mut out,
+            key(KeyCode::Right, KeyModifiers::CONTROL | KeyModifiers::SHIFT),
+        )
+        .unwrap();
+        assert_eq!(app.buffer.cursor().col, word.len() + 2);
+        assert_eq!(
+            app.selection.active().unwrap().ordered(),
+            (
+                Cursor::default(),
+                Cursor {
+                    row: 0,
+                    col: word.len() + 2
+                }
+            )
+        );
+        handle_key(
+            &mut app,
+            &mut out,
+            key(KeyCode::Right, KeyModifiers::CONTROL),
+        )
+        .unwrap();
+        assert_eq!(app.buffer.cursor().col, word.len() + 4);
+        handle_key(
+            &mut app,
+            &mut out,
+            key(KeyCode::Left, KeyModifiers::CONTROL),
+        )
+        .unwrap();
+        assert_eq!(app.buffer.cursor().col, word.len() + 2);
     }
 
     #[test]

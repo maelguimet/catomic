@@ -8,6 +8,10 @@
 //! narrowing byte coordinates. A single very long line therefore needs no
 //! overflow side table and has no 16- or 32-bit representation ceiling.
 
+use std::sync::Arc;
+
+use crate::buffer::piece_table::file_original::FileOriginalMetadata;
+
 const TARGET_BLOCK_LINES: usize = 128;
 const MAX_BLOCK_LINES: usize = TARGET_BLOCK_LINES * 2;
 const PRIORITY_SEED: u64 = 0x6a09_e667_f3bc_c909;
@@ -102,6 +106,9 @@ pub(crate) struct LineIndex {
     root: BlockTree,
     priority_state: u64,
     work: LineIndexWork,
+    /// Untouched descriptor-backed pages borrow their canonical compact
+    /// boundaries. The first valid edit materializes the current block tree.
+    file_metadata: Option<Arc<FileOriginalMetadata>>,
 }
 
 impl Default for LineIndex {
@@ -123,24 +130,6 @@ impl LineIndex {
         Self::from_spans(spans)
     }
 
-    pub(crate) fn from_line_starts(mut starts: Vec<usize>, total_bytes: usize) -> Self {
-        if starts.first().copied() != Some(0) {
-            starts.insert(0, 0);
-        }
-        starts.retain(|start| *start <= total_bytes);
-        starts.dedup();
-        if starts.is_empty() {
-            starts.push(0);
-        }
-
-        let mut spans = Vec::with_capacity(starts.len());
-        for pair in starts.windows(2) {
-            spans.push(pair[1] - pair[0]);
-        }
-        spans.push(total_bytes - starts.last().copied().unwrap_or(0));
-        Self::from_spans(spans)
-    }
-
     fn from_spans(spans: Vec<usize>) -> Self {
         let spans = if spans.is_empty() { vec![0] } else { spans };
         let mut priority_state = PRIORITY_SEED;
@@ -157,18 +146,36 @@ impl LineIndex {
             root,
             priority_state,
             work: LineIndexWork::default(),
+            file_metadata: None,
+        }
+    }
+
+    pub(crate) fn from_file_metadata(metadata: Arc<FileOriginalMetadata>) -> Self {
+        Self {
+            root: None,
+            priority_state: PRIORITY_SEED,
+            work: LineIndexWork::default(),
+            file_metadata: Some(metadata),
         }
     }
 
     pub(crate) fn line_count(&self) -> usize {
-        tree_lines(&self.root).max(1)
+        self.file_metadata.as_ref().map_or_else(
+            || tree_lines(&self.root).max(1),
+            |metadata| metadata.line_count(),
+        )
     }
 
     pub(crate) fn total_bytes(&self) -> usize {
-        tree_bytes(&self.root)
+        self.file_metadata
+            .as_ref()
+            .map_or_else(|| tree_bytes(&self.root), |metadata| metadata.logical_len)
     }
 
     pub(crate) fn line_start_byte(&self, row: usize) -> usize {
+        if let Some(metadata) = &self.file_metadata {
+            return metadata.logical_line_start(row);
+        }
         let row = row.min(self.line_count().saturating_sub(1));
         self.locate_row(row)
             .map(|located| located.bytes_before + located.node.block.line_start(located.local_row))
@@ -177,6 +184,9 @@ impl LineIndex {
 
     /// Byte offset of line content end, excluding the terminating `\n`.
     pub(crate) fn line_end_byte(&self, row: usize) -> usize {
+        if let Some(metadata) = &self.file_metadata {
+            return metadata.logical_line_end(row);
+        }
         let row = row.min(self.line_count().saturating_sub(1));
         let start = self.line_start_byte(row);
         let span = self.line_span(row).unwrap_or(0);
@@ -188,6 +198,9 @@ impl LineIndex {
     }
 
     pub(crate) fn row_for_byte(&self, byte: usize) -> usize {
+        if let Some(metadata) = &self.file_metadata {
+            return metadata.row_for_logical_byte(byte);
+        }
         let line_count = self.line_count();
         let total_bytes = self.total_bytes();
         if line_count <= 1 || byte >= total_bytes {
@@ -228,6 +241,7 @@ impl LineIndex {
         if byte_len == 0 || at_byte > self.total_bytes() {
             return;
         }
+        self.materialize_file_metadata();
         let row = self.row_for_byte(at_byte);
         let old_span = self.line_span(row).unwrap_or(0);
         self.set_line_span(row, old_span + byte_len);
@@ -239,15 +253,18 @@ impl LineIndex {
         }
         let row = self.row_for_byte(at_byte);
         let old_span = self.line_span(row).unwrap_or(0);
-        if byte_len <= old_span {
-            self.set_line_span(row, old_span - byte_len);
+        if byte_len > old_span {
+            return;
         }
+        self.materialize_file_metadata();
+        self.set_line_span(row, old_span - byte_len);
     }
 
     pub(crate) fn insert_newline(&mut self, at_byte: usize) {
         if at_byte > self.total_bytes() {
             return;
         }
+        self.materialize_file_metadata();
         let row = self.row_for_byte(at_byte);
         let line_start = self.line_start_byte(row);
         let old_span = self.line_span(row).unwrap_or(0);
@@ -257,6 +274,7 @@ impl LineIndex {
             root,
             priority_state,
             work,
+            ..
         } = self;
         *root = replace_one_span(root.take(), row, &replacement, priority_state, work);
     }
@@ -271,6 +289,7 @@ impl LineIndex {
         }
         let first = self.line_span(row).unwrap_or(0);
         let second = self.line_span(row + 1).unwrap_or(0);
+        self.materialize_file_metadata();
         self.set_line_span(row, first - 1 + second);
         let LineIndex { root, work, .. } = self;
         *root = remove_one_span(root.take(), row + 1, work);
@@ -301,6 +320,7 @@ impl LineIndex {
             return false;
         }
 
+        self.materialize_file_metadata();
         let start_row = self.row_for_byte(start);
         let end_row = self.row_for_byte(end);
         if start_row == end_row && inserted_newlines.is_empty() {
@@ -345,6 +365,7 @@ impl LineIndex {
             root,
             priority_state,
             work,
+            ..
         } = self;
         let (left, tail) = split_at_row(root.take(), start_row, priority_state, work);
         let (removed, right) = split_at_row(tail, remove_lines, priority_state, work);
@@ -355,6 +376,15 @@ impl LineIndex {
     }
 
     fn line_span(&self, row: usize) -> Option<usize> {
+        if let Some(metadata) = &self.file_metadata {
+            let row = row.min(metadata.line_count().saturating_sub(1));
+            let start = metadata.logical_line_start(row);
+            return Some(if row + 1 < metadata.line_count() {
+                metadata.logical_line_start(row + 1).saturating_sub(start)
+            } else {
+                metadata.logical_len.saturating_sub(start)
+            });
+        }
         self.locate_row(row)
             .map(|located| located.node.block.spans[located.local_row])
     }
@@ -384,7 +414,17 @@ impl LineIndex {
     }
 
     fn set_line_span(&mut self, row: usize, span: usize) {
+        debug_assert!(self.file_metadata.is_none());
         set_one_span(&mut self.root, row, span, &mut self.work);
+    }
+
+    fn materialize_file_metadata(&mut self) {
+        let Some(metadata) = self.file_metadata.take() else {
+            return;
+        };
+        let owned = Self::from_spans(metadata.logical_line_spans());
+        self.root = owned.root;
+        self.priority_state = owned.priority_state;
     }
 
     #[cfg(test)]
@@ -409,7 +449,16 @@ impl LineIndex {
                 + tree_retained_bytes(&node.right)
         }
 
-        tree_retained_bytes(&self.root)
+        if self.file_metadata.is_some() {
+            0
+        } else {
+            tree_retained_bytes(&self.root)
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn uses_shared_file_metadata(&self) -> bool {
+        self.file_metadata.is_some()
     }
 
     #[cfg(test)]
@@ -647,7 +696,34 @@ fn remove_one_span(tree: BlockTree, row: usize, work: &mut LineIndexWork) -> Blo
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use crate::buffer::piece_table::file_original::FileOriginalMetadata;
+
     use super::{LineIndex, MAX_BLOCK_LINES};
+
+    fn shared_crlf_index() -> LineIndex {
+        let lines = MAX_BLOCK_LINES * 3;
+        let range_start = 100usize;
+        let line_starts = (0..=lines)
+            .map(|row| range_start + row * 3)
+            .collect::<Vec<_>>();
+        let crlf_offsets = (0..lines)
+            .map(|row| range_start + row * 3 + 1)
+            .collect::<Vec<_>>();
+        let metadata = FileOriginalMetadata::from_scan(
+            range_start,
+            range_start + lines * 3,
+            lines * 2,
+            line_starts,
+            crlf_offsets,
+            [vec![1; lines], vec![0]].concat(),
+            vec![true; lines + 1],
+            Vec::new(),
+            vec![0; lines + 2],
+        );
+        LineIndex::from_file_metadata(Arc::new(metadata))
+    }
 
     #[test]
     fn from_text_empty_has_single_start() {
@@ -699,6 +775,52 @@ mod tests {
         assert!(bottom_work.summary_nodes_updated < 64, "{bottom_work:?}");
         assert_eq!(top.line_count(), bottom.line_count());
         assert_eq!(top.total_bytes(), bottom.total_bytes());
+    }
+
+    #[test]
+    fn valid_mutations_materialize_shared_metadata_into_local_blocks() {
+        let mut cases = [
+            shared_crlf_index(),
+            shared_crlf_index(),
+            shared_crlf_index(),
+            shared_crlf_index(),
+            shared_crlf_index(),
+        ];
+
+        cases[0].insert_bytes(0, 1);
+        cases[1].delete_bytes(0, 1);
+        cases[2].insert_newline(1);
+        assert!(cases[3].delete_newline(1));
+        assert!(cases[4].replace_byte_range(0, 1, 2, &[0]));
+
+        for index in &cases {
+            assert!(!index.uses_shared_file_metadata());
+            let work = index.work();
+            assert!(work.blocks_touched <= 4, "{work:?}");
+            assert!(work.summary_nodes_updated < 64, "{work:?}");
+            assert!(index.retained_bytes() > 0);
+        }
+
+        cases[0].reset_work();
+        let end = cases[0].total_bytes();
+        cases[0].insert_bytes(end, 1);
+        assert_eq!(cases[0].work().blocks_touched, 1);
+        assert!(cases[0].work().summary_nodes_updated < 64);
+    }
+
+    #[test]
+    fn invalid_mutations_do_not_materialize_shared_metadata() {
+        let mut index = shared_crlf_index();
+        let total = index.total_bytes();
+
+        index.insert_bytes(0, 0);
+        index.insert_bytes(total + 1, 1);
+        index.delete_bytes(total, 2);
+        assert!(!index.delete_newline(0));
+        assert!(!index.replace_byte_range(total + 1, total + 1, 1, &[]));
+
+        assert!(index.uses_shared_file_metadata());
+        assert_eq!(index.retained_bytes(), 0);
     }
 
     #[test]

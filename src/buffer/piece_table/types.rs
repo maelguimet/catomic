@@ -75,7 +75,7 @@ impl OriginalBacking {
     pub(crate) fn from_file(
         file: std::fs::File,
         snapshot: FileMetadataSnapshot,
-        metadata: FileOriginalMetadata,
+        metadata: Arc<FileOriginalMetadata>,
     ) -> Self {
         Self::File(Arc::new(FileOriginal::new(file, snapshot, metadata)))
     }
@@ -187,6 +187,16 @@ impl OriginalBacking {
         match self {
             Self::Owned { .. } => 0,
             Self::File(file) => file.retained_metadata_bytes(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn file_metadata_bytes(
+        &self,
+    ) -> Option<super::file_original::FileOriginalMetadataBytes> {
+        match self {
+            Self::Owned { .. } => None,
+            Self::File(file) => Some(file.metadata_bytes()),
         }
     }
 

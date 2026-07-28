@@ -283,3 +283,171 @@ fn paged_active_run_growth_refreshes_and_prunes_only_older_transactions() {
 
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn compact_metadata_is_shared_and_uses_u32_line_starts() {
+    let cases = [
+        ("compact_ascii_lf", "line\n".repeat(20_000)),
+        ("compact_ascii_crlf", "line\r\n".repeat(20_000)),
+        ("compact_unicode_lf", "é\n".repeat(20_000)),
+    ];
+
+    for (label, text) in cases {
+        let path = temp_path(label);
+        let _ = std::fs::remove_file(&path);
+        std::fs::write(&path, text).unwrap();
+        let buffer = PagedFileBuffer::open(&path, 20_000).unwrap();
+        let bytes = buffer.retained_metadata_components();
+        let line_count = buffer.active().buffer.line_count();
+
+        assert!(buffer.active().buffer.uses_shared_file_line_index());
+        assert_eq!(bytes.materialized_line_index, 0);
+        assert!(
+            bytes.line_starts <= line_count.saturating_mul(std::mem::size_of::<u32>()),
+            "{label}: line starts must use compact u32 storage"
+        );
+        assert_eq!(
+            buffer.perf_stats().retained_page_metadata_bytes,
+            bytes.total()
+        );
+        if label == "compact_ascii_lf" {
+            assert_eq!(bytes.crlf_offsets, 0);
+            assert_eq!(
+                bytes.non_ascii_rows
+                    + bytes.non_ascii_char_counts
+                    + bytes.non_ascii_checkpoint_starts
+                    + bytes.checkpoints,
+                0
+            );
+        } else if label == "compact_ascii_crlf" {
+            assert!(bytes.crlf_offsets > 0);
+            assert_eq!(
+                bytes.non_ascii_rows
+                    + bytes.non_ascii_char_counts
+                    + bytes.non_ascii_checkpoint_starts
+                    + bytes.checkpoints,
+                0
+            );
+        } else {
+            assert!(bytes.non_ascii_rows > 0);
+            assert!(bytes.non_ascii_char_counts > 0);
+        }
+        let legacy_line_tables = line_count.saturating_mul(
+            std::mem::size_of::<usize>()
+                .saturating_mul(4)
+                .saturating_add(1),
+        );
+        assert!(bytes.total() < legacy_line_tables, "{label}: {bytes:?}");
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+#[test]
+fn nonzero_crlf_page_windows_keep_alternating_unicode_metadata_exact() {
+    let path = temp_path("alternating_unicode");
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(
+        &path,
+        "p0\r\np1\r\np2\r\np3\r\nascii\r\né猫\r\nplain\r\nβz\r\ntail",
+    )
+    .unwrap();
+
+    let mut buffer = PagedFileBuffer::open(&path, 4).unwrap();
+    assert!(buffer.next_page().unwrap());
+    assert!(buffer.page_info().unwrap().start_byte > 0);
+    assert_eq!(
+        (0..4)
+            .map(|row| buffer.line_char_count(row))
+            .collect::<Vec<_>>(),
+        vec![Some(5), Some(2), Some(5), Some(2)]
+    );
+    let window = buffer.try_visible_lines_window(0, 4, 1, 1).unwrap();
+    assert_eq!(
+        window
+            .iter()
+            .map(|line| line.content.as_ref())
+            .collect::<Vec<_>>(),
+        vec!["s", "猫", "l", "z"]
+    );
+
+    buffer.set_cursor(Cursor { row: 1, col: 1 });
+    buffer.insert_char('!');
+    assert_eq!(buffer.line(1).as_deref(), Some("é!猫"));
+    buffer.undo();
+    assert_eq!(buffer.line(1).as_deref(), Some("é猫"));
+    buffer.redo();
+    assert_eq!(buffer.line(1).as_deref(), Some("é!猫"));
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn edited_active_and_retained_pages_count_materialized_block_indexes_once() {
+    let path = temp_path("materialized_index_bytes");
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, "one\ntwo\nthree\nfour\nfive").unwrap();
+
+    let mut buffer = PagedFileBuffer::open(&path, 2).unwrap();
+    let untouched = buffer.retained_metadata_components();
+    assert_eq!(untouched.materialized_line_index, 0);
+
+    buffer.insert_char('A');
+    let first = buffer.retained_metadata_components();
+    assert!(first.materialized_line_index > 0);
+    assert_eq!(
+        buffer.perf_stats().retained_page_metadata_bytes,
+        first.total()
+    );
+
+    assert!(buffer.next_page().unwrap());
+    buffer.insert_char('B');
+    let second = buffer.retained_metadata_components();
+    assert!(second.materialized_line_index > first.materialized_line_index);
+
+    assert!(buffer.next_page().unwrap());
+    buffer.insert_char('C');
+    let third = buffer.retained_metadata_components();
+    assert!(third.materialized_line_index > second.materialized_line_index);
+    let stats = buffer.perf_stats();
+    assert_eq!(stats.retained_page_metadata_bytes, third.total());
+    assert!(stats.retained_bytes >= stats.retained_page_metadata_bytes);
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn crlf_page_add_compaction_preserves_materialized_index_and_history() {
+    let path = temp_path("crlf_add_compaction");
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, "seed\r\nrow").unwrap();
+
+    let mut buffer = PagedFileBuffer::open(&path, 2).unwrap();
+    assert!(buffer.active().buffer.uses_shared_file_line_index());
+    assert_eq!(buffer.active_mut().buffer.compact_add_buffer_for_test(), 0);
+    assert!(buffer.active().buffer.uses_shared_file_line_index());
+    buffer.set_history_retention_for_test(1, usize::MAX);
+    for text in ["αα", "ββ", "猫猫"] {
+        let end = buffer.line_char_count(0).unwrap();
+        assert!(buffer
+            .replace_range(Cursor { row: 0, col: 0 }, Cursor { row: 0, col: end }, text,)
+            .unwrap());
+    }
+
+    assert!(!buffer.active().buffer.uses_shared_file_line_index());
+    assert!(buffer.active_mut().buffer.compact_add_buffer_for_test() > 0);
+    assert_eq!(buffer.lines(), vec!["猫猫", "row"]);
+    buffer.undo();
+    assert_eq!(buffer.lines(), vec!["ββ", "row"]);
+    buffer.redo();
+    assert_eq!(buffer.lines(), vec!["猫猫", "row"]);
+
+    buffer.active_mut().buffer.reset_line_index_work();
+    buffer.set_cursor(Cursor { row: 0, col: 2 });
+    buffer.insert_char('!');
+    let work = buffer.active().buffer.perf_stats();
+    assert_eq!(work.line_index_blocks_touched, 1);
+    assert!(work.line_index_summary_nodes_updated < 64);
+
+    let mut written = Vec::new();
+    buffer.write_to(&mut written).unwrap();
+    assert_eq!(written, "猫猫!\nrow".as_bytes());
+    let _ = std::fs::remove_file(path);
+}

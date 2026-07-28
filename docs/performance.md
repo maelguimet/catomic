@@ -552,6 +552,14 @@ for a 20,000-line CRLF page and asserts `pieces=1`; this is descriptor-count
 evidence, not a timing gate. Page open performs no additional scan and retains
 only the existing per-line/scalar metadata plus one offset per elided CR.
 
+Untouched editable pages now share one canonical compact line-boundary table
+between their file original and LineIndex. Page-local offsets use relative
+`u32` storage with an exact `usize` fallback for spans beyond 4 GiB; ASCII rows
+retain no scalar-count or checkpoint entries. The first valid edit materializes
+the existing block-local LineIndex in one linear pass, and retained-page
+metadata metrics include those block nodes and span capacities for active and
+retained edited pages without double-counting the shared table.
+
 An ignored sparse exact-1-GiB Huge smoke now validates the limited read-only
 open + simple navigation/render path without writing a dense fixture:
 ```

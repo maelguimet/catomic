@@ -11,7 +11,7 @@
 mod buffer_impl;
 mod construct;
 mod edit;
-mod file_original;
+pub(crate) mod file_original;
 mod piece_tree;
 mod query;
 mod retention;
@@ -95,7 +95,10 @@ impl PieceTable {
             history_transactions,
             history_bytes,
             retained_bytes,
-            retained_metadata_bytes: self.original.retained_metadata_bytes(),
+            retained_metadata_bytes: self
+                .original
+                .retained_metadata_bytes()
+                .saturating_add(self.index.retained_bytes()),
             // The block-local representation neither scans document bytes nor
             // shifts a tail of absolute line starts during ordinary edits.
             line_index_scanned_bytes: 0,

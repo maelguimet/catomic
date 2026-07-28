@@ -247,4 +247,19 @@ impl PieceTable {
     pub(crate) fn take_scalar_piece_visits(&self) -> usize {
         self.pieces.take_coordinate_node_visits()
     }
+
+    #[cfg(test)]
+    pub(crate) fn uses_shared_file_line_index(&self) -> bool {
+        self.index.uses_shared_file_metadata()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn retained_metadata_components(
+        &self,
+    ) -> Option<super::file_original::FileOriginalMetadataBytes> {
+        self.original.file_metadata_bytes().map(|mut bytes| {
+            bytes.materialized_line_index = self.index.retained_bytes();
+            bytes
+        })
+    }
 }

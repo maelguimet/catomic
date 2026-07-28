@@ -9,7 +9,7 @@ use crate::editor::search::{find_match, SearchDirection};
 use super::helpers::{measure_allocated_sample, measure_sample, print_perf_sample};
 
 const MEDIUM_BYTES: usize = 10 * 1024 * 1024;
-const LARGE_BYTES: usize = crate::file::size::SMALL_FILE_LIMIT_BYTES as usize + 1;
+const LARGE_BYTES: usize = 90 * 1024 * 1024;
 const QUERY: &str = "needle";
 const INCREMENTAL_QUERY: &str = "needle_👩🏽‍💻";
 

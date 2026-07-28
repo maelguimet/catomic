@@ -158,7 +158,7 @@ fn seeded_random_edit_plus_undo_redo_against_dumb_model() {
     let mut seed: u64 = 0x1C_2026_DEAD_BEEF;
     let mut pt = PieceTable::new();
     let mut model = DumbModel::new();
-    let steps = 48usize; // small and fast
+    let steps = 1_000usize;
     for step in 0..steps {
         let r = next_seed(&mut seed) % 100;
         match r {
@@ -216,14 +216,49 @@ fn seeded_random_edit_plus_undo_redo_against_dumb_model() {
                 model.insert_char(ch);
             }
         }
-        assert_eq!(
-            pt.to_string(),
-            model.text(),
-            "text drifted at step {}",
-            step
-        );
+        let model_text = model.text();
+        assert_eq!(pt.to_string(), model_text, "text drifted at step {step}");
+        assert_line_index_parity(&pt, &model_text, step);
     }
     assert_eq!(pt.to_string(), model.text());
+}
+
+fn assert_line_index_parity(pt: &PieceTable, text: &str, step: usize) {
+    let mut starts = vec![0usize];
+    starts.extend(text.match_indices('\n').map(|(byte, _)| byte + 1));
+    assert_eq!(
+        pt.index.line_count(),
+        starts.len(),
+        "line count drifted at step {step}"
+    );
+    assert_eq!(
+        pt.index.total_bytes(),
+        text.len(),
+        "total bytes drifted at step {step}"
+    );
+    for (row, start) in starts.iter().copied().enumerate() {
+        let end = starts
+            .get(row + 1)
+            .map_or(text.len(), |next| next.saturating_sub(1));
+        assert_eq!(
+            pt.index.line_start_byte(row),
+            start,
+            "line start drifted at row {row}, step {step}"
+        );
+        assert_eq!(
+            pt.index.line_end_byte(row),
+            end,
+            "line end drifted at row {row}, step {step}"
+        );
+    }
+    for byte in 0..=text.len() {
+        let expected_row = starts.partition_point(|start| *start <= byte) - 1;
+        assert_eq!(
+            pt.index.row_for_byte(byte),
+            expected_row,
+            "byte-to-row drifted at byte {byte}, step {step}"
+        );
+    }
 }
 
 fn seeded_char_for_model(seed: &mut u64) -> char {

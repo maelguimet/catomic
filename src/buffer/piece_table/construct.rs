@@ -54,10 +54,6 @@ impl PieceTable {
             piece_starts,
             undo_stack: crate::buffer::undo::UndoStack::new(),
             recording: true,
-            #[cfg(test)]
-            line_index_scanned_bytes: 0,
-            #[cfg(test)]
-            line_index_shifted_entries: 0,
         }
     }
 
@@ -183,19 +179,12 @@ impl PieceTable {
             original: OriginalBacking::from_file(file, snapshot, original_metadata),
             add: String::new(),
             pieces,
-            index: LineIndex {
-                line_starts: local_line_starts,
-                total_bytes: logical_len,
-            },
+            index: LineIndex::from_line_starts(local_line_starts, logical_len),
             cursor: Cursor { row: 0, col: 0 },
             cursor_byte_offset: 0,
             piece_starts: vec![0],
             undo_stack: crate::buffer::undo::UndoStack::new(),
             recording: true,
-            #[cfg(test)]
-            line_index_scanned_bytes: 0,
-            #[cfg(test)]
-            line_index_shifted_entries: 0,
         }
     }
 
@@ -232,10 +221,6 @@ impl PieceTable {
             piece_starts,
             undo_stack: crate::buffer::undo::UndoStack::new(),
             recording: true,
-            #[cfg(test)]
-            line_index_scanned_bytes: 0,
-            #[cfg(test)]
-            line_index_shifted_entries: 0,
         }
     }
 }

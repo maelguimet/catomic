@@ -86,7 +86,7 @@ impl Buffer for PieceTable {
     }
 
     fn logical_byte_len(&self) -> Option<usize> {
-        Some(self.index.total_bytes)
+        Some(self.index.total_bytes())
     }
 
     fn set_cursor(&mut self, cursor: Cursor) {
@@ -113,9 +113,9 @@ impl Buffer for PieceTable {
         }
 
         let before = self.capture_cursor_state();
+        self.replace_index_range(start_byte, end_byte, text);
         let (removed, inserted) = self.splice_replacement(start_byte, end_byte, text);
         self.coalesce();
-        self.rebuild_index();
         self.cursor = cursor_after_text(start, text);
         self.cursor_byte_offset = start_byte + text.len();
         self.record_replacement(before, start_byte, removed, inserted);
@@ -133,6 +133,7 @@ impl Buffer for PieceTable {
             if start_byte == end_byte && text.is_empty() {
                 continue;
             }
+            self.replace_index_range(start_byte, end_byte, text);
             let (removed, inserted) = self.splice_replacement(start_byte, end_byte, text);
             if !removed.is_empty() {
                 edits.push(PieceEdit::Delete {
@@ -147,7 +148,6 @@ impl Buffer for PieceTable {
                 });
             }
             self.coalesce();
-            self.rebuild_index();
             self.cursor = cursor_after_text(start, text);
             self.cursor_byte_offset = start_byte + text.len();
             changed += 1;
@@ -164,7 +164,7 @@ impl Buffer for PieceTable {
     }
 
     fn to_string(&self) -> String {
-        self.slice_to_string(0, self.index.total_bytes)
+        self.slice_to_string(0, self.index.total_bytes())
     }
 
     fn write_to(&self, out: &mut dyn Write) -> io::Result<()> {
@@ -196,9 +196,9 @@ impl Buffer for PieceTable {
         let inserted = self.insert_at_cursor(ch);
         self.coalesce();
         if ch == '\n' {
-            self.rebuild_index();
+            self.index.insert_newline(at);
         } else {
-            self.adjust_index_for_simple_delta(at, ch.len_utf8() as isize);
+            self.index.insert_bytes(at, ch.len_utf8());
         }
         if self.recording && !inserted.is_empty() {
             let after = self.capture_cursor_state();
@@ -219,7 +219,7 @@ impl Buffer for PieceTable {
         let at = self.cursor_byte_offset;
         let inserted = self.insert_at_cursor('\n');
         self.coalesce();
-        self.adjust_index_for_newline_insert(at);
+        self.index.insert_newline(at);
         if self.recording && !inserted.is_empty() {
             let after = self.capture_cursor_state();
             self.undo_stack.record(Transaction {
@@ -283,7 +283,6 @@ impl Buffer for PieceTable {
                 self.apply_inverse_edit(edit);
             }
             self.coalesce();
-            self.rebuild_index();
             self.cursor = tx.before.cursor;
             self.cursor_byte_offset = tx.before.byte_offset;
             self.undo_stack.push_redo(tx);
@@ -299,7 +298,6 @@ impl Buffer for PieceTable {
                 self.apply_edit(edit);
             }
             self.coalesce();
-            self.rebuild_index();
             self.cursor = tx.after.cursor;
             self.cursor_byte_offset = tx.after.byte_offset;
             self.undo_stack.push_undo(tx);
@@ -404,7 +402,7 @@ impl PieceTable {
         self.cursor.col -= 1;
         self.cursor_byte_offset = start;
         self.coalesce();
-        self.adjust_index_for_simple_delta(start, -((end - start) as isize));
+        self.index.delete_bytes(start, end - start);
         self.record_delete(before, start, removed);
     }
 
@@ -414,7 +412,7 @@ impl PieceTable {
         let before = self.capture_cursor_state();
         let removed = self.delete_byte_range(start, end);
         self.coalesce();
-        self.adjust_index_for_simple_delta(start, -((end - start) as isize));
+        self.index.delete_bytes(start, end - start);
         self.record_delete(before, start, removed);
     }
 
@@ -431,7 +429,7 @@ impl PieceTable {
         self.cursor.col = previous_len;
         self.sync_cursor_byte_offset();
         self.coalesce();
-        self.adjust_index_for_newline_delete(next_start - 1);
+        let _ = self.index.delete_newline(next_start - 1);
         self.record_delete(before, next_start - 1, removed);
     }
 
@@ -445,7 +443,7 @@ impl PieceTable {
         let before = self.capture_cursor_state();
         let removed = self.delete_byte_range(newline, next_start);
         self.coalesce();
-        self.adjust_index_for_newline_delete(newline);
+        let _ = self.index.delete_newline(newline);
         self.record_delete(before, newline, removed);
     }
 
@@ -473,19 +471,39 @@ impl PieceTable {
         match edit {
             PieceEdit::Insert { at, pieces } => {
                 let len = pieces.iter().map(|piece| piece.len).sum::<usize>();
+                let _ = self.index.replace_byte_range(*at, *at + len, 0, &[]);
                 self.delete_byte_range(*at, *at + len);
             }
-            PieceEdit::Delete { at, pieces } => self.insert_pieces_at(*at, pieces),
+            PieceEdit::Delete { at, pieces } => {
+                let (len, newlines) = self.piece_sequence_line_metadata(pieces);
+                let _ = self.index.replace_byte_range(*at, *at, len, &newlines);
+                self.insert_pieces_at(*at, pieces);
+            }
         }
     }
 
     fn apply_edit(&mut self, edit: &PieceEdit) {
         match edit {
-            PieceEdit::Insert { at, pieces } => self.insert_pieces_at(*at, pieces),
+            PieceEdit::Insert { at, pieces } => {
+                let (len, newlines) = self.piece_sequence_line_metadata(pieces);
+                let _ = self.index.replace_byte_range(*at, *at, len, &newlines);
+                self.insert_pieces_at(*at, pieces);
+            }
             PieceEdit::Delete { at, pieces } => {
                 let len = pieces.iter().map(|piece| piece.len).sum::<usize>();
+                let _ = self.index.replace_byte_range(*at, *at + len, 0, &[]);
                 self.delete_byte_range(*at, *at + len);
             }
         }
+    }
+
+    fn replace_index_range(&mut self, start: usize, end: usize, text: &str) {
+        let newlines = text
+            .match_indices('\n')
+            .map(|(byte, _)| byte)
+            .collect::<Vec<_>>();
+        let _ = self
+            .index
+            .replace_byte_range(start, end, text.len(), &newlines);
     }
 }

@@ -11,6 +11,8 @@
 
 use std::path::Path;
 
+use crate::buffer::{Buffer, Cursor, PieceTable};
+
 use super::helpers::{
     cleanup_perf, generate_line_heavy_ascii_file, measure_sample, print_perf_sample, temp_perf_path,
 };
@@ -167,4 +169,75 @@ fn manual_open_100mib_line_heavy_file_smoke() {
         "manual_100mib_line_heavy.bin",
         "100mib-line",
     );
+}
+
+#[test]
+#[ignore = "manual LineIndex work comparison; builds two 100k-line buffers"]
+fn manual_line_index_top_bottom_edit_work() {
+    const LINES: usize = 100_000;
+    let mut text = "x\n".repeat(LINES - 1);
+    text.push('x');
+
+    let mut top = PieceTable::from_text(&text);
+    top.reset_line_index_work();
+    top.insert_char('a');
+    let top_work = top.line_index_work();
+
+    let mut bottom = PieceTable::from_text(&text);
+    bottom.set_cursor(Cursor {
+        row: LINES - 1,
+        col: 1,
+    });
+    bottom.reset_line_index_work();
+    bottom.insert_char('a');
+    let bottom_work = bottom.line_index_work();
+
+    let mut delete_top = PieceTable::from_text(&text);
+    delete_top.set_cursor(Cursor { row: 0, col: 1 });
+    delete_top.reset_line_index_work();
+    delete_top.delete_back();
+    let delete_top_work = delete_top.line_index_work();
+
+    let mut delete_bottom = PieceTable::from_text(&text);
+    delete_bottom.set_cursor(Cursor {
+        row: LINES - 1,
+        col: 1,
+    });
+    delete_bottom.reset_line_index_work();
+    delete_bottom.delete_back();
+    let delete_bottom_work = delete_bottom.line_index_work();
+
+    eprintln!(
+        "PERF index-work: edit=insert-char position=top lines={} blocks_touched={} summary_nodes_updated={}",
+        LINES, top_work.blocks_touched, top_work.summary_nodes_updated
+    );
+    eprintln!(
+        "PERF index-work: edit=insert-char position=bottom lines={} blocks_touched={} summary_nodes_updated={}",
+        LINES, bottom_work.blocks_touched, bottom_work.summary_nodes_updated
+    );
+    eprintln!(
+        "PERF index-work: edit=delete-char position=top lines={} blocks_touched={} summary_nodes_updated={}",
+        LINES, delete_top_work.blocks_touched, delete_top_work.summary_nodes_updated
+    );
+    eprintln!(
+        "PERF index-work: edit=delete-char position=bottom lines={} blocks_touched={} summary_nodes_updated={}",
+        LINES, delete_bottom_work.blocks_touched, delete_bottom_work.summary_nodes_updated
+    );
+
+    assert_eq!(top_work.blocks_touched, 1);
+    assert_eq!(bottom_work.blocks_touched, 1);
+    assert_eq!(delete_top_work.blocks_touched, 1);
+    assert_eq!(delete_bottom_work.blocks_touched, 1);
+    assert!(top_work.summary_nodes_updated < 64, "{top_work:?}");
+    assert!(bottom_work.summary_nodes_updated < 64, "{bottom_work:?}");
+    assert!(
+        delete_top_work.summary_nodes_updated < 64,
+        "{delete_top_work:?}"
+    );
+    assert!(
+        delete_bottom_work.summary_nodes_updated < 64,
+        "{delete_bottom_work:?}"
+    );
+    assert_eq!(top.logical_byte_len(), bottom.logical_byte_len());
+    assert_eq!(top.line_count(), bottom.line_count());
 }

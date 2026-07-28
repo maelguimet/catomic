@@ -3,7 +3,7 @@
 //! Must not: access buffer internals, bypass save/quit guards, spawn services, or network.
 //! Invariants: lines are user-facing 1-based; invalid commands do not mutate editor state.
 
-use std::io::{self, Write};
+use std::io;
 use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -51,19 +51,31 @@ enum PromptKind {
     },
 }
 
-pub(crate) fn open_goto_prompt(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+pub(crate) fn open_goto_prompt(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     open_prompt(app, out, PromptKind::GotoLine)
 }
 
-pub(crate) fn open_command_prompt(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+pub(crate) fn open_command_prompt(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     open_prompt(app, out, PromptKind::Command)
 }
 
-pub(crate) fn open_save_as_prompt(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+pub(crate) fn open_save_as_prompt(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     open_prompt(app, out, PromptKind::SaveAs)
 }
 
-pub(crate) fn open_file_prompt(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+pub(crate) fn open_file_prompt(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     open_prompt(app, out, PromptKind::OpenFile)
 }
 
@@ -134,7 +146,11 @@ pub(super) fn forget_active_config_detour(app: &mut super::App) {
     }
 }
 
-fn open_prompt(app: &mut super::App, out: &mut dyn Write, kind: PromptKind) -> io::Result<()> {
+fn open_prompt(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    kind: PromptKind,
+) -> io::Result<()> {
     cancel_running(&mut app.command_prompt);
     if !matches!(&kind, PromptKind::Command) {
         app.selection.clear();
@@ -149,7 +165,7 @@ fn open_prompt(app: &mut super::App, out: &mut dyn Write, kind: PromptKind) -> i
 
 pub(crate) fn handle_active_key(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
     if app.command_prompt.active.is_none() {
@@ -189,7 +205,7 @@ pub(crate) fn handle_active_key(
 
 pub(crate) fn dispatch_action(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     action: Action,
 ) -> io::Result<bool> {
     if app.command_prompt.active.is_none() {
@@ -243,7 +259,7 @@ fn update_message(app: &mut super::App) {
     app.message_info(message);
 }
 
-fn submit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+fn submit(app: &mut super::App, out: &mut dyn crate::terminal::TerminalOutput) -> io::Result<()> {
     let prompt = app
         .command_prompt
         .active
@@ -261,7 +277,11 @@ fn submit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
     }
 }
 
-fn execute_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> io::Result<()> {
+fn execute_command(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    command: &str,
+) -> io::Result<()> {
     let keeps_pending_save_as = command_matches_pending_save_as(app, command);
     if !keeps_pending_save_as {
         app.pending_save_conflict = None;
@@ -325,12 +345,20 @@ fn command_matches_pending_save_as(app: &super::App, command: &str) -> bool {
         .is_some_and(|path| path == pending.path)
 }
 
-fn unknown_command(app: &mut super::App, out: &mut dyn Write, command: &str) -> io::Result<()> {
+fn unknown_command(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    command: &str,
+) -> io::Result<()> {
     app.message_error(format!("Unknown command: {command}"));
     app.render(out)
 }
 
-fn execute_open(app: &mut super::App, out: &mut dyn Write, input: &str) -> io::Result<()> {
+fn execute_open(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    input: &str,
+) -> io::Result<()> {
     let path = match super::save::expand_user_path(input, std::env::var_os("HOME").as_deref()) {
         Ok(path) => path,
         Err(error) => {
@@ -341,7 +369,11 @@ fn execute_open(app: &mut super::App, out: &mut dyn Write, input: &str) -> io::R
     open_path(app, out, &path)
 }
 
-fn open_path(app: &mut super::App, out: &mut dyn Write, path: &Path) -> io::Result<()> {
+fn open_path(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    path: &Path,
+) -> io::Result<()> {
     // The prompt is complete before open_file_buffer may swap this buffer into a slot.
     app.message = None;
     match app.open_file_buffer(path) {
@@ -351,7 +383,10 @@ fn open_path(app: &mut super::App, out: &mut dyn Write, path: &Path) -> io::Resu
     app.render(out)
 }
 
-fn execute_config(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+fn execute_config(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     match crate::config::user_file::path() {
         Ok(path) => execute_config_path(app, out, path, false),
         Err(error) => {
@@ -363,7 +398,7 @@ fn execute_config(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
 
 pub(super) fn open_startup_config(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     path: PathBuf,
 ) -> io::Result<()> {
     execute_config_path(app, out, path, true)
@@ -371,7 +406,7 @@ pub(super) fn open_startup_config(
 
 fn execute_config_path(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     path: PathBuf,
     exit_on_decline: bool,
 ) -> io::Result<()> {
@@ -401,7 +436,7 @@ fn execute_config_path(
 
 fn execute_config_create(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     path: PathBuf,
     exit_on_decline: bool,
     answer: &str,
@@ -425,7 +460,7 @@ fn execute_config_create(
 
 fn open_created_config_path(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     path: &Path,
 ) -> io::Result<()> {
     if app.file.path.as_deref() == Some(path) {
@@ -434,7 +469,11 @@ fn open_created_config_path(
     open_config_path(app, out, path)
 }
 
-fn open_config_path(app: &mut super::App, out: &mut dyn Write, path: &Path) -> io::Result<()> {
+fn open_config_path(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    path: &Path,
+) -> io::Result<()> {
     let source_path = app.file.path.clone();
     let source_buffer_index = app.active_buffer_index;
     open_path(app, out, path)?;
@@ -452,7 +491,10 @@ fn open_config_path(app: &mut super::App, out: &mut dyn Write, path: &Path) -> i
     app.render(out)
 }
 
-pub(crate) fn execute_new(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+pub(crate) fn execute_new(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     if let Err(error) = app.new_file_buffer() {
         app.message_error(format!("New buffer error: {error}"));
     }
@@ -461,7 +503,7 @@ pub(crate) fn execute_new(app: &mut super::App, out: &mut dyn Write) -> io::Resu
 
 pub(crate) fn execute_close(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     force: bool,
 ) -> io::Result<()> {
     if let Err(error) = app.close_active_buffer(force) {
@@ -470,7 +512,11 @@ pub(crate) fn execute_close(
     app.render(out)
 }
 
-fn execute_goto(app: &mut super::App, out: &mut dyn Write, input: &str) -> io::Result<()> {
+fn execute_goto(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    input: &str,
+) -> io::Result<()> {
     let Ok(line) = input.trim().parse::<usize>() else {
         app.message_info("Goto line requires a positive line number.");
         return app.render(out);
@@ -503,7 +549,10 @@ fn execute_goto(app: &mut super::App, out: &mut dyn Write, input: &str) -> io::R
     app.render(out)
 }
 
-pub(crate) fn poll_goto(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+pub(crate) fn poll_goto(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     let Some(result) = app
         .command_prompt
         .running

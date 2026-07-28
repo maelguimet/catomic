@@ -9,7 +9,7 @@ use std::sync::Arc;
 mod code;
 mod markdown;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub(crate) enum SyntaxKind {
     #[default]
     Plain,
@@ -21,7 +21,7 @@ pub(crate) enum SyntaxKind {
     Diff,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum SpanStyle {
     Heading,
     Marker,
@@ -48,14 +48,14 @@ pub(crate) enum SpanStyle {
     DiffRemoved,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct HyperlinkSpan {
     pub(crate) start: usize,
     pub(crate) end: usize,
     pub(crate) destination: Arc<str>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct StyledSpan {
     pub(crate) start: usize,
     pub(crate) end: usize,

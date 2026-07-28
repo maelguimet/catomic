@@ -6,8 +6,10 @@
 use crate::buffer::{Buffer, PieceTable};
 use crate::editor::syntax::{SpanStyle, StyledSpan, SyntaxKind};
 use crate::terminal::render::{
-    render_buffer, ContentSurface, DocumentPresentation, RenderOptions, RenderViewport,
+    render_buffer, ContentSurface, DocumentPresentation, PresentationMetrics, RenderOptions,
+    RenderViewport,
 };
+use crate::terminal::{RuntimeOutput, TerminalOutput};
 
 use super::helpers::{
     count_thread_allocations, measure_allocated_sample, measure_live_allocations, measure_sample,
@@ -24,6 +26,105 @@ fn repeating_fixture(pattern: &str, bytes: usize) -> String {
         fixture.push_str(pattern);
     }
     fixture
+}
+
+#[test]
+fn retained_cursor_only_frame_allocates_nothing_after_warmup() {
+    let mut buffer = PieceTable::from_text("zero\none\ntwo\nthree");
+    let viewport = RenderViewport::new(0, 0, 5, 40);
+    let mut output = RuntimeOutput::new(Vec::with_capacity(16 * 1024));
+    let options = |buffer: &dyn Buffer| RenderOptions {
+        document_id: 7,
+        document_revision: buffer.content_revision(),
+        ..RenderOptions::default()
+    };
+
+    output
+        .present_buffer(&buffer, viewport, None, options(&buffer))
+        .unwrap();
+    buffer.move_right();
+    output
+        .present_buffer(&buffer, viewport, None, options(&buffer))
+        .unwrap();
+    output.writer_mut().clear();
+
+    buffer.move_right();
+    let render_options = options(&buffer);
+    let (result, allocations) =
+        count_thread_allocations(|| output.present_buffer(&buffer, viewport, None, render_options));
+    result.unwrap();
+
+    assert_eq!(allocations, 0);
+    assert_eq!(
+        output.presentation().metrics(),
+        PresentationMetrics {
+            rows_composed: 0,
+            rows_emitted: 0,
+            output_bytes: output.writer().len(),
+        }
+    );
+}
+
+#[test]
+#[ignore = "manual retained-row damage and allocation baseline"]
+fn manual_retained_row_render_reports_damage_samples() {
+    let text = (0..200)
+        .map(|row| format!("row {row:03} has stable visible content"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut buffer = PieceTable::from_owned_text(text);
+    let viewport = RenderViewport::new(0, 0, 24, 80);
+    let mut output = RuntimeOutput::new(Vec::with_capacity(64 * 1024));
+    let options = |buffer: &dyn Buffer| RenderOptions {
+        document_id: 7,
+        document_revision: buffer.content_revision(),
+        syntax: SyntaxKind::Markdown,
+        line_numbers: true,
+        ..RenderOptions::default()
+    };
+    output
+        .present_buffer(&buffer, viewport, None, options(&buffer))
+        .unwrap();
+
+    let sample = |label: &str,
+                  output: &mut RuntimeOutput<Vec<u8>>,
+                  buffer: &PieceTable,
+                  viewport: RenderViewport| {
+        output.writer_mut().clear();
+        let render_options = options(buffer);
+        let (result, allocations) = count_thread_allocations(|| {
+            output.present_buffer(buffer, viewport, None, render_options)
+        });
+        result.unwrap();
+        let metrics = output.presentation().metrics();
+        eprintln!(
+            "PERF retained-render: sample={label} allocations={allocations} \
+             rows_composed={} rows_emitted={} output_bytes={}",
+            metrics.rows_composed, metrics.rows_emitted, metrics.output_bytes
+        );
+        (allocations, metrics)
+    };
+
+    buffer.move_right();
+    let (cursor_allocations, cursor) = sample("cursor", &mut output, &buffer, viewport);
+    assert_eq!(cursor_allocations, 0);
+    assert_eq!(cursor.rows_composed, 0);
+    assert_eq!(cursor.rows_emitted, 0);
+
+    buffer.set_cursor(crate::buffer::Cursor { row: 10, col: 0 });
+    buffer.insert_char('X');
+    let (_, edit) = sample("one-line-edit", &mut output, &buffer, viewport);
+    assert_eq!(edit.rows_composed, 1);
+    assert_eq!(edit.rows_emitted, 1);
+
+    let scrolled = RenderViewport::new(8, 0, 24, 80);
+    let (_, scroll) = sample("scroll", &mut output, &buffer, scrolled);
+    assert!(scroll.rows_emitted > 1);
+
+    let expected_rows = output.presentation().published_row_count();
+    output.invalidate_presentation();
+    let (_, invalidated) = sample("invalidated", &mut output, &buffer, scrolled);
+    assert_eq!(invalidated.rows_emitted, expected_rows);
 }
 
 #[test]

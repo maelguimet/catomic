@@ -3,7 +3,7 @@
 //! Must not: handle active surfaces, translate keybindings, save files, or decode terminal bytes.
 //! Invariants: edits use common cleanup; movement does not mutate buffer content.
 
-use std::io::{self, Write};
+use std::io;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -12,7 +12,7 @@ use crate::config::actions::Action;
 
 pub(super) fn dispatch_action(
     app: &mut App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     action: Action,
 ) -> io::Result<bool> {
     match action {
@@ -30,7 +30,11 @@ pub(super) fn dispatch_action(
     Ok(true)
 }
 
-pub(super) fn handle_key(app: &mut App, out: &mut dyn Write, key: KeyEvent) -> io::Result<()> {
+pub(super) fn handle_key(
+    app: &mut App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    key: KeyEvent,
+) -> io::Result<()> {
     match key {
         KeyEvent {
             code: KeyCode::Tab,
@@ -85,7 +89,7 @@ pub(super) fn handle_key(app: &mut App, out: &mut dyn Write, key: KeyEvent) -> i
 
 fn handle_character(
     app: &mut App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     character: char,
     modifiers: KeyModifiers,
 ) -> io::Result<()> {
@@ -109,14 +113,22 @@ fn handle_character(
     super::finish_content_edit(app, out)
 }
 
-fn move_horizontal(app: &mut App, out: &mut dyn Write, forward: bool) -> io::Result<()> {
+fn move_horizontal(
+    app: &mut App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    forward: bool,
+) -> io::Result<()> {
     app.selection.clear();
     navigation::move_grapheme(app, forward)?;
     app.reveal_cursor();
     app.render(out)
 }
 
-fn move_vertical(app: &mut App, out: &mut dyn Write, forward: bool) -> io::Result<()> {
+fn move_vertical(
+    app: &mut App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    forward: bool,
+) -> io::Result<()> {
     app.selection.clear();
     if forward {
         app.buffer.move_down();

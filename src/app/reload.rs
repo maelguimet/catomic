@@ -15,7 +15,7 @@
 //!   successful reloads refresh watcher path identities;
 //!   input routing cancels it before any unrelated editor action.
 
-use std::io::{self, Write};
+use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::buffer;
@@ -452,7 +452,10 @@ fn apply_observation(
 /// Extracted from App::handle_key_with so mod.rs stays thin.
 /// Computes one observation for the path; if matches pending exactly then
 /// perform (with proper read-fail handling); else delegate to check for arm/status.
-pub(crate) fn handle_reload_key(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+pub(crate) fn handle_reload_key(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     let current_path = app.file.path.clone();
     let baseline = app.file.disk_snapshot.as_ref();
     let obs = observe_external_file(current_path.as_deref(), baseline);

@@ -6,8 +6,6 @@
 //! Must not: key dispatch, run loop, file state, render core.
 //! Invariants: viewport-only scrolling never mutates a display buffer cursor or source state.
 
-use std::io::Write;
-
 use crate::app::App; // to mutate self.screen etc, or take pieces
 
 /// Crossterm normalizes terminal and tmux wheel reports to one event per wheel step.
@@ -27,7 +25,7 @@ pub(crate) fn handle_resize(
     app: &mut App,
     w: u16,
     h: u16,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
 ) -> std::io::Result<()> {
     let cursor_was_visible = display_cursor_is_visible(app);
     app.screen.update_size(w, h);
@@ -45,8 +43,9 @@ pub(crate) fn handle_resize(
 pub(crate) fn redraw_after_focus(
     app: &mut App,
     size: Option<(u16, u16)>,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
 ) -> std::io::Result<()> {
+    out.invalidate_presentation();
     if let Some((width, height)) = size {
         app.screen.update_size(width, height);
         super::view::relayout_preview(app);
@@ -58,7 +57,7 @@ pub(crate) fn redraw_after_focus(
 
 pub(crate) fn handle_mouse_wheel(
     app: &mut App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     direction: ScrollDirection,
     terminal_row: usize,
 ) -> std::io::Result<()> {
@@ -88,7 +87,11 @@ pub(crate) fn scroll_viewport(
 
 /// Scroll by a signed number of visual rows and render once.
 /// Used by touch actions whose direction is encoded in the sign.
-pub(crate) fn scroll_view(app: &mut App, out: &mut dyn Write, rows: isize) -> std::io::Result<()> {
+pub(crate) fn scroll_view(
+    app: &mut App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    rows: isize,
+) -> std::io::Result<()> {
     let direction = if rows < 0 {
         ScrollDirection::Up
     } else {

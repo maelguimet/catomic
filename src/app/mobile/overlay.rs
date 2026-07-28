@@ -5,7 +5,7 @@
 
 use crossterm::event::KeyCode;
 
-use crate::buffer::{Buffer, Cursor, PieceTable};
+use crate::buffer::{Buffer, Cursor, PreviewBuffer};
 
 use super::actions::{MenuAction, MENU_ENTRIES};
 
@@ -24,7 +24,7 @@ enum Overlay {
 }
 
 struct View {
-    buffer: PieceTable,
+    buffer: PreviewBuffer,
     saved: SavedSurface,
 }
 
@@ -59,7 +59,7 @@ pub(super) fn open_menu(app: &mut super::super::App) {
         .collect::<Vec<_>>()
         .join("\n");
     let view = View {
-        buffer: PieceTable::from_owned_text(text),
+        buffer: PreviewBuffer::from_owned_text(text),
         saved: capture(app),
     };
     app.mobile.overlay = Some(Overlay::Menu(view));
@@ -71,7 +71,7 @@ pub(super) fn open_notice(app: &mut super::super::App, text: &str) {
     close(app);
     let width = (app.screen.width as usize).max(1);
     let view = View {
-        buffer: PieceTable::from_owned_text(wrap_text(text, width)),
+        buffer: PreviewBuffer::from_owned_text(wrap_text(text, width)),
         saved: capture(app),
     };
     app.mobile.overlay = Some(Overlay::Notice(view));
@@ -177,7 +177,7 @@ fn reset_viewport(app: &mut super::super::App) {
     app.screen.wrap_col = 0;
 }
 
-fn move_rows(buffer: &mut PieceTable, forward: bool, count: usize) {
+fn move_rows(buffer: &mut PreviewBuffer, forward: bool, count: usize) {
     for _ in 0..count {
         if forward {
             buffer.move_down();

@@ -3,7 +3,7 @@
 //! Must not: auto-run, scan repositories, block editing, invent severity, or open a Problems view.
 //! Invariants: findings belong to one exact path, buffer generation, and on-disk snapshot.
 
-use std::io::{self, Write};
+use std::io;
 use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -51,7 +51,10 @@ pub(crate) struct LintFinding {
     pub(crate) message: String,
 }
 
-pub(crate) fn start(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+pub(crate) fn start(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     match crate::config::linters::load() {
         Ok(config) => start_with_config(app, out, config),
         Err(error) => {
@@ -63,7 +66,7 @@ pub(crate) fn start(app: &mut super::App, out: &mut dyn Write) -> io::Result<()>
 
 fn start_with_config(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     config: LinterConfig,
 ) -> io::Result<()> {
     if app.buffer.is_read_only() || app.buffer.page_info().is_some() {
@@ -135,7 +138,10 @@ fn start_with_config(
     app.render(out)
 }
 
-pub(crate) fn poll(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+pub(crate) fn poll(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     let result = app
         .lint
         .running
@@ -258,7 +264,7 @@ fn finish(
 
 pub(crate) fn handle_key(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
     if key.code != KeyCode::Esc || key.modifiers != KeyModifiers::NONE || !is_running(app) {

@@ -3,11 +3,14 @@
 //! Must not: parse whole files, infer language services, save, or run background work.
 //! Invariants: each user action is one replacement transaction; selected text is retained.
 
-use std::io::{self, Write};
+use std::io;
 
 use crate::buffer::Cursor;
 
-pub(crate) fn insert_newline(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+pub(crate) fn insert_newline(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     let (start, end) = selected_or_cursor(app);
     let line = app.buffer.line(start.row).unwrap_or_default();
     let prefix: String = line.chars().take_while(|ch| ch.is_whitespace()).collect();
@@ -34,7 +37,7 @@ pub(crate) fn insert_newline(app: &mut super::App, out: &mut dyn Write) -> io::R
 
 pub(crate) fn handle_tab(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     unindent: bool,
 ) -> io::Result<()> {
     if let Some(selection) = app.selection.active() {
@@ -53,7 +56,10 @@ pub(crate) fn handle_tab(
     }
 }
 
-fn insert_to_tab_stop(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+fn insert_to_tab_stop(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     let cursor = app.buffer.cursor();
     let width = tab_width(app);
     let spaces = width - cursor.col % width;
@@ -64,7 +70,7 @@ fn insert_to_tab_stop(app: &mut super::App, out: &mut dyn Write) -> io::Result<(
 
 fn edit_lines(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     first_row: usize,
     last_row: usize,
     unindent: bool,

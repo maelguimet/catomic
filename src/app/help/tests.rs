@@ -34,6 +34,18 @@ impl Write for FrameRecorder {
     }
 }
 
+impl crate::terminal::TerminalOutput for FrameRecorder {
+    fn present_buffer(
+        &mut self,
+        buffer: &dyn crate::buffer::Buffer,
+        viewport: crate::terminal::render::RenderViewport,
+        message: Option<&str>,
+        options: crate::terminal::render::RenderOptions<'_>,
+    ) -> io::Result<()> {
+        crate::terminal::render::render_buffer(self, buffer, viewport, message, options)
+    }
+}
+
 #[test]
 fn ctrl_h_renders_curated_markdown_as_one_frame() {
     let mut app = app();

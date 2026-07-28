@@ -3,7 +3,7 @@
 //! Must not: decode terminal bytes, implement editor commands, scan projects, or call networks.
 //! Invariants: background work is polled once per loop; terminal teardown is guard-backed.
 
-use std::io::{self, Write};
+use std::io;
 use std::path::PathBuf;
 
 use crossterm::event::{self, Event, KeyEvent};
@@ -26,7 +26,7 @@ impl App {
     }
 
     fn run_with_startup_config(&mut self, config_path: Option<PathBuf>) -> io::Result<()> {
-        let mut stdout = io::stdout();
+        let mut stdout = term::RuntimeOutput::new(io::stdout());
         let terminal_guard = term::TerminalGuard::new();
         terminal_guard.setup(&mut stdout)?;
         if let Ok((width, height)) = crossterm::terminal::size() {
@@ -57,7 +57,10 @@ impl App {
         Ok(())
     }
 
-    fn poll_runtime_tasks(&mut self, out: &mut dyn Write) -> io::Result<()> {
+    fn poll_runtime_tasks(
+        &mut self,
+        out: &mut dyn crate::terminal::TerminalOutput,
+    ) -> io::Result<()> {
         watch::check_file_watcher_once_and_render(self, out)?;
         search::poll_search(self, out)?;
         command_prompt::poll_goto(self, out)?;
@@ -67,9 +70,13 @@ impl App {
         recovery::poll(self, out)
     }
 
-    fn dispatch_terminal_event(&mut self, out: &mut dyn Write, event: Event) -> io::Result<()> {
+    fn dispatch_terminal_event(
+        &mut self,
+        out: &mut dyn crate::terminal::TerminalOutput,
+        event: Event,
+    ) -> io::Result<()> {
         match event {
-            Event::Key(key) => self.handle_key(key),
+            Event::Key(key) => self.handle_key_with(out, key),
             Event::Paste(text) => input::handle_paste(self, out, &text),
             Event::Mouse(mouse) => selection::handle_mouse(self, out, mouse),
             Event::Resize(width, height) => self.handle_resize(width, height, out),
@@ -80,12 +87,16 @@ impl App {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn handle_key(&mut self, key: KeyEvent) -> io::Result<()> {
-        input::handle_key(self, key)
+        input::handle_key_with(self, &mut Vec::new(), key)
     }
 
-    #[cfg(test)]
-    pub(super) fn handle_key_with(&mut self, out: &mut dyn Write, key: KeyEvent) -> io::Result<()> {
+    pub(super) fn handle_key_with(
+        &mut self,
+        out: &mut dyn crate::terminal::TerminalOutput,
+        key: KeyEvent,
+    ) -> io::Result<()> {
         input::handle_key_with(self, out, key)
     }
 
@@ -93,7 +104,7 @@ impl App {
         &mut self,
         width: u16,
         height: u16,
-        out: &mut dyn Write,
+        out: &mut dyn crate::terminal::TerminalOutput,
     ) -> io::Result<()> {
         viewport::handle_resize(self, width, height, out)
     }
@@ -134,5 +145,23 @@ mod tests {
             app.handle_key_with(&mut out, control('q')).unwrap();
             assert!(app.should_quit);
         });
+    }
+
+    #[test]
+    fn runtime_key_dispatch_reuses_the_session_presentation() {
+        let mut app = App::new(None).unwrap();
+        app.screen.update_size(20, 5);
+        app.buffer = Box::new(crate::buffer::PieceTable::from_text("abc"));
+        let mut output = term::RuntimeOutput::new(Vec::new());
+        app.render(&mut output).unwrap();
+
+        let right = || Event::Key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        app.dispatch_terminal_event(&mut output, right()).unwrap();
+        assert_eq!(output.presentation().metrics().rows_composed, 0);
+        assert_eq!(output.presentation().metrics().rows_emitted, 0);
+
+        app.dispatch_terminal_event(&mut output, right()).unwrap();
+        assert_eq!(output.presentation().metrics().rows_composed, 0);
+        assert_eq!(output.presentation().metrics().rows_emitted, 0);
     }
 }

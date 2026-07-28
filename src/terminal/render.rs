@@ -20,10 +20,14 @@ mod coherence_tests;
 mod cursor_tests;
 mod emoji_picker;
 mod frame;
+mod presentation;
 mod status_bar;
 mod style;
 pub(crate) mod wrapped;
 
+#[cfg(test)]
+pub(crate) use presentation::PresentationMetrics;
+pub(crate) use presentation::PresentationState;
 pub(crate) use status_bar::{StatusRole, StatusTheme};
 
 const MAX_FRAME_DIMENSION: usize = 16_384;
@@ -86,34 +90,34 @@ pub(super) fn boundary_complete_line<'a>(
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct TextHighlight {
     pub(crate) start: Cursor,
     pub(crate) end: Cursor,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub(crate) enum HighlightKind {
     #[default]
     Selection,
     Search,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub(crate) enum ContentSurface {
     #[default]
     Normal,
     Preview,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum ExternalChangeKind {
     Added,
     Changed,
     Deleted,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct ExternalLineMarker {
     pub(crate) line: usize,
     pub(crate) kind: ExternalChangeKind,
@@ -139,6 +143,10 @@ pub(crate) struct EmojiPicker<'a> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct RenderOptions<'a> {
+    /// Stable process-local identity and monotonic content revision for the
+    /// displayed buffer/page. Retained presentation never owns buffer state.
+    pub(crate) document_id: u64,
+    pub(crate) document_revision: u64,
     pub(crate) cursor_shape: CursorShape,
     pub(crate) highlight: Option<TextHighlight>,
     pub(crate) highlight_kind: HighlightKind,
@@ -165,6 +173,8 @@ pub(crate) struct RenderOptions<'a> {
 impl Default for RenderOptions<'_> {
     fn default() -> Self {
         Self {
+            document_id: 0,
+            document_revision: 0,
             cursor_shape: CursorShape::Default,
             highlight: None,
             highlight_kind: HighlightKind::Selection,
@@ -201,7 +211,7 @@ pub(super) fn write_terminal_cursor(
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct RenderViewport {
     start_row: usize,
     start_col: usize,
@@ -314,17 +324,17 @@ pub fn render_buffer<W: Write + ?Sized>(
     out.flush()
 }
 
-fn begin_frame(frame: &mut Vec<u8>) -> io::Result<()> {
+pub(super) fn begin_frame(frame: &mut Vec<u8>) -> io::Result<()> {
     frame.write_all(TERMINAL_STATE_RECOVERY)?;
     frame.write_all(SYNC_UPDATE_BEGIN)?;
     frame.write_all(HIDE_CURSOR)
 }
 
-fn end_frame(frame: &mut Vec<u8>) -> io::Result<()> {
+pub(super) fn end_frame(frame: &mut Vec<u8>) -> io::Result<()> {
     frame.write_all(SYNC_UPDATE_END)
 }
 
-fn validate_frame_size(viewport: RenderViewport) -> io::Result<()> {
+pub(super) fn validate_frame_size(viewport: RenderViewport) -> io::Result<()> {
     let within_dimensions =
         viewport.height <= MAX_FRAME_DIMENSION && viewport.width <= MAX_FRAME_DIMENSION;
     let within_cells = viewport

@@ -5,6 +5,7 @@
 
 use std::borrow::Cow;
 use std::io::{self, Write};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::{Buffer, Cursor, LineView};
 
@@ -100,9 +101,27 @@ pub(crate) struct PreviewBuffer {
     text: String,
     line_starts: CompactLineStarts,
     cursor: Cursor,
+    presentation_id: u64,
 }
 
 impl PreviewBuffer {
+    pub(crate) fn from_text(text: &str) -> Self {
+        Self::from_owned_text(text.to_owned())
+    }
+
+    pub(crate) fn from_owned_text(text: String) -> Self {
+        let text = if text.as_bytes().contains(&b'\r') {
+            text.replace("\r\n", "\n").replace('\r', "\n")
+        } else {
+            text
+        };
+        let mut line_starts = CompactLineStarts::new();
+        for (byte, _) in text.match_indices('\n') {
+            line_starts.push(byte.saturating_add(1));
+        }
+        Self::from_parts(text, line_starts)
+    }
+
     pub(crate) fn from_parts(text: String, line_starts: CompactLineStarts) -> Self {
         debug_assert_eq!(line_starts.get(0), Some(0));
         debug_assert!(line_starts
@@ -112,6 +131,7 @@ impl PreviewBuffer {
             text,
             line_starts,
             cursor: Cursor::default(),
+            presentation_id: next_presentation_id(),
         }
     }
 
@@ -198,6 +218,10 @@ impl Buffer for PreviewBuffer {
 
     fn is_read_only(&self) -> bool {
         true
+    }
+
+    fn presentation_identity(&self) -> Option<u64> {
+        Some(self.presentation_id)
     }
 
     fn logical_byte_len(&self) -> Option<usize> {
@@ -288,6 +312,15 @@ impl Buffer for PreviewBuffer {
     }
 }
 
+fn next_presentation_id() -> u64 {
+    static NEXT_PRESENTATION_ID: AtomicU64 = AtomicU64::new(1);
+    NEXT_PRESENTATION_ID
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |identity| {
+            (identity < u64::MAX / 2).then(|| identity + 1)
+        })
+        .expect("preview presentation identity exhausted")
+}
+
 fn byte_offset_at_scalar(text: &str, scalar: usize) -> usize {
     text.char_indices()
         .nth(scalar)
@@ -358,5 +391,18 @@ mod tests {
         buffer.move_down();
         assert_eq!(buffer.cursor(), Cursor { row: 1, col: 4 });
         assert!(buffer.is_read_only());
+    }
+
+    #[test]
+    fn presentation_identity_survives_clone_and_separates_new_previews() {
+        let first = PreviewBuffer::from_parts("first".into(), CompactLineStarts::new());
+        let clone = first.clone();
+        let second = PreviewBuffer::from_parts("second".into(), CompactLineStarts::new());
+
+        assert_eq!(first.presentation_identity(), clone.presentation_identity());
+        assert_ne!(
+            first.presentation_identity(),
+            second.presentation_identity()
+        );
     }
 }

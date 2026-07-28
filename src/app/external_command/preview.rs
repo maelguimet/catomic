@@ -3,12 +3,12 @@
 //! Must not: spawn processes, load config, write files, or apply failed/truncated output.
 //! Invariants: Enter alone applies successful complete output; source/path drift refuses it.
 
-use std::io::{self, Write};
+use std::io;
 use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::buffer::{Buffer, Cursor, PieceTable};
+use crate::buffer::{Buffer, Cursor, PreviewBuffer};
 use crate::config::actions::Action;
 
 use super::{ApplyTarget, RunningCommand};
@@ -20,14 +20,14 @@ pub(super) struct CommandPreview {
     succeeded: bool,
     source_snapshot: Option<String>,
     source_path: Option<PathBuf>,
-    buffer: PieceTable,
+    buffer: PreviewBuffer,
     source_scroll_top: usize,
     source_scroll_left: usize,
 }
 
 pub(super) fn open(
     app: &mut super::super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     mut running: RunningCommand,
     stdout: String,
     stderr: String,
@@ -47,7 +47,7 @@ pub(super) fn open(
         succeeded,
         source_snapshot: running.source_snapshot,
         source_path: running.source_path,
-        buffer: PieceTable::from_text(&text),
+        buffer: PreviewBuffer::from_owned_text(text),
         source_scroll_top: app.screen.scroll_top,
         source_scroll_left: app.screen.scroll_left,
     });
@@ -60,7 +60,7 @@ pub(super) fn open(
 
 pub(super) fn handle_key(
     app: &mut super::super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
     if !is_viewing(app) || is_quit(key) {
@@ -88,7 +88,7 @@ pub(super) fn handle_key(
 
 pub(super) fn dispatch_action(
     app: &mut super::super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     action: Action,
 ) -> io::Result<bool> {
     if !is_viewing(app) {
@@ -114,7 +114,10 @@ pub(super) fn dispatch_action(
     Ok(true)
 }
 
-pub(super) fn handle_paste(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<bool> {
+pub(super) fn handle_paste(
+    app: &mut super::super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<bool> {
     if !is_viewing(app) {
         return Ok(false);
     }
@@ -165,7 +168,10 @@ fn result_text(stdout: &str, stderr: &str, code: Option<i32>, truncated: bool) -
     text
 }
 
-fn apply_or_close(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
+fn apply_or_close(
+    app: &mut super::super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     let preview = app.external_command.preview.take().expect("preview active");
     restore_scroll(app, &preview);
     let Some(target) = preview.target else {
@@ -209,7 +215,10 @@ fn replace_buffer(buffer: &mut dyn Buffer, text: &str) -> io::Result<bool> {
     buffer.replace_range(Cursor::default(), end, text)
 }
 
-fn cancel(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
+fn cancel(
+    app: &mut super::super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     close(app);
     app.message = None;
     super::super::hooks::finish_command(app, false);

@@ -906,7 +906,7 @@ fn pty_external_edit_confirm_reload_quit_shows_disk_content() -> TestResult {
     editor.send_keys(b"\x12")?;
     editor.wait_for_output("first explicit reload arms", "Press Ctrl+R again")?;
     let armed_frame = editor.output_string();
-    assert!(armed_frame.contains("LOCAL-original"));
+    assert!(armed_frame.contains("Press Ctrl+R again"));
     assert!(!armed_frame.contains("external disk content"));
 
     editor.clear_output();
@@ -996,13 +996,13 @@ fn pty_saved_config_detour_closes_and_preserves_dirty_source() -> TestResult {
     assert!(!close_output.contains("Buffer closed."));
     assert!(!close_output.contains("file 1/2"));
 
-    editor.clear_output();
+    let cycle_start = editor.output_len();
     editor.send_keys(b"\x1b[6;3~")?; // Alt+PageDown must remain on the sole source buffer.
-    editor.wait_for_output(
-        "closed config stays out of buffer ring",
-        "Xsource stays untouched",
-    )?;
-    assert!(!editor.output_string().contains("Catomic configuration"));
+    wait_until("sole-buffer cycle frame", Duration::from_secs(2), || {
+        editor.output_since(cycle_start).contains("\x1b[?2026l")
+    })?;
+    let cycle_frame = editor.output_since(cycle_start);
+    assert!(!cycle_frame.contains("Catomic configuration"));
 
     editor.send_keys(b"\x11")?;
     editor.wait_for_output(
@@ -1040,7 +1040,9 @@ fn pty_dirty_config_detour_refuses_then_discards_only_config_and_reopens_from_di
         "config-local discard guard",
         "Unsaved configuration. Press Ctrl+Q again to discard it, or Ctrl+S to save.",
     )?;
-    assert!(editor.output_string().contains("X# CONFIG DISK MARKER"));
+    let guard_frame = editor.output_string();
+    assert!(guard_frame.contains("Unsaved configuration."));
+    assert!(!guard_frame.contains("SOURCE BUFFER MARKER"));
 
     editor.clear_output();
     editor.send_keys(b"\x11")?;
@@ -1242,13 +1244,13 @@ fn pty_f4_lints_active_file_and_exposes_raw_message() -> TestResult {
     editor.wait_for_initial_render()?;
     editor.send_keys(b"\x1bOS")?; // F4
     editor.wait_for_output("direct lint result", "Lint found 1 issue(s)")?;
+    assert!(
+        editor.output_string().contains("\x1b[31;4ma\x1b[39;24m"),
+        "the lint-result frame should underline the finding column"
+    );
     editor.clear_output();
     editor.send_keys(b"\x1b[C")?; // Clear the completion notice while staying on the marked line.
     editor.wait_for_output("raw lint message", "Lint 1:2: raw PTY lint message")?;
-    assert!(
-        editor.output_string().contains("\x1b[31;4ma\x1b[39;24m"),
-        "the finding column should be underlined in the active buffer"
-    );
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
 

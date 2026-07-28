@@ -11,7 +11,7 @@ use serde::Deserialize;
 mod color;
 pub(crate) use color::{indexed_fallback, Color};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub(crate) struct Style {
     pub(crate) fg: Option<Color>,
     pub(crate) bg: Option<Color>,
@@ -60,7 +60,7 @@ impl Style {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct Theme {
     pub(crate) text: Style,
     pub(crate) cursor: Option<Color>,

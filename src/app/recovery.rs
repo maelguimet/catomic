@@ -3,7 +3,7 @@
 //! Must not: overwrite source files, run when disabled, autosave unbounded buffers, or block typing.
 //! Invariants: offers retain the opened candidate; Enter applies one edit; drift refuses apply.
 
-use std::io::{self, Write};
+use std::io;
 use std::time::{Duration, Instant};
 
 use crate::file::recovery::{CatnapResult, CatnapTask, RecoveryCandidate};
@@ -53,7 +53,10 @@ pub(crate) fn initialize(app: &mut super::App) {
     }
 }
 
-pub(crate) fn poll(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+pub(crate) fn poll(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     if finish_task_if_ready(app, out)? || !autosave_is_due(app) {
         return Ok(());
     }
@@ -61,7 +64,10 @@ pub(crate) fn poll(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> 
     start_autosave(app, out)
 }
 
-fn finish_task_if_ready(app: &mut super::App, out: &mut dyn Write) -> io::Result<bool> {
+fn finish_task_if_ready(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<bool> {
     let result = app.recovery.task.as_ref().and_then(CatnapTask::try_result);
     let Some(result) = result else {
         return Ok(false);
@@ -98,7 +104,10 @@ fn autosave_is_due(app: &super::App) -> bool {
         && app.recovery.last_attempt.elapsed() >= Duration::from_secs(config.interval_secs)
 }
 
-fn start_autosave(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+fn start_autosave(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     let config = app.cat_config.recovery;
     let Some(length) = app.buffer.logical_byte_len() else {
         return Ok(());

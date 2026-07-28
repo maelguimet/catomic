@@ -3,7 +3,7 @@
 //! Must not: decode terminal bytes, scan whole documents, save, or start background work.
 //! Invariants: targets are scalar-coordinate boundaries; word deletion is one undoable edit.
 
-use std::io::{self, Write};
+use std::io;
 
 #[cfg(test)]
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -20,7 +20,7 @@ const WORD_WINDOW: usize = 256;
 #[cfg(test)]
 pub(crate) fn handle_key(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
     let extend = key.modifiers.contains(KeyModifiers::SHIFT);
@@ -66,7 +66,7 @@ pub(crate) fn handle_key(
 
 pub(crate) fn dispatch_action(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     action: Action,
 ) -> io::Result<bool> {
     let (target, extend) = match action {
@@ -117,7 +117,7 @@ pub(crate) fn move_grapheme(app: &mut super::App, right: bool) -> io::Result<()>
 
 pub(crate) fn delete_grapheme(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     forward: bool,
 ) -> io::Result<()> {
     if super::selection::replace_active(app, "")? {
@@ -402,7 +402,11 @@ fn word_class(ch: char) -> u8 {
     }
 }
 
-fn delete_to(app: &mut super::App, out: &mut dyn Write, target: Cursor) -> io::Result<()> {
+fn delete_to(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    target: Cursor,
+) -> io::Result<()> {
     if super::selection::replace_active(app, "")? {
         return super::input::finish_content_edit(app, out);
     }

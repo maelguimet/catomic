@@ -3,18 +3,18 @@
 //! Must not: write source files, schedule autosave, load config, remove sidecars, or network.
 //! Invariants: source stays unchanged until Enter; source or retained-candidate drift refuses apply.
 
-use std::io::{self, Write};
+use std::io;
 use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::buffer::{Buffer, Cursor, PieceTable};
+use crate::buffer::{Buffer, Cursor, PreviewBuffer};
 use crate::config::actions::Action;
 use crate::file::io::{ensure_path_matches_snapshot, FileSnapshot};
 use crate::file::recovery::RecoveryCandidate;
 
 pub(super) struct RecoveryPreview {
-    buffer: PieceTable,
+    buffer: PreviewBuffer,
     candidate: RecoveryCandidate,
     source_path: PathBuf,
     source_history: u64,
@@ -24,7 +24,10 @@ pub(super) struct RecoveryPreview {
     source_scroll_left: usize,
 }
 
-pub(crate) fn start_preview(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
+pub(crate) fn start_preview(
+    app: &mut super::super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     let config = app.cat_config.recovery;
     if !config.enabled {
         app.message_info("Catnap recovery is disabled in [recovery].");
@@ -62,7 +65,7 @@ pub(crate) fn start_preview(app: &mut super::super::App, out: &mut dyn Write) ->
 
 fn preview_error(
     app: &mut super::super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     error: io::Error,
 ) -> io::Result<()> {
     app.message_error(format!("Cannot open catnap recovery: {error}"));
@@ -71,7 +74,7 @@ fn preview_error(
 
 fn open(
     app: &mut super::super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     candidate: RecoveryCandidate,
 ) -> io::Result<()> {
     let Some(source_path) = app.file.path.clone() else {
@@ -88,7 +91,7 @@ fn open(
     };
     super::super::view::cancel_preview(app);
     app.recovery.preview = Some(RecoveryPreview {
-        buffer: PieceTable::from_text(candidate.text()),
+        buffer: PreviewBuffer::from_text(candidate.text()),
         candidate,
         source_path,
         source_history: app.buffer.content_revision(),
@@ -106,7 +109,7 @@ fn open(
 
 pub(crate) fn handle_key(
     app: &mut super::super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
     if !is_viewing(app) || is_quit(key) {
@@ -130,7 +133,7 @@ pub(crate) fn handle_key(
 
 pub(crate) fn dispatch_action(
     app: &mut super::super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     action: Action,
 ) -> io::Result<bool> {
     if !is_viewing(app) {
@@ -152,7 +155,10 @@ pub(crate) fn dispatch_action(
     Ok(true)
 }
 
-pub(crate) fn handle_paste(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<bool> {
+pub(crate) fn handle_paste(
+    app: &mut super::super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<bool> {
     if !is_viewing(app) {
         return Ok(false);
     }
@@ -161,7 +167,10 @@ pub(crate) fn handle_paste(app: &mut super::super::App, out: &mut dyn Write) -> 
     Ok(true)
 }
 
-fn apply(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
+fn apply(
+    app: &mut super::super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     let mut preview = app.recovery.preview.take().expect("recovery preview");
     restore_scroll(app, &preview);
     if app.file.path.as_ref() != Some(&preview.source_path)
@@ -200,7 +209,10 @@ fn replace_buffer(buffer: &mut dyn Buffer, text: &str) -> io::Result<bool> {
     buffer.replace_range(Cursor::default(), end, text)
 }
 
-fn cancel(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
+fn cancel(
+    app: &mut super::super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     close(app);
     app.message = None;
     app.reveal_cursor();
@@ -221,7 +233,7 @@ fn restore_scroll(app: &mut super::super::App, preview: &RecoveryPreview) {
     app.screen.scroll_left = preview.source_scroll_left;
 }
 
-fn move_cursor(app: &mut super::super::App, movement: impl FnOnce(&mut PieceTable)) {
+fn move_cursor(app: &mut super::super::App, movement: impl FnOnce(&mut PreviewBuffer)) {
     movement(&mut app.recovery.preview.as_mut().expect("preview").buffer);
 }
 

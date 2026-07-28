@@ -4,7 +4,7 @@
 //! Invariants: scoped normalization precedes active surfaces; guarded editor actions win over
 //!   text input; ordinary editor actions clear stale completed messages.
 
-use std::io::{self, Write};
+use std::io;
 
 use crossterm::event::KeyEvent;
 
@@ -61,13 +61,16 @@ pub(super) fn active_scope(app: &super::App) -> crate::config::actions::Scope {
 /// messages, reveal cursor, and render. Movement paths deliberately do not call this.
 /// Behavior must remain identical to the prior inlined blocks (including no-op undo/redo
 /// and boundary backspace/delete still clearing pending state).
-pub(super) fn finish_content_edit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+pub(super) fn finish_content_edit(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     finish_content_edit_with_message(app, out, None)
 }
 
 pub(super) fn finish_content_edit_with_message(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     message: Option<String>,
 ) -> io::Result<()> {
     note_content_change(&mut app.file);
@@ -91,18 +94,11 @@ pub(super) fn finish_content_edit_with_message(
     app.render(out)
 }
 
-/// Thin entry called from the run loop (and a few tests).
-pub(crate) fn handle_key(app: &mut super::App, key: KeyEvent) -> io::Result<()> {
-    let mut out = io::stdout();
-    handle_key_with(app, &mut out, key)
-}
-
 /// Route key handling + associated renders through a writer.
 /// Smallest seam so tests can capture render side-effects for e.g. Ctrl+Q message.
-/// The public-in-module handle_key keeps the run loop and existing calls unchanged.
 pub(crate) fn handle_key_with(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<()> {
     if mobile::handle_key(app, out, key)? {
@@ -119,7 +115,7 @@ pub(crate) fn handle_key_with(
 
 fn handle_bound_key(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     scope: Scope,
     key: KeyEvent,
 ) -> io::Result<bool> {
@@ -136,7 +132,11 @@ fn handle_bound_key(
     Ok(false)
 }
 
-fn handle_raw_key(app: &mut super::App, out: &mut dyn Write, key: KeyEvent) -> io::Result<()> {
+fn handle_raw_key(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    key: KeyEvent,
+) -> io::Result<()> {
     if surfaces::handle_raw_key(app, out, key)? {
         return Ok(());
     }
@@ -185,7 +185,7 @@ pub(super) fn prepare_editor_action(app: &mut super::App, action: Option<Action>
 
 pub(super) fn dispatch_action(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     action: Action,
 ) -> io::Result<()> {
     #[cfg(test)]
@@ -332,7 +332,7 @@ mod tests {
 
 fn switch_buffer(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     direction: buffers::BufferDirection,
 ) -> io::Result<()> {
     app.switch_buffer(direction);
@@ -342,7 +342,7 @@ fn switch_buffer(
 
 pub(crate) fn handle_paste(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     text: &str,
 ) -> io::Result<()> {
     selection::end_cut_line_chain(app);
@@ -356,7 +356,10 @@ pub(crate) fn handle_paste(
     selection::handle_external_paste(app, out, text)
 }
 
-pub(super) fn handle_quit(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+pub(super) fn handle_quit(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     if let Some(request) = command_prompt::request_config_close(app) {
         match request {
             command_prompt::ConfigCloseRequest::WarnDirty => {

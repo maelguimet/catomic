@@ -3,7 +3,7 @@
 //! Must not: scan implicitly, operate across paged descriptors, save, or start workers.
 //! Invariants: replacement is explicit; matches are scalar-aligned; paged files fail closed.
 
-use std::io::{self, Write};
+use std::io;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -29,7 +29,11 @@ enum PromptStage {
     Replacement,
 }
 
-pub(crate) fn open_prompt(app: &mut super::App, out: &mut dyn Write, all: bool) -> io::Result<()> {
+pub(crate) fn open_prompt(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    all: bool,
+) -> io::Result<()> {
     app.selection.clear();
     app.replace.prompt = Some(ReplacePrompt {
         stage: PromptStage::Find,
@@ -51,7 +55,7 @@ pub(super) fn is_active(app: &super::App) -> bool {
 
 pub(crate) fn handle_key(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
     if app.replace.prompt.is_none() {
@@ -84,7 +88,7 @@ pub(crate) fn handle_key(
 
 pub(crate) fn dispatch_action(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     action: Action,
 ) -> io::Result<bool> {
     if app.replace.prompt.is_none() {
@@ -109,7 +113,7 @@ pub(crate) fn dispatch_action(
 
 pub(crate) fn handle_paste(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     text: &str,
 ) -> io::Result<bool> {
     let Some(prompt) = app.replace.prompt.as_mut() else {
@@ -147,7 +151,10 @@ fn update_message(app: &mut super::App) {
     ));
 }
 
-fn advance_or_apply(app: &mut super::App, out: &mut dyn Write) -> io::Result<()> {
+fn advance_or_apply(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+) -> io::Result<()> {
     let prompt = app.replace.prompt.as_mut().expect("replace prompt exists");
     if matches!(prompt.stage, PromptStage::Find) {
         if prompt.find.is_empty() {
@@ -174,7 +181,7 @@ fn advance_or_apply(app: &mut super::App, out: &mut dyn Write) -> io::Result<()>
 
 fn replace_next(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     find: &str,
     replacement: &str,
 ) -> io::Result<()> {
@@ -198,7 +205,7 @@ fn replace_next(
 
 fn replace_all(
     app: &mut super::App,
-    out: &mut dyn Write,
+    out: &mut dyn crate::terminal::TerminalOutput,
     find: &str,
     replacement: &str,
 ) -> io::Result<()> {

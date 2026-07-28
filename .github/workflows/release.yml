@@ -52,6 +52,8 @@ jobs:
 
       - name: Install verification toolchains
         run: |
+          sudo apt-get update
+          sudo apt-get install --yes acl tmux
           rustup toolchain install stable --profile minimal --component clippy,rustfmt
           rustup toolchain install 1.87.0 --profile minimal
 
@@ -153,10 +155,25 @@ jobs:
           run_url="https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           evidence_url="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/release-evidence.md"
           source_url="https://github.com/$GITHUB_REPOSITORY/tree/$SOURCE_SHA"
-          manual_url="https://github.com/$GITHUB_REPOSITORY/blob/$SOURCE_SHA/docs/v0.1-acceptance.md"
           attestation_url="${{ steps.attest.outputs.attestation-url }}"
+          curated_notes="docs/releases/${TAG#v}.md"
+          curated_title="docs/releases/${TAG#v}.title"
+          release_reference_url="https://github.com/$GITHUB_REPOSITORY/blob/$SOURCE_SHA/$curated_notes"
+          release_title="Catomic $TAG"
+          generated_notes=(--generate-notes)
 
-          cat > release-notes.md <<EOF
+          : > release-notes.md
+          if [[ -f "$curated_notes" ]]; then
+            cat "$curated_notes" >> release-notes.md
+            printf '\n\n' >> release-notes.md
+            generated_notes=()
+          fi
+          if [[ -f "$curated_title" ]]; then
+            IFS= read -r release_title < "$curated_title"
+            test -n "$release_title"
+          fi
+
+          cat >> release-notes.md <<EOF
           ## Artifact-bound verification
 
           This release is built from [$TAG at $SOURCE_SHA]($source_url), not from a branch head.
@@ -164,7 +181,7 @@ jobs:
           - [Release acceptance evidence]($evidence_url) is uploaded only after a fresh runner downloads and verifies the public assets.
           - [Release workflow and job conclusions]($run_url)
           - [Build provenance attestation]($attestation_url)
-          - [Historical/manual roadmap acceptance]($manual_url)
+          - [Tagged release notes]($release_reference_url)
 
           The public binary, packaged Cargo source, package file list, toolchain record,
           source-verification result, and checksum manifests are attached below. Build
@@ -188,9 +205,9 @@ jobs:
             dist/toolchain.txt \
             dist/SHA256SUMS \
             --verify-tag \
-            --generate-notes \
+            "${generated_notes[@]}" \
             --notes-file release-notes.md \
-            --title "Catomic $TAG" \
+            --title "$release_title" \
             "${prerelease[@]}"
 
       - name: Mark a public release if publication fails
@@ -284,7 +301,7 @@ jobs:
         run: |
           run_url="https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           source_url="https://github.com/$GITHUB_REPOSITORY/tree/$SOURCE_SHA"
-          manual_url="https://github.com/$GITHUB_REPOSITORY/blob/$SOURCE_SHA/docs/v0.1-acceptance.md"
+          release_notes_url="https://github.com/$GITHUB_REPOSITORY/blob/$SOURCE_SHA/docs/releases/${TAG#v}.md"
           limitations_url="https://github.com/$GITHUB_REPOSITORY/blob/$SOURCE_SHA/README.md#limitations"
 
           cat > release-evidence.md <<EOF
@@ -364,13 +381,12 @@ jobs:
           This workflow does not deploy Catomic elsewhere. The temporary installed smoke
           copy is the only installed binary in scope, and cmp verified it byte-for-byte.
 
-          ## Manual acceptance and limitations
+          ## Release scope and limitations
 
-          - [Historical/manual roadmap acceptance at the tagged source]($manual_url)
+          - [Curated release notes at the tagged source]($release_notes_url)
           - [Known limitations at the tagged source]($limitations_url)
 
-          The roadmap record is historical evidence for its own named candidate SHA. This
-          release record is the artifact-bound evidence for $TAG.
+          This release record is the artifact-bound evidence for $TAG.
 
           ## Replacement policy
 

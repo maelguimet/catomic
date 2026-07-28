@@ -183,7 +183,7 @@ impl Buffer for PieceTable {
         self.cursor = cursor_after_text(cursor_range.start, text);
         self.cursor_byte_offset = cursor_range.start_byte + text.len();
         if self.recording {
-            self.undo_stack.record(Transaction {
+            self.record_transaction(Transaction {
                 before,
                 after: self.capture_cursor_state(),
                 edits,
@@ -231,8 +231,7 @@ impl Buffer for PieceTable {
         let inserted = self.insert_at_cursor(ch);
         self.index.insert_bytes(at, ch.len_utf8());
         if self.recording {
-            self.undo_stack
-                .record_typing_insert(before, self.capture_cursor_state(), at, inserted);
+            self.record_typing_history(before, self.capture_cursor_state(), at, inserted);
         }
     }
 
@@ -244,7 +243,7 @@ impl Buffer for PieceTable {
         self.index.insert_newline(at);
         if self.recording {
             let after = self.capture_cursor_state();
-            self.undo_stack.record(Transaction {
+            self.record_transaction(Transaction {
                 before,
                 after,
                 edits: vec![PieceEdit::Insert {
@@ -340,6 +339,10 @@ impl Buffer for PieceTable {
 
     fn content_revision(&self) -> u64 {
         self.undo_stack.content_revision()
+    }
+
+    fn is_history_position_retained(&self, position: u64) -> bool {
+        self.history_position_is_retained(position)
     }
 }
 
@@ -475,7 +478,7 @@ impl PieceTable {
                 pieces: inserted,
             });
         }
-        self.undo_stack.record(Transaction {
+        self.record_transaction(Transaction {
             before,
             after: self.capture_cursor_state(),
             edits,
@@ -546,8 +549,7 @@ impl PieceTable {
         pieces: Vec<super::types::Piece>,
     ) {
         if self.recording && !pieces.is_empty() {
-            self.undo_stack
-                .record_delete(run, before, self.capture_cursor_state(), at, pieces);
+            self.record_delete_history(run, before, self.capture_cursor_state(), at, pieces);
         }
     }
 
@@ -558,7 +560,7 @@ impl PieceTable {
         pieces: Vec<Piece>,
     ) {
         if self.recording && !pieces.is_empty() {
-            self.undo_stack.record(Transaction {
+            self.record_transaction(Transaction {
                 before,
                 after: self.capture_cursor_state(),
                 edits: vec![PieceEdit::Delete { at, pieces }],

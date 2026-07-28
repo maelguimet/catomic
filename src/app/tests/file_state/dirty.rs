@@ -459,3 +459,41 @@ fn app_file_state_movement_render_resize_do_not_affect_dirty() {
 
     let _ = std::fs::remove_file(&p);
 }
+
+#[test]
+fn pruned_saved_token_stays_durably_dirty_until_a_new_save_point() {
+    let mut buffer = crate::buffer::PieceTable::new();
+    buffer.set_history_retention_for_test(1, usize::MAX);
+    let mut file = FileState {
+        saved_history_position: buffer.edit_history_position(),
+        ..FileState::default()
+    };
+
+    buffer.insert_char('a');
+    buffer.finish_undo_group();
+    buffer.insert_char('b');
+    super::super::super::file_state::refresh_dirty(&mut file, &buffer);
+    assert!(file.saved_history_pruned);
+    assert!(file.dirty);
+
+    buffer.undo();
+    super::super::super::file_state::refresh_dirty(&mut file, &buffer);
+    assert_eq!(buffer.to_string(), "a");
+    assert!(
+        file.dirty,
+        "the pruned initial save point must not become clean at the retained floor"
+    );
+
+    super::super::super::file_state::mark_saved(&mut file, &buffer);
+    assert!(!file.saved_history_pruned);
+    assert!(!file.dirty);
+    let saved = file.saved_history_position;
+
+    buffer.insert_char('c');
+    super::super::super::file_state::refresh_dirty(&mut file, &buffer);
+    assert!(file.dirty);
+    buffer.undo();
+    super::super::super::file_state::refresh_dirty(&mut file, &buffer);
+    assert_eq!(buffer.edit_history_position(), saved);
+    assert!(!file.dirty);
+}

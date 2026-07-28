@@ -14,6 +14,7 @@ mod edit;
 mod file_original;
 mod piece_tree;
 mod query;
+mod retention;
 pub(crate) mod types;
 
 use crate::buffer::undo::CursorState;
@@ -44,6 +45,10 @@ impl PieceTable {
 
     pub(crate) fn undo_transaction_count(&self) -> usize {
         self.undo_stack.undo_transaction_count()
+    }
+
+    pub(crate) fn needs_page_retention(&self) -> bool {
+        self.has_edit_history() || self.undo_stack.current_history_position() != 0
     }
 
     fn capture_cursor_state(&self) -> CursorState {

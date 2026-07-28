@@ -46,3 +46,7 @@ mod extensibility;
 #[cfg(test)]
 #[path = "perf_recovery.rs"]
 mod recovery;
+
+#[cfg(test)]
+#[path = "perf_history.rs"]
+mod history;

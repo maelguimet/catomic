@@ -189,3 +189,97 @@ fn crlf_page_navigation_hides_synthetic_rows_at_source_boundaries() {
 
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn new_cross_page_edit_invalidates_redo_and_releases_clean_inactive_page() {
+    let path = temp_path("redo-release");
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, "zero\none\ntwo").unwrap();
+    let mut buffer = PagedFileBuffer::open(&path, 1).unwrap();
+
+    buffer.insert_char('X');
+    buffer.undo();
+    assert!(buffer.next_page().unwrap());
+    assert_eq!(buffer.retained_page_count_for_test(), 1);
+
+    buffer.insert_char('Y');
+    assert_eq!(
+        buffer.retained_page_count_for_test(),
+        0,
+        "invalidated redo must not pin an otherwise clean inactive page"
+    );
+    buffer.redo();
+    assert_eq!(buffer.line(0).as_deref(), Some("Yone"));
+    assert!(buffer.previous_page().unwrap());
+    assert_eq!(buffer.line(0).as_deref(), Some("zero"));
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn paged_pruning_keeps_newest_global_undo_and_current_edited_pages() {
+    let path = temp_path("bounded-history");
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, "zero\none\ntwo").unwrap();
+    let mut buffer = PagedFileBuffer::open(&path, 1).unwrap();
+    buffer.set_history_retention_for_test(1, usize::MAX);
+
+    buffer.insert_char('X');
+    let retained_floor = buffer.edit_history_position();
+    assert!(buffer.next_page().unwrap());
+    buffer.insert_char('Y');
+
+    buffer.undo();
+    assert_eq!(buffer.line(0).as_deref(), Some("one"));
+    assert_eq!(buffer.edit_history_position(), retained_floor);
+    buffer.undo();
+    assert_eq!(
+        buffer.edit_history_position(),
+        retained_floor,
+        "the older global transaction was pruned"
+    );
+    assert!(buffer.previous_page().unwrap());
+    assert_eq!(
+        buffer.line(0).as_deref(),
+        Some("Xzero"),
+        "a page with current edits remains resident after its undo is pruned"
+    );
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn paged_active_run_growth_refreshes_and_prunes_only_older_transactions() {
+    let path = temp_path("grouped-byte-retention");
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, "zero\none").unwrap();
+    let mut buffer = PagedFileBuffer::open(&path, 2).unwrap();
+    buffer.set_history_retention_for_test(10, usize::MAX);
+
+    for ch in ['a', 'b'] {
+        buffer.insert_char(ch);
+        buffer.finish_undo_group();
+    }
+    buffer.insert_char('c');
+    let first_token = buffer.edit_history_position();
+    let first_revision = buffer.content_revision();
+    let (transactions, retained_bytes) = buffer.history_retention_metrics_for_test();
+    assert_eq!(transactions, 3);
+    buffer.set_history_retention_for_test(10, retained_bytes + 128);
+
+    for _ in 0..512 {
+        buffer.insert_char('x');
+    }
+
+    let (transactions, retained_bytes_after) = buffer.history_retention_metrics_for_test();
+    assert_eq!(transactions, 1);
+    assert!(retained_bytes_after > retained_bytes + 128);
+    assert_ne!(buffer.edit_history_position(), first_token);
+    assert_ne!(buffer.content_revision(), first_revision);
+    buffer.undo();
+    assert_eq!(buffer.line(0).as_deref(), Some("abzero"));
+    buffer.undo();
+    assert_eq!(buffer.line(0).as_deref(), Some("abzero"));
+
+    let _ = std::fs::remove_file(path);
+}

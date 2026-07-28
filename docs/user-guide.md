@@ -450,6 +450,24 @@ end that run, so unrelated edits remain separate undo steps.
 Grouped actions such as a bracketed paste, selected-line indentation, Replace
 All, or a confirmed command result are each one undoable transaction.
 
+Catomic retains the newest 10,000 undo transactions, subject to a 64 MiB
+retained-history budget that accounts for edited bytes and transaction
+descriptors. The newest transaction is always kept even when one unusually
+large paste or replacement exceeds the byte budget by itself. Once older
+history crosses either limit, it is no longer undoable; a new edit after undo
+also discards the complete redo branch.
+
+Dirty tracking remains exact across that boundary. If the last saved state
+falls outside the retained undo window, the buffer remains dirty until another
+successful save even after undo reaches the oldest available state.
+
+Discarded history can leave inserted text unreachable in the PieceTable add
+store. Catomic checks for reclamation only after at least 8 MiB of add ranges
+have been discarded, and rebases storage only when at least 8 MiB and one
+quarter of the add store are unreachable. This rare operation copies reachable
+inserted ranges and retained descriptors; it does not read or materialize the
+original file.
+
 ### Indentation
 
 `Tab` inserts spaces to the next configured tab stop. If lines are selected,
@@ -694,7 +712,11 @@ default page contains 20,000 lines and can be changed with
 - `Ctrl+PageUp` opens the previous file page.
 - The status line shows the page number.
 - Edits to visited pages remain available when you move away.
-- Undo and redo follow edit order across pages.
+- Undo and redo follow edit order across pages and share the same session-wide
+  retention budget.
+- An inactive page is released once it has neither current edits nor retained
+  undo/redo history. Invalidating a redo branch can therefore release pages
+  whose edits were completely undone.
 - `Ctrl+S` streams the complete logical document to an atomic save, combining
   edited pages with untouched source ranges.
 - `Ctrl+F` searches the complete logical document after explicit invocation.

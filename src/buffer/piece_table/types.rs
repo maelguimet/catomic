@@ -207,6 +207,8 @@ pub struct PieceTable {
     pub(crate) recording: bool,
     #[cfg(test)]
     pub(crate) last_piece_mutation: PieceMutationMetrics,
+    #[cfg(test)]
+    pub(crate) compaction_descriptor_scans: std::cell::Cell<usize>,
 }
 
 #[cfg(test)]

@@ -1,10 +1,11 @@
 //! Purpose: provide editable logical-line pages over one stable file descriptor.
 //! Owns: active/retained page lifetime, stable page loading, and cross-page history.
 //! Must not: own App policy, path replacement, terminal input/rendering, or external services.
-//! Invariants: only pages with edit history are retained; original page byte ranges
-//!   never overlap; descriptor drift fails page loads and whole-file writes closed.
+//! Invariants: only pages with edit history or current edits are retained; original
+//!   page byte ranges never overlap; descriptor drift fails page loads and whole-file
+//!   writes closed.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io;
 #[cfg(test)]
@@ -17,7 +18,7 @@ mod buffer_impl;
 mod history;
 mod stream;
 
-use history::PageHistory;
+use history::{HistoryChange, PageHistory};
 
 pub(crate) struct PagedFileBuffer {
     file: File,
@@ -102,7 +103,8 @@ impl PagedFileBuffer {
         page_number: usize,
         page_lines: usize,
     ) -> io::Result<EditablePage> {
-        let page = PieceTable::from_file_page(file.try_clone()?, start_byte, page_lines)?;
+        let mut page = PieceTable::from_file_page(file.try_clone()?, start_byte, page_lines)?;
+        page.buffer.use_external_history_retention();
         Ok(EditablePage {
             buffer: page.buffer,
             start_byte: page.start_byte,
@@ -151,7 +153,7 @@ impl PagedFileBuffer {
 
     fn park_active(&mut self) {
         let page = self.active.take().expect("paged buffer has active page");
-        if page.buffer.has_edit_history() {
+        if page.buffer.needs_page_retention() {
             self.retained.insert(page.start_byte, page);
         }
     }
@@ -175,6 +177,7 @@ impl PagedFileBuffer {
             self.ensure_unchanged()?;
             page
         };
+        self.active_mut().buffer.finish_undo_group();
         self.park_active();
         self.active = Some(page);
         Ok(())
@@ -187,6 +190,7 @@ impl PagedFileBuffer {
         let Some(page) = self.retained.remove(&start_byte) else {
             return false;
         };
+        self.active_mut().buffer.finish_undo_group();
         self.park_active();
         self.active = Some(page);
         true
@@ -208,13 +212,58 @@ impl PagedFileBuffer {
         let after_transactions = self.active().buffer.undo_transaction_count();
         let after_revision = self.active().buffer.content_revision();
         if after_revision != before_revision {
-            if after_transactions != before_transactions {
-                self.history.record(start);
-            } else {
-                self.history.extend_current(start);
-            }
+            self.record_page_transaction(start, after_transactions == before_transactions);
             self.history.note_content_change();
         }
+    }
+
+    fn record_page_transaction(&mut self, page_start: usize, extends_current: bool) {
+        let retained_bytes = self
+            .active()
+            .buffer
+            .latest_undo_retained_bytes()
+            .expect("changed page has a local undo transaction");
+        let change = if extends_current {
+            self.history.extend_current(page_start, retained_bytes)
+        } else {
+            self.history.record(page_start, retained_bytes)
+        };
+        self.apply_history_change(change);
+    }
+
+    fn apply_history_change(&mut self, change: HistoryChange) {
+        let invalidated_pages = change
+            .invalidated_redo
+            .iter()
+            .map(|transaction| transaction.page_start)
+            .collect::<BTreeSet<_>>();
+        for start in invalidated_pages {
+            self.page_buffer_mut(start).clear_redo_history();
+        }
+
+        let mut pruned_per_page = BTreeMap::new();
+        for transaction in change.pruned_undo {
+            *pruned_per_page
+                .entry(transaction.page_start)
+                .or_insert(0usize) += 1;
+        }
+        for (start, count) in pruned_per_page {
+            self.page_buffer_mut(start)
+                .discard_oldest_undo_transactions(count);
+        }
+        self.retained
+            .retain(|_, page| page.buffer.needs_page_retention());
+    }
+
+    fn page_buffer_mut(&mut self, start_byte: usize) -> &mut PieceTable {
+        if self.active().start_byte == start_byte {
+            return &mut self.active_mut().buffer;
+        }
+        &mut self
+            .retained
+            .get_mut(&start_byte)
+            .expect("globally retained history page must remain resident")
+            .buffer
     }
 
     pub(super) fn undo_active_transaction(&mut self) {
@@ -246,7 +295,7 @@ impl PagedFileBuffer {
     #[cfg(test)]
     pub(crate) fn perf_stats(&self) -> PagedFilePerfStats {
         let pages = self.retained.values().chain(std::iter::once(self.active()));
-        let mut retained_bytes = self.history.retained_bytes();
+        let mut retained_bytes = self.history.allocated_bytes();
         let mut retained_page_metadata_bytes = 0;
         let mut descriptor_read_bytes = 0;
         let mut descriptor_metadata_checks = self.metadata_check_count.get();
@@ -265,6 +314,28 @@ impl PagedFileBuffer {
             descriptor_read_bytes,
             descriptor_metadata_checks,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_history_retention_for_test(
+        &mut self,
+        max_transactions: usize,
+        max_bytes: usize,
+    ) {
+        let change = self
+            .history
+            .set_retention_policy(max_transactions, max_bytes);
+        self.apply_history_change(change);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn retained_page_count_for_test(&self) -> usize {
+        self.retained.len()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn history_retention_metrics_for_test(&self) -> (usize, usize) {
+        self.history.retention_metrics()
     }
 }
 

@@ -55,6 +55,8 @@ impl PieceTable {
             recording: true,
             #[cfg(test)]
             last_piece_mutation: Default::default(),
+            #[cfg(test)]
+            compaction_descriptor_scans: Default::default(),
         }
     }
 
@@ -187,6 +189,8 @@ impl PieceTable {
             recording: true,
             #[cfg(test)]
             last_piece_mutation: Default::default(),
+            #[cfg(test)]
+            compaction_descriptor_scans: Default::default(),
         }
     }
 
@@ -223,6 +227,8 @@ impl PieceTable {
             recording: true,
             #[cfg(test)]
             last_piece_mutation: Default::default(),
+            #[cfg(test)]
+            compaction_descriptor_scans: Default::default(),
         }
     }
 }

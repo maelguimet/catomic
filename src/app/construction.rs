@@ -81,6 +81,7 @@ impl App {
                 buffer_id: super::file_state::next_buffer_id(),
                 content_generation: 0,
                 saved_history_position: initial_pos,
+                saved_history_pruned: false,
                 disk_snapshot: meta.disk_snapshot,
                 size_bytes: meta.size_bytes,
                 size_tier: meta.size_tier,

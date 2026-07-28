@@ -393,6 +393,7 @@ fn write_rows<W: Write + ?Sized>(
             options.theme.truecolor,
         )?;
         let Some(row) = rows.get(screen_row - 1) else {
+            super::style::write_reset(out)?;
             continue;
         };
         if external_gutter > 0 && row.start_col == 0 {
@@ -439,6 +440,7 @@ fn write_rows<W: Write + ?Sized>(
                 ));
             }
         }
+        super::style::write_reset(out)?;
     }
     Ok(cursor_position)
 }

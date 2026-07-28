@@ -20,7 +20,7 @@ fn frame_hides_the_caret_and_publishes_one_synchronized_update() {
         },
     );
 
-    assert!(frame.starts_with("\x1b[?2026h\x1b[?25l"));
+    assert!(frame.starts_with("\x1b\\\x1b]8;;\x1b\\\x1b[0m\x1b[?2026h\x1b[?25l"));
     assert_eq!(frame.matches("\x1b[?2026h").count(), 1);
     assert_eq!(frame.matches("\x1b[?2026l").count(), 1);
     assert!(position(&frame, "\x1b[?25l") < position(&frame, "\x1b[1;1H"));
@@ -116,7 +116,7 @@ fn back_to_back_frames_finish_before_the_newer_state_begins() {
     let old_frame = std::str::from_utf8(&stream[..boundary]).unwrap();
     let newer_frame = std::str::from_utf8(&stream[boundary..]).unwrap();
     assert!(old_frame.ends_with("\x1b[?2026l"));
-    assert!(newer_frame.starts_with("\x1b[?2026h\x1b[?25l"));
+    assert!(newer_frame.starts_with("\x1b\\\x1b]8;;\x1b\\\x1b[0m\x1b[?2026h\x1b[?25l"));
     assert_final_cursor(newer_frame, 1, 6);
 }
 

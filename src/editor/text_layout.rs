@@ -68,7 +68,7 @@ impl VisibleLineLayout {
                 layout_grapheme_metrics(grapheme, self.cell_len);
             let cell_end = self.cell_len.saturating_add(width);
             let fits = cell_end <= max_cells;
-            if !fits && !(ensure_progress && self.graphemes.is_empty()) {
+            if !(fits || ensure_progress && self.graphemes.is_empty()) {
                 break;
             }
             let scalar_end = self.source_scalar_len.saturating_add(scalar_count);

@@ -945,7 +945,9 @@ fn pty_ctrl_f_prompt_finds_content_and_quits() -> TestResult {
     editor.send_keys(b"\x06target")?;
     editor.wait_for_output("Ctrl+F result", "Found 'target'.")?;
     assert!(
-        editor.output_string().contains("\x1b[30;43mtarget\x1b[0m"),
+        editor
+            .output_string()
+            .contains("\x1b[30;43mtarget\x1b[39;49m"),
         "incremental Ctrl+F should use the search-match theme role"
     );
     editor.send_keys(b"\r")?;
@@ -1244,7 +1246,7 @@ fn pty_f4_lints_active_file_and_exposes_raw_message() -> TestResult {
     editor.send_keys(b"\x1b[C")?; // Clear the completion notice while staying on the marked line.
     editor.wait_for_output("raw lint message", "Lint 1:2: raw PTY lint message")?;
     assert!(
-        editor.output_string().contains("\x1b[31;4ma\x1b[0m"),
+        editor.output_string().contains("\x1b[31;4ma\x1b[39;24m"),
         "the finding column should be underlined in the active buffer"
     );
     editor.send_keys(b"\x11")?;
@@ -1283,7 +1285,7 @@ fn pty_mouse_selection_ctrl_c_emits_bounded_st_osc52() -> TestResult {
     editor.wait_for_initial_render()?;
     // Select columns 0..4 with SGR mouse reporting, then exercise literal Ctrl+C.
     editor.send_keys(b"\x1b[<0;1;1M\x1b[<32;5;1M\x1b[<0;5;1m")?;
-    editor.wait_for_output("mouse selection", "\x1b[30;46mcopy\x1b[0m")?;
+    editor.wait_for_output("mouse selection", "\x1b[30;46mcopy\x1b[39;49m")?;
     editor.wait_for_output("mouse copy-on-select", "\x1b]52;c;Y29weQ==\x1b\\")?;
     editor.clear_output();
     editor.send_keys(b"\x03")?;

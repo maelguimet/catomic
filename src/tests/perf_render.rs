@@ -4,11 +4,14 @@
 //! Invariants: fixture allocation is unmeasured; repeated renders request only the final 23 rows.
 
 use crate::buffer::{Buffer, PieceTable};
-use crate::editor::syntax::SyntaxKind;
-use crate::terminal::render::{render_buffer, RenderOptions, RenderViewport};
+use crate::editor::syntax::{SpanStyle, StyledSpan, SyntaxKind};
+use crate::terminal::render::{
+    render_buffer, ContentSurface, DocumentPresentation, RenderOptions, RenderViewport,
+};
 
 use super::helpers::{
-    measure_allocated_sample, measure_live_allocations, measure_sample, print_perf_sample,
+    count_thread_allocations, measure_allocated_sample, measure_live_allocations, measure_sample,
+    print_perf_sample,
 };
 
 const MEDIUM_BYTES: usize = 10 * 1024 * 1024;
@@ -185,6 +188,60 @@ fn manual_visible_line_layout_reports_temporary_allocations() {
         eprintln!("render visible-line fixture={name}");
         assert!(!output.is_empty());
     }
+}
+
+#[test]
+#[ignore = "manual allocation sample for equal-size style-heavy frames"]
+fn manual_style_heavy_frame_reports_segment_allocation_samples() {
+    const SCALARS: usize = 512;
+
+    fn sample(segment_count: usize) -> (usize, Vec<u8>) {
+        let buffer = PieceTable::from_text(&"x".repeat(SCALARS));
+        let rows = vec![(0..segment_count)
+            .map(|index| StyledSpan {
+                start: index * SCALARS / segment_count,
+                end: (index + 1) * SCALARS / segment_count,
+                style: SpanStyle::PreviewStrong,
+            })
+            .collect::<Vec<_>>()];
+        let annotations =
+            crate::editor::markdown_preview::MarkdownAnnotations::from_rows(&rows, &[]);
+        let options = RenderOptions {
+            presentation: Some(DocumentPresentation {
+                annotations: &annotations,
+            }),
+            surface: ContentSurface::Preview,
+            ..RenderOptions::default()
+        };
+        let mut output = Vec::with_capacity(4 * 1024);
+        let (result, allocations) = count_thread_allocations(|| {
+            render_buffer(
+                &mut output,
+                &buffer,
+                RenderViewport::new(0, 0, 2, SCALARS),
+                None,
+                options,
+            )
+        });
+        result.unwrap();
+        (allocations, output)
+    }
+
+    let (four_allocations, four_output) = sample(4);
+    let (many_allocations, many_output) = sample(SCALARS);
+    eprintln!(
+        "PERF render allocations: scalars={SCALARS} four_segments={four_allocations} \
+         many_segments={many_allocations} frame_bytes={}",
+        many_output.len()
+    );
+
+    assert_eq!(many_output, four_output);
+    assert!(
+        many_allocations <= four_allocations + 32,
+        "layout and boundary growth may allocate logarithmically, but style \
+         emission must not allocate per segment: \
+         four={four_allocations}, many={many_allocations}"
+    );
 }
 
 #[test]

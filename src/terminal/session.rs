@@ -139,10 +139,14 @@ impl TerminalRestorer {
 fn restore_output_modes<W: Write>(out: &mut W, active: u8) -> (u8, io::Result<()>) {
     use crossterm::{cursor, event, execute, terminal};
 
+    if let Err(error) = out.write_all(crate::terminal::render::TERMINAL_STATE_RECOVERY) {
+        return (active, Err(error));
+    }
+    if let Err(error) = out.write_all(crate::terminal::render::SYNC_UPDATE_END) {
+        return (active, Err(error));
+    }
     let mut remaining = active;
-    let mut first_error = out
-        .write_all(crate::terminal::render::SYNC_UPDATE_END)
-        .err();
+    let mut first_error = None;
     if let Err(error) = crate::terminal::cursor_style::restore(out) {
         first_error.get_or_insert(error);
     }

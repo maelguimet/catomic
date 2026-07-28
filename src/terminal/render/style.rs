@@ -1,8 +1,9 @@
 //! Purpose: compose scalar-indexed syntax spans and semantic active-range styling.
 //! Owns: visible-line ANSI color selection, boundary splitting, and reset emission.
 //! Must not: query buffers, infer file types, mutate state, or inspect non-visible lines.
-//! Invariants: only the supplied visible text is allocated; every styled segment resets ANSI.
+//! Invariants: style transitions allocate nothing; rows and hyperlinks reset conservatively.
 
+use std::fmt::Display;
 use std::io::{self, Write};
 use std::sync::Arc;
 
@@ -77,6 +78,7 @@ pub(super) fn write_content_line_from_layout<W: Write + ?Sized>(
         &links,
         boundaries,
     );
+    let mut style_state = StyleState::default();
     for range in boundaries.windows(2) {
         let start = range[0];
         let end = range[1];
@@ -119,13 +121,16 @@ pub(super) fn write_content_line_from_layout<W: Write + ?Sized>(
                 scalar_start: start,
                 scalar_end: end,
             },
-            style,
-            options.whitespace,
-            options.theme.truecolor,
-            hyperlink,
+            SegmentOutput {
+                style,
+                whitespace: options.whitespace,
+                truecolor: options.theme.truecolor,
+                hyperlink,
+            },
+            &mut style_state,
         )?;
     }
-    Ok(())
+    style_state.reset(out)
 }
 
 fn ranges_overlap(
@@ -284,23 +289,27 @@ struct LayoutRange<'a> {
 fn write_segment<W: Write + ?Sized>(
     out: &mut W,
     range: LayoutRange<'_>,
+    segment: SegmentOutput<'_>,
+    style_state: &mut StyleState,
+) -> io::Result<()> {
+    if let Some(destination) = segment.hyperlink {
+        style_state.force_reset(out)?;
+        write!(out, "\x1b]8;;{destination}\x1b\\")?;
+        style_state.transition(out, segment.style, segment.truecolor)?;
+        write_layout_range(out, range, segment.whitespace)?;
+        style_state.force_reset(out)?;
+        write!(out, "\x1b]8;;\x1b\\")
+    } else {
+        style_state.transition(out, segment.style, segment.truecolor)?;
+        write_layout_range(out, range, segment.whitespace)
+    }
+}
+
+struct SegmentOutput<'a> {
     style: Style,
     whitespace: bool,
     truecolor: bool,
-    hyperlink: Option<&str>,
-) -> io::Result<()> {
-    if let Some(destination) = hyperlink {
-        write!(out, "\x1b]8;;{destination}\x1b\\")?;
-    }
-    let styled = write_style_prefix(out, style, truecolor)?;
-    write_layout_range(out, range, whitespace)?;
-    if styled {
-        write!(out, "\x1b[0m")?;
-    }
-    if hyperlink.is_some() {
-        write!(out, "\x1b]8;;\x1b\\")?;
-    }
-    Ok(())
+    hyperlink: Option<&'a str>,
 }
 
 fn write_layout_range<W: Write + ?Sized>(
@@ -471,11 +480,14 @@ pub(super) fn write_row_start<W: Write + ?Sized>(
     truecolor: bool,
 ) -> io::Result<()> {
     write!(out, "\x1b[{row};1H")?;
-    if write_style_prefix(out, style, truecolor)? {
-        write!(out, "\x1b[K\x1b[0m")
-    } else {
-        write!(out, "\x1b[K")
-    }
+    let mut style_state = StyleState::default();
+    style_state.transition(out, style, truecolor)?;
+    write!(out, "\x1b[K")?;
+    style_state.reset(out)
+}
+
+pub(super) fn write_reset<W: Write + ?Sized>(out: &mut W) -> io::Result<()> {
+    out.write_all(b"\x1b[0m")
 }
 
 pub(super) fn write_styled_text<W: Write + ?Sized>(
@@ -484,65 +496,216 @@ pub(super) fn write_styled_text<W: Write + ?Sized>(
     style: Style,
     truecolor: bool,
 ) -> io::Result<()> {
-    if write_style_prefix(out, style, truecolor)? {
-        write!(out, "{text}\x1b[0m")
-    } else {
-        write!(out, "{text}")
+    let mut style_state = StyleState::default();
+    style_state.transition(out, style, truecolor)?;
+    write!(out, "{text}")?;
+    style_state.reset(out)
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct EmittedStyle {
+    fg: Option<Color>,
+    bg: Option<Color>,
+    bold: bool,
+    dim: bool,
+    underlined: bool,
+    reversed: bool,
+    crossed_out: bool,
+}
+
+impl From<Style> for EmittedStyle {
+    fn from(style: Style) -> Self {
+        Self {
+            fg: terminal_color(style.fg),
+            bg: terminal_color(style.bg),
+            bold: style.bold == Some(true),
+            dim: style.dim == Some(true),
+            underlined: style.underlined == Some(true),
+            reversed: style.reversed == Some(true),
+            crossed_out: style.crossed_out == Some(true),
+        }
     }
 }
 
-fn write_style_prefix<W: Write + ?Sized>(
-    out: &mut W,
-    style: Style,
-    truecolor: bool,
-) -> io::Result<bool> {
-    let mut codes = Vec::new();
-    if let Some(color) = style.fg {
-        codes.push(color_code(color, true, truecolor));
-    }
-    if let Some(color) = style.bg {
-        codes.push(color_code(color, false, truecolor));
-    }
-    if style.bold == Some(true) {
-        codes.push("1".to_string());
-    }
-    if style.dim == Some(true) {
-        codes.push("2".to_string());
-    }
-    if style.underlined == Some(true) {
-        codes.push("4".to_string());
-    }
-    if style.reversed == Some(true) {
-        codes.push("7".to_string());
-    }
-    if style.crossed_out == Some(true) {
-        codes.push("9".to_string());
-    }
-    if codes.is_empty() {
-        return Ok(false);
-    }
-    write!(out, "\x1b[{}m", codes.join(";"))?;
-    Ok(true)
-}
-
-fn color_code(color: Color, foreground: bool, truecolor: bool) -> String {
-    let base = if foreground { 30 } else { 40 };
+fn terminal_color(color: Option<Color>) -> Option<Color> {
     match color {
-        Color::Default => if foreground { "39" } else { "49" }.to_string(),
-        Color::Ansi(index) if index < 8 => (base + u16::from(index)).to_string(),
-        Color::Ansi(index) => (base + 60 + u16::from(index - 8)).to_string(),
-        Color::Indexed(index) => format!("{};5;{index}", if foreground { 38 } else { 48 }),
+        None | Some(Color::Default) => None,
+        color => color,
+    }
+}
+
+#[derive(Default)]
+struct StyleState {
+    current: EmittedStyle,
+}
+
+impl StyleState {
+    fn transition<W: Write + ?Sized>(
+        &mut self,
+        out: &mut W,
+        style: Style,
+        truecolor: bool,
+    ) -> io::Result<()> {
+        let target = EmittedStyle::from(style);
+        if target == self.current {
+            return Ok(());
+        }
+        let mut parameters = SgrParameters::new(out);
+        write_color_transition(&mut parameters, self.current.fg, target.fg, true, truecolor)?;
+        write_color_transition(
+            &mut parameters,
+            self.current.bg,
+            target.bg,
+            false,
+            truecolor,
+        )?;
+        write_intensity_transition(&mut parameters, self.current, target)?;
+        write_attribute_transition(
+            &mut parameters,
+            self.current.underlined,
+            target.underlined,
+            4,
+            24,
+        )?;
+        write_attribute_transition(
+            &mut parameters,
+            self.current.reversed,
+            target.reversed,
+            7,
+            27,
+        )?;
+        write_attribute_transition(
+            &mut parameters,
+            self.current.crossed_out,
+            target.crossed_out,
+            9,
+            29,
+        )?;
+        parameters.finish()?;
+        self.current = target;
+        Ok(())
+    }
+
+    fn reset<W: Write + ?Sized>(&mut self, out: &mut W) -> io::Result<()> {
+        if self.current == EmittedStyle::default() {
+            return Ok(());
+        }
+        self.force_reset(out)
+    }
+
+    fn force_reset<W: Write + ?Sized>(&mut self, out: &mut W) -> io::Result<()> {
+        write_reset(out)?;
+        self.current = EmittedStyle::default();
+        Ok(())
+    }
+}
+
+struct SgrParameters<'a, W: Write + ?Sized> {
+    out: &'a mut W,
+    started: bool,
+}
+
+impl<'a, W: Write + ?Sized> SgrParameters<'a, W> {
+    fn new(out: &'a mut W) -> Self {
+        Self {
+            out,
+            started: false,
+        }
+    }
+
+    fn write(&mut self, parameter: impl Display) -> io::Result<()> {
+        self.out
+            .write_all(if self.started { b";" } else { b"\x1b[" })?;
+        write!(self.out, "{parameter}")?;
+        self.started = true;
+        Ok(())
+    }
+
+    fn finish(self) -> io::Result<()> {
+        if self.started {
+            self.out.write_all(b"m")?;
+        }
+        Ok(())
+    }
+}
+
+fn write_color_transition<W: Write + ?Sized>(
+    parameters: &mut SgrParameters<'_, W>,
+    current: Option<Color>,
+    target: Option<Color>,
+    foreground: bool,
+    truecolor: bool,
+) -> io::Result<()> {
+    if current == target {
+        return Ok(());
+    }
+    let Some(color) = target else {
+        return parameters.write(if foreground { 39 } else { 49 });
+    };
+    let layer = if foreground { 38 } else { 48 };
+    match color {
+        Color::Default => unreachable!("terminal default colors are normalized"),
+        Color::Ansi(index) if index < 8 => {
+            parameters.write(if foreground { 30 } else { 40 } + u16::from(index))
+        }
+        Color::Ansi(index) => {
+            parameters.write(if foreground { 90 } else { 100 } + u16::from(index - 8))
+        }
+        Color::Indexed(index) => {
+            parameters.write(layer)?;
+            parameters.write(5)?;
+            parameters.write(index)
+        }
         Color::Rgb(red, green, blue) if truecolor => {
-            format!(
-                "{};2;{red};{green};{blue}",
-                if foreground { 38 } else { 48 }
-            )
+            parameters.write(layer)?;
+            parameters.write(2)?;
+            parameters.write(red)?;
+            parameters.write(green)?;
+            parameters.write(blue)
         }
         Color::Rgb(red, green, blue) => {
-            let index = crate::config::theme::indexed_fallback(red, green, blue);
-            format!("{};5;{index}", if foreground { 38 } else { 48 })
+            parameters.write(layer)?;
+            parameters.write(5)?;
+            parameters.write(crate::config::theme::indexed_fallback(red, green, blue))
         }
     }
+}
+
+fn write_intensity_transition<W: Write + ?Sized>(
+    parameters: &mut SgrParameters<'_, W>,
+    current: EmittedStyle,
+    target: EmittedStyle,
+) -> io::Result<()> {
+    if (current.bold && !target.bold) || (current.dim && !target.dim) {
+        parameters.write(22)?;
+        if target.bold {
+            parameters.write(1)?;
+        }
+        if target.dim {
+            parameters.write(2)?;
+        }
+        return Ok(());
+    }
+    if !current.bold && target.bold {
+        parameters.write(1)?;
+    }
+    if !current.dim && target.dim {
+        parameters.write(2)?;
+    }
+    Ok(())
+}
+
+fn write_attribute_transition<W: Write + ?Sized>(
+    parameters: &mut SgrParameters<'_, W>,
+    current: bool,
+    target: bool,
+    enable: u8,
+    disable: u8,
+) -> io::Result<()> {
+    if current == target {
+        return Ok(());
+    }
+    parameters.write(if target { enable } else { disable })
 }
 
 pub(super) fn write_cursor_color<W: Write + ?Sized>(out: &mut W, theme: Theme) -> io::Result<()> {

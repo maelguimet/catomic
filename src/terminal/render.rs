@@ -30,6 +30,11 @@ const MAX_FRAME_DIMENSION: usize = 16_384;
 const MAX_FRAME_CELLS: usize = 8 * 1024 * 1024;
 pub(crate) const SYNC_UPDATE_BEGIN: &[u8] = b"\x1b[?2026h";
 pub(crate) const SYNC_UPDATE_END: &[u8] = b"\x1b[?2026l";
+/// Abort one partial string command, close OSC 8, then restore default SGR.
+///
+/// The order is intentional: no CSI/synchronized-update command is emitted
+/// until a truncated OSC or DCS from an earlier transport failure is closed.
+pub(crate) const TERMINAL_STATE_RECOVERY: &[u8] = b"\x1b\\\x1b]8;;\x1b\\\x1b[0m";
 const HIDE_CURSOR: &[u8] = b"\x1b[?25l";
 
 /// Fetch enough scalars to prove that the retained layout ends at a complete
@@ -310,6 +315,7 @@ pub fn render_buffer<W: Write + ?Sized>(
 }
 
 fn begin_frame(frame: &mut Vec<u8>) -> io::Result<()> {
+    frame.write_all(TERMINAL_STATE_RECOVERY)?;
     frame.write_all(SYNC_UPDATE_BEGIN)?;
     frame.write_all(HIDE_CURSOR)
 }

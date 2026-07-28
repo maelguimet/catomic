@@ -23,12 +23,20 @@ fn setup_and_repeated_restore_push_and_pop_keyboard_flags_once() {
     assert_eq!(count(&output, b"\x1b[>4;0m"), 1);
     assert_eq!(count(&output, b"\x1b[<1u"), 1);
     assert_eq!(count(&output, b"\x1b[0 q"), 1);
+    assert_eq!(
+        count(&output, crate::terminal::render::TERMINAL_STATE_RECOVERY),
+        1
+    );
     assert_eq!(count(&output, crate::terminal::render::SYNC_UPDATE_END), 1);
     assert_eq!(count(&output, b"\x1b]112\x07"), 1);
     assert_eq!(count(&output, b"\x1b[22;0t"), 1);
     assert_eq!(count(&output, b"\x1b[23;0t"), 1);
     assert!(position(&output, b"\x1b[?1049h") < position(&output, b"\x1b[>1u"));
     assert!(position(&output, b"\x1b[>4;0m") < position(&output, b"\x1b[<1u"));
+    assert!(
+        position(&output, crate::terminal::render::TERMINAL_STATE_RECOVERY)
+            < position(&output, crate::terminal::render::SYNC_UPDATE_END)
+    );
     assert!(
         position(&output, crate::terminal::render::SYNC_UPDATE_END)
             < position(&output, b"\x1b[0 q")
@@ -94,6 +102,53 @@ fn teardown_error_before_pop_does_not_cause_a_duplicate_pop() {
     let mut repeated = Vec::new();
     guard.restore(&mut repeated).unwrap();
     assert!(repeated.is_empty());
+}
+
+#[test]
+fn partial_recovery_or_sync_end_defers_teardown_until_a_complete_retry() {
+    let recovery = crate::terminal::render::TERMINAL_STATE_RECOVERY;
+    let sync_end = crate::terminal::render::SYNC_UPDATE_END;
+    let osc_close = b"\x1b]8;;\x1b\\";
+    let sgr_reset = b"\x1b[0m";
+    let boundary = [recovery, sync_end].concat();
+    let cuts = [
+        ("bare ST", 1),
+        ("OSC close", find_bytes(recovery, osc_close) + 3),
+        ("SGR reset", find_bytes(recovery, sgr_reset) + 2),
+        ("sync end", recovery.len() + 3),
+    ];
+
+    for (label, cut) in cuts {
+        let guard = tmux_guard();
+        guard.enable_output_modes(&mut Vec::new()).unwrap();
+        let mut output = FailAfterPrefixOnce::new(cut);
+
+        assert!(guard.restore(&mut output).is_err(), "{label}");
+        assert_eq!(output.bytes, boundary[..cut], "{label}");
+        assert_eq!(
+            count(&output.bytes, crate::terminal::render::SYNC_UPDATE_END),
+            0,
+            "{label}"
+        );
+        assert_eq!(count(&output.bytes, b"\x1b[<1u"), 0, "{label}");
+        assert_eq!(count(&output.bytes, b"\x1b[?1049l"), 0, "{label}");
+
+        let retry_start = output.bytes.len();
+        guard.restore(&mut output).unwrap();
+        let retry = &output.bytes[retry_start..];
+        assert!(retry.starts_with(recovery), "{label}");
+        assert_eq!(
+            count(retry, crate::terminal::render::SYNC_UPDATE_END),
+            1,
+            "{label}"
+        );
+        assert_eq!(count(retry, b"\x1b[<1u"), 1, "{label}");
+        assert_eq!(count(retry, b"\x1b[?1049l"), 1, "{label}");
+
+        let completed = output.bytes.len();
+        guard.restore(&mut output).unwrap();
+        assert_eq!(output.bytes.len(), completed, "{label}");
+    }
 }
 
 #[test]
@@ -171,6 +226,13 @@ fn position(bytes: &[u8], needle: &[u8]) -> usize {
         .expect("terminal sequence")
 }
 
+fn find_bytes(bytes: &[u8], needle: &[u8]) -> usize {
+    bytes
+        .windows(needle.len())
+        .position(|part| part == needle)
+        .expect("terminal sequence")
+}
+
 struct FailAfter {
     accepted: usize,
     limit: usize,
@@ -191,6 +253,46 @@ impl Write for FailAfter {
             ));
         }
         self.accepted += bytes.len();
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+struct FailAfterPrefixOnce {
+    bytes: Vec<u8>,
+    remaining: usize,
+    failed: bool,
+}
+
+impl FailAfterPrefixOnce {
+    fn new(prefix: usize) -> Self {
+        Self {
+            bytes: Vec::new(),
+            remaining: prefix,
+            failed: false,
+        }
+    }
+}
+
+impl Write for FailAfterPrefixOnce {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if !self.failed {
+            if self.remaining > 0 {
+                let written = self.remaining.min(bytes.len());
+                self.bytes.extend_from_slice(&bytes[..written]);
+                self.remaining -= written;
+                return Ok(written);
+            }
+            self.failed = true;
+            return Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "intentional partial recovery",
+            ));
+        }
+        self.bytes.extend_from_slice(bytes);
         Ok(bytes.len())
     }
 

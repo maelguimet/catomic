@@ -10,6 +10,7 @@
 //!   cleanup is best-effort (ignore errors); helpers are test-only.
 
 use std::alloc::{GlobalAlloc, Layout, System};
+use std::cell::Cell;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -27,10 +28,16 @@ static LIVE_BYTES: AtomicUsize = AtomicUsize::new(0);
 static PEAK_LIVE_BYTES: AtomicUsize = AtomicUsize::new(0);
 static LIVE_MEASUREMENT_LOCK: Mutex<()> = Mutex::new(());
 
+thread_local! {
+    static THREAD_TRACKING: Cell<bool> = const { Cell::new(false) };
+    static THREAD_ALLOCATIONS: Cell<usize> = const { Cell::new(0) };
+}
+
 unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
         ALLOCATED_BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
+        note_thread_allocation();
         // SAFETY: the caller supplies the GlobalAlloc layout contract unchanged.
         let pointer = unsafe { System.alloc(layout) };
         if !pointer.is_null() && LIVE_MEASURING.load(Ordering::Relaxed) {
@@ -42,6 +49,7 @@ unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
         ALLOCATED_BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
+        note_thread_allocation();
         // SAFETY: the caller supplies the GlobalAlloc layout contract unchanged.
         let pointer = unsafe { System.alloc_zeroed(layout) };
         if !pointer.is_null() && LIVE_MEASURING.load(Ordering::Relaxed) {
@@ -61,6 +69,7 @@ unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
         ALLOCATED_BYTES.fetch_add(new_size as u64, Ordering::Relaxed);
+        note_thread_allocation();
         // SAFETY: the pointer, old layout, and requested size are forwarded unchanged.
         let pointer = unsafe { System.realloc(ptr, layout, new_size) };
         if !pointer.is_null() && LIVE_MEASURING.load(Ordering::Relaxed) {
@@ -77,6 +86,41 @@ unsafe impl GlobalAlloc for CountingAllocator {
 
 #[global_allocator]
 static PERF_ALLOCATOR: CountingAllocator = CountingAllocator;
+
+fn note_thread_allocation() {
+    if THREAD_TRACKING.try_with(Cell::get).unwrap_or(false) {
+        let _ = THREAD_ALLOCATIONS
+            .try_with(|allocations| allocations.set(allocations.get().saturating_add(1)));
+    }
+}
+
+/// Count allocations made by one scoped operation on the calling test thread.
+///
+/// The process-global allocator remains the single allocator for the test
+/// binary; thread-local bookkeeping keeps unrelated parallel tests out of the
+/// result. The guard also restores tracking after unwinding.
+pub(crate) fn count_thread_allocations<T>(operation: impl FnOnce() -> T) -> (T, usize) {
+    THREAD_ALLOCATIONS.with(|allocations| allocations.set(0));
+    THREAD_TRACKING.with(|tracking| {
+        assert!(
+            !tracking.replace(true),
+            "thread allocation tracking cannot nest"
+        );
+    });
+    let tracking = ThreadTrackingGuard;
+    let value = operation();
+    drop(tracking);
+    let allocations = THREAD_ALLOCATIONS.with(Cell::get);
+    (value, allocations)
+}
+
+struct ThreadTrackingGuard;
+
+impl Drop for ThreadTrackingGuard {
+    fn drop(&mut self) {
+        let _ = THREAD_TRACKING.try_with(|tracking| tracking.set(false));
+    }
+}
 
 fn record_live_allocation(bytes: usize) {
     LIVE_ALLOCATIONS.fetch_add(1, Ordering::Relaxed);

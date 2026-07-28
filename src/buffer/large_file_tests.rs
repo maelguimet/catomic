@@ -225,7 +225,7 @@ fn fallible_visible_window_checks_descriptor_before_and_after() {
     assert_eq!(
         lines
             .iter()
-            .map(|line| line.content.as_str())
+            .map(|line| line.content.as_ref())
             .collect::<Vec<_>>(),
         vec!["first", "second", "third", "fourth"]
     );

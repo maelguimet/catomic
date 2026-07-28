@@ -89,7 +89,7 @@ fn line_text(buffer: &dyn Buffer, row: usize) -> io::Result<String> {
         .try_visible_lines_window(row, 1, 0, width)?
         .into_iter()
         .next()
-        .map(|line| line.content)
+        .map(|line| line.content.into_owned())
         .unwrap_or_default())
 }
 

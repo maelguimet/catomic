@@ -29,17 +29,19 @@ impl Buffer for PieceTable {
         }
         let start = self.index.line_start_byte(row);
         let end = self.index.line_end_byte(row);
-        Some(Cow::Owned(self.slice_to_string(start, end)))
+        Some(self.try_slice_to_cow(start, end).unwrap_or_default())
     }
 
-    fn visible_lines(&self, start: usize, height: usize) -> Vec<LineView> {
+    fn visible_lines(&self, start: usize, height: usize) -> Vec<LineView<'_>> {
         let end = (start + height).min(self.index.line_count());
         (start..end)
             .map(|row| LineView {
-                content: self.slice_to_string(
-                    self.index.line_start_byte(row),
-                    self.index.line_end_byte(row),
-                ),
+                content: self
+                    .try_slice_to_cow(
+                        self.index.line_start_byte(row),
+                        self.index.line_end_byte(row),
+                    )
+                    .unwrap_or_default(),
             })
             .collect()
     }
@@ -50,7 +52,7 @@ impl Buffer for PieceTable {
         height: usize,
         start_col: usize,
         width: usize,
-    ) -> Vec<LineView> {
+    ) -> Vec<LineView<'_>> {
         self.try_visible_lines_window(start, height, start_col, width)
             .unwrap_or_default()
     }
@@ -61,11 +63,11 @@ impl Buffer for PieceTable {
         height: usize,
         start_col: usize,
         width: usize,
-    ) -> io::Result<Vec<LineView>> {
+    ) -> io::Result<Vec<LineView<'_>>> {
         let end = (start + height).min(self.index.line_count());
         (start..end)
             .map(|row| {
-                self.try_window_to_string(
+                self.try_window_to_cow(
                     self.index.line_start_byte(row),
                     self.index.line_end_byte(row),
                     start_col,

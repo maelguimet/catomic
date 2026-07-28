@@ -239,7 +239,7 @@ fn line_window(
         .try_visible_lines_window(row, 1, start_col, width)?
         .into_iter()
         .next()
-        .map(|line| line.content)
+        .map(|line| line.content.into_owned())
         .unwrap_or_default())
 }
 

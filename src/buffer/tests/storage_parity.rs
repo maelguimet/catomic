@@ -6,6 +6,7 @@
 //! Must not: edit parity (insert/delete/move), undo, random model, or history token tests.
 //! Invariants: descendant of buffer::tests; preserves original test names and behavior.
 
+use std::borrow::Cow;
 use std::io::Write;
 
 use crate::buffer::{Buffer, PieceTable, SimpleBuffer};
@@ -419,4 +420,45 @@ fn piece_table_new_is_empty_and_has_one_line() {
     assert_eq!(pt.line(0).as_deref(), Some(""));
     assert_eq!(pt.cursor().row, 0);
     assert_eq!(pt.cursor().col, 0);
+}
+
+#[test]
+fn visible_windows_borrow_single_in_memory_sources_and_own_cross_piece_ranges() {
+    let simple = SimpleBuffer::from_text("zero\nalpha猫omega");
+    let simple_window = simple.visible_lines_window(1, 1, 5, 1);
+    assert!(matches!(simple_window[0].content, Cow::Borrowed("猫")));
+
+    let mut original = PieceTable::from_owned_text("alpha猫omega".to_string());
+    let original_window = original.visible_lines_window(0, 1, 5, 1);
+    assert!(matches!(original_window[0].content, Cow::Borrowed("猫")));
+    drop(original_window);
+
+    original.insert_char('!');
+    let crossing = original.visible_lines_window(0, 1, 0, 2);
+    assert!(matches!(crossing[0].content, Cow::Owned(_)));
+    assert_eq!(crossing[0].content, "!a");
+
+    let mut add = PieceTable::new();
+    add.insert_char('猫');
+    let add_window = add.visible_lines_window(0, 1, 0, 1);
+    assert!(matches!(add_window[0].content, Cow::Borrowed("猫")));
+}
+
+#[test]
+fn file_backed_crlf_window_owns_descriptor_normalized_text() {
+    let path = std::env::temp_dir().join(format!(
+        "catomic_file_piece_table_crlf_cow_{}.txt",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, "alpha\r\n猫omega\r\n").unwrap();
+
+    let buffer = PieceTable::from_file(&path).unwrap();
+    let window = buffer
+        .try_visible_lines_window(1, 1, 0, 4)
+        .expect("descriptor-normalized window");
+    assert!(matches!(window[0].content, Cow::Owned(_)));
+    assert_eq!(window[0].content, "猫ome");
+
+    let _ = std::fs::remove_file(path);
 }

@@ -11,6 +11,7 @@ use crate::editor::text_layout;
 
 use super::{ContentSurface, HighlightKind, RenderOptions, TextHighlight};
 
+#[cfg(test)]
 pub(super) fn write_content_line<W: Write + ?Sized>(
     out: &mut W,
     content: &str,
@@ -19,11 +20,33 @@ pub(super) fn write_content_line<W: Write + ?Sized>(
     max_cells: usize,
     options: RenderOptions<'_>,
 ) -> io::Result<()> {
-    let visible_len = text_layout::clipped_scalar_len(content, max_cells);
-    let content: String = content.chars().take(visible_len).collect();
-    let chars: Vec<char> = content.chars().collect();
+    let mut layout = text_layout::VisibleLineLayout::default();
+    layout.build(content, max_cells);
+    let mut boundaries = Vec::new();
+    write_content_line_from_layout(
+        out,
+        content,
+        row,
+        start_col,
+        options,
+        &layout,
+        &mut boundaries,
+    )
+}
+
+pub(super) fn write_content_line_from_layout<W: Write + ?Sized>(
+    out: &mut W,
+    content: &str,
+    row: usize,
+    start_col: usize,
+    options: RenderOptions<'_>,
+    layout: &text_layout::VisibleLineLayout,
+    boundaries: &mut Vec<usize>,
+) -> io::Result<()> {
+    let content = &content[..layout.byte_len()];
+    let content_len = layout.scalar_len();
     let spans = options.presentation.map_or_else(
-        || syntax::spans_for_line(options.syntax, &content),
+        || syntax::spans_for_line(options.syntax, content),
         |presentation| {
             visible_spans(
                 presentation
@@ -32,7 +55,7 @@ pub(super) fn write_content_line<W: Write + ?Sized>(
                     .map(Vec::as_slice)
                     .unwrap_or(&[]),
                 start_col,
-                chars.len(),
+                content_len,
             )
         },
     );
@@ -44,16 +67,16 @@ pub(super) fn write_content_line<W: Write + ?Sized>(
                 .map(Vec::as_slice)
                 .unwrap_or(&[]),
             start_col,
-            chars.len(),
+            content_len,
         )
     });
-    let selected = visible_highlight(options.highlight, row, start_col, chars.len());
-    let lint = visible_ranges(options.lint_ranges, row, start_col, chars.len());
+    let selected = visible_highlight(options.highlight, row, start_col, content_len);
+    let lint = visible_ranges(options.lint_ranges, row, start_col, content_len);
     let external_added = visible_ranges(
         options.external_changes.map(|changes| changes.added_ranges),
         row,
         start_col,
-        chars.len(),
+        content_len,
     );
     let external_changed = visible_ranges(
         options
@@ -61,16 +84,16 @@ pub(super) fn write_content_line<W: Write + ?Sized>(
             .map(|changes| changes.changed_ranges),
         row,
         start_col,
-        chars.len(),
+        content_len,
     );
-    let boundaries = segment_boundaries(
-        &content,
+    segment_boundaries(
+        layout,
         &spans,
         selected,
         &[&lint, &external_added, &external_changed],
         &links,
+        boundaries,
     );
-    let mut cell = 0;
     for range in boundaries.windows(2) {
         let start = range[0];
         let end = range[1];
@@ -79,21 +102,22 @@ pub(super) fn write_content_line<W: Write + ?Sized>(
         }
         let syntax_styles = spans
             .iter()
-            .filter(|span| start >= span.start && start < span.end)
+            .filter(|span| ranges_overlap(start, end, span.start, span.end))
             .map(|span| span.style);
         let hyperlink = links
             .iter()
-            .find(|link| start >= link.start && start < link.end)
-            .map(|link| link.destination.as_ref());
-        let highlighted = selected.is_some_and(|(from, to)| start >= from && start < to);
-        let lint = lint.iter().any(|(from, to)| start >= *from && start < *to);
+            .find(|link| ranges_overlap(start, end, link.start, link.end))
+            .map(|link| link.destination);
+        let highlighted = selected.is_some_and(|(from, to)| ranges_overlap(start, end, from, to));
+        let lint = lint
+            .iter()
+            .any(|(from, to)| ranges_overlap(start, end, *from, *to));
         let external_added = external_added
             .iter()
-            .any(|(from, to)| start >= *from && start < *to);
+            .any(|(from, to)| ranges_overlap(start, end, *from, *to));
         let external_changed = external_changed
             .iter()
-            .any(|(from, to)| start >= *from && start < *to);
-        let segment: String = chars[start..end].iter().collect();
+            .any(|(from, to)| ranges_overlap(start, end, *from, *to));
         let style = segment_style(
             options,
             syntax_styles,
@@ -106,16 +130,28 @@ pub(super) fn write_content_line<W: Write + ?Sized>(
         );
         write_segment(
             out,
-            &segment,
+            LayoutRange {
+                text: content,
+                layout,
+                scalar_start: start,
+                scalar_end: end,
+            },
             style,
             options.whitespace,
-            cell,
             options.theme.truecolor,
             hyperlink,
         )?;
-        cell = cell.saturating_add(text_layout::cell_width_from(&segment, cell));
     }
     Ok(())
+}
+
+fn ranges_overlap(
+    left_start: usize,
+    left_end: usize,
+    right_start: usize,
+    right_end: usize,
+) -> bool {
+    left_start < right_end && right_start < left_end
 }
 
 fn visible_spans(spans: &[StyledSpan], start_col: usize, content_len: usize) -> Vec<StyledSpan> {
@@ -134,21 +170,28 @@ fn visible_spans(spans: &[StyledSpan], start_col: usize, content_len: usize) -> 
         .collect()
 }
 
-fn visible_links(
-    links: &[HyperlinkSpan],
+#[derive(Clone, Copy)]
+struct VisibleLink<'a> {
+    start: usize,
+    end: usize,
+    destination: &'a str,
+}
+
+fn visible_links<'a>(
+    links: &'a [HyperlinkSpan],
     start_col: usize,
     content_len: usize,
-) -> Vec<HyperlinkSpan> {
+) -> Vec<VisibleLink<'a>> {
     let visible_end = start_col.saturating_add(content_len);
     links
         .iter()
         .filter_map(|link| {
             let start = link.start.max(start_col);
             let end = link.end.min(visible_end);
-            (start < end).then(|| HyperlinkSpan {
+            (start < end).then(|| VisibleLink {
                 start: start - start_col,
                 end: end - start_col,
-                destination: link.destination.clone(),
+                destination: link.destination.as_ref(),
             })
         })
         .collect()
@@ -206,14 +249,16 @@ fn visible_highlight(
 }
 
 fn segment_boundaries(
-    content: &str,
+    layout: &text_layout::VisibleLineLayout,
     spans: &[StyledSpan],
     selected: Option<(usize, usize)>,
     change_sets: &[&[(usize, usize)]],
-    links: &[HyperlinkSpan],
-) -> Vec<usize> {
-    let content_len = content.chars().count();
-    let mut boundaries = vec![0, content_len];
+    links: &[VisibleLink<'_>],
+    boundaries: &mut Vec<usize>,
+) {
+    let content_len = layout.scalar_len();
+    boundaries.clear();
+    boundaries.extend([0, content_len]);
     for span in spans {
         boundaries.push(span.start.min(content_len));
         boundaries.push(span.end.min(content_len));
@@ -233,32 +278,99 @@ fn segment_boundaries(
         boundaries.push(link.end.min(content_len));
     }
     boundaries.sort_unstable();
-    boundaries = boundaries
-        .into_iter()
-        .map(|col| text_layout::snap_to_grapheme_col(content, col))
-        .collect();
+    for boundary in boundaries.iter_mut() {
+        *boundary = layout.snap_scalar(*boundary);
+    }
     boundaries.push(content_len);
     boundaries.sort_unstable();
     boundaries.dedup();
-    boundaries
+}
+
+#[derive(Clone, Copy)]
+struct LayoutRange<'a> {
+    text: &'a str,
+    layout: &'a text_layout::VisibleLineLayout,
+    scalar_start: usize,
+    scalar_end: usize,
 }
 
 fn write_segment<W: Write + ?Sized>(
     out: &mut W,
-    text: &str,
+    range: LayoutRange<'_>,
     style: Style,
     whitespace: bool,
-    initial_cell: usize,
     truecolor: bool,
     hyperlink: Option<&str>,
 ) -> io::Result<()> {
-    let text = text_layout::expand_tabs(text, whitespace, initial_cell);
     if let Some(destination) = hyperlink {
         write!(out, "\x1b]8;;{destination}\x1b\\")?;
     }
-    write_styled_text(out, &text, style, truecolor)?;
+    let styled = write_style_prefix(out, style, truecolor)?;
+    write_layout_range(out, range, whitespace)?;
+    if styled {
+        write!(out, "\x1b[0m")?;
+    }
     if hyperlink.is_some() {
         write!(out, "\x1b]8;;\x1b\\")?;
+    }
+    Ok(())
+}
+
+fn write_layout_range<W: Write + ?Sized>(
+    out: &mut W,
+    range: LayoutRange<'_>,
+    whitespace: bool,
+) -> io::Result<()> {
+    let LayoutRange {
+        text,
+        layout,
+        scalar_start,
+        scalar_end,
+    } = range;
+    let graphemes = layout.grapheme_range(scalar_start, scalar_end);
+    let transformed = graphemes.iter().any(|grapheme| {
+        grapheme.is_tab || grapheme.has_control || (whitespace && grapheme.is_space)
+    });
+    if !transformed {
+        let byte_start = layout.boundary_byte(scalar_start);
+        let byte_end = layout.boundary_byte(scalar_end);
+        return out.write_all(&text.as_bytes()[byte_start..byte_end]);
+    }
+
+    let mut run_start = None;
+    for grapheme in graphemes {
+        let needs_transform =
+            grapheme.is_tab || grapheme.has_control || (whitespace && grapheme.is_space);
+        if !needs_transform {
+            run_start.get_or_insert(grapheme.byte_start);
+            continue;
+        }
+        if let Some(byte_start) = run_start.take() {
+            out.write_all(&text.as_bytes()[byte_start..grapheme.byte_start])?;
+        }
+        if grapheme.is_tab {
+            if whitespace {
+                write!(out, "→")?;
+            }
+            let marker_width = usize::from(whitespace);
+            for _ in marker_width..grapheme.cell_end.saturating_sub(grapheme.cell_start) {
+                out.write_all(b" ")?;
+            }
+        } else if whitespace && grapheme.is_space {
+            write!(out, "·")?;
+        } else {
+            for ch in text[grapheme.byte_start..grapheme.byte_end].chars() {
+                let safe = text_layout::terminal_safe_char(ch);
+                let mut encoded = [0; 4];
+                out.write_all(safe.encode_utf8(&mut encoded).as_bytes())?;
+            }
+        }
+    }
+    if let Some(byte_start) = run_start {
+        let byte_end = graphemes
+            .last()
+            .map_or(byte_start, |grapheme| grapheme.byte_end);
+        out.write_all(&text.as_bytes()[byte_start..byte_end])?;
     }
     Ok(())
 }

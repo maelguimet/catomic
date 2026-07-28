@@ -109,6 +109,17 @@ impl OriginalBacking {
         }
     }
 
+    /// Borrow owned source text without bypassing file-backed normalization.
+    ///
+    /// File-backed ranges use descriptor-aware reads because their logical
+    /// coordinates may elide carriage returns from CRLF input.
+    pub(crate) fn borrowed_slice(&self, range: Range<usize>) -> Option<&str> {
+        match self {
+            Self::Owned { text, .. } => Some(&text[range]),
+            Self::File(_) => None,
+        }
+    }
+
     pub(crate) fn write_slice(&self, range: Range<usize>, out: &mut dyn Write) -> io::Result<()> {
         match self {
             Self::Owned { text, .. } => out.write_all(text[range].as_bytes()),
@@ -142,26 +153,6 @@ impl OriginalBacking {
         match self {
             Self::Owned { text, scalars } => Ok(scalars.byte_at_scalar_in(text, range, col)),
             Self::File(file) => file.byte_offset_at_char(range, col),
-        }
-    }
-
-    pub(crate) fn try_push_char_window(
-        &self,
-        range: Range<usize>,
-        skip: usize,
-        take: usize,
-        out: &mut String,
-    ) -> io::Result<usize> {
-        match self {
-            Self::Owned { text, scalars } => {
-                let start = scalars.byte_at_scalar_in(text, range.clone(), skip);
-                let end = scalars.byte_at_scalar_in(text, start..range.end, take);
-                let window = &text[start..end];
-                let taken = window.chars().count();
-                out.push_str(window);
-                Ok(taken)
-            }
-            Self::File(file) => file.push_char_window(range, skip, take, out),
         }
     }
 

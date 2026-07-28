@@ -237,16 +237,21 @@ fn click_after_wrapped_wheel_scroll_maps_wide_content_from_wrap_origin() {
     let mut out = Vec::new();
     handle_mouse(&mut app, &mut out, event(MouseEventKind::ScrollDown, 0, 0)).unwrap();
     assert!(app.screen.wrap_col > 0);
-    let first = crate::terminal::render::wrapped::visible_rows(
-        &*app.buffer,
-        app.screen.scroll_top,
-        app.screen.wrap_col,
-        app.screen.visible_height(),
-        super::super::super::view::content_width(&app),
-    )
-    .unwrap()
-    .remove(0);
-    let expected_col = first.start_col + text_layout::scalar_at_cell(&first.content, 2);
+    let (expected_row, expected_col) = {
+        let first = crate::terminal::render::wrapped::visible_rows(
+            &*app.buffer,
+            app.screen.scroll_top,
+            app.screen.wrap_col,
+            app.screen.visible_height(),
+            super::super::super::view::content_width(&app),
+        )
+        .unwrap()
+        .remove(0);
+        (
+            first.document_row,
+            first.start_col + text_layout::scalar_at_cell(&first.content, 2),
+        )
+    };
 
     handle_mouse(
         &mut app,
@@ -258,7 +263,7 @@ fn click_after_wrapped_wheel_scroll_maps_wide_content_from_wrap_origin() {
     assert_eq!(
         app.buffer.cursor(),
         Cursor {
-            row: first.document_row,
+            row: expected_row,
             col: expected_col,
         }
     );

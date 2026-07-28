@@ -5,7 +5,7 @@
 
 use std::io;
 
-use crate::buffer::{Buffer, Cursor, LineView};
+use crate::buffer::{Buffer, Cursor};
 
 use super::{
     change_gutter_width, line_number_gutter, style, write_external_change_gutter,
@@ -32,21 +32,28 @@ pub(super) fn compose_buffer(
     let content_width = width.saturating_sub(gutter);
     let cursor = buffer.cursor();
     let fetch_width = fetch_width(cursor, start_row, start_col, content_height, content_width);
-    let visible =
-        buffer.try_visible_lines_window(start_row, content_height, start_col, fetch_width)?;
-    write_rows(
+    let cursor_cells = write_rows(
         out,
-        &visible,
+        buffer,
+        cursor,
         start_row,
         start_col,
         content_height,
         content_width,
         line_gutter,
         external_gutter,
+        fetch_width,
         options,
     )?;
     super::write_bottom_rows(out, viewport, message, options)?;
-    let position = cursor_position(buffer, cursor, &visible, viewport, gutter, content_height);
+    let position = cursor_position(
+        buffer,
+        cursor,
+        cursor_cells,
+        viewport,
+        gutter,
+        content_height,
+    );
     super::emoji_picker::write(
         out,
         position,
@@ -96,15 +103,20 @@ fn fetch_width(
 #[allow(clippy::too_many_arguments)]
 fn write_rows(
     out: &mut Vec<u8>,
-    visible: &[LineView],
+    buffer: &dyn Buffer,
+    cursor: Cursor,
     start_row: usize,
     start_col: usize,
     height: usize,
     width: usize,
     line_gutter: usize,
     external_gutter: usize,
+    fetch_width: usize,
     options: RenderOptions<'_>,
-) -> io::Result<()> {
+) -> io::Result<usize> {
+    let mut layout = crate::editor::text_layout::VisibleLineLayout::default();
+    let mut boundaries = Vec::new();
+    let mut cursor_cells = 0;
     for screen_row in 1..=height {
         style::write_row_start(out, screen_row, options.theme.text, options.theme.truecolor)?;
         if external_gutter > 0 {
@@ -119,25 +131,39 @@ fn write_rows(
             write_line_number(out, start_row + screen_row - 1, line_gutter, options.theme)?;
         }
         if width > 0 {
-            if let Some(line) = visible.get(screen_row - 1) {
-                style::write_content_line(
-                    out,
-                    &line.content,
-                    start_row + screen_row - 1,
+            let document_row = start_row + screen_row - 1;
+            if document_row < buffer.line_count() {
+                let content = super::boundary_complete_line(
+                    buffer,
+                    document_row,
                     start_col,
+                    fetch_width,
                     width,
-                    options,
+                    false,
+                    &mut layout,
                 )?;
+                style::write_content_line_from_layout(
+                    out,
+                    &content,
+                    document_row,
+                    start_col,
+                    options,
+                    &layout,
+                    &mut boundaries,
+                )?;
+                if cursor.row == document_row && cursor.col >= start_col {
+                    cursor_cells = layout.scalar_to_cell(cursor.col.saturating_sub(start_col));
+                }
             }
         }
     }
-    Ok(())
+    Ok(cursor_cells)
 }
 
 fn cursor_position(
     buffer: &dyn Buffer,
     cursor: Cursor,
-    visible: &[LineView],
+    cursor_cells: usize,
     viewport: RenderViewport,
     gutter: usize,
     content_height: usize,
@@ -146,27 +172,14 @@ fn cursor_position(
     let Cursor { row, col } = cursor;
     let row_visible =
         row >= viewport.start_row && row < viewport.start_row.saturating_add(content_height);
-    let cells = if row_visible && col >= viewport.start_col {
-        visible
-            .get(row - viewport.start_row)
-            .map(|line| {
-                crate::editor::text_layout::scalar_to_cell(
-                    &line.content,
-                    col.saturating_sub(viewport.start_col),
-                )
-            })
-            .unwrap_or(0)
-    } else {
-        0
-    };
     let line_end = buffer.line_char_count(row).unwrap_or(0);
     let col_visible = col >= viewport.start_col
-        && (cells < content_width || (col == line_end && cells == content_width));
+        && (cursor_cells < content_width || (col == line_end && cursor_cells == content_width));
     (row_visible && col_visible && content_width > 0).then(|| {
         (
             row - viewport.start_row + 1,
             gutter
-                .saturating_add(cells)
+                .saturating_add(cursor_cells)
                 .saturating_add(1)
                 .min(viewport.width.max(1)),
         )

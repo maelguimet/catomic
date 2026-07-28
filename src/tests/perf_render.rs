@@ -13,6 +13,79 @@ const MEDIUM_BYTES: usize = 10 * 1024 * 1024;
 const RENDERS: usize = 1_000;
 
 #[test]
+#[ignore = "manual visible-line temporary allocation report"]
+fn manual_visible_line_layout_reports_temporary_allocations() {
+    let fixtures = [
+        (
+            "plain ascii",
+            "render visible-line plain ascii",
+            SyntaxKind::Plain,
+            false,
+            "ordinary visible text with no transformations",
+        ),
+        (
+            "styled code",
+            "render visible-line styled code",
+            SyntaxKind::Rust,
+            false,
+            "pub fn render(value: usize) -> usize { value + 42 } // styled",
+        ),
+        (
+            "markdown",
+            "render visible-line markdown",
+            SyntaxKind::Markdown,
+            true,
+            "## [layout](https://example.com) with `code` and spaces",
+        ),
+        (
+            "emoji",
+            "render visible-line emoji",
+            SyntaxKind::Plain,
+            false,
+            "wide 猫, combining e\u{301}, family 👩\u{200d}👩\u{200d}👧\u{200d}👦, and 🙂",
+        ),
+    ];
+
+    for (name, sample_label, syntax, whitespace, line) in fixtures {
+        let text = std::iter::repeat_n(line, 23).collect::<Vec<_>>().join("\n");
+        let buffer = PieceTable::from_owned_text(text);
+        let mut output = Vec::with_capacity(32 * 1024);
+        render_buffer(
+            &mut output,
+            &buffer,
+            RenderViewport::new(0, 0, 24, 80),
+            None,
+            RenderOptions {
+                syntax,
+                whitespace,
+                ..RenderOptions::default()
+            },
+        )
+        .unwrap();
+        output.clear();
+
+        let (_, sample) = measure_allocated_sample(sample_label, None, || {
+            render_buffer(
+                &mut output,
+                &buffer,
+                RenderViewport::new(0, 0, 24, 80),
+                None,
+                RenderOptions {
+                    syntax,
+                    whitespace,
+                    ..RenderOptions::default()
+                },
+            )
+            .unwrap();
+        });
+        let sample = sample.with_metric("frame_output_bytes", output.len());
+        print_perf_sample(&sample);
+        eprintln!("render visible-line fixture={name}");
+        assert!(!output.is_empty());
+    }
+}
+
+#[test]
 #[ignore = "manual Phase 4 10 MiB Markdown preview/render measurement"]
 fn manual_phase4_10mib_markdown_reports_samples() {
     let mut text = String::with_capacity(MEDIUM_BYTES);

@@ -4,6 +4,7 @@
 //! Invariants: no whole-document scan; forward work is viewport-bounded; visual slices end on
 //!   grapheme boundaries, and each reverse step inspects at most one logical line.
 
+use std::borrow::Cow;
 use std::io::{self, Write};
 
 use crate::buffer::{Buffer, Cursor};
@@ -15,26 +16,28 @@ use super::{
 };
 
 #[derive(Clone, Debug)]
-pub(crate) struct WrappedRow {
+pub(crate) struct WrappedRow<'a> {
     pub(crate) document_row: usize,
     pub(crate) start_col: usize,
-    pub(crate) content: String,
+    pub(crate) content: Cow<'a, str>,
     pub(crate) line_end: bool,
+    layout: text_layout::VisibleLineLayout,
 }
 
-impl WrappedRow {
+impl WrappedRow<'_> {
     pub(crate) fn end_col(&self) -> usize {
-        self.start_col.saturating_add(self.content.chars().count())
+        self.start_col
+            .saturating_add(self.layout.source_scalar_len())
     }
 }
 
-pub(crate) fn visible_rows(
-    buffer: &dyn Buffer,
+pub(crate) fn visible_rows<'a>(
+    buffer: &'a dyn Buffer,
     start_row: usize,
     wrap_col: usize,
     height: usize,
     width: usize,
-) -> io::Result<Vec<WrappedRow>> {
+) -> io::Result<Vec<WrappedRow<'a>>> {
     let mut rows = Vec::with_capacity(height);
     let mut document_row = start_row;
     let mut start_col = wrap_col;
@@ -274,16 +277,16 @@ pub(super) fn compose_buffer(
         content_height,
         content_width,
     )?;
-    write_rows(
+    let cursor = write_rows(
         out,
         &rows,
+        buffer.cursor(),
         content_height,
         content_width,
         (line_gutter, external_gutter),
         options,
     )?;
     super::write_bottom_rows(out, viewport, message, options)?;
-    let cursor = wrapped_cursor_position(buffer.cursor(), &rows, gutter, content_width);
     super::emoji_picker::write(
         out,
         cursor,
@@ -295,39 +298,46 @@ pub(super) fn compose_buffer(
     super::write_terminal_cursor(out, cursor, options.cursor_shape)
 }
 
-pub(super) fn append_line_rows(
-    buffer: &dyn Buffer,
+pub(super) fn append_line_rows<'a>(
+    buffer: &'a dyn Buffer,
     document_row: usize,
     mut start_col: usize,
     limit: usize,
     width: usize,
-    rows: &mut Vec<WrappedRow>,
+    rows: &mut Vec<WrappedRow<'a>>,
 ) -> io::Result<()> {
     let line_len = buffer.line_char_count(document_row).unwrap_or(0);
     if start_col >= line_len || width == 0 {
         rows.push(WrappedRow {
             document_row,
             start_col: start_col.min(line_len),
-            content: String::new(),
+            content: Cow::Borrowed(""),
             line_end: true,
+            layout: text_layout::VisibleLineLayout::default(),
         });
         return Ok(());
     }
     for _ in 0..limit {
         let fetch = width.saturating_mul(4).saturating_add(32);
-        let text = line_window(buffer, document_row, start_col, fetch)?;
-        let mut take = text_layout::clipped_scalar_len(&text, width);
-        if take == 0 {
-            take = text_layout::next_grapheme_col(&text, 0);
-        }
-        let content: String = text.chars().take(take).collect();
-        let end_col = start_col.saturating_add(content.chars().count());
+        let mut layout = text_layout::VisibleLineLayout::default();
+        let text = super::boundary_complete_line(
+            buffer,
+            document_row,
+            start_col,
+            fetch,
+            width,
+            true,
+            &mut layout,
+        )?;
+        let end_col = start_col.saturating_add(layout.source_scalar_len());
         let line_end = end_col >= line_len;
+        let content = cow_prefix(text, layout.source_byte_len());
         rows.push(WrappedRow {
             document_row,
             start_col,
             content,
             line_end,
+            layout,
         });
         start_col = end_col;
         if line_end {
@@ -348,24 +358,33 @@ fn wrapped_row_end(
         return Ok((start_col.min(line_len), true));
     }
     let fetch = width.saturating_mul(4).saturating_add(32);
-    let text = line_window(buffer, document_row, start_col, fetch)?;
-    let mut take = text_layout::clipped_scalar_len(&text, width);
-    if take == 0 {
-        take = text_layout::next_grapheme_col(&text, 0);
-    }
-    let end_col = start_col.saturating_add(take);
+    let mut layout = text_layout::VisibleLineLayout::default();
+    let _ = super::boundary_complete_line(
+        buffer,
+        document_row,
+        start_col,
+        fetch,
+        width,
+        true,
+        &mut layout,
+    )?;
+    let end_col = start_col.saturating_add(layout.source_scalar_len());
     Ok((end_col, end_col >= line_len))
 }
 
 fn write_rows<W: Write + ?Sized>(
     out: &mut W,
-    rows: &[WrappedRow],
+    rows: &[WrappedRow<'_>],
+    cursor: Cursor,
     height: usize,
     width: usize,
     gutters: (usize, usize),
     options: RenderOptions<'_>,
-) -> io::Result<()> {
+) -> io::Result<Option<(usize, usize)>> {
     let (line_gutter, external_gutter) = gutters;
+    let gutter = line_gutter.saturating_add(external_gutter);
+    let mut boundaries = Vec::new();
+    let mut cursor_position = None;
     for screen_row in 1..=height {
         super::style::write_row_start(
             out,
@@ -397,21 +416,37 @@ fn write_rows<W: Write + ?Sized>(
                 options.theme.truecolor,
             )?;
         }
-        super::style::write_content_line(
+        super::style::write_content_line_from_layout(
             out,
             &row.content,
             row.document_row,
             row.start_col,
-            width.max(1),
             options,
+            &row.layout,
+            &mut boundaries,
         )?;
+        if row_contains_cursor(row, cursor) {
+            let cell = row
+                .layout
+                .scalar_to_cell(cursor.col.saturating_sub(row.start_col));
+            if width > 0 && (cell < width || (cell == width && row.line_end)) {
+                cursor_position = Some((
+                    screen_row,
+                    gutter
+                        .saturating_add(cell)
+                        .saturating_add(1)
+                        .min(gutter.saturating_add(width).max(1)),
+                ));
+            }
+        }
     }
-    Ok(())
+    Ok(cursor_position)
 }
 
+#[cfg(test)]
 fn wrapped_cursor_position(
     cursor: Cursor,
-    rows: &[WrappedRow],
+    rows: &[WrappedRow<'_>],
     gutter: usize,
     width: usize,
 ) -> Option<(usize, usize)> {
@@ -419,7 +454,9 @@ fn wrapped_cursor_position(
         .iter()
         .enumerate()
         .find(|(_, row)| row_contains_cursor(row, cursor))?;
-    let cell = text_layout::scalar_to_cell(&row.content, cursor.col.saturating_sub(row.start_col));
+    let cell = row
+        .layout
+        .scalar_to_cell(cursor.col.saturating_sub(row.start_col));
     if width == 0 || cell > width || (cell == width && !row.line_end) {
         return None;
     }
@@ -432,24 +469,34 @@ fn wrapped_cursor_position(
     ))
 }
 
-fn row_contains_cursor(row: &WrappedRow, cursor: Cursor) -> bool {
+fn row_contains_cursor(row: &WrappedRow<'_>, cursor: Cursor) -> bool {
     cursor.row == row.document_row
         && cursor.col >= row.start_col
         && (cursor.col < row.end_col() || (row.line_end && cursor.col == row.end_col()))
 }
 
-fn line_window(
-    buffer: &dyn Buffer,
+fn line_window<'a>(
+    buffer: &'a dyn Buffer,
     row: usize,
     start_col: usize,
     width: usize,
-) -> io::Result<String> {
+) -> io::Result<Cow<'a, str>> {
     Ok(buffer
         .try_visible_lines_window(row, 1, start_col, width)?
         .into_iter()
         .next()
         .map(|line| line.content)
         .unwrap_or_default())
+}
+
+fn cow_prefix<'a>(text: Cow<'a, str>, byte_len: usize) -> Cow<'a, str> {
+    match text {
+        Cow::Borrowed(text) => Cow::Borrowed(&text[..byte_len]),
+        Cow::Owned(mut text) => {
+            text.truncate(byte_len);
+            Cow::Owned(text)
+        }
+    }
 }
 
 #[cfg(test)]

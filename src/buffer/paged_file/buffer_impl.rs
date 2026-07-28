@@ -26,7 +26,7 @@ impl Buffer for PagedFileBuffer {
         }
     }
 
-    fn visible_lines(&self, start: usize, height: usize) -> Vec<LineView> {
+    fn visible_lines(&self, start: usize, height: usize) -> Vec<LineView<'_>> {
         let height = height.min(self.line_count().saturating_sub(start));
         self.active().buffer.visible_lines(start, height)
     }
@@ -37,7 +37,7 @@ impl Buffer for PagedFileBuffer {
         height: usize,
         start_col: usize,
         width: usize,
-    ) -> Vec<LineView> {
+    ) -> Vec<LineView<'_>> {
         self.try_visible_lines_window(start, height, start_col, width)
             .unwrap_or_default()
     }
@@ -48,7 +48,7 @@ impl Buffer for PagedFileBuffer {
         height: usize,
         start_col: usize,
         width: usize,
-    ) -> io::Result<Vec<LineView>> {
+    ) -> io::Result<Vec<LineView<'_>>> {
         let height = height.min(self.line_count().saturating_sub(start));
         self.active()
             .buffer

@@ -3,6 +3,8 @@
 //! Owns: newest-history pruning, byte-aware retention, base-token behavior,
 //! compaction/rebase semantics, and retained-storage stress coverage.
 
+use std::borrow::Cow;
+
 use crate::buffer::undo::{DEFAULT_UNDO_MAX_BYTES, DEFAULT_UNDO_MAX_TRANSACTIONS};
 use crate::buffer::{Buffer, Cursor, PieceTable};
 
@@ -279,6 +281,11 @@ fn compaction_rebuilds_sparse_add_coordinates_for_windows_and_future_appends() {
             .unwrap(),
         expected_window
     );
+    let compacted_window = buffer
+        .try_window_to_cow(0, buffer.logical_byte_len().unwrap(), middle, 8)
+        .unwrap();
+    assert!(matches!(compacted_window, Cow::Borrowed(_)));
+    assert_eq!(compacted_window, expected_window);
 
     buffer.set_cursor(Cursor {
         row: 0,

@@ -385,3 +385,47 @@ fn row_indexing_skips_offscreen_sorted_annotations() {
     assert_eq!(visible.len(), 1);
     assert_eq!(visible[0].start.row, 19_999);
 }
+
+#[test]
+fn overlays_inside_a_combining_grapheme_style_and_link_the_whole_cluster() {
+    let spans = vec![vec![StyledSpan {
+        start: 1,
+        end: 2,
+        style: SpanStyle::PreviewLink,
+    }]];
+    let links = vec![vec![HyperlinkSpan {
+        start: 1,
+        end: 2,
+        destination: "https://example.com".into(),
+    }]];
+    let presentation = super::super::DocumentPresentation {
+        spans: &spans,
+        links: &links,
+    };
+    let range = TextHighlight {
+        start: Cursor { row: 0, col: 1 },
+        end: Cursor { row: 0, col: 2 },
+    };
+
+    let output = rendered(
+        "e\u{301}x",
+        0,
+        RenderOptions {
+            presentation: Some(presentation),
+            highlight: Some(range),
+            lint_ranges: Some(std::slice::from_ref(&range)),
+            external_changes: Some(super::super::ExternalChanges {
+                added_ranges: &[],
+                changed_ranges: std::slice::from_ref(&range),
+                markers: &[],
+            }),
+            ..RenderOptions::default()
+        },
+    );
+
+    assert_eq!(
+        output,
+        "\x1b]8;;https://example.com\x1b\\\x1b[30;46;4me\u{301}\x1b[0m\
+         \x1b]8;;\x1b\\x"
+    );
+}

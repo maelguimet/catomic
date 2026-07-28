@@ -75,11 +75,38 @@ impl Buffer for SimpleBuffer {
         self.lines.get(row).map(|s| Cow::Borrowed(s.as_str()))
     }
 
-    fn visible_lines(&self, start: usize, height: usize) -> Vec<LineView> {
+    fn visible_lines(&self, start: usize, height: usize) -> Vec<LineView<'_>> {
         let end = (start + height).min(self.line_count());
         (start..end)
             .map(|r| LineView {
-                content: self.line(r).unwrap_or_default().to_string(),
+                content: self.line(r).unwrap_or_default(),
+            })
+            .collect()
+    }
+
+    fn visible_lines_window(
+        &self,
+        start: usize,
+        height: usize,
+        start_col: usize,
+        width: usize,
+    ) -> Vec<LineView<'_>> {
+        let end = (start + height).min(self.line_count());
+        (start..end)
+            .map(|row| {
+                let line = self.lines.get(row).map_or("", String::as_str);
+                let byte_start = line
+                    .char_indices()
+                    .nth(start_col)
+                    .map_or(line.len(), |(offset, _)| offset);
+                let tail = &line[byte_start..];
+                let byte_end = tail
+                    .char_indices()
+                    .nth(width)
+                    .map_or(tail.len(), |(offset, _)| offset);
+                LineView {
+                    content: Cow::Borrowed(&tail[..byte_end]),
+                }
             })
             .collect()
     }

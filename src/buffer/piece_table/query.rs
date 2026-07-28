@@ -5,6 +5,7 @@
 //! Invariants: source ranges respect UTF-8 boundaries and logical offsets are global.
 
 use super::types::{PieceTable, Source};
+use std::borrow::Cow;
 use std::io;
 
 impl PieceTable {
@@ -78,6 +79,33 @@ impl PieceTable {
         Ok(out)
     }
 
+    /// Return a logical range without copying when it lies in one contiguous
+    /// in-memory source piece. File originals deliberately fall back to their
+    /// descriptor-aware reader so CRLF normalization remains exact.
+    pub(crate) fn try_slice_to_cow(&self, start: usize, end: usize) -> io::Result<Cow<'_, str>> {
+        let end = end.min(self.pieces.byte_len());
+        if start >= end || self.pieces.is_empty() {
+            return Ok(Cow::Borrowed(""));
+        }
+        let (piece_index, local_start) = self.pieces.locate(start);
+        let piece = self.pieces.get(piece_index).copied();
+        if let Some(piece) = piece {
+            let logical_start = self.pieces.logical_start(piece_index);
+            let local_end = end.saturating_sub(logical_start);
+            if local_end <= piece.len {
+                let source_range = piece.start + local_start..piece.start.saturating_add(local_end);
+                let borrowed = match piece.source {
+                    Source::Original => self.original.borrowed_slice(source_range),
+                    Source::Add => Some(&self.add[source_range]),
+                };
+                if let Some(text) = borrowed {
+                    return Ok(Cow::Borrowed(text));
+                }
+            }
+        }
+        self.try_slice_to_string(start, end).map(Cow::Owned)
+    }
+
     pub(crate) fn try_char_count(&self, start: usize, end: usize) -> io::Result<usize> {
         if start >= end || self.pieces.is_empty() {
             return Ok(0);
@@ -115,6 +143,7 @@ impl PieceTable {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn try_window_to_string(
         &self,
         start: usize,
@@ -122,72 +151,26 @@ impl PieceTable {
         skip: usize,
         width: usize,
     ) -> io::Result<String> {
-        if width == 0 || start >= end {
-            return Ok(String::new());
-        }
-        let window_start = self.try_byte_offset_after_chars(start, end, skip)?;
-        if window_start >= end {
-            return Ok(String::new());
-        }
-        let mut out = String::new();
-        let mut remaining = width;
-        self.for_each_piece_overlap(
-            window_start,
-            end,
-            |source, range, _logical_start, cached_char_len| {
-                let taken = if cached_char_len.is_some_and(|count| count <= remaining) {
-                    let count = cached_char_len.expect("checked cached scalar count");
-                    self.source_push_slice(source, range, &mut out)?;
-                    count
-                } else {
-                    self.source_push_char_window(source, range, 0, remaining, &mut out)?
-                };
-                remaining -= taken;
-                Ok(remaining > 0)
-            },
-        )?;
-        Ok(out)
+        self.try_window_to_cow(start, end, skip, width)
+            .map(Cow::into_owned)
     }
 
-    fn for_each_piece_overlap(
+    pub(crate) fn try_window_to_cow(
         &self,
         start: usize,
         end: usize,
-        mut visit: impl FnMut(Source, std::ops::Range<usize>, usize, Option<usize>) -> io::Result<bool>,
-    ) -> io::Result<()> {
-        if start >= end || self.pieces.is_empty() {
-            return Ok(());
+        skip: usize,
+        width: usize,
+    ) -> io::Result<Cow<'_, str>> {
+        if width == 0 || start >= end {
+            return Ok(Cow::Borrowed(""));
         }
-        let first = self.find_piece_for_byte(start);
-        let mut piece_start = self.pieces.logical_start(first);
-        self.pieces
-            .try_for_each_from(first, |piece| -> io::Result<bool> {
-                let piece_end = piece_start + piece.len;
-                if piece_start >= end {
-                    return Ok(false);
-                }
-                let local_start = start.saturating_sub(piece_start).min(piece.len);
-                let local_end = end.saturating_sub(piece_start).min(piece.len);
-                if local_start < local_end {
-                    let source_range = piece.start + local_start..piece.start + local_end;
-                    let cached_char_len = if local_start == 0 && local_end == piece.len {
-                        piece.char_len
-                    } else {
-                        None
-                    };
-                    if !visit(
-                        piece.source,
-                        source_range,
-                        piece_start + local_start,
-                        cached_char_len,
-                    )? {
-                        return Ok(false);
-                    }
-                }
-                piece_start = piece_end;
-                Ok(true)
-            })?;
-        Ok(())
+        let window_start = self.try_byte_offset_after_chars(start, end, skip)?;
+        if window_start >= end {
+            return Ok(Cow::Borrowed(""));
+        }
+        let window_end = self.try_byte_offset_after_chars(window_start, end, width)?;
+        self.try_slice_to_cow(window_start, window_end)
     }
 
     pub(crate) fn source_char_count(
@@ -210,46 +193,6 @@ impl PieceTable {
         match source {
             Source::Original => self.original.try_byte_offset_at_char(range, col),
             Source::Add => Ok(self.add_scalars.byte_at_scalar_in(&self.add, range, col)),
-        }
-    }
-
-    fn source_push_char_window(
-        &self,
-        source: Source,
-        range: std::ops::Range<usize>,
-        skip: usize,
-        take: usize,
-        out: &mut String,
-    ) -> io::Result<usize> {
-        match source {
-            Source::Original => self.original.try_push_char_window(range, skip, take, out),
-            Source::Add => {
-                let start = self
-                    .add_scalars
-                    .byte_at_scalar_in(&self.add, range.clone(), skip);
-                let end = self
-                    .add_scalars
-                    .byte_at_scalar_in(&self.add, start..range.end, take);
-                let window = &self.add[start..end];
-                let taken = window.chars().count();
-                out.push_str(window);
-                Ok(taken)
-            }
-        }
-    }
-
-    fn source_push_slice(
-        &self,
-        source: Source,
-        range: std::ops::Range<usize>,
-        out: &mut String,
-    ) -> io::Result<()> {
-        match source {
-            Source::Original => self.original.try_push_slice(range, out),
-            Source::Add => {
-                out.push_str(&self.add[range]);
-                Ok(())
-            }
         }
     }
 

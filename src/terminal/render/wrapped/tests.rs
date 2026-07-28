@@ -6,6 +6,7 @@
 use crate::buffer::{Buffer, Cursor, SimpleBuffer};
 use crate::config::theme::{Color, Style, Theme};
 use crate::editor::syntax::SyntaxKind;
+use std::borrow::Cow;
 
 use super::*;
 
@@ -150,4 +151,117 @@ fn wrapped_continuation_gutter_inherits_the_base_background() {
 
     let rendered = String::from_utf8(out).unwrap();
     assert!(rendered.contains("\x1b[2;1H\x1b[37;40m\x1b[K\x1b[0m\x1b[36;40m  \x1b[0m"));
+}
+
+#[test]
+fn wrapped_render_reuses_each_borrowed_row_layout_for_output_and_cursor() {
+    let mut buffer = SimpleBuffer::from_text("a👩\u{200d}💻b");
+    buffer.set_cursor(Cursor { row: 0, col: 4 });
+    let rows = visible_rows(&buffer, 0, 0, 3, 3).unwrap();
+    assert_eq!(rows.len(), 2);
+    assert!(matches!(rows[0].content, Cow::Borrowed("a👩\u{200d}💻")));
+    assert_eq!(
+        wrapped_cursor_position(buffer.cursor(), &rows, 0, 3),
+        Some((2, 1))
+    );
+    drop(rows);
+
+    crate::editor::text_layout::reset_visible_layout_builds();
+    let mut out = Vec::new();
+    super::super::render_buffer(
+        &mut out,
+        &buffer,
+        RenderViewport::new(0, 0, 4, 3),
+        None,
+        RenderOptions {
+            soft_wrap: true,
+            ..RenderOptions::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        crate::editor::text_layout::take_visible_layout_build_counts(),
+        (2, 0),
+        "each materialized wrapped row must build exactly one shared layout"
+    );
+    let rendered = String::from_utf8(out).unwrap();
+    assert!(rendered.contains("a👩\u{200d}💻"));
+    assert!(rendered.ends_with("\x1b[0 q\x1b[2;1H\x1b[?25h\x1b[?2026l"));
+}
+
+#[test]
+fn oversized_zwj_grapheme_advances_once_without_terminal_overflow() {
+    let mut buffer = SimpleBuffer::from_text("👩\u{200d}💻");
+    buffer.set_cursor(Cursor { row: 0, col: 3 });
+    let rows = visible_rows(&buffer, 0, 0, 3, 1).unwrap();
+
+    assert_eq!(rows[0].content, "👩\u{200d}💻");
+    assert_eq!(rows[0].end_col(), 3);
+    assert_eq!(wrapped_cursor_position(buffer.cursor(), &rows, 0, 1), None);
+
+    let mut out = Vec::new();
+    super::super::render_buffer(
+        &mut out,
+        &buffer,
+        RenderViewport::new(0, 0, 4, 1),
+        None,
+        RenderOptions {
+            soft_wrap: true,
+            ..RenderOptions::default()
+        },
+    )
+    .unwrap();
+    let rendered = String::from_utf8(out).unwrap();
+    assert!(!rendered.contains("👩\u{200d}💻"));
+}
+
+#[test]
+fn wrapped_boundary_completion_never_splits_a_long_zwj_cluster() {
+    let cluster = format!("👩{}", "\u{200d}👩".repeat(40));
+    assert!(cluster.chars().count() > 36);
+    let mut buffer = SimpleBuffer::from_text(&format!("{cluster}x"));
+    let boundary = cluster.chars().count();
+    buffer.set_cursor(Cursor {
+        row: 0,
+        col: boundary,
+    });
+
+    let rows = visible_rows(&buffer, 0, 0, 3, 1).unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].content, cluster);
+    assert_eq!(rows[0].end_col(), boundary);
+    assert_eq!(rows[1].start_col, boundary);
+    assert_eq!(rows[1].content, "x");
+    assert_eq!(
+        wrapped_cursor_position(buffer.cursor(), &rows, 0, 1),
+        Some((2, 1))
+    );
+    drop(rows);
+
+    crate::editor::text_layout::reset_visible_layout_builds();
+    let mut out = Vec::new();
+    super::super::render_buffer(
+        &mut out,
+        &buffer,
+        RenderViewport::new(0, 0, 4, 1),
+        None,
+        RenderOptions {
+            soft_wrap: true,
+            ..RenderOptions::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        crate::editor::text_layout::take_visible_layout_build_counts(),
+        (2, 2),
+        "two discarded probes establish the long cluster boundary; final row layouts are reused"
+    );
+    let rendered = String::from_utf8(out).unwrap();
+    assert!(
+        !rendered.contains('👩'),
+        "oversized cluster must not overflow"
+    );
+    assert!(rendered.contains('x'));
 }

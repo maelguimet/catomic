@@ -123,22 +123,22 @@ fn wrapped_scroll_advances_by_visible_rows_across_tabs_and_unicode() {
     app.view_preferences.set_line_numbers(true);
     app.screen.width = 6;
     app.screen.height = 4;
-    let expected = crate::terminal::render::wrapped::visible_rows(
-        &*app.buffer,
-        0,
-        0,
-        app.screen.visible_height() + MOUSE_WHEEL_ROWS,
-        crate::app::view::content_width(&app),
-    )
-    .unwrap()[MOUSE_WHEEL_ROWS]
-        .clone();
+    let expected = {
+        let rows = crate::terminal::render::wrapped::visible_rows(
+            &*app.buffer,
+            0,
+            0,
+            app.screen.visible_height() + MOUSE_WHEEL_ROWS,
+            crate::app::view::content_width(&app),
+        )
+        .unwrap();
+        let row = &rows[MOUSE_WHEEL_ROWS];
+        (row.document_row, row.start_col)
+    };
 
     scroll_viewport(&mut app, ScrollDirection::Down, MOUSE_WHEEL_ROWS).unwrap();
 
-    assert_eq!(
-        (app.screen.scroll_top, app.screen.wrap_col),
-        (expected.document_row, expected.start_col)
-    );
+    assert_eq!((app.screen.scroll_top, app.screen.wrap_col), expected);
     assert_eq!(app.buffer.cursor(), Cursor::default());
     assert_eq!(app.screen.scroll_left, 0);
 

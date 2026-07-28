@@ -250,27 +250,6 @@ impl FileOriginal {
         Ok(offset)
     }
 
-    pub(crate) fn push_char_window(
-        &self,
-        range: Range<usize>,
-        skip: usize,
-        take: usize,
-        out: &mut String,
-    ) -> io::Result<usize> {
-        if take == 0 || range.is_empty() {
-            return Ok(0);
-        }
-        self.ensure_unchanged()?;
-        let (row, start_col, end_col) = self.range_columns(&range)?;
-        let window_start_col = start_col.saturating_add(skip).min(end_col);
-        let window_end_col = window_start_col.saturating_add(take).min(end_col);
-        let start = self.byte_offset_at_line_col(row, window_start_col)?;
-        let end = self.byte_offset_at_line_col(row, window_end_col)?;
-        self.push_range(start..end, out)?;
-        self.ensure_unchanged()?;
-        Ok(window_end_col - window_start_col)
-    }
-
     fn range_columns(&self, range: &Range<usize>) -> io::Result<(usize, usize, usize)> {
         if range.start > range.end || range.end > self.metadata.logical_len {
             return Err(io::Error::new(

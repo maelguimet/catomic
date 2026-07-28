@@ -1,4 +1,5 @@
 use crate::buffer::{Buffer, Cursor, PieceTable};
+use std::borrow::Cow;
 
 const MAX_SCALAR_MAPPING_VISITS: usize = 16 * 1024;
 
@@ -180,4 +181,22 @@ fn scalar_checkpoint_storage_is_included_in_retained_memory_stats() {
         + history_bytes;
     assert!(buffer.add_scalars.retained_bytes() > 0);
     assert_eq!(stats.retained_bytes, expected);
+}
+
+#[test]
+fn unicode_window_crossing_checkpoint_is_exact_borrowed_and_bounded() {
+    let unit = "a\u{301}👩\u{200d}💻\t猫";
+    let text = unit.repeat(512);
+    let scalar_start = 1022;
+    let expected = text.chars().skip(scalar_start).take(12).collect::<String>();
+    let buffer = PieceTable::from_owned_text(text);
+    let _ = buffer.take_scalar_visited_bytes();
+
+    let window = buffer
+        .try_window_to_cow(0, buffer.logical_byte_len().unwrap(), scalar_start, 12)
+        .unwrap();
+
+    assert!(matches!(window, Cow::Borrowed(_)));
+    assert_eq!(window, expected);
+    assert!(buffer.take_scalar_visited_bytes() <= MAX_SCALAR_MAPPING_VISITS);
 }

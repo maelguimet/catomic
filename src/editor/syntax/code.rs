@@ -6,90 +6,94 @@
 use super::{SpanStyle, StyledSpan, SyntaxKind};
 
 pub(super) fn spans(syntax: SyntaxKind, line: &str) -> Vec<StyledSpan> {
-    let chars: Vec<char> = line.chars().collect();
     let mut spans = Vec::new();
-    let mut index = 0;
-    while index < chars.len() {
-        if is_comment_start(syntax, &chars, index) {
+    let mut chars = line.char_indices().peekable();
+    let mut scalar = 0usize;
+    while let Some((byte, ch)) = chars.next() {
+        if is_comment_start(syntax, line, byte, ch) {
             spans.push(StyledSpan {
-                start: index,
-                end: chars.len(),
+                start: scalar,
+                end: scalar.saturating_add(line[byte..].chars().count()),
                 style: SpanStyle::Comment,
             });
             break;
         }
-        if is_quote(syntax, chars[index]) {
-            let end = quoted_end(&chars, index);
+        if is_quote(syntax, ch) {
+            let start = scalar;
+            scalar = scalar.saturating_add(1);
+            let mut escaped = false;
+            for (_, quoted) in chars.by_ref() {
+                scalar = scalar.saturating_add(1);
+                if escaped {
+                    escaped = false;
+                } else if quoted == '\\' {
+                    escaped = true;
+                } else if quoted == ch {
+                    break;
+                }
+            }
             spans.push(StyledSpan {
-                start: index,
-                end,
+                start,
+                end: scalar,
                 style: SpanStyle::String,
             });
-            index = end;
             continue;
         }
-        if chars[index].is_ascii_digit() {
-            let end = token_end(&chars, index, |ch| {
-                ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.')
+        if ch.is_ascii_digit() {
+            let start = scalar;
+            scalar = scalar.saturating_add(1);
+            take_while(&mut chars, &mut scalar, |next| {
+                next.is_ascii_alphanumeric() || matches!(next, '_' | '.')
             });
             spans.push(StyledSpan {
-                start: index,
-                end,
+                start,
+                end: scalar,
                 style: SpanStyle::Number,
             });
-            index = end;
             continue;
         }
-        if chars[index].is_alphabetic() || chars[index] == '_' {
-            let end = token_end(&chars, index, |ch| ch.is_alphanumeric() || ch == '_');
-            let token: String = chars[index..end].iter().collect();
-            if is_keyword(syntax, &token) {
+        if ch.is_alphabetic() || ch == '_' {
+            let start = scalar;
+            scalar = scalar.saturating_add(1);
+            take_while(&mut chars, &mut scalar, |next| {
+                next.is_alphanumeric() || next == '_'
+            });
+            let byte_end = chars.peek().map_or(line.len(), |(offset, _)| *offset);
+            if is_keyword(syntax, &line[byte..byte_end]) {
                 spans.push(StyledSpan {
-                    start: index,
-                    end,
+                    start,
+                    end: scalar,
                     style: SpanStyle::Keyword,
                 });
             }
-            index = end;
             continue;
         }
-        index += 1;
+        scalar = scalar.saturating_add(1);
     }
     spans
 }
 
-fn is_comment_start(syntax: SyntaxKind, chars: &[char], index: usize) -> bool {
+fn take_while(
+    chars: &mut std::iter::Peekable<std::str::CharIndices<'_>>,
+    scalar: &mut usize,
+    accepts: impl Fn(char) -> bool,
+) {
+    while chars.peek().is_some_and(|(_, ch)| accepts(*ch)) {
+        chars.next();
+        *scalar = (*scalar).saturating_add(1);
+    }
+}
+
+fn is_comment_start(syntax: SyntaxKind, line: &str, byte: usize, ch: char) -> bool {
     match syntax {
-        SyntaxKind::Rust => chars[index..].starts_with(&['/', '/']),
-        SyntaxKind::Python => chars[index] == '#',
+        SyntaxKind::Rust => line[byte..].starts_with("//"),
+        SyntaxKind::Python => ch == '#',
         _ => false,
     }
 }
 
 fn is_quote(syntax: SyntaxKind, ch: char) -> bool {
     ch == '"' || (syntax == SyntaxKind::Python && ch == '\'')
-}
-
-fn quoted_end(chars: &[char], start: usize) -> usize {
-    let quote = chars[start];
-    let mut index = start + 1;
-    let mut escaped = false;
-    while index < chars.len() {
-        let ch = chars[index];
-        index += 1;
-        if escaped {
-            escaped = false;
-        } else if ch == '\\' {
-            escaped = true;
-        } else if ch == quote {
-            break;
-        }
-    }
-    index
-}
-
-fn token_end(chars: &[char], start: usize, accepts: impl Fn(char) -> bool) -> usize {
-    start + chars[start..].iter().take_while(|ch| accepts(**ch)).count()
 }
 
 fn is_keyword(syntax: SyntaxKind, token: &str) -> bool {

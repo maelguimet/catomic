@@ -4,11 +4,13 @@
 //! Invariants: composition errors produce no output; every update hides the cursor and is published
 //!   as one synchronized frame with explicit dimension/work bounds.
 
+use std::borrow::Cow;
 use std::io::{self, Write};
 
 use crate::buffer::{Buffer, Cursor};
 use crate::config::theme::Theme;
 use crate::editor::syntax::{HyperlinkSpan, StyledSpan, SyntaxKind};
+use crate::editor::text_layout::VisibleLineLayout;
 use crate::terminal::cursor_style::{self, CursorShape};
 
 #[cfg(test)]
@@ -28,6 +30,55 @@ const MAX_FRAME_CELLS: usize = 8 * 1024 * 1024;
 pub(crate) const SYNC_UPDATE_BEGIN: &[u8] = b"\x1b[?2026h";
 pub(crate) const SYNC_UPDATE_END: &[u8] = b"\x1b[?2026l";
 const HIDE_CURSOR: &[u8] = b"\x1b[?25l";
+
+/// Fetch enough scalars to prove that the retained layout ends at a complete
+/// grapheme boundary. A trailing partial cluster is ambiguous only when layout
+/// consumed the whole fetched string while the logical line still has text.
+pub(super) fn boundary_complete_line<'a>(
+    buffer: &'a dyn Buffer,
+    row: usize,
+    start_col: usize,
+    initial_fetch: usize,
+    max_cells: usize,
+    wrapped: bool,
+    layout: &mut VisibleLineLayout,
+) -> io::Result<Cow<'a, str>> {
+    let line_len = buffer.line_char_count(row).unwrap_or(0);
+    let remaining = line_len.saturating_sub(start_col);
+    if remaining == 0 {
+        layout.build("", max_cells);
+        return Ok(Cow::Borrowed(""));
+    }
+    let mut fetch = initial_fetch.max(1).min(remaining);
+    loop {
+        let content = buffer
+            .try_visible_lines_window(row, 1, start_col, fetch)?
+            .into_iter()
+            .next()
+            .map(|line| line.content)
+            .unwrap_or_default();
+        if wrapped {
+            layout.build_wrapped(&content, max_cells);
+        } else {
+            layout.build(&content, max_cells);
+        }
+        let needs_boundary_completion = layout.source_byte_len() == content.len()
+            && start_col.saturating_add(layout.source_scalar_len()) < line_len;
+        if !needs_boundary_completion {
+            return Ok(content);
+        }
+        #[cfg(test)]
+        crate::editor::text_layout::record_visible_layout_probe();
+        let next_fetch = fetch
+            .saturating_mul(2)
+            .max(fetch.saturating_add(1))
+            .min(remaining);
+        if next_fetch == fetch {
+            return Ok(content);
+        }
+        fetch = next_fetch;
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct TextHighlight {

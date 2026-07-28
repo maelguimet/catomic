@@ -418,3 +418,30 @@ fn render_buffer_cursor_uses_grapheme_display_width() {
     assert!(rendered.contains("a\u{301}猫x"));
     assert!(rendered.ends_with("\x1b[0 q\x1b[1;4H\x1b[?25h\x1b[?2026l"));
 }
+
+#[test]
+fn unwrapped_boundary_completion_never_emits_a_partial_long_cluster() {
+    let cluster = format!("a{}", "\u{301}".repeat(100));
+    assert!(cluster.chars().count() > 36);
+    let buffer = SimpleBuffer::from_text(&format!("{cluster}x"));
+    crate::editor::text_layout::reset_visible_layout_builds();
+    let mut out = Vec::new();
+
+    render_buffer(
+        &mut out,
+        &buffer,
+        RenderViewport::new(0, 0, 3, 1),
+        None,
+        RenderOptions::default(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        crate::editor::text_layout::take_visible_layout_build_counts(),
+        (1, 2),
+        "boundary probes must not become additional final line layouts"
+    );
+    let rendered = String::from_utf8(out).unwrap();
+    assert_eq!(rendered.matches(&cluster).count(), 1);
+    assert!(!rendered.contains('x'));
+}

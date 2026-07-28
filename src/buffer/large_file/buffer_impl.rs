@@ -23,11 +23,11 @@ impl Buffer for LargeFileBuffer {
         Some(Cow::Owned(self.line_to_string(row).unwrap_or_default()))
     }
 
-    fn visible_lines(&self, start: usize, height: usize) -> Vec<LineView> {
+    fn visible_lines(&self, start: usize, height: usize) -> Vec<LineView<'_>> {
         let end = (start + height).min(self.line_count());
         (start..end)
             .map(|row| LineView {
-                content: self.line_to_string(row).unwrap_or_default(),
+                content: Cow::Owned(self.line_to_string(row).unwrap_or_default()),
             })
             .collect()
     }
@@ -38,13 +38,14 @@ impl Buffer for LargeFileBuffer {
         height: usize,
         start_col: usize,
         width: usize,
-    ) -> Vec<LineView> {
+    ) -> Vec<LineView<'_>> {
         let end = (start + height).min(self.line_count());
         (start..end)
             .map(|row| LineView {
-                content: self
-                    .line_window_to_string(row, start_col, width)
-                    .unwrap_or_default(),
+                content: Cow::Owned(
+                    self.line_window_to_string(row, start_col, width)
+                        .unwrap_or_default(),
+                ),
             })
             .collect()
     }
@@ -55,13 +56,15 @@ impl Buffer for LargeFileBuffer {
         height: usize,
         start_col: usize,
         width: usize,
-    ) -> io::Result<Vec<LineView>> {
+    ) -> io::Result<Vec<LineView<'_>>> {
         self.ensure_fd_unchanged()?;
         let end = (start + height).min(self.line_count());
         let lines = (start..end)
             .map(|row| {
                 self.line_window_to_string_unchecked(row, start_col, width)
-                    .map(|content| LineView { content })
+                    .map(|content| LineView {
+                        content: Cow::Owned(content),
+                    })
             })
             .collect::<io::Result<Vec<_>>>()?;
         self.ensure_fd_unchanged()?;

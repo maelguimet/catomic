@@ -40,8 +40,8 @@ pub struct Cursor {
 /// A view of one line for rendering.
 /// Phase 0: just the string content. Later can carry style info, etc.
 #[derive(Clone, Debug)]
-pub struct LineView {
-    pub content: String,
+pub struct LineView<'a> {
+    pub content: Cow<'a, str>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -84,14 +84,14 @@ pub trait Buffer {
     // --- Queries ---
     fn line_count(&self) -> usize;
     fn line(&self, row: usize) -> Option<Cow<'_, str>>;
-    fn visible_lines(&self, start: usize, height: usize) -> Vec<LineView>;
+    fn visible_lines(&self, start: usize, height: usize) -> Vec<LineView<'_>>;
     fn visible_lines_window(
         &self,
         start: usize,
         height: usize,
         start_col: usize,
         width: usize,
-    ) -> Vec<LineView> {
+    ) -> Vec<LineView<'_>> {
         self.visible_lines(start, height)
             .into_iter()
             .map(|lv| {
@@ -100,7 +100,9 @@ pub trait Buffer {
                 } else {
                     lv.content.chars().skip(start_col).take(width).collect()
                 };
-                LineView { content }
+                LineView {
+                    content: Cow::Owned(content),
+                }
             })
             .collect()
     }
@@ -114,7 +116,7 @@ pub trait Buffer {
         height: usize,
         start_col: usize,
         width: usize,
-    ) -> io::Result<Vec<LineView>> {
+    ) -> io::Result<Vec<LineView<'_>>> {
         Ok(self.visible_lines_window(start, height, start_col, width))
     }
     fn line_char_count(&self, row: usize) -> Option<usize> {

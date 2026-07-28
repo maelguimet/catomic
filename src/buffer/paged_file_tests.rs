@@ -6,12 +6,23 @@
 use std::io::Write;
 
 use super::{Buffer, Cursor, PagedFileBuffer};
+use crate::buffer::piece_table::types::FileReadOperationTestPoint;
+use crate::terminal::render::{render_buffer, RenderOptions, RenderViewport};
+use crate::terminal::{RuntimeOutput, TerminalOutput};
 
 fn temp_path(label: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!(
         "catomic_paged_edit_{label}_{}.txt",
         std::process::id()
     ))
+}
+
+fn retained_options(buffer: &dyn Buffer) -> RenderOptions<'_> {
+    RenderOptions {
+        document_id: 1,
+        document_revision: buffer.content_revision(),
+        ..RenderOptions::default()
+    }
 }
 
 #[test]
@@ -143,6 +154,296 @@ fn descriptor_drift_blocks_page_load_and_streaming() {
     assert_eq!(buffer.page_info().unwrap().page_number, 1);
     assert!(buffer.try_visible_lines_window(0, 1, 0, 80).is_err());
 
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn paged_viewports_batch_file_and_add_pieces_with_crlf_scroll_mapping() {
+    let path = temp_path("batched_crlf_viewport");
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, "zero\r\none\r\ntwo\r\nthree\r\nnext").unwrap();
+
+    let mut buffer = PagedFileBuffer::open(&path, 4).unwrap();
+    buffer.insert_char('X');
+    assert_eq!(buffer.file_original_metadata_check_count(), 0);
+
+    let plain = buffer
+        .try_visible_lines_window(0, 4, 0, 80)
+        .expect("plain viewport");
+    assert_eq!(
+        plain
+            .iter()
+            .map(|line| line.content.as_ref())
+            .collect::<Vec<_>>(),
+        vec!["Xzero", "one", "two", "three"]
+    );
+    assert_eq!(buffer.file_original_metadata_check_count(), 2);
+
+    let scrolled = buffer
+        .try_visible_lines_window(0, 4, 2, 2)
+        .expect("horizontally scrolled viewport");
+    assert_eq!(
+        scrolled
+            .iter()
+            .map(|line| line.content.as_ref())
+            .collect::<Vec<_>>(),
+        vec!["er", "e", "o", "re"]
+    );
+    assert_eq!(buffer.file_original_metadata_check_count(), 4);
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn descriptor_drift_before_during_or_after_batch_discards_every_row() {
+    for (label, point, expected_checks) in [
+        (
+            "batch_drift_before",
+            FileReadOperationTestPoint::BeforeInitialValidation,
+            1,
+        ),
+        (
+            "batch_drift_during",
+            FileReadOperationTestPoint::AfterRangeRead,
+            2,
+        ),
+        (
+            "batch_drift_after",
+            FileReadOperationTestPoint::BeforeFinalValidation,
+            2,
+        ),
+    ] {
+        let path = temp_path(label);
+        let _ = std::fs::remove_file(&path);
+        std::fs::write(&path, "zero\none\ntwo\nthree").unwrap();
+        let buffer = PagedFileBuffer::open(&path, 4).unwrap();
+        let mut external = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        buffer.set_file_read_operation_test_hook(point, move || {
+            external.write_all(b"\nchanged").unwrap();
+            external.sync_all().unwrap();
+        });
+
+        let error = buffer
+            .try_visible_lines_window(0, 4, 0, 80)
+            .expect_err("descriptor drift must reject the whole viewport");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(buffer.file_original_metadata_check_count(), expected_checks);
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+#[test]
+fn ordinary_render_uses_one_descriptor_guard_for_the_viewport() {
+    let path = temp_path("batched_render");
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, "zero\none\ntwo\nthree").unwrap();
+    let buffer = PagedFileBuffer::open(&path, 4).unwrap();
+    let mut output = Vec::new();
+
+    render_buffer(
+        &mut output,
+        &buffer,
+        RenderViewport::new(0, 0, 6, 80),
+        None,
+        RenderOptions::default(),
+    )
+    .expect("render viewport");
+
+    assert_eq!(buffer.file_original_metadata_check_count(), 2);
+    let rendered = String::from_utf8(output).unwrap();
+    for line in ["zero", "one", "two", "three"] {
+        assert!(rendered.contains(line), "missing {line:?}: {rendered:?}");
+    }
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn retained_render_reuses_one_guarded_viewport_read_for_planning_and_composition() {
+    let path = temp_path("retained_batched_render");
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, "zero\none\ntwo\nthree").unwrap();
+    let mut buffer = PagedFileBuffer::open(&path, 4).unwrap();
+    let mut output = RuntimeOutput::new(Vec::new());
+    let viewport = RenderViewport::new(0, 0, 6, 80);
+
+    output
+        .present_buffer(&buffer, viewport, None, retained_options(&buffer))
+        .expect("render retained viewport");
+
+    assert_eq!(
+        buffer.file_original_metadata_check_count(),
+        2,
+        "the frame-local viewport read must serve both planning and composition"
+    );
+    let rendered = String::from_utf8(output.writer().clone()).unwrap();
+    for line in ["zero", "one", "two", "three"] {
+        assert!(rendered.contains(line), "missing {line:?}: {rendered:?}");
+    }
+
+    output
+        .present_buffer(&buffer, viewport, None, retained_options(&buffer))
+        .expect("reuse retained viewport");
+    assert_eq!(
+        buffer.file_original_metadata_check_count(),
+        2,
+        "an unchanged retained frame must not reread viewport text"
+    );
+    assert_eq!(output.presentation().metrics().rows_composed, 0);
+
+    buffer.set_cursor(Cursor { row: 0, col: 1 });
+    let cursor_checks = buffer.file_original_metadata_check_count();
+    output
+        .present_buffer(&buffer, viewport, None, retained_options(&buffer))
+        .expect("render cursor-only retained viewport");
+    assert_eq!(
+        buffer.file_original_metadata_check_count(),
+        cursor_checks,
+        "a cursor-only frame must not reread viewport text"
+    );
+    assert_eq!(output.presentation().metrics().rows_composed, 0);
+
+    output
+        .present_buffer(
+            &buffer,
+            viewport,
+            Some("status changed"),
+            retained_options(&buffer),
+        )
+        .expect("render status-only retained viewport");
+    assert_eq!(
+        buffer.file_original_metadata_check_count(),
+        cursor_checks,
+        "a status-only frame must not reread viewport text"
+    );
+    assert_eq!(output.presentation().metrics().rows_composed, 0);
+
+    buffer.insert_char('X');
+    let edit_checks = buffer.file_original_metadata_check_count();
+    output
+        .present_buffer(&buffer, viewport, None, retained_options(&buffer))
+        .expect("render changed retained viewport");
+    assert_eq!(
+        buffer.file_original_metadata_check_count(),
+        edit_checks + 2,
+        "a content-revision frame must use one new guarded viewport read"
+    );
+    assert_eq!(output.presentation().metrics().rows_composed, 1);
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn retained_render_descriptor_drift_discards_the_complete_frame() {
+    for (label, point, expected_checks) in [
+        (
+            "retained_batch_drift_before",
+            FileReadOperationTestPoint::BeforeInitialValidation,
+            1,
+        ),
+        (
+            "retained_batch_drift_during",
+            FileReadOperationTestPoint::AfterRangeRead,
+            2,
+        ),
+        (
+            "retained_batch_drift_after",
+            FileReadOperationTestPoint::BeforeFinalValidation,
+            2,
+        ),
+    ] {
+        let path = temp_path(label);
+        let _ = std::fs::remove_file(&path);
+        std::fs::write(&path, "zero\none\ntwo\nthree").unwrap();
+        let buffer = PagedFileBuffer::open(&path, 4).unwrap();
+        let mut external = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        buffer.set_file_read_operation_test_hook(point, move || {
+            external.write_all(b"\nchanged").unwrap();
+            external.sync_all().unwrap();
+        });
+        let mut output = RuntimeOutput::new(Vec::new());
+
+        let error = output
+            .present_buffer(
+                &buffer,
+                RenderViewport::new(0, 0, 6, 80),
+                None,
+                retained_options(&buffer),
+            )
+            .expect_err("descriptor drift must reject the retained frame");
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert!(output.writer().is_empty());
+        assert_eq!(buffer.file_original_metadata_check_count(), expected_checks);
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+#[test]
+fn long_grapheme_completion_counts_bounded_additional_descriptor_probes() {
+    let path = temp_path("long_grapheme_probes");
+    let _ = std::fs::remove_file(&path);
+    let cluster = format!("a{}", "\u{301}".repeat(100));
+    std::fs::write(&path, format!("{cluster}x")).unwrap();
+    let buffer = PagedFileBuffer::open(&path, 1).unwrap();
+    crate::editor::text_layout::reset_visible_layout_builds();
+    let mut output = Vec::new();
+
+    render_buffer(
+        &mut output,
+        &buffer,
+        RenderViewport::new(0, 0, 3, 1),
+        None,
+        RenderOptions::default(),
+    )
+    .expect("render long grapheme");
+
+    let (_, probes) = crate::editor::text_layout::take_visible_layout_build_counts();
+    assert!(probes > 0);
+    assert_eq!(
+        buffer.file_original_metadata_check_count(),
+        2 + probes * 2,
+        "one guarded viewport plus one guarded read per exponential boundary probe"
+    );
+    let rendered = String::from_utf8(output).unwrap();
+    assert_eq!(rendered.matches(&cluster).count(), 1);
+    assert!(!rendered.contains('x'));
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn retained_long_grapheme_completion_counts_only_explicit_retry_guards() {
+    let path = temp_path("retained_long_grapheme_probes");
+    let _ = std::fs::remove_file(&path);
+    let cluster = format!("a{}", "\u{301}".repeat(100));
+    std::fs::write(&path, format!("{cluster}x")).unwrap();
+    let buffer = PagedFileBuffer::open(&path, 1).unwrap();
+    crate::editor::text_layout::reset_visible_layout_builds();
+    let mut output = RuntimeOutput::new(Vec::new());
+
+    output
+        .present_buffer(
+            &buffer,
+            RenderViewport::new(0, 0, 3, 1),
+            None,
+            retained_options(&buffer),
+        )
+        .expect("render retained long grapheme");
+
+    let (_, probes) = crate::editor::text_layout::take_visible_layout_build_counts();
+    assert!(probes > 0);
+    assert_eq!(
+        buffer.file_original_metadata_check_count(),
+        2 + probes * 2,
+        "one guarded viewport plus one guarded read per exponential boundary probe"
+    );
+    let rendered = String::from_utf8(output.writer().clone()).unwrap();
+    assert_eq!(rendered.matches(&cluster).count(), 1);
+    assert!(!rendered.contains('x'));
     let _ = std::fs::remove_file(path);
 }
 

@@ -16,6 +16,30 @@ use std::sync::Arc;
 
 use crate::buffer::large_file::LineCheckpoint;
 
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FileReadOperationTestPoint {
+    BeforeInitialValidation,
+    AfterRangeRead,
+    BeforeFinalValidation,
+}
+
+#[cfg(test)]
+struct FileReadOperationTestHook {
+    point: FileReadOperationTestPoint,
+    action: Option<Box<dyn FnOnce() + Send>>,
+}
+
+#[cfg(test)]
+impl std::fmt::Debug for FileReadOperationTestHook {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("FileReadOperationTestHook")
+            .field("point", &self.point)
+            .finish()
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct FileMetadataSnapshot {
     pub(crate) len: u64,
@@ -339,6 +363,14 @@ pub(crate) struct FileOriginal {
     read_bytes: std::sync::atomic::AtomicUsize,
     #[cfg(test)]
     metadata_check_count: std::sync::atomic::AtomicUsize,
+    #[cfg(test)]
+    read_operation_test_hook: std::sync::Mutex<Option<FileReadOperationTestHook>>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct FileOriginalReadOperation<'a> {
+    original: &'a FileOriginal,
+    expected_snapshot: FileMetadataSnapshot,
 }
 
 impl FileOriginal {
@@ -355,14 +387,16 @@ impl FileOriginal {
             read_bytes: std::sync::atomic::AtomicUsize::new(0),
             #[cfg(test)]
             metadata_check_count: std::sync::atomic::AtomicUsize::new(0),
+            #[cfg(test)]
+            read_operation_test_hook: std::sync::Mutex::new(None),
         }
     }
 
-    fn ensure_unchanged(&self) -> io::Result<()> {
+    fn ensure_snapshot(&self, expected: FileMetadataSnapshot) -> io::Result<()> {
         #[cfg(test)]
         self.metadata_check_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        if FileMetadataSnapshot::capture(&self.file)? == self.snapshot {
+        if FileMetadataSnapshot::capture(&self.file)? == expected {
             Ok(())
         } else {
             Err(io::Error::new(
@@ -370,6 +404,29 @@ impl FileOriginal {
                 "file-backed original changed while open",
             ))
         }
+    }
+
+    fn ensure_unchanged(&self) -> io::Result<()> {
+        self.ensure_snapshot(self.snapshot)
+    }
+
+    pub(crate) fn with_read_operation<T>(
+        &self,
+        read: impl FnOnce(&FileOriginalReadOperation<'_>) -> io::Result<T>,
+    ) -> io::Result<T> {
+        #[cfg(test)]
+        self.run_read_operation_test_hook(FileReadOperationTestPoint::BeforeInitialValidation);
+        let expected_snapshot = self.snapshot;
+        self.ensure_snapshot(expected_snapshot)?;
+        let operation = FileOriginalReadOperation {
+            original: self,
+            expected_snapshot,
+        };
+        let result = read(&operation);
+        #[cfg(test)]
+        self.run_read_operation_test_hook(FileReadOperationTestPoint::BeforeFinalValidation);
+        self.ensure_snapshot(operation.expected_snapshot)?;
+        result
     }
 
     fn read_range_unchecked(&self, range: Range<usize>) -> io::Result<Vec<u8>> {
@@ -390,38 +447,9 @@ impl FileOriginal {
                 .fetch_add(read, std::sync::atomic::Ordering::Relaxed);
             filled += read;
         }
+        #[cfg(test)]
+        self.run_read_operation_test_hook(FileReadOperationTestPoint::AfterRangeRead);
         Ok(bytes)
-    }
-
-    fn read_range(&self, range: Range<usize>) -> io::Result<Vec<u8>> {
-        self.ensure_unchanged()?;
-        let bytes = self.read_range_unchecked(range)?;
-        self.ensure_unchanged()?;
-        Ok(bytes)
-    }
-
-    pub(crate) fn push_range(
-        &self,
-        logical_range: Range<usize>,
-        out: &mut String,
-    ) -> io::Result<()> {
-        let source_range = self.source_range(logical_range)?;
-        let bytes = self.read_range(source_range.clone())?;
-        let mut source_start = source_range.start;
-        self.for_each_crlf_offset(source_range.clone(), |carriage_return| {
-            let relative_start = source_start - source_range.start;
-            let relative_end = carriage_return - source_range.start;
-            if relative_start < relative_end {
-                out.push_str(as_utf8(&bytes[relative_start..relative_end])?);
-            }
-            source_start = carriage_return + 1;
-            Ok(())
-        })?;
-        let relative_start = source_start - source_range.start;
-        if relative_start < bytes.len() {
-            out.push_str(as_utf8(&bytes[relative_start..])?);
-        }
-        Ok(())
     }
 
     /// Read a scalar-aligned prefix without requiring line metadata. Search can
@@ -542,23 +570,6 @@ impl FileOriginal {
             }
             row += 1;
         }
-    }
-
-    pub(crate) fn char_count(&self, range: Range<usize>) -> io::Result<usize> {
-        self.ensure_unchanged()?;
-        let (row, start_col, end_col) = self.range_columns(&range)?;
-        let _ = row;
-        self.ensure_unchanged()?;
-        Ok(end_col - start_col)
-    }
-
-    pub(crate) fn byte_offset_at_char(&self, range: Range<usize>, col: usize) -> io::Result<usize> {
-        self.ensure_unchanged()?;
-        let (row, start_col, end_col) = self.range_columns(&range)?;
-        let target_col = start_col.saturating_add(col).min(end_col);
-        let offset = self.byte_offset_at_line_col(row, target_col)?;
-        self.ensure_unchanged()?;
-        Ok(offset)
     }
 
     fn range_columns(&self, range: &Range<usize>) -> io::Result<(usize, usize, usize)> {
@@ -745,6 +756,33 @@ impl FileOriginal {
     }
 
     #[cfg(test)]
+    pub(crate) fn set_read_operation_test_hook(
+        &self,
+        point: FileReadOperationTestPoint,
+        action: impl FnOnce() + Send + 'static,
+    ) {
+        *self.read_operation_test_hook.lock().unwrap() = Some(FileReadOperationTestHook {
+            point,
+            action: Some(Box::new(action)),
+        });
+    }
+
+    #[cfg(test)]
+    fn run_read_operation_test_hook(&self, point: FileReadOperationTestPoint) {
+        let action = {
+            let mut slot = self.read_operation_test_hook.lock().unwrap();
+            if slot.as_ref().is_some_and(|hook| hook.point == point) {
+                slot.take().and_then(|mut hook| hook.action.take())
+            } else {
+                None
+            }
+        };
+        if let Some(action) = action {
+            action();
+        }
+    }
+
+    #[cfg(test)]
     pub(crate) fn retained_metadata_bytes(&self) -> usize {
         self.metadata.retained_bytes().total()
     }
@@ -752,6 +790,48 @@ impl FileOriginal {
     #[cfg(test)]
     pub(crate) fn metadata_bytes(&self) -> FileOriginalMetadataBytes {
         self.metadata.retained_bytes()
+    }
+}
+
+impl FileOriginalReadOperation<'_> {
+    pub(crate) fn push_range(
+        &self,
+        logical_range: Range<usize>,
+        out: &mut String,
+    ) -> io::Result<()> {
+        let source_range = self.original.source_range(logical_range)?;
+        let bytes = self.read_range(source_range.clone())?;
+        let mut source_start = source_range.start;
+        self.original
+            .for_each_crlf_offset(source_range.clone(), |carriage_return| {
+                let relative_start = source_start - source_range.start;
+                let relative_end = carriage_return - source_range.start;
+                if relative_start < relative_end {
+                    out.push_str(as_utf8(&bytes[relative_start..relative_end])?);
+                }
+                source_start = carriage_return + 1;
+                Ok(())
+            })?;
+        let relative_start = source_start - source_range.start;
+        if relative_start < bytes.len() {
+            out.push_str(as_utf8(&bytes[relative_start..])?);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn char_count(&self, range: Range<usize>) -> io::Result<usize> {
+        let (_row, start_col, end_col) = self.original.range_columns(&range)?;
+        Ok(end_col - start_col)
+    }
+
+    pub(crate) fn byte_offset_at_char(&self, range: Range<usize>, col: usize) -> io::Result<usize> {
+        let (row, start_col, end_col) = self.original.range_columns(&range)?;
+        let target_col = start_col.saturating_add(col).min(end_col);
+        self.original.byte_offset_at_line_col(row, target_col)
+    }
+
+    fn read_range(&self, range: Range<usize>) -> io::Result<Vec<u8>> {
+        self.original.read_range_unchecked(range)
     }
 }
 

@@ -137,7 +137,8 @@ impl PagedFileBuffer {
         let count = page.buffer.line_count();
         page.next_page_start.is_some()
             && count > 1
-            && page.buffer.line_char_count(count - 1) == Some(0)
+            && page.buffer.index.line_start_byte(count - 1)
+                == page.buffer.index.line_end_byte(count - 1)
     }
 
     pub(super) fn ensure_unchanged(&self) -> io::Result<()> {
@@ -314,6 +315,22 @@ impl PagedFileBuffer {
             descriptor_read_bytes,
             descriptor_metadata_checks,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn file_original_metadata_check_count(&self) -> usize {
+        self.active().buffer.file_original_metadata_check_count()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_file_read_operation_test_hook(
+        &self,
+        point: crate::buffer::piece_table::types::FileReadOperationTestPoint,
+        action: impl FnOnce() + Send + 'static,
+    ) {
+        self.active()
+            .buffer
+            .set_file_read_operation_test_hook(point, action);
     }
 
     #[cfg(test)]

@@ -20,7 +20,11 @@ use std::{io, io::Write};
 use crate::buffer::line_index::LineIndex;
 use crate::buffer::Cursor;
 
-use super::file_original::{FileMetadataSnapshot, FileOriginal, FileOriginalMetadata};
+#[cfg(test)]
+pub(crate) use super::file_original::FileReadOperationTestPoint;
+use super::file_original::{
+    FileMetadataSnapshot, FileOriginal, FileOriginalMetadata, FileOriginalReadOperation,
+};
 use super::piece_tree::PieceTree;
 use super::scalar_index::ScalarIndex;
 
@@ -52,6 +56,14 @@ pub(crate) enum OriginalBacking {
     File(Arc<FileOriginal>),
 }
 
+pub(crate) enum OriginalReadOperation<'a> {
+    Owned {
+        text: &'a str,
+        scalars: &'a ScalarIndex,
+    },
+    File(FileOriginalReadOperation<'a>),
+}
+
 impl OriginalBacking {
     pub(crate) fn empty() -> Self {
         Self::Owned {
@@ -78,16 +90,6 @@ impl OriginalBacking {
         metadata: Arc<FileOriginalMetadata>,
     ) -> Self {
         Self::File(Arc::new(FileOriginal::new(file, snapshot, metadata)))
-    }
-
-    pub(crate) fn try_push_slice(&self, range: Range<usize>, out: &mut String) -> io::Result<()> {
-        match self {
-            Self::Owned { text, .. } => {
-                out.push_str(&text[range]);
-                Ok(())
-            }
-            Self::File(file) => file.push_range(range, out),
-        }
     }
 
     /// Read a prefix that ends on a scalar boundary. The returned text may use
@@ -138,21 +140,15 @@ impl OriginalBacking {
         }
     }
 
-    pub(crate) fn try_char_count(&self, range: Range<usize>) -> io::Result<usize> {
-        match self {
-            Self::Owned { text, scalars } => Ok(scalars.scalar_count(text, range)),
-            Self::File(file) => file.char_count(range),
-        }
-    }
-
-    pub(crate) fn try_byte_offset_at_char(
+    pub(crate) fn with_read_operation<T>(
         &self,
-        range: Range<usize>,
-        col: usize,
-    ) -> io::Result<usize> {
+        read: impl FnOnce(&OriginalReadOperation<'_>) -> io::Result<T>,
+    ) -> io::Result<T> {
         match self {
-            Self::Owned { text, scalars } => Ok(scalars.byte_at_scalar_in(text, range, col)),
-            Self::File(file) => file.byte_offset_at_char(range, col),
+            Self::Owned { text, scalars } => read(&OriginalReadOperation::Owned { text, scalars }),
+            Self::File(file) => {
+                file.with_read_operation(|operation| read(&OriginalReadOperation::File(*operation)))
+            }
         }
     }
 
@@ -169,6 +165,17 @@ impl OriginalBacking {
         match self {
             Self::Owned { .. } => 0,
             Self::File(file) => file.metadata_check_count(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_file_read_operation_test_hook(
+        &self,
+        point: FileReadOperationTestPoint,
+        action: impl FnOnce() + Send + 'static,
+    ) {
+        if let Self::File(file) = self {
+            file.set_read_operation_test_hook(point, action);
         }
     }
 
@@ -205,6 +212,36 @@ impl OriginalBacking {
         match self {
             Self::Owned { scalars, .. } => scalars.take_visited_bytes(),
             Self::File(_) => 0,
+        }
+    }
+}
+
+impl OriginalReadOperation<'_> {
+    pub(crate) fn try_push_slice(&self, range: Range<usize>, out: &mut String) -> io::Result<()> {
+        match self {
+            Self::Owned { text, .. } => {
+                out.push_str(&text[range]);
+                Ok(())
+            }
+            Self::File(file) => file.push_range(range, out),
+        }
+    }
+
+    pub(crate) fn try_char_count(&self, range: Range<usize>) -> io::Result<usize> {
+        match self {
+            Self::Owned { text, scalars } => Ok(scalars.scalar_count(text, range)),
+            Self::File(file) => file.char_count(range),
+        }
+    }
+
+    pub(crate) fn try_byte_offset_at_char(
+        &self,
+        range: Range<usize>,
+        col: usize,
+    ) -> io::Result<usize> {
+        match self {
+            Self::Owned { text, scalars } => Ok(scalars.byte_at_scalar_in(text, range, col)),
+            Self::File(file) => file.byte_offset_at_char(range, col),
         }
     }
 }

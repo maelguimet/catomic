@@ -6,7 +6,7 @@
 use std::borrow::Cow;
 use std::io;
 
-use crate::buffer::{Buffer, Cursor};
+use crate::buffer::{Buffer, Cursor, LineView};
 use crate::editor::text_layout::VisibleLineLayout;
 
 use super::{
@@ -20,6 +20,23 @@ struct PlannedRow {
     content_fingerprint: Option<u64>,
     layout: VisibleLineLayout,
     line_end: bool,
+}
+
+struct ViewportRow<'a> {
+    line: LineView<'a>,
+    char_count: usize,
+    completed: Option<Cow<'a, str>>,
+}
+
+pub(super) struct ViewportRead<'a> {
+    rows: Vec<ViewportRow<'a>>,
+    start_row: usize,
+    start_col: usize,
+    fetch_width: usize,
+    content_height: usize,
+    content_width: usize,
+    line_gutter: usize,
+    external_gutter: usize,
 }
 
 pub(super) struct RowPlan {
@@ -50,9 +67,16 @@ pub(super) fn compose_buffer(
     let content_width = width.saturating_sub(gutter);
     let cursor = buffer.cursor();
     let fetch_width = fetch_width(cursor, start_row, start_col, content_height, content_width);
+    let visible_lines = buffer.try_visible_lines_window_with_char_counts(
+        start_row,
+        content_height,
+        start_col,
+        fetch_width,
+    )?;
     let cursor_cells = write_rows(
         out,
         buffer,
+        &visible_lines,
         cursor,
         start_row,
         start_col,
@@ -65,12 +89,14 @@ pub(super) fn compose_buffer(
     )?;
     super::write_bottom_rows(out, viewport, message, options)?;
     let position = cursor_position(
-        buffer,
         cursor,
         cursor_cells,
         viewport,
         gutter,
         content_height,
+        visible_lines
+            .get(cursor.row.saturating_sub(start_row))
+            .map(|(_, char_count)| *char_count),
     );
     super::emoji_picker::write(
         out,
@@ -83,11 +109,11 @@ pub(super) fn compose_buffer(
     super::write_terminal_cursor(out, position, options.cursor_shape)
 }
 
-pub(super) fn plan_buffer(
-    buffer: &dyn Buffer,
+pub(super) fn read_viewport<'a>(
+    buffer: &'a dyn Buffer,
     viewport: RenderViewport,
     options: RenderOptions<'_>,
-) -> io::Result<RowPlan> {
+) -> io::Result<ViewportRead<'a>> {
     let RenderViewport {
         start_row,
         start_col,
@@ -100,32 +126,71 @@ pub(super) fn plan_buffer(
     let gutter = line_gutter.saturating_add(external_gutter);
     let content_width = width.saturating_sub(gutter);
     let fetch_width = content_width.saturating_mul(4).saturating_add(32);
+    let rows = buffer
+        .try_visible_lines_window_with_char_counts(
+            start_row,
+            content_height,
+            start_col,
+            fetch_width,
+        )?
+        .into_iter()
+        .map(|(line, char_count)| ViewportRow {
+            line,
+            char_count,
+            completed: None,
+        })
+        .collect();
+    Ok(ViewportRead {
+        rows,
+        start_row,
+        start_col,
+        fetch_width,
+        content_height,
+        content_width,
+        line_gutter,
+        external_gutter,
+    })
+}
+
+pub(super) fn plan_buffer_from_read<'a>(
+    buffer: &'a dyn Buffer,
+    read: &mut ViewportRead<'a>,
+) -> io::Result<RowPlan> {
     let line_count = buffer.line_count();
-    let mut rows = Vec::with_capacity(content_height);
-    for screen_row in 0..content_height {
-        let document_row = start_row.saturating_add(screen_row);
-        let line_len = buffer.line_char_count(document_row).unwrap_or(0);
+    let mut rows = Vec::with_capacity(read.content_height);
+    for screen_row in 0..read.content_height {
+        let document_row = read.start_row.saturating_add(screen_row);
+        let line_len = read.rows.get(screen_row).map_or(0, |row| row.char_count);
         let mut layout = VisibleLineLayout::default();
-        let content_fingerprint = if content_width > 0 && document_row < line_count {
-            let content = super::boundary_complete_line(
+        let content_fingerprint = if read.content_width > 0 && document_row < line_count {
+            let Some(row) = read.rows.get_mut(screen_row) else {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "viewport read omitted an indexed buffer row",
+                ));
+            };
+            row.completed = super::boundary_complete_line_from_initial(
                 buffer,
                 document_row,
-                start_col,
-                fetch_width,
-                content_width,
+                read.start_col,
+                read.fetch_width,
+                read.content_width,
                 false,
+                line_len,
+                &row.line.content,
                 &mut layout,
             )?;
+            let content = row.completed.as_deref().unwrap_or(&row.line.content);
             Some(super::presentation::content_fingerprint(
                 &content[..layout.source_byte_len()],
             ))
         } else {
             None
         };
-        let end_col = start_col.saturating_add(layout.source_scalar_len());
+        let end_col = read.start_col.saturating_add(layout.source_scalar_len());
         rows.push(PlannedRow {
             document_row,
-            start_col,
+            start_col: read.start_col,
             content_fingerprint,
             layout,
             line_end: document_row < line_count && end_col >= line_len,
@@ -133,11 +198,45 @@ pub(super) fn plan_buffer(
     }
     Ok(RowPlan {
         rows,
-        content_height,
-        content_width,
-        line_gutter,
-        external_gutter,
+        content_height: read.content_height,
+        content_width: read.content_width,
+        line_gutter: read.line_gutter,
+        external_gutter: read.external_gutter,
     })
+}
+
+pub(super) fn complete_read_for_plan<'a>(
+    buffer: &'a dyn Buffer,
+    plan: &RowPlan,
+    read: &mut ViewportRead<'a>,
+) -> io::Result<()> {
+    for (row_index, planned) in plan.rows.iter().enumerate() {
+        if planned.content_fingerprint.is_none() {
+            continue;
+        }
+        let Some(row) = read.rows.get_mut(row_index) else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "viewport read omitted a retained buffer row",
+            ));
+        };
+        if row.line.content.len() >= planned.layout.source_byte_len() {
+            continue;
+        }
+        let mut layout = VisibleLineLayout::default();
+        row.completed = super::boundary_complete_line_from_initial(
+            buffer,
+            planned.document_row,
+            read.start_col,
+            read.fetch_width,
+            read.content_width,
+            false,
+            row.char_count,
+            &row.line.content,
+            &mut layout,
+        )?;
+    }
+    Ok(())
 }
 
 fn gutter_width(buffer: &dyn Buffer, options: RenderOptions<'_>, width: usize) -> (usize, usize) {
@@ -158,8 +257,8 @@ fn gutter_width(buffer: &dyn Buffer, options: RenderOptions<'_>, width: usize) -
 
 pub(super) fn compose_row(
     out: &mut Vec<u8>,
-    buffer: &dyn Buffer,
     plan: &RowPlan,
+    read: &ViewportRead<'_>,
     row_index: usize,
     options: RenderOptions<'_>,
     boundaries: &mut Vec<usize>,
@@ -185,10 +284,10 @@ pub(super) fn compose_row(
         write_line_number(out, row.document_row, plan.line_gutter, options.theme)?;
     }
     if row.content_fingerprint.is_some() {
-        let content = planned_content(buffer, row)?;
+        let content = planned_content(read, row_index, row)?;
         style::write_content_line_from_layout(
             out,
-            &content,
+            content,
             row.document_row,
             row.start_col,
             options,
@@ -247,13 +346,15 @@ impl RowPlan {
     }
 }
 
-fn planned_content<'a>(buffer: &'a dyn Buffer, row: &PlannedRow) -> io::Result<Cow<'a, str>> {
-    let scalar_len = row.layout.source_scalar_len();
-    let content = buffer
-        .try_visible_lines_window(row.document_row, 1, row.start_col, scalar_len)?
-        .into_iter()
-        .next()
-        .map(|line| line.content)
+fn planned_content<'a>(
+    read: &'a ViewportRead<'_>,
+    row_index: usize,
+    row: &PlannedRow,
+) -> io::Result<&'a str> {
+    let content = read
+        .rows
+        .get(row_index)
+        .map(|row| row.completed.as_deref().unwrap_or(&row.line.content))
         .unwrap_or_default();
     let byte_len = row.layout.source_byte_len();
     if content.len() < byte_len || !content.is_char_boundary(byte_len) {
@@ -262,17 +363,14 @@ fn planned_content<'a>(buffer: &'a dyn Buffer, row: &PlannedRow) -> io::Result<C
             "buffer changed while composing retained row",
         ));
     }
-    Ok(cow_prefix(content, byte_len))
-}
-
-fn cow_prefix<'a>(content: Cow<'a, str>, byte_len: usize) -> Cow<'a, str> {
-    match content {
-        Cow::Borrowed(content) => Cow::Borrowed(&content[..byte_len]),
-        Cow::Owned(mut content) => {
-            content.truncate(byte_len);
-            Cow::Owned(content)
-        }
+    let content = &content[..byte_len];
+    if row.content_fingerprint != Some(super::presentation::content_fingerprint(content)) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "buffer changed while composing retained row",
+        ));
     }
+    Ok(content)
 }
 
 fn fetch_width(
@@ -298,6 +396,7 @@ fn fetch_width(
 fn write_rows(
     out: &mut Vec<u8>,
     buffer: &dyn Buffer,
+    visible_lines: &[(crate::buffer::LineView<'_>, usize)],
     cursor: Cursor,
     start_row: usize,
     start_col: usize,
@@ -326,19 +425,22 @@ fn write_rows(
         }
         if width > 0 {
             let document_row = start_row + screen_row - 1;
-            if document_row < buffer.line_count() {
-                let content = super::boundary_complete_line(
+            if let Some((line, line_len)) = visible_lines.get(screen_row - 1) {
+                let completed = super::boundary_complete_line_from_initial(
                     buffer,
                     document_row,
                     start_col,
                     fetch_width,
                     width,
                     false,
+                    *line_len,
+                    &line.content,
                     &mut layout,
                 )?;
+                let content = completed.as_deref().unwrap_or(&line.content);
                 style::write_content_line_from_layout(
                     out,
-                    &content,
+                    content,
                     document_row,
                     start_col,
                     options,
@@ -356,18 +458,18 @@ fn write_rows(
 }
 
 fn cursor_position(
-    buffer: &dyn Buffer,
     cursor: Cursor,
     cursor_cells: usize,
     viewport: RenderViewport,
     gutter: usize,
     content_height: usize,
+    line_end: Option<usize>,
 ) -> Option<(usize, usize)> {
     let content_width = viewport.width.saturating_sub(gutter);
     let Cursor { row, col } = cursor;
     let row_visible =
         row >= viewport.start_row && row < viewport.start_row.saturating_add(content_height);
-    let line_end = buffer.line_char_count(row).unwrap_or(0);
+    let line_end = line_end.unwrap_or(0);
     let col_visible = col >= viewport.start_col
         && (cursor_cells < content_width || (col == line_end && cursor_cells == content_width));
     (row_visible && col_visible && content_width > 0).then(|| {
@@ -390,13 +492,18 @@ mod retained_tests {
     fn planned_content_preserves_a_borrowed_preview_slice() {
         let buffer =
             PreviewBuffer::from_parts("borrowed preview row".into(), CompactLineStarts::new());
-        let plan = plan_buffer(
+        let mut read = read_viewport(
             &buffer,
             RenderViewport::new(0, 0, 2, 8),
             RenderOptions::default(),
         )
         .unwrap();
-        let content = planned_content(&buffer, &plan.rows[0]).unwrap();
-        assert!(matches!(content, Cow::Borrowed("borrowed")));
+        let plan = plan_buffer_from_read(&buffer, &mut read).unwrap();
+        assert!(matches!(
+            read.rows[0].line.content,
+            Cow::Borrowed("borrowed preview row")
+        ));
+        let content = planned_content(&read, 0, &plan.rows[0]).unwrap();
+        assert_eq!(content, "borrowed");
     }
 }

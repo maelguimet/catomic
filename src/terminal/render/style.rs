@@ -162,9 +162,20 @@ fn visible_ranges(
 ) -> Vec<(usize, usize)> {
     ranges
         .into_iter()
-        .flat_map(|ranges| ranges.iter().copied())
+        .flat_map(|ranges| ranges_for_row(ranges, row).iter().copied())
         .filter_map(|range| visible_highlight(Some(range), row, start_col, content_len))
         .collect()
+}
+
+/// Stored render annotations are sorted by their single-line coordinates at
+/// installation. This returns only ranges that can overlap `row`; end-column
+/// zero remains half-open and therefore does not paint its ending row.
+fn ranges_for_row(ranges: &[TextHighlight], row: usize) -> &[TextHighlight] {
+    let first = ranges.partition_point(|range| {
+        range.end.row < row || (range.end.row == row && range.end.col == 0)
+    });
+    let end = first + ranges[first..].partition_point(|range| range.start.row <= row);
+    &ranges[first..end]
 }
 
 fn visible_highlight(

@@ -22,6 +22,10 @@ Hot paths must not do:
 - full clones
 - background work on every key
 
+Render annotations (lint and external-reload overlays) are validated and sorted
+when installed. A frame borrows those immutable slices and narrows them by row;
+it neither clones the complete annotation set nor rescans off-screen findings.
+
 When adding expensive work, document:
 
 - when it runs

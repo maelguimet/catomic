@@ -9,6 +9,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::buffer::{Buffer, Cursor};
 use crate::file::size::SMALL_FILE_LIMIT_BYTES;
+use crate::terminal::render::{ExternalChangeKind, ExternalLineMarker, TextHighlight};
 
 const MAX_DIFF_LINES: usize = 200_000;
 const MAX_GRAPHEME_LINE_BYTES: usize = 1024 * 1024;
@@ -20,31 +21,19 @@ pub(crate) enum ChangeKind {
     Deleted,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct ChangedRange {
-    pub(crate) start: Cursor,
-    pub(crate) end: Cursor,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct LineMarker {
-    pub(crate) line: usize,
-    pub(crate) kind: ChangeKind,
-}
-
 #[derive(Clone, Copy)]
 pub(crate) struct VisibleChanges<'a> {
-    pub(crate) added_ranges: &'a [ChangedRange],
-    pub(crate) changed_ranges: &'a [ChangedRange],
-    pub(crate) markers: &'a [LineMarker],
+    pub(crate) added_ranges: &'a [TextHighlight],
+    pub(crate) changed_ranges: &'a [TextHighlight],
+    pub(crate) markers: &'a [ExternalLineMarker],
 }
 
 #[derive(Debug, Default)]
 pub(crate) struct ExternalChanges {
     history_position: Option<u64>,
-    added_ranges: Vec<ChangedRange>,
-    changed_ranges: Vec<ChangedRange>,
-    markers: Vec<LineMarker>,
+    added_ranges: Vec<TextHighlight>,
+    changed_ranges: Vec<TextHighlight>,
+    markers: Vec<ExternalLineMarker>,
 }
 
 pub(crate) enum DiffOutcome {
@@ -97,7 +86,7 @@ impl ExternalChanges {
         self.changed_ranges
             .sort_by_key(|range| (range.start.row, range.start.col));
         self.markers.sort_by_key(|marker| marker.line);
-        let mut merged = Vec::<LineMarker>::with_capacity(self.markers.len());
+        let mut merged = Vec::<ExternalLineMarker>::with_capacity(self.markers.len());
         for marker in self.markers.drain(..) {
             if let Some(previous) = merged.last_mut().filter(|item| item.line == marker.line) {
                 previous.kind = merge_kind(previous.kind, marker.kind);
@@ -115,7 +104,7 @@ impl ExternalChanges {
         if start >= end {
             return;
         }
-        let range = ChangedRange {
+        let range = TextHighlight {
             start: Cursor { row, col: start },
             end: Cursor { row, col: end },
         };
@@ -127,7 +116,10 @@ impl ExternalChanges {
     }
 
     fn mark_line(&mut self, line: usize, kind: ChangeKind) {
-        self.markers.push(LineMarker { line, kind });
+        self.markers.push(ExternalLineMarker {
+            line,
+            kind: terminal_kind(kind),
+        });
     }
 }
 
@@ -345,11 +337,19 @@ fn compare_line(old: &str, new: &str, row: usize, changes: &mut ExternalChanges)
     }
 }
 
-fn merge_kind(left: ChangeKind, right: ChangeKind) -> ChangeKind {
+fn terminal_kind(kind: ChangeKind) -> ExternalChangeKind {
+    match kind {
+        ChangeKind::Added => ExternalChangeKind::Added,
+        ChangeKind::Changed => ExternalChangeKind::Changed,
+        ChangeKind::Deleted => ExternalChangeKind::Deleted,
+    }
+}
+
+fn merge_kind(left: ExternalChangeKind, right: ExternalChangeKind) -> ExternalChangeKind {
     if left == right {
         left
     } else {
-        ChangeKind::Changed
+        ExternalChangeKind::Changed
     }
 }
 
@@ -374,15 +374,15 @@ mod tests {
         assert!(changes
             .markers
             .iter()
-            .any(|marker| marker.kind == ChangeKind::Added));
+            .any(|marker| marker.kind == ExternalChangeKind::Added));
         assert!(changes
             .markers
             .iter()
-            .any(|marker| marker.kind == ChangeKind::Changed));
+            .any(|marker| marker.kind == ExternalChangeKind::Changed));
         assert!(changes
             .markers
             .iter()
-            .any(|marker| marker.kind == ChangeKind::Deleted));
+            .any(|marker| marker.kind == ExternalChangeKind::Deleted));
         assert!(changes
             .added_ranges
             .iter()

@@ -370,3 +370,18 @@ fn lint_ranges_use_the_distinct_underlined_role() {
 
     assert_eq!(output, "c\x1b[31;4ma\x1b[0mt");
 }
+
+#[test]
+fn row_indexing_skips_offscreen_sorted_annotations() {
+    let ranges = (0..20_000)
+        .map(|row| TextHighlight {
+            start: Cursor { row, col: 0 },
+            end: Cursor { row, col: 1 },
+        })
+        .collect::<Vec<_>>();
+
+    let visible = super::ranges_for_row(&ranges, 19_999);
+
+    assert_eq!(visible.len(), 1);
+    assert_eq!(visible[0].start.row, 19_999);
+}

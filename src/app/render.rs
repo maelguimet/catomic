@@ -7,9 +7,7 @@ use std::io::{self, Write};
 
 use crate::terminal as term;
 
-use super::{
-    completion, external_command, external_diff, help, lint, mobile, recovery, status, view, App,
-};
+use super::{completion, external_command, help, lint, mobile, recovery, status, view, App};
 
 impl App {
     pub(crate) fn render(&self, out: &mut dyn Write) -> io::Result<()> {
@@ -25,39 +23,17 @@ fn render(app: &App, out: &mut dyn Write) -> io::Result<()> {
                 .visible(app.buffer.edit_history_position())
         })
         .flatten();
-    let external_added = external_ranges(visible_external.map(|changes| changes.added_ranges));
-    let external_changed = external_ranges(visible_external.map(|changes| changes.changed_ranges));
-    let external_markers = visible_external
-        .map(|changes| {
-            changes
-                .markers
-                .iter()
-                .map(|marker| term::render::ExternalLineMarker {
-                    line: marker.line,
-                    kind: match marker.kind {
-                        external_diff::ChangeKind::Added => term::render::ExternalChangeKind::Added,
-                        external_diff::ChangeKind::Changed => {
-                            term::render::ExternalChangeKind::Changed
-                        }
-                        external_diff::ChangeKind::Deleted => {
-                            term::render::ExternalChangeKind::Deleted
-                        }
-                    },
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let external_changes = visible_external.map(|_| term::render::ExternalChanges {
-        added_ranges: &external_added,
-        changed_ranges: &external_changed,
-        markers: &external_markers,
+    let external_changes = visible_external.map(|changes| term::render::ExternalChanges {
+        added_ranges: changes.added_ranges,
+        changed_ranges: changes.changed_ranges,
+        markers: changes.markers,
     });
-    let lint_ranges = lint_ranges(app);
+    let lint_ranges = lint::visible_highlights(app);
     let action_bar = mobile::action_bar_text(app);
     let emoji_picker = completion::emoji_picker_presentation(app);
     let mut options = render_options(
         app,
-        &lint_ranges,
+        lint_ranges,
         external_changes,
         action_bar.as_deref(),
         emoji_picker.as_ref(),
@@ -76,43 +52,6 @@ fn render(app: &App, out: &mut dyn Write) -> io::Result<()> {
     options.status_filename = Some(status.filename);
     options.status_selection = app.selection.status_range(&status.text);
     render_frame(app, out, &status.text, options)
-}
-
-fn lint_ranges(app: &App) -> Vec<term::render::TextHighlight> {
-    lint::visible_findings(app)
-        .into_iter()
-        .flat_map(|findings| findings.iter())
-        .filter_map(|finding| {
-            let line_len = app.buffer.line_char_count(finding.row)?;
-            if line_len == 0 {
-                return None;
-            }
-            let col = finding.col.min(line_len.saturating_sub(1));
-            Some(term::render::TextHighlight {
-                start: crate::buffer::Cursor {
-                    row: finding.row,
-                    col,
-                },
-                end: crate::buffer::Cursor {
-                    row: finding.row,
-                    col: col.saturating_add(1),
-                },
-            })
-        })
-        .collect()
-}
-
-fn external_ranges(
-    ranges: Option<&[external_diff::ChangedRange]>,
-) -> Vec<term::render::TextHighlight> {
-    ranges
-        .into_iter()
-        .flat_map(|ranges| ranges.iter())
-        .map(|range| term::render::TextHighlight {
-            start: range.start,
-            end: range.end,
-        })
-        .collect()
 }
 
 fn render_frame(
@@ -138,7 +77,7 @@ fn render_frame(
 
 fn render_options<'a>(
     app: &'a App,
-    lint_ranges: &'a [term::render::TextHighlight],
+    lint_ranges: Option<&'a [term::render::TextHighlight]>,
     external_changes: Option<term::render::ExternalChanges<'a>>,
     action_bar: Option<&'a str>,
     emoji_picker: Option<&'a completion::EmojiPickerPresentation>,
@@ -155,7 +94,7 @@ fn render_options<'a>(
         },
         highlight,
         highlight_kind,
-        lint_ranges: (!lint_ranges.is_empty()).then_some(lint_ranges),
+        lint_ranges,
         external_changes,
         syntax: view::display_syntax(app),
         presentation: view::display_presentation(app),

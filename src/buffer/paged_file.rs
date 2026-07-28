@@ -337,6 +337,27 @@ impl PagedFileBuffer {
     pub(crate) fn history_retention_metrics_for_test(&self) -> (usize, usize) {
         self.history.retention_metrics()
     }
+
+    #[cfg(test)]
+    pub(crate) fn retained_metadata_components(
+        &self,
+    ) -> crate::buffer::piece_table::file_original::FileOriginalMetadataBytes {
+        let mut total =
+            crate::buffer::piece_table::file_original::FileOriginalMetadataBytes::default();
+        for page in self.retained.values().chain(std::iter::once(self.active())) {
+            let Some(bytes) = page.buffer.retained_metadata_components() else {
+                continue;
+            };
+            total.line_starts += bytes.line_starts;
+            total.materialized_line_index += bytes.materialized_line_index;
+            total.crlf_offsets += bytes.crlf_offsets;
+            total.non_ascii_rows += bytes.non_ascii_rows;
+            total.non_ascii_char_counts += bytes.non_ascii_char_counts;
+            total.non_ascii_checkpoint_starts += bytes.non_ascii_checkpoint_starts;
+            total.checkpoints += bytes.checkpoints;
+        }
+        total
+    }
 }
 
 fn changed_descriptor_error() -> io::Error {

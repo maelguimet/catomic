@@ -15,6 +15,7 @@ use std::fs::File;
 use std::io;
 #[cfg(test)]
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::buffer::large_file::page_scan::scan_utf8_page;
 #[cfg(test)]
@@ -149,34 +150,20 @@ impl PieceTable {
         range_start: usize,
         range_end: usize,
     ) -> Self {
-        let local_line_starts: Vec<usize> = scan
-            .line_starts
-            .iter()
-            .map(|start| {
-                let removed = scan.crlf_offsets.partition_point(|offset| offset < start);
-                start - range_start - removed
-            })
-            .collect();
-        let newline_offsets = local_line_starts
-            .iter()
-            .skip(1)
-            .map(|start| start - 1)
-            .collect();
-        let crlf_offsets = scan.crlf_offsets;
         let logical_len = range_end
             .saturating_sub(range_start)
-            .saturating_sub(crlf_offsets.len());
-        let original_metadata = FileOriginalMetadata {
+            .saturating_sub(scan.crlf_offsets.len());
+        let original_metadata = Arc::new(FileOriginalMetadata::from_scan(
             range_start,
             range_end,
             logical_len,
-            newline_offsets,
-            crlf_offsets,
-            line_char_counts: scan.line_char_counts,
-            line_is_ascii: scan.line_is_ascii,
-            line_checkpoints: scan.line_checkpoints,
-            line_checkpoint_starts: scan.line_checkpoint_starts,
-        };
+            scan.line_starts,
+            scan.crlf_offsets,
+            scan.line_char_counts,
+            scan.line_is_ascii,
+            scan.line_checkpoints,
+            scan.line_checkpoint_starts,
+        ));
         let pieces = PieceTree::from_pieces(vec![Piece {
             source: Source::Original,
             start: 0,
@@ -184,11 +171,11 @@ impl PieceTable {
             char_len: None,
         }]);
         Self {
-            original: OriginalBacking::from_file(file, snapshot, original_metadata),
+            original: OriginalBacking::from_file(file, snapshot, Arc::clone(&original_metadata)),
             add: String::new(),
             add_scalars: ScalarIndex::empty_appendable(),
             pieces,
-            index: LineIndex::from_line_starts(local_line_starts, logical_len),
+            index: LineIndex::from_file_metadata(original_metadata),
             cursor: Cursor { row: 0, col: 0 },
             cursor_byte_offset: 0,
             undo_stack: crate::buffer::undo::UndoStack::new(),

@@ -64,18 +64,31 @@ impl Buffer for PieceTable {
         start_col: usize,
         width: usize,
     ) -> io::Result<Vec<LineView<'_>>> {
-        let end = (start + height).min(self.index.line_count());
-        (start..end)
-            .map(|row| {
-                self.try_window_to_cow(
-                    self.index.line_start_byte(row),
-                    self.index.line_end_byte(row),
-                    start_col,
-                    width,
-                )
-                .map(|content| LineView { content })
+        self.try_visible_lines_window_with_char_counts(start, height, start_col, width, false)
+            .map(|lines| {
+                lines
+                    .into_iter()
+                    .map(|(content, _)| LineView { content })
+                    .collect()
             })
-            .collect()
+    }
+
+    fn try_visible_lines_window_with_char_counts(
+        &self,
+        start: usize,
+        height: usize,
+        start_col: usize,
+        width: usize,
+    ) -> io::Result<Vec<(LineView<'_>, usize)>> {
+        PieceTable::try_visible_lines_window_with_char_counts(
+            self, start, height, start_col, width, false,
+        )
+        .map(|lines| {
+            lines
+                .into_iter()
+                .map(|(content, char_count)| (LineView { content }, char_count))
+                .collect()
+        })
     }
 
     fn line_char_count(&self, row: usize) -> Option<usize> {

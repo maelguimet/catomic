@@ -531,8 +531,12 @@ PERF sample: label=render 100mib-line bytes=104857601 elapsed_ms=0
 ```
 
 Phase 2-bp removed per-row descriptor metadata probes inside one fallible
-visible-window render. A deterministic test verifies a four-row window now
-performs a constant pair of probes (before and after reads) rather than four.
+visible-window render. Deterministic tests verify that both the four-row query
+API and an actual ordinary terminal frame perform one constant pair of probes
+(before and after all row reads), including CRLF horizontal scrolling and an
+add-piece edit overlay. Rare exponential reads that complete a grapheme
+boundary use one additional guarded pair per bounded retry, with that count
+asserted separately.
 The existing ignored one-line 100 MiB
 smoke remained render-below-resolution on 2026-07-16 (`elapsed_ms=0`); its
 `App::new` sample was 1200 ms because one configured logical-line page still

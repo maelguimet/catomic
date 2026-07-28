@@ -63,13 +63,20 @@ impl RetainedPlan {
         &self,
         out: &mut Vec<u8>,
         buffer: &dyn Buffer,
+        read: Option<&frame::ViewportRead<'_>>,
         row: usize,
         options: RenderOptions<'_>,
         boundaries: &mut Vec<usize>,
     ) -> io::Result<()> {
         match self {
             Self::Unwrapped(plan) => {
-                frame::compose_row(out, buffer, plan, row, options, boundaries)
+                let read = read.ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "retained unwrapped composition omitted its viewport read",
+                    )
+                })?;
+                frame::compose_row(out, plan, read, row, options, boundaries)
             }
             Self::Wrapped(plan) => {
                 wrapped::compose_row(out, buffer, plan, row, options, boundaries)
@@ -143,15 +150,18 @@ impl PresentationState {
         let replace_plan = published_plan.is_none() || self.plan_input != plan_input;
         let layout_changed = published_plan.is_none() || self.layout_input != layout_input;
         let mut candidate_plan = None;
+        let mut candidate_read = None;
         let plan = if replace_plan {
-            candidate_plan = Some(match build_plan(buffer, viewport, options) {
-                Ok(plan) => plan,
+            let (plan, read) = match build_plan(buffer, viewport, options) {
+                Ok(candidate) => candidate,
                 Err(error) => {
                     self.invalidated = true;
                     self.plan = published_plan;
                     return Err(error);
                 }
-            });
+            };
+            candidate_plan = Some(plan);
+            candidate_read = read;
             candidate_plan.as_ref().expect("candidate plan was built")
         } else {
             published_plan
@@ -163,7 +173,34 @@ impl PresentationState {
         let force_all_rows =
             self.invalidated || layout_changed || emoji_picker_active || self.had_emoji_picker;
         let cursor_position = plan.cursor_position(buffer.cursor());
-        if let Err(error) = self.compose_candidate_rows(buffer, plan, options, force_all_rows) {
+        let needs_unwrapped_read = matches!(plan, RetainedPlan::Unwrapped(_))
+            && self.needs_row_composition(plan, options, force_all_rows);
+        if needs_unwrapped_read && candidate_read.is_none() {
+            let mut read = match frame::read_viewport(buffer, viewport, options) {
+                Ok(read) => read,
+                Err(error) => {
+                    self.invalidated = true;
+                    self.plan = published_plan;
+                    return Err(error);
+                }
+            };
+            let RetainedPlan::Unwrapped(row_plan) = plan else {
+                unreachable!("an unwrapped viewport read requires an unwrapped row plan");
+            };
+            if let Err(error) = frame::complete_read_for_plan(buffer, row_plan, &mut read) {
+                self.invalidated = true;
+                self.plan = published_plan;
+                return Err(error);
+            }
+            candidate_read = Some(read);
+        }
+        if let Err(error) = self.compose_candidate_rows(
+            buffer,
+            plan,
+            candidate_read.as_ref(),
+            options,
+            force_all_rows,
+        ) {
             self.invalidated = true;
             self.recycle_candidates();
             self.plan = published_plan;
@@ -222,6 +259,7 @@ impl PresentationState {
         &mut self,
         buffer: &dyn Buffer,
         plan: &RetainedPlan,
+        read: Option<&frame::ViewportRead<'_>>,
         options: RenderOptions<'_>,
         force: bool,
     ) -> io::Result<()> {
@@ -240,7 +278,7 @@ impl PresentationState {
             let mut bytes = self.row_pool.pop().unwrap_or_default();
             bytes.clear();
             if let Err(error) =
-                plan.compose_row(&mut bytes, buffer, row, options, &mut self.boundaries)
+                plan.compose_row(&mut bytes, buffer, read, row, options, &mut self.boundaries)
             {
                 self.row_pool.push(bytes);
                 return Err(error);
@@ -257,6 +295,21 @@ impl PresentationState {
             });
         }
         Ok(())
+    }
+
+    fn needs_row_composition(
+        &self,
+        plan: &RetainedPlan,
+        options: RenderOptions<'_>,
+        force: bool,
+    ) -> bool {
+        force
+            || (0..plan.content_height()).any(|row| {
+                let fingerprint = plan.row_fingerprint(row, options);
+                self.rows
+                    .get(row)
+                    .is_none_or(|cached| cached.fingerprint != fingerprint)
+            })
     }
 
     fn compose_frame(
@@ -344,15 +397,19 @@ impl PresentationState {
     }
 }
 
-fn build_plan(
-    buffer: &dyn Buffer,
+fn build_plan<'a>(
+    buffer: &'a dyn Buffer,
     viewport: RenderViewport,
     options: RenderOptions<'_>,
-) -> io::Result<RetainedPlan> {
+) -> io::Result<(RetainedPlan, Option<frame::ViewportRead<'a>>)> {
     if options.soft_wrap {
-        wrapped::plan_buffer(buffer, viewport, options).map(RetainedPlan::Wrapped)
+        wrapped::plan_buffer(buffer, viewport, options)
+            .map(RetainedPlan::Wrapped)
+            .map(|plan| (plan, None))
     } else {
-        frame::plan_buffer(buffer, viewport, options).map(RetainedPlan::Unwrapped)
+        let mut read = frame::read_viewport(buffer, viewport, options)?;
+        let plan = frame::plan_buffer_from_read(buffer, &mut read)?;
+        Ok((RetainedPlan::Unwrapped(plan), Some(read)))
     }
 }
 

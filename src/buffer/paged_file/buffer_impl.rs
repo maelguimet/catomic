@@ -49,10 +49,45 @@ impl Buffer for PagedFileBuffer {
         start_col: usize,
         width: usize,
     ) -> io::Result<Vec<LineView<'_>>> {
-        let height = height.min(self.line_count().saturating_sub(start));
         self.active()
             .buffer
-            .try_visible_lines_window(start, height, start_col, width)
+            .try_visible_lines_window_with_char_counts(
+                start,
+                height,
+                start_col,
+                width,
+                self.active().next_page_start.is_some(),
+            )
+            .map(|lines| {
+                lines
+                    .into_iter()
+                    .map(|(content, _)| LineView { content })
+                    .collect()
+            })
+    }
+
+    fn try_visible_lines_window_with_char_counts(
+        &self,
+        start: usize,
+        height: usize,
+        start_col: usize,
+        width: usize,
+    ) -> io::Result<Vec<(LineView<'_>, usize)>> {
+        self.active()
+            .buffer
+            .try_visible_lines_window_with_char_counts(
+                start,
+                height,
+                start_col,
+                width,
+                self.active().next_page_start.is_some(),
+            )
+            .map(|lines| {
+                lines
+                    .into_iter()
+                    .map(|(content, char_count)| (LineView { content }, char_count))
+                    .collect()
+            })
     }
 
     fn line_char_count(&self, row: usize) -> Option<usize> {

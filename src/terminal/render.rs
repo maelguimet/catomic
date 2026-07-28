@@ -53,14 +53,69 @@ pub(super) fn boundary_complete_line<'a>(
     wrapped: bool,
     layout: &mut VisibleLineLayout,
 ) -> io::Result<Cow<'a, str>> {
-    let line_len = buffer.line_char_count(row).unwrap_or(0);
+    let mut lines = buffer.try_visible_lines_window_with_char_counts(
+        row,
+        1,
+        start_col,
+        initial_fetch.max(1),
+    )?;
+    let Some((line, line_len)) = lines.pop() else {
+        layout.build("", max_cells);
+        return Ok(Cow::Borrowed(""));
+    };
+    let completed = boundary_complete_line_from_initial(
+        buffer,
+        row,
+        start_col,
+        initial_fetch,
+        max_cells,
+        wrapped,
+        line_len,
+        &line.content,
+        layout,
+    )?;
+    Ok(completed.unwrap_or(line.content))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn boundary_complete_line_from_initial<'a>(
+    buffer: &'a dyn Buffer,
+    row: usize,
+    start_col: usize,
+    initial_fetch: usize,
+    max_cells: usize,
+    wrapped: bool,
+    line_len: usize,
+    initial_content: &str,
+    layout: &mut VisibleLineLayout,
+) -> io::Result<Option<Cow<'a, str>>> {
     let remaining = line_len.saturating_sub(start_col);
     if remaining == 0 {
         layout.build("", max_cells);
-        return Ok(Cow::Borrowed(""));
+        return Ok(None);
     }
     let mut fetch = initial_fetch.max(1).min(remaining);
+    if wrapped {
+        layout.build_wrapped(initial_content, max_cells);
+    } else {
+        layout.build(initial_content, max_cells);
+    }
+    let mut needs_boundary_completion = layout.source_byte_len() == initial_content.len()
+        && start_col.saturating_add(layout.source_scalar_len()) < line_len;
     loop {
+        if !needs_boundary_completion {
+            return Ok(None);
+        }
+        #[cfg(test)]
+        crate::editor::text_layout::record_visible_layout_probe();
+        let next_fetch = fetch
+            .saturating_mul(2)
+            .max(fetch.saturating_add(1))
+            .min(remaining);
+        if next_fetch == fetch {
+            return Ok(None);
+        }
+        fetch = next_fetch;
         let content = buffer
             .try_visible_lines_window(row, 1, start_col, fetch)?
             .into_iter()
@@ -72,21 +127,11 @@ pub(super) fn boundary_complete_line<'a>(
         } else {
             layout.build(&content, max_cells);
         }
-        let needs_boundary_completion = layout.source_byte_len() == content.len()
+        needs_boundary_completion = layout.source_byte_len() == content.len()
             && start_col.saturating_add(layout.source_scalar_len()) < line_len;
         if !needs_boundary_completion {
-            return Ok(content);
+            return Ok(Some(content));
         }
-        #[cfg(test)]
-        crate::editor::text_layout::record_visible_layout_probe();
-        let next_fetch = fetch
-            .saturating_mul(2)
-            .max(fetch.saturating_add(1))
-            .min(remaining);
-        if next_fetch == fetch {
-            return Ok(content);
-        }
-        fetch = next_fetch;
     }
 }
 

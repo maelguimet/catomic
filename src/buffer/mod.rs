@@ -121,6 +121,30 @@ pub trait Buffer {
     ) -> io::Result<Vec<LineView<'_>>> {
         Ok(self.visible_lines_window(start, height, start_col, width))
     }
+    /// Fetch render text together with each complete logical line's scalar
+    /// length. Descriptor-backed implementations override this to keep all
+    /// rows and coordinate lookups inside one validated read operation.
+    fn try_visible_lines_window_with_char_counts(
+        &self,
+        start: usize,
+        height: usize,
+        start_col: usize,
+        width: usize,
+    ) -> io::Result<Vec<(LineView<'_>, usize)>> {
+        self.try_visible_lines_window(start, height, start_col, width)
+            .map(|lines| {
+                lines
+                    .into_iter()
+                    .enumerate()
+                    .map(|(offset, line)| {
+                        let char_count = self
+                            .line_char_count(start.saturating_add(offset))
+                            .unwrap_or_else(|| line.content.chars().count());
+                        (line, char_count)
+                    })
+                    .collect()
+            })
+    }
     fn line_char_count(&self, row: usize) -> Option<usize> {
         self.line(row).map(|line| line.chars().count())
     }

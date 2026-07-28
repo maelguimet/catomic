@@ -4,6 +4,7 @@
 //! Invariants: temporary descriptors are removed after each completed test.
 
 use super::*;
+use crate::buffer::Buffer;
 use crate::buffer::PieceTable;
 use std::sync::atomic::AtomicBool;
 
@@ -23,6 +24,140 @@ fn forward_search_starts_at_origin_and_wraps() {
     let wrapped = find_match(&buffer, "cat", first.start, SearchDirection::Forward, false)
         .expect("wrapped match");
     assert_eq!(wrapped.start, Cursor { row: 0, col: 0 });
+}
+
+#[test]
+fn local_streaming_search_crosses_piece_boundaries_without_line_allocations() {
+    let mut buffer = PieceTable::from_text("a猫");
+    buffer.set_cursor(Cursor { row: 0, col: 1 });
+    buffer.insert_char('X');
+    let mut task = LocalSearchTask::new("X猫", Cursor::default(), SearchDirection::Forward, true);
+
+    let result = loop {
+        if let Some(result) = task.poll(&buffer, 1) {
+            break result;
+        }
+    };
+    match result {
+        SearchResult::LocalFound(found) => {
+            assert_eq!(found.start, Cursor { row: 0, col: 1 });
+            assert_eq!(found.end_col, 3);
+        }
+        _ => panic!("expected streaming match"),
+    }
+    assert_eq!(
+        task.metrics(),
+        (5, 0),
+        "owned PieceTable ranges stay borrowed"
+    );
+}
+
+#[test]
+fn local_streaming_search_keeps_file_backed_piece_ranges_utf8_aligned() {
+    let path = std::env::temp_dir().join(format!(
+        "catomic_local_search_utf8_{}.txt",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, "a猫").unwrap();
+    let buffer = PieceTable::from_file(&path).unwrap();
+    let mut task = LocalSearchTask::new("猫", Cursor::default(), SearchDirection::Forward, true);
+
+    let result = loop {
+        if let Some(result) = task.poll(&buffer, 1) {
+            break result;
+        }
+    };
+    let SearchResult::LocalFound(found) = result else {
+        panic!("expected file-backed streaming match");
+    };
+    assert_eq!(found.start, Cursor { row: 0, col: 1 });
+    assert_eq!(task.metrics(), (4, 2));
+
+    drop(buffer);
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn local_streaming_search_uses_normalized_crlf_file_coordinates() {
+    let path = std::env::temp_dir().join(format!(
+        "catomic_local_search_crlf_{}.txt",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, "a\r\n猫 needle\r\nz").unwrap();
+    let buffer = PieceTable::from_file(&path).unwrap();
+    let mut task =
+        LocalSearchTask::new("needle", Cursor::default(), SearchDirection::Forward, true);
+
+    let result = loop {
+        if let Some(result) = task.poll(&buffer, 1) {
+            break result;
+        }
+    };
+    let SearchResult::LocalFound(found) = result else {
+        panic!("expected normalized file-backed streaming match");
+    };
+    assert_eq!(found.start, Cursor { row: 1, col: 2 });
+    assert_eq!(found.end_col, 8);
+
+    drop(buffer);
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn local_streaming_search_cancels_before_the_next_bounded_poll() {
+    let buffer = PieceTable::from_text(&"x".repeat(128 * 1024));
+    let mut task =
+        LocalSearchTask::new("needle", Cursor::default(), SearchDirection::Forward, true);
+
+    assert!(task.poll(&buffer, 64 * 1024).is_none());
+    task.cancel();
+    assert!(matches!(
+        task.poll(&buffer, 64 * 1024),
+        Some(SearchResult::NotFound)
+    ));
+    assert_eq!(task.metrics().0, 64 * 1024);
+}
+
+#[test]
+fn local_streaming_search_preserves_backward_wrap_semantics() {
+    let buffer = PieceTable::from_text("cat zero\ncat one\nlast cat");
+    let mut task = LocalSearchTask::new(
+        "cat",
+        Cursor { row: 0, col: 0 },
+        SearchDirection::Backward,
+        false,
+    );
+
+    let result = loop {
+        if let Some(result) = task.poll(&buffer, 2) {
+            break result;
+        }
+    };
+    let SearchResult::LocalFound(found) = result else {
+        panic!("expected wrapped local search match");
+    };
+    assert_eq!(found.start, Cursor { row: 2, col: 5 });
+}
+
+#[test]
+#[ignore = "manual 90MiB streaming-search allocation evidence"]
+fn manual_local_streaming_search_reports_90mib_query_extension_metrics() {
+    const FIXTURE_BYTES: usize = 90 * 1024 * 1024;
+    let line = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n";
+    let source = line.repeat(FIXTURE_BYTES / line.len() + 1);
+    let buffer = PieceTable::from_text(&source[..FIXTURE_BYTES]);
+
+    for query in ["n", "ne", "nee", "need", "needl", "needle"] {
+        let mut task =
+            LocalSearchTask::new(query, Cursor::default(), SearchDirection::Forward, true);
+        while task.poll(&buffer, 64 * 1024).is_none() {}
+        let (scanned_bytes, temporary_allocations) = task.metrics();
+        eprintln!("query={query:?} scanned_bytes={scanned_bytes} temporary_allocations={temporary_allocations}");
+        assert_eq!(scanned_bytes, FIXTURE_BYTES);
+        assert_eq!(temporary_allocations, 0);
+    }
 }
 
 #[test]

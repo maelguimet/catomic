@@ -140,6 +140,46 @@ impl FileOriginal {
         Ok(())
     }
 
+    /// Read a scalar-aligned prefix without requiring line metadata. Search can
+    /// traverse pieces that span original newlines, so it cannot use the
+    /// line-oriented cursor helpers below.
+    pub(crate) fn search_text_segment(
+        &self,
+        logical_range: Range<usize>,
+        max_bytes: usize,
+    ) -> io::Result<String> {
+        if logical_range.is_empty() || max_bytes == 0 {
+            return Ok(String::new());
+        }
+        self.ensure_unchanged()?;
+        let logical_read_end = logical_range
+            .start
+            .saturating_add(max_bytes.saturating_add(3))
+            .min(logical_range.end);
+        let source_range = self.source_range(logical_range.start..logical_read_end)?;
+        let bytes = self.read_range_unchecked(source_range.clone())?;
+        let mut normalized = Vec::with_capacity(bytes.len());
+        let mut source_start = source_range.start;
+        self.for_each_crlf_offset(source_range.clone(), |carriage_return| {
+            normalized.extend_from_slice(
+                &bytes[source_start - source_range.start..carriage_return - source_range.start],
+            );
+            source_start = carriage_return + 1;
+            Ok(())
+        })?;
+        normalized.extend_from_slice(&bytes[source_start - source_range.start..]);
+        let text = utf8_valid_prefix(&normalized)?;
+        let mut end = 0;
+        for (start, ch) in text.char_indices() {
+            end = start + ch.len_utf8();
+            if end >= max_bytes {
+                break;
+            }
+        }
+        self.ensure_unchanged()?;
+        Ok(text[..end].to_owned())
+    }
+
     pub(crate) fn write_range(
         &self,
         logical_range: Range<usize>,

@@ -28,8 +28,143 @@ pub(crate) struct SearchMatch {
 
 pub(crate) enum SearchResult {
     Found(DescriptorPosition),
+    LocalFound(SearchMatch),
     NotFound,
     Error(String),
+}
+
+/// Incremental literal scanner for an in-memory buffer. It retains only the
+/// query-sized KMP state and advances in bounded byte slices on runtime polls.
+pub(crate) struct LocalSearchTask {
+    query: Vec<u8>,
+    prefix: Vec<usize>,
+    matched: usize,
+    recent_positions: VecDeque<Cursor>,
+    offset: usize,
+    cursor: Cursor,
+    origin: Cursor,
+    direction: SearchDirection,
+    include_origin: bool,
+    first: Option<SearchMatch>,
+    last: Option<SearchMatch>,
+    before_origin: Option<SearchMatch>,
+    cancelled: bool,
+    scanned_bytes: usize,
+    temporary_allocations: usize,
+}
+
+impl LocalSearchTask {
+    pub(crate) fn new(
+        query: &str,
+        origin: Cursor,
+        direction: SearchDirection,
+        include_origin: bool,
+    ) -> Self {
+        Self {
+            query: query.as_bytes().to_vec(),
+            prefix: prefix_table(query.as_bytes()),
+            matched: 0,
+            recent_positions: VecDeque::with_capacity(query.len()),
+            offset: 0,
+            cursor: Cursor::default(),
+            origin,
+            direction,
+            include_origin,
+            first: None,
+            last: None,
+            before_origin: None,
+            cancelled: false,
+            scanned_bytes: 0,
+            temporary_allocations: 0,
+        }
+    }
+
+    pub(crate) fn cancel(&mut self) {
+        self.cancelled = true;
+    }
+
+    pub(crate) fn poll(&mut self, buffer: &dyn Buffer, budget: usize) -> Option<SearchResult> {
+        if self.cancelled || self.query.is_empty() || self.query.contains(&b'\n') {
+            return Some(SearchResult::NotFound);
+        }
+        let mut remaining = budget;
+        while remaining > 0 {
+            let Some(segment) = buffer.search_text_segment(self.offset, remaining) else {
+                return Some(self.finish());
+            };
+            if segment.is_empty() {
+                return Some(self.finish());
+            }
+            if matches!(&segment, std::borrow::Cow::Owned(_)) {
+                self.temporary_allocations += 1;
+            }
+            let length = segment.len();
+            for ch in segment.chars() {
+                let position = self.cursor;
+                let mut encoded = [0; 4];
+                for byte in ch.encode_utf8(&mut encoded).bytes() {
+                    self.recent_positions.push_back(position);
+                    if self.recent_positions.len() > self.query.len() {
+                        self.recent_positions.pop_front();
+                    }
+                    while self.matched > 0 && self.query[self.matched] != byte {
+                        self.matched = self.prefix[self.matched - 1];
+                    }
+                    if self.query[self.matched] == byte {
+                        self.matched += 1;
+                    }
+                    self.scanned_bytes += 1;
+                    if self.matched == self.query.len() {
+                        let start = *self
+                            .recent_positions
+                            .front()
+                            .expect("complete match has a start");
+                        self.matched = self.prefix[self.matched - 1];
+                        let found = SearchMatch {
+                            start,
+                            end_col: start.col
+                                + std::str::from_utf8(&self.query).ok()?.chars().count(),
+                        };
+                        self.first.get_or_insert(found);
+                        self.last = Some(found);
+                        let ordering = compare_cursor(start, self.origin);
+                        if self.direction == SearchDirection::Forward
+                            && (ordering.is_gt() || (self.include_origin && ordering.is_eq()))
+                        {
+                            return Some(SearchResult::LocalFound(found));
+                        }
+                        if self.direction == SearchDirection::Backward
+                            && (ordering.is_lt() || (self.include_origin && ordering.is_eq()))
+                        {
+                            self.before_origin = Some(found);
+                        }
+                    }
+                }
+                if ch == '\n' {
+                    self.cursor.row += 1;
+                    self.cursor.col = 0;
+                } else {
+                    self.cursor.col += 1;
+                }
+            }
+            self.offset += length;
+            remaining = remaining.saturating_sub(length);
+        }
+        None
+    }
+
+    fn finish(&self) -> SearchResult {
+        let found = match self.direction {
+            SearchDirection::Forward => self.first,
+            SearchDirection::Backward => self.before_origin.or(self.last),
+        };
+        found.map_or(SearchResult::NotFound, SearchResult::LocalFound)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn metrics(&self) -> (usize, usize) {
+        (self.scanned_bytes, self.temporary_allocations)
+    }
 }
 
 pub(crate) struct SearchTask {

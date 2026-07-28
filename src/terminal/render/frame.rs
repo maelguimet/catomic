@@ -156,6 +156,7 @@ fn write_rows(
                 }
             }
         }
+        style::write_reset(out)?;
     }
     Ok(cursor_cells)
 }

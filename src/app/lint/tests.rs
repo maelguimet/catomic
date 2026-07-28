@@ -75,7 +75,7 @@ fn finding_renders_in_buffer_and_exposes_raw_message_at_cursor() {
     app.render(&mut out).unwrap();
 
     let rendered = String::from_utf8(out).unwrap();
-    assert!(rendered.contains("\x1b[31;4ma\x1b[0m"));
+    assert!(rendered.contains("\x1b[31;4ma\x1b[39;24m"));
     assert!(rendered.contains("Lint 1:2: raw compiler wording"));
 }
 

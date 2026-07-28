@@ -12,6 +12,9 @@
 mod helpers;
 
 #[cfg(test)]
+pub(crate) use helpers::count_thread_allocations;
+
+#[cfg(test)]
 #[path = "perf_default.rs"]
 mod default;
 

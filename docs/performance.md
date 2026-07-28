@@ -609,6 +609,40 @@ default-suite timing assertions.
 Future measurements should use the same fixture name and stable `PERF sample`
 label before comparing results.
 
+### ANSI style emission (2026-07-28)
+
+Terminal SGR transitions write numeric parameters directly into the existing
+frame buffer. They create no temporary `String`, `Vec<String>`, or joined
+parameter buffer. A row-local emitted-style state skips identical adjacent
+styles and emits only changed colors or attributes; bold and dim share the
+required SGR 22 reset before either surviving intensity is reapplied. Visible
+segment text continues to stream through the reusable visible-line layout
+instead of allocating one temporary string per style boundary.
+
+Frame composition begins by terminating a possibly incomplete OSC sequence,
+closing any stale OSC 8 hyperlink, and resetting SGR before synchronized-update
+setup. Hyperlinks reset around their open/close pair, every composed content row
+ends with an explicit reset, and session teardown emits the same recovery
+sequence before ending a synchronized update. These fixed boundaries recover
+from interrupted transport without restoring per-segment resets.
+
+The default unit regression observes zero heap allocations while emitting 512
+alternating normal SGR transitions into a preallocated frame buffer. The
+ignored whole-frame sample holds source text and output bytes constant while
+comparing four versus 512 adjacent equal-style spans:
+
+```text
+cargo test manual_style_heavy_frame_reports_segment_allocation_samples \
+  -- --ignored --nocapture
+PERF render allocations: scalars=512 four_segments=20 many_segments=35 frame_bytes=602
+```
+
+The 15 extra allocations are structural growth for visible-layout and boundary
+vectors, rather than one allocation per emitted segment. The emitted frame is
+byte-identical between both samples and contains one style prefix for the
+adjacent run. Allocation counts are deterministic regression evidence from the
+test allocator; they are not a general process-allocation budget.
+
 ### Candidate Phase 2B budgets — not enforced yet
 
 These are starting-point advisory targets derived from the 2026-06-24 recorded baselines above, with 2026-07-07 follow-up splits showing the current LF-only, owned App open, newline-search, and owned file-read-helper behavior. They are **not** wired into tests as assertions. They are local-machine dependent and must be revisited with more samples on representative hardware before any enforcement.

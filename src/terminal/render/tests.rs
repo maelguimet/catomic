@@ -28,7 +28,7 @@ fn render_buffer_highlights_the_visible_search_match() {
     .unwrap();
 
     let rendered = String::from_utf8(out).unwrap();
-    assert!(rendered.contains("zero \x1b[30;43mtarget\x1b[0m here"));
+    assert!(rendered.contains("zero \x1b[30;43mtarget\x1b[39;49m here"));
 }
 
 #[test]
@@ -54,7 +54,7 @@ fn render_buffer_highlights_a_multiline_selection() {
     let rendered = String::from_utf8(out).unwrap();
     assert!(rendered.contains("zero \x1b[30;46mhere\x1b[0m"));
     assert!(rendered.contains("\x1b[30;46mmiddle\x1b[0m"));
-    assert!(rendered.contains("\x1b[30;46mlast\x1b[0m row"));
+    assert!(rendered.contains("\x1b[30;46mlast\x1b[39;49m row"));
 }
 
 #[test]

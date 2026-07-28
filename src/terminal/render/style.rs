@@ -4,6 +4,7 @@
 //! Invariants: only the supplied visible text is allocated; every styled segment resets ANSI.
 
 use std::io::{self, Write};
+use std::sync::Arc;
 
 use crate::config::theme::{Color, Style, Theme};
 use crate::editor::syntax::{self, HyperlinkSpan, SpanStyle, StyledSpan};
@@ -47,28 +48,10 @@ pub(super) fn write_content_line_from_layout<W: Write + ?Sized>(
     let content_len = layout.scalar_len();
     let spans = options.presentation.map_or_else(
         || syntax::spans_for_line(options.syntax, content),
-        |presentation| {
-            visible_spans(
-                presentation
-                    .spans
-                    .get(row)
-                    .map(Vec::as_slice)
-                    .unwrap_or(&[]),
-                start_col,
-                content_len,
-            )
-        },
+        |presentation| visible_spans(presentation.annotations.spans(row), start_col, content_len),
     );
     let links = options.presentation.map_or_else(Vec::new, |presentation| {
-        visible_links(
-            presentation
-                .links
-                .get(row)
-                .map(Vec::as_slice)
-                .unwrap_or(&[]),
-            start_col,
-            content_len,
-        )
+        visible_links(presentation.annotations.links(row), start_col, content_len)
     });
     let selected = visible_highlight(options.highlight, row, start_col, content_len);
     let lint = visible_ranges(options.lint_ranges, row, start_col, content_len);
@@ -107,7 +90,7 @@ pub(super) fn write_content_line_from_layout<W: Write + ?Sized>(
         let hyperlink = links
             .iter()
             .find(|link| ranges_overlap(start, end, link.start, link.end))
-            .map(|link| link.destination);
+            .map(|link| link.destination.as_ref());
         let highlighted = selected.is_some_and(|(from, to)| ranges_overlap(start, end, from, to));
         let lint = lint
             .iter()
@@ -154,10 +137,14 @@ fn ranges_overlap(
     left_start < right_end && right_start < left_end
 }
 
-fn visible_spans(spans: &[StyledSpan], start_col: usize, content_len: usize) -> Vec<StyledSpan> {
+fn visible_spans(
+    spans: impl IntoIterator<Item = StyledSpan>,
+    start_col: usize,
+    content_len: usize,
+) -> Vec<StyledSpan> {
     let visible_end = start_col.saturating_add(content_len);
     spans
-        .iter()
+        .into_iter()
         .filter_map(|span| {
             let start = span.start.max(start_col);
             let end = span.end.min(visible_end);
@@ -170,28 +157,28 @@ fn visible_spans(spans: &[StyledSpan], start_col: usize, content_len: usize) -> 
         .collect()
 }
 
-#[derive(Clone, Copy)]
-struct VisibleLink<'a> {
+#[derive(Clone)]
+struct VisibleLink {
     start: usize,
     end: usize,
-    destination: &'a str,
+    destination: Arc<str>,
 }
 
-fn visible_links<'a>(
-    links: &'a [HyperlinkSpan],
+fn visible_links(
+    links: impl IntoIterator<Item = HyperlinkSpan>,
     start_col: usize,
     content_len: usize,
-) -> Vec<VisibleLink<'a>> {
+) -> Vec<VisibleLink> {
     let visible_end = start_col.saturating_add(content_len);
     links
-        .iter()
+        .into_iter()
         .filter_map(|link| {
             let start = link.start.max(start_col);
             let end = link.end.min(visible_end);
             (start < end).then(|| VisibleLink {
                 start: start - start_col,
                 end: end - start_col,
-                destination: link.destination.as_ref(),
+                destination: link.destination,
             })
         })
         .collect()
@@ -253,7 +240,7 @@ fn segment_boundaries(
     spans: &[StyledSpan],
     selected: Option<(usize, usize)>,
     change_sets: &[&[(usize, usize)]],
-    links: &[VisibleLink<'_>],
+    links: &[VisibleLink],
     boundaries: &mut Vec<usize>,
 ) {
     let content_len = layout.scalar_len();

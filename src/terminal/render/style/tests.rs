@@ -8,8 +8,12 @@ use crate::buffer::Cursor;
 use crate::editor::syntax::SyntaxKind;
 
 fn rendered(content: &str, start_col: usize, options: RenderOptions) -> String {
+    rendered_row(content, 0, start_col, options)
+}
+
+fn rendered_row(content: &str, row: usize, start_col: usize, options: RenderOptions) -> String {
     let mut out = Vec::new();
-    write_content_line(&mut out, content, 0, start_col, usize::MAX, options).unwrap();
+    write_content_line(&mut out, content, row, start_col, usize::MAX, options).unwrap();
     String::from_utf8(out).unwrap()
 }
 
@@ -77,9 +81,10 @@ fn markdown_presentation_uses_attributes_and_osc8_without_source_delimiters() {
         end: 27,
         destination: "https://example.com".into(),
     }]];
+    let annotations =
+        crate::editor::markdown_preview::MarkdownAnnotations::from_rows(&spans, &links);
     let presentation = super::super::DocumentPresentation {
-        spans: &spans,
-        links: &links,
+        annotations: &annotations,
     };
 
     let output = rendered(
@@ -126,9 +131,10 @@ fn markdown_code_blocks_use_code_color_without_a_reversed_surface() {
         style: SpanStyle::PreviewCodeBlock,
     }]];
     let links = vec![Vec::new()];
+    let annotations =
+        crate::editor::markdown_preview::MarkdownAnnotations::from_rows(&spans, &links);
     let presentation = super::super::DocumentPresentation {
-        spans: &spans,
-        links: &links,
+        annotations: &annotations,
     };
 
     let output = rendered(
@@ -387,6 +393,52 @@ fn row_indexing_skips_offscreen_sorted_annotations() {
 }
 
 #[test]
+fn sparse_presentation_and_indexed_ranges_meet_on_a_distant_row() {
+    let row = 19_999;
+    let mut span_rows = Vec::with_capacity(row + 1);
+    span_rows.resize_with(row + 1, Vec::new);
+    span_rows[row].push(StyledSpan {
+        start: 0,
+        end: 1,
+        style: SpanStyle::PreviewStrong,
+    });
+    let annotations =
+        crate::editor::markdown_preview::MarkdownAnnotations::from_rows(&span_rows, &[]);
+    let presentation = super::super::DocumentPresentation {
+        annotations: &annotations,
+    };
+    let ranges = (0..=row)
+        .map(|range_row| TextHighlight {
+            start: Cursor {
+                row: range_row,
+                col: 0,
+            },
+            end: Cursor {
+                row: range_row,
+                col: 1,
+            },
+        })
+        .collect::<Vec<_>>();
+
+    let output = rendered_row(
+        "x",
+        row,
+        0,
+        RenderOptions {
+            presentation: Some(presentation),
+            lint_ranges: Some(&ranges),
+            ..RenderOptions::default()
+        },
+    );
+
+    assert_eq!(annotations.annotated_row_count(), 1);
+    assert_eq!(annotations.spans(row - 1).count(), 0);
+    assert_eq!(super::ranges_for_row(&ranges, row).len(), 1);
+    assert!(output.contains("\x1b["), "{output:?}");
+    assert!(output.contains('x'), "{output:?}");
+}
+
+#[test]
 fn overlays_inside_a_combining_grapheme_style_and_link_the_whole_cluster() {
     let spans = vec![vec![StyledSpan {
         start: 1,
@@ -398,9 +450,10 @@ fn overlays_inside_a_combining_grapheme_style_and_link_the_whole_cluster() {
         end: 2,
         destination: "https://example.com".into(),
     }]];
+    let annotations =
+        crate::editor::markdown_preview::MarkdownAnnotations::from_rows(&spans, &links);
     let presentation = super::super::DocumentPresentation {
-        spans: &spans,
-        links: &links,
+        annotations: &annotations,
     };
     let range = TextHighlight {
         start: Cursor { row: 0, col: 1 },

@@ -4,6 +4,23 @@
 //! Invariants: expected text preserves readable content and table terminal-cell alignment.
 
 use super::*;
+use crate::buffer::Buffer;
+
+fn row_spans(preview: &MarkdownDocument, row: usize) -> Vec<StyledSpan> {
+    preview.annotations.spans(row).collect()
+}
+
+fn all_spans(preview: &MarkdownDocument) -> Vec<StyledSpan> {
+    (0..preview.text.lines().count())
+        .flat_map(|row| preview.annotations.spans(row))
+        .collect()
+}
+
+fn all_links(preview: &MarkdownDocument) -> Vec<HyperlinkSpan> {
+    (0..preview.text.lines().count())
+        .flat_map(|row| preview.annotations.links(row))
+        .collect()
+}
 
 #[test]
 fn renders_nested_blocks_links_tasks_code_and_footnotes() {
@@ -49,8 +66,8 @@ fn tables_preserve_alignment_inline_content_escaped_pipes_and_unicode() {
         )
     );
     assert!(!preview.text.chars().any(|ch| "┌┬┐╞╪╡└┴┘═─".contains(ch)));
-    assert!(preview.spans[0]
-        .iter()
+    assert!(row_spans(&preview, 0)
+        .into_iter()
         .any(|span| span.style == SpanStyle::PreviewStrong));
 }
 
@@ -117,10 +134,8 @@ fn semantic_output_does_not_regenerate_source_delimiters() {
     ] {
         assert!(!preview.text.contains(delimiter), "{}", preview.text);
     }
-    let styles = preview
-        .spans
-        .iter()
-        .flatten()
+    let styles = all_spans(&preview)
+        .into_iter()
         .map(|span| span.style)
         .collect::<Vec<_>>();
     assert!(styles.contains(&SpanStyle::PreviewStrong));
@@ -128,7 +143,7 @@ fn semantic_output_does_not_regenerate_source_delimiters() {
     assert!(styles.contains(&SpanStyle::PreviewStrikethrough));
     assert!(styles.contains(&SpanStyle::PreviewInlineCode));
     assert!(styles.contains(&SpanStyle::PreviewLink));
-    assert_eq!(preview.links.iter().flatten().count(), 1);
+    assert_eq!(all_links(&preview).len(), 1);
 }
 
 #[test]
@@ -156,19 +171,19 @@ fn inline_and_fenced_code_use_distinct_complete_treatments() {
     let source = "Use `inline` here.\n\n```text\none\n\nthree\n```";
     let preview = render_with_width(source, 40).unwrap();
     let code_rows = preview
-        .spans
-        .iter()
+        .text
+        .lines()
         .enumerate()
-        .filter_map(|(row, spans)| {
-            spans
-                .iter()
+        .filter_map(|(row, _)| {
+            row_spans(&preview, row)
+                .into_iter()
                 .find(|span| span.style == SpanStyle::PreviewCodeBlock)
                 .map(|span| (row, span))
         })
         .collect::<Vec<_>>();
 
-    assert!(preview.spans[0]
-        .iter()
+    assert!(row_spans(&preview, 0)
+        .into_iter()
         .any(|span| span.style == SpanStyle::PreviewInlineCode));
     assert_eq!(code_rows.len(), 3);
     for (row, span) in code_rows {
@@ -203,7 +218,9 @@ fn heading_levels_use_semantic_styles_and_defined_spacing_without_rulers() {
         (6, SpanStyle::PreviewHeading5),
         (7, SpanStyle::PreviewHeading6),
     ] {
-        assert!(preview.spans[row].iter().any(|span| span.style == style));
+        assert!(row_spans(&preview, row)
+            .into_iter()
+            .any(|span| span.style == style));
     }
 }
 
@@ -215,7 +232,8 @@ fn long_h1_headings_fill_each_wrapped_title_row() {
     )
     .unwrap();
 
-    for (line, spans) in preview.text.lines().zip(&preview.spans) {
+    for (row, line) in preview.text.lines().enumerate() {
+        let spans = row_spans(&preview, row);
         assert_eq!(text_layout::cell_width_from(line, 0), 38);
         assert!(spans.iter().any(|span| {
             span.style == SpanStyle::PreviewHeading1 && span.start == 2 && span.end == line.len()
@@ -226,7 +244,7 @@ fn long_h1_headings_fill_each_wrapped_title_row() {
 #[test]
 fn multiline_links_share_one_safe_destination_across_rendered_lines() {
     let preview = render_with_width("[first  \nsecond](https://example.com)", 80).unwrap();
-    let links = preview.links.iter().flatten().collect::<Vec<_>>();
+    let links = all_links(&preview);
 
     assert_eq!(preview.text, "  first\n  second\n");
     assert_eq!(links.len(), 2);
@@ -251,6 +269,246 @@ fn pathological_table_shape_returns_a_real_render_error() {
         render_with_width(&source, 80),
         Err(RenderError::TableComplexity)
     );
+}
+
+#[test]
+fn newline_dense_plain_preview_keeps_only_compact_boundaries() {
+    const ROWS: usize = 32 * 1024;
+    let source = "x  \n".repeat(ROWS);
+    let preview = render_with_width(&source, 80).unwrap();
+    let rendered_rows = preview.text.lines().count();
+
+    assert_eq!(rendered_rows, ROWS);
+    assert_eq!(preview.line_starts.len(), ROWS + 1);
+    assert_eq!(preview.annotations.annotated_row_count(), 0);
+    assert_eq!(preview.annotations.annotation_count(), 0);
+    assert_eq!(preview.annotations.retained_bytes(), 0);
+    assert!(
+        preview.text.capacity() < source.len().saturating_mul(2),
+        "a trailing synthetic row must not double the output allocation",
+    );
+    assert!(
+        preview.retained_bytes()
+            <= preview
+                .text
+                .capacity()
+                .saturating_add((ROWS + 1).saturating_mul(8)),
+        "retained={} text={} rows={rendered_rows}",
+        preview.retained_bytes(),
+        preview.text.capacity(),
+    );
+}
+
+#[test]
+#[cfg(target_pointer_width = "64")]
+fn compact_annotations_promote_losslessly_at_row_and_column_boundaries() {
+    let mut builder = AnnotationBuilder::default();
+    let shared_destination: Arc<str> = Arc::from("https://shared.example");
+    builder
+        .push_row(
+            7,
+            vec![StyledSpan {
+                start: 1,
+                end: 2,
+                style: SpanStyle::PreviewStrong,
+            }],
+            vec![HyperlinkSpan {
+                start: 3,
+                end: 4,
+                destination: Arc::clone(&shared_destination),
+            }],
+        )
+        .unwrap();
+    builder
+        .push_row(
+            10,
+            vec![StyledSpan {
+                start: 5,
+                end: 6,
+                style: SpanStyle::PreviewInlineCode,
+            }],
+            vec![HyperlinkSpan {
+                start: 7,
+                end: 8,
+                destination: Arc::from("https://compact.example"),
+            }],
+        )
+        .unwrap();
+    let overflow = u32::MAX as usize + 1;
+    builder
+        .push_row(
+            overflow,
+            vec![StyledSpan {
+                start: overflow,
+                end: overflow + 1,
+                style: SpanStyle::PreviewEmphasis,
+            }],
+            vec![HyperlinkSpan {
+                start: overflow + 2,
+                end: overflow + 3,
+                destination: Arc::clone(&shared_destination),
+            }],
+        )
+        .unwrap();
+    builder
+        .push_row(
+            overflow + 5,
+            vec![StyledSpan {
+                start: 9,
+                end: 11,
+                style: SpanStyle::PreviewCodeBlock,
+            }],
+            vec![HyperlinkSpan {
+                start: 12,
+                end: 14,
+                destination: Arc::from("https://wide.example"),
+            }],
+        )
+        .unwrap();
+    let annotations = builder.finish();
+
+    assert_eq!(
+        annotations.spans(7).collect::<Vec<_>>(),
+        vec![StyledSpan {
+            start: 1,
+            end: 2,
+            style: SpanStyle::PreviewStrong,
+        }]
+    );
+    assert_eq!(
+        annotations.spans(10).collect::<Vec<_>>(),
+        vec![StyledSpan {
+            start: 5,
+            end: 6,
+            style: SpanStyle::PreviewInlineCode,
+        }]
+    );
+    assert_eq!(
+        annotations.spans(overflow).collect::<Vec<_>>(),
+        vec![StyledSpan {
+            start: overflow,
+            end: overflow + 1,
+            style: SpanStyle::PreviewEmphasis,
+        }]
+    );
+    assert_eq!(
+        annotations.spans(overflow + 5).collect::<Vec<_>>(),
+        vec![StyledSpan {
+            start: 9,
+            end: 11,
+            style: SpanStyle::PreviewCodeBlock,
+        }]
+    );
+    assert_eq!(annotations.spans(8).count(), 0);
+    assert_eq!(annotations.links(8).count(), 0);
+    let compact_link = annotations.links(7).next().unwrap();
+    let link = annotations.links(overflow).next().unwrap();
+    assert_eq!((link.start, link.end), (overflow + 2, overflow + 3));
+    assert!(Arc::ptr_eq(&compact_link.destination, &shared_destination));
+    assert!(Arc::ptr_eq(&link.destination, &shared_destination));
+    assert_eq!(
+        annotations
+            .links(overflow + 5)
+            .next()
+            .unwrap()
+            .destination
+            .as_ref(),
+        "https://wide.example"
+    );
+}
+
+#[test]
+fn sparse_annotation_lookup_handles_large_unannotated_row_gaps() {
+    let mut builder = AnnotationBuilder::default();
+    for row in [1, 10_000, 1_000_000] {
+        builder
+            .push_row(
+                row,
+                vec![StyledSpan {
+                    start: row % 7,
+                    end: row % 7 + 1,
+                    style: SpanStyle::PreviewStrong,
+                }],
+                Vec::new(),
+            )
+            .unwrap();
+    }
+    let annotations = builder.finish();
+
+    assert_eq!(annotations.annotated_row_count(), 3);
+    assert_eq!(annotations.spans(999_999).count(), 0);
+    assert_eq!(annotations.spans(1_000_000).count(), 1);
+}
+
+#[test]
+fn retained_bytes_count_unique_link_allocations_once() {
+    let shared: Arc<str> = Arc::from("https://shared.example/path");
+    let distinct: Arc<str> = Arc::from("https://distinct.example/path");
+    let mut builder = AnnotationBuilder::default();
+    for (row, destination) in [
+        (1, Arc::clone(&shared)),
+        (2, Arc::clone(&shared)),
+        (10_000, Arc::clone(&distinct)),
+    ] {
+        builder
+            .push_row(
+                row,
+                Vec::new(),
+                vec![HyperlinkSpan {
+                    start: 0,
+                    end: 1,
+                    destination,
+                }],
+            )
+            .unwrap();
+    }
+    let annotations = builder.finish();
+    let expected_destinations =
+        arc_str_allocation_bytes(&shared) + arc_str_allocation_bytes(&distinct);
+
+    assert_eq!(
+        annotations.link_destination_retained_bytes(),
+        expected_destinations
+    );
+    assert_eq!(
+        annotations.retained_bytes(),
+        annotations
+            .container_retained_bytes()
+            .saturating_add(expected_destinations)
+    );
+
+    let document = MarkdownDocument {
+        text: "x\n".to_string(),
+        line_starts: {
+            let mut starts = CompactLineStarts::new();
+            starts.push(2);
+            starts
+        },
+        annotations,
+    };
+    assert_eq!(
+        document.retained_bytes(),
+        document
+            .text
+            .capacity()
+            .saturating_add(document.line_starts.retained_bytes())
+            .saturating_add(document.annotations.retained_bytes())
+    );
+}
+
+#[test]
+fn newline_dense_preview_preserves_a_borrowed_terminal_empty_row() {
+    let preview = render_with_width("a  \nb  \n", 80).unwrap();
+    let (buffer, annotations) = preview.into_buffer_and_annotations();
+
+    assert_eq!(buffer.to_string(), "  a\n  b\n");
+    assert_eq!(buffer.line_count(), 3);
+    assert!(matches!(buffer.line(2), Some(Cow::Borrowed(""))));
+    assert!(matches!(
+        buffer.visible_lines_window(2, 1, 0, 80)[0].content,
+        Cow::Borrowed("")
+    ));
+    assert_eq!(annotations.annotated_row_count(), 0);
 }
 
 const MAX_TABLE_COLUMNS_FOR_FIXTURE: usize = 128;

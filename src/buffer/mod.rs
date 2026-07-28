@@ -12,6 +12,7 @@ pub(crate) mod large_file;
 pub mod line_index;
 mod paged_file;
 pub mod piece_table;
+mod preview;
 #[cfg(test)]
 pub mod simple;
 pub mod undo;
@@ -25,6 +26,7 @@ mod tests;
 pub(crate) use large_file::LargeFileBuffer;
 pub(crate) use paged_file::PagedFileBuffer;
 pub use piece_table::PieceTable;
+pub(crate) use preview::{CompactLineStarts, PreviewBuffer};
 /// Public re-exports for the rest of the crate.
 #[cfg(test)]
 pub use simple::SimpleBuffer;

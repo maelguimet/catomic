@@ -9,7 +9,8 @@ use std::io::{self, Write};
 
 use crate::buffer::{Buffer, Cursor};
 use crate::config::theme::Theme;
-use crate::editor::syntax::{HyperlinkSpan, StyledSpan, SyntaxKind};
+use crate::editor::markdown_preview::MarkdownAnnotations;
+use crate::editor::syntax::SyntaxKind;
 use crate::editor::text_layout::VisibleLineLayout;
 use crate::terminal::cursor_style::{self, CursorShape};
 
@@ -122,8 +123,7 @@ pub(crate) struct ExternalChanges<'a> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct DocumentPresentation<'a> {
-    pub(crate) spans: &'a [Vec<StyledSpan>],
-    pub(crate) links: &'a [Vec<HyperlinkSpan>],
+    pub(crate) annotations: &'a MarkdownAnnotations,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

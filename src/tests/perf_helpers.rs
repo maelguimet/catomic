@@ -13,30 +13,47 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::Mutex;
 use std::time::Instant;
 
 struct CountingAllocator;
 
 static ALLOCATION_COUNT: AtomicU64 = AtomicU64::new(0);
 static ALLOCATED_BYTES: AtomicU64 = AtomicU64::new(0);
+static LIVE_MEASURING: AtomicBool = AtomicBool::new(false);
+static LIVE_ALLOCATIONS: AtomicUsize = AtomicUsize::new(0);
+static LIVE_BYTES: AtomicUsize = AtomicUsize::new(0);
+static PEAK_LIVE_BYTES: AtomicUsize = AtomicUsize::new(0);
+static LIVE_MEASUREMENT_LOCK: Mutex<()> = Mutex::new(());
 
 unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
         ALLOCATED_BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
         // SAFETY: the caller supplies the GlobalAlloc layout contract unchanged.
-        unsafe { System.alloc(layout) }
+        let pointer = unsafe { System.alloc(layout) };
+        if !pointer.is_null() && LIVE_MEASURING.load(Ordering::Relaxed) {
+            record_live_allocation(layout.size());
+        }
+        pointer
     }
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
         ALLOCATED_BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
         // SAFETY: the caller supplies the GlobalAlloc layout contract unchanged.
-        unsafe { System.alloc_zeroed(layout) }
+        let pointer = unsafe { System.alloc_zeroed(layout) };
+        if !pointer.is_null() && LIVE_MEASURING.load(Ordering::Relaxed) {
+            record_live_allocation(layout.size());
+        }
+        pointer
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        if LIVE_MEASURING.load(Ordering::Relaxed) {
+            subtract_live_bytes(layout.size());
+        }
         // SAFETY: the pointer and layout are forwarded to the allocator that created it.
         unsafe { System.dealloc(ptr, layout) };
     }
@@ -45,12 +62,88 @@ unsafe impl GlobalAlloc for CountingAllocator {
         ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
         ALLOCATED_BYTES.fetch_add(new_size as u64, Ordering::Relaxed);
         // SAFETY: the pointer, old layout, and requested size are forwarded unchanged.
-        unsafe { System.realloc(ptr, layout, new_size) }
+        let pointer = unsafe { System.realloc(ptr, layout, new_size) };
+        if !pointer.is_null() && LIVE_MEASURING.load(Ordering::Relaxed) {
+            LIVE_ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
+            if new_size >= layout.size() {
+                add_live_bytes(new_size - layout.size());
+            } else {
+                subtract_live_bytes(layout.size() - new_size);
+            }
+        }
+        pointer
     }
 }
 
 #[global_allocator]
 static PERF_ALLOCATOR: CountingAllocator = CountingAllocator;
+
+fn record_live_allocation(bytes: usize) {
+    LIVE_ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
+    add_live_bytes(bytes);
+}
+
+fn add_live_bytes(bytes: usize) {
+    let live = LIVE_BYTES
+        .fetch_add(bytes, Ordering::Relaxed)
+        .saturating_add(bytes);
+    let mut peak = PEAK_LIVE_BYTES.load(Ordering::Relaxed);
+    while live > peak {
+        match PEAK_LIVE_BYTES.compare_exchange_weak(
+            peak,
+            live,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => break,
+            Err(observed) => peak = observed,
+        }
+    }
+}
+
+fn subtract_live_bytes(bytes: usize) {
+    let _ = LIVE_BYTES.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |live| {
+        Some(live.saturating_sub(bytes))
+    });
+}
+
+pub(crate) struct LiveAllocationSample {
+    pub(crate) allocations: usize,
+    pub(crate) retained_bytes: usize,
+    pub(crate) peak_bytes: usize,
+    pub(crate) elapsed: std::time::Duration,
+}
+
+struct LiveMeasurementScope;
+
+impl Drop for LiveMeasurementScope {
+    fn drop(&mut self) {
+        LIVE_MEASURING.store(false, Ordering::Release);
+    }
+}
+
+pub(crate) fn measure_live_allocations<T>(
+    operation: impl FnOnce() -> T,
+) -> (T, LiveAllocationSample) {
+    let _guard = LIVE_MEASUREMENT_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    LIVE_ALLOCATIONS.store(0, Ordering::Relaxed);
+    LIVE_BYTES.store(0, Ordering::Relaxed);
+    PEAK_LIVE_BYTES.store(0, Ordering::Relaxed);
+    let start = Instant::now();
+    LIVE_MEASURING.store(true, Ordering::Release);
+    let measurement = LiveMeasurementScope;
+    let value = operation();
+    drop(measurement);
+    let sample = LiveAllocationSample {
+        allocations: LIVE_ALLOCATIONS.load(Ordering::Relaxed),
+        retained_bytes: LIVE_BYTES.load(Ordering::Relaxed),
+        peak_bytes: PEAK_LIVE_BYTES.load(Ordering::Relaxed),
+        elapsed: start.elapsed(),
+    };
+    (value, sample)
+}
 
 #[derive(Clone, Copy)]
 struct AllocationSnapshot {

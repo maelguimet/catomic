@@ -7,7 +7,7 @@
 use std::borrow::Cow;
 use std::io::{self, Write};
 
-use crate::buffer::undo::{PieceEdit, Transaction};
+use crate::buffer::undo::{PieceEdit, Transaction, UndoRun};
 use crate::buffer::{Buffer, Cursor, LineView};
 
 use super::types::{Piece, PieceTable, Source};
@@ -102,8 +102,16 @@ impl Buffer for PieceTable {
     fn set_cursor(&mut self, cursor: Cursor) {
         let row = cursor.row.min(self.line_count().saturating_sub(1));
         let col = cursor.col.min(self.current_line_char_len(row));
-        self.cursor = Cursor { row, col };
-        self.sync_cursor_byte_offset();
+        let cursor = Cursor { row, col };
+        if self.cursor != cursor {
+            self.undo_stack.finish_run();
+            self.cursor = cursor;
+            self.sync_cursor_byte_offset();
+        }
+    }
+
+    fn finish_undo_group(&mut self) {
+        self.undo_stack.finish_run();
     }
 
     fn text_range(&self, start: Cursor, end: Cursor) -> io::Result<String> {
@@ -115,6 +123,7 @@ impl Buffer for PieceTable {
     }
 
     fn replace_range(&mut self, start: Cursor, end: Cursor, text: &str) -> io::Result<bool> {
+        self.undo_stack.finish_run();
         let (start, end) = self.clamped_ordered_range(start, end);
         let start_byte = self.byte_offset_at(start.row, start.col);
         let end_byte = self.byte_offset_at(end.row, end.col);
@@ -129,16 +138,17 @@ impl Buffer for PieceTable {
         self.cursor = cursor_after_text(start, text);
         self.cursor_byte_offset = start_byte + text.len();
         self.record_replacement(before, start_byte, removed, inserted);
+        self.undo_stack.finish_run();
         Ok(true)
     }
 
     fn replace_ranges(&mut self, ranges: &[(Cursor, Cursor)], text: &str) -> io::Result<usize> {
+        self.undo_stack.finish_run();
         let mut ranges = self.snapshot_ranges(ranges)?;
         ranges.retain(|range| range.start_byte != range.end_byte || !text.is_empty());
         if ranges.is_empty() {
             return Ok(0);
         }
-
         let before = self.capture_cursor_state();
         self.reset_piece_mutation_metrics();
         #[cfg(test)]
@@ -180,6 +190,7 @@ impl Buffer for PieceTable {
                 id: 0,
             });
         }
+        self.undo_stack.finish_run();
         Ok(ranges.len())
     }
 
@@ -211,45 +222,39 @@ impl Buffer for PieceTable {
     }
 
     fn insert_char(&mut self, ch: char) {
+        if ch == '\n' {
+            self.insert_newline();
+            return;
+        }
         let before = self.capture_cursor_state();
         let at = self.cursor_byte_offset;
         let inserted = self.insert_at_cursor(ch);
-        if ch == '\n' {
-            self.index.insert_newline(at);
-        } else {
-            self.index.insert_bytes(at, ch.len_utf8());
-        }
-        if self.recording && !inserted.is_empty() {
-            let after = self.capture_cursor_state();
-            self.undo_stack.record(Transaction {
-                before,
-                after,
-                edits: vec![PieceEdit::Insert {
-                    at,
-                    pieces: inserted,
-                }],
-                id: 0,
-            });
+        self.index.insert_bytes(at, ch.len_utf8());
+        if self.recording {
+            self.undo_stack
+                .record_typing_insert(before, self.capture_cursor_state(), at, inserted);
         }
     }
 
     fn insert_newline(&mut self) {
+        self.undo_stack.finish_run();
         let before = self.capture_cursor_state();
         let at = self.cursor_byte_offset;
         let inserted = self.insert_at_cursor('\n');
         self.index.insert_newline(at);
-        if self.recording && !inserted.is_empty() {
+        if self.recording {
             let after = self.capture_cursor_state();
             self.undo_stack.record(Transaction {
                 before,
                 after,
                 edits: vec![PieceEdit::Insert {
                     at,
-                    pieces: inserted,
+                    pieces: vec![inserted],
                 }],
                 id: 0,
             });
         }
+        self.undo_stack.finish_run();
     }
 
     fn delete_back(&mut self) {
@@ -257,6 +262,8 @@ impl Buffer for PieceTable {
             self.delete_previous_char();
         } else if self.cursor.row > 0 {
             self.join_with_previous_line();
+        } else {
+            self.undo_stack.finish_run();
         }
     }
 
@@ -266,30 +273,37 @@ impl Buffer for PieceTable {
             self.delete_next_char();
         } else if self.cursor.row + 1 < self.line_count() {
             self.join_with_next_line();
+        } else {
+            self.undo_stack.finish_run();
         }
     }
 
     fn move_left(&mut self) {
+        self.undo_stack.finish_run();
         self.move_left_internal();
         self.sync_cursor_byte_offset();
     }
 
     fn move_right(&mut self) {
+        self.undo_stack.finish_run();
         self.move_right_internal();
         self.sync_cursor_byte_offset();
     }
 
     fn move_up(&mut self) {
+        self.undo_stack.finish_run();
         self.move_up_internal();
         self.sync_cursor_byte_offset();
     }
 
     fn move_down(&mut self) {
+        self.undo_stack.finish_run();
         self.move_down_internal();
         self.sync_cursor_byte_offset();
     }
 
     fn undo(&mut self) {
+        self.undo_stack.finish_run();
         if let Some(tx) = self.undo_stack.pop_undo() {
             let was_recording = self.recording;
             self.recording = false;
@@ -305,6 +319,7 @@ impl Buffer for PieceTable {
     }
 
     fn redo(&mut self) {
+        self.undo_stack.finish_run();
         if let Some(tx) = self.undo_stack.pop_redo() {
             let was_recording = self.recording;
             self.recording = false;
@@ -321,6 +336,10 @@ impl Buffer for PieceTable {
 
     fn edit_history_position(&self) -> u64 {
         self.undo_stack.current_history_position()
+    }
+
+    fn content_revision(&self) -> u64 {
+        self.undo_stack.content_revision()
     }
 }
 
@@ -473,7 +492,7 @@ impl PieceTable {
         self.cursor.col -= 1;
         self.cursor_byte_offset = start;
         self.index.delete_bytes(start, end - start);
-        self.record_delete(before, start, removed);
+        self.record_delete(UndoRun::Backspace, before, start, removed);
     }
 
     fn delete_next_char(&mut self) {
@@ -483,10 +502,11 @@ impl PieceTable {
         self.reset_piece_mutation_metrics();
         let removed = self.delete_byte_range(start, end);
         self.index.delete_bytes(start, end - start);
-        self.record_delete(before, start, removed);
+        self.record_delete(UndoRun::DeleteForward, before, start, removed);
     }
 
     fn join_with_previous_line(&mut self) {
+        self.undo_stack.finish_run();
         let next_start = self.byte_offset_at(self.cursor.row, 0);
         if next_start == 0 {
             return;
@@ -499,10 +519,12 @@ impl PieceTable {
         self.cursor.col = previous_len;
         self.sync_cursor_byte_offset();
         let _ = self.index.delete_newline(next_start - 1);
-        self.record_delete(before, next_start - 1, removed);
+        self.record_independent_delete(before, next_start - 1, removed);
+        self.undo_stack.finish_run();
     }
 
     fn join_with_next_line(&mut self) {
+        self.undo_stack.finish_run();
         let next_start = self.byte_offset_at(self.cursor.row + 1, 0);
         if next_start == 0 {
             return;
@@ -512,14 +534,28 @@ impl PieceTable {
         self.reset_piece_mutation_metrics();
         let removed = self.delete_byte_range(newline, next_start);
         let _ = self.index.delete_newline(newline);
-        self.record_delete(before, newline, removed);
+        self.record_independent_delete(before, newline, removed);
+        self.undo_stack.finish_run();
     }
 
     fn record_delete(
         &mut self,
+        run: UndoRun,
         before: crate::buffer::undo::CursorState,
         at: usize,
         pieces: Vec<super::types::Piece>,
+    ) {
+        if self.recording && !pieces.is_empty() {
+            self.undo_stack
+                .record_delete(run, before, self.capture_cursor_state(), at, pieces);
+        }
+    }
+
+    fn record_independent_delete(
+        &mut self,
+        before: crate::buffer::undo::CursorState,
+        at: usize,
+        pieces: Vec<Piece>,
     ) {
         if self.recording && !pieces.is_empty() {
             self.undo_stack.record(Transaction {

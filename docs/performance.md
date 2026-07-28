@@ -94,6 +94,13 @@ same one-byte insertion and deletion near the top and bottom of equally sized
 `PERF index-work` records report blocks touched and summary nodes updated, so
 tail-dependent index work is visible independently of wall-clock noise.
 
+The ignored editing harness also emits an `undo typing run` sample for a 16 KiB
+ordinary typing burst. Run it serially with the other allocation-aware samples;
+it reports actual allocator requests and bytes plus the retained transaction and
+history sizes. The sample is observational, but it asserts that the burst
+remains one transaction and that one undo/redo restores the complete run. It
+does not impose an allocation or timing budget.
+
 Profile before optimizing redraw or buffer access.
 
 Never add full-file scans, full-buffer clones, background work, or network calls to hot paths.

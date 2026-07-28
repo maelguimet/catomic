@@ -145,6 +145,7 @@ impl App {
     }
 
     pub(crate) fn switch_buffer(&mut self, direction: BufferDirection) -> bool {
+        self.buffer.finish_undo_group();
         selection::end_cut_line_chain(self);
         if self.inactive_buffers.is_empty() {
             return false;
@@ -394,13 +395,37 @@ mod tests {
         assert!(app.view_preferences.external_diff());
         assert!(app
             .external_changes
-            .visible(app.buffer.edit_history_position())
+            .visible(app.buffer.content_revision())
             .is_some());
         assert!(app.view.whitespace);
         assert!(app.view.soft_wrap);
 
         app.switch_buffer(BufferDirection::Next);
         assert_eq!(app.screen.scroll_top, 11);
+
+        fs::remove_file(first).unwrap();
+        fs::remove_file(second).unwrap();
+    }
+
+    #[test]
+    fn switching_buffers_ends_the_active_typing_run() {
+        let first = temp_file("undo_run_first", "alpha");
+        let second = temp_file("undo_run_second", "beta");
+        let paths = vec![
+            first.to_string_lossy().into_owned(),
+            second.to_string_lossy().into_owned(),
+        ];
+        let mut app =
+            App::new_with_paths_and_big_file_config(&paths, BigFileConfig::default()).unwrap();
+
+        app.buffer.insert_char('X');
+        assert!(app.switch_buffer(BufferDirection::Next));
+        assert!(app.switch_buffer(BufferDirection::Previous));
+        app.buffer.insert_char('Y');
+        app.buffer.undo();
+        assert_eq!(app.buffer.to_string(), "Xalpha");
+        app.buffer.undo();
+        assert_eq!(app.buffer.to_string(), "alpha");
 
         fs::remove_file(first).unwrap();
         fs::remove_file(second).unwrap();

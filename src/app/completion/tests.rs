@@ -196,6 +196,39 @@ fn emoji_acceptance_preserves_text_outside_the_active_query() {
 }
 
 #[test]
+fn completion_and_emoji_acceptance_end_the_preceding_typing_run() {
+    let mut completion = completion_app();
+    let mut out = Vec::new();
+    completion
+        .handle_key_with(&mut out, key(KeyCode::Char(' '), KeyModifiers::CONTROL))
+        .unwrap();
+    completion
+        .handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
+        .unwrap();
+    completion
+        .handle_key_with(&mut out, key(KeyCode::Char('!'), KeyModifiers::NONE))
+        .unwrap();
+    completion.buffer.undo();
+    assert_eq!(
+        completion.buffer.to_string(),
+        "alpha alpine alphabet\nalpha"
+    );
+    completion.buffer.undo();
+    assert_eq!(completion.buffer.to_string(), "alpha alpine alphabet\nal");
+
+    let mut emoji = App::new(None).unwrap();
+    type_text(&mut emoji, &mut out, ":hun");
+    emoji
+        .handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
+        .unwrap();
+    type_text(&mut emoji, &mut out, "!");
+    emoji.buffer.undo();
+    assert_eq!(emoji.buffer.to_string(), "💯");
+    emoji.buffer.undo();
+    assert_eq!(emoji.buffer.to_string(), ":hun");
+}
+
+#[test]
 fn emoji_picker_updates_with_typing_and_backspace() {
     let mut app = App::new(None).unwrap();
     let mut out = Vec::new();

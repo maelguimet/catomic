@@ -9,7 +9,7 @@ use super::helpers::{measure_allocated_sample, mixed_text_fixture, print_perf_sa
 
 const LINE_HEAVY_BYTES: usize = 512 * 1024;
 const TYPED_CHARS: usize = 1_000;
-const UNDO_CHARS: usize = 10_000;
+const UNDO_CHARS: usize = 16 * 1024;
 
 fn add_piece_table_metrics(
     sample: super::helpers::PerfSample,
@@ -153,19 +153,19 @@ fn manual_cursor_movement_on_long_line_reports_sample() {
 #[ignore = "manual allocation and retained-history baseline for a long typing run"]
 fn manual_undo_growth_during_long_typing_run_reports_sample() {
     let mut buffer = PieceTable::new();
-    let (_, sample) = measure_allocated_sample(
-        "type 10000 chars with undo history",
-        Some(UNDO_CHARS as u64),
-        || {
-            for index in 0..UNDO_CHARS {
-                buffer.insert_char(if index % 97 == 0 { 'é' } else { 'x' });
-            }
-        },
-    );
+    let (_, sample) = measure_allocated_sample("undo typing run", Some(UNDO_CHARS as u64), || {
+        for _ in 0..UNDO_CHARS {
+            buffer.insert_char('x');
+        }
+    });
     let stats = buffer.perf_stats();
     print_perf_sample(&add_piece_table_metrics(sample, &stats));
 
-    assert_eq!(stats.history_transactions, UNDO_CHARS);
-    assert!(stats.add_buffer_bytes >= UNDO_CHARS);
-    assert!(stats.history_bytes > stats.add_buffer_bytes);
+    assert_eq!(stats.history_transactions, 1);
+    assert_eq!(stats.add_buffer_bytes, UNDO_CHARS);
+    assert!(stats.history_bytes > 0);
+    buffer.undo();
+    assert_eq!(buffer.to_string(), "");
+    buffer.redo();
+    assert_eq!(buffer.to_string().chars().count(), UNDO_CHARS);
 }

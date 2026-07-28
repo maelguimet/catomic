@@ -191,10 +191,7 @@ pub(crate) fn gutter_width(app: &super::App) -> usize {
     };
     let source_is_visible = source_is_displayed(app);
     let external_changes = (source_is_visible && app.view_preferences.external_diff())
-        .then(|| {
-            app.external_changes
-                .visible(app.buffer.edit_history_position())
-        })
+        .then(|| app.external_changes.visible(app.buffer.content_revision()))
         .flatten();
     line_numbers
         + crate::terminal::render::change_gutter_width(

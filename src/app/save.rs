@@ -348,6 +348,7 @@ pub(crate) fn do_atomic_save(app: &mut super::App, out: &mut dyn Write) -> io::R
 
 fn do_atomic_save_to(app: &mut super::App, out: &mut dyn Write, target: PathBuf) -> io::Result<()> {
     super::recovery::finish_before_save(app);
+    app.buffer.finish_undo_group();
     let path_changed = app.file.path.as_ref() != Some(&target);
     let save_result = file::io::atomic_write_with(&target, |writer| {
         file::text_format::write_buffer(&*app.buffer, writer, app.file.text_format)

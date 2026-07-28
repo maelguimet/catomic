@@ -12,6 +12,7 @@ use super::{Buffer, Cursor, LineView};
 pub struct SimpleBuffer {
     lines: Vec<String>,
     cursor: Cursor,
+    revision: u64,
 }
 
 impl SimpleBuffer {
@@ -19,6 +20,7 @@ impl SimpleBuffer {
         Self {
             lines: vec![String::new()],
             cursor: Cursor { row: 0, col: 0 },
+            revision: 0,
         }
     }
 
@@ -46,6 +48,7 @@ impl SimpleBuffer {
         Self {
             lines,
             cursor: Cursor { row: 0, col: 0 },
+            revision: 0,
         }
     }
 
@@ -110,6 +113,7 @@ impl Buffer for SimpleBuffer {
         chars.insert(col, ch);
         *line = chars.into_iter().collect();
         self.cursor.col += 1;
+        self.revision = self.revision.wrapping_add(1);
     }
 
     fn insert_newline(&mut self) {
@@ -124,6 +128,7 @@ impl Buffer for SimpleBuffer {
         self.lines.insert(self.cursor.row + 1, after);
         self.cursor.row += 1;
         self.cursor.col = 0;
+        self.revision = self.revision.wrapping_add(1);
     }
 
     fn delete_back(&mut self) {
@@ -135,6 +140,7 @@ impl Buffer for SimpleBuffer {
                 chars.remove(col - 1);
                 *line = chars.into_iter().collect();
                 self.cursor.col -= 1;
+                self.revision = self.revision.wrapping_add(1);
             }
         } else if self.cursor.row > 0 {
             // Join with previous line
@@ -143,6 +149,7 @@ impl Buffer for SimpleBuffer {
             let prev = &mut self.lines[self.cursor.row];
             self.cursor.col = prev.chars().count();
             prev.push_str(&current);
+            self.revision = self.revision.wrapping_add(1);
         }
     }
 
@@ -153,10 +160,12 @@ impl Buffer for SimpleBuffer {
             let mut chars: Vec<char> = line.chars().collect();
             chars.remove(self.cursor.col);
             *line = chars.into_iter().collect();
+            self.revision = self.revision.wrapping_add(1);
         } else if self.cursor.row + 1 < self.lines.len() {
             // Join next line into current
             let next = self.lines.remove(self.cursor.row + 1);
             self.lines[self.cursor.row].push_str(&next);
+            self.revision = self.revision.wrapping_add(1);
         }
     }
 
@@ -207,5 +216,9 @@ impl Buffer for SimpleBuffer {
         // SimpleBuffer undo is a no-op stub; constant position is sufficient
         // for compilation and for any tests that construct it directly.
         0
+    }
+
+    fn content_revision(&self) -> u64 {
+        self.revision
     }
 }

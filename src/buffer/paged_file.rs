@@ -202,11 +202,18 @@ impl PagedFileBuffer {
 
     pub(super) fn mutate_active(&mut self, edit: impl FnOnce(&mut PieceTable)) {
         let start = self.active().start_byte;
-        let before = self.active().buffer.edit_history_position();
+        let before_transactions = self.active().buffer.undo_transaction_count();
+        let before_revision = self.active().buffer.content_revision();
         edit(&mut self.active_mut().buffer);
-        let after = self.active().buffer.edit_history_position();
-        if after != before {
-            self.history.record(start);
+        let after_transactions = self.active().buffer.undo_transaction_count();
+        let after_revision = self.active().buffer.content_revision();
+        if after_revision != before_revision {
+            if after_transactions != before_transactions {
+                self.history.record(start);
+            } else {
+                self.history.extend_current(start);
+            }
+            self.history.note_content_change();
         }
     }
 
@@ -220,6 +227,7 @@ impl PagedFileBuffer {
         );
         self.active_mut().buffer.undo();
         self.history.finish_undo(transaction);
+        self.history.note_content_change();
     }
 
     pub(super) fn redo_active_transaction(&mut self) {
@@ -232,6 +240,7 @@ impl PagedFileBuffer {
         );
         self.active_mut().buffer.redo();
         self.history.finish_redo(transaction);
+        self.history.note_content_change();
     }
 
     #[cfg(test)]

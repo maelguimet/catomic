@@ -91,7 +91,7 @@ fn open(
         buffer: PieceTable::from_text(candidate.text()),
         candidate,
         source_path,
-        source_history: app.buffer.edit_history_position(),
+        source_history: app.buffer.content_revision(),
         source_file_state_snapshot: app.file.disk_snapshot.clone(),
         source_snapshot,
         source_scroll_top: app.screen.scroll_top,
@@ -165,7 +165,7 @@ fn apply(app: &mut super::super::App, out: &mut dyn Write) -> io::Result<()> {
     let mut preview = app.recovery.preview.take().expect("recovery preview");
     restore_scroll(app, &preview);
     if app.file.path.as_ref() != Some(&preview.source_path)
-        || app.buffer.edit_history_position() != preview.source_history
+        || app.buffer.content_revision() != preview.source_history
         || app.file.disk_snapshot != preview.source_file_state_snapshot
         || ensure_path_matches_snapshot(&preview.source_path, &preview.source_snapshot).is_err()
     {

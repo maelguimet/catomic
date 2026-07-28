@@ -72,6 +72,40 @@ fn undo_and_redo_follow_edit_order_across_pages() {
 }
 
 #[test]
+fn paged_typing_run_has_one_undo_and_distinct_content_revisions() {
+    let path = temp_path("grouped_revision");
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, "zero\none").unwrap();
+
+    let mut buffer = PagedFileBuffer::open(&path, 2).unwrap();
+    buffer.insert_char('a');
+    let history = buffer.edit_history_position();
+    let first_revision = buffer.content_revision();
+    buffer.insert_char('b');
+    let refreshed_history = buffer.edit_history_position();
+    let second_revision = buffer.content_revision();
+
+    assert_ne!(refreshed_history, history);
+    assert_ne!(buffer.content_revision(), first_revision);
+    buffer.undo();
+    assert_eq!(buffer.line(0).as_deref(), Some("zero"));
+    assert_eq!(buffer.edit_history_position(), 0);
+    let undo_revision = buffer.content_revision();
+
+    buffer.redo();
+    assert_eq!(buffer.line(0).as_deref(), Some("abzero"));
+    assert_eq!(
+        buffer.edit_history_position(),
+        refreshed_history,
+        "redo restores the refreshed token for the complete typing run"
+    );
+    assert_ne!(buffer.content_revision(), undo_revision);
+    assert_ne!(second_revision, undo_revision);
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
 fn backspace_at_page_start_removes_the_previous_page_boundary() {
     let path = temp_path("boundary");
     let _ = std::fs::remove_file(&path);

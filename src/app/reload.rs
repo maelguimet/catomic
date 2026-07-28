@@ -581,7 +581,7 @@ mod tests {
             .contains("External change highlighting skipped"));
         assert!(app
             .external_changes
-            .visible(app.buffer.edit_history_position())
+            .visible(app.buffer.content_revision())
             .is_none());
         cleanup(&path);
     }

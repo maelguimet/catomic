@@ -18,10 +18,7 @@ impl App {
 fn render(app: &App, out: &mut dyn Write) -> io::Result<()> {
     let window_title = status::title(app.file.path.as_deref());
     let visible_external = (app.view_preferences.external_diff() && view::source_is_displayed(app))
-        .then(|| {
-            app.external_changes
-                .visible(app.buffer.edit_history_position())
-        })
+        .then(|| app.external_changes.visible(app.buffer.content_revision()))
         .flatten();
     let external_changes = visible_external.map(|changes| term::render::ExternalChanges {
         added_ranges: changes.added_ranges,

@@ -6,9 +6,8 @@ use super::types::{Piece, PieceTable, Source};
 
 impl PieceTable {
     /// Core insert. Uses cached cursor_byte_offset when available.
-    /// Returns the piece descriptor(s) that were spliced in for this insert
-    /// (used by history recording; single-char inserts yield one piece).
-    pub(crate) fn insert_at_cursor(&mut self, ch: char) -> Vec<Piece> {
+    /// Returns the piece descriptor spliced in for this scalar insert.
+    pub(crate) fn insert_at_cursor(&mut self, ch: char) -> Piece {
         self.reset_piece_mutation_metrics();
         let insert_byte = self.cursor_byte_offset;
         let add_start = self.add.len();
@@ -76,7 +75,7 @@ impl PieceTable {
         } else {
             self.cursor.col += 1;
         }
-        vec![inserted]
+        inserted
     }
 
     /// Insert the given piece descriptors at logical byte 'at' (for undo/redo).

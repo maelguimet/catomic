@@ -75,6 +75,10 @@ impl Buffer for PagedFileBuffer {
         });
     }
 
+    fn finish_undo_group(&mut self) {
+        self.active_mut().buffer.finish_undo_group();
+    }
+
     fn page_info(&self) -> Option<PageInfo> {
         let page = self.active();
         Some(PageInfo {
@@ -88,6 +92,7 @@ impl Buffer for PagedFileBuffer {
     }
 
     fn next_page(&mut self) -> io::Result<bool> {
+        self.finish_undo_group();
         let Some(start) = self.active().next_page_start else {
             return Ok(false);
         };
@@ -97,6 +102,7 @@ impl Buffer for PagedFileBuffer {
     }
 
     fn previous_page(&mut self) -> io::Result<bool> {
+        self.finish_undo_group();
         if self.active().start_byte == 0 {
             return Ok(false);
         }
@@ -152,11 +158,18 @@ impl Buffer for PagedFileBuffer {
 
     fn replace_range(&mut self, start: Cursor, end: Cursor, text: &str) -> io::Result<bool> {
         let page_start = self.active().start_byte;
-        let before = self.active().buffer.edit_history_position();
+        let before_transactions = self.active().buffer.undo_transaction_count();
+        let before_revision = self.active().buffer.content_revision();
         let changed = self.active_mut().buffer.replace_range(start, end, text)?;
-        let after = self.active().buffer.edit_history_position();
-        if changed && after != before {
-            self.history.record(page_start);
+        let after_transactions = self.active().buffer.undo_transaction_count();
+        let after_revision = self.active().buffer.content_revision();
+        if changed && after_revision != before_revision {
+            if after_transactions != before_transactions {
+                self.history.record(page_start);
+            } else {
+                self.history.extend_current(page_start);
+            }
+            self.history.note_content_change();
         }
         Ok(changed)
     }
@@ -249,5 +262,9 @@ impl Buffer for PagedFileBuffer {
 
     fn edit_history_position(&self) -> u64 {
         self.history.position()
+    }
+
+    fn content_revision(&self) -> u64 {
+        self.history.content_revision()
     }
 }

@@ -294,7 +294,12 @@ fn watcher_drift_invalidates_dirty_reload_confirmation() {
         &mut app,
         crate::file::watcher::FileWatchSignal::Changed,
     );
-    assert!(app.pending_reload.is_none());
+    assert!(
+        app.pending_reload
+            .as_ref()
+            .is_some_and(|pending| !pending.is_explicitly_armed),
+        "drift must retain external-B as a passive observation"
+    );
     assert!(app.message.as_deref().unwrap().contains("re-arm"));
     assert_eq!(app.buffer.to_string(), "xBASE");
     assert!(app.file.dirty);
@@ -313,7 +318,7 @@ fn watcher_drift_invalidates_dirty_reload_confirmation() {
 }
 
 #[test]
-fn watcher_observation_local_edit_clears_then_next_ctrl_r_arms() {
+fn watcher_observation_local_edit_retains_passive_state_then_next_ctrl_r_arms() {
     let mut tmp = std::env::temp_dir();
     tmp.push(format!(
         "catomic_2ae_w_edit_clears_pend_{}.txt",
@@ -348,17 +353,20 @@ fn watcher_observation_local_edit_clears_then_next_ctrl_r_arms() {
             .is_explicitly_armed
     );
 
-    // local edit clears pending (no reload)
+    // Local edit cancels confirmation but retains the observed divergence.
     app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::NONE))
         .unwrap();
-    assert!(app.pending_reload.is_none());
+    assert!(app
+        .pending_reload
+        .as_ref()
+        .is_some_and(|pending| !pending.is_explicitly_armed));
 
     // next Ctrl+R must re-arm (first press behavior), not auto-reload
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(
         app.pending_reload.is_some(),
-        "after local edit clears the watcher observation, next Ctrl+R must arm"
+        "after local edit disarms the watcher observation, next Ctrl+R must arm"
     );
     // buffer still has the 'z' edit, not external
     assert!(app.buffer.to_string().contains('z') || app.buffer.to_string().contains("EBASE"));

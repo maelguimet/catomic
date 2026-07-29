@@ -118,9 +118,10 @@ pub struct App {
     /// Pending reload observation and confirmation. Watcher notifications record the exact
     /// Modified/Deleted revision without arming it. The first explicit Ctrl+R arms that
     /// revision; the second reloads only on an exact snapshot match.
-    /// Cleared by content edits (insert/delete/undo/redo), successful save, path changes.
-    /// Any unrelated editor action cancels it; resize/render do not clear.
-    /// NoPath/Unchanged/Unknown do not arm.
+    /// Content edits and unrelated actions cancel only an explicit destructive
+    /// confirmation; the passive observation remains until the disk relationship
+    /// is accepted, saved, or freshly observed unchanged. Resize/render do not clear.
+    /// NoPath/Unchanged clear it; Unknown remains passive and never arms.
     pub pending_reload: Option<reload::PendingReload>,
     /// Explicit Ctrl+F prompt/worker state. No worker exists before invocation.
     pub(crate) search: search::SearchUiState,

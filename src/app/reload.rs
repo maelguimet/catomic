@@ -9,11 +9,13 @@
 //! Must not: own watcher polling, background work, snapshot capture policy,
 //!   config parsing, repository scans, or external services.
 //! Invariants: pending is bound to concrete (path + status + live snapshot);
-//!   watcher observations never arm destructive confirmation; second explicit
-//!   press only acts on an explicitly armed exact match; any content mutation clears it;
+//!   watcher observations never arm destructive confirmation; unrelated actions
+//!   downgrade an armed confirmation while retaining the observed divergence;
+//!   a second explicit press only acts on an explicitly armed exact match;
+//!   content mutations disarm it;
 //!   automatic reload is invoked only for clean buffers by caller policy;
 //!   successful reloads refresh watcher path identities;
-//!   input routing cancels it before any unrelated editor action.
+//!   input routing disarms it before any unrelated editor action.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -39,6 +41,37 @@ pub(crate) struct PendingReload {
     /// Watcher observations record the revision without counting as the user's
     /// first destructive reload action.
     pub is_explicitly_armed: bool,
+}
+
+/// Cancel only the destructive confirmation while retaining the authoritative
+/// observation that the accepted buffer revision differs from disk.
+pub(crate) fn cancel_confirmation(app: &mut super::App) {
+    if let Some(pending) = &mut app.pending_reload {
+        pending.is_explicitly_armed = false;
+    }
+}
+
+/// Retain a fresh unresolved disk observation without treating it as a user
+/// confirmation. Modified, Deleted, and Unknown observations all mean the
+/// accepted buffer/disk relationship cannot currently be called saved.
+pub(crate) fn remember_external_observation(app: &mut super::App, obs: &ExternalFileObservation) {
+    let Some(path) = app.file.path.clone() else {
+        app.pending_reload = None;
+        return;
+    };
+    if matches!(
+        obs.status,
+        ExternalFileStatus::Modified | ExternalFileStatus::Deleted | ExternalFileStatus::Unknown(_)
+    ) {
+        app.pending_reload = Some(PendingReload {
+            path,
+            status: obs.status.clone(),
+            snapshot: obs.live_snapshot.clone(),
+            is_explicitly_armed: false,
+        });
+    } else {
+        app.pending_reload = None;
+    }
 }
 
 /// Returns the message for first Ctrl+R press that arms a reload confirmation.
@@ -273,6 +306,7 @@ pub(crate) fn perform_observed_reload(app: &mut super::App, obs: &ExternalFileOb
         app.message_info("No file path.");
         return;
     };
+    remember_external_observation(app, obs);
     match obs.status {
         ExternalFileStatus::Modified => {
             match observed_present_snapshot(obs).and_then(|expected| {
@@ -363,7 +397,6 @@ fn external_diff_warning(outcome: &super::external_diff::DiffOutcome) -> Option<
 
 fn report_reload_error(app: &mut super::App, error: io::Error) {
     if error.kind() == io::ErrorKind::Interrupted {
-        app.pending_reload = None;
         let local = if app.file.dirty {
             " Local changes preserved."
         } else {
@@ -416,8 +449,8 @@ fn apply_observation(
             app.pending_reload = None;
         }
         ExternalFileStatus::Unknown(kind) => {
+            remember_external_observation(app, obs);
             app.message_error(format!("File status check failed: {:?}", kind));
-            app.pending_reload = None;
         }
         ExternalFileStatus::Modified | ExternalFileStatus::Deleted => {
             let was_explicitly_armed = pending_matches_observation(app, obs)
@@ -426,15 +459,9 @@ fn apply_observation(
                     .as_ref()
                     .is_some_and(|pending| pending.is_explicitly_armed);
             let is_explicitly_armed = is_explicit_action || was_explicitly_armed;
-            if let Some(ref p) = app.file.path {
-                app.pending_reload = Some(PendingReload {
-                    path: p.clone(),
-                    status: obs.status.clone(),
-                    snapshot: obs.live_snapshot.clone(),
-                    is_explicitly_armed,
-                });
-            } else {
-                app.pending_reload = None;
+            remember_external_observation(app, obs);
+            if let Some(pending) = &mut app.pending_reload {
+                pending.is_explicitly_armed = is_explicitly_armed;
             }
             let dirty = app.file.dirty;
             let mobile = super::mobile::is_enabled(app);
@@ -646,12 +673,47 @@ mod tests {
         assert_eq!(app.buffer.to_string(), local_buffer);
         assert!(app.file.dirty);
         assert_eq!(app.file.disk_snapshot, base_snapshot);
-        assert!(app.pending_reload.is_none());
+        assert!(app
+            .pending_reload
+            .as_ref()
+            .is_some_and(|pending| !pending.is_explicitly_armed));
         assert!(app
             .message
             .as_deref()
             .unwrap_or("")
             .contains("Re-arm reload confirmation"));
+        cleanup(&path);
+    }
+
+    #[test]
+    fn clean_revision_drift_retains_not_saved_observation() {
+        let path = temp_path("clean_confirmed_b_loaded_c.txt");
+        cleanup(&path);
+        std::fs::write(&path, "base").unwrap();
+        let mut app = super::super::App::new(Some(&path.to_string_lossy())).unwrap();
+        let base_snapshot = app.file.disk_snapshot.clone();
+
+        std::fs::write(&path, "BBBB").unwrap();
+        let confirmed = observe_external_file(Some(&path), app.file.disk_snapshot.as_ref());
+        apply_check_observation(&mut app, &confirmed);
+        assert!(app
+            .pending_reload
+            .as_ref()
+            .is_some_and(|pending| pending.is_explicitly_armed));
+
+        std::fs::write(&path, "CCCC").unwrap();
+        perform_observed_reload(&mut app, &confirmed);
+
+        assert_eq!(app.buffer.to_string(), "base");
+        assert!(!app.file.dirty);
+        assert_eq!(app.file.disk_snapshot, base_snapshot);
+        assert!(app
+            .pending_reload
+            .as_ref()
+            .is_some_and(|pending| !pending.is_explicitly_armed));
+        assert!(super::super::render::status_line(&app)
+            .text
+            .contains("(not saved)"));
         cleanup(&path);
     }
 }

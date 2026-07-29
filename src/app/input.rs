@@ -86,7 +86,7 @@ pub(super) fn finish_content_edit_with_message(
         command_prompt::clear_config_discard_confirmation(app);
         app.pending_quit_confirm = false;
         app.pending_save_conflict = None;
-        app.pending_reload = None;
+        reload::cancel_confirmation(app);
         app.message = message;
         app.message_role = crate::terminal::render::StatusRole::Info;
     }
@@ -175,7 +175,7 @@ pub(super) fn prepare_editor_action(app: &mut super::App, action: Option<Action>
         app.pending_save_conflict = None;
     }
     if !is_reload {
-        app.pending_reload = None;
+        reload::cancel_confirmation(app);
     }
     if !keeps_confirmation {
         app.message = None;
@@ -310,7 +310,10 @@ mod tests {
 
         assert!(!app.pending_quit_confirm);
         assert!(app.pending_save_conflict.is_none());
-        assert!(app.pending_reload.is_none());
+        assert!(app
+            .pending_reload
+            .as_ref()
+            .is_some_and(|pending| !pending.is_explicitly_armed));
         assert!(super::super::help::is_viewing(&app));
     }
 

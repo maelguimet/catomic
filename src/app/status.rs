@@ -38,27 +38,29 @@ pub(crate) fn format_status_line(
     }
     let (parent, mut filename) = status_path_parts(path);
     let mut metadata = position_suffix(page, buffer_position);
-    let activity = activity
+    let mut activity = activity
         .map(|activity| format!("  {activity}"))
         .unwrap_or_default();
-    if fits(&filename, &metadata, &activity, width) {
-        metadata.push_str(&activity);
+    if text_layout::cell_width_from(&activity, 0) >= width {
+        activity.clear();
     }
     if text_layout::cell_width_from(&filename, 0)
+        .saturating_add(text_layout::cell_width_from(&activity, 0))
         .saturating_add(text_layout::cell_width_from(&metadata, 0))
         > width
     {
         metadata.clear();
     }
-    let metadata_cells = text_layout::cell_width_from(&metadata, 0);
+    let suffix_cells = text_layout::cell_width_from(&activity, 0)
+        .saturating_add(text_layout::cell_width_from(&metadata, 0));
     filename =
-        text_layout::terminal_safe_tail_clipped(&filename, width.saturating_sub(metadata_cells));
+        text_layout::terminal_safe_tail_clipped(&filename, width.saturating_sub(suffix_cells));
     let filename_cells = text_layout::cell_width_from(&filename, 0);
     let brand = if cat_status { "=^..^=  " } else { "" };
     let brand = if text_layout::cell_width_from(brand, 0)
         .saturating_add(text_layout::cell_width_from(&parent, 0))
         .saturating_add(filename_cells)
-        .saturating_add(metadata_cells)
+        .saturating_add(suffix_cells)
         <= width
     {
         brand
@@ -68,7 +70,7 @@ pub(crate) fn format_status_line(
     let parent_budget = width
         .saturating_sub(text_layout::cell_width_from(brand, 0))
         .saturating_sub(filename_cells)
-        .saturating_sub(metadata_cells);
+        .saturating_sub(suffix_cells);
     let parent = text_layout::terminal_safe_tail_clipped(&parent, parent_budget);
     let mut text = brand.to_string();
     let path_start = text.len();
@@ -76,19 +78,13 @@ pub(crate) fn format_status_line(
     let filename_start = text.len();
     text.push_str(&filename);
     let filename_end = text.len();
+    text.push_str(&activity);
     text.push_str(&metadata);
     StatusLine {
         text,
         path: (path_start, filename_end),
         filename: (filename_start, filename_end),
     }
-}
-
-fn fits(filename: &str, metadata: &str, activity: &str, width: usize) -> bool {
-    text_layout::cell_width_from(filename, 0)
-        .saturating_add(text_layout::cell_width_from(metadata, 0))
-        .saturating_add(text_layout::cell_width_from(activity, 0))
-        <= width
 }
 
 fn status_path_parts(path: Option<&Path>) -> (String, String) {
@@ -149,7 +145,10 @@ pub(crate) fn format_prompt(label: &str, text: &str, width: usize) -> String {
 pub(crate) fn transient_role(app: &super::App) -> StatusRole {
     if app.pending_quit_confirm
         || app.pending_save_conflict.is_some()
-        || app.pending_reload.is_some()
+        || app
+            .pending_reload
+            .as_ref()
+            .is_some_and(|pending| pending.is_explicitly_armed)
         || super::command_prompt::config_discard_confirmation_pending(app)
     {
         return StatusRole::Warning;
@@ -191,17 +190,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn persistent_status_is_only_cat_and_full_path() {
+    fn persistent_status_shows_cat_path_and_saved_state() {
         let status = format_status_line(
             Some(Path::new("/work/cats/notes.txt")),
             None,
             None,
-            None,
+            Some("(saved)"),
             true,
             80,
         );
 
-        assert_eq!(status.text, "=^..^=  /work/cats/notes.txt");
+        assert_eq!(status.text, "=^..^=  /work/cats/notes.txt  (saved)");
         assert_eq!(
             &status.text[status.path.0..status.path.1],
             "/work/cats/notes.txt"
@@ -210,18 +209,18 @@ mod tests {
             &status.text[status.filename.0..status.filename.1],
             "notes.txt"
         );
-        for slop in ["ac off", "INS", "OVR", "saved", "modified", "utf-8", "lf"] {
+        for slop in ["ac off", "INS", "OVR", "modified", "utf-8", "lf"] {
             assert!(!status.text.contains(slop), "status: {}", status.text);
         }
     }
 
     #[test]
     fn untitled_and_cat_disabled_are_compact() {
-        let with_cat = format_status_line(None, None, None, None, true, 80);
-        let without_cat = format_status_line(None, None, None, None, false, 80);
+        let with_cat = format_status_line(None, None, None, Some("(not saved)"), true, 80);
+        let without_cat = format_status_line(None, None, None, Some("(not saved)"), false, 80);
 
-        assert_eq!(with_cat.text, "=^..^=  [untitled]");
-        assert_eq!(without_cat.text, "[untitled]");
+        assert_eq!(with_cat.text, "=^..^=  [untitled]  (not saved)");
+        assert_eq!(without_cat.text, "[untitled]  (not saved)");
         assert_eq!(
             &without_cat.text[without_cat.path.0..without_cat.path.1],
             "[untitled]"
@@ -238,23 +237,36 @@ mod tests {
             Some(Path::new("/one/two/three/猫-notes.txt")),
             None,
             None,
-            None,
+            Some("(not saved)"),
             true,
             20,
         );
 
         let displayed_path = &status.text[status.path.0..status.path.1];
-        assert_eq!(displayed_path, status.text);
-        assert!(
-            displayed_path.ends_with("猫-notes.txt"),
-            "path: {displayed_path}"
-        );
+        assert_eq!(displayed_path, "…es.txt");
+        assert!(displayed_path.ends_with("es.txt"), "path: {displayed_path}");
         assert_eq!(
             &status.text[status.filename.0..status.filename.1],
-            "猫-notes.txt"
+            "…es.txt"
         );
-        assert!(status.text.starts_with('…'), "status: {}", status.text);
+        assert_eq!(status.text, "…es.txt  (not saved)");
         assert!(text_layout::cell_width_from(&status.text, 0) <= 20);
+    }
+
+    #[test]
+    fn ultra_narrow_status_omits_unfittable_state_but_keeps_filename() {
+        let status = format_status_line(
+            Some(Path::new("notes.txt")),
+            None,
+            None,
+            Some("(not saved)"),
+            true,
+            9,
+        );
+
+        assert_eq!(status.text, "notes.txt");
+        assert_eq!(&status.text[status.path.0..status.path.1], "notes.txt");
+        assert!(text_layout::cell_width_from(&status.text, 0) <= 9);
     }
 
     #[test]
@@ -319,6 +331,24 @@ mod tests {
             crate::terminal::render::StatusRole::Warning
         );
         app.pending_quit_confirm = false;
+
+        app.pending_reload = Some(super::super::reload::PendingReload {
+            path: "notes.txt".into(),
+            status: crate::file::io::ExternalFileStatus::Modified,
+            snapshot: None,
+            is_explicitly_armed: false,
+        });
+        app.message_info("Informational message while disk divergence remains.");
+        assert_eq!(
+            transient_role(&app),
+            crate::terminal::render::StatusRole::Info
+        );
+        app.pending_reload.as_mut().unwrap().is_explicitly_armed = true;
+        assert_eq!(
+            transient_role(&app),
+            crate::terminal::render::StatusRole::Warning
+        );
+        app.pending_reload = None;
 
         let mut out = Vec::new();
         super::super::command_prompt::open_command_prompt(&mut app, &mut out).unwrap();

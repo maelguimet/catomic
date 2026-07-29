@@ -187,10 +187,7 @@ fn status_path_drag_copies_on_select_and_ctrl_c_uses_the_same_path() {
     .unwrap();
 
     let status = super::super::super::render::status_line(&app);
-    assert_eq!(
-        app.selection.status_range(&status.text),
-        Some((8, status.text.len()))
-    );
+    assert_eq!(app.selection.status_range(&status.text), Some(status.path));
     assert_eq!(app.clipboard, "/work/cats/notes.txt");
     assert!(String::from_utf8_lossy(&out).contains("\x1b]52;c;L3dvcmsvY2F0cy9ub3Rlcy50eHQ=\x1b\\"));
 
@@ -374,7 +371,10 @@ fn touch_endpoint_cancels_every_unrelated_editor_confirmation() {
 
     assert!(!app.pending_quit_confirm);
     assert!(app.pending_save_conflict.is_none());
-    assert!(app.pending_reload.is_none());
+    assert!(app
+        .pending_reload
+        .as_ref()
+        .is_some_and(|pending| !pending.is_explicitly_armed));
     assert!(!super::super::is_touch_selecting(&app));
     assert_eq!(app.clipboard, "select");
 }

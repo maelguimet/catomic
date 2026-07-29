@@ -149,7 +149,7 @@ pub(crate) fn apply_file_watch_signal(
                             ExternalFileStatus::Modified | ExternalFileStatus::Deleted
                         )
                     {
-                        app.pending_reload = None;
+                        super::reload::remember_external_observation(app, &obs);
                         app.message_warning(super::reload::reload_drift_message_for_ui(
                             &obs.status,
                             app.file.dirty,

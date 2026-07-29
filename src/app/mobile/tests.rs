@@ -41,7 +41,10 @@ fn arm_editor_confirmations(app: &mut super::super::App) {
 fn assert_editor_confirmations_cancelled(app: &super::super::App) {
     assert!(!app.pending_quit_confirm);
     assert!(app.pending_save_conflict.is_none());
-    assert!(app.pending_reload.is_none());
+    assert!(app
+        .pending_reload
+        .as_ref()
+        .is_some_and(|pending| !pending.is_explicitly_armed));
 }
 
 #[test]

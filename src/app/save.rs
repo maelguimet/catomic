@@ -157,10 +157,11 @@ pub(crate) fn handle_save(
         // First time seeing this concrete conflict, or the live state drifted:
         // refuse, record a fresh token bound to the *current* observation (incl. snapshot).
         let target_path = current_path.expect("conflict status requires a path");
+        super::reload::remember_external_observation(app, &obs);
         app.pending_save_conflict = Some(PendingSaveConflict {
             path: target_path,
             status: obs.status.clone(),
-            snapshot: obs.live_snapshot,
+            snapshot: obs.live_snapshot.clone(),
             is_command_prompt_save_as: false,
         });
         app.message_warning(save_conflict_message_for_ui(

@@ -168,7 +168,7 @@ fn undo_redo_clear_pending_and_message_even_on_noop() {
 }
 
 #[test]
-fn movement_cancels_save_conflict_and_reload_pending() {
+fn movement_cancels_save_conflict_and_downgrades_reload_confirmation() {
     let mut app = App::new(None).unwrap();
     // Directly arm both to exercise the shared unrelated-action cancellation path.
     app.pending_save_conflict = Some(super::super::save::PendingSaveConflict {
@@ -192,8 +192,10 @@ fn movement_cancels_save_conflict_and_reload_pending() {
         "movement must cancel save conflict pending"
     );
     assert!(
-        app.pending_reload.is_none(),
-        "movement must cancel reload pending"
+        app.pending_reload
+            .as_ref()
+            .is_some_and(|pending| !pending.is_explicitly_armed),
+        "movement must retain only the passive reload observation"
     );
     assert!(app.message.is_none());
 }

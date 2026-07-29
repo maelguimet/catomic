@@ -717,6 +717,27 @@ fn pty_f1_help_wraps_and_scrolls_to_reload_reference_in_a_narrow_terminal() -> T
 }
 
 #[test]
+fn pty_f1_help_preserves_the_source_selection_for_cut() -> TestResult {
+    let temp = TempPath::new("help_selection");
+    fs::write(&temp.path, "abcdef\n")?;
+    let mut editor = PtyEditor::spawn(&temp.path)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(&b"\x1b[1;2C".repeat(3))?; // Select "abc" with Shift+Right.
+    editor.wait_for_output("source selection", "\x1b[30;46mabc\x1b[39;49m")?;
+    editor.send_keys(b"\x1bOP")?; // F1
+    editor.wait_for_output("F1 built-in help", "Help; Esc closes.")?;
+    editor.clear_output();
+    editor.send_keys(b"\x1b")?; // Escape
+    editor.wait_for_output("selection restored after help", "\x1b[30;46mabc\x1b[39;49m")?;
+    editor.send_keys(b"\x18\x13\x11")?; // Ctrl+X, Ctrl+S, Ctrl+Q.
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(&temp.path)?, "def\n");
+    Ok(())
+}
+
+#[test]
 fn pty_insert_overwrite_cursor_prompt_and_teardown_transitions() -> TestResult {
     let temp = TempPath::new("insert_overwrite");
     fs::write(&temp.path, "abc")?;

@@ -428,7 +428,10 @@ separate undo transaction. Moving, editing, switching buffers, or using another
 action ends the append chain; an active selection keeps ordinary selection-cut
 behavior.
 
-Bracketed terminal paste is inserted as one undoable edit. Terminal emulators,
+Bracketed terminal paste targets an active Find, Replace, command, Open, Save As,
+or Goto line prompt. With no text prompt active, it edits the document as one
+undoable transaction and never falls through to the document behind a prompt.
+Terminal emulators,
 multiplexers, desktop shortcuts, and SSH clients may intercept clipboard chords
 before Catomic receives them; see [Troubleshooting](#troubleshooting).
 

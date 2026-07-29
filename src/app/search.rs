@@ -663,7 +663,10 @@ mod tests {
     fn bracketed_paste_populates_search_without_editing_source() {
         let mut app = super::super::App::new(None).unwrap();
         app.buffer = Box::new(crate::buffer::PieceTable::from_text("zero target"));
+        app.buffer.insert_char('!');
+        app.buffer.undo();
         let revision = app.buffer.content_revision();
+        let history = app.buffer.edit_history_position();
         let mut out = Vec::new();
 
         open_prompt(&mut app, &mut out).unwrap();
@@ -671,8 +674,19 @@ mod tests {
 
         assert_eq!(app.buffer.to_string(), "zero target");
         assert_eq!(app.buffer.content_revision(), revision);
+        assert_eq!(app.buffer.edit_history_position(), history);
         assert!(!app.file.dirty);
+        assert!(app.selection.active().is_none());
         assert_eq!(app.search.prompt.as_deref(), Some("target"));
         assert_eq!(app.buffer.cursor(), Cursor { row: 0, col: 5 });
+
+        handle_active_key(
+            &mut app,
+            &mut out,
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+        )
+        .unwrap();
+        app.buffer.redo();
+        assert_eq!(app.buffer.to_string(), "!zero target");
     }
 }

@@ -747,17 +747,72 @@ fn escape_cancels_a_running_paged_goto() {
 }
 
 #[test]
-fn bracketed_paste_populates_open_prompt_without_editing_source() {
+fn bracketed_paste_populates_every_prompt_kind_without_editing_source() {
+    let prompts = [
+        PromptKind::GotoLine,
+        PromptKind::Command,
+        PromptKind::SaveAs,
+        PromptKind::OpenFile,
+        PromptKind::CreateConfig {
+            path: PathBuf::from("/tmp/catomic-paste-config.toml"),
+            exit_on_decline: false,
+        },
+    ];
+
+    for kind in prompts {
+        let mut app = super::super::App::new(None).unwrap();
+        app.buffer = Box::new(crate::buffer::PieceTable::from_text("source"));
+        let revision = app.buffer.content_revision();
+        let history = app.buffer.edit_history_position();
+        let mut out = Vec::new();
+
+        open_prompt(&mut app, &mut out, kind).unwrap();
+        out.clear();
+        super::super::input::handle_paste(&mut app, &mut out, "target\r\nname.txt").unwrap();
+
+        assert_eq!(app.buffer.to_string(), "source");
+        assert_eq!(app.buffer.content_revision(), revision);
+        assert_eq!(app.buffer.edit_history_position(), history);
+        assert!(!app.file.dirty);
+        assert!(app.selection.active().is_none());
+        assert_eq!(
+            app.command_prompt
+                .active
+                .as_ref()
+                .map(|prompt| prompt.text.as_str()),
+            Some("target\nname.txt")
+        );
+        assert!(String::from_utf8_lossy(&out).contains("target␊name.txt"));
+    }
+}
+
+#[test]
+fn command_prompt_paste_preserves_selection_and_redo_history() {
     let mut app = super::super::App::new(None).unwrap();
     app.buffer = Box::new(crate::buffer::PieceTable::from_text("source"));
+    app.buffer
+        .set_cursor(crate::buffer::Cursor { row: 0, col: 6 });
+    app.buffer.insert_char('!');
+    app.buffer.undo();
+    app.buffer.set_cursor(crate::buffer::Cursor::default());
     let revision = app.buffer.content_revision();
+    let history = app.buffer.edit_history_position();
     let mut out = Vec::new();
 
-    open_file_prompt(&mut app, &mut out).unwrap();
-    super::super::input::handle_paste(&mut app, &mut out, "target\r\nname.txt").unwrap();
+    app.handle_key_with(&mut out, key(KeyCode::Right, KeyModifiers::SHIFT))
+        .unwrap();
+    let selection = app.selection.active().unwrap();
+    open_command_prompt(&mut app, &mut out).unwrap();
+    super::super::input::handle_paste(&mut app, &mut out, "save").unwrap();
 
     assert_eq!(app.buffer.to_string(), "source");
     assert_eq!(app.buffer.content_revision(), revision);
+    assert_eq!(app.buffer.edit_history_position(), history);
     assert!(!app.file.dirty);
-    assert_eq!(app.message.as_deref(), Some("Open file: target␊name.txt"));
+    assert_eq!(app.selection.active(), Some(selection));
+    assert_eq!(app.message.as_deref(), Some("Command: save"));
+
+    dispatch_action(&mut app, &mut out, Action::PromptCancel).unwrap();
+    app.buffer.redo();
+    assert_eq!(app.buffer.to_string(), "source!");
 }

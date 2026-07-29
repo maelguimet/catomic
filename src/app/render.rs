@@ -206,14 +206,36 @@ pub(super) fn status_line(app: &App) -> status::StatusLine {
             app.buffer_count(),
         )
     });
+    let saved_state = if active_buffer_is_saved(app) {
+        "(saved)"
+    } else {
+        "(not saved)"
+    };
     status::format_status_line(
         display_path.as_deref(),
         app.buffer.page_info(),
         position,
-        None,
+        Some(saved_state),
         app.cat_config.status_messages,
         app.screen.width as usize,
     )
+}
+
+fn active_buffer_is_saved(app: &App) -> bool {
+    !app.file.dirty
+        && matches!(
+            app.file.disk_snapshot.as_ref(),
+            Some(crate::file::io::FileSnapshot::Present { .. })
+        )
+        && !app.pending_reload.as_ref().is_some_and(|pending| {
+            app.file.path.as_deref() == Some(pending.path.as_path())
+                && matches!(
+                    pending.status,
+                    crate::file::io::ExternalFileStatus::Modified
+                        | crate::file::io::ExternalFileStatus::Deleted
+                        | crate::file::io::ExternalFileStatus::Unknown(_)
+                )
+        })
 }
 
 #[cfg(test)]
@@ -221,6 +243,183 @@ mod tests {
     use super::*;
     use crate::buffer::PieceTable;
     use crate::terminal::RuntimeOutput;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_file(label: &str, text: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "catomic_footer_{label}_{}_{}.txt",
+            std::process::id(),
+            nonce
+        ));
+        std::fs::write(&path, text).unwrap();
+        path
+    }
+
+    fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
+        KeyEvent::new(code, modifiers)
+    }
+
+    fn saved_label(app: &App) -> &str {
+        let status = status_line(app);
+        if status.text.contains("(not saved)") {
+            "(not saved)"
+        } else if status.text.contains("(saved)") {
+            "(saved)"
+        } else {
+            panic!("footer omitted saved state: {}", status.text);
+        }
+    }
+
+    #[test]
+    fn footer_tracks_edit_save_and_undo_redo_across_the_saved_revision() {
+        let path = temp_file("history", "base");
+        let mut app = App::new(path.to_str()).unwrap();
+        let mut out = Vec::new();
+
+        assert_eq!(saved_label(&app), "(saved)");
+        app.handle_key_with(&mut out, key(KeyCode::Char('x'), KeyModifiers::NONE))
+            .unwrap();
+        assert_eq!(saved_label(&app), "(not saved)");
+
+        app.handle_key_with(&mut out, key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+            .unwrap();
+        assert_eq!(saved_label(&app), "(saved)");
+
+        app.handle_key_with(&mut out, key(KeyCode::Char('y'), KeyModifiers::NONE))
+            .unwrap();
+        assert_eq!(saved_label(&app), "(not saved)");
+        app.handle_key_with(&mut out, key(KeyCode::Char('z'), KeyModifiers::CONTROL))
+            .unwrap();
+        assert_eq!(saved_label(&app), "(saved)");
+        app.handle_key_with(&mut out, key(KeyCode::Char('y'), KeyModifiers::CONTROL))
+            .unwrap();
+        assert_eq!(saved_label(&app), "(not saved)");
+
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn footer_tracks_the_active_buffer_and_successful_save_as() {
+        let first = temp_file("switch_first", "alpha");
+        let second = temp_file("switch_second", "beta");
+        let paths = vec![
+            first.to_string_lossy().into_owned(),
+            second.to_string_lossy().into_owned(),
+        ];
+        let mut app = App::new_with_paths_and_big_file_config(
+            &paths,
+            crate::config::big_files::BigFileConfig::default(),
+        )
+        .unwrap();
+
+        app.buffer.insert_char('x');
+        super::super::file_state::note_content_change(&mut app.file);
+        super::super::file_state::refresh_dirty(&mut app.file, &*app.buffer);
+        assert_eq!(saved_label(&app), "(not saved)");
+        assert!(app.switch_buffer(super::super::buffers::BufferDirection::Next));
+        assert_eq!(saved_label(&app), "(saved)");
+        assert!(app.switch_buffer(super::super::buffers::BufferDirection::Previous));
+        assert_eq!(saved_label(&app), "(not saved)");
+
+        let untitled_target = temp_file("save_as", "");
+        std::fs::remove_file(&untitled_target).unwrap();
+        let named_missing = App::new(untitled_target.to_str()).unwrap();
+        assert_eq!(saved_label(&named_missing), "(not saved)");
+        drop(named_missing);
+
+        let mut untitled = App::new(None).unwrap();
+        let mut out = Vec::new();
+        assert_eq!(saved_label(&untitled), "(not saved)");
+        super::super::save::handle_save_as(
+            &mut untitled,
+            &mut out,
+            untitled_target.to_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(saved_label(&untitled), "(saved)");
+
+        std::fs::remove_file(first).unwrap();
+        std::fs::remove_file(second).unwrap();
+        std::fs::remove_file(untitled_target).unwrap();
+    }
+
+    #[test]
+    fn footer_tracks_external_divergence_reload_deletion_and_recreation() {
+        let path = temp_file("external", "base");
+        let mut app = App::new(path.to_str()).unwrap();
+        let mut out = Vec::new();
+        app.auto_reload = false;
+
+        std::fs::write(&path, "external").unwrap();
+        super::super::watch::apply_file_watch_signal(
+            &mut app,
+            crate::file::watcher::FileWatchSignal::Changed,
+        );
+        assert_eq!(saved_label(&app), "(not saved)");
+
+        app.handle_key_with(&mut out, key(KeyCode::Char('x'), KeyModifiers::NONE))
+            .unwrap();
+        app.handle_key_with(&mut out, key(KeyCode::Char('z'), KeyModifiers::CONTROL))
+            .unwrap();
+        assert!(!app.file.dirty);
+        assert!(
+            app.pending_reload
+                .as_ref()
+                .is_some_and(|pending| !pending.is_explicitly_armed),
+            "undo must retain the passive external observation"
+        );
+        assert_eq!(saved_label(&app), "(not saved)");
+
+        app.handle_key_with(&mut out, key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+            .unwrap();
+        app.handle_key_with(&mut out, key(KeyCode::Char('r'), KeyModifiers::CONTROL))
+            .unwrap();
+        assert_eq!(saved_label(&app), "(saved)");
+
+        app.auto_reload = true;
+        std::fs::remove_file(&path).unwrap();
+        super::super::watch::apply_file_watch_signal(
+            &mut app,
+            crate::file::watcher::FileWatchSignal::Deleted,
+        );
+        assert_eq!(saved_label(&app), "(not saved)");
+
+        std::fs::write(&path, "recreated").unwrap();
+        super::super::watch::apply_file_watch_signal(
+            &mut app,
+            crate::file::watcher::FileWatchSignal::Changed,
+        );
+        assert_eq!(saved_label(&app), "(saved)");
+
+        super::super::watch::apply_file_watch_signal(
+            &mut app,
+            crate::file::watcher::FileWatchSignal::Error("transport failed".to_string()),
+        );
+        assert_eq!(
+            saved_label(&app),
+            "(saved)",
+            "watcher transport failure alone is not a disk observation"
+        );
+
+        super::super::reload::apply_check_observation(
+            &mut app,
+            &crate::file::io::ExternalFileObservation {
+                status: crate::file::io::ExternalFileStatus::Unknown(
+                    std::io::ErrorKind::PermissionDenied,
+                ),
+                live_snapshot: None,
+            },
+        );
+        assert_eq!(saved_label(&app), "(not saved)");
+
+        std::fs::remove_file(path).unwrap();
+    }
 
     #[test]
     fn source_display_identity_is_stable_across_content_revisions() {

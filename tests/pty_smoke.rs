@@ -546,6 +546,36 @@ fn pty_save_undo_save_quit_writes_expected_file() -> TestResult {
 }
 
 #[test]
+fn pty_footer_tracks_edit_save_and_accepted_external_modification() -> TestResult {
+    let temp = TempPath::new("footer_saved_state");
+    fs::write(&temp.path, "base")?;
+    let mut editor = PtyEditor::spawn_sized(&temp.path, 8, 60)?;
+
+    editor.wait_for_initial_render()?;
+    editor.wait_for_output("initial saved footer", "(saved)")?;
+
+    editor.clear_output();
+    editor.send_keys(b"X")?;
+    editor.wait_for_output("edited footer", "(not saved)")?;
+
+    editor.clear_output();
+    editor.send_keys(b"\x13")?;
+    editor.wait_for_output("saved footer", "(saved)")?;
+    wait_until("saved edited bytes", Duration::from_secs(2), || {
+        fs::read_to_string(&temp.path).is_ok_and(|text| text == "Xbase")
+    })?;
+
+    editor.clear_output();
+    fs::write(&temp.path, "external")?;
+    editor.wait_for_output("accepted external content", "external")?;
+    editor.wait_for_output("accepted external footer", "(saved)")?;
+
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+    Ok(())
+}
+
+#[test]
 fn pty_emoji_picker_opens_and_accepts_ranked_match() -> TestResult {
     let temp = TempPath::new("emoji_picker");
     let mut editor = PtyEditor::spawn_sized(&temp.path, 12, 60)?;

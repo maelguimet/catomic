@@ -664,7 +664,7 @@ fn app_file_state_reload_clears_save_conflict() {
 }
 
 #[test]
-fn app_file_state_edit_after_reload_pending_clears_it() {
+fn app_file_state_edit_after_reload_pending_downgrades_it() {
     let mut tmp = std::env::temp_dir();
     tmp.push(format!("catomic_2s_edit_clr_p_{}.txt", std::process::id()));
     let p = tmp.to_string_lossy().to_string();
@@ -679,8 +679,11 @@ fn app_file_state_edit_after_reload_pending_clears_it() {
     assert!(app.pending_reload.is_some());
 
     app.handle_key(make_key(KeyCode::Char('x'), KeyModifiers::NONE))
-        .unwrap(); // edit clears
-    assert!(app.pending_reload.is_none());
+        .unwrap(); // edit cancels the confirmation but retains the observation
+    assert!(app
+        .pending_reload
+        .as_ref()
+        .is_some_and(|pending| !pending.is_explicitly_armed));
 
     // next R must re-arm, not auto reload
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
@@ -752,10 +755,11 @@ fn app_file_state_reload_modified_read_failure_keeps_state_and_pending() {
     let _ = std::fs::remove_file(&p);
 }
 
-// Phase 2-t: generic Char('\n') / Char('\r') must clear pending_reload (paste etc path)
+// Phase 2-t: generic Char('\n') / Char('\r') must cancel reload confirmation
+// while retaining the passive external observation.
 
 #[test]
-fn app_file_state_generic_newline_clears_reload_pending() {
+fn app_file_state_generic_newline_downgrades_reload_pending() {
     let mut tmp = std::env::temp_dir();
     tmp.push(format!(
         "catomic_2t_newline_clear_{}.txt",
@@ -772,22 +776,24 @@ fn app_file_state_generic_newline_clears_reload_pending() {
         .unwrap();
     assert!(app.pending_reload.is_some(), "first R should arm");
 
-    // generic newline (the \n/\r Char path, e.g. from paste) must clear it
+    // generic newline (the \n/\r Char path, e.g. from paste) must disarm it
     app.handle_key(make_key(KeyCode::Char('\n'), KeyModifiers::NONE))
         .unwrap();
     assert!(
-        app.pending_reload.is_none(),
-        "generic newline must clear pending_reload"
+        app.pending_reload
+            .as_ref()
+            .is_some_and(|pending| !pending.is_explicitly_armed),
+        "generic newline must retain only a passive observation"
     );
     // Concrete expected state immediately after the generic newline (no reload yet).
     assert_eq!(app.buffer.to_string(), "\nBASE");
 
-    // next R must re-arm, not perform reload (since pending was cleared)
+    // next R must re-arm, not perform reload.
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(
         app.pending_reload.is_some(),
-        "after clear, next R must re-arm"
+        "after cancellation, next R must re-arm"
     );
     // Concrete state: generic newline inserted at start; reload not performed.
     assert_eq!(app.buffer.to_string(), "\nBASE");

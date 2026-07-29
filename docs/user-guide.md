@@ -241,9 +241,12 @@ is invalid because they do not enter terminal raw mode.
 ## The editor screen
 
 The main area contains the active buffer. The bottom line shows a transient
-message when an operation needs attention; otherwise it shows only the active
-path (or `[untitled]`) beside the small cat decoration. The parent path is
-muted and the filename is red. Exceptional navigation context is appended as
+message when an operation needs attention; otherwise it shows the active path
+(or `[untitled]`) and exactly `(saved)` or `(not saved)` beside the small cat
+decoration. `(saved)` means the active buffer has an accepted on-disk revision;
+untitled or missing files, local edits, external divergence, and accepted
+deletion show `(not saved)`. The parent path is muted and the filename is red.
+Exceptional navigation context is appended as
 `file N/M` or `page N`. The terminal window title tracks the active filename and Catomic
 restores the previous title when the editor exits.
 
@@ -1168,9 +1171,9 @@ restores SGR attributes and the terminal's cursor color.
 The persistent footer uses the terminal's own default foreground/background
 pair, so its contrast follows the selected terminal theme instead of assuming a
 dark background. The complete displayed path uses that normal foreground and is
-underlined while the cat branding stays plain. The filename remains bright red;
-`status_filename` customizes only that filename span. The footer adds no bold,
-inverse video, or background to the path by default.
+underlined while the cat branding and saved-state label stay plain. The filename
+remains bright red; `status_filename` customizes only that filename span. The
+footer adds no bold, inverse video, or background to the path by default.
 At four or more rows, a cleared row separates document text from the footer;
 smaller terminals drop the separator first, then the footer, so the editing area
 never becomes zero-height. Transient messages keep their semantic full-row styles.

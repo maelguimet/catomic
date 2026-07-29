@@ -92,10 +92,10 @@ fn update_target_prompt_cancels_or_rejects_before_network_work() -> TestResult {
     assert_eq!(invalid.status.code(), Some(5));
     assert!(String::from_utf8(invalid.stderr)?.contains("invalid update target"));
 
-    let explicit = run_with_input(&fixture, &["update", "--latest-commit"], b"n\n")?;
+    let explicit = run_with_input(&fixture, &["update", "--stable"], b"n\n")?;
     assert!(explicit.status.success(), "{:?}", explicit.stderr);
     let stdout = String::from_utf8(explicit.stdout)?;
-    assert!(stdout.contains("update target: latest official master commit"));
+    assert!(stdout.contains("update target: latest stable release"));
     assert!(!stdout.contains("Select target"));
     assert!(stdout.contains("update cancelled; no network or disk changes made"));
 

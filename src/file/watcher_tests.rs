@@ -141,6 +141,20 @@ fn sibling_file_event_is_ignored() {
 }
 
 #[test]
+fn notify_callback_filter_drops_sibling_event_before_queueing() {
+    let target = PathBuf::from("/abs/w/test.txt");
+    let event = make_event(
+        EventKind::Modify(notify::event::ModifyKind::Any),
+        vec![PathBuf::from("/abs/w/sibling.txt")],
+    );
+
+    assert_eq!(
+        map_notify_result_to_signal(std::slice::from_ref(&target), Ok(event)),
+        None
+    );
+}
+
+#[test]
 fn event_with_multiple_paths_including_target_is_accepted() {
     let target = PathBuf::from("/abs/w/test.txt");
     let ev = make_event(

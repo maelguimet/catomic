@@ -4,7 +4,8 @@
 //! and provide explicit seams for signal handling.
 //! Owns: refresh/clear, apply_file_watch_signal (hint -> observe + auto-reload clean buffers
 //!   or record passive dirty/disabled observations),
-//!   check_file_watcher_once (single try_recv + apply), check_file_watcher_once_and_render.
+//!   check_file_watcher_once (one semantic signal + apply),
+//!   check_file_watcher_once_and_render.
 //! Must not: be called from handle_key / save / render paths; discard dirty buffers;
 //!   trust signal kind without fresh metadata observation;
 //!   expand repository/network/UI policy; call try_recv outside check_file_watcher_once.
@@ -176,7 +177,7 @@ pub(crate) fn apply_file_watch_signal(
     }
 }
 
-/// Single (at most one) try_recv + apply drain of the file watcher.
+/// Apply at most one queued semantic signal from the file watcher.
 ///
 /// If no watcher or no signal ready: returns false, no mutation.
 /// If a signal is received: calls apply_file_watch_signal and returns its
@@ -200,7 +201,7 @@ pub(crate) fn check_file_watcher_once(app: &mut super::App) -> bool {
 
 /// Runtime seam: check watcher at most once, render only if a signal produced visible change.
 ///
-/// Calls check_file_watcher_once (at most one try_recv + apply).
+/// Calls check_file_watcher_once (at most one semantic signal + apply).
 /// Only renders if the received signal produced a visible outcome
 /// (i.e. apply returned true).
 ///
@@ -213,7 +214,8 @@ pub(crate) fn check_file_watcher_once(app: &mut super::App) -> bool {
 /// Returns Ok(true) if a signal was received AND produced visible state
 /// (render attempted), Ok(false) otherwise. Errors only from render.
 ///
-/// Must be called at most once per event loop iteration from App::run.
+/// The runtime calls this before its terminal wait and again immediately before
+/// dispatching a ready event; each call handles at most one semantic signal.
 /// Must not be called from handle_key, save, reload, or render.
 pub(crate) fn check_file_watcher_once_and_render(
     app: &mut super::App,

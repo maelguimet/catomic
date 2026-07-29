@@ -236,3 +236,20 @@ fn escape_closes_help_without_leaving_a_message_and_restores_source_viewport() {
     assert_eq!(app.screen.wrap_col, 2);
     assert!(!String::from_utf8(out).unwrap().contains("Help closed"));
 }
+
+#[test]
+fn escape_closes_help_and_preserves_the_source_selection() {
+    let mut app = app();
+    let mut out = Vec::new();
+    crate::app::selection::move_to(&mut app, &mut out, Cursor { row: 0, col: 6 }, true).unwrap();
+    let selection = app.selection.active();
+
+    show(&mut app, &mut out).unwrap();
+    assert_eq!(app.selection.active(), selection);
+
+    app.handle_key_with(&mut out, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+        .unwrap();
+
+    assert!(!is_viewing(&app));
+    assert_eq!(app.selection.active(), selection);
+}

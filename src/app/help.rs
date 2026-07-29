@@ -56,7 +56,6 @@ pub(crate) fn show(
     app.screen.scroll_top = 0;
     app.screen.scroll_left = 0;
     app.screen.wrap_col = 0;
-    app.selection.clear();
     app.message_info("Help; Esc closes.");
     app.render(out)
 }

@@ -1,7 +1,7 @@
 //! Purpose: run the single terminal event loop and dispatch normalized terminal events.
 //! Owns: setup/teardown guards, runtime polling order, event reads, and resize dispatch.
 //! Must not: decode terminal bytes, implement editor commands, scan projects, or call networks.
-//! Invariants: background work is polled once per loop; terminal teardown is guard-backed.
+//! Invariants: ready background work is applied before terminal input; teardown is guard-backed.
 
 use std::io;
 use std::path::PathBuf;
@@ -49,7 +49,7 @@ impl App {
             }
             self.poll_runtime_tasks(&mut stdout)?;
             if event::poll(std::time::Duration::from_millis(100))? {
-                self.dispatch_terminal_event(&mut stdout, event::read()?)?;
+                self.dispatch_ready_terminal_event(&mut stdout, event::read()?)?;
             }
         }
 
@@ -68,6 +68,18 @@ impl App {
         external_command::poll(self, out)?;
         hooks::pump(self, out)?;
         recovery::poll(self, out)
+    }
+
+    fn dispatch_ready_terminal_event(
+        &mut self,
+        out: &mut dyn crate::terminal::TerminalOutput,
+        event: Event,
+    ) -> io::Result<()> {
+        // A watcher or worker can become ready while terminal polling blocks.
+        // Apply that state before interpreting input against an obsolete buffer
+        // revision, cursor, or temporary surface.
+        self.poll_runtime_tasks(out)?;
+        self.dispatch_terminal_event(out, event)
     }
 
     fn dispatch_terminal_event(
@@ -113,7 +125,8 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{Duration, Instant};
+    use std::fs;
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
     use crossterm::event::{KeyCode, KeyEventKind, KeyEventState, KeyModifiers};
 
@@ -163,5 +176,59 @@ mod tests {
         app.dispatch_terminal_event(&mut output, right()).unwrap();
         assert_eq!(output.presentation().metrics().rows_composed, 0);
         assert_eq!(output.presentation().metrics().rows_emitted, 0);
+    }
+
+    #[test]
+    fn watcher_result_ready_during_terminal_wait_precedes_input() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "catomic_runtime_watcher_order_{}_{}",
+            std::process::id(),
+            nonce
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let first = root.join("first.txt");
+        let second = root.join("second.txt");
+        fs::write(&first, "OLD").unwrap();
+        fs::write(&second, "SECOND").unwrap();
+
+        let paths = vec![
+            first.to_string_lossy().into_owned(),
+            second.to_string_lossy().into_owned(),
+        ];
+        let mut app = App::new_with_paths_and_big_file_config(
+            &paths,
+            crate::config::big_files::BigFileConfig::default(),
+        )
+        .unwrap();
+        let (watcher, _tx) = crate::file::watcher::FileWatcher::new_for_test(first.clone());
+        crate::app::watch::replace_file_watcher_for_test(&mut app, watcher);
+        fs::write(&first, "NEW").unwrap();
+        app.file_watcher
+            .as_ref()
+            .unwrap()
+            .inject_signal(crate::file::watcher::FileWatchSignal::Changed);
+
+        assert!(app.switch_buffer(crate::app::buffers::BufferDirection::Next));
+        assert_eq!(app.buffer.to_string(), "SECOND");
+        assert!(app.switch_buffer(crate::app::buffers::BufferDirection::Previous));
+        assert_eq!(app.buffer.to_string(), "OLD");
+
+        let mut output = term::RuntimeOutput::new(Vec::new());
+        app.render(&mut output).unwrap();
+        app.dispatch_ready_terminal_event(
+            &mut output,
+            Event::Key(KeyEvent::new(KeyCode::Char('X'), KeyModifiers::NONE)),
+        )
+        .unwrap();
+
+        assert_eq!(app.buffer.to_string(), "XNEW");
+        assert!(app.file.dirty);
+        assert_eq!(fs::read_to_string(&first).unwrap(), "NEW");
+
+        fs::remove_dir_all(root).unwrap();
     }
 }

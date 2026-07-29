@@ -60,12 +60,14 @@ cd catomic
 
 The installer never replaces an existing configuration.
 
-For an official checkout whose current branch can fast-forward to `master`,
-either launch method supports the state-preserving updater:
+The updater can follow the newest stable release or the exact current official
+`master` commit. Interactive updates ask which target to use; automation
+defaults to stable unless an explicit selector is supplied:
 
 ```sh
 catomic update --check
-catomic update --backup
+catomic update --latest-commit --check
+catomic update --stable --yes --backup
 ```
 
 The updater never rewrites Catomic configuration or drops local source changes. See

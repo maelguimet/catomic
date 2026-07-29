@@ -75,6 +75,45 @@ fn run_with_input(
     Ok(child.wait_with_output()?)
 }
 
+#[test]
+fn update_target_prompt_cancels_or_rejects_before_network_work() -> TestResult {
+    let fixture = Fixture::new();
+
+    for input in [b"q\n".as_slice(), b"".as_slice()] {
+        let output = run_with_input(&fixture, &["update"], input)?;
+        assert!(output.status.success());
+        let stdout = String::from_utf8(output.stdout)?;
+        assert!(stdout.contains("latest stable release (default)"));
+        assert!(stdout.contains("update cancelled; no network or disk changes made"));
+        assert!(!stdout.contains("source: https://"));
+    }
+
+    let invalid = run_with_input(&fixture, &["update"], b"nightly\n")?;
+    assert_eq!(invalid.status.code(), Some(5));
+    assert!(String::from_utf8(invalid.stderr)?.contains("invalid update target"));
+
+    let explicit = run_with_input(&fixture, &["update", "--stable"], b"n\n")?;
+    assert!(explicit.status.success(), "{:?}", explicit.stderr);
+    let stdout = String::from_utf8(explicit.stdout)?;
+    assert!(stdout.contains("update target: latest stable release"));
+    assert!(!stdout.contains("Select target"));
+    assert!(stdout.contains("update cancelled; no network or disk changes made"));
+
+    let empty_path = fixture.root.join("empty-path");
+    fs::create_dir(&empty_path)?;
+    let automated = fixture
+        .command()
+        .env("PATH", &empty_path)
+        .args(["update", "--latest-commit", "--yes"])
+        .output()?;
+    assert_eq!(automated.status.code(), Some(3));
+    let stdout = String::from_utf8(automated.stdout)?;
+    assert!(stdout.contains("update target: latest official master commit"));
+    assert!(!stdout.contains("Select target"));
+    assert!(!stdout.contains("Network and disk writes will follow"));
+    Ok(())
+}
+
 #[cfg(unix)]
 #[test]
 fn config_path_check_and_help_are_read_only_and_preserving() -> TestResult {

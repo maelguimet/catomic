@@ -106,7 +106,7 @@ fn release_server(binary: Vec<u8>) -> (String, std::thread::JoinHandle<()>) {
         .collect();
     let checksum = format!("{hash}  catomic-x86_64-unknown-linux-gnu\n").into_bytes();
     let metadata = format!(
-        "{{\"tag_name\":\"v9.8.7\",\"assets\":[{{\"name\":\"catomic-x86_64-unknown-linux-gnu\",\"browser_download_url\":\"{base}/binary\",\"size\":{}}},{{\"name\":\"catomic-x86_64-unknown-linux-gnu.sha256\",\"browser_download_url\":\"{base}/checksum\",\"size\":{}}}]}}",
+        "{{\"tag_name\":\"v9.8.7\",\"draft\":false,\"prerelease\":false,\"assets\":[{{\"name\":\"catomic-x86_64-unknown-linux-gnu\",\"browser_download_url\":\"{base}/binary\",\"size\":{}}},{{\"name\":\"catomic-x86_64-unknown-linux-gnu.sha256\",\"browser_download_url\":\"{base}/checksum\",\"size\":{}}}]}}",
         binary.len(),
         checksum.len()
     )
@@ -137,6 +137,29 @@ fn release_server(binary: Vec<u8>) -> (String, std::thread::JoinHandle<()>) {
         }
     });
     (api_url, server)
+}
+
+#[test]
+fn stable_metadata_rejects_drafts_and_prereleases() {
+    for field in ["draft", "prerelease"] {
+        let (url, server) = one_response(
+            "200 OK",
+            &[],
+            format!(
+                "{{\"tag_name\":\"v9.8.7\",\"draft\":{},\"prerelease\":{},\"assets\":[]}}",
+                field == "draft",
+                field == "prerelease"
+            )
+            .into_bytes(),
+            Duration::ZERO,
+        );
+        let client = HttpClient::build(&url, true, Duration::from_secs(1)).unwrap();
+
+        let error = block_on(client.latest("catomic-x86_64-unknown-linux-gnu")).unwrap_err();
+        server.join().unwrap();
+
+        assert!(error.to_string().contains("draft or prerelease"));
+    }
 }
 
 fn one_response(

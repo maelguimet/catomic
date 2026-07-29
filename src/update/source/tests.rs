@@ -94,33 +94,20 @@ fn remote_policy_rejects_lookalikes() {
 }
 
 #[test]
-fn missing_checkout_selects_controlled_path_install() {
+fn missing_checkout_selects_isolated_locked_build() {
     let root = fixture();
     assert!(discover_path(&root.join("missing")).unwrap().is_none());
 
     let revision = "71f3cbd98484e5bb9be921d63ff1ebf9394ecafe";
-    let install_root = root.join("cargo-home");
     let checkout = root.join("checkout");
     let target = root.join("target");
-    let command = cargo_install_command(&checkout, &install_root, &target, revision);
+    let command =
+        cargo_without_retained_source_command(&checkout, &RELEASE_BUILD_ARGS, revision, &target);
     let args: Vec<_> = command
         .get_args()
         .map(|argument| argument.to_str().unwrap())
         .collect();
-    assert_eq!(
-        args,
-        [
-            "install",
-            "--path",
-            checkout.to_str().unwrap(),
-            "--locked",
-            "--force",
-            "--root",
-            install_root.to_str().unwrap(),
-            "--target-dir",
-            target.to_str().unwrap(),
-        ]
-    );
+    assert_eq!(args, RELEASE_BUILD_ARGS);
     let environment = command
         .get_envs()
         .map(|(name, value)| {
@@ -133,6 +120,7 @@ fn missing_checkout_selects_controlled_path_install() {
     assert!(environment.contains(&("CATOMIC_SOURCE_DIR", Some(""))));
     assert!(environment.contains(&("CATOMIC_BUILD_COMMIT", Some(revision))));
     assert!(environment.contains(&("CATOMIC_BUILD_DIRTY", Some("0"))));
+    assert!(environment.contains(&("CARGO_TARGET_DIR", Some(target.to_str().unwrap()))));
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -148,18 +136,9 @@ fn implicit_cargo_git_checkout_uses_cargo_install_again() {
     );
 }
 
-#[test]
-fn cargo_install_targets_the_invoked_binary_root() {
-    assert_eq!(
-        cargo_install_root(Path::new("/home/test/.cargo/bin/catomic")).unwrap(),
-        Path::new("/home/test/.cargo")
-    );
-    assert!(cargo_install_root(Path::new("/home/test/catomic")).is_err());
-}
-
 #[cfg(target_os = "linux")]
 #[test]
-fn installed_version_verification_requires_the_exact_revision() {
+fn candidate_verification_requires_the_exact_revision() {
     use std::os::unix::fs::PermissionsExt;
 
     let root = std::env::temp_dir().join(format!(
@@ -177,15 +156,15 @@ fn installed_version_verification_requires_the_exact_revision() {
     fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
 
     let revision = "71f3cbd98484e5bb9be921d63ff1ebf9394ecafe";
-    verify_installed_version(&executable, "1.2.3", revision).unwrap();
-    let error = verify_installed_version(
+    require_candidate_identity(&executable, "1.2.3", revision).unwrap();
+    let error = require_candidate_identity(
         &executable,
         "1.2.3",
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     )
     .unwrap_err();
-    assert_eq!(error.exit_code(), EXIT_INSTALL);
-    assert!(error.to_string().contains("update not confirmed"));
+    assert_eq!(error.exit_code(), EXIT_BUILD);
+    assert!(error.to_string().contains("candidate reports"));
 
     fs::remove_dir_all(root).unwrap();
 }
@@ -194,6 +173,16 @@ fn installed_version_verification_requires_the_exact_revision() {
 fn source_update_builds_without_spawning_cargo_test() {
     assert_eq!(RELEASE_BUILD_ARGS, ["build", "--release", "--locked"]);
     assert!(!RELEASE_BUILD_ARGS.contains(&"test"));
+}
+
+#[test]
+fn rust_toolchain_version_comparison_accepts_manifest_minor_versions() {
+    assert_eq!(parse_numeric_version("1.87"), Some([1, 87, 0]));
+    assert_eq!(parse_numeric_version("1.90.0"), Some([1, 90, 0]));
+    assert_eq!(parse_numeric_version("1.91.0-nightly"), Some([1, 91, 0]));
+    assert!(parse_numeric_version("1.86.9").unwrap() < parse_numeric_version("1.87").unwrap());
+    assert!(parse_numeric_version("nightly").is_none());
+    assert!(parse_numeric_version("1").is_none());
 }
 
 #[test]
@@ -238,12 +227,14 @@ fn standalone_checkout_workspace_cleans_after_failed_local_build() {
     let workspace =
         UpdateWorkspace::clone_revision_in(&temporary_parent, &remote, "master", &sha).unwrap();
     let workspace_root = workspace.root().to_path_buf();
-    let install_root = root.with_extension("failed-install-root");
-
     let error = with_workspace(workspace, |workspace| {
         fs::remove_file(workspace.checkout.join("src/main.rs")).unwrap();
-        let mut command =
-            cargo_install_command(&workspace.checkout, &install_root, &workspace.target, &sha);
+        let mut command = cargo_without_retained_source_command(
+            &workspace.checkout,
+            &["build", "--locked", "--offline"],
+            &sha,
+            &workspace.target,
+        );
         command.env("CARGO_HOME", &cargo_home);
         command.env("CARGO_NET_OFFLINE", "true");
         run_cargo(&mut command)
@@ -255,9 +246,30 @@ fn standalone_checkout_workspace_cleans_after_failed_local_build() {
     fs::remove_dir_all(root).unwrap();
     fs::remove_dir_all(temporary_parent).unwrap();
     fs::remove_dir_all(cargo_home).unwrap();
-    if install_root.exists() {
-        fs::remove_dir_all(install_root).unwrap();
-    }
+}
+
+#[test]
+fn exact_revision_clone_detects_branch_movement_and_cleans_workspace() {
+    let root = fixture();
+    let old_sha = git_text(&root, &["rev-parse", "HEAD"]).unwrap();
+    fs::write(root.join("moved"), "new commit\n").unwrap();
+    git(&root, &["add", "moved"]);
+    git(&root, &["commit", "-m", "move branch"]);
+    let temporary_parent = root.with_extension("moved-workspace");
+    fs::create_dir(&temporary_parent).unwrap();
+    let remote = root.to_string_lossy().into_owned();
+
+    let error =
+        match UpdateWorkspace::clone_revision_in(&temporary_parent, &remote, "master", &old_sha) {
+            Ok(_) => panic!("branch movement must reject the stale expected revision"),
+            Err(error) => error,
+        };
+
+    assert_eq!(error.exit_code(), EXIT_NETWORK);
+    assert!(error.to_string().contains("branch moved during update"));
+    assert!(fs::read_dir(&temporary_parent).unwrap().next().is_none());
+    fs::remove_dir_all(root).unwrap();
+    fs::remove_dir_all(temporary_parent).unwrap();
 }
 
 #[test]

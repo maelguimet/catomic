@@ -9,6 +9,7 @@ mod security;
 #[cfg(test)]
 mod tests;
 
+use std::cmp::Ordering;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -26,7 +27,7 @@ use self::http::{HttpClient, ReleaseInfo};
 use self::security::{valid_sha, verify_checksum, ReleaseVersion};
 use super::{
     confirm, maybe_backup, process, UpdateError, EXIT_CONFIG, EXIT_INSTALL, EXIT_NETWORK,
-    EXIT_UNSUPPORTED,
+    EXIT_SOURCE_STATE, EXIT_UNSUPPORTED,
 };
 use crate::build_info;
 
@@ -42,10 +43,21 @@ pub(super) fn is_managed_build() -> bool {
 }
 
 pub(super) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
-    let asset_name = asset_name()?;
-    println!("install method: managed release binary");
+    println!("update target: latest stable release");
+    println!(
+        "install method: {}",
+        if is_managed_build() {
+            "managed release binary"
+        } else {
+            "source/Cargo-built binary"
+        }
+    );
     println!("source: {LATEST_RELEASE_URL}");
     println!("current version: {}", env!("CARGO_PKG_VERSION"));
+    if !is_managed_build() {
+        println!("source checkout: will remain unchanged");
+    }
+    let asset_name = asset_name()?;
     let client = HttpClient::new(LATEST_RELEASE_URL)?;
     if options.check {
         let release = block_on(client.latest(asset_name))?;
@@ -62,10 +74,22 @@ pub(super) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
     }
     let release = block_on(client.latest(asset_name))?;
     let current = current_version()?;
-    if release.version <= current {
-        println!("available version: {}", release.version);
-        println!("already up to date; no files changed");
-        return Ok(());
+    match release.version.cmp(&current) {
+        Ordering::Less => {
+            return Err(UpdateError::new(
+                EXIT_SOURCE_STATE,
+                format!(
+                    "latest stable release {} is older than current version {}; refusing to downgrade",
+                    release.version, current
+                ),
+            ));
+        }
+        Ordering::Equal => {
+            println!("available version: {}", release.version);
+            println!("already up to date; no files changed");
+            return Ok(());
+        }
+        Ordering::Greater => {}
     }
     println!("available version: {}", release.version);
     println!("artifact: {}", release.binary.url);
@@ -79,6 +103,9 @@ pub(super) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
     println!("new version: {}", release.version);
     println!("new build: {new_build}");
     println!("user state: unchanged");
+    if !is_managed_build() {
+        println!("source checkout: unchanged");
+    }
     match backup {
         Some(path) => println!("user-state backup: {}", path.display()),
         None => println!("user-state backup: not requested"),
@@ -92,7 +119,12 @@ pub(super) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
     Ok(())
 }
 
-pub(super) fn source_version_at(sha: &str) -> Result<String, UpdateError> {
+pub(super) struct SourceManifest {
+    pub(super) version: String,
+    pub(super) rust_version: Option<String>,
+}
+
+pub(super) fn source_manifest_at(sha: &str) -> Result<SourceManifest, UpdateError> {
     if !valid_sha(sha) {
         return Err(UpdateError::new(
             EXIT_NETWORK,
@@ -110,12 +142,24 @@ pub(super) fn source_version_at(sha: &str) -> Result<String, UpdateError> {
             format!("official Cargo.toml is invalid: {error}"),
         )
     })?;
-    manifest
-        .get("package")
-        .and_then(|package| package.get("version"))
+    let package = manifest.get("package").ok_or_else(|| {
+        UpdateError::new(EXIT_NETWORK, "official Cargo.toml has no package table")
+    })?;
+    let version = package
+        .get("version")
         .and_then(toml::Value::as_str)
         .map(str::to_string)
-        .ok_or_else(|| UpdateError::new(EXIT_NETWORK, "official Cargo.toml has no package version"))
+        .ok_or_else(|| {
+            UpdateError::new(EXIT_NETWORK, "official Cargo.toml has no package version")
+        })?;
+    let rust_version = package
+        .get("rust-version")
+        .and_then(toml::Value::as_str)
+        .map(str::to_string);
+    Ok(SourceManifest {
+        version,
+        rust_version,
+    })
 }
 
 pub(super) fn source_relation(base: &str, head: &str) -> Result<String, UpdateError> {

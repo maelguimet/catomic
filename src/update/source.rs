@@ -1,5 +1,5 @@
 //! Purpose: safely update binaries built from the official Catomic source.
-//! Owns: checkout updates, dirty-change preservation, and missing-checkout Cargo reinstall.
+//! Owns: checkout updates, dirty-change preservation, and isolated standalone source builds.
 //! Must not: reset, clean, discard local changes, run hooks, or edit user state.
 //! Invariants: dirty changes survive; candidates build and pass config validation; Cargo uses the
 //! official remote.
@@ -43,21 +43,17 @@ struct SourceInstall {
 }
 
 pub(super) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
+    println!("update target: latest official master commit");
+    require_tool("git")?;
     let Some(install) = discover().map_err(|error| UpdateError::new(EXIT_UNSUPPORTED, error))?
     else {
-        if options.check {
-            return Err(UpdateError::new(
-                EXIT_UNSUPPORTED,
-                "source checkout is unavailable; no files changed",
-            ));
-        }
-        return cargo_install(options);
+        return standalone(options);
     };
     print_local_status(&install);
+    println!("source: {OFFICIAL_REMOTE} branch {OFFICIAL_BRANCH}");
     if options.check {
         return check(&install);
     }
-    println!("source: {OFFICIAL_REMOTE} branch {OFFICIAL_BRANCH}");
     if !confirm(
         options,
         "Fetch, build, and install from this source? Network and disk writes will follow.",
@@ -65,6 +61,7 @@ pub(super) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
         println!("update cancelled; no network or disk changes made");
         return Ok(());
     }
+    require_tool("cargo")?;
     let remote_sha = remote_head()?;
     if remote_sha == install.current_sha {
         println!(
@@ -73,7 +70,9 @@ pub(super) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
         );
         return Ok(());
     }
-    let remote_version = super::managed::source_version_at(&remote_sha)?;
+    let manifest = super::managed::source_manifest_at(&remote_sha)?;
+    require_rust_version(manifest.rust_version.as_deref())?;
+    let remote_version = manifest.version;
     println!(
         "available version: {remote_version} (commit {})",
         short_sha(&remote_sha)
@@ -100,18 +99,43 @@ pub(super) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
     }
 }
 
-fn cargo_install(options: UpdateOptions) -> Result<(), UpdateError> {
-    println!("install method: Cargo git install");
+fn standalone(options: UpdateOptions) -> Result<(), UpdateError> {
+    println!(
+        "install method: {}",
+        if super::managed::is_managed_build() {
+            "managed binary with isolated source build"
+        } else {
+            "source/Cargo binary without retained checkout"
+        }
+    );
     println!("source: {OFFICIAL_REMOTE} branch {OFFICIAL_BRANCH}");
+    println!("current version: {}", env!("CARGO_PKG_VERSION"));
+    match build_info::commit() {
+        Some(revision) => println!("current revision: {}", short_sha(revision)),
+        None => println!("current revision: unknown"),
+    }
+    if options.check {
+        return check_standalone();
+    }
     if !confirm(
         options,
-        "Reinstall from the official Cargo git source? Network and disk writes will follow.",
+        "Fetch, build, and install the exact official master commit? Network and disk writes will follow.",
     )? {
         println!("update cancelled; no network or disk changes made");
         return Ok(());
     }
+    require_tool("cargo")?;
     let remote_sha = remote_head()?;
-    let remote_version = super::managed::source_version_at(&remote_sha)?;
+    let manifest = super::managed::source_manifest_at(&remote_sha)?;
+    require_rust_version(manifest.rust_version.as_deref())?;
+    let remote_version = manifest.version;
+    if build_info::commit() == Some(remote_sha.as_str()) {
+        println!(
+            "available version: already current ({})",
+            short_sha(&remote_sha)
+        );
+        return Ok(());
+    }
     if super::managed::source_version_is_downgrade(&remote_version)? {
         return Err(UpdateError::new(
             EXIT_SOURCE_STATE,
@@ -121,37 +145,91 @@ fn cargo_install(options: UpdateOptions) -> Result<(), UpdateError> {
             ),
         ));
     }
-    let executable = std::env::current_exe().map_err(|error| {
-        UpdateError::new(EXIT_INSTALL, format!("locate current executable: {error}"))
-    })?;
-    let install_root = cargo_install_root(&executable)?;
-    maybe_backup(options)?;
+    println!(
+        "available version: {remote_version} (commit {})",
+        short_sha(&remote_sha)
+    );
+    let backup = maybe_backup(options)?;
     let workspace = UpdateWorkspace::clone_revision(OFFICIAL_REMOTE, OFFICIAL_BRANCH, &remote_sha)?;
-    with_workspace(workspace, |workspace| {
-        println!("running Cargo install...");
-        let mut command = cargo_install_command(
+    let receipt = with_workspace(workspace, |workspace| {
+        println!("building release binary...");
+        cargo_without_retained_source(
             &workspace.checkout,
-            &install_root,
-            &workspace.target,
+            &RELEASE_BUILD_ARGS,
             &remote_sha,
-        );
-        run_cargo(&mut command)?;
-        verify_installed_version(&executable, &remote_version, &remote_sha)
+            &workspace.target,
+        )?;
+        let candidate = workspace.target.join("release/catomic");
+        validate_candidate_config(&candidate)?;
+        require_candidate_identity(&candidate, &remote_version, &remote_sha)?;
+        let bytes = fs::read(&candidate).map_err(|error| {
+            UpdateError::new(
+                EXIT_BUILD,
+                format!("read candidate binary {}: {error}", candidate.display()),
+            )
+        })?;
+        super::install::replace_current(&bytes, env!("CARGO_PKG_VERSION"))
+            .map_err(|error| UpdateError::new(EXIT_INSTALL, error))
     })?;
-    println!("updated from {OFFICIAL_REMOTE}");
+    println!("old version: {}", env!("CARGO_PKG_VERSION"));
     println!("new version: {remote_version}");
     println!("new revision: {}", short_sha(&remote_sha));
     println!("user state: unchanged");
+    match backup {
+        Some(path) => println!("user-state backup: {}", path.display()),
+        None => println!("user-state backup: not requested"),
+    }
+    println!("rollback binary: {}", receipt.rollback_path().display());
+    println!(
+        "rollback command: cp -- {} {}",
+        shell_quote(receipt.rollback_path()),
+        shell_quote(&std::env::current_exe().unwrap_or_default())
+    );
+    Ok(())
+}
+
+fn check_standalone() -> Result<(), UpdateError> {
+    let cargo_error = tool_error("cargo");
+    let remote_sha = remote_head()?;
+    let manifest = super::managed::source_manifest_at(&remote_sha)?;
+    let build_error = cargo_error.or_else(|| rust_version_error(manifest.rust_version.as_deref()));
+    let remote_version = manifest.version;
+    let downgrade = super::managed::source_version_is_downgrade(&remote_version)?;
+    let available = build_info::commit().map(|current| current != remote_sha);
+    let can_apply = !downgrade && build_error.is_none();
+    println!(
+        "available version: {remote_version} (commit {})",
+        short_sha(&remote_sha)
+    );
+    println!(
+        "update available: {}",
+        match available {
+            Some(true) => "yes",
+            Some(false) => "no",
+            None => "unknown (current revision is unavailable)",
+        }
+    );
+    println!("can apply: {}", if can_apply { "yes" } else { "no" });
+    if downgrade {
+        println!("reason: the official branch reports an older package version");
+    } else if let Some(error) = build_error {
+        println!("reason: {error}");
+    }
+    println!("writes performed: none");
     Ok(())
 }
 
 fn check(install: &SourceInstall) -> Result<(), UpdateError> {
+    let cargo_error = tool_error("cargo");
     let remote_sha = remote_head()?;
-    let remote_version = super::managed::source_version_at(&remote_sha)?;
+    let manifest = super::managed::source_manifest_at(&remote_sha)?;
+    let build_error = cargo_error.or_else(|| rust_version_error(manifest.rust_version.as_deref()));
+    let remote_version = manifest.version;
     let relation = super::managed::source_relation(&install.current_sha, &remote_sha)?;
     let downgrade = super::managed::source_version_is_downgrade(&remote_version)?;
     let available = remote_sha != install.current_sha;
-    let can_apply = !downgrade && matches!(relation.as_str(), "ahead" | "identical");
+    let can_apply =
+        !downgrade && build_error.is_none() && matches!(relation.as_str(), "ahead" | "identical");
     println!(
         "available version: {remote_version} (commit {})",
         short_sha(&remote_sha)
@@ -159,12 +237,17 @@ fn check(install: &SourceInstall) -> Result<(), UpdateError> {
     println!("update available: {}", if available { "yes" } else { "no" });
     println!("official branch relation to checkout: {relation}");
     println!("can apply: {}", if can_apply { "yes" } else { "no" });
-    if install.dirty {
-        println!("source changes will be stashed and reapplied");
-    } else if downgrade {
+    if downgrade {
         println!("reason: the official branch reports an older package version");
     } else if !can_apply {
-        println!("reason: the checkout cannot be fast-forwarded to the official branch");
+        if let Some(error) = build_error {
+            println!("reason: {error}");
+        } else {
+            println!("reason: the checkout cannot be fast-forwarded to the official branch");
+        }
+    }
+    if install.dirty {
+        println!("source changes will be stashed and reapplied");
     }
     println!("writes performed: none");
     Ok(())
@@ -201,15 +284,7 @@ fn apply(
         )?;
         let candidate = workspace.target.join("release/catomic");
         validate_candidate_config(&candidate)?;
-        let new_version = candidate_version(&candidate)?;
-        let expected_version =
-            build_info::format_version(remote_version, Some(&fetched_sha), SourceState::Clean);
-        if new_version != expected_version {
-            return Err(UpdateError::new(
-                EXIT_BUILD,
-                format!("candidate reports {new_version:?}, expected {expected_version:?}"),
-            ));
-        }
+        require_candidate_identity(&candidate, remote_version, &fetched_sha)?;
         let bytes = fs::read(&candidate).map_err(|error| {
             UpdateError::new(
                 EXIT_BUILD,
@@ -549,45 +624,6 @@ fn fast_forward_checkout(root: &Path, sha: &str) -> Result<(), String> {
     }
 }
 
-fn cargo_install_root(executable: &Path) -> Result<PathBuf, UpdateError> {
-    let bin = executable.parent().ok_or_else(|| {
-        UpdateError::new(EXIT_INSTALL, "current executable has no parent directory")
-    })?;
-    if bin.file_name() != Some(std::ffi::OsStr::new("bin")) {
-        return Err(UpdateError::new(
-            EXIT_INSTALL,
-            format!(
-                "Cargo-Git update requires an executable in a Cargo bin directory; current executable is {}",
-                executable.display()
-            ),
-        ));
-    }
-    bin.parent()
-        .map(Path::to_path_buf)
-        .ok_or_else(|| UpdateError::new(EXIT_INSTALL, "Cargo bin directory has no install root"))
-}
-
-fn cargo_install_command(
-    checkout: &Path,
-    install_root: &Path,
-    target: &Path,
-    revision: &str,
-) -> Command {
-    let mut command = Command::new("cargo");
-    command
-        .args(["install", "--path"])
-        .arg(checkout)
-        .args(["--locked", "--force", "--root"])
-        .arg(install_root)
-        .args(["--target-dir"])
-        .arg(target)
-        .env("CATOMIC_SOURCE_DIR", "")
-        .env("CATOMIC_BUILD_COMMIT", revision)
-        .env("CATOMIC_BUILD_DIRTY", "0")
-        .env_remove("CATOMIC_MANAGED_RELEASE");
-    command
-}
-
 fn cargo_with_source(
     root: &Path,
     args: &[&str],
@@ -597,6 +633,34 @@ fn cargo_with_source(
 ) -> Result<(), UpdateError> {
     let mut command = cargo_with_source_command(root, args, source, revision, target);
     run_cargo(&mut command)
+}
+
+fn cargo_without_retained_source(
+    root: &Path,
+    args: &[&str],
+    revision: &str,
+    target: &Path,
+) -> Result<(), UpdateError> {
+    let mut command = cargo_without_retained_source_command(root, args, revision, target);
+    run_cargo(&mut command)
+}
+
+fn cargo_without_retained_source_command(
+    root: &Path,
+    args: &[&str],
+    revision: &str,
+    target: &Path,
+) -> Command {
+    let mut command = Command::new("cargo");
+    command
+        .current_dir(root)
+        .args(args)
+        .env("CATOMIC_SOURCE_DIR", "")
+        .env("CATOMIC_BUILD_COMMIT", revision)
+        .env("CATOMIC_BUILD_DIRTY", "0")
+        .env("CARGO_TARGET_DIR", target)
+        .env_remove("CATOMIC_MANAGED_RELEASE");
+    command
 }
 
 fn cargo_with_source_command(
@@ -645,28 +709,84 @@ fn candidate_version(candidate: &Path) -> Result<String, UpdateError> {
         .map_err(|_| UpdateError::new(EXIT_BUILD, "candidate version was not UTF-8"))
 }
 
-fn verify_installed_version(
-    executable: &Path,
+fn require_candidate_identity(
+    candidate: &Path,
     package_version: &str,
     revision: &str,
 ) -> Result<(), UpdateError> {
     let expected = build_info::format_version(package_version, Some(revision), SourceState::Clean);
-    let actual = candidate_version(executable).map_err(|error| {
-        UpdateError::new(
-            EXIT_INSTALL,
-            format!("could not verify installed executable: {error}"),
-        )
-    })?;
+    let actual = candidate_version(candidate)?;
     if actual == expected {
         Ok(())
     } else {
         Err(UpdateError::new(
-            EXIT_INSTALL,
-            format!(
-                "installed executable reports {actual:?}, expected {expected:?}; update not confirmed"
-            ),
+            EXIT_BUILD,
+            format!("candidate reports {actual:?}, expected {expected:?}"),
         ))
     }
+}
+
+fn require_tool(tool: &str) -> Result<(), UpdateError> {
+    match tool_error(tool) {
+        None => Ok(()),
+        Some(error) => Err(UpdateError::new(EXIT_UNSUPPORTED, error)),
+    }
+}
+
+fn require_rust_version(minimum: Option<&str>) -> Result<(), UpdateError> {
+    match rust_version_error(minimum) {
+        None => Ok(()),
+        Some(error) => Err(UpdateError::new(EXIT_UNSUPPORTED, error)),
+    }
+}
+
+fn rust_version_error(minimum: Option<&str>) -> Option<String> {
+    let minimum = minimum?;
+    let mut command = Command::new("rustc");
+    command.arg("--version");
+    let output = match process::run_checked(&mut command, GIT_TIMEOUT, 16 * 1024) {
+        Ok(output) => output,
+        Err(error) => {
+            return Some(format!(
+                "latest-commit updates require Rust {minimum} or newer: {error}"
+            ));
+        }
+    };
+    let reported = String::from_utf8_lossy(&output.stdout);
+    let version = reported.split_whitespace().nth(1).unwrap_or_default();
+    match (
+        parse_numeric_version(version),
+        parse_numeric_version(minimum),
+    ) {
+        (Some(version), Some(minimum)) if version >= minimum => None,
+        (Some(_), Some(_)) => Some(format!(
+            "latest-commit updates require Rust {minimum} or newer; rustc reports {version}"
+        )),
+        _ => Some(format!(
+            "could not compare rustc version {version:?} with required Rust {minimum:?}"
+        )),
+    }
+}
+
+fn parse_numeric_version(version: &str) -> Option<[u64; 3]> {
+    let mut parsed = [0; 3];
+    let mut count = 0;
+    for (index, component) in version.split('-').next()?.split('.').enumerate() {
+        if index >= parsed.len() {
+            return None;
+        }
+        parsed[index] = component.parse().ok()?;
+        count += 1;
+    }
+    (count >= 2).then_some(parsed)
+}
+
+fn tool_error(tool: &str) -> Option<String> {
+    let mut command = Command::new(tool);
+    command.arg("--version");
+    process::run_checked(&mut command, GIT_TIMEOUT, 16 * 1024)
+        .err()
+        .map(|error| format!("latest-commit updates require {tool}: {error}"))
 }
 
 fn git_text(root: &Path, args: &[&str]) -> Result<String, String> {

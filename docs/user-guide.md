@@ -68,31 +68,56 @@ catomic --help
 
 ## Updating, backup, and rollback
 
-Catomic has an explicit updater. Checking is read-only:
+Catomic has two explicit update targets:
 
 ```sh
-catomic update --check
+catomic update --stable
+catomic update --latest-commit
 ```
 
-It reports the installed version and method, the available version or source
-revision, whether the update can be applied, and the trusted source it queried.
-The command contacts the official GitHub repository because checking a remote
-version requires a network request, but it does not fetch into the checkout,
-write a cache, create a backup, or change the binary.
+- `--stable` selects the newest published official release that is neither a
+  draft nor a prerelease. This is the safe default.
+- `--latest-commit` selects the exact commit currently named by the official
+  `master` branch. Catomic resolves the full SHA first and refuses the update if
+  the branch moves before that revision is fetched.
 
-The default update prints its source and asks before any network or install
-action. Use `--yes` for deterministic non-interactive operation:
+Bare interactive `catomic update` asks for stable, latest commit, or cancel
+before it performs network or install work. Pressing `Enter` selects stable;
+`q`, `cancel`, or end-of-input cancels without changes. An invalid answer fails
+without contacting the update source.
 
 ```sh
 catomic update
-catomic update --yes
 ```
 
-Use `--backup` to make a private, timestamped copy of user-owned state before
-the update is downloaded or built:
+Automation never waits for the target prompt. Bare `--yes` and bare `--check`
+select stable deterministically. Use one mutually exclusive selector to choose
+otherwise:
 
 ```sh
-catomic update --backup
+catomic update --yes
+catomic update --latest-commit --yes
+catomic update --check
+catomic update --latest-commit --check
+```
+
+`--check` is read-only. It reports the selected target, installed method and
+identity, trusted source, exact available stable version or master revision,
+whether the target differs, whether it can be applied, and any missing
+prerequisite. It may query the official GitHub source, but it does not fetch
+into a retained checkout, write a cache, create a backup, or replace the
+binary. `--check` cannot be combined with `--yes` or `--backup`.
+
+Without `--yes`, an explicitly selected target still receives the final
+network-and-install confirmation. Catomic never substitutes stable for
+latest-commit or latest-commit for stable.
+
+Use `--backup` to make a private, timestamped copy of user-owned state before
+the selected update is downloaded or built:
+
+```sh
+catomic update --stable --backup
+catomic update --latest-commit --backup
 ```
 
 Backups live below
@@ -103,35 +128,47 @@ mode `0700` and regular files use `0600`; symlinks are copied without following
 them. Caches are not user state and are not included. The updater prints the
 exact backup path.
 
-### Supported install methods
+### Supported targets and install methods
 
-- An official managed x86_64 Linux release downloads the exact architecture
-  asset and its SHA-256 file from the GitHub release. HTTPS origins and
-  redirects are allowlisted, requests have bounded timeouts, responses and
-  declared asset sizes are capped, and the candidate's checksum and version are
-  verified before it can run or replace the installed binary.
-- A binary built in an official checkout whose current branch can fast-forward
-  to `master`, including one installed by `./scripts/install.sh`, retains that
-  checkout as its update source.
-  Catomic preserves local changes, checks the official remote revision, refuses
-  non-fast-forward history, fetches without running hooks, and builds in an
-  isolated temporary worktree and target directory. The new revision must build
-  successfully and validate the existing configuration before the executable is
-  replaced. Only then is the source checkout fast-forwarded and the local
-  changes reapplied.
-- If that source checkout no longer exists, or the binary came from Cargo's
-  detached Git checkout, Catomic makes a shallow checkout of the exact official
-  `master` revision in its own temporary workspace and asks Cargo to install
-  from that path with the build target in the same workspace. It installs into
-  the current executable's Cargo root and verifies that executable's reported
-  revision before claiming success. `--check` remains unsupported for this
-  install method and exits without writing.
-- Cargo registry installs, other detached Git builds, forks, diverged branches,
-  and architectures without a managed release are reported as unsupported.
+Stable uses the official x86-64 Linux release asset from GitHub for managed,
+source-checkout, and Cargo-built binaries. HTTPS origins and redirects are
+allowlisted, requests have bounded timeouts, response and declared asset sizes
+are capped, and the exact architecture asset is bound to its SHA-256 file. The
+candidate's version and existing-configuration compatibility are checked before
+atomic replacement. An older stable version is reported as a downgrade and is
+refused; an equal installed version is already current. Selecting stable for a
+source-built binary changes only the installed executable: the source checkout,
+its branch, index, worktree, and stash list remain untouched. The installed
+release binary is subsequently identified as a managed binary.
+
+Latest commit requires Git and Cargo/Rust. Missing tools, an unsupported
+toolchain, or a build failure are reported for that target and never cause a
+stable fallback.
+
+- A binary that retains an official checkout uses that checkout only when
+  latest commit is selected. Its current branch may have any name but must
+  fast-forward to official `master`. Catomic preserves local changes, refuses
+  non-fast-forward history, fetches without hooks, and builds the pinned SHA in
+  an isolated temporary worktree and target directory. The candidate must
+  validate the existing configuration and report the exact full-SHA-derived
+  build identity before replacement. Only then is the source checkout
+  fast-forwarded and the local changes reapplied.
+- A managed binary, a Cargo-Git binary, or a source binary whose retained
+  checkout is unavailable uses a private shallow checkout of the pinned master
+  SHA and a locked release build in an isolated target directory. The candidate
+  must validate configuration and report that exact revision before Catomic
+  atomically replaces the running executable. No source checkout is created or
+  retained. This path works on supported Linux architectures when the local
+  Rust toolchain can build Catomic.
+- A retained official checkout that has diverged from `master` cannot use the
+  checkout fast-forward path. Catomic does not reset, merge, or switch to the
+  standalone path behind the user's back. Forks and detached retained
+  checkouts are rejected as unsafe source state.
 
 Dirty official source checkouts are stashed with untracked files before an
-update and popped afterward with their staged state restored. Git reports any
-conflicts normally.
+latest-commit update and reapplied afterward with their staged state restored.
+Stable updates do not touch those changes. Git reports any reapply conflicts
+normally and retains the updater's exact stash for recovery.
 
 Source updates remove their `catomic-update-*` workspace after successful and
 failed builds without deleting persistent Cargo caches. A cleanup failure is an
@@ -141,20 +178,16 @@ running before creating a new one.
 
 ### Atomic install and recovery
 
-Managed releases and retained-checkout updates stage the new executable beside
-the installed one, sync it, and atomically rename over it. Before that rename,
-Catomic creates a sibling rollback binary containing the old bytes. A failed
-download, checksum, build,
+Both targets stage the new executable beside the installed one, sync it, and
+atomically rename over it. Before that rename, Catomic creates a sibling
+rollback binary containing the old bytes. A failed download, checksum, build,
 configuration validation, or staging step leaves the installed executable
 untouched. If final source fast-forwarding fails after replacement, Catomic
 automatically restores the old binary.
 
-The missing-checkout fallback delegates the replacement directly to `cargo
-install` and therefore does not create Catomic's sibling rollback binary.
-
-On managed-release and retained-checkout success Catomic prints the old and new
-versions, backup status, rollback path, and an exact recovery command. Roll back
-manually with the printed command, which has this shape:
+On success Catomic prints the old and new versions, backup status, rollback
+path, and an exact recovery command. Roll back manually with the printed
+command, which has this shape:
 
 ```sh
 cp -- /path/to/.catomic.rollback-VERSION-TIMESTAMP /path/to/catomic
@@ -178,7 +211,8 @@ updated, or user-cancelled; `2` is command-line usage; `3` unsupported install;
 backup failure; `7` candidate configuration failure; `8` build failure;
 and `9` install or rollback failure.
 
-If the updater is unavailable for a source install, the manual equivalent is:
+If the latest-commit updater is unavailable for a retained source install, the
+manual equivalent is:
 
 ```sh
 git pull --ff-only

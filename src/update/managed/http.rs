@@ -88,6 +88,8 @@ impl HttpClient {
         #[derive(Deserialize)]
         struct Release {
             tag_name: String,
+            draft: bool,
+            prerelease: bool,
             assets: Vec<Asset>,
         }
         let release: Release = serde_json::from_slice(&bytes).map_err(|error| {
@@ -96,6 +98,12 @@ impl HttpClient {
                 format!("invalid GitHub release metadata: {error}"),
             )
         })?;
+        if release.draft || release.prerelease {
+            return Err(UpdateError::new(
+                EXIT_NETWORK,
+                "latest stable endpoint returned a draft or prerelease",
+            ));
+        }
         let version_text = release
             .tag_name
             .strip_prefix('v')

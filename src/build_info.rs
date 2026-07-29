@@ -26,6 +26,13 @@ pub(crate) fn version_line() -> String {
     format_version(env!("CARGO_PKG_VERSION"), commit, state)
 }
 
+pub(crate) fn commit() -> Option<&'static str> {
+    match env!("CATOMIC_BUILD_COMMIT") {
+        UNKNOWN => None,
+        commit => Some(commit),
+    }
+}
+
 pub(crate) fn format_version(
     package_version: &str,
     commit: Option<&str>,

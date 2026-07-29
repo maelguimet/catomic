@@ -4,6 +4,7 @@
 //! Invariants: every fixture is unique and confined to the temporary directory.
 
 use std::fs;
+use std::io::Cursor;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -131,4 +132,56 @@ fn rejected_candidate_leaves_existing_binary_byte_identical() {
     assert!(error.contains("empty binary"));
     assert_eq!(fs::read(&executable).unwrap(), b"known-good");
     fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn target_prompt_defaults_selects_cancels_and_rejects_without_side_effects() {
+    for (input, expected) in [
+        (b"\n".as_slice(), Some(crate::cli::UpdateTarget::Stable)),
+        (b"1\n".as_slice(), Some(crate::cli::UpdateTarget::Stable)),
+        (
+            b"2\n".as_slice(),
+            Some(crate::cli::UpdateTarget::LatestCommit),
+        ),
+        (b"q\n".as_slice(), None),
+        (b"".as_slice(), None),
+    ] {
+        let mut output = Vec::new();
+        assert_eq!(
+            super::prompt_target(&mut Cursor::new(input), &mut output).unwrap(),
+            expected
+        );
+        assert!(String::from_utf8(output)
+            .unwrap()
+            .contains("latest stable release (default)"));
+    }
+
+    let mut output = Vec::new();
+    let error = super::prompt_target(&mut Cursor::new(b"nightly\n"), &mut output).unwrap_err();
+    assert_eq!(error.exit_code(), super::EXIT_SOURCE_STATE);
+    assert!(error.to_string().contains("no network or disk changes"));
+}
+
+#[test]
+fn automation_without_selector_defaults_to_stable_without_prompting() {
+    let options = crate::cli::UpdateOptions {
+        check: true,
+        assume_yes: false,
+        backup: false,
+        target: None,
+    };
+    assert_eq!(
+        super::resolve_target(options).unwrap(),
+        Some(crate::cli::UpdateTarget::Stable)
+    );
+    let options = crate::cli::UpdateOptions {
+        check: false,
+        assume_yes: true,
+        backup: false,
+        target: None,
+    };
+    assert_eq!(
+        super::resolve_target(options).unwrap(),
+        Some(crate::cli::UpdateTarget::Stable)
+    );
 }

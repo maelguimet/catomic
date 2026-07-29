@@ -13,10 +13,10 @@ mod source;
 mod tests;
 
 use std::fmt;
-use std::io::{self, Write};
+use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 
-use crate::cli::UpdateOptions;
+use crate::cli::{UpdateOptions, UpdateTarget};
 
 pub(crate) const EXIT_UNSUPPORTED: i32 = 3;
 pub(crate) const EXIT_NETWORK: i32 = 4;
@@ -52,10 +52,55 @@ impl fmt::Display for UpdateError {
 }
 
 pub(crate) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
-    if managed::is_managed_build() {
-        managed::run(options)
-    } else {
-        source::run(options)
+    let Some(target) = resolve_target(options)? else {
+        println!("update cancelled; no network or disk changes made");
+        return Ok(());
+    };
+    match target {
+        UpdateTarget::Stable => managed::run(options),
+        UpdateTarget::LatestCommit => source::run(options),
+    }
+}
+
+fn resolve_target(options: UpdateOptions) -> Result<Option<UpdateTarget>, UpdateError> {
+    if let Some(target) = options.target {
+        return Ok(Some(target));
+    }
+    if options.assume_yes || options.check {
+        return Ok(Some(UpdateTarget::Stable));
+    }
+    let stdin = io::stdin();
+    let stdout = io::stdout();
+    prompt_target(&mut stdin.lock(), &mut stdout.lock())
+}
+
+fn prompt_target(
+    input: &mut impl BufRead,
+    output: &mut impl Write,
+) -> Result<Option<UpdateTarget>, UpdateError> {
+    write!(
+        output,
+        "Update target:\n  1) latest stable release (default)\n  2) latest official master commit\n  q) cancel\nSelect target [1]: "
+    )
+    .and_then(|_| output.flush())
+    .map_err(|error| UpdateError::new(EXIT_SOURCE_STATE, format!("write prompt: {error}")))?;
+    let mut response = String::new();
+    let read = input
+        .read_line(&mut response)
+        .map_err(|error| UpdateError::new(EXIT_SOURCE_STATE, format!("read prompt: {error}")))?;
+    if read == 0 {
+        return Ok(None);
+    }
+    match response.trim().to_ascii_lowercase().as_str() {
+        "" | "1" | "stable" => Ok(Some(UpdateTarget::Stable)),
+        "2" | "latest" | "latest-commit" | "master" => Ok(Some(UpdateTarget::LatestCommit)),
+        "q" | "quit" | "cancel" => Ok(None),
+        response => Err(UpdateError::new(
+            EXIT_SOURCE_STATE,
+            format!(
+                "invalid update target {response:?}; enter 1, 2, or q (no network or disk changes made)"
+            ),
+        )),
     }
 }
 

@@ -40,6 +40,13 @@ pub(crate) struct UpdateOptions {
     pub(crate) check: bool,
     pub(crate) assume_yes: bool,
     pub(crate) backup: bool,
+    pub(crate) target: Option<UpdateTarget>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum UpdateTarget {
+    Stable,
+    LatestCommit,
 }
 
 pub(crate) fn parse<I, S>(args: I) -> Result<Action, String>
@@ -112,6 +119,14 @@ fn parse_update(args: &[String]) -> Result<Action, String> {
             Some(help::UpdateOption::Check) => options.check = true,
             Some(help::UpdateOption::Yes) => options.assume_yes = true,
             Some(help::UpdateOption::Backup) => options.backup = true,
+            Some(help::UpdateOption::Stable) => {
+                set_update_target(&mut options.target, UpdateTarget::Stable, "--stable")?
+            }
+            Some(help::UpdateOption::LatestCommit) => set_update_target(
+                &mut options.target,
+                UpdateTarget::LatestCommit,
+                "--latest-commit",
+            )?,
             Some(help::UpdateOption::ValidateConfig) => return Ok(Action::ValidateConfig),
             None => return Err(format!("unknown update option {arg:?}")),
         }
@@ -120,6 +135,22 @@ fn parse_update(args: &[String]) -> Result<Action, String> {
         return Err("--check cannot be combined with --yes or --backup".to_string());
     }
     Ok(Action::Update(options))
+}
+
+fn set_update_target(
+    target: &mut Option<UpdateTarget>,
+    selected: UpdateTarget,
+    spelling: &str,
+) -> Result<(), String> {
+    if target.is_some_and(|target| target != selected) {
+        return Err("--stable and --latest-commit are mutually exclusive".to_string());
+    }
+    if target.replace(selected).is_some() {
+        return Err(format!(
+            "update target {spelling} was specified more than once"
+        ));
+    }
+    Ok(())
 }
 
 fn parse_file(args: Vec<String>) -> Result<Action, String> {
@@ -173,6 +204,16 @@ mod tests {
                 check: false,
                 assume_yes: true,
                 backup: true,
+                target: None,
+            })
+        );
+        assert_eq!(
+            parse(["update", "--latest-commit", "--yes"]).unwrap(),
+            Action::Update(UpdateOptions {
+                check: false,
+                assume_yes: true,
+                backup: false,
+                target: Some(UpdateTarget::LatestCommit),
             })
         );
         assert_eq!(
@@ -222,6 +263,8 @@ mod tests {
     fn rejects_conflicting_or_unknown_update_options() {
         assert!(parse(["update", "--check", "--backup"]).is_err());
         assert!(parse(["update", "--check", "--yes"]).is_err());
+        assert!(parse(["update", "--stable", "--latest-commit"]).is_err());
+        assert!(parse(["update", "--stable", "--stable"]).is_err());
         assert!(parse(["update", "--wat"]).is_err());
     }
 

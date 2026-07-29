@@ -114,6 +114,19 @@ pub(crate) fn dispatch_action(
     Ok(true)
 }
 
+pub(crate) fn handle_paste(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    text: &str,
+) -> io::Result<bool> {
+    let Some(prompt) = app.search.prompt.as_mut() else {
+        return Ok(false);
+    };
+    prompt.push_str(&text.replace("\r\n", "\n").replace('\r', "\n"));
+    refresh_incremental_match(app, out)?;
+    Ok(true)
+}
+
 fn handle_prompt_key(
     app: &mut super::App,
     out: &mut dyn crate::terminal::TerminalOutput,
@@ -644,5 +657,22 @@ mod tests {
         assert!(app.message.is_none());
 
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn bracketed_paste_populates_search_without_editing_source() {
+        let mut app = super::super::App::new(None).unwrap();
+        app.buffer = Box::new(crate::buffer::PieceTable::from_text("zero target"));
+        let revision = app.buffer.content_revision();
+        let mut out = Vec::new();
+
+        open_prompt(&mut app, &mut out).unwrap();
+        super::super::input::handle_paste(&mut app, &mut out, "target").unwrap();
+
+        assert_eq!(app.buffer.to_string(), "zero target");
+        assert_eq!(app.buffer.content_revision(), revision);
+        assert!(!app.file.dirty);
+        assert_eq!(app.search.prompt.as_deref(), Some("target"));
+        assert_eq!(app.buffer.cursor(), Cursor { row: 0, col: 5 });
     }
 }

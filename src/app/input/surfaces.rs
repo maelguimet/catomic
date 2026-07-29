@@ -102,14 +102,18 @@ pub(super) fn dispatch_action(
 enum PasteSurface {
     Help,
     Replace,
+    Search,
+    CommandPrompt,
     Recovery,
     ExternalCommand,
     MarkdownPreview,
 }
 
-const PASTE_PRECEDENCE: [PasteSurface; 5] = [
+const PASTE_PRECEDENCE: [PasteSurface; 7] = [
     PasteSurface::Help,
     PasteSurface::Replace,
+    PasteSurface::Search,
+    PasteSurface::CommandPrompt,
     PasteSurface::Recovery,
     PasteSurface::ExternalCommand,
     PasteSurface::MarkdownPreview,
@@ -124,6 +128,8 @@ pub(super) fn handle_paste(
         let handled = match surface {
             PasteSurface::Help => help::handle_paste(app, out)?,
             PasteSurface::Replace => replace::handle_paste(app, out, text)?,
+            PasteSurface::Search => search::handle_paste(app, out, text)?,
+            PasteSurface::CommandPrompt => command_prompt::handle_paste(app, out, text)?,
             PasteSurface::Recovery => recovery::handle_paste(app, out)?,
             PasteSurface::ExternalCommand => external_command::handle_paste(app, out)?,
             PasteSurface::MarkdownPreview => view::handle_paste(app, out)?,
@@ -149,6 +155,8 @@ mod tests {
         assert_eq!(RAW_KEY_PRECEDENCE[8], RawKeySurface::MarkdownPreview);
         assert_eq!(PASTE_PRECEDENCE[0], PasteSurface::Help);
         assert_eq!(PASTE_PRECEDENCE[1], PasteSurface::Replace);
-        assert_eq!(PASTE_PRECEDENCE[4], PasteSurface::MarkdownPreview);
+        assert_eq!(PASTE_PRECEDENCE[2], PasteSurface::Search);
+        assert_eq!(PASTE_PRECEDENCE[3], PasteSurface::CommandPrompt);
+        assert_eq!(PASTE_PRECEDENCE[6], PasteSurface::MarkdownPreview);
     }
 }

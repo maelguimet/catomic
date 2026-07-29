@@ -745,3 +745,19 @@ fn escape_cancels_a_running_paged_goto() {
     assert_eq!(app.buffer.page_info().unwrap().page_number, 1);
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn bracketed_paste_populates_open_prompt_without_editing_source() {
+    let mut app = super::super::App::new(None).unwrap();
+    app.buffer = Box::new(crate::buffer::PieceTable::from_text("source"));
+    let revision = app.buffer.content_revision();
+    let mut out = Vec::new();
+
+    open_file_prompt(&mut app, &mut out).unwrap();
+    super::super::input::handle_paste(&mut app, &mut out, "target\r\nname.txt").unwrap();
+
+    assert_eq!(app.buffer.to_string(), "source");
+    assert_eq!(app.buffer.content_revision(), revision);
+    assert!(!app.file.dirty);
+    assert_eq!(app.message.as_deref(), Some("Open file: target␊name.txt"));
+}

@@ -239,6 +239,22 @@ pub(crate) fn dispatch_action(
     Ok(true)
 }
 
+pub(crate) fn handle_paste(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    text: &str,
+) -> io::Result<bool> {
+    let Some(prompt) = app.command_prompt.active.as_mut() else {
+        return Ok(false);
+    };
+    prompt
+        .text
+        .push_str(&text.replace("\r\n", "\n").replace('\r', "\n"));
+    update_message(app);
+    app.render(out)?;
+    Ok(true)
+}
+
 fn update_message(app: &mut super::App) {
     let Some(prompt) = app.command_prompt.active.as_ref() else {
         return;

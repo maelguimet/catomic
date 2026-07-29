@@ -1803,3 +1803,32 @@ fn pty_catnap_recovery_refuses_external_source_drift_without_auto_reload() -> Te
     assert_eq!(fs::read_to_string(active)?, "external\n");
     Ok(())
 }
+
+#[test]
+fn pty_bracketed_paste_populates_open_prompt_without_editing_source() -> TestResult {
+    let project = TempProject::new("prompt_paste");
+    let source = project.write("source.txt", "abc\n");
+    let target = project.write("target.txt", "opened target marker\n");
+    let mut editor = PtyEditor::spawn(&source)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"\x0f")?;
+    editor.wait_for_output("open prompt", "Open file:")?;
+
+    editor.clear_output();
+    let mut paste = b"\x1b[200~".to_vec();
+    paste.extend_from_slice(target.to_string_lossy().as_bytes());
+    paste.extend_from_slice(b"\x1b[201~");
+    editor.send_keys(&paste)?;
+    editor.wait_for_output("pasted open path", "target.txt")?;
+
+    editor.clear_output();
+    editor.send_keys(b"\r")?;
+    editor.wait_for_output("pasted path opened", "opened target marker")?;
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read(&source)?, b"abc\n");
+    assert_eq!(fs::read(&target)?, b"opened target marker\n");
+    Ok(())
+}

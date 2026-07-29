@@ -15,16 +15,6 @@ use crossterm::event::{KeyCode, KeyModifiers};
 
 use super::super::make_key;
 
-// Small helper to build a notify Event carrying a path (used only for tx
-// injection in the one-at-a-time test to exercise map path + two queued).
-fn make_modify_event(p: &std::path::Path) -> notify::Event {
-    notify::Event {
-        kind: notify::EventKind::Modify(notify::event::ModifyKind::Any),
-        paths: vec![p.to_path_buf()],
-        attrs: Default::default(),
-    }
-}
-
 // queued Changed + externally modified => visible reload + render
 #[test]
 fn queued_changed_external_modified_auto_reloads_and_renders() {
@@ -217,10 +207,10 @@ fn one_call_processes_at_most_one_signal() {
     let (tw, tx) = crate::file::watcher::FileWatcher::new_for_test(path.clone());
     crate::app::watch::replace_file_watcher_for_test(&mut app, tw);
 
-    // Queue two raw relevant events through the test channel (not live notify).
-    let ev = make_modify_event(&path);
-    let _ = tx.send(Ok(ev.clone()));
-    let _ = tx.send(Ok(ev));
+    // Queue two semantic signals through the test channel (not live notify).
+    let signal = crate::file::watcher::FileWatchSignal::Changed;
+    let _ = tx.send(signal.clone());
+    let _ = tx.send(signal);
 
     // First call consumes at most one.
     let mut out1: Vec<u8> = Vec::new();

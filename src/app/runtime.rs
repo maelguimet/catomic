@@ -179,7 +179,7 @@ mod tests {
     }
 
     #[test]
-    fn watcher_result_ready_during_terminal_wait_precedes_input() {
+    fn watcher_result_ready_during_terminal_wait_precedes_navigation_and_edit() {
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -221,11 +221,16 @@ mod tests {
         app.render(&mut output).unwrap();
         app.dispatch_ready_terminal_event(
             &mut output,
+            Event::Key(KeyEvent::new(KeyCode::End, KeyModifiers::CONTROL)),
+        )
+        .unwrap();
+        app.dispatch_ready_terminal_event(
+            &mut output,
             Event::Key(KeyEvent::new(KeyCode::Char('X'), KeyModifiers::NONE)),
         )
         .unwrap();
 
-        assert_eq!(app.buffer.to_string(), "XNEW");
+        assert_eq!(app.buffer.to_string(), "NEWX");
         assert!(app.file.dirty);
         assert_eq!(fs::read_to_string(&first).unwrap(), "NEW");
 

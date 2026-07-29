@@ -5,22 +5,25 @@
 //! consumed via non-blocking try_recv.
 //! Owns: the notify RecommendedWatcher (kept alive), normalized lexical and
 //!   resolved target paths,
-//!   and mpsc receiver for events (notify manages its internal polling thread).
+//!   and mpsc receiver for target signals (notify manages its internal polling thread).
 //! Must not: imply or construct unrelated project or external services.
 //! Invariants: watches the lexical target parent plus a distinct resolved referent parent (non-recursive);
-//!   events filter to either exact target path; try_recv drains at most one.
+//!   callback events filter to either exact target path before queueing;
+//!   try_recv drains at most one semantic signal.
 //!   best-effort lifecycle and consumes via app/watch helper (hints only).
 //!
 //! Dependency justification (per AGENTS.md):
 //! 1. std has no portable filesystem event notification API.
 //! 2. Used only by `file::watcher`.
-//! 3. FileWatcher is App-owned best-effort when a file path exists. App runtime checks once per loop via watch helper
+//! 3. FileWatcher is App-owned best-effort when a file path exists. App runtime checks through
+//!    the watch helper before waiting and again before dispatching ready terminal input
 //!    (try_recv only inside check_file_watcher_once). Signals are hints only.
 //! 5. Removable by deleting the watcher wrapper + the dependency.
 //!
 //! Current truth:
 //! - App owns FileWatcher (best-effort) when an active file path is watchable.
-//! - Runtime polls via check_file_watcher_once_and_render (once/iter).
+//! - Runtime polls via check_file_watcher_once_and_render before the terminal wait
+//!   and again before dispatching a ready terminal event.
 //! - Signals are hints only; App policy decides automatic or confirmed reload.
 //! - Unchanged/NoPath from watcher are ignored unless they clear a stale
 //!   pending_reload (see apply_file_watch_signal).
@@ -56,9 +59,9 @@ pub struct FileWatcher {
     /// In tests a TestStub variant allows construction without a live notify thread.
     _watcher: InnerWatcher,
     /// Normalized lexical target followed by a distinct resolved referent, if any.
-    targets: Vec<PathBuf>,
-    /// Receives events from the notify callback.
-    rx: Receiver<notify::Result<Event>>,
+    _targets: Vec<PathBuf>,
+    /// Receives target-specific signals from the notify callback.
+    rx: Receiver<FileWatchSignal>,
     /// Test-only direct signal injection (takes precedence in try_recv).
     /// Allows deterministic queued Error/Changed without OS or notify::Error construction.
     #[cfg(test)]
@@ -83,11 +86,15 @@ impl FileWatcher {
         let directories = watch_directories(&targets);
 
         let (tx, rx) = mpsc::channel();
+        let callback_targets = targets.clone();
 
         let mut watcher: RecommendedWatcher = RecommendedWatcher::new(
             move |res: notify::Result<Event>| {
-                // Best effort send; receiver side handles absence.
-                let _ = tx.send(res);
+                let signal = map_notify_result_to_signal(&callback_targets, res);
+                if let Some(signal) = signal {
+                    // Best effort send; receiver side handles absence.
+                    let _ = tx.send(signal);
+                }
             },
             Config::default(),
         )?;
@@ -98,7 +105,7 @@ impl FileWatcher {
 
         Ok(Self {
             _watcher: InnerWatcher::Real(watcher),
-            targets,
+            _targets: targets,
             rx,
             #[cfg(test)]
             test_inject: std::sync::Mutex::new(None),
@@ -118,28 +125,21 @@ impl FileWatcher {
                 }
             }
         }
-        match self.rx.try_recv() {
-            Ok(Ok(event)) => map_event_to_signal(&self.targets, &event),
-            Ok(Err(err)) => Some(FileWatchSignal::Error(err.to_string())),
-            Err(_) => None,
-        }
+        self.rx.try_recv().ok()
     }
 }
 
 #[cfg(test)]
 impl FileWatcher {
     /// Test-only seam: construct a FileWatcher with no live notify thread or FS watch.
-    /// Returns the watcher (for install into App) and a Sender for raw events
-    /// (exercises map_event_to_signal for Changed/Deleted). For direct
-    /// FileWatchSignal (incl. Error) prefer inject_signal.
-    pub(crate) fn new_for_test(target: PathBuf) -> (Self, Sender<notify::Result<Event>>) {
+    /// Returns the watcher (for install into App) and a Sender for semantic
+    /// signals. Pure tests exercise raw notify-event mapping separately.
+    pub(crate) fn new_for_test(target: PathBuf) -> (Self, Sender<FileWatchSignal>) {
         let (tx, rx) = mpsc::channel();
-        // Match real ctor: store the normalized form so is_relevant filtering
-        // during tx-injected raw events behaves identically.
         let targets = vec![normalize_path(&target)];
         let fw = Self {
             _watcher: InnerWatcher::TestStub,
-            targets,
+            _targets: targets,
             rx,
             test_inject: std::sync::Mutex::new(None),
         };
@@ -157,7 +157,17 @@ impl FileWatcher {
 
     /// Expose immutable watcher identities for deterministic lifecycle tests.
     pub(crate) fn watched_targets_for_test(&self) -> &[PathBuf] {
-        &self.targets
+        &self._targets
+    }
+}
+
+fn map_notify_result_to_signal(
+    targets: &[PathBuf],
+    result: notify::Result<Event>,
+) -> Option<FileWatchSignal> {
+    match result {
+        Ok(event) => map_event_to_signal(targets, &event),
+        Err(error) => Some(FileWatchSignal::Error(error.to_string())),
     }
 }
 

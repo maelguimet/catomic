@@ -35,8 +35,9 @@ Before tagging:
    review, and require the static residue/ownership regression gate to pass.
    The release may retain updater networking and generic trusted commands/hooks,
    but must not regain a model/provider path.
-5. Require normal `master` CI to pass for the commit that will be tagged.
-6. On the exact `master` commit, run **Publish managed release** from GitHub
+5. Require all protected pull-request checks to pass before merge.
+6. Confirm that `master` points to the intended merge commit before tagging.
+7. On that exact `master` commit, run **Publish managed release** from GitHub
    Actions with `v<package-version>` as its `tag` input. The dispatch refuses a
    non-`master` ref, a tag that does not match `Cargo.toml`, or an existing tag,
    then creates and pushes the annotated tag. Maintainers may instead create and

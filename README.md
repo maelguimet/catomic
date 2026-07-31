@@ -2,15 +2,17 @@
 
 [![CI](https://github.com/maelguimet/catomic/actions/workflows/ci.yml/badge.svg)](https://github.com/maelguimet/catomic/actions/workflows/ci.yml)
 
-I removed a lot of IDE-shaped bloat I was not using, including all of Catomic's
+I removed a lot of IDE bloat I was not using, including all of Catomic's
 built-in AI features. Some of it may return later; for now, I am focusing on
-making Catomic run before it walks.
+making Catomic run before it walks. Or something like that.
 
-This beta should be stable enough for daily use. It is also, by the technical
-measurement of “a gazillion,” much faster than before: 6.72× across the
-benchmark suite, with several pathological cases improving by 76× to 2,229×.
+This beta should be stable enough for daily use. It's also about a gazillion 
+times faster than before: 6.72× across the benchmark suite, with several 
+pathological cases improving by 76× to 2,229×.
 
 ![Catomic terminal text editor open on a Rust source file](docs/assets/catomic.jpg)
+
+**Everything after this is AI slop**
 
 ## The good stuff
 

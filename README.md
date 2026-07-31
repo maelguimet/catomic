@@ -2,17 +2,18 @@
 
 [![CI](https://github.com/maelguimet/catomic/actions/workflows/ci.yml/badge.svg)](https://github.com/maelguimet/catomic/actions/workflows/ci.yml)
 
-I removed a lot of IDE bloat I was not using, including all of Catomic's
-built-in AI features. Some of it may return later; for now, I am focusing on
-making Catomic run before it walks. Or something like that.
+Catomic is a fast, Linux-first, modeless terminal text editor with familiar
+shortcuts, careful Unicode and file-safety behavior, and deliberately invoked
+developer tools. It has no built-in AI/model runtime, repository scanner, or
+background project service.
 
-This beta should be stable enough for daily use. It's also about a gazillion 
-times faster than before: 6.72× across the benchmark suite, with several 
-pathological cases improving by 76× to 2,229×.
+This open beta should be stable enough for daily use. The Catomic 0.2
+performance pass measured a 6.72× geometric-mean speedup across 13 workloads,
+with individual improvements from 76× to 2,229×. The
+[performance report](docs/releases/0.2.0-beta.1.md#fast) records the method,
+exact comparison commits, and measured regressions.
 
 ![Catomic terminal text editor open on a Rust source file](docs/assets/catomic.jpg)
-
-**Everything after this is AI slop**
 
 ## The good stuff
 
@@ -36,21 +37,7 @@ pathological cases improving by 76× to 2,229×.
 
 ## Install
 
-Catomic currently publishes a verified x86-64 Linux binary. Download it, verify
-its checksum, and install it somewhere on your `PATH`:
-
-```sh
-version=0.2.0-beta.1
-curl -fLO "https://github.com/maelguimet/catomic/releases/download/v$version/catomic-x86_64-unknown-linux-gnu"
-curl -fLO "https://github.com/maelguimet/catomic/releases/download/v$version/catomic-x86_64-unknown-linux-gnu.sha256"
-sha256sum --check --strict catomic-x86_64-unknown-linux-gnu.sha256
-install -Dm755 catomic-x86_64-unknown-linux-gnu "$HOME/.local/bin/catomic"
-```
-
-The release also includes the packaged Cargo source, complete checksums,
-toolchain details, build provenance, and fresh-download verification evidence.
-
-To build from source instead, clone the repository and run the installer. It
+Build the current beta from source with stable Rust 1.87 or newer. The installer
 builds an optimized binary into Cargo's binary directory and creates a private,
 commented user configuration:
 
@@ -62,15 +49,25 @@ cd catomic
 
 The installer never replaces an existing configuration.
 
-The updater can follow the newest stable release or the exact current official
-`master` commit. Interactive updates ask which target to use; automation
-defaults to stable unless an explicit selector is supplied:
+Managed releases, when published, provide a verified x86-64 Linux binary,
+checksum, packaged Cargo source, toolchain details, build provenance, and
+fresh-download evidence. Check
+[GitHub Releases](https://github.com/maelguimet/catomic/releases) for available
+versions and follow the instructions attached to that release.
+
+The updater can follow the exact current official `master` commit. It can also
+follow the newest stable release once a release that is neither a draft nor a
+prerelease is published. There is no such stable release yet, so current source
+installations should select the latest-commit target explicitly:
 
 ```sh
-catomic update --check
 catomic update --latest-commit --check
-catomic update --stable --yes --backup
+catomic update --latest-commit --yes --backup
 ```
+
+Interactive updates ask which target to use. Automation defaults to stable
+unless an explicit selector is supplied and reports that target as unavailable
+while no stable release exists.
 
 The updater never rewrites Catomic configuration or drops local source changes. See
 [Updating, backup, and rollback](docs/user-guide.md#updating-backup-and-rollback)

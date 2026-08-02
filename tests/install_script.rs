@@ -1,5 +1,5 @@
 //! Purpose: exercise source-install configuration provisioning without installing a binary.
-//! Owns: a fake Cargo executable and isolated HOME/XDG filesystem assertions.
+//! Owns: fake dependency executables and isolated HOME/XDG filesystem assertions.
 //! Must not: modify the real Cargo installation, ambient config, or network state.
 //! Invariants: creation is private and exact; a second install preserves user bytes.
 
@@ -18,6 +18,10 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
+        Self::with_cargo()
+    }
+
+    fn with_cargo() -> Self {
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system clock")
@@ -36,6 +40,48 @@ impl Fixture {
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(&cargo, fs::Permissions::from_mode(0o700))
                 .expect("make fake cargo executable");
+        }
+        Self { root, fake_bin }
+    }
+
+    fn without_cargo() -> Self {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "catomic_install_script_{}_{}",
+            std::process::id(),
+            nonce
+        ));
+        let fake_bin = root.join("bin");
+        fs::create_dir_all(&fake_bin).expect("create fake bin");
+
+        let bootstrap_cargo = root.join("bootstrap-cargo");
+        fs::write(
+            &bootstrap_cargo,
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$HOME/cargo.args\"\n",
+        )
+        .expect("write bootstrapped cargo");
+        let rustup_installer = root.join("rustup-installer");
+        fs::write(
+            &rustup_installer,
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$HOME/rustup.args\"\nmkdir -p \"$CARGO_HOME/bin\"\ncp \"$HOME/bootstrap-cargo\" \"$CARGO_HOME/bin/cargo\"\nchmod 700 \"$CARGO_HOME/bin/cargo\"\n",
+        )
+        .expect("write fake rustup installer");
+        let downloader = fake_bin.join("curl");
+        fs::write(
+            &downloader,
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$HOME/curl.args\"\ncat \"$HOME/rustup-installer\"\n",
+        )
+        .expect("write fake downloader");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for path in [&bootstrap_cargo, &rustup_installer, &downloader] {
+                fs::set_permissions(path, fs::Permissions::from_mode(0o700))
+                    .expect("make bootstrap fixture executable");
+            }
         }
         Self { root, fake_bin }
     }
@@ -105,5 +151,31 @@ fn installer_refuses_an_accessible_config_directory() -> TestResult {
     assert!(!output.status.success());
     assert!(String::from_utf8(output.stderr)?.contains("must be user-only"));
     assert!(!Path::new(&fixture.config_path()).exists());
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn installer_bootstraps_cargo_when_it_is_missing() -> TestResult {
+    let fixture = Fixture::without_cargo();
+
+    let output = fixture.run()?;
+    assert!(output.status.success(), "{:?}", output.stderr);
+    assert!(fixture.root.join(".cargo/bin/cargo").is_file());
+    assert_eq!(
+        fs::read_to_string(fixture.root.join("rustup.args"))?,
+        "-y\n--profile\nminimal\n--default-toolchain\nstable\n--no-modify-path\n"
+    );
+    assert_eq!(
+        fs::read_to_string(fixture.root.join("cargo.args"))?,
+        format!(
+            "install\n--path\n{}\n--locked\n",
+            env!("CARGO_MANIFEST_DIR")
+        )
+    );
+    let curl_args = fs::read_to_string(fixture.root.join("curl.args"))?;
+    assert!(curl_args.contains("--proto\n=https\n"));
+    assert!(curl_args.contains("--tlsv1.2\n"));
+    assert!(curl_args.ends_with("https://sh.rustup.rs\n"));
     Ok(())
 }

@@ -194,6 +194,7 @@ fn installer_bootstraps_cargo_when_it_is_missing() -> TestResult {
 fn installer_persists_missing_cargo_path_without_duplicate_profile_edits() -> TestResult {
     let fixture = Fixture::with_cargo();
     let cargo_bin = fixture.root.join(".cargo/bin");
+    let cargo_bin_text = cargo_bin.to_string_lossy();
     let expected_line = format!("export PATH='{}':\"$PATH\"", cargo_bin.display());
 
     let first = fixture.run()?;
@@ -203,7 +204,7 @@ fn installer_persists_missing_cargo_path_without_duplicate_profile_edits() -> Te
         fs::read_to_string(fixture.root.join("cargo.path"))?
             .split(':')
             .next(),
-        Some(cargo_bin.to_string_lossy().as_ref())
+        Some(cargo_bin_text.as_ref())
     );
     let bashrc = fs::read(fixture.root.join(".bashrc"))?;
     let profile = fs::read(fixture.root.join(".profile"))?;
@@ -232,5 +233,21 @@ fn installer_leaves_profiles_untouched_when_cargo_bin_is_already_in_path() -> Te
     assert!(output.status.success(), "{:?}", output.stderr);
     assert!(!fixture.root.join(".bashrc").exists());
     assert!(!fixture.root.join(".profile").exists());
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn installer_refuses_a_broken_shell_profile_symlink() -> TestResult {
+    use std::os::unix::fs::symlink;
+
+    let fixture = Fixture::with_cargo();
+    let missing_target = fixture.root.join("missing-profile");
+    symlink(&missing_target, fixture.root.join(".bashrc"))?;
+
+    let output = fixture.run()?;
+    assert!(!output.status.success());
+    assert!(String::from_utf8(output.stderr)?.contains("broken shell-profile symlink"));
+    assert!(!missing_target.exists());
     Ok(())
 }

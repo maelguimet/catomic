@@ -69,16 +69,16 @@ impl Fixture {
             "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$HOME/rustup.args\"\nmkdir -p \"$CARGO_HOME/bin\"\ncp \"$HOME/bootstrap-cargo\" \"$CARGO_HOME/bin/cargo\"\nchmod 700 \"$CARGO_HOME/bin/cargo\"\n",
         )
         .expect("write fake rustup installer");
-        let curl = fake_bin.join("curl");
+        let downloader = fake_bin.join("curl");
         fs::write(
-            &curl,
+            &downloader,
             "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$HOME/curl.args\"\ncat \"$HOME/rustup-installer\"\n",
         )
-        .expect("write fake curl");
+        .expect("write fake downloader");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            for path in [&bootstrap_cargo, &rustup_installer, &curl] {
+            for path in [&bootstrap_cargo, &rustup_installer, &downloader] {
                 fs::set_permissions(path, fs::Permissions::from_mode(0o700))
                     .expect("make bootstrap fixture executable");
             }

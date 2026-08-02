@@ -38,8 +38,8 @@ it on files with unusual links, ACLs, or extended attributes.
 Catomic currently targets Linux terminals and stable Rust. The package declares
 Rust 1.87 as its minimum supported version. The source installer uses an existing
 Cargo installation when available. Otherwise it downloads the official rustup
-installer with `curl` or `wget`, installs a minimal stable toolchain without
-changing shell profiles, and continues in the same invocation.
+installer with `curl` or `wget`, installs a minimal stable toolchain, and
+continues in the same invocation.
 
 Clone the repository and build an optimized binary:
 
@@ -60,9 +60,12 @@ provision the private commented user configuration:
 The installer creates `$XDG_CONFIG_HOME/catomic/config.toml` when the XDG root
 is absolute, otherwise `~/.config/catomic/config.toml`. It uses directory mode
 `0700` and file mode `0600`, publishes the template without overwriting a racing
-path, and leaves any existing configuration byte-for-byte untouched.
+path, and leaves any existing configuration byte-for-byte untouched. If Cargo's
+binary directory is missing from `PATH`, the installer appends an idempotent
+entry to the active shell's startup profile without replacing existing bytes.
 
-Make sure Cargo's binary directory is in `PATH`, then verify the installation:
+When the installer reports that it added the entry, open a new shell. Then verify
+the installation:
 
 ```sh
 catomic --version

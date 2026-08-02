@@ -1,25 +1,111 @@
 #!/usr/bin/env bash
-# Purpose: install Catomic from this checkout and provision its private user config.
-# Owns: Rust bootstrap, the documented source install, and first-install config creation.
-# Must not: replace an existing config, mutate shell profiles, or hide Cargo failures.
-# Invariants: bootstrapping is conditional; config is private and published atomically.
+# Purpose: install Catomic from this checkout and provision its user environment.
+# Owns: Rust bootstrap, Cargo PATH setup, source install, and first-install config creation.
+# Must not: replace existing config/profile bytes or hide Cargo failures.
+# Invariants: PATH setup is conditional and idempotent; config is private and atomic.
 
 set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
-bootstrap_cargo() {
+if [[ -n "${CARGO_HOME:-}" ]]; then
+  cargo_home="$CARGO_HOME"
+elif [[ -n "${HOME:-}" && "$HOME" == /* ]]; then
+  cargo_home="$HOME/.cargo"
+else
+  echo "catomic install: HOME must be absolute when CARGO_HOME is unset" >&2
+  exit 1
+fi
+if [[ "$cargo_home" != /* ]]; then
+  echo "catomic install: CARGO_HOME must be absolute" >&2
+  exit 1
+fi
+cargo_bin="$cargo_home/bin"
+
+path_contains_directory() {
+  case ":${PATH:-}:" in
+    *:"$1":*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+quote_shell_word() {
+  local value="$1"
+  printf "'%s'" "${value//\'/\'\\\'\'}"
+}
+
+append_path_setup() {
+  local profile="$1"
+  local line="$2"
+  local comment="# Added by the Catomic installer for Cargo-installed binaries."
+
+  if [[ -L "$profile" && ! -e "$profile" ]]; then
+    echo "catomic install: refusing broken shell-profile symlink: $profile" >&2
+    exit 1
+  fi
+  if [[ -e "$profile" && ! -f "$profile" ]]; then
+    echo "catomic install: shell profile is not a regular file: $profile" >&2
+    exit 1
+  fi
+  if [[ -f "$profile" ]] && grep -Fqx -- "$line" "$profile"; then
+    return
+  fi
+  printf '\n%s\n%s\n' "$comment" "$line" >> "$profile"
+}
+
+persist_cargo_path() {
   if [[ -z "${HOME:-}" || "$HOME" != /* ]]; then
-    echo "catomic install: HOME must be absolute to install Rust" >&2
+    echo "catomic install: HOME must be absolute to configure shell PATH" >&2
     exit 1
   fi
 
-  local cargo_home="${CARGO_HOME:-$HOME/.cargo}"
-  if [[ "$cargo_home" != /* ]]; then
-    echo "catomic install: CARGO_HOME must be absolute to install Rust" >&2
-    exit 1
-  fi
+  local quoted_bin
+  quoted_bin="$(quote_shell_word "$cargo_bin")"
+  local shell_path="${SHELL:-/bin/sh}"
+  local shell_name="${shell_path##*/}"
+  local -a profiles=()
+  local line
 
+  case "$shell_name" in
+    bash)
+      profiles+=("$HOME/.bashrc")
+      if [[ -e "$HOME/.bash_profile" ]]; then
+        profiles+=("$HOME/.bash_profile")
+      elif [[ -e "$HOME/.bash_login" ]]; then
+        profiles+=("$HOME/.bash_login")
+      else
+        profiles+=("$HOME/.profile")
+      fi
+      line="export PATH=$quoted_bin:\"\$PATH\""
+      ;;
+    zsh)
+      profiles+=("$HOME/.zshrc")
+      line="export PATH=$quoted_bin:\"\$PATH\""
+      ;;
+    fish)
+      local fish_config_root="${XDG_CONFIG_HOME:-$HOME/.config}"
+      if [[ "$fish_config_root" != /* ]]; then
+        echo "catomic install: XDG_CONFIG_HOME must be absolute to configure fish PATH" >&2
+        exit 1
+      fi
+      mkdir -p -- "$fish_config_root/fish"
+      profiles+=("$fish_config_root/fish/config.fish")
+      line="fish_add_path --global $quoted_bin"
+      ;;
+    *)
+      profiles+=("$HOME/.profile")
+      line="export PATH=$quoted_bin:\"\$PATH\""
+      ;;
+  esac
+
+  local profile
+  for profile in "${profiles[@]}"; do
+    append_path_setup "$profile" "$line"
+  done
+  echo "catomic install: configured $cargo_bin for future $shell_name shells; open a new shell to use catomic"
+}
+
+bootstrap_cargo() {
   echo "catomic install: Cargo not found; installing a minimal stable Rust toolchain"
   export CARGO_HOME="$cargo_home"
   if command -v curl >/dev/null 2>&1; then
@@ -33,17 +119,24 @@ bootstrap_cargo() {
     exit 1
   fi
 
-  export PATH="$cargo_home/bin:$PATH"
   if ! command -v cargo >/dev/null 2>&1; then
     echo "catomic install: Rust bootstrap completed without installing Cargo" >&2
     exit 1
   fi
 }
 
+cargo_path_was_missing=false
+if ! path_contains_directory "$cargo_bin"; then
+  cargo_path_was_missing=true
+  export PATH="$cargo_bin:${PATH:-}"
+fi
 if ! command -v cargo >/dev/null 2>&1; then
   bootstrap_cargo
 fi
 cargo install --path "$repo_root" --locked "$@"
+if [[ "$cargo_path_was_missing" == true ]]; then
+  persist_cargo_path
+fi
 
 if [[ -n "${XDG_CONFIG_HOME:-}" && "$XDG_CONFIG_HOME" == /* ]]; then
   config_root="$XDG_CONFIG_HOME"

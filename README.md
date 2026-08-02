@@ -38,9 +38,9 @@ exact comparison commits, and measured regressions.
 ## Install
 
 Build the current beta from source. If Cargo is unavailable, the installer first
-bootstraps a minimal stable Rust toolchain without changing shell profiles. It
-then builds an optimized binary into Cargo's binary directory and creates a
-private, commented user configuration:
+bootstraps a minimal stable Rust toolchain. It then builds an optimized binary
+into Cargo's binary directory, adds that directory to the current shell's startup
+PATH when needed, and creates a private, commented user configuration:
 
 ```sh
 git clone https://github.com/maelguimet/catomic.git
@@ -48,7 +48,8 @@ cd catomic
 ./scripts/install.sh
 ```
 
-The installer never replaces an existing configuration.
+The installer never replaces an existing configuration or shell profile. When it
+adds the PATH entry, open a new shell before invoking `catomic` by name.
 
 Managed releases, when published, provide a verified x86-64 Linux binary,
 checksum, packaged Cargo source, toolchain details, build provenance, and

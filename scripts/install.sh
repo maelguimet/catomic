@@ -39,6 +39,10 @@ append_path_setup() {
   local line="$2"
   local comment="# Added by the Catomic installer for Cargo-installed binaries."
 
+  if [[ -L "$profile" && ! -e "$profile" ]]; then
+    echo "catomic install: refusing broken shell-profile symlink: $profile" >&2
+    exit 1
+  fi
   if [[ -e "$profile" && ! -f "$profile" ]]; then
     echo "catomic install: shell profile is not a regular file: $profile" >&2
     exit 1

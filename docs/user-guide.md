@@ -36,7 +36,10 @@ it on files with unusual links, ACLs, or extended attributes.
 ## Requirements and installation
 
 Catomic currently targets Linux terminals and stable Rust. The package declares
-Rust 1.87 as its minimum supported version.
+Rust 1.87 as its minimum supported version. The source installer uses an existing
+Cargo installation when available. Otherwise it downloads the official rustup
+installer with `curl` or `wget`, installs a minimal stable toolchain without
+changing shell profiles, and continues in the same invocation.
 
 Clone the repository and build an optimized binary:
 

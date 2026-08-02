@@ -37,9 +37,10 @@ exact comparison commits, and measured regressions.
 
 ## Install
 
-Build the current beta from source with stable Rust 1.87 or newer. The installer
-builds an optimized binary into Cargo's binary directory and creates a private,
-commented user configuration:
+Build the current beta from source. If Cargo is unavailable, the installer first
+bootstraps a minimal stable Rust toolchain without changing shell profiles. It
+then builds an optimized binary into Cargo's binary directory and creates a
+private, commented user configuration:
 
 ```sh
 git clone https://github.com/maelguimet/catomic.git

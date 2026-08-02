@@ -1,12 +1,48 @@
 #!/usr/bin/env bash
 # Purpose: install Catomic from this checkout and provision its private user config.
-# Owns: the documented source-install command and first-install config creation.
-# Must not: replace an existing config, weaken its directory, or hide Cargo failures.
-# Invariants: a new config is owner-only and published atomically from the canonical template.
+# Owns: Rust bootstrap, the documented source install, and first-install config creation.
+# Must not: replace an existing config, mutate shell profiles, or hide Cargo failures.
+# Invariants: bootstrapping is conditional; config is private and published atomically.
 
 set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+
+bootstrap_cargo() {
+  if [[ -z "${HOME:-}" || "$HOME" != /* ]]; then
+    echo "catomic install: HOME must be absolute to install Rust" >&2
+    exit 1
+  fi
+
+  local cargo_home="${CARGO_HOME:-$HOME/.cargo}"
+  if [[ "$cargo_home" != /* ]]; then
+    echo "catomic install: CARGO_HOME must be absolute to install Rust" >&2
+    exit 1
+  fi
+
+  echo "catomic install: Cargo not found; installing a minimal stable Rust toolchain"
+  export CARGO_HOME="$cargo_home"
+  if command -v curl >/dev/null 2>&1; then
+    curl --proto '=https' --tlsv1.2 --fail --silent --show-error https://sh.rustup.rs |
+      sh -s -- -y --profile minimal --default-toolchain stable --no-modify-path
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO- https://sh.rustup.rs |
+      sh -s -- -y --profile minimal --default-toolchain stable --no-modify-path
+  else
+    echo "catomic install: Cargo is missing and Rust bootstrap requires curl or wget" >&2
+    exit 1
+  fi
+
+  export PATH="$cargo_home/bin:$PATH"
+  if ! command -v cargo >/dev/null 2>&1; then
+    echo "catomic install: Rust bootstrap completed without installing Cargo" >&2
+    exit 1
+  fi
+}
+
+if ! command -v cargo >/dev/null 2>&1; then
+  bootstrap_cargo
+fi
 cargo install --path "$repo_root" --locked "$@"
 
 if [[ -n "${XDG_CONFIG_HOME:-}" && "$XDG_CONFIG_HOME" == /* ]]; then

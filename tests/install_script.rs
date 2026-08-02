@@ -1,5 +1,5 @@
-//! Purpose: exercise source-install configuration provisioning without installing a binary.
-//! Owns: fake dependency executables and isolated HOME/XDG filesystem assertions.
+//! Purpose: exercise source-install environment/config provisioning without installing a binary.
+//! Owns: fake dependency executables and isolated HOME/shell/XDG filesystem assertions.
 //! Must not: modify the real Cargo installation, ambient config, or network state.
 //! Invariants: creation is private and exact; a second install preserves user bytes.
 
@@ -34,7 +34,11 @@ impl Fixture {
         let fake_bin = root.join("bin");
         fs::create_dir_all(&fake_bin).expect("create fake bin");
         let cargo = fake_bin.join("cargo");
-        fs::write(&cargo, "#!/bin/sh\nexit 0\n").expect("write fake cargo");
+        fs::write(
+            &cargo,
+            "#!/bin/sh\nprintf '%s\\n' \"$PATH\" > \"$HOME/cargo.path\"\ncase \":$PATH:\" in\n  *:\"$HOME/.cargo/bin\":*) ;;\n  *) printf '%s\\n' 'warning: Cargo bin is missing from PATH' >&2 ;;\nesac\n",
+        )
+        .expect("write fake cargo");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -92,11 +96,16 @@ impl Fixture {
 
     fn run(&self) -> Result<Output, Box<dyn Error>> {
         let path = format!("{}:/usr/bin:/bin", self.fake_bin.display());
+        self.run_with_path(&path)
+    }
+
+    fn run_with_path(&self, path: &str) -> Result<Output, Box<dyn Error>> {
         Ok(Command::new("/bin/bash")
             .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/scripts/install.sh"))
             .env_clear()
             .env("PATH", path)
             .env("HOME", &self.root)
+            .env("SHELL", "/bin/bash")
             .env("XDG_CONFIG_HOME", self.root.join("xdg"))
             .output()?)
     }
@@ -177,5 +186,51 @@ fn installer_bootstraps_cargo_when_it_is_missing() -> TestResult {
     assert!(curl_args.contains("--proto\n=https\n"));
     assert!(curl_args.contains("--tlsv1.2\n"));
     assert!(curl_args.ends_with("https://sh.rustup.rs\n"));
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn installer_persists_missing_cargo_path_without_duplicate_profile_edits() -> TestResult {
+    let fixture = Fixture::with_cargo();
+    let cargo_bin = fixture.root.join(".cargo/bin");
+    let expected_line = format!("export PATH='{}':\"$PATH\"", cargo_bin.display());
+
+    let first = fixture.run()?;
+    assert!(first.status.success(), "{:?}", first.stderr);
+    assert!(!String::from_utf8(first.stderr)?.contains("Cargo bin is missing"));
+    assert_eq!(
+        fs::read_to_string(fixture.root.join("cargo.path"))?
+            .split(':')
+            .next(),
+        Some(cargo_bin.to_string_lossy().as_ref())
+    );
+    let bashrc = fs::read(fixture.root.join(".bashrc"))?;
+    let profile = fs::read(fixture.root.join(".profile"))?;
+    assert!(String::from_utf8_lossy(&bashrc).contains(&expected_line));
+    assert!(String::from_utf8_lossy(&profile).contains(&expected_line));
+
+    let second = fixture.run()?;
+    assert!(second.status.success(), "{:?}", second.stderr);
+    assert_eq!(fs::read(fixture.root.join(".bashrc"))?, bashrc);
+    assert_eq!(fs::read(fixture.root.join(".profile"))?, profile);
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn installer_leaves_profiles_untouched_when_cargo_bin_is_already_in_path() -> TestResult {
+    let fixture = Fixture::with_cargo();
+    let cargo_bin = fixture.root.join(".cargo/bin");
+    let path = format!(
+        "{}:{}:/usr/bin:/bin",
+        cargo_bin.display(),
+        fixture.fake_bin.display()
+    );
+
+    let output = fixture.run_with_path(&path)?;
+    assert!(output.status.success(), "{:?}", output.stderr);
+    assert!(!fixture.root.join(".bashrc").exists());
+    assert!(!fixture.root.join(".profile").exists());
     Ok(())
 }

@@ -27,8 +27,9 @@ exact comparison commits, and measured regressions.
   thing into one enormous string.
 - Atomic saves, external-change detection, overwrite confirmation, and optional
   `.catnap` recovery for when reality happens.
-- Fast, viewport-only highlighting for Markdown, Rust, Python, and JSON, plus a
-  read-only Markdown preview.
+- Fast, bounded highlighting for Markdown, Rust, Python, JSON, TOML, shell, and
+  diff files, plus a read-only Markdown preview. Unsupported extensions and
+  intentional monochrome fallbacks say so instead of impersonating a renderer bug.
 - Direct, configured linting with `F4`: it runs only when asked, remains
   cancellable, and marks findings in the active buffer without a Problems view.
 - No built-in AI runtime, model provider, prompt machinery, or repository-aware

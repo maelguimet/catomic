@@ -90,6 +90,32 @@ pub(crate) struct Theme {
     pub(crate) lint: Style,
     pub(crate) preview: Style,
     pub(crate) truecolor: bool,
+    pub(crate) colors_enabled: bool,
+    pub(crate) color_reason: ColorReason,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum ColorOverride {
+    #[default]
+    Auto,
+    Always,
+    Never,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum ColorReason {
+    Automatic,
+    ExplicitAlways,
+    NoColor,
+    ExplicitNever,
+    MissingTerm,
+    TerminalMonochrome,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ColorDecision {
+    pub(crate) enabled: bool,
+    pub(crate) reason: ColorReason,
 }
 
 impl Default for Theme {
@@ -131,17 +157,60 @@ pub(crate) fn parse(text: &str) -> io::Result<Theme> {
     Ok(theme)
 }
 
-pub(crate) fn for_terminal(theme: Theme) -> Theme {
-    let no_color = std::env::var_os("NO_COLOR").is_some();
-    let term = std::env::var("TERM").ok();
-    apply_capabilities(
-        theme,
-        no_color || terminal_is_monochrome(term.as_deref()),
-        terminal_supports_truecolor(),
+pub(crate) fn for_terminal(theme: Theme, color_override: ColorOverride) -> Theme {
+    let decision = color_decision(color_override);
+    let mut theme = apply_capabilities(theme, !decision.enabled, terminal_supports_truecolor());
+    theme.color_reason = decision.reason;
+    theme
+}
+
+pub(crate) fn color_decision(color_override: ColorOverride) -> ColorDecision {
+    decide_color(
+        std::env::var_os("NO_COLOR").is_some(),
+        std::env::var("TERM").ok().as_deref(),
+        color_override,
     )
 }
 
+pub(crate) fn decide_color(
+    no_color: bool,
+    term: Option<&str>,
+    color_override: ColorOverride,
+) -> ColorDecision {
+    if no_color {
+        return ColorDecision {
+            enabled: false,
+            reason: ColorReason::NoColor,
+        };
+    }
+    match color_override {
+        ColorOverride::Always => ColorDecision {
+            enabled: true,
+            reason: ColorReason::ExplicitAlways,
+        },
+        ColorOverride::Never => ColorDecision {
+            enabled: false,
+            reason: ColorReason::ExplicitNever,
+        },
+        ColorOverride::Auto => match term.filter(|term| !term.is_empty()) {
+            None => ColorDecision {
+                enabled: false,
+                reason: ColorReason::MissingTerm,
+            },
+            Some(term) if terminal_is_monochrome(term) => ColorDecision {
+                enabled: false,
+                reason: ColorReason::TerminalMonochrome,
+            },
+            Some(_) => ColorDecision {
+                enabled: true,
+                reason: ColorReason::Automatic,
+            },
+        },
+    }
+}
+
 fn apply_capabilities(mut theme: Theme, monochrome: bool, truecolor: bool) -> Theme {
+    theme.colors_enabled = !monochrome;
     theme.truecolor = truecolor && !monochrome;
     if !monochrome {
         return theme;
@@ -250,6 +319,8 @@ fn named(name: &str) -> io::Result<Theme> {
         },
         preview: Style::default(),
         truecolor: false,
+        colors_enabled: true,
+        color_reason: ColorReason::Automatic,
     };
     match name.trim().to_ascii_lowercase().as_str() {
         "default" => {}
@@ -375,11 +446,12 @@ fn terminal_supports_truecolor() -> bool {
         .is_ok_and(|value| matches!(value.to_ascii_lowercase().as_str(), "truecolor" | "24bit"))
 }
 
-fn terminal_is_monochrome(term: Option<&str>) -> bool {
-    term.is_none_or(|term| {
-        let term = term.to_ascii_lowercase();
-        term == "dumb" || term == "unknown" || term.contains("mono") || term.starts_with("vt")
-    })
+fn terminal_is_monochrome(term: &str) -> bool {
+    let term = term.to_ascii_lowercase();
+    matches!(
+        term.as_str(),
+        "dumb" | "unknown" | "vt100" | "vt102" | "vt220"
+    ) || term.contains("mono")
 }
 
 fn invalid(message: impl Into<String>) -> io::Error {

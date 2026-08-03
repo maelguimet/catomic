@@ -45,6 +45,14 @@ fn terminal_capability_selection_has_a_monochrome_inverse_fallback() {
         StatusTheme::for_terminal(false, Some("linux")),
         StatusTheme::default()
     );
+    assert_eq!(
+        StatusTheme::for_terminal(false, Some("vte-256color")),
+        StatusTheme::default()
+    );
+    assert_eq!(
+        StatusTheme::for_terminal(false, Some("vt100-color")),
+        StatusTheme::default()
+    );
 }
 
 #[test]

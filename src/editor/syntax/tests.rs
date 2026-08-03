@@ -1,5 +1,5 @@
 //! Purpose: specify extension detection and scalar-indexed visible-line syntax spans.
-//! Owns: exact Markdown, Rust, Python, JSON, and Unicode fixtures.
+//! Owns: exact Markdown, code/config, and Unicode fixtures.
 //! Must not: render ANSI, touch disk, construct App, or measure performance.
 //! Invariants: expected spans are ordered half-open scalar ranges.
 
@@ -28,8 +28,23 @@ fn extensions_select_the_small_builtin_set() {
         SyntaxKind::Json
     );
     assert_eq!(
+        syntax_for_path(Some(Path::new("Cargo.toml"))),
+        SyntaxKind::Toml
+    );
+    for shell in ["install.sh", "script.bash", ".bashrc", ".zshrc"] {
+        assert_eq!(
+            syntax_for_path(Some(Path::new(shell))),
+            SyntaxKind::Shell,
+            "path: {shell}"
+        );
+    }
+    assert_eq!(
         syntax_for_path(Some(Path::new("notes.txt"))),
         SyntaxKind::Plain
+    );
+    assert_eq!(
+        syntax_for_path(Some(Path::new("notes.xyz"))),
+        SyntaxKind::Unsupported
     );
     assert_eq!(syntax_for_path(None), SyntaxKind::Plain);
 }
@@ -180,6 +195,37 @@ fn code_lexers_style_keywords_strings_numbers_and_comments() {
             span(18, 20, SpanStyle::Number)
         ]
     );
+    assert_eq!(
+        spans_for_line(SyntaxKind::Toml, "enabled = true # 配置"),
+        vec![
+            span(0, 7, SpanStyle::Keyword),
+            span(10, 14, SpanStyle::Keyword),
+            span(15, 19, SpanStyle::Comment),
+        ]
+    );
+    assert_eq!(
+        spans_for_line(SyntaxKind::Toml, "[target.'cfg(unix)'] # host"),
+        vec![
+            span(0, 20, SpanStyle::Keyword),
+            span(21, 27, SpanStyle::Comment),
+        ]
+    );
+    assert_eq!(
+        spans_for_line(SyntaxKind::Shell, "if [ \"$HOME\" ]; then # ok"),
+        vec![
+            span(0, 2, SpanStyle::Keyword),
+            span(5, 12, SpanStyle::String),
+            span(16, 20, SpanStyle::Keyword),
+            span(21, 25, SpanStyle::Comment),
+        ]
+    );
+    assert_eq!(
+        spans_for_line(SyntaxKind::Shell, "echo ${猫_HOME} $USER"),
+        vec![
+            span(5, 14, SpanStyle::Keyword),
+            span(15, 20, SpanStyle::Keyword),
+        ]
+    );
 }
 
 #[test]
@@ -190,5 +236,18 @@ fn unicode_before_a_token_keeps_scalar_coordinates() {
             span(4, 5, SpanStyle::Number),
             span(6, 10, SpanStyle::Comment)
         ]
+    );
+}
+
+#[test]
+fn lexical_work_is_bounded_on_pathological_logical_lines() {
+    let mut line = "x".repeat(MAX_LEX_SCALARS);
+    line.push_str(" let beyond = 7 # outside bound");
+    assert!(spans_for_line(SyntaxKind::Rust, &line).is_empty());
+
+    let diff = format!("+{}", "猫".repeat(MAX_LEX_SCALARS + 100));
+    assert_eq!(
+        spans_for_line(SyntaxKind::Diff, &diff),
+        vec![span(0, MAX_LEX_SCALARS, SpanStyle::DiffAdded)]
     );
 }

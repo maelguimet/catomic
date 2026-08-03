@@ -464,6 +464,55 @@ fn sequence_count(output: &str, sequence: &str) -> usize {
 }
 
 #[test]
+fn pty_syntax_capabilities_distinguish_colored_monochrome_and_unsupported_paths() -> TestResult {
+    let toml = TempPath::with_extension("syntax_toml", "toml");
+    fs::write(&toml.path, "enabled = true # bounded config\n")?;
+    let mut colored = PtyEditor::spawn(&toml.path)?;
+    colored.wait_for_output("TOML key color", "\x1b[35menabled")?;
+    colored.wait_for_output("TOML keyword color", "\x1b[35mtrue")?;
+    assert!(!colored.output_string().contains("Plain text:"));
+    colored.send_keys(b"\x11")?;
+    colored.wait_for_exit()?;
+    drop(colored);
+
+    let mut monochrome = PtyEditor::spawn_monochrome(&toml.path)?;
+    monochrome.wait_for_output("monochrome reason", "Color off: TERM=dumb is monochrome")?;
+    monochrome.wait_for_output("recognized monochrome syntax", "Syntax: TOML")?;
+    assert!(!monochrome.output_string().contains("\x1b[35menabled"));
+    monochrome.send_keys(b"\x11")?;
+    monochrome.wait_for_exit()?;
+    drop(monochrome);
+
+    let unsupported = TempPath::with_extension("syntax_plain", "xyz");
+    fs::write(&unsupported.path, "let value = 7\n")?;
+    let mut plain = PtyEditor::spawn_sized(&unsupported.path, 24, 160)?;
+    plain.wait_for_output(
+        "unsupported syntax reason",
+        "Plain text: no syntax highlighter for .xyz files",
+    )?;
+    assert!(!plain.output_string().contains("\x1b[35mlet"));
+    plain.send_keys(b"\x11")?;
+    plain.wait_for_exit()?;
+    Ok(())
+}
+
+#[test]
+fn pty_explicit_color_override_repairs_a_false_terminal_downgrade() -> TestResult {
+    let toml = TempPath::with_extension("syntax_override", "toml");
+    fs::write(&toml.path, "enabled = true\n")?;
+    let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
+    command.arg("--color=always");
+    command.arg(&toml.path);
+    let mut editor = PtyEditor::spawn_command_for_terminal(command, "dumb")?;
+
+    editor.wait_for_output("forced TOML color", "\x1b[35menabled")?;
+    assert!(!editor.output_string().contains("Color off:"));
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+    Ok(())
+}
+
+#[test]
 fn pty_dangling_final_symlink_is_refused_before_terminal_setup() -> TestResult {
     let project = TempProject::new("dangling_symlink_startup");
     let target = project.root.join("missing-target.txt");
@@ -700,7 +749,65 @@ fn pty_legacy_and_enhanced_backspace_paths_remain_distinct() -> TestResult {
     assert_eq!(fs::read_to_string(&temp.path)?, "one ");
     let output = editor.output_string();
     assert_eq!(sequence_count(&output, "\x1b[>1u"), 1);
+    assert_eq!(
+        sequence_count(&output, "\x1b[>4;1f"),
+        1,
+        "direct sessions must request CSI-u xterm key formatting"
+    );
+    assert_eq!(
+        sequence_count(&output, "\x1b[>4;2m"),
+        1,
+        "direct sessions must request xterm modified-key mode"
+    );
+    assert_eq!(
+        sequence_count(&output, "\x1b[>4m"),
+        1,
+        "xterm modified-key mode must reset exactly once"
+    );
+    assert_eq!(
+        sequence_count(&output, "\x1b[>4f"),
+        1,
+        "xterm key formatting must reset exactly once"
+    );
     assert_eq!(sequence_count(&output, "\x1b[<1u"), 1);
+    assert!(
+        output.find("\x1b[>4;1f").expect("xterm format")
+            < output.find("\x1b[>4;2m").expect("xterm enable"),
+        "CSI-u formatting must be selected before xterm modified-key mode"
+    );
+    assert!(
+        output.find("\x1b[>4;2m").expect("xterm enable")
+            < output.rfind("\x1b[>4m").expect("xterm reset"),
+        "xterm modified-key mode must be enabled before it is reset"
+    );
+    assert!(
+        output.rfind("\x1b[>4m").expect("xterm reset")
+            < output.rfind("\x1b[>4f").expect("xterm format reset"),
+        "modified-key mode must reset before its CSI-u format"
+    );
+    Ok(())
+}
+
+#[test]
+fn pty_legacy_ctrl_h_collision_is_visible_and_fallback_still_works() -> TestResult {
+    let project = TempProject::new("backspace_ctrl_h_collision");
+    project.write(
+        "catomic/config.toml",
+        "[keybindings]\ndelete-word-backward = [\"ctrl+u\"]\n",
+    );
+    let active = project.write("note.txt", "");
+    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"one two\x08")?; // Legacy Ctrl+Backspace can collapse to Ctrl+H.
+    editor.wait_for_output("visible Ctrl+H collision", "Help; Esc closes.")?;
+    editor.clear_output();
+    editor.send_keys(b"\x1b")?;
+    editor.wait_for_output("close Help after Ctrl+H collision", "one two")?;
+    editor.send_keys(b"\x15\x13\x11")?; // Fallback, save, quit.
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(active)?, "one ");
     Ok(())
 }
 
@@ -874,6 +981,16 @@ fn pty_sigterm_restores_terminal_modes_before_exit() -> TestResult {
         sequence_count(&output, "\x1b[<1u"),
         1,
         "keyboard enhancement stack must be popped exactly once"
+    );
+    assert_eq!(
+        sequence_count(&output, "\x1b[>4m"),
+        1,
+        "handled signal must reset xterm modified-key mode exactly once"
+    );
+    assert_eq!(
+        sequence_count(&output, "\x1b[>4f"),
+        1,
+        "handled signal must reset xterm key formatting exactly once"
     );
     let final_block = output.rfind("\x1b[2 q").expect("signal test block cursor");
     let final_default = output.rfind("\x1b[0 q").expect("signal cursor reset");
@@ -1083,7 +1200,7 @@ fn pty_dirty_config_detour_refuses_then_discards_only_config_and_reopens_from_di
     editor.send_keys(b"\x1b[80;6uconfig\r")?;
     editor.wait_for_output("existing config detour", "CONFIG DISK MARKER")?;
     editor.send_keys(b"X")?;
-    editor.wait_for_output("dirty config edit", "X# CONFIG DISK MARKER")?;
+    editor.wait_for_output("dirty config edit", "X\x1b[90;2m# CONFIG DISK MARKER")?;
 
     editor.clear_output();
     editor.send_keys(b"\x11")?;

@@ -1,7 +1,7 @@
 //! Purpose: capture one physical key as terminal bytes or a Crossterm event.
 //! Owns: an explicit, short-lived live-terminal compatibility diagnostic.
 //! Must not: edit files, contact a network, reuse ambient input, or persist terminal state.
-//! Invariants: raw mode and any pushed keyboard flags are restored before results print.
+//! Invariants: raw mode and negotiated keyboard settings are restored before results print.
 
 use std::io::{self, Write};
 
@@ -11,7 +11,9 @@ use crossterm::{execute, terminal};
 const KEYBOARD_FLAGS: KeyboardEnhancementFlags =
     KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES;
 const XTERM_EXTENDED_KEYS_ENABLE: &[u8] = b"\x1b[>4;2m";
-const XTERM_EXTENDED_KEYS_DISABLE: &[u8] = b"\x1b[>4;0m";
+const XTERM_EXTENDED_KEYS_RESET: &[u8] = b"\x1b[>4m";
+const XTERM_OTHER_KEYS_FORMAT_CSI_U: &[u8] = b"\x1b[>4;1f";
+const XTERM_OTHER_KEYS_FORMAT_RESET: &[u8] = b"\x1b[>4f";
 
 fn main() {
     let mode = match Mode::parse(std::env::args().nth(1).as_deref()) {
@@ -78,6 +80,7 @@ enum Capture {
 struct ProbeTerminal {
     keyboard_flags_pushed: bool,
     xterm_extended_keys_enabled: bool,
+    xterm_other_keys_format_set: bool,
 }
 
 impl ProbeTerminal {
@@ -86,6 +89,7 @@ impl ProbeTerminal {
         let mut terminal = Self {
             keyboard_flags_pushed: false,
             xterm_extended_keys_enabled: false,
+            xterm_other_keys_format_set: false,
         };
         if push_keyboard_flags {
             if let Err(error) = execute!(io::stdout(), PushKeyboardEnhancementFlags(KEYBOARD_FLAGS))
@@ -95,6 +99,11 @@ impl ProbeTerminal {
             }
             terminal.keyboard_flags_pushed = true;
             let mut stdout = io::stdout();
+            if let Err(error) = stdout.write_all(XTERM_OTHER_KEYS_FORMAT_CSI_U) {
+                drop(terminal);
+                return Err(error);
+            }
+            terminal.xterm_other_keys_format_set = true;
             if let Err(error) = stdout.write_all(XTERM_EXTENDED_KEYS_ENABLE) {
                 drop(terminal);
                 return Err(error);
@@ -112,7 +121,10 @@ impl ProbeTerminal {
 impl Drop for ProbeTerminal {
     fn drop(&mut self) {
         if self.xterm_extended_keys_enabled {
-            let _ = io::stdout().write_all(XTERM_EXTENDED_KEYS_DISABLE);
+            let _ = io::stdout().write_all(XTERM_EXTENDED_KEYS_RESET);
+        }
+        if self.xterm_other_keys_format_set {
+            let _ = io::stdout().write_all(XTERM_OTHER_KEYS_FORMAT_RESET);
         }
         if self.keyboard_flags_pushed {
             let _ = execute!(io::stdout(), event::PopKeyboardEnhancementFlags);

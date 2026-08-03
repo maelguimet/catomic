@@ -89,21 +89,21 @@ def _core_session(launcher: TerminalLauncher, root: Path) -> list[dict[str, obje
         child.send(b"\x1b[200~" + rendered_marker + b"\x1b[201~")
         child.wait_for(rendered_marker)
 
-        select_marker_count = child.output.count(rendered_marker)
+        select_output_length = len(child.output)
         select_osc52_count = child.output.count(osc52_frame)
         child.send(b"\x01")
         if launcher.path_id == "direct-pty":
             child.wait_for_occurrences(osc52_frame, select_osc52_count + 1)
         else:
-            child.wait_for_occurrences(rendered_marker, select_marker_count + 1)
+            child.wait_for_more_output(select_output_length)
 
-        copy_marker_count = child.output.count(rendered_marker)
+        copy_output_length = len(child.output)
         copy_osc52_count = child.output.count(osc52_frame)
         child.send(b"\x03")
         if launcher.path_id == "direct-pty":
             child.wait_for_occurrences(osc52_frame, copy_osc52_count + 1)
         else:
-            child.wait_for_occurrences(rendered_marker, copy_marker_count + 1)
+            child.wait_for_more_output(copy_output_length)
 
         child.send(b"\x1a\x19\x13\x11")
         exit_status = child.finish()

@@ -86,24 +86,19 @@ def _core_session(launcher: TerminalLauncher, root: Path) -> list[dict[str, obje
     child = launcher.spawn("core", fixture, isolated_environment(root / "core"))
     try:
         child.wait_for(b"CORE_BASE", timeout=10)
+        base_render_count = child.output.count(b"CORE_BASE")
         child.send(b"\x1b[200~" + rendered_marker + b"\x1b[201~")
-        child.wait_for(rendered_marker)
+        child.wait_for_occurrences(b"CORE_BASE", base_render_count + 1)
 
-        select_output_length = len(child.output)
         select_osc52_count = child.output.count(osc52_frame)
         child.send(b"\x01")
         if launcher.path_id == "direct-pty":
             child.wait_for_occurrences(osc52_frame, select_osc52_count + 1)
-        else:
-            child.wait_for_more_output(select_output_length)
 
-        copy_output_length = len(child.output)
         copy_osc52_count = child.output.count(osc52_frame)
         child.send(b"\x03")
         if launcher.path_id == "direct-pty":
             child.wait_for_occurrences(osc52_frame, copy_osc52_count + 1)
-        else:
-            child.wait_for_more_output(copy_output_length)
 
         child.send(b"\x1a\x19\x13\x11")
         exit_status = child.finish()
@@ -154,7 +149,7 @@ def _core_session(launcher: TerminalLauncher, root: Path) -> list[dict[str, obje
                 before_sha256=before,
                 after_sha256=after,
                 evidence=[
-                    "Catomic reported copy, but tmux did not forward OSC 52 to the outer PTY"
+                    "Harness sent Ctrl+A/C through tmux, but no OSC 52 frame reached the outer PTY"
                 ],
                 restoration=restore,
                 notes="A headless tmux client cannot attest the host clipboard; verify manually with the configured tmux set-clipboard policy.",
@@ -182,9 +177,9 @@ def _fallback_session(
         child.wait_for_occurrences(source_marker, source_render_count + 1)
         child.send(b"\x1bOQ")
         child.wait_for(b"Command:")
-        output_length = len(child.output)
+        saved_render_count = child.output.count(b"(saved)")
         child.send(b"\x1b")
-        child.wait_for_more_output(output_length)
+        child.wait_for_occurrences(b"(saved)", saved_render_count + 1)
         child.send(b"\x11")
         exit_status = child.finish()
     finally:

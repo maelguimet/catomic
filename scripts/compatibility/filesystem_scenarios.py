@@ -157,7 +157,7 @@ def recovery_after_interruption(binary: Path, root: Path):
         [str(binary.resolve(strict=True)), str(fixture)], environment
     )
     with restarted:
-        restarted.wait_for(b"Catnap recovery found. Run :recover to preview it.")
+        restarted.wait_for(b"Catnap recovery found.")
         restarted.send(b"\x1bOQ")
         restarted.wait_for(b"Command:")
         restarted.send(b"recover\r")

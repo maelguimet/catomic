@@ -180,11 +180,15 @@ The matrix keeps setup and the measured operation separate:
   least 256 MiB in aggregate and report `iterations`; streaming chunks deliberately
   split a CRLF pair and hashes preserve the no-final-newline case exactly; and
 - replacement samples insert 8 MiB ASCII, line-heavy, and mixed Unicode text
-  through PieceTable, then replace 20,000 ranges with one shared string. An
+  through PieceTable, then replace 20,000 ranges with short ASCII,
+  line-containing ASCII, multibyte UTF-8, and 1 KiB shared payloads. An
   unmeasured observer specialization of the same owner implementation exposes
-  replacement scans and Add-source copies; the timed specialization is a no-op.
+  analyzed bytes, newline/scalar work, and Add-source copies; the timed
+  specialization is a no-op.
   Add checkpoints, PieceTree and LineIndex work remain owner-state observations,
-  while streamed result hashes and cursors prove timed/shadow parity.
+  while streamed result hashes and cursors prove timed/shadow parity. Unmeasured
+  undo/redo hashes and cursors also prove round-trip parity and assert that redo
+  adds no source bytes.
 
 Every record retains the stable
 `PERF sample: label=... bytes=... elapsed_ms=...` prefix. Ordered integer fields

@@ -10,6 +10,7 @@ use std::io::{self, Write};
 use crate::buffer::undo::{PieceEdit, Transaction, UndoRun};
 use crate::buffer::{Buffer, Cursor, LineView};
 
+use super::scalar_index::SCALAR_CHECKPOINT_INTERVAL;
 use super::types::{Piece, PieceTable, Source};
 
 struct SnapshotRange {
@@ -299,10 +300,13 @@ impl Buffer for PieceTable {
 
 trait ReplacementObserver {
     #[inline(always)]
-    fn newline_scan(&mut self, _bytes: usize) {}
-
-    #[inline(always)]
-    fn scalar_scan(&mut self, _bytes: usize) {}
+    fn analysis(
+        &mut self,
+        _text_bytes: usize,
+        _newline_scan_bytes: usize,
+        _scalar_scan_bytes: usize,
+    ) {
+    }
 
     #[inline(always)]
     fn add_copy(&mut self, _bytes: usize) {}
@@ -320,14 +324,11 @@ struct PerfReplacementObserver {
 
 #[cfg(test)]
 impl ReplacementObserver for PerfReplacementObserver {
-    fn newline_scan(&mut self, bytes: usize) {
+    fn analysis(&mut self, text_bytes: usize, newline_scan_bytes: usize, scalar_scan_bytes: usize) {
         self.stats.text_analysis_passes += 1;
-        self.stats.newline_scan_bytes += bytes;
-    }
-
-    fn scalar_scan(&mut self, bytes: usize) {
-        self.stats.text_analysis_passes += 1;
-        self.stats.scalar_scan_bytes += bytes;
+        self.stats.text_analyzed_bytes += text_bytes;
+        self.stats.newline_scan_bytes += newline_scan_bytes;
+        self.stats.scalar_scan_bytes += scalar_scan_bytes;
     }
 
     fn add_copy(&mut self, bytes: usize) {
@@ -336,26 +337,141 @@ impl ReplacementObserver for PerfReplacementObserver {
     }
 }
 
-fn cursor_after_text(start: Cursor, text: &str, observer: &mut impl ReplacementObserver) -> Cursor {
-    observer.newline_scan(text.len());
-    let newline_count = text.bytes().filter(|byte| *byte == b'\n').count();
-    if newline_count == 0 {
-        observer.scalar_scan(text.len());
-        Cursor {
-            row: start.row,
-            col: start.col + text.chars().count(),
+struct ReplacementText<'a> {
+    text: &'a str,
+    byte_len: usize,
+    scalar_len: usize,
+    add_scalar_start: usize,
+    newline_offsets: Vec<usize>,
+    trailing_line_scalars: usize,
+    is_ascii: bool,
+    scalar_checkpoint_offsets: Vec<usize>,
+}
+
+impl<'a> ReplacementText<'a> {
+    fn analyze(
+        text: &'a str,
+        add_scalar_len: usize,
+        observer: &mut impl ReplacementObserver,
+    ) -> Self {
+        let byte_len = text.len();
+        let bytes = text.as_bytes();
+        let mut newline_offsets = Vec::new();
+        let mut ascii_prefix_len = 0usize;
+        while ascii_prefix_len < byte_len && bytes[ascii_prefix_len].is_ascii() {
+            if bytes[ascii_prefix_len] == b'\n' {
+                newline_offsets.push(ascii_prefix_len);
+            }
+            ascii_prefix_len += 1;
         }
-    } else {
-        let final_line = text.rsplit('\n').next().unwrap_or_default();
-        observer.scalar_scan(final_line.len());
-        Cursor {
-            row: start.row + newline_count,
-            col: final_line.chars().count(),
+
+        let mut scalar_checkpoint_offsets =
+            ascii_checkpoint_offsets(add_scalar_len, ascii_prefix_len);
+        if ascii_prefix_len == byte_len {
+            let trailing_line_scalars = newline_offsets
+                .last()
+                .map_or(byte_len, |newline| byte_len - newline - 1);
+            observer.analysis(byte_len, byte_len, 0);
+            return Self {
+                text,
+                byte_len,
+                scalar_len: byte_len,
+                add_scalar_start: add_scalar_len,
+                newline_offsets,
+                trailing_line_scalars,
+                is_ascii: true,
+                scalar_checkpoint_offsets,
+            };
+        }
+
+        let mut scalar_len = ascii_prefix_len;
+        let mut trailing_line_scalars = newline_offsets
+            .last()
+            .map_or(ascii_prefix_len, |newline| ascii_prefix_len - newline - 1);
+        for (relative_byte, ch) in text[ascii_prefix_len..].char_indices() {
+            scalar_len += 1;
+            let scalar_end_byte = ascii_prefix_len + relative_byte + ch.len_utf8();
+            if (add_scalar_len + scalar_len).is_multiple_of(SCALAR_CHECKPOINT_INTERVAL) {
+                scalar_checkpoint_offsets.push(scalar_end_byte);
+            }
+            if ch == '\n' {
+                newline_offsets.push(ascii_prefix_len + relative_byte);
+                trailing_line_scalars = 0;
+            } else {
+                trailing_line_scalars += 1;
+            }
+        }
+        observer.analysis(byte_len, byte_len, byte_len - ascii_prefix_len);
+        Self {
+            text,
+            byte_len,
+            scalar_len,
+            add_scalar_start: add_scalar_len,
+            newline_offsets,
+            trailing_line_scalars,
+            is_ascii: false,
+            scalar_checkpoint_offsets,
+        }
+    }
+
+    fn cursor_after(&self, start: Cursor) -> Cursor {
+        if self.newline_offsets.is_empty() {
+            Cursor {
+                row: start.row,
+                col: start.col + self.scalar_len,
+            }
+        } else {
+            Cursor {
+                row: start.row + self.newline_offsets.len(),
+                col: self.trailing_line_scalars,
+            }
         }
     }
 }
 
+fn ascii_checkpoint_offsets(base_scalar_len: usize, scalar_len: usize) -> Vec<usize> {
+    let remainder = base_scalar_len % SCALAR_CHECKPOINT_INTERVAL;
+    let first = if remainder == 0 {
+        SCALAR_CHECKPOINT_INTERVAL
+    } else {
+        SCALAR_CHECKPOINT_INTERVAL - remainder
+    };
+    if first > scalar_len {
+        return Vec::new();
+    }
+
+    (first..=scalar_len)
+        .step_by(SCALAR_CHECKPOINT_INTERVAL)
+        .collect()
+}
+
 impl PieceTable {
+    fn prepare_replacement(
+        &mut self,
+        replacement: &ReplacementText<'_>,
+        observer: &mut impl ReplacementObserver,
+    ) -> Option<Piece> {
+        if replacement.byte_len == 0 {
+            return None;
+        }
+        debug_assert_eq!(self.add_scalars.scalar_len(), replacement.add_scalar_start);
+        let piece = Piece {
+            source: Source::Add,
+            start: self.add.len(),
+            len: replacement.byte_len,
+            char_len: Some(replacement.scalar_len),
+        };
+        self.add_scalars.append_precomputed(
+            replacement.byte_len,
+            replacement.scalar_len,
+            replacement.is_ascii,
+            &replacement.scalar_checkpoint_offsets,
+        );
+        observer.add_copy(replacement.byte_len);
+        self.add.push_str(replacement.text);
+        Some(piece)
+    }
+
     fn replace_range_observed(
         &mut self,
         start: Cursor,
@@ -371,12 +487,14 @@ impl PieceTable {
             return Ok(false);
         }
 
+        let replacement = ReplacementText::analyze(text, self.add_scalars.scalar_len(), observer);
+        let replacement_piece = self.prepare_replacement(&replacement, observer);
         let before = self.capture_cursor_state();
         self.reset_piece_mutation_metrics();
-        self.replace_index_range(start_byte, end_byte, text, observer);
-        let (removed, inserted) = self.splice_replacement(start_byte, end_byte, text, observer);
-        self.cursor = cursor_after_text(start, text, observer);
-        self.cursor_byte_offset = start_byte + text.len();
+        self.replace_index_range(start_byte, end_byte, &replacement);
+        let (removed, inserted) = self.splice_replacement(start_byte, end_byte, replacement_piece);
+        self.cursor = replacement.cursor_after(start);
+        self.cursor_byte_offset = start_byte + replacement.byte_len;
         self.record_replacement(before, start_byte, removed, inserted);
         self.undo_stack.finish_run();
         Ok(true)
@@ -394,6 +512,8 @@ impl PieceTable {
         if ranges.is_empty() {
             return Ok(0);
         }
+        let replacement = ReplacementText::analyze(text, self.add_scalars.scalar_len(), observer);
+        let replacement_piece = self.prepare_replacement(&replacement, observer);
         let before = self.capture_cursor_state();
         self.reset_piece_mutation_metrics();
         #[cfg(test)]
@@ -403,9 +523,9 @@ impl PieceTable {
         // Each mutation stays local in both the PieceTree and block LineIndex,
         // so the batch needs no document-wide coalesce or index rebuild.
         for range in &ranges {
-            self.replace_index_range(range.start_byte, range.end_byte, text, observer);
+            self.replace_index_range(range.start_byte, range.end_byte, &replacement);
             let (removed, inserted) =
-                self.splice_replacement(range.start_byte, range.end_byte, text, observer);
+                self.splice_replacement(range.start_byte, range.end_byte, replacement_piece);
             if !removed.is_empty() {
                 edits.push(PieceEdit::Delete {
                     at: range.start_byte,
@@ -425,8 +545,8 @@ impl PieceTable {
                 "replacement batch unexpectedly has no ranges",
             )
         })?;
-        self.cursor = cursor_after_text(cursor_range.start, text, observer);
-        self.cursor_byte_offset = cursor_range.start_byte + text.len();
+        self.cursor = replacement.cursor_after(cursor_range.start);
+        self.cursor_byte_offset = cursor_range.start_byte + replacement.byte_len;
         if self.recording {
             self.record_transaction(Transaction {
                 before,
@@ -539,24 +659,12 @@ impl PieceTable {
         &mut self,
         start: usize,
         end: usize,
-        text: &str,
-        observer: &mut impl ReplacementObserver,
+        replacement_piece: Option<Piece>,
     ) -> (Vec<Piece>, Vec<Piece>) {
         let removed = self.delete_byte_range(start, end);
-        if text.is_empty() {
+        let Some(piece) = replacement_piece else {
             return (removed, Vec::new());
-        }
-        observer.scalar_scan(text.len());
-        let piece = Piece {
-            source: Source::Add,
-            start: self.add.len(),
-            len: text.len(),
-            char_len: Some(text.chars().count()),
         };
-        observer.scalar_scan(text.len());
-        self.add_scalars.append(text);
-        observer.add_copy(text.len());
-        self.add.push_str(text);
         self.insert_pieces_at(start, std::slice::from_ref(&piece));
         (removed, vec![piece])
     }
@@ -709,20 +817,12 @@ impl PieceTable {
         }
     }
 
-    fn replace_index_range(
-        &mut self,
-        start: usize,
-        end: usize,
-        text: &str,
-        observer: &mut impl ReplacementObserver,
-    ) {
-        observer.newline_scan(text.len());
-        let newlines = text
-            .match_indices('\n')
-            .map(|(byte, _)| byte)
-            .collect::<Vec<_>>();
-        let _ = self
-            .index
-            .replace_byte_range(start, end, text.len(), &newlines);
+    fn replace_index_range(&mut self, start: usize, end: usize, replacement: &ReplacementText<'_>) {
+        let _ = self.index.replace_byte_range(
+            start,
+            end,
+            replacement.byte_len,
+            &replacement.newline_offsets,
+        );
     }
 }

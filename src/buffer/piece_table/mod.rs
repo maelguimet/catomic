@@ -44,6 +44,7 @@ pub(crate) struct PieceTablePerfStats {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct ReplacementPerfStats {
     pub(crate) text_analysis_passes: usize,
+    pub(crate) text_analyzed_bytes: usize,
     pub(crate) newline_scan_bytes: usize,
     pub(crate) scalar_scan_bytes: usize,
     pub(crate) add_copy_calls: usize,

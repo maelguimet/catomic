@@ -184,6 +184,56 @@ fn scalar_checkpoint_storage_is_included_in_retained_memory_stats() {
 }
 
 #[test]
+fn analyzed_replacement_checkpoints_cross_existing_add_scalar_boundaries() {
+    let mut buffer = PieceTable::new();
+    let ascii_prefix = "a".repeat(1000);
+    assert!(buffer
+        .replace_range(Cursor::default(), Cursor::default(), &ascii_prefix)
+        .unwrap());
+    let replacement = format!("{}{}", "x".repeat(30), "é".repeat(2000));
+    let checkpoint_count_before = buffer.perf_stats().add_scalar_checkpoints;
+    let at = Cursor {
+        row: 0,
+        col: ascii_prefix.chars().count(),
+    };
+
+    let (changed, analysis) = buffer
+        .replace_range_for_perf(at, at, &replacement)
+        .expect("append analyzed Unicode replacement");
+
+    assert!(changed);
+    assert_eq!(analysis.text_analysis_passes, 1);
+    assert_eq!(analysis.text_analyzed_bytes, replacement.len());
+    assert_eq!(analysis.scalar_scan_bytes, "é".len() * 2000);
+    assert_eq!(analysis.add_copy_calls, 1);
+    assert_eq!(
+        buffer.perf_stats().add_scalar_checkpoints - checkpoint_count_before,
+        2,
+        "global scalar checkpoints at 1024 and 2048 must be appended once"
+    );
+    let expected = format!("{ascii_prefix}{replacement}");
+    assert_eq!(buffer.to_string(), expected);
+    assert_eq!(buffer.line_char_count(0), Some(3030));
+
+    for col in [0, 999, 1000, 1023, 1024, 2047, 2048, 3029, 3030] {
+        let _ = buffer.take_scalar_visited_bytes();
+        buffer.set_cursor(Cursor { row: 0, col });
+        assert_eq!(buffer.cursor(), Cursor { row: 0, col });
+        assert!(
+            buffer.take_scalar_visited_bytes() <= MAX_SCALAR_MAPPING_VISITS,
+            "column {col} exceeded sparse-checkpoint scan bounds"
+        );
+    }
+
+    let add_len = buffer.add.len();
+    buffer.undo();
+    assert_eq!(buffer.to_string(), ascii_prefix);
+    buffer.redo();
+    assert_eq!(buffer.to_string(), expected);
+    assert_eq!(buffer.add.len(), add_len, "redo must reuse scalar metadata");
+}
+
+#[test]
 fn unicode_window_crossing_checkpoint_is_exact_borrowed_and_bounded() {
     let unit = "a\u{301}👩\u{200d}💻\t猫";
     let text = unit.repeat(512);

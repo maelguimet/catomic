@@ -79,6 +79,39 @@ impl ScalarIndex {
         self.is_ascii &= appended_is_ascii;
     }
 
+    pub(crate) fn append_precomputed(
+        &mut self,
+        byte_len: usize,
+        scalar_len: usize,
+        appended_is_ascii: bool,
+        checkpoint_byte_offsets: &[usize],
+    ) {
+        debug_assert!(checkpoint_byte_offsets
+            .windows(2)
+            .all(|pair| pair[0] < pair[1]));
+        debug_assert!(checkpoint_byte_offsets
+            .last()
+            .is_none_or(|offset| *offset <= byte_len));
+        let expected_checkpoints = (self.scalar_len + scalar_len) / SCALAR_CHECKPOINT_INTERVAL
+            - self.scalar_len / SCALAR_CHECKPOINT_INTERVAL;
+        debug_assert_eq!(checkpoint_byte_offsets.len(), expected_checkpoints);
+
+        let base_byte = self.byte_len;
+        let mut checkpoint_scalar =
+            (self.scalar_len / SCALAR_CHECKPOINT_INTERVAL + 1) * SCALAR_CHECKPOINT_INTERVAL;
+        self.checkpoints.reserve(checkpoint_byte_offsets.len());
+        for relative_byte in checkpoint_byte_offsets {
+            self.checkpoints.push(ScalarCheckpoint {
+                scalar: checkpoint_scalar,
+                byte: base_byte + relative_byte,
+            });
+            checkpoint_scalar += SCALAR_CHECKPOINT_INTERVAL;
+        }
+        self.scalar_len += scalar_len;
+        self.byte_len += byte_len;
+        self.is_ascii &= appended_is_ascii;
+    }
+
     pub(crate) fn scalar_len(&self) -> usize {
         self.scalar_len
     }

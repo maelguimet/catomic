@@ -92,7 +92,7 @@ is not required. A missing path opens as an empty named buffer and is never
 created until explicitly saved.
 
 Run `catomic --help` for command-line behavior and examples. Inside the editor,
-press `F1` for a concise, task-oriented reference. Shortcuts in that
+press `Ctrl+H` or `F1` for a concise, task-oriented reference. Shortcuts in that
 page reflect the effective keybindings loaded for the current session.
 On Android/Termux, the automatic action row and its **Menu** palette expose the
 same essential workflow without a hardware keyboard. See the

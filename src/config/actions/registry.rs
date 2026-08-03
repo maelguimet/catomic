@@ -45,7 +45,7 @@ macro_rules! wheel {
 }
 
 pub(crate) const REGISTRY: &[Descriptor] = &[
-    key!(Help, "help", "Toggle shortcut help", G, ["f1"]),
+    key!(Help, "help", "Toggle shortcut help", G, ["ctrl+h", "f1"]),
     key!(
         Quit,
         "quit",
@@ -317,7 +317,7 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
         "delete-word-backward",
         "Delete previous word",
         E,
-        ["ctrl+backspace", "ctrl+h"]
+        ["ctrl+backspace", "alt+backspace"]
     ),
     key!(
         DeleteWordForward,

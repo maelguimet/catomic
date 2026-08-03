@@ -87,6 +87,10 @@ fn monochrome_capability_keeps_non_color_distinctions() {
     assert_eq!(theme.external_changed.reversed, Some(true));
     assert_eq!(theme.external_deleted.fg, None);
     assert_eq!(theme.external_deleted.bold, Some(true));
+    assert_eq!(theme.markdown_heading.fg, None);
+    assert_eq!(theme.markdown_heading.bg, None);
+    assert_eq!(theme.markdown_heading.bold, Some(true));
+    assert_eq!(theme.markdown_heading.reversed, None);
 }
 
 #[test]

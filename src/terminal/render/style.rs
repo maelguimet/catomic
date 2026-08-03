@@ -426,7 +426,6 @@ fn span_style(theme: Theme, style: SpanStyle) -> Style {
         SpanStyle::PreviewCodeBlock => theme.markdown_code,
         SpanStyle::PreviewHeading1 => Style {
             bold: Some(true),
-            reversed: Some(true),
             ..theme.markdown_heading
         },
         SpanStyle::PreviewHeading2 => Style {

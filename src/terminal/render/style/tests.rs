@@ -156,7 +156,51 @@ fn markdown_code_blocks_use_code_color_without_a_reversed_surface() {
 }
 
 #[test]
-fn preview_heading_levels_keep_distinct_monochrome_attributes() {
+fn preview_h1_styles_only_heading_content_without_reverse_video() {
+    let spans = vec![vec![StyledSpan {
+        start: 2,
+        end: 9,
+        style: SpanStyle::PreviewHeading1,
+    }]];
+    let annotations = crate::editor::markdown_preview::MarkdownAnnotations::from_rows(&spans, &[]);
+    let output = rendered(
+        "  Heading  ",
+        0,
+        RenderOptions {
+            presentation: Some(super::super::DocumentPresentation {
+                annotations: &annotations,
+            }),
+            surface: ContentSurface::Preview,
+            ..RenderOptions::default()
+        },
+    );
+
+    assert_eq!(output, "  \x1b[94;1mHeading\x1b[39;22m  ");
+    assert!(!output.contains("\x1b[7m"));
+}
+
+#[test]
+fn preview_h1_preserves_custom_foreground_and_only_explicit_background() {
+    let foreground_theme =
+        crate::config::theme::parse("[theme.colors]\nmarkdown_heading = { fg = 'red' }\n").unwrap();
+    let foreground = span_style(foreground_theme, SpanStyle::PreviewHeading1);
+    assert_eq!(foreground.fg, Some(Color::Ansi(1)));
+    assert_eq!(foreground.bg, None);
+    assert_eq!(foreground.bold, Some(true));
+    assert_eq!(foreground.reversed, None);
+
+    let explicit_background_theme = crate::config::theme::parse(
+        "[theme.colors]\nmarkdown_heading = { fg = 'red', bg = 'blue' }\n",
+    )
+    .unwrap();
+    let explicit_background = span_style(explicit_background_theme, SpanStyle::PreviewHeading1);
+    assert_eq!(explicit_background.fg, Some(Color::Ansi(1)));
+    assert_eq!(explicit_background.bg, Some(Color::Ansi(4)));
+    assert_eq!(explicit_background.reversed, None);
+}
+
+#[test]
+fn preview_heading_levels_keep_monochrome_attributes_without_h1_reverse() {
     let theme = crate::config::theme::parse("[theme]\nname = 'mono'\n").unwrap();
     let h1 = span_style(theme, SpanStyle::PreviewHeading1);
     let h2 = span_style(theme, SpanStyle::PreviewHeading2);
@@ -165,7 +209,7 @@ fn preview_heading_levels_keep_distinct_monochrome_attributes() {
     let h5 = span_style(theme, SpanStyle::PreviewHeading5);
     let h6 = span_style(theme, SpanStyle::PreviewHeading6);
 
-    assert_eq!((h1.bold, h1.reversed), (Some(true), Some(true)));
+    assert_eq!((h1.bold, h1.reversed), (Some(true), None));
     assert_eq!((h2.bold, h2.reversed), (Some(true), None));
     assert_eq!((h3.bold, h3.reversed), (Some(false), None));
     assert_eq!((h4.bold, h4.dim), (Some(false), None));

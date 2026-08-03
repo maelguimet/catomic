@@ -1656,21 +1656,20 @@ fn pty_spaced_and_literal_option_filenames_each_open_as_one_buffer() -> TestResu
 #[test]
 fn pty_markdown_preview_and_view_toggles_leave_source_unchanged() -> TestResult {
     let temp = TempPath::with_extension("markdown_preview", "md");
-    let source = "# PTY Heading\n\n- item with `code`\n";
+    let source = "# Heading\n\nNormal paragraph text.\n";
     fs::write(&temp.path, source)?;
     let mut editor = PtyEditor::spawn(&temp.path)?;
 
     editor.wait_for_initial_render()?;
     let startup_output = editor.output_string();
-    editor.wait_for_output("Markdown source", "# PTY Heading")?;
+    editor.wait_for_output("Markdown source", "# Heading")?;
     editor.clear_output();
     editor.send_keys(b"\x1b[17~")?; // F6
     editor.wait_for_output("preview enabled", "Markdown preview on")?;
     let preview_output = editor.output_string();
-    assert!(preview_output.contains("PTY"));
-    assert!(!preview_output.contains("# PTY Heading"));
-    assert!(preview_output.contains("• "));
-    assert!(!preview_output.contains("- item with"));
+    assert!(preview_output.contains("\x1b[94;1mHeading\x1b[0m"));
+    assert!(preview_output.contains("Normal paragraph text."));
+    assert!(!preview_output.contains("# Heading"));
 
     editor.send_keys(b"x")?;
     editor.wait_for_output("preview read-only guard", "preview is read-only")?;
@@ -1682,7 +1681,7 @@ fn pty_markdown_preview_and_view_toggles_leave_source_unchanged() -> TestResult 
     editor.wait_for_output("whitespace enabled", "·")?;
     editor.clear_output();
     editor.send_keys(b"\x1b")?;
-    editor.wait_for_output("preview disabled", "#·PTY·Heading")?;
+    editor.wait_for_output("preview disabled", "#·Heading")?;
     editor.send_keys(b"\x11")?;
     editor.wait_for_exit()?;
 

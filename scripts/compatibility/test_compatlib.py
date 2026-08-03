@@ -32,7 +32,7 @@ from compatlib import (
 )
 from pty_driver import PtyError, PtyProcess
 from run_terminal import _ask_status, _ask_yes_no
-from terminal_scenarios import _fallback_session
+from terminal_scenarios import _core_session, _fallback_session
 
 
 def fixture_scenario(status: str = "pass", issue: str | None = None, notes: str = ""):
@@ -219,6 +219,69 @@ class PtyDriverTests(unittest.TestCase):
 
 
 class TerminalScenarioTests(unittest.TestCase):
+    def test_tmux_core_accepts_ansi_split_selection_output(self):
+        rendered_marker = "SHIFTED !@# ÅΩ中🙂".encode()
+
+        class StyledSelectionChild:
+            def __init__(self, fixture):
+                self.fixture = fixture
+                self.output = bytearray(b"CORE_BASE")
+                self.waited_for_additional_output = 0
+
+            def send(self, data):
+                if data.startswith(b"\x1b[200~"):
+                    self.output.extend(rendered_marker + b"CORE_BASE")
+                elif data == b"\x01":
+                    self.output.extend(
+                        b"\x1b[7mSHIFTED !@# \x1b[0m" + "ÅΩ中🙂".encode()
+                    )
+                elif data == b"\x03":
+                    self.output.extend(b"selection copied")
+                elif data == b"\x1a\x19\x13\x11":
+                    self.fixture.write_bytes(rendered_marker + b"CORE_BASE")
+                    self.output.extend(b"\x1b[?1000l\x1b[?2004l\x1b[?1049l")
+
+            def wait_for(self, expected, timeout=5.0):
+                if expected not in self.output:
+                    raise PtyError(f"missing {expected!r} after {timeout} seconds")
+
+            def wait_for_occurrences(self, expected, minimum):
+                if self.output.count(expected) < minimum:
+                    raise PtyError(f"missing occurrence {minimum} of {expected!r}")
+
+            def wait_for_more_output(self, previous_length):
+                if len(self.output) <= previous_length:
+                    raise PtyError("missing styled selection output")
+                self.waited_for_additional_output += 1
+
+            def finish(self):
+                return 0
+
+            def close(self):
+                pass
+
+        class TmuxLauncher:
+            path_id = "tmux"
+
+            def __init__(self):
+                self.child = None
+
+            def spawn(self, _label, fixture, _environment):
+                self.child = StyledSelectionChild(fixture)
+                return self.child
+
+            def cleanup(self):
+                pass
+
+        with tempfile.TemporaryDirectory() as directory:
+            launcher = TmuxLauncher()
+            records = _core_session(launcher, Path(directory))
+
+        statuses = {record["id"]: record["status"] for record in records}
+        self.assertEqual(statuses["core-open-edit-save-quit"], "pass")
+        self.assertEqual(statuses["osc52"], "unsupported")
+        self.assertEqual(launcher.child.waited_for_additional_output, 2)
+
     def test_fallback_prompt_close_accepts_retained_source_row(self):
         source_marker = b"FALLBACK_SOURCE_MARKER"
 

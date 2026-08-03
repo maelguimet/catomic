@@ -8,7 +8,7 @@ use std::borrow::Cow;
 use std::io::{self, Write};
 
 use crate::buffer::undo::{PieceEdit, Transaction, UndoRun};
-use crate::buffer::{Buffer, Cursor, LineView};
+use crate::buffer::{Buffer, Cursor, LineView, PieceTableSearch};
 
 use super::scalar_index::SCALAR_CHECKPOINT_INTERVAL;
 use super::types::{Piece, PieceTable, Source};
@@ -113,6 +113,10 @@ impl Buffer for PieceTable {
 
     fn search_text_segment(&self, byte_offset: usize, max_bytes: usize) -> Option<Cow<'_, str>> {
         self.search_text_segment(byte_offset, max_bytes)
+    }
+
+    fn piece_table_search(&self) -> Option<PieceTableSearch<'_>> {
+        Some(PieceTableSearch::new(self))
     }
 
     fn set_cursor(&mut self, cursor: Cursor) {

@@ -347,6 +347,39 @@ impl PieceTable {
             .unwrap_or(line_start)
     }
 
+    pub(crate) fn search_byte_offset_for_cursor(
+        &self,
+        cursor: crate::buffer::Cursor,
+    ) -> io::Result<usize> {
+        if self.index.total_bytes() == 0 {
+            return Ok(0);
+        }
+        let row = cursor.row.min(self.index.line_count().saturating_sub(1));
+        let line_start = self.index.line_start_byte(row);
+        let line_end = self.index.line_end_byte(row);
+        let line_scalars = self.try_char_count(line_start, line_end)?;
+        self.try_byte_offset_after_chars(line_start, line_end, cursor.col.min(line_scalars))
+    }
+
+    pub(crate) fn search_cursor_for_byte_offset(
+        &self,
+        byte_offset: usize,
+    ) -> io::Result<crate::buffer::Cursor> {
+        if byte_offset > self.index.total_bytes() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "search byte offset exceeds the editable buffer",
+            ));
+        }
+        let row = self.index.row_for_byte(byte_offset);
+        let line_start = self.index.line_start_byte(row);
+        let line_end = self.index.line_end_byte(row);
+        Ok(crate::buffer::Cursor {
+            row,
+            col: self.try_char_count(line_start, byte_offset.min(line_end))?,
+        })
+    }
+
     #[cfg(test)]
     pub(crate) fn file_original_read_bytes(&self) -> usize {
         self.original.file_read_bytes()

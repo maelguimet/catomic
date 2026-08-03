@@ -78,6 +78,32 @@ pub(crate) struct DescriptorPosition {
     pub(crate) col: usize,
 }
 
+/// Narrow PieceTable adapter used only by bounded incremental literal search.
+/// It keeps storage and coordinate policy with the PieceTable without adding a
+/// general byte-coordinate contract to every Buffer backend.
+#[derive(Clone, Copy)]
+pub(crate) struct PieceTableSearch<'a> {
+    table: &'a PieceTable,
+}
+
+impl<'a> PieceTableSearch<'a> {
+    pub(crate) fn new(table: &'a PieceTable) -> Self {
+        Self { table }
+    }
+
+    pub(crate) fn text_segment(self, byte_offset: usize, max_bytes: usize) -> Option<Cow<'a, str>> {
+        Buffer::search_text_segment(self.table, byte_offset, max_bytes)
+    }
+
+    pub(crate) fn byte_offset_for_cursor(self, cursor: Cursor) -> io::Result<usize> {
+        self.table.search_byte_offset_for_cursor(cursor)
+    }
+
+    pub(crate) fn cursor_for_byte_offset(self, byte_offset: usize) -> io::Result<Cursor> {
+        self.table.search_cursor_for_byte_offset(byte_offset)
+    }
+}
+
 /// The stable Buffer interface.
 ///
 /// All editor operations go through this.
@@ -192,6 +218,9 @@ pub trait Buffer {
             }
             return Some(Cow::Owned(text[start..end].to_string()));
         }
+        None
+    }
+    fn piece_table_search(&self) -> Option<PieceTableSearch<'_>> {
         None
     }
     fn next_page(&mut self) -> io::Result<bool> {

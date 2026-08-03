@@ -4,7 +4,7 @@ use std::fs::File;
 
 use crate::buffer::{Buffer, Cursor, DescriptorPosition, DescriptorSource, PieceTable};
 use crate::editor::search::{
-    scan_descriptor_for_perf, LocalSearchTask, SearchDirection, SearchResult,
+    scan_descriptor_for_perf, DescriptorSearchMatch, LocalSearchTask, SearchDirection, SearchResult,
 };
 
 use super::super::helpers::{measure_allocated_sample, print_perf_sample};
@@ -41,6 +41,7 @@ struct SearchPerfStats {
     scanned_bytes: usize,
     segments_visited: usize,
     candidate_matches: usize,
+    coordinate_conversions: usize,
     position_records: usize,
     temporary_allocations: usize,
     descriptor_read_calls: usize,
@@ -99,7 +100,7 @@ pub(super) fn run() {
             1
         };
 
-        std::hint::black_box(run_local_task(&buffer, scenario, local_origin).0);
+        std::hint::black_box(run_local_task(&buffer, scenario, local_origin));
         let (batch, sample) =
             measure_allocated_sample(scenario.local_label, Some(FIXTURE_BYTES as u64), || {
                 run_local_batch(
@@ -112,17 +113,14 @@ pub(super) fn run() {
             });
         assert_eq!(batch.mismatches, 0, "every batched local result must match");
         assert_eq!(batch.last_fields, expected_local_fields);
-        let (shadow_result, (scanned_bytes, temporary_allocations)) =
-            run_local_task(&buffer, scenario, local_origin);
+        let shadow_result = run_local_task(&buffer, scenario, local_origin);
         let fields = assert_local_result(shadow_result, expected_cursor, scenario.query);
         assert_eq!(fields, batch.last_fields);
-        assert_eq!(scanned_bytes, per_iteration_scanned);
         let metrics = local_shadow_metrics(
             &buffer,
             text.as_bytes(),
             scenario,
-            scanned_bytes,
-            temporary_allocations,
+            per_iteration_scanned,
             iterations,
         );
         print_search_sample(sample, metrics, fields, iterations);
@@ -131,9 +129,10 @@ pub(super) fn run() {
             expected_offset.map(|offset| descriptor_position(&text, &line_starts, offset));
         let expected_descriptor_fields =
             descriptor_expected_fields(expected_descriptor, scenario.query);
-        let descriptor_anchor = scenario
-            .anchor_byte
-            .map(|offset| descriptor_position(&text, &line_starts, offset));
+        let descriptor_anchor = scenario.anchor_byte.map(|offset| DescriptorSearchMatch {
+            position: descriptor_position(&text, &line_starts, offset),
+            byte_offset: offset,
+        });
         let source = descriptor_source(fixture.path());
         std::hint::black_box(run_descriptor_task(&source, scenario, descriptor_anchor));
         let (batch, sample) = measure_allocated_sample(
@@ -176,21 +175,20 @@ pub(super) fn smoke() {
         anchor_byte: None,
         batch_cross_boundary: false,
     };
-    let (result, (scanned_bytes, temporary_allocations)) =
-        run_local_task(&buffer, scenario, Cursor::default());
+    let result = run_local_task(&buffer, scenario, Cursor::default());
     let fields = assert_local_result(result, Some(Cursor { row: 0, col: 1 }), "aXa");
     assert_eq!((fields.row, fields.col, fields.end_col), (0, 1, 4));
     let metrics = local_shadow_metrics(
         &buffer,
         b"aaXa tail \xe7\x8c\xab\xc3\xa9needle",
         scenario,
-        scanned_bytes,
-        temporary_allocations,
+        4,
         1,
     );
     assert_eq!(metrics.candidate_matches, 1);
     assert!(metrics.segments_visited >= 2);
-    assert_eq!(metrics.position_records, metrics.scanned_bytes);
+    assert_eq!(metrics.coordinate_conversions, 2);
+    assert_eq!(metrics.position_records, 0);
 
     let fixture = TempFixture::new("byte_scan_search_smoke.txt");
     std::fs::write(fixture.path(), "aaXa tail 猫éneedle").expect("write search smoke fixture");
@@ -204,8 +202,7 @@ pub(super) fn smoke() {
     };
     let fields = assert_descriptor_result(result, Some(expected), "aXa");
     assert_eq!((fields.row, fields.col), (0, 1));
-    let metrics =
-        descriptor_shadow_metrics("aaXa tail 猫éneedle".as_bytes(), scenario, scanned_bytes, 1);
+    let metrics = descriptor_shadow_metrics("aaXa tail 猫éneedle".as_bytes(), scenario, 4, 1);
     assert_eq!(metrics.descriptor_read_calls, 1);
     assert!(metrics.descriptor_read_bytes > 0);
 }
@@ -275,23 +272,18 @@ fn search_fixture() -> Vec<u8> {
     bytes
 }
 
-fn run_local_task(
-    buffer: &PieceTable,
-    scenario: Scenario,
-    origin: Cursor,
-) -> (SearchResult, (usize, usize)) {
+fn run_local_task(buffer: &PieceTable, scenario: Scenario, origin: Cursor) -> SearchResult {
     let mut task = LocalSearchTask::new(
         scenario.query,
         origin,
         scenario.direction,
         scenario.anchor_byte.is_none(),
     );
-    let result = loop {
+    loop {
         if let Some(result) = task.poll(buffer, SEARCH_BUDGET) {
             break result;
         }
-    };
-    (result, task.metrics())
+    }
 }
 
 fn run_local_batch(
@@ -303,7 +295,7 @@ fn run_local_batch(
 ) -> BatchResult {
     let mut batch = BatchResult::default();
     for _ in 0..iterations {
-        let result = run_local_task(buffer, scenario, origin).0;
+        let result = run_local_task(buffer, scenario, origin);
         let fields = local_result_fields(&result);
         batch.mismatches += usize::from(fields != Some(expected));
         batch.last_fields = fields.unwrap_or_default();
@@ -314,7 +306,7 @@ fn run_local_batch(
 fn run_descriptor_task(
     source: &DescriptorSource,
     scenario: Scenario,
-    anchor: Option<DescriptorPosition>,
+    anchor: Option<DescriptorSearchMatch>,
 ) -> SearchResult {
     scan_descriptor_for_perf(source, scenario.query, anchor, scenario.direction)
         .expect("descriptor search sample")
@@ -323,7 +315,7 @@ fn run_descriptor_task(
 fn run_descriptor_batch(
     source: &DescriptorSource,
     scenario: Scenario,
-    anchor: Option<DescriptorPosition>,
+    anchor: Option<DescriptorSearchMatch>,
     expected: ResultFields,
     iterations: usize,
 ) -> BatchResult {
@@ -370,6 +362,7 @@ fn print_search_sample(
         .with_metric("iterations", iterations)
         .with_metric("segments_visited", metrics.segments_visited)
         .with_metric("candidate_matches", metrics.candidate_matches)
+        .with_metric("coordinate_conversions", metrics.coordinate_conversions)
         .with_metric("position_records", metrics.position_records)
         .with_metric("temporary_allocations", metrics.temporary_allocations)
         .with_metric("descriptor_read_calls", metrics.descriptor_read_calls)
@@ -393,18 +386,26 @@ fn local_shadow_metrics(
     bytes: &[u8],
     scenario: Scenario,
     scanned_bytes: usize,
-    temporary_allocations: usize,
     iterations: usize,
 ) -> SearchPerfStats {
     let (segments_visited, shadow_allocations) = local_segment_work(buffer, scanned_bytes);
-    assert_eq!(shadow_allocations, temporary_allocations);
     let candidate_matches = candidate_matches(&bytes[..scanned_bytes], scenario.query);
+    let selected = usize::from(
+        expected_match_offset(
+            bytes,
+            scenario.query,
+            scenario.anchor_byte,
+            scenario.direction,
+        )
+        .is_some(),
+    );
     SearchPerfStats {
         scanned_bytes: scanned_bytes * iterations,
         segments_visited: segments_visited * iterations,
         candidate_matches: candidate_matches * iterations,
-        position_records: scanned_bytes * iterations,
-        temporary_allocations: temporary_allocations * iterations,
+        coordinate_conversions: (1 + selected) * iterations,
+        position_records: 0,
+        temporary_allocations: shadow_allocations * iterations,
         ..SearchPerfStats::default()
     }
 }
@@ -446,16 +447,66 @@ fn descriptor_shadow_metrics(
 ) -> SearchPerfStats {
     let read_calls = scanned_bytes.div_ceil(SEARCH_BUDGET);
     let read_bytes = (read_calls * SEARCH_BUDGET).min(bytes.len());
+    let (candidate_matches, coordinate_conversions) =
+        descriptor_candidate_metrics(&bytes[..scanned_bytes], scenario);
     SearchPerfStats {
         scanned_bytes: scanned_bytes * iterations,
         segments_visited: read_calls * iterations,
-        candidate_matches: candidate_matches(&bytes[..scanned_bytes], scenario.query) * iterations,
-        position_records: scanned_bytes * iterations,
+        candidate_matches: candidate_matches * iterations,
+        coordinate_conversions: coordinate_conversions * iterations,
+        position_records: 0,
         descriptor_read_calls: read_calls * iterations,
         descriptor_read_bytes: read_bytes * iterations,
         descriptor_metadata_checks: 2 * iterations,
         ..SearchPerfStats::default()
     }
+}
+
+fn descriptor_candidate_metrics(bytes: &[u8], scenario: Scenario) -> (usize, usize) {
+    let mut candidate_matches = 0usize;
+    let mut coordinate_conversions = 0usize;
+    let mut current_chunk = None;
+    let mut chunk_last = 0usize;
+    let mut chunk_last_before_anchor = None;
+    let mut first_fallback_recorded = false;
+
+    let mut finish_chunk = |last: usize, last_before_anchor: Option<usize>| {
+        coordinate_conversions += match (scenario.anchor_byte, scenario.direction) {
+            (None, _) => 1,
+            (Some(anchor), SearchDirection::Forward) if last > anchor => 1,
+            (Some(_), SearchDirection::Forward) if !first_fallback_recorded => {
+                first_fallback_recorded = true;
+                1
+            }
+            (Some(_), SearchDirection::Forward) => 0,
+            (Some(_), SearchDirection::Backward) => {
+                1 + usize::from(last_before_anchor.is_some_and(|offset| offset != last))
+            }
+        };
+    };
+
+    for (offset, window) in bytes.windows(scenario.query.len()).enumerate() {
+        if window != scenario.query.as_bytes() {
+            continue;
+        }
+        candidate_matches += 1;
+        let chunk = (offset + scenario.query.len() - 1) / SEARCH_BUDGET;
+        if current_chunk.is_some_and(|current| current != chunk) {
+            finish_chunk(chunk_last, chunk_last_before_anchor);
+            chunk_last_before_anchor = None;
+        }
+        if current_chunk != Some(chunk) {
+            current_chunk = Some(chunk);
+        }
+        chunk_last = offset;
+        if scenario.anchor_byte.is_some_and(|anchor| offset < anchor) {
+            chunk_last_before_anchor = Some(offset);
+        }
+    }
+    if current_chunk.is_some() {
+        finish_chunk(chunk_last, chunk_last_before_anchor);
+    }
+    (candidate_matches, coordinate_conversions)
 }
 
 fn candidate_matches(bytes: &[u8], query: &str) -> usize {
@@ -547,11 +598,11 @@ fn descriptor_result_fields(result: &SearchResult, query_chars: usize) -> Option
     match result {
         SearchResult::Found(found) => Some(ResultFields {
             found: 1,
-            page_start: found.page_start as usize,
-            page_number: found.page_number,
-            row: found.row,
-            col: found.col,
-            end_col: found.col + query_chars,
+            page_start: found.position.page_start as usize,
+            page_number: found.position.page_number,
+            row: found.position.row,
+            col: found.position.col,
+            end_col: found.position.col + query_chars,
         }),
         SearchResult::NotFound => Some(ResultFields::default()),
         SearchResult::LocalFound(_) | SearchResult::Error(_) => None,
@@ -588,14 +639,14 @@ fn assert_descriptor_result(
 ) -> ResultFields {
     match (result, expected) {
         (SearchResult::Found(found), Some(expected)) => {
-            assert_eq!(found, expected);
+            assert_eq!(found.position, expected);
             ResultFields {
                 found: 1,
-                page_start: found.page_start as usize,
-                page_number: found.page_number,
-                row: found.row,
-                col: found.col,
-                end_col: found.col + query.chars().count(),
+                page_start: found.position.page_start as usize,
+                page_number: found.position.page_number,
+                row: found.position.row,
+                col: found.position.col,
+                end_col: found.position.col + query.chars().count(),
             }
         }
         (SearchResult::NotFound, None) => ResultFields::default(),

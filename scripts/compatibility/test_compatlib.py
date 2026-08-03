@@ -32,6 +32,7 @@ from compatlib import (
 )
 from pty_driver import PtyError, PtyProcess
 from run_terminal import _ask_status, _ask_yes_no
+from terminal_scenarios import _fallback_session
 
 
 def fixture_scenario(status: str = "pass", issue: str | None = None, notes: str = ""):
@@ -215,6 +216,65 @@ class PtyDriverTests(unittest.TestCase):
         ) as child:
             with self.assertRaisesRegex(PtyError, "exceeded 4 byte limit"):
                 child.finish()
+
+
+class TerminalScenarioTests(unittest.TestCase):
+    def test_fallback_prompt_close_accepts_retained_source_row(self):
+        source_marker = b"FALLBACK_SOURCE_MARKER"
+
+        class RetainedFallbackChild:
+            def __init__(self):
+                self.output = bytearray(source_marker)
+                self.escape_count = 0
+                self.waited_for_additional_output = False
+
+            def send(self, data):
+                if data == b"\x1bOP":
+                    self.output.extend(b"Catomic help")
+                elif data == b"\x1bOQ":
+                    self.output.extend(b"Command:")
+                elif data == b"\x1b":
+                    self.escape_count += 1
+                    if self.escape_count == 1:
+                        self.output.extend(source_marker)
+                    else:
+                        self.output.extend(b"status row redrawn")
+
+            def wait_for(self, expected):
+                if expected not in self.output:
+                    raise PtyError(f"missing {expected!r}")
+
+            def wait_for_occurrences(self, expected, minimum):
+                if self.output.count(expected) < minimum:
+                    raise PtyError(f"missing occurrence {minimum} of {expected!r}")
+
+            def wait_for_more_output(self, previous_length):
+                if len(self.output) <= previous_length:
+                    raise PtyError("missing retained-row redraw")
+                self.waited_for_additional_output = True
+
+            def finish(self):
+                return 0
+
+            def close(self):
+                pass
+
+        class RetainedFallbackLauncher:
+            def __init__(self):
+                self.child = RetainedFallbackChild()
+
+            def spawn(self, _label, _fixture, _environment):
+                return self.child
+
+            def cleanup(self):
+                pass
+
+        with tempfile.TemporaryDirectory() as directory:
+            launcher = RetainedFallbackLauncher()
+            records = _fallback_session(launcher, Path(directory))
+
+        self.assertEqual(records[0]["status"], "pass")
+        self.assertTrue(launcher.child.waited_for_additional_output)
 
 
 def matrix_scenario(identifier: str):

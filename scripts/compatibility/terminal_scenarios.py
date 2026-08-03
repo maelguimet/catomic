@@ -182,9 +182,9 @@ def _fallback_session(
         child.wait_for_occurrences(source_marker, source_render_count + 1)
         child.send(b"\x1bOQ")
         child.wait_for(b"Command:")
-        source_render_count = child.output.count(source_marker)
+        output_length = len(child.output)
         child.send(b"\x1b")
-        child.wait_for_occurrences(source_marker, source_render_count + 1)
+        child.wait_for_more_output(output_length)
         child.send(b"\x11")
         exit_status = child.finish()
     finally:

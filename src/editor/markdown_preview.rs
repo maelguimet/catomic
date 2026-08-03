@@ -632,11 +632,11 @@ impl PreviewRenderer {
             Tag::Paragraph => self.start_paragraph(),
             Tag::Heading { level, .. } => {
                 self.start_heading(level);
-                self.active_styles.push(heading_style(level));
                 let indent = heading_indent(level);
                 if indent > 0 {
                     self.push(&" ".repeat(indent));
                 }
+                self.active_styles.push(heading_style(level));
             }
             Tag::BlockQuote(_) => {
                 self.quote_depth += 1;
@@ -1198,7 +1198,6 @@ impl LineBuilder {
         self.trim_end();
         BuiltLine {
             text: self.text,
-            scalar_len: self.len,
             spans: self.spans,
             links: self.links,
         }
@@ -1207,7 +1206,6 @@ impl LineBuilder {
 
 struct BuiltLine {
     text: String,
-    scalar_len: usize,
     spans: Vec<StyledSpan>,
     links: Vec<HyperlinkSpan>,
 }
@@ -1297,18 +1295,16 @@ struct DocumentBuilder {
     line_starts: CompactLineStarts,
     annotations: AnnotationBuilder,
     row: usize,
-    width: usize,
     margin: usize,
 }
 
 impl DocumentBuilder {
-    fn new(capacity: usize, width: usize, margin: usize) -> Self {
+    fn new(capacity: usize, margin: usize) -> Self {
         Self {
             text: String::with_capacity(capacity.min(MAX_OUTPUT_BYTES)),
             line_starts: CompactLineStarts::new(),
             annotations: AnnotationBuilder::default(),
             row: 0,
-            width,
             margin,
         }
     }
@@ -1317,66 +1313,24 @@ impl DocumentBuilder {
         let margin = usize::from(!source.text.is_empty()).saturating_mul(self.margin);
         let mut spans = source.local_spans(0, source.scalar_len).collect::<Vec<_>>();
         let links = source.local_links(0, source.scalar_len).collect::<Vec<_>>();
-        let heading = spans
-            .iter()
-            .any(|span| span.style == SpanStyle::PreviewHeading1);
-        let padding = if heading {
-            self.width
-                .saturating_sub(text_layout::cell_width_from(source.text, 0))
-        } else {
-            0
-        };
-        let scalar_len = source.scalar_len.saturating_add(padding);
-        if heading {
-            spans.retain(|span| span.style != SpanStyle::PreviewHeading1);
-            spans.insert(
-                0,
-                StyledSpan {
-                    start: 0,
-                    end: scalar_len,
-                    style: SpanStyle::PreviewHeading1,
-                },
-            );
-        }
+        consolidate_heading_span(&mut spans);
         shift_annotations(&mut spans, margin);
         let mut links = links;
         shift_links(&mut links, margin);
         self.ensure_room(
             margin
                 .checked_add(source.text.len())
-                .and_then(|length| length.checked_add(padding))
                 .and_then(|length| length.checked_add(1))
                 .ok_or(RenderError::OutputExpansion)?,
         )?;
         push_spaces(&mut self.text, margin);
         self.text.push_str(source.text);
-        push_spaces(&mut self.text, padding);
         self.finish_row(spans, links)
     }
 
     fn push_built_line(&mut self, mut line: BuiltLine) -> Result<(), RenderError> {
-        let heading = line
-            .spans
-            .iter()
-            .any(|span| span.style == SpanStyle::PreviewHeading1);
-        if heading {
-            let padding = self
-                .width
-                .saturating_sub(text_layout::cell_width_from(&line.text, 0));
-            push_spaces(&mut line.text, padding);
-            line.scalar_len = line.scalar_len.saturating_add(padding);
-            line.spans
-                .retain(|span| span.style != SpanStyle::PreviewHeading1);
-            line.spans.insert(
-                0,
-                StyledSpan {
-                    start: 0,
-                    end: line.scalar_len,
-                    style: SpanStyle::PreviewHeading1,
-                },
-            );
-        }
         let margin = usize::from(!line.text.is_empty()).saturating_mul(self.margin);
+        consolidate_heading_span(&mut line.spans);
         shift_annotations(&mut line.spans, margin);
         shift_links(&mut line.links, margin);
         self.ensure_room(
@@ -1428,6 +1382,35 @@ impl DocumentBuilder {
     }
 }
 
+fn consolidate_heading_span(spans: &mut Vec<StyledSpan>) {
+    let Some(style) = spans.iter().find_map(|span| match span.style {
+        SpanStyle::PreviewHeading1
+        | SpanStyle::PreviewHeading2
+        | SpanStyle::PreviewHeading3
+        | SpanStyle::PreviewHeading4
+        | SpanStyle::PreviewHeading5
+        | SpanStyle::PreviewHeading6 => Some(span.style),
+        _ => None,
+    }) else {
+        return;
+    };
+    let mut start = usize::MAX;
+    let mut end = 0usize;
+    spans.retain(|span| {
+        if span.style == style {
+            start = start.min(span.start);
+            end = end.max(span.end);
+            false
+        } else {
+            true
+        }
+    });
+    if start < end {
+        spans.push(StyledSpan { start, end, style });
+        spans.sort_by_key(|span| span.start);
+    }
+}
+
 fn shift_annotations(spans: &mut [StyledSpan], amount: usize) {
     for span in spans {
         span.start = span.start.saturating_add(amount);
@@ -1458,7 +1441,7 @@ fn wrap_document(
             annotations: MarkdownAnnotations::default(),
         });
     }
-    let mut output = DocumentBuilder::new(document.text.len(), width, margin);
+    let mut output = DocumentBuilder::new(document.text.len(), margin);
     let mut global_start = 0usize;
     let mut span_start = 0usize;
     let mut link_start = 0usize;

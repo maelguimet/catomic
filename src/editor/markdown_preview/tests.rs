@@ -196,36 +196,70 @@ fn inline_and_fenced_code_use_distinct_complete_treatments() {
 }
 
 #[test]
-fn heading_levels_use_semantic_styles_and_defined_spacing_without_rulers() {
+fn heading_levels_keep_content_bounded_hierarchy_at_normal_and_narrow_widths() {
     let source = "# One\n\n## Two\n\n### Three\n\n#### Four\n\n##### Five\n\n###### Six";
-    let preview = render_with_width(source, 80).unwrap();
+    let heading_rows = [
+        (0, "One", SpanStyle::PreviewHeading1),
+        (2, "Two", SpanStyle::PreviewHeading2),
+        (4, "Three", SpanStyle::PreviewHeading3),
+        (5, "Four", SpanStyle::PreviewHeading4),
+        (6, "Five", SpanStyle::PreviewHeading5),
+        (7, "Six", SpanStyle::PreviewHeading6),
+    ];
 
-    let lines = preview.text.lines().collect::<Vec<_>>();
-    assert_eq!(lines[0].trim(), "One");
-    assert_eq!(text_layout::cell_width_from(lines[0], 0), 78);
-    assert_eq!(lines[2], "  Two");
-    assert_eq!(lines[4], "    Three");
-    assert_eq!(lines[5], "      Four");
-    assert_eq!(lines[6], "      Five");
-    assert_eq!(lines[7], "        Six");
-    assert!(!preview.text.contains('#'));
-    assert!(!preview.text.chars().any(|ch| matches!(ch, '═' | '─')));
-    for (row, style) in [
-        (0, SpanStyle::PreviewHeading1),
-        (2, SpanStyle::PreviewHeading2),
-        (4, SpanStyle::PreviewHeading3),
-        (5, SpanStyle::PreviewHeading4),
-        (6, SpanStyle::PreviewHeading5),
-        (7, SpanStyle::PreviewHeading6),
+    for (width, expected_lines) in [
+        (
+            80,
+            [
+                "    One",
+                "",
+                "  Two",
+                "",
+                "    Three",
+                "      Four",
+                "      Five",
+                "        Six",
+            ],
+        ),
+        (
+            20,
+            [
+                "  One",
+                "",
+                "Two",
+                "",
+                "  Three",
+                "    Four",
+                "    Five",
+                "      Six",
+            ],
+        ),
     ] {
-        assert!(row_spans(&preview, row)
-            .into_iter()
-            .any(|span| span.style == style));
+        let preview = render_with_width(source, width).unwrap();
+        let lines = preview.text.lines().collect::<Vec<_>>();
+        assert_eq!(lines, expected_lines, "width {width}");
+        assert!(!preview.text.contains('#'));
+        assert!(!preview.text.chars().any(|ch| matches!(ch, '═' | '─')));
+        for (row, content, style) in heading_rows {
+            let line = lines[row];
+            let content_start = line.chars().count() - content.chars().count();
+            assert_eq!(
+                row_spans(&preview, row),
+                vec![StyledSpan {
+                    start: content_start,
+                    end: line.chars().count(),
+                    style,
+                }],
+                "width {width}, row {row}"
+            );
+        }
+        assert!(row_spans(&preview, 1).is_empty());
+        assert!(row_spans(&preview, 3).is_empty());
     }
 }
 
 #[test]
-fn long_h1_headings_fill_each_wrapped_title_row() {
+fn wrapped_h1_headings_style_content_without_row_filling_padding() {
     let preview = render_with_width(
         "# A deliberately long title that wraps across multiple terminal rows",
         40,
@@ -234,10 +268,12 @@ fn long_h1_headings_fill_each_wrapped_title_row() {
 
     for (row, line) in preview.text.lines().enumerate() {
         let spans = row_spans(&preview, row);
-        assert_eq!(text_layout::cell_width_from(line, 0), 38);
-        assert!(spans.iter().any(|span| {
-            span.style == SpanStyle::PreviewHeading1 && span.start == 2 && span.end == line.len()
-        }));
+        assert_eq!(line, line.trim_end(), "row {row} has presentation padding");
+        assert!(text_layout::cell_width_from(line, 0) <= 38);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].style, SpanStyle::PreviewHeading1);
+        assert_eq!(spans[0].start, 4);
+        assert_eq!(spans[0].end, line.chars().count());
     }
 }
 

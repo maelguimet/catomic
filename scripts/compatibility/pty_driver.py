@@ -127,7 +127,7 @@ class PtyProcess:
             self.read_available(0.05)
             if len(self.output) > previous_length:
                 return
-        raise PtyError("timed out waiting for output after terminal resize")
+        raise PtyError("timed out waiting for additional terminal output")
 
     def finish(self, timeout: float = 10.0) -> int:
         deadline = time.monotonic() + timeout

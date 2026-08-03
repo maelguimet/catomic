@@ -175,10 +175,11 @@ The matrix keeps setup and the measured operation separate:
   The short cross-boundary case batches to at least 16 MiB of aggregate scanned
   work and reports `iterations` so its elapsed value is measurable;
 - format samples isolate byte detection, decode normalization, and counting/hash
-  sink writes for LF, CRLF, CR, no-newline, sparse/dense newline, and UTF-8 BOM
-  variants. Short detection paths repeat deterministically until they examine at
-  least 256 MiB in aggregate and report `iterations`; streaming chunks deliberately
-  split a CRLF pair and hashes preserve the no-final-newline case exactly; and
+  sink writes for LF, CRLF, CR, no-newline, sparse/dense newline, mixed valid
+  UTF-8, and UTF-8 BOM variants. Short detection paths repeat deterministically
+  until they examine at least 256 MiB in aggregate and report `iterations`;
+  streaming chunks deliberately split a CRLF pair and hashes preserve the
+  no-final-newline case exactly; and
 - replacement samples insert 8 MiB ASCII, line-heavy, and mixed Unicode text
   through PieceTable, then replace 20,000 ranges with short ASCII,
   line-containing ASCII, multibyte UTF-8, and 1 KiB shared payloads. An

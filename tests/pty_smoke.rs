@@ -789,16 +789,36 @@ fn pty_legacy_and_enhanced_backspace_paths_remain_distinct() -> TestResult {
 }
 
 #[test]
-fn pty_legacy_ctrl_h_deletes_the_previous_word_by_default() -> TestResult {
-    let project = TempProject::new("backspace_ctrl_h_default");
+fn pty_esc_del_deletes_the_previous_word_by_default() -> TestResult {
+    let project = TempProject::new("backspace_alt_default");
     let active = project.write("note.txt", "");
     let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
 
     editor.wait_for_initial_render()?;
-    editor.send_keys(b"one two\x08\x13\x11")?; // Legacy Ctrl+Backspace collapses to Ctrl+H.
+    // ESC DEL is Alt+Backspace; undo, redo, save, and quit verify one edit.
+    editor.send_keys(b"one two\x1b\x7f\x1a\x19\x13\x11")?;
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(active)?, "one ");
+    Ok(())
+}
+
+#[test]
+fn pty_ctrl_h_opens_help_by_default() -> TestResult {
+    let project = TempProject::new("ctrl_h_help_default");
+    let active = project.write("note.txt", "source remains unchanged");
+    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"\x08")?;
+    editor.wait_for_output("Ctrl+H opens Help", "Help; Esc closes.")?;
+    editor.clear_output();
+    editor.send_keys(b"\x1b")?;
+    editor.wait_for_output("Escape closes Help", "source remains unchanged")?;
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(active)?, "source remains unchanged");
     Ok(())
 }
 

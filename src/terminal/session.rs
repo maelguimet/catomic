@@ -14,10 +14,15 @@ const ALTERNATE_SCREEN: u8 = 1 << 0;
 const KITTY_KEYBOARD_FLAGS: u8 = 1 << 1;
 const XTERM_EXTENDED_KEYS: u8 = 1 << 2;
 const TITLE_STACK: u8 = 1 << 3;
+const XTERM_OTHER_KEYS_FORMAT: u8 = 1 << 4;
 const RESTORING: u8 = 1 << 7;
 
 const XTERM_EXTENDED_KEYS_ENABLE: &[u8] = b"\x1b[>4;2m";
-const XTERM_EXTENDED_KEYS_DISABLE: &[u8] = b"\x1b[>4;0m";
+// Omitting the value restores the terminal's configured initial value. An
+// explicit `;0` would instead clobber a non-default user setting on exit.
+const XTERM_EXTENDED_KEYS_RESET: &[u8] = b"\x1b[>4m";
+const XTERM_OTHER_KEYS_FORMAT_CSI_U: &[u8] = b"\x1b[>4;1f";
+const XTERM_OTHER_KEYS_FORMAT_RESET: &[u8] = b"\x1b[>4f";
 const TITLE_STACK_PUSH: &[u8] = b"\x1b[22;0t";
 const TITLE_STACK_POP: &[u8] = b"\x1b[23;0t";
 
@@ -33,20 +38,14 @@ pub(crate) struct TerminalRestorer {
 /// Guard installed before the first terminal mutation.
 pub(crate) struct TerminalGuard {
     restorer: TerminalRestorer,
-    enable_xterm_extended_keys: bool,
 }
 
 impl TerminalGuard {
     pub(crate) fn new() -> Self {
-        Self::with_xterm_extended_keys(std::env::var_os("TMUX").is_some())
-    }
-
-    fn with_xterm_extended_keys(enable_xterm_extended_keys: bool) -> Self {
         Self {
             restorer: TerminalRestorer {
                 active_modes: Arc::new(AtomicU8::new(0)),
             },
-            enable_xterm_extended_keys,
         }
     }
 
@@ -75,11 +74,17 @@ impl TerminalGuard {
             event::PushKeyboardEnhancementFlags(KEYBOARD_FLAGS_REQUEST)
         )?;
         self.restorer.mark_active(KITTY_KEYBOARD_FLAGS);
-        if self.enable_xterm_extended_keys {
-            out.write_all(XTERM_EXTENDED_KEYS_ENABLE)?;
-            self.restorer.mark_active(XTERM_EXTENDED_KEYS);
-            out.flush()?;
-        }
+        // Kitty's disambiguation flag intentionally leaves Backspace on its
+        // legacy encoding. Request xterm modifyOtherKeys level 2 as the
+        // complementary path in every session, not only under tmux. Terminals
+        // that do not implement it ignore the well-formed CSI sequence.
+        // Crossterm decodes the CSI-u form, so request that format before
+        // enabling modifyOtherKeys; xterm otherwise defaults to CSI 27;...~.
+        out.write_all(XTERM_OTHER_KEYS_FORMAT_CSI_U)?;
+        self.restorer.mark_active(XTERM_OTHER_KEYS_FORMAT);
+        out.write_all(XTERM_EXTENDED_KEYS_ENABLE)?;
+        self.restorer.mark_active(XTERM_EXTENDED_KEYS);
+        out.flush()?;
         execute!(
             out,
             event::EnableBracketedPaste,
@@ -163,10 +168,21 @@ fn restore_output_modes<W: Write>(out: &mut W, active: u8) -> (u8, io::Result<()
     }
     if active & XTERM_EXTENDED_KEYS != 0 {
         match out
-            .write_all(XTERM_EXTENDED_KEYS_DISABLE)
+            .write_all(XTERM_EXTENDED_KEYS_RESET)
             .and_then(|()| out.flush())
         {
             Ok(()) => remaining &= !XTERM_EXTENDED_KEYS,
+            Err(error) => {
+                first_error.get_or_insert(error);
+            }
+        }
+    }
+    if active & XTERM_OTHER_KEYS_FORMAT != 0 {
+        match out
+            .write_all(XTERM_OTHER_KEYS_FORMAT_RESET)
+            .and_then(|()| out.flush())
+        {
+            Ok(()) => remaining &= !XTERM_OTHER_KEYS_FORMAT,
             Err(error) => {
                 first_error.get_or_insert(error);
             }
@@ -180,7 +196,7 @@ fn restore_output_modes<W: Write>(out: &mut W, active: u8) -> (u8, io::Result<()
             }
         }
     }
-    if remaining & (KITTY_KEYBOARD_FLAGS | XTERM_EXTENDED_KEYS) == 0
+    if remaining & (KITTY_KEYBOARD_FLAGS | XTERM_EXTENDED_KEYS | XTERM_OTHER_KEYS_FORMAT) == 0
         && active & ALTERNATE_SCREEN != 0
     {
         match execute!(out, terminal::LeaveAlternateScreen) {

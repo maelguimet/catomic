@@ -36,6 +36,7 @@ fn retained_cursor_only_frame_allocates_nothing_after_warmup() {
     let options = |buffer: &dyn Buffer| RenderOptions {
         document_id: 7,
         document_revision: buffer.content_revision(),
+        line_numbers: true,
         ..RenderOptions::default()
     };
 

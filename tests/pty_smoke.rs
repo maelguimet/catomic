@@ -1191,7 +1191,7 @@ fn pty_dirty_config_detour_refuses_then_discards_only_config_and_reopens_from_di
     editor.send_keys(b"\x1b[80;6uconfig\r")?;
     editor.wait_for_output("existing config detour", "CONFIG DISK MARKER")?;
     editor.send_keys(b"X")?;
-    editor.wait_for_output("dirty config edit", "X\x1b[90;2m# CONFIG DISK MARKER")?;
+    editor.wait_for_output("dirty config edit", "X\x1b[96m# CONFIG DISK MARKER")?;
 
     editor.clear_output();
     editor.send_keys(b"\x11")?;
@@ -1666,7 +1666,7 @@ fn pty_markdown_preview_and_view_toggles_leave_source_unchanged() -> TestResult 
     editor.wait_for_output("preview read-only guard", "preview is read-only")?;
     editor.clear_output();
     editor.send_keys(b"\x1b[18~")?; // F7
-    editor.wait_for_output("line numbers enabled", "\x1b[90m1 \x1b[0m")?;
+    editor.wait_for_output("line numbers enabled", "\x1b[37m1 \x1b[0m")?;
     editor.clear_output();
     editor.send_keys(b"\x1b[19~")?; // F8
     editor.wait_for_output("whitespace enabled", "·")?;
@@ -1775,7 +1775,7 @@ fn pty_f7_persists_across_relaunch_and_applies_to_new_unicode_buffer() -> TestRe
     let project = TempProject::new("line_number_preference");
     let active = project.write("猫.txt", "猫 first\nsecond\n");
     let preference_path = project.root.join("catomic/preferences.toml");
-    let gutter = "\x1b[90m1 \x1b[0m";
+    let gutter = "\x1b[37m1 \x1b[0m";
 
     let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
     editor.wait_for_initial_render()?;

@@ -14,6 +14,8 @@ fn defaults_and_named_schemes_are_accessible() {
     );
     assert_eq!(default.status, Style::fg(Color::Default));
     assert_eq!(default.status_filename, Style::fg(Color::Ansi(9)));
+    assert_eq!(default.line_number, Style::fg(Color::Ansi(7)));
+    assert_eq!(default.syntax_comment, Style::fg(Color::Ansi(14)));
     assert_eq!(
         default.message,
         Style::pair(Color::Ansi(0), Color::Ansi(14))

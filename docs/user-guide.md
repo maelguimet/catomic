@@ -1115,7 +1115,7 @@ text = "default"
 background = "default"
 cursor = "default"
 selection = { fg = "black", bg = "cyan" }
-line_number = "bright-black"
+line_number = "white"
 status = "default"
 status_filename = "bright-red"
 message = { fg = "black", bg = "white" }
@@ -1127,7 +1127,7 @@ markdown_code = "green"
 markdown_marker = "bright-cyan"
 syntax_keyword = "magenta"
 syntax_string = "green"
-syntax_comment = "bright-black"
+syntax_comment = "bright-cyan"
 syntax_number = "yellow"
 search_match = { fg = "black", bg = "yellow" }
 diff_added = "green"

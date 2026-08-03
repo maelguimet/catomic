@@ -1692,6 +1692,32 @@ fn pty_markdown_preview_and_view_toggles_leave_source_unchanged() -> TestResult 
 }
 
 #[test]
+fn pty_markdown_preview_scrolls_the_source_to_the_corresponding_position() -> TestResult {
+    let temp = TempPath::with_extension("markdown_preview_scroll_sync", "md");
+    let source = (0..60)
+        .map(|row| format!("## Row {row:02}\n\n"))
+        .collect::<String>();
+    fs::write(&temp.path, &source)?;
+    let mut editor = PtyEditor::spawn_sized(&temp.path, 8, 60)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"\x1b[17~")?; // F6
+    editor.wait_for_output("preview enabled", "Markdown preview on")?;
+    for _ in 0..24 {
+        editor.send_keys(b"\x1b[6~")?; // PageDown
+    }
+    editor.wait_for_output("preview scrolled to bottom", "Row 59")?;
+    editor.clear_output();
+    editor.send_keys(b"\x1b[17~")?; // F6
+    editor.wait_for_output("source synchronized to bottom", "## Row 59")?;
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(&temp.path)?, source);
+    Ok(())
+}
+
+#[test]
 fn pty_live_resize_redraws_at_each_new_status_row() -> TestResult {
     let temp = TempPath::new("live_resize");
     let source = (1..=40)

@@ -82,6 +82,7 @@ jobs:
 
       - name: Record toolchain and runner versions
         run: |
+          mkdir -p target/release-metadata
           {
             rustc +stable -Vv
             cargo +stable -V
@@ -94,7 +95,7 @@ jobs:
             echo "runner_image_os=${ImageOS:-unknown}"
             echo "runner_image_version=${ImageVersion:-unknown}"
             sed -n '1,8p' /etc/os-release
-          } > toolchain.txt
+          } > target/release-metadata/toolchain.txt
 
       - name: Verify tagged source
         run: |
@@ -110,7 +111,7 @@ jobs:
         env:
           VERSION: ${{ steps.identity.outputs.version }}
         run: |
-          cargo +stable package --locked --list | tee package-contents.txt
+          cargo +stable package --locked --list | tee target/release-metadata/package-contents.txt
           cargo +stable package --locked
           test -f "target/package/catomic-$VERSION.crate"
 
@@ -147,7 +148,11 @@ jobs:
           mkdir -p dist
           install -m 0755 target/release/catomic "dist/$BINARY"
           install -m 0644 "target/package/$PACKAGE" "dist/$PACKAGE"
-          install -m 0644 package-contents.txt toolchain.txt source-verification.txt dist/
+          install -m 0644 \
+            target/release-metadata/package-contents.txt \
+            target/release-metadata/toolchain.txt \
+            source-verification.txt \
+            dist/
           (
             cd dist
             sha256sum "$BINARY" > "$BINARY.sha256"

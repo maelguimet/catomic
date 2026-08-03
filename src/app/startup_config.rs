@@ -28,16 +28,24 @@ pub(super) struct StartupConfig {
 }
 
 impl StartupConfig {
-    pub(super) fn load() -> io::Result<Self> {
+    pub(super) fn load(color_override: crate::config::theme::ColorOverride) -> io::Result<Self> {
         let text = crate::config::user_file::read_optional()?.unwrap_or_default();
-        Self::from_snapshot(&text, crate::config::view_preferences::current_path())
+        Self::from_snapshot(
+            &text,
+            crate::config::view_preferences::current_path(),
+            color_override,
+        )
     }
 
     pub(super) fn without_user_config() -> io::Result<Self> {
-        Self::from_snapshot("", None)
+        Self::from_snapshot("", None, crate::config::theme::ColorOverride::Auto)
     }
 
-    fn from_snapshot(text: &str, preference_path: Option<std::path::PathBuf>) -> io::Result<Self> {
+    fn from_snapshot(
+        text: &str,
+        preference_path: Option<std::path::PathBuf>,
+        color_override: crate::config::theme::ColorOverride,
+    ) -> io::Result<Self> {
         crate::config::validate_unknown_keys(text)?;
         Ok(Self {
             big_files: crate::config::big_files::parse(text)?,
@@ -46,7 +54,10 @@ impl StartupConfig {
             keybindings: crate::config::keybindings::parse(text)?,
             commands: crate::config::commands::parse(text)?,
             cat: crate::config::cat::parse(text)?,
-            theme: crate::config::theme::for_terminal(crate::config::theme::parse(text)?),
+            theme: crate::config::theme::for_terminal(
+                crate::config::theme::parse(text)?,
+                color_override,
+            ),
             view_preferences: crate::config::view_preferences::load_with_config(
                 text,
                 preference_path,
@@ -102,6 +113,7 @@ mod tests {
              [editor]\ntab_size = 2\n[view]\nline_numbers = true\n\
              [theme]\nname = \"high-contrast\"\n",
             None,
+            crate::config::theme::ColorOverride::Auto,
         )
         .unwrap();
         assert_eq!(config.big_files.page_lines, 321);
@@ -111,14 +123,19 @@ mod tests {
         let error = StartupConfig::from_snapshot(
             "[files]\nauto_reload = false\n[theme]\nname = \"missing\"\n",
             None,
+            crate::config::theme::ColorOverride::Auto,
         )
         .err()
         .expect("one invalid recognized setting rejects the document");
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
 
-        let error = StartupConfig::from_snapshot("[editor]\ntab_szie = 2\n", None)
-            .err()
-            .expect("unknown keys must fail startup validation");
+        let error = StartupConfig::from_snapshot(
+            "[editor]\ntab_szie = 2\n",
+            None,
+            crate::config::theme::ColorOverride::Auto,
+        )
+        .err()
+        .expect("unknown keys must fail startup validation");
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
         assert!(error.to_string().contains("editor.tab_szie"));
     }
@@ -132,6 +149,7 @@ mod tests {
              allow_remote = false\n[theme.colors]\n\
              autocomplete = { fg = \"bright-black\", dim = true }\n",
             None,
+            crate::config::theme::ColorOverride::Auto,
         )
         .unwrap();
     }
@@ -141,9 +159,12 @@ mod tests {
         let retired = StartupConfig::from_snapshot(
             include_str!("../../tests/fixtures/retired_ai_config.toml"),
             None,
+            crate::config::theme::ColorOverride::Auto,
         )
         .unwrap();
-        let defaults = StartupConfig::from_snapshot("", None).unwrap();
+        let defaults =
+            StartupConfig::from_snapshot("", None, crate::config::theme::ColorOverride::Auto)
+                .unwrap();
 
         assert_eq!(retired.big_files, defaults.big_files);
         assert_eq!(retired.auto_reload, defaults.auto_reload);

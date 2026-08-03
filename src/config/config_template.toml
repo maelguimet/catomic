@@ -34,6 +34,9 @@ max_bytes = 1_048_576
 
 [theme]
 # Built-ins: "default", "high-contrast", and "mono".
+# Terminal capability detection is separate from the theme. Use the startup
+# flags --color=auto|always|never; NO_COLOR always wins. Run
+# `catomic --color-diagnostics FILE` to inspect the decision and syntax fallback.
 name = "default"
 
 [theme.colors]

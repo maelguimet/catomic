@@ -140,9 +140,7 @@ impl StatusTheme {
     }
 
     pub(crate) fn from_theme(theme: Theme) -> Self {
-        let no_color = std::env::var_os("NO_COLOR").is_some();
-        let term = std::env::var("TERM").ok();
-        if no_color || terminal_is_monochrome(term.as_deref()) {
+        if !theme.colors_enabled {
             return Self::monochrome();
         }
         let fallback = Self::default();
@@ -181,8 +179,12 @@ impl StatusTheme {
 
     #[cfg(test)]
     pub(crate) fn for_terminal(no_color: bool, term: Option<&str>) -> Self {
-        let monochrome = terminal_is_monochrome(term);
-        if no_color || monochrome {
+        let decision = crate::config::theme::decide_color(
+            no_color,
+            term,
+            crate::config::theme::ColorOverride::Auto,
+        );
+        if !decision.enabled {
             Self::monochrome()
         } else {
             Self::default()
@@ -229,13 +231,6 @@ impl StatusTheme {
     const fn filename_style(self) -> StatusStyle {
         self.filename
     }
-}
-
-fn terminal_is_monochrome(term: Option<&str>) -> bool {
-    term.is_none_or(|term| {
-        let term = term.to_ascii_lowercase();
-        term == "dumb" || term == "unknown" || term.contains("mono") || term.starts_with("vt")
-    })
 }
 
 fn themed_status_style(style: ThemeStyle, truecolor: bool, fallback: StatusStyle) -> StatusStyle {

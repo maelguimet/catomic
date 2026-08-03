@@ -114,6 +114,36 @@ fn update_target_prompt_cancels_or_rejects_before_network_work() -> TestResult {
     Ok(())
 }
 
+#[test]
+fn color_diagnostics_capture_environment_syntax_and_no_color_precedence() -> TestResult {
+    let fixture = Fixture::new();
+    let output = fixture
+        .command()
+        .env("TERM", "vte-256color")
+        .env("COLORTERM", "truecolor")
+        .env("NO_COLOR", "1")
+        .args(["--color-diagnostics", "Cargo.toml"])
+        .output()?;
+
+    assert!(output.status.success(), "{:?}", output.stderr);
+    let stdout = String::from_utf8(output.stdout)?;
+    for expected in [
+        "catomic 0.2.0-beta.1",
+        "file=Cargo.toml",
+        "syntax=TOML",
+        "TERM=vte-256color",
+        "COLORTERM=truecolor",
+        "NO_COLOR=1",
+        "color=disabled (NO_COLOR is set)",
+    ] {
+        assert!(
+            stdout.contains(expected),
+            "missing {expected:?}: {stdout:?}"
+        );
+    }
+    Ok(())
+}
+
 #[cfg(unix)]
 #[test]
 fn config_path_check_and_help_are_read_only_and_preserving() -> TestResult {

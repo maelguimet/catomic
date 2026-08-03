@@ -73,6 +73,10 @@ fn main() {
             }
             return;
         }
+        cli::Action::ColorDiagnostics(file) => {
+            print_color_diagnostics(file.as_deref());
+            return;
+        }
         cli::Action::Update(options) => {
             if let Err(error) = update::run(options) {
                 eprintln!("catomic: {error}");
@@ -98,7 +102,9 @@ fn main() {
     }
 
     let result = match editor_run {
-        EditorRun::Files(run_options) => app::run(run_options.file.as_deref()),
+        EditorRun::Files(run_options) => {
+            app::run(run_options.file.as_deref(), run_options.color_override)
+        }
         EditorRun::Config => app::run_config(),
     };
     if let Some(signal) = terminal::termination_signal() {
@@ -108,6 +114,44 @@ fn main() {
         eprintln!("catomic: {e}");
         std::process::exit(1);
     }
+}
+
+fn print_color_diagnostics(file: Option<&str>) {
+    use config::theme::{ColorOverride, ColorReason};
+
+    let decision = config::theme::color_decision(ColorOverride::Auto);
+    let syntax = editor::syntax::syntax_for_path(file.map(std::path::Path::new));
+    let term = diagnostic_environment_value("TERM");
+    let colorterm = diagnostic_environment_value("COLORTERM");
+    let no_color = diagnostic_environment_value("NO_COLOR");
+    let reason = match decision.reason {
+        ColorReason::Automatic => "terminal supports color",
+        ColorReason::ExplicitAlways => "explicit override",
+        ColorReason::NoColor => "NO_COLOR is set",
+        ColorReason::ExplicitNever => "explicit override",
+        ColorReason::MissingTerm => "TERM is missing",
+        ColorReason::TerminalMonochrome => "TERM identifies a monochrome terminal",
+    };
+    println!("{}", build_info::version_line());
+    println!("file={}", file.unwrap_or("<untitled>"));
+    println!("syntax={}", editor::syntax::syntax_name(syntax));
+    println!("TERM={term}");
+    println!("COLORTERM={colorterm}");
+    println!("NO_COLOR={no_color}");
+    println!(
+        "color={} ({reason})",
+        if decision.enabled {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
+}
+
+fn diagnostic_environment_value(name: &str) -> String {
+    std::env::var_os(name)
+        .map(|value| value.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "<unset>".to_string())
 }
 
 fn validate_utf8_locale(

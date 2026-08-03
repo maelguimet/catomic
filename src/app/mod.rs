@@ -181,8 +181,11 @@ impl App {
 }
 
 /// Public entry called from main.rs.
-pub fn run(initial_file: Option<&str>) -> io::Result<()> {
-    let config = StartupConfig::load()?;
+pub fn run(
+    initial_file: Option<&str>,
+    color_override: crate::config::theme::ColorOverride,
+) -> io::Result<()> {
+    let config = StartupConfig::load(color_override)?;
     let mut app = App::new_with_config(initial_file, config)?;
     app.run()
 }

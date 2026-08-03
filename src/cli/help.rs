@@ -7,6 +7,10 @@
 pub(super) enum MainOption {
     Help,
     Version,
+    ColorAuto,
+    ColorAlways,
+    ColorNever,
+    ColorDiagnostics,
 }
 
 pub(super) struct MainOptionSpec {
@@ -25,6 +29,26 @@ pub(super) const MAIN_OPTIONS: &[MainOptionSpec] = &[
         option: MainOption::Version,
         spellings: &["-V", "--version"],
         description: "Show the package version and build commit, then exit",
+    },
+    MainOptionSpec {
+        option: MainOption::ColorAuto,
+        spellings: &["--color=auto"],
+        description: "Detect color support from the terminal (default)",
+    },
+    MainOptionSpec {
+        option: MainOption::ColorAlways,
+        spellings: &["--color=always"],
+        description: "Use ANSI color despite terminal detection; NO_COLOR still wins",
+    },
+    MainOptionSpec {
+        option: MainOption::ColorNever,
+        spellings: &["--color=never"],
+        description: "Disable terminal colors while keeping text attributes",
+    },
+    MainOptionSpec {
+        option: MainOption::ColorDiagnostics,
+        spellings: &["--color-diagnostics"],
+        description: "Print terminal, color, and FILE syntax detection, then exit",
     },
 ];
 
@@ -142,6 +166,7 @@ pub(super) fn main_help(version: &str) -> String {
             "Catomic is a Linux-first, modeless terminal text editor.\n\n",
             "Usage:\n",
             "  catomic [OPTION] [FILE]\n",
+            "  catomic --color-diagnostics [FILE]\n",
             "  catomic config [path|edit|check|refresh-keybindings]\n",
             "  catomic update [--stable | --latest-commit] [--yes] [--backup]\n",
             "  catomic update [--stable | --latest-commit] --check\n",
@@ -170,6 +195,8 @@ pub(super) fn main_help(version: &str) -> String {
             "  catomic \"meeting notes.md\"  Quoted paths remain supported\n",
             "  catomic ./-draft.md          Open an option-like filename\n",
             "  catomic ./update             Open a file literally named update\n",
+            "  catomic --color=always Cargo.toml\n",
+            "  catomic --color-diagnostics Cargo.toml\n",
             "  catomic config               Open the resolved configuration in Catomic\n",
             "  catomic config path          Print the exact resolved configuration path\n",
             "  catomic update               Choose an update target interactively\n",

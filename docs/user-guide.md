@@ -381,12 +381,17 @@ overwrite mode. A typed character in overwrite mode replaces one complete
 Unicode grapheme. Newlines, paste, prompts, command results, and other edit
 paths keep their normal insert/replace semantics.
 
-Catomic requests the Kitty enhanced-keyboard protocol and xterm modified-key
-mode 2 while its alternate screen is active. A terminal path that honors a
-request and preserves the physical Backspace key reports plain `Backspace`
-without modifiers and `Ctrl+Backspace` with `Control`, so the former deletes
-one grapheme and the latter deletes one word. Catomic restores the terminal's
-previous keyboard modes when the session ends.
+Catomic requests the Kitty enhanced-keyboard protocol plus xterm modified-key
+mode 2 with CSI-u output formatting while its alternate screen is active, both
+directly and under a multiplexer. Kitty's minimal disambiguation flag
+deliberately keeps ordinary text on the legacy path; the xterm requests are the
+complementary path that lets a compatible terminal preserve modified Backspace
+in the form Crossterm decodes. A terminal path that honors a request and
+preserves the physical key reports plain `Backspace` without modifiers and
+`Ctrl+Backspace` with `Control`, so the former deletes one grapheme and the
+latter deletes one word. Catomic pops the Kitty flag and resets both xterm
+settings to the terminal's configured initial values on normal, error, panic,
+and handled-signal exits.
 
 Legacy terminal paths may emit the same byte for both physical keys. No
 application can distinguish the chord after that information has been lost;
@@ -1514,15 +1519,18 @@ cargo run --quiet --example keyboard_probe -- legacy-event
 cargo run --quiet --example keyboard_probe -- enhanced-event
 ```
 
-In an enhanced path, plain `Backspace` is normally `1b 5b 31 32 37 75`
-(`CSI 127u`) and decodes as Backspace without modifiers. `Ctrl+Backspace` is
-`1b 5b 31 32 37 3b 35 75` (`CSI 127;5u`) and decodes as Backspace with
-`CONTROL`; its raw burst may first include a separate protocol record for the
-physical Control-key press. The event probe skips only that standalone modifier
-record and reports the Backspace event. A legacy `Ctrl+Backspace` may instead
-produce `08`, which Crossterm 0.28 decodes as `Ctrl+H`, or the same `7f` and
-unmodified Backspace event as the plain key. Neither legacy result identifies
-`Ctrl+Backspace`, so that path needs the fallback.
+For xterm-compatible terminals, Catomic requests CSI-u formatting before it
+enables modified-key mode 2. Plain `Backspace` normally remains `7f`, while
+`Ctrl+Backspace` becomes `1b 5b 31 32 37 3b 35 75` (`CSI 127;5u`) and decodes
+as Backspace with `CONTROL`. A native enhanced-keyboard path may instead report
+plain `Backspace` as `1b 5b 31 32 37 75` (`CSI 127u`). A raw burst may first
+include a separate protocol record for the physical Control-key press. The
+event probe skips only that standalone modifier record and reports the
+Backspace event. A legacy `Ctrl+Backspace` may instead
+produce `08`, which Crossterm 0.28 decodes as `Ctrl+H` and therefore visibly
+opens Catomic's Help, or the same `7f` and unmodified Backspace event as the
+plain key. Neither legacy result identifies `Ctrl+Backspace`, so Catomic cannot
+safely reinterpret it and that path needs the remappable fallback.
 
 Repeat the probe directly and inside tmux when diagnosing a difference. Record
 the terminal name/version, `TERM`, `tmux -V`, whether SSH is involved, all eight

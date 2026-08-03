@@ -700,7 +700,65 @@ fn pty_legacy_and_enhanced_backspace_paths_remain_distinct() -> TestResult {
     assert_eq!(fs::read_to_string(&temp.path)?, "one ");
     let output = editor.output_string();
     assert_eq!(sequence_count(&output, "\x1b[>1u"), 1);
+    assert_eq!(
+        sequence_count(&output, "\x1b[>4;1f"),
+        1,
+        "direct sessions must request CSI-u xterm key formatting"
+    );
+    assert_eq!(
+        sequence_count(&output, "\x1b[>4;2m"),
+        1,
+        "direct sessions must request xterm modified-key mode"
+    );
+    assert_eq!(
+        sequence_count(&output, "\x1b[>4m"),
+        1,
+        "xterm modified-key mode must reset exactly once"
+    );
+    assert_eq!(
+        sequence_count(&output, "\x1b[>4f"),
+        1,
+        "xterm key formatting must reset exactly once"
+    );
     assert_eq!(sequence_count(&output, "\x1b[<1u"), 1);
+    assert!(
+        output.find("\x1b[>4;1f").expect("xterm format")
+            < output.find("\x1b[>4;2m").expect("xterm enable"),
+        "CSI-u formatting must be selected before xterm modified-key mode"
+    );
+    assert!(
+        output.find("\x1b[>4;2m").expect("xterm enable")
+            < output.rfind("\x1b[>4m").expect("xterm reset"),
+        "xterm modified-key mode must be enabled before it is reset"
+    );
+    assert!(
+        output.rfind("\x1b[>4m").expect("xterm reset")
+            < output.rfind("\x1b[>4f").expect("xterm format reset"),
+        "modified-key mode must reset before its CSI-u format"
+    );
+    Ok(())
+}
+
+#[test]
+fn pty_legacy_ctrl_h_collision_is_visible_and_fallback_still_works() -> TestResult {
+    let project = TempProject::new("backspace_ctrl_h_collision");
+    project.write(
+        "catomic/config.toml",
+        "[keybindings]\ndelete-word-backward = [\"ctrl+u\"]\n",
+    );
+    let active = project.write("note.txt", "");
+    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"one two\x08")?; // Legacy Ctrl+Backspace can collapse to Ctrl+H.
+    editor.wait_for_output("visible Ctrl+H collision", "Help; Esc closes.")?;
+    editor.clear_output();
+    editor.send_keys(b"\x1b")?;
+    editor.wait_for_output("close Help after Ctrl+H collision", "one two")?;
+    editor.send_keys(b"\x15\x13\x11")?; // Fallback, save, quit.
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(active)?, "one ");
     Ok(())
 }
 
@@ -874,6 +932,16 @@ fn pty_sigterm_restores_terminal_modes_before_exit() -> TestResult {
         sequence_count(&output, "\x1b[<1u"),
         1,
         "keyboard enhancement stack must be popped exactly once"
+    );
+    assert_eq!(
+        sequence_count(&output, "\x1b[>4m"),
+        1,
+        "handled signal must reset xterm modified-key mode exactly once"
+    );
+    assert_eq!(
+        sequence_count(&output, "\x1b[>4f"),
+        1,
+        "handled signal must reset xterm key formatting exactly once"
     );
     let final_block = output.rfind("\x1b[2 q").expect("signal test block cursor");
     let final_default = output.rfind("\x1b[0 q").expect("signal cursor reset");

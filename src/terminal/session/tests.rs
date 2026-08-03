@@ -5,13 +5,13 @@
 
 use super::*;
 
-fn tmux_guard() -> TerminalGuard {
-    TerminalGuard::with_xterm_extended_keys(true)
+fn terminal_guard() -> TerminalGuard {
+    TerminalGuard::new()
 }
 
 #[test]
 fn setup_and_repeated_restore_push_and_pop_keyboard_flags_once() {
-    let guard = tmux_guard();
+    let guard = terminal_guard();
     let mut output = Vec::new();
 
     guard.enable_output_modes(&mut output).unwrap();
@@ -19,8 +19,10 @@ fn setup_and_repeated_restore_push_and_pop_keyboard_flags_once() {
     guard.restore(&mut output).unwrap();
 
     assert_eq!(count(&output, b"\x1b[>1u"), 1);
+    assert_eq!(count(&output, b"\x1b[>4;1f"), 1);
     assert_eq!(count(&output, b"\x1b[>4;2m"), 1);
-    assert_eq!(count(&output, b"\x1b[>4;0m"), 1);
+    assert_eq!(count(&output, b"\x1b[>4m"), 1);
+    assert_eq!(count(&output, b"\x1b[>4f"), 1);
     assert_eq!(count(&output, b"\x1b[<1u"), 1);
     assert_eq!(count(&output, b"\x1b[0 q"), 1);
     assert_eq!(
@@ -32,7 +34,10 @@ fn setup_and_repeated_restore_push_and_pop_keyboard_flags_once() {
     assert_eq!(count(&output, b"\x1b[22;0t"), 1);
     assert_eq!(count(&output, b"\x1b[23;0t"), 1);
     assert!(position(&output, b"\x1b[?1049h") < position(&output, b"\x1b[>1u"));
-    assert!(position(&output, b"\x1b[>4;0m") < position(&output, b"\x1b[<1u"));
+    assert!(position(&output, b"\x1b[>4;1f") < position(&output, b"\x1b[>4;2m"));
+    assert!(position(&output, b"\x1b[>4m") < position(&output, b"\x1b[<1u"));
+    assert!(position(&output, b"\x1b[>4m") < position(&output, b"\x1b[>4f"));
+    assert!(position(&output, b"\x1b[>4f") < position(&output, b"\x1b[<1u"));
     assert!(
         position(&output, crate::terminal::render::TERMINAL_STATE_RECOVERY)
             < position(&output, crate::terminal::render::SYNC_UPDATE_END)
@@ -47,7 +52,7 @@ fn setup_and_repeated_restore_push_and_pop_keyboard_flags_once() {
 
 #[test]
 fn setup_error_before_keyboard_push_leaves_screen_without_pop() {
-    let guard = tmux_guard();
+    let guard = terminal_guard();
     let mut failing = FailAfter::new(b"\x1b[?1049h".len());
 
     assert!(guard.enable_output_modes(&mut failing).is_err());
@@ -60,23 +65,26 @@ fn setup_error_before_keyboard_push_leaves_screen_without_pop() {
 
 #[test]
 fn setup_error_after_both_keyboard_modes_resets_before_leaving_screen() {
-    let guard = tmux_guard();
-    let setup_prefix = b"\x1b[?1049h\x1b[22;0t\x1b[>1u\x1b[>4;2m";
+    let guard = terminal_guard();
+    let setup_prefix = b"\x1b[?1049h\x1b[22;0t\x1b[>1u\x1b[>4;1f\x1b[>4;2m";
     let mut failing = FailAfter::new(setup_prefix.len());
 
     assert!(guard.enable_output_modes(&mut failing).is_err());
     let mut restored = Vec::new();
     guard.restore(&mut restored).unwrap();
 
-    assert_eq!(count(&restored, b"\x1b[>4;0m"), 1);
+    assert_eq!(count(&restored, b"\x1b[>4m"), 1);
+    assert_eq!(count(&restored, b"\x1b[>4f"), 1);
     assert_eq!(count(&restored, b"\x1b[<1u"), 1);
-    assert!(position(&restored, b"\x1b[>4;0m") < position(&restored, b"\x1b[<1u"));
+    assert!(position(&restored, b"\x1b[>4m") < position(&restored, b"\x1b[<1u"));
+    assert!(position(&restored, b"\x1b[>4m") < position(&restored, b"\x1b[>4f"));
+    assert!(position(&restored, b"\x1b[>4f") < position(&restored, b"\x1b[<1u"));
     assert!(position(&restored, b"\x1b[<1u") < position(&restored, b"\x1b[?1049l"));
 }
 
 #[test]
-fn setup_error_during_xterm_enable_still_pops_kitty_flags() {
-    let guard = tmux_guard();
+fn setup_error_during_xterm_format_still_pops_kitty_flags() {
+    let guard = terminal_guard();
     let setup_prefix = b"\x1b[?1049h\x1b[22;0t\x1b[>1u";
     let mut failing = FailAfter::new(setup_prefix.len());
 
@@ -84,14 +92,32 @@ fn setup_error_during_xterm_enable_still_pops_kitty_flags() {
     let mut restored = Vec::new();
     guard.restore(&mut restored).unwrap();
 
-    assert_eq!(count(&restored, b"\x1b[>4;0m"), 0);
+    assert_eq!(count(&restored, b"\x1b[>4m"), 0);
+    assert_eq!(count(&restored, b"\x1b[>4f"), 0);
     assert_eq!(count(&restored, b"\x1b[<1u"), 1);
     assert_eq!(count(&restored, b"\x1b[?1049l"), 1);
 }
 
 #[test]
+fn setup_error_during_xterm_enable_resets_format_before_popping_kitty_flags() {
+    let guard = terminal_guard();
+    let setup_prefix = b"\x1b[?1049h\x1b[22;0t\x1b[>1u\x1b[>4;1f";
+    let mut failing = FailAfter::new(setup_prefix.len());
+
+    assert!(guard.enable_output_modes(&mut failing).is_err());
+    let mut restored = Vec::new();
+    guard.restore(&mut restored).unwrap();
+
+    assert_eq!(count(&restored, b"\x1b[>4m"), 0);
+    assert_eq!(count(&restored, b"\x1b[>4f"), 1);
+    assert_eq!(count(&restored, b"\x1b[<1u"), 1);
+    assert!(position(&restored, b"\x1b[>4f") < position(&restored, b"\x1b[<1u"));
+    assert!(position(&restored, b"\x1b[<1u") < position(&restored, b"\x1b[?1049l"));
+}
+
+#[test]
 fn teardown_error_before_pop_does_not_cause_a_duplicate_pop() {
-    let guard = tmux_guard();
+    let guard = terminal_guard();
     guard.enable_output_modes(&mut Vec::new()).unwrap();
     let mut failing = FailOnceOn::new(b"\x1b[?1006l");
 
@@ -119,7 +145,7 @@ fn partial_recovery_or_sync_end_defers_teardown_until_a_complete_retry() {
     ];
 
     for (label, cut) in cuts {
-        let guard = tmux_guard();
+        let guard = terminal_guard();
         guard.enable_output_modes(&mut Vec::new()).unwrap();
         let mut output = FailAfterPrefixOnce::new(cut);
 
@@ -153,7 +179,7 @@ fn partial_recovery_or_sync_end_defers_teardown_until_a_complete_retry() {
 
 #[test]
 fn failed_pop_keeps_alternate_screen_active_for_a_retry() {
-    let guard = tmux_guard();
+    let guard = terminal_guard();
     guard.enable_output_modes(&mut Vec::new()).unwrap();
     let mut failing = FailOnceOn::new(b"\x1b[<1u");
 
@@ -168,38 +194,60 @@ fn failed_pop_keeps_alternate_screen_active_for_a_retry() {
 
 #[test]
 fn failed_xterm_reset_retries_without_duplicate_kitty_pop() {
-    let guard = tmux_guard();
+    let guard = terminal_guard();
     guard.enable_output_modes(&mut Vec::new()).unwrap();
-    let mut failing = FailOnceOn::new(b"\x1b[>4;0m");
+    let mut failing = FailOnceOn::new(b"\x1b[>4m");
 
     assert!(guard.restore(&mut failing).is_err());
+    assert_eq!(count(&failing.output, b"\x1b[>4f"), 1);
     assert_eq!(count(&failing.output, b"\x1b[<1u"), 1);
     assert_eq!(count(&failing.output, b"\x1b[?1049l"), 0);
 
     let mut retried = Vec::new();
     guard.restore(&mut retried).unwrap();
-    assert_eq!(count(&retried, b"\x1b[>4;0m"), 1);
+    assert_eq!(count(&retried, b"\x1b[>4m"), 1);
     assert_eq!(count(&retried, b"\x1b[<1u"), 0);
     assert_eq!(count(&retried, b"\x1b[?1049l"), 1);
 }
 
 #[test]
-fn direct_terminal_does_not_enable_xterm_modified_keys() {
-    let guard = TerminalGuard::with_xterm_extended_keys(false);
+fn failed_xterm_format_reset_retries_without_repeating_other_resets() {
+    let guard = terminal_guard();
+    guard.enable_output_modes(&mut Vec::new()).unwrap();
+    let mut failing = FailOnceOn::new(b"\x1b[>4f");
+
+    assert!(guard.restore(&mut failing).is_err());
+    assert_eq!(count(&failing.output, b"\x1b[>4m"), 1);
+    assert_eq!(count(&failing.output, b"\x1b[<1u"), 1);
+    assert_eq!(count(&failing.output, b"\x1b[?1049l"), 0);
+
+    let mut retried = Vec::new();
+    guard.restore(&mut retried).unwrap();
+    assert_eq!(count(&retried, b"\x1b[>4m"), 0);
+    assert_eq!(count(&retried, b"\x1b[>4f"), 1);
+    assert_eq!(count(&retried, b"\x1b[<1u"), 0);
+    assert_eq!(count(&retried, b"\x1b[?1049l"), 1);
+}
+
+#[test]
+fn direct_terminal_enables_and_resets_xterm_modified_keys() {
+    let guard = TerminalGuard::new();
     let mut output = Vec::new();
 
     guard.enable_output_modes(&mut output).unwrap();
     guard.restore(&mut output).unwrap();
 
     assert_eq!(count(&output, b"\x1b[>1u"), 1);
-    assert_eq!(count(&output, b"\x1b[>4;2m"), 0);
-    assert_eq!(count(&output, b"\x1b[>4;0m"), 0);
+    assert_eq!(count(&output, b"\x1b[>4;1f"), 1);
+    assert_eq!(count(&output, b"\x1b[>4;2m"), 1);
+    assert_eq!(count(&output, b"\x1b[>4m"), 1);
+    assert_eq!(count(&output, b"\x1b[>4f"), 1);
     assert_eq!(count(&output, b"\x1b[<1u"), 1);
 }
 
 #[test]
 fn failed_title_pop_retries_without_repeating_other_teardown() {
-    let guard = TerminalGuard::with_xterm_extended_keys(false);
+    let guard = TerminalGuard::new();
     guard.enable_output_modes(&mut Vec::new()).unwrap();
     let mut failing = FailOnceOn::new(TITLE_STACK_POP);
 

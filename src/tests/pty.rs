@@ -108,6 +108,8 @@ mod tests {
         drop(terminal);
 
         let restored = restored.lock().unwrap();
+        assert_eq!(count(&restored, b"\x1b[>4m"), 1);
+        assert_eq!(count(&restored, b"\x1b[>4f"), 1);
         assert_eq!(count(&restored, b"\x1b[<1u"), 1);
         assert_eq!(count(&restored, b"\x1b[?1049l"), 1);
     }

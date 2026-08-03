@@ -5,6 +5,7 @@
 
 use std::io;
 
+use crate::buffer::piece_table::types::Source;
 use crate::buffer::{Buffer, Cursor, PieceTable};
 
 #[test]
@@ -66,6 +67,163 @@ fn bottom_up_range_replacements_are_one_transaction() {
     assert_eq!(buffer.to_string(), "α aa α aa");
     buffer.redo();
     assert_eq!(buffer.to_string(), "x x x x");
+}
+
+#[test]
+fn range_replacements_analyze_append_and_reuse_one_add_source() {
+    const MATCH_COUNT: usize = 256;
+    const SOURCE_TOKEN: &str = "target|";
+    const REPLACEMENT: &str = "é\nCafe\u{301} 👩🏽\u{200d}💻";
+
+    let original = SOURCE_TOKEN.repeat(MATCH_COUNT);
+    let expected = format!("{REPLACEMENT}|").repeat(MATCH_COUNT);
+    let ranges = (0..MATCH_COUNT)
+        .map(|index| {
+            let start = index * SOURCE_TOKEN.len();
+            (
+                Cursor { row: 0, col: start },
+                Cursor {
+                    row: 0,
+                    col: start + "target".len(),
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut buffer = PieceTable::from_text(&original);
+    buffer.set_cursor(Cursor { row: 0, col: 3 });
+    let before_cursor = buffer.cursor();
+    let before_history = buffer.edit_history_position();
+    let before_revision = buffer.content_revision();
+    let before_add = buffer.add.len();
+
+    let (replaced, analysis) = buffer
+        .replace_ranges_for_perf(&ranges, REPLACEMENT)
+        .expect("replace shared ranges");
+
+    assert_eq!(replaced, MATCH_COUNT);
+    assert_eq!(analysis.text_analysis_passes, 1);
+    assert_eq!(analysis.text_analyzed_bytes, REPLACEMENT.len());
+    assert_eq!(analysis.newline_scan_bytes, REPLACEMENT.len());
+    assert_eq!(analysis.scalar_scan_bytes, REPLACEMENT.len());
+    assert_eq!(analysis.add_copy_calls, 1);
+    assert_eq!(analysis.add_copied_bytes, REPLACEMENT.len());
+    assert_eq!(buffer.add.len() - before_add, REPLACEMENT.len());
+    assert_eq!(buffer.to_string(), expected);
+    assert_eq!(
+        buffer.cursor(),
+        Cursor {
+            row: 1,
+            col: "Cafe\u{301} 👩🏽\u{200d}💻".chars().count(),
+        }
+    );
+    assert_eq!(buffer.undo_transaction_count(), 1);
+    assert_ne!(buffer.edit_history_position(), before_history);
+    assert_ne!(buffer.content_revision(), before_revision);
+
+    let mut add_ranges = Vec::new();
+    buffer.pieces.for_each(|piece| {
+        if piece.source == Source::Add {
+            add_ranges.push((piece.start, piece.len, piece.char_len));
+        }
+    });
+    assert_eq!(add_ranges.len(), MATCH_COUNT);
+    assert!(add_ranges.iter().all(|range| *range == add_ranges[0]));
+    assert_eq!(add_ranges[0].1, REPLACEMENT.len());
+    assert_eq!(add_ranges[0].2, Some(REPLACEMENT.chars().count()));
+
+    let add_after_replace = buffer.add.len();
+    let replacement_history = buffer.edit_history_position();
+    let replacement_revision = buffer.content_revision();
+    buffer.undo();
+    assert_eq!(buffer.to_string(), original);
+    assert_eq!(buffer.cursor(), before_cursor);
+    assert_eq!(buffer.edit_history_position(), before_history);
+    assert_ne!(buffer.content_revision(), replacement_revision);
+    assert_eq!(buffer.add.len(), add_after_replace);
+
+    let undo_revision = buffer.content_revision();
+    buffer.redo();
+    assert_eq!(buffer.to_string(), expected);
+    assert_eq!(buffer.edit_history_position(), replacement_history);
+    assert_ne!(buffer.content_revision(), undo_revision);
+    assert_eq!(buffer.add.len(), add_after_replace, "redo must not append");
+}
+
+#[test]
+fn replacement_analysis_preserves_ascii_newline_and_unicode_cursor_shapes() {
+    let cases = [
+        ("ASCII", Cursor { row: 0, col: 6 }),
+        ("\n", Cursor { row: 1, col: 0 }),
+        ("\n\n", Cursor { row: 2, col: 0 }),
+        ("\nlead", Cursor { row: 1, col: 4 }),
+        ("trail\n", Cursor { row: 1, col: 0 }),
+        (
+            "é e\u{301} 👩🏽\u{200d}💻",
+            Cursor {
+                row: 0,
+                col: 1 + "é e\u{301} 👩🏽\u{200d}💻".chars().count(),
+            },
+        ),
+    ];
+
+    for (replacement, expected_cursor) in cases {
+        let mut buffer = PieceTable::from_text("ab");
+        let at = Cursor { row: 0, col: 1 };
+        let (changed, analysis) = buffer
+            .replace_range_for_perf(at, at, replacement)
+            .expect("insert replacement shape");
+        assert!(changed, "{replacement:?}");
+        assert_eq!(analysis.text_analysis_passes, 1, "{replacement:?}");
+        assert_eq!(analysis.text_analyzed_bytes, replacement.len());
+        assert_eq!(analysis.add_copy_calls, 1, "{replacement:?}");
+        assert_eq!(analysis.add_copied_bytes, replacement.len());
+        assert_eq!(buffer.to_string(), format!("a{replacement}b"));
+        assert_eq!(buffer.cursor(), expected_cursor, "{replacement:?}");
+
+        let add_len = buffer.add.len();
+        buffer.undo();
+        assert_eq!(buffer.to_string(), "ab");
+        buffer.redo();
+        assert_eq!(buffer.to_string(), format!("a{replacement}b"));
+        assert_eq!(buffer.add.len(), add_len, "redo must reuse Add bytes");
+    }
+}
+
+#[test]
+fn empty_replacement_analyzes_once_without_appending_add_metadata() {
+    let mut buffer = PieceTable::from_text("aé猫🙂z");
+    let add_before = buffer.add_storage_for_test();
+    let checkpoints_before = buffer.perf_stats().add_scalar_checkpoints;
+
+    let (replaced, analysis) = buffer
+        .replace_ranges_for_perf(
+            &[
+                (Cursor { row: 0, col: 1 }, Cursor { row: 0, col: 2 }),
+                (Cursor { row: 0, col: 3 }, Cursor { row: 0, col: 4 }),
+            ],
+            "",
+        )
+        .expect("delete ranges");
+
+    assert_eq!(replaced, 2);
+    assert_eq!(analysis.text_analysis_passes, 1);
+    assert_eq!(analysis.text_analyzed_bytes, 0);
+    assert_eq!(analysis.newline_scan_bytes, 0);
+    assert_eq!(analysis.scalar_scan_bytes, 0);
+    assert_eq!(analysis.add_copy_calls, 0);
+    assert_eq!(analysis.add_copied_bytes, 0);
+    assert_eq!(buffer.add_storage_for_test(), add_before);
+    assert_eq!(
+        buffer.perf_stats().add_scalar_checkpoints,
+        checkpoints_before
+    );
+    assert_eq!(buffer.to_string(), "a猫z");
+
+    buffer.undo();
+    assert_eq!(buffer.to_string(), "aé猫🙂z");
+    buffer.redo();
+    assert_eq!(buffer.to_string(), "a猫z");
+    assert_eq!(buffer.add_storage_for_test(), add_before);
 }
 
 #[test]
@@ -149,6 +307,7 @@ fn range_replacements_reject_overlapping_or_out_of_snapshot_ranges() {
     buffer.set_cursor(Cursor { row: 0, col: 2 });
     let original = buffer.to_string();
     let history = buffer.edit_history_position();
+    let add_storage = buffer.add_storage_for_test();
 
     let error = buffer
         .replace_ranges(
@@ -171,6 +330,11 @@ fn range_replacements_reject_overlapping_or_out_of_snapshot_ranges() {
     assert_eq!(buffer.to_string(), original);
     assert_eq!(buffer.cursor(), Cursor { row: 0, col: 2 });
     assert_eq!(buffer.edit_history_position(), history);
+    assert_eq!(
+        buffer.add_storage_for_test(),
+        add_storage,
+        "validation must finish before preparing an Add source"
+    );
 }
 
 #[test]

@@ -688,13 +688,28 @@ auto_reload = false
 
 ## Views, highlighting, and Markdown
 
-Catomic applies lightweight, viewport-bounded syntax styling to Markdown,
-Rust, Python, and JSON based on the file extension. It is deliberately lexical:
-there is no tree-sitter parse or whole-document highlighting pass.
+Catomic applies lightweight, viewport-bounded syntax styling based on the file
+extension. The initial built-in set is Markdown (`.md`, `.markdown`, `.mkd`),
+Rust (`.rs`), Python (`.py`, `.pyw`), JSON (`.json`), TOML (`.toml`), shell
+(`.sh`, `.bash`, `.zsh`, `.ksh`, `.fish`, plus common shell profile names), and
+diffs (`.diff`, `.patch`). It is deliberately lexical: there is no tree-sitter
+parse or whole-document highlighting pass. Each visible logical line also has a
+16,384-scalar highlighting budget, so one pathological line cannot turn syntax
+coloring into unbounded render work.
+Text and log extensions (`.txt`, `.text`, `.log`), extensionless files, and
+untitled buffers are intentional plain text; other unrecognized extensions are
+reported as unsupported.
 Markdown source styling keeps every delimiter visible and every document
 coordinate unchanged while distinguishing headings, emphasis, links, inline
 code, fences, quotes, list/task markers, and table delimiters. Unsupported or
 malformed constructs remain ordinary readable text.
+
+An unsupported named file opens with a one-time `Plain text` status message.
+When color is deliberately or automatically disabled, the startup status says
+why and still reports the recognized syntax. Run
+`catomic --color-diagnostics [FILE]` outside the editor to capture the Catomic
+version, filename, detected syntax, `TERM`, `COLORTERM`, `NO_COLOR`, and the
+automatic color decision.
 
 | View | Key | Behavior |
 | --- | --- | --- |
@@ -1186,7 +1201,8 @@ surface. The complete role inventory is `text`, `background`, `cursor`,
 `markdown_link`, `syntax_keyword`, `syntax_string`, `syntax_comment`, `syntax_number`,
 `search_match`, `diff_added`, `diff_removed`, `external_added`,
 `external_changed`, `external_deleted`, `lint`, and `preview`. The syntax roles
-apply consistently to the built-in Rust, Python, and JSON highlighters.
+apply consistently to the built-in Rust, Python, JSON, TOML, and shell
+highlighters.
 
 A role may be `"default"`, one of the standard 16 names (`black` through
 `white` and `bright-black` through `bright-white`), an integer from 0 to 255,
@@ -1196,9 +1212,14 @@ reverse = false }`. RGB is emitted as
 truecolor only when the terminal advertises `COLORTERM=truecolor` or `24bit`;
 otherwise Catomic selects a stable xterm-256 fallback.
 
-`NO_COLOR`, missing or monochrome terminal types, and `TERM=dumb` suppress color
-while retaining bold, underline, and inverse-video distinctions for selections
-and search matches.
+Automatic detection suppresses color for missing `TERM`, `TERM=dumb`,
+`TERM=unknown`, explicitly monochrome terminal names, and the exact legacy
+`vt100`, `vt102`, and `vt220` descriptions. Names such as `vte-256color` and
+`vt100-color` are not discarded merely because their prefix resembles `vt`.
+Use `--color=always` when detection is wrong, `--color=never` for a deliberate
+monochrome run, or `--color=auto` to state the default explicitly. `NO_COLOR`
+always wins, including over `--color=always`. Monochrome rendering retains bold,
+underline, and inverse-video distinctions for selections and search matches.
 
 The built-in `default` scheme preserves terminal-default text/background while
 keeping selection, search, warnings, and errors distinguishable. Use

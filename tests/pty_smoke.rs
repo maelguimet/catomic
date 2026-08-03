@@ -464,6 +464,55 @@ fn sequence_count(output: &str, sequence: &str) -> usize {
 }
 
 #[test]
+fn pty_syntax_capabilities_distinguish_colored_monochrome_and_unsupported_paths() -> TestResult {
+    let toml = TempPath::with_extension("syntax_toml", "toml");
+    fs::write(&toml.path, "enabled = true # bounded config\n")?;
+    let mut colored = PtyEditor::spawn(&toml.path)?;
+    colored.wait_for_output("TOML key color", "\x1b[35menabled")?;
+    colored.wait_for_output("TOML keyword color", "\x1b[35mtrue")?;
+    assert!(!colored.output_string().contains("Plain text:"));
+    colored.send_keys(b"\x11")?;
+    colored.wait_for_exit()?;
+    drop(colored);
+
+    let mut monochrome = PtyEditor::spawn_monochrome(&toml.path)?;
+    monochrome.wait_for_output("monochrome reason", "Color off: TERM=dumb is monochrome")?;
+    monochrome.wait_for_output("recognized monochrome syntax", "Syntax: TOML")?;
+    assert!(!monochrome.output_string().contains("\x1b[35menabled"));
+    monochrome.send_keys(b"\x11")?;
+    monochrome.wait_for_exit()?;
+    drop(monochrome);
+
+    let unsupported = TempPath::with_extension("syntax_plain", "xyz");
+    fs::write(&unsupported.path, "let value = 7\n")?;
+    let mut plain = PtyEditor::spawn_sized(&unsupported.path, 24, 160)?;
+    plain.wait_for_output(
+        "unsupported syntax reason",
+        "Plain text: no syntax highlighter for .xyz files",
+    )?;
+    assert!(!plain.output_string().contains("\x1b[35mlet"));
+    plain.send_keys(b"\x11")?;
+    plain.wait_for_exit()?;
+    Ok(())
+}
+
+#[test]
+fn pty_explicit_color_override_repairs_a_false_terminal_downgrade() -> TestResult {
+    let toml = TempPath::with_extension("syntax_override", "toml");
+    fs::write(&toml.path, "enabled = true\n")?;
+    let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
+    command.arg("--color=always");
+    command.arg(&toml.path);
+    let mut editor = PtyEditor::spawn_command_for_terminal(command, "dumb")?;
+
+    editor.wait_for_output("forced TOML color", "\x1b[35menabled")?;
+    assert!(!editor.output_string().contains("Color off:"));
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+    Ok(())
+}
+
+#[test]
 fn pty_dangling_final_symlink_is_refused_before_terminal_setup() -> TestResult {
     let project = TempProject::new("dangling_symlink_startup");
     let target = project.root.join("missing-target.txt");
@@ -1083,7 +1132,7 @@ fn pty_dirty_config_detour_refuses_then_discards_only_config_and_reopens_from_di
     editor.send_keys(b"\x1b[80;6uconfig\r")?;
     editor.wait_for_output("existing config detour", "CONFIG DISK MARKER")?;
     editor.send_keys(b"X")?;
-    editor.wait_for_output("dirty config edit", "X# CONFIG DISK MARKER")?;
+    editor.wait_for_output("dirty config edit", "X\x1b[90;2m# CONFIG DISK MARKER")?;
 
     editor.clear_output();
     editor.send_keys(b"\x11")?;

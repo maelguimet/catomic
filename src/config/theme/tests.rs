@@ -90,6 +90,40 @@ fn monochrome_capability_keeps_non_color_distinctions() {
 }
 
 #[test]
+fn capability_detection_does_not_confuse_vte_or_colored_vt_names_with_vt100() {
+    for term in ["xterm-256color", "vte-256color", "vt100-color", "linux"] {
+        assert_eq!(
+            decide_color(false, Some(term), ColorOverride::Auto),
+            ColorDecision {
+                enabled: true,
+                reason: ColorReason::Automatic,
+            },
+            "TERM={term}"
+        );
+    }
+    for term in ["dumb", "unknown", "vt100", "xterm-mono"] {
+        assert!(!decide_color(false, Some(term), ColorOverride::Auto).enabled);
+    }
+}
+
+#[test]
+fn explicit_color_override_is_safe_and_no_color_has_precedence() {
+    assert!(decide_color(false, Some("dumb"), ColorOverride::Always).enabled);
+    assert!(!decide_color(false, Some("xterm-256color"), ColorOverride::Never).enabled);
+    assert_eq!(
+        decide_color(true, Some("xterm-256color"), ColorOverride::Always),
+        ColorDecision {
+            enabled: false,
+            reason: ColorReason::NoColor,
+        }
+    );
+    assert_eq!(
+        decide_color(false, None, ColorOverride::Auto).reason,
+        ColorReason::MissingTerm
+    );
+}
+
+#[test]
 fn retired_llm_changed_role_is_accepted_but_inert() {
     let theme =
         parse("[theme.colors]\nllm_changed = { fg = \"red\", underline = true }\n").unwrap();

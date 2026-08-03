@@ -11,15 +11,15 @@ mod tests {
         let preview = crate::editor::markdown_preview::render_with_width(source, 80).unwrap();
 
         let lines = preview.text.lines().collect::<Vec<_>>();
-        assert_eq!(lines[0], "    Heading");
+        assert_eq!(lines[0], "  Heading");
         assert!(preview.text.contains("  • item code"));
         assert!(preview.text.contains("“quote”"));
         assert!(!preview.text.chars().any(|ch| matches!(ch, '#' | '═' | '─')));
         assert_eq!(
             preview.annotations.spans(0).collect::<Vec<_>>(),
             vec![crate::editor::syntax::StyledSpan {
-                start: 4,
-                end: 11,
+                start: 2,
+                end: 9,
                 style: crate::editor::syntax::SpanStyle::PreviewHeading1,
             }]
         );

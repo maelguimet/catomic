@@ -632,10 +632,6 @@ impl PreviewRenderer {
             Tag::Paragraph => self.start_paragraph(),
             Tag::Heading { level, .. } => {
                 self.start_heading(level);
-                let indent = heading_indent(level);
-                if indent > 0 {
-                    self.push(&" ".repeat(indent));
-                }
                 self.active_styles.push(heading_style(level));
             }
             Tag::BlockQuote(_) => {
@@ -1052,16 +1048,6 @@ fn heading_style(level: HeadingLevel) -> SpanStyle {
         HeadingLevel::H4 => SpanStyle::PreviewHeading4,
         HeadingLevel::H5 => SpanStyle::PreviewHeading5,
         HeadingLevel::H6 => SpanStyle::PreviewHeading6,
-    }
-}
-
-fn heading_indent(level: HeadingLevel) -> usize {
-    match level {
-        HeadingLevel::H1 => 2,
-        HeadingLevel::H2 => 0,
-        HeadingLevel::H3 => 2,
-        HeadingLevel::H4 | HeadingLevel::H5 => 4,
-        HeadingLevel::H6 => 6,
     }
 }
 

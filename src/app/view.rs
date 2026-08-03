@@ -2,7 +2,7 @@
 //! Owns: F5 external changes, F6 preview, F7/F8 indicators, F9 wrap, and coordinates.
 //! Must not: mutate source text/history, emit terminal setup, or contact the network.
 //! Invariants: preview is explicit/read-only; F5/F7 are session-global and persisted;
-//!   F8/F9 and source viewports remain per buffer.
+//!   F8/F9 remain per buffer; Markdown preview synchronizes its vertical viewport with source.
 
 use std::io;
 
@@ -26,6 +26,7 @@ struct PreviewDocument {
     annotations: MarkdownAnnotations,
     layout_width: usize,
     source_scroll_top: usize,
+    initial_preview_scroll_top: usize,
     source_scroll_left: usize,
     source_wrap_col: usize,
 }
@@ -216,7 +217,16 @@ pub(crate) fn soft_wrap_active(app: &super::App) -> bool {
 
 pub(crate) fn cancel_preview(app: &mut super::App) {
     if let Some(preview) = app.view.preview.take() {
-        app.screen.scroll_top = preview.source_scroll_top;
+        app.screen.scroll_top = if app.screen.scroll_top == preview.initial_preview_scroll_top {
+            preview.source_scroll_top
+        } else {
+            map_viewport_top(
+                app.screen.scroll_top,
+                preview.buffer.line_count(),
+                app.buffer.line_count(),
+                app.screen.visible_height(),
+            )
+        };
         app.screen.scroll_left = preview.source_scroll_left;
         app.screen.wrap_col = preview.source_wrap_col;
     }
@@ -231,16 +241,45 @@ pub(crate) fn relayout_preview(app: &mut super::App) {
         return;
     }
     let cursor = preview.buffer.cursor();
+    let old_line_count = preview.buffer.line_count();
+    let old_scroll_top = app.screen.scroll_top;
+    let old_initial_scroll_top = preview.initial_preview_scroll_top;
+    let viewport_was_untouched = old_scroll_top == old_initial_scroll_top;
+    let visible_height = app.screen.visible_height();
     match crate::editor::markdown_preview::render_with_width(&app.buffer.to_string(), width) {
         Ok(rendered) => {
             let (mut buffer, annotations) = rendered.into_buffer_and_annotations();
-            let row = cursor.row.min(buffer.line_count().saturating_sub(1));
+            let new_line_count = buffer.line_count();
+            let new_initial_scroll_top = map_viewport_top(
+                old_initial_scroll_top,
+                old_line_count,
+                new_line_count,
+                visible_height,
+            );
+            let new_scroll_top = if viewport_was_untouched {
+                new_initial_scroll_top
+            } else {
+                map_viewport_top(
+                    old_scroll_top,
+                    old_line_count,
+                    new_line_count,
+                    visible_height,
+                )
+            };
+            let row = if viewport_was_untouched {
+                new_initial_scroll_top
+            } else {
+                cursor.row
+            }
+            .min(buffer.line_count().saturating_sub(1));
             let col = cursor.col.min(buffer.line_char_count(row).unwrap_or(0));
             buffer.set_cursor(Cursor { row, col });
             if let Some(preview) = app.view.preview.as_mut() {
                 preview.buffer = buffer;
                 preview.annotations = annotations;
                 preview.layout_width = width;
+                preview.initial_preview_scroll_top = new_initial_scroll_top;
+                app.screen.scroll_top = new_scroll_top;
                 app.screen.scroll_left = 0;
             }
         }
@@ -259,16 +298,30 @@ fn toggle_preview(
         let width = crate::editor::markdown_preview::layout_width(content_width(app));
         match crate::editor::markdown_preview::render_with_width(&app.buffer.to_string(), width) {
             Ok(rendered) => {
-                let (buffer, annotations) = rendered.into_buffer_and_annotations();
+                let source_scroll_top = app.screen.scroll_top;
+                let (mut buffer, annotations) = rendered.into_buffer_and_annotations();
+                let initial_preview_scroll_top = map_viewport_top(
+                    source_scroll_top,
+                    app.buffer.line_count(),
+                    buffer.line_count(),
+                    app.screen.visible_height(),
+                );
+                let cursor_row =
+                    initial_preview_scroll_top.min(buffer.line_count().saturating_sub(1));
+                buffer.set_cursor(Cursor {
+                    row: cursor_row,
+                    col: 0,
+                });
                 app.view.preview = Some(PreviewDocument {
                     buffer,
                     annotations,
                     layout_width: width,
-                    source_scroll_top: app.screen.scroll_top,
+                    source_scroll_top,
+                    initial_preview_scroll_top,
                     source_scroll_left: app.screen.scroll_left,
                     source_wrap_col: app.screen.wrap_col,
                 });
-                app.screen.scroll_top = 0;
+                app.screen.scroll_top = initial_preview_scroll_top;
                 app.screen.scroll_left = 0;
                 app.screen.wrap_col = 0;
                 app.message_info("Markdown preview on (read-only; F6 or Esc to exit).");
@@ -279,6 +332,27 @@ fn toggle_preview(
     }
     app.render(out)?;
     Ok(true)
+}
+
+fn map_viewport_top(
+    scroll_top: usize,
+    from_line_count: usize,
+    to_line_count: usize,
+    visible_height: usize,
+) -> usize {
+    if visible_height == 0 {
+        return 0;
+    }
+    let from_maximum = from_line_count.saturating_sub(visible_height);
+    let to_maximum = to_line_count.saturating_sub(visible_height);
+    if from_maximum == 0 || to_maximum == 0 {
+        return 0;
+    }
+    let position = scroll_top.min(from_maximum) as u128;
+    let numerator = position
+        .saturating_mul(to_maximum as u128)
+        .saturating_add((from_maximum / 2) as u128);
+    (numerator / from_maximum as u128) as usize
 }
 
 fn toggle_line_numbers(
@@ -617,6 +691,52 @@ mod tests {
             ),
             viewport
         );
+    }
+
+    #[test]
+    fn preview_scroll_maps_back_to_the_source_without_drifting_an_untouched_view() {
+        let mut app = super::super::App::new(None).unwrap();
+        let source = (0..60)
+            .map(|row| format!("## Row {row:02}\n\n"))
+            .collect::<String>();
+        app.buffer = Box::new(crate::buffer::PieceTable::from_text(&source));
+        app.screen.width = 60;
+        app.screen.height = 8;
+        let visible_height = app.screen.visible_height();
+        let source_maximum = app.buffer.line_count().saturating_sub(visible_height);
+        let source_middle = source_maximum / 2;
+        app.screen.scroll_top = source_middle;
+        let mut out = Vec::new();
+
+        press(&mut app, &mut out, KeyCode::F(6));
+        let initial_preview_top = app.screen.scroll_top;
+        assert!(initial_preview_top > 0);
+        press(&mut app, &mut out, KeyCode::F(6));
+        assert_eq!(app.screen.scroll_top, source_middle);
+
+        press(&mut app, &mut out, KeyCode::F(6));
+        let preview_maximum = display_buffer(&app)
+            .line_count()
+            .saturating_sub(visible_height);
+        app.screen.scroll_top = preview_maximum;
+        press(&mut app, &mut out, KeyCode::F(6));
+
+        assert_eq!(app.screen.scroll_top, source_maximum);
+        assert_eq!(app.buffer.to_string(), source);
+    }
+
+    #[test]
+    fn viewport_mapping_is_monotonic_and_pins_both_ends() {
+        assert_eq!(map_viewport_top(0, 100, 200, 10), 0);
+        assert_eq!(map_viewport_top(90, 100, 200, 10), 190);
+        assert_eq!(map_viewport_top(50, 5, 200, 10), 0);
+        assert_eq!(map_viewport_top(50, 100, 5, 10), 0);
+        assert_eq!(map_viewport_top(50, 100, 200, 0), 0);
+
+        let mapped = (0..=90)
+            .map(|position| map_viewport_top(position, 100, 200, 10))
+            .collect::<Vec<_>>();
+        assert!(mapped.windows(2).all(|pair| pair[0] <= pair[1]));
     }
 
     #[test]

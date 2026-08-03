@@ -734,6 +734,11 @@ continuations preserve document coordinates and mouse mapping. Whitespace and
 soft wrapping remain per-buffer settings. F5 and F7 update the session-global
 preference used by every current buffer and buffers opened later.
 
+The source and preview vertical viewports stay synchronized. Entering preview
+maps the source position into the reflowed document; leaving maps the current
+preview position back. Top and bottom remain exact, while intermediate
+positions are proportional when Markdown layout changes the number of rows.
+
 The shared Markdown presentation layer reflows paragraphs, headings, nested
 quotes and lists, tasks, links, footnotes, rules, and indented code blocks to
 the terminal width. At 40 cells and above it reserves two side margins; on
@@ -761,9 +766,11 @@ gutter changes; this never reparses during ordinary editing.
 Preview construction accepts at most 10 MiB of active source and 32 MiB of
 rendered output. Individual table cells are capped at 40 terminal cells;
 pathological table row, column, and text counts are refused with a render error.
-No source bytes, path, dirty state, selection, history, cursor, viewport, or
-line-ending format are changed. Raw HTML is displayed as inert text; terminal
-control characters become visible safe glyphs rather than executing.
+No source bytes, path, dirty state, selection, history, cursor, horizontal
+viewport, or line-ending format are changed. Only the source's vertical
+viewport is synchronized with preview navigation. Raw HTML is displayed as
+inert text; terminal control characters become visible safe glyphs rather than
+executing.
 
 ## Large files
 

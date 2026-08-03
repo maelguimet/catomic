@@ -8,6 +8,8 @@ use std::fs::File;
 use std::io;
 use std::os::unix::fs::FileExt;
 
+use memchr::{memchr, memrchr};
+
 use super::scan::{LineScan, LineScanState};
 use super::SCAN_CHUNK_BYTES;
 
@@ -61,13 +63,7 @@ fn scan_utf8_page_with_reader(
         if n == 0 {
             break;
         }
-        let page_chunk = page_chunk(&chunk[..n], state.lines_remaining);
-        state.scan_chunk(
-            &chunk[..page_chunk.used],
-            page_chunk.newline_count,
-            page_chunk.is_ascii,
-        )?;
-        if page_chunk.page_complete {
+        if state.scan_chunk(&chunk[..n])? {
             state.finish_complete_page()?;
             let next_page_start = state.offset;
             return Ok(state.into_scan(Some(next_page_start)));
@@ -123,13 +119,7 @@ pub(crate) fn scan_utf8_page_bytes_for_perf(
     while state.offset < bytes.len() {
         let end = (state.offset + SCAN_CHUNK_BYTES).min(bytes.len());
         let chunk = &bytes[state.offset..end];
-        let page_chunk = page_chunk(chunk, state.lines_remaining);
-        state.scan_chunk(
-            &chunk[..page_chunk.used],
-            page_chunk.newline_count,
-            page_chunk.is_ascii,
-        )?;
-        if page_chunk.page_complete {
+        if state.scan_chunk(chunk)? {
             state.finish_complete_page()?;
             let next_page_start = state.offset;
             return Ok(state.into_scan(Some(next_page_start)));
@@ -339,10 +329,8 @@ fn reverse_page_chunk(
     remaining_newlines: usize,
 ) -> ReversePageChunk {
     let mut newline_count = 0usize;
-    for index in (0..bytes.len()).rev() {
-        if bytes[index] != b'\n' {
-            continue;
-        }
+    let mut search_end = bytes.len();
+    while let Some(index) = memrchr(b'\n', &bytes[..search_end]) {
         newline_count += 1;
         if newline_count == remaining_newlines {
             return ReversePageChunk {
@@ -351,6 +339,7 @@ fn reverse_page_chunk(
                 newline_count,
             };
         }
+        search_end = index;
     }
     ReversePageChunk {
         start_byte: None,
@@ -365,6 +354,7 @@ struct PageScanState {
     lines_remaining: usize,
     lines: LineScanState,
     carry: Vec<u8>,
+    newline_offsets: Vec<usize>,
 }
 
 impl PageScanState {
@@ -375,17 +365,31 @@ impl PageScanState {
             lines_remaining: page_lines,
             lines: LineScanState::new(start_byte),
             carry: Vec::new(),
+            newline_offsets: Vec::new(),
         }
     }
 
-    fn scan_chunk(&mut self, bytes: &[u8], newline_count: usize, is_ascii: bool) -> io::Result<()> {
-        self.lines_remaining = self.lines_remaining.saturating_sub(newline_count);
+    fn scan_chunk(&mut self, bytes: &[u8]) -> io::Result<bool> {
+        let page_chunk = page_chunk(
+            bytes,
+            self.offset,
+            self.lines_remaining,
+            &mut self.newline_offsets,
+        );
+        let bytes = &bytes[..page_chunk.used];
+        self.lines_remaining = self
+            .lines_remaining
+            .saturating_sub(self.newline_offsets.len());
         let carry_len = self.carry.len();
         let text_start_offset = self.offset - carry_len;
-        if self.carry.is_empty() && is_ascii {
-            self.scan_ascii_bytes(bytes, text_start_offset);
+        if self.carry.is_empty() && bytes.is_ascii() {
+            self.lines.scan_ascii_bytes_with_newlines(
+                bytes,
+                text_start_offset,
+                &self.newline_offsets,
+            );
             self.offset += bytes.len();
-            return Ok(());
+            return Ok(page_chunk.page_complete);
         }
         let mut combined;
         let text_bytes = if self.carry.is_empty() {
@@ -400,14 +404,14 @@ impl PageScanState {
         let valid_end = valid_utf8_end(text_bytes)?;
         let valid_text = std::str::from_utf8(&text_bytes[..valid_end])
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-        self.lines.scan_valid_text(valid_text, text_start_offset);
+        self.lines.scan_valid_text_with_newlines(
+            valid_text,
+            text_start_offset,
+            &self.newline_offsets,
+        );
         self.carry.extend_from_slice(&text_bytes[valid_end..]);
         self.offset += bytes.len();
-        Ok(())
-    }
-
-    fn scan_ascii_bytes(&mut self, bytes: &[u8], text_start_offset: usize) {
-        self.lines.scan_ascii_bytes(bytes, text_start_offset);
+        Ok(page_chunk.page_complete)
     }
 
     fn finish_complete_page(&mut self) -> io::Result<()> {
@@ -438,60 +442,32 @@ impl PageScanState {
 
 struct PageChunk {
     used: usize,
-    newline_count: usize,
     page_complete: bool,
-    is_ascii: bool,
 }
 
-fn page_chunk(bytes: &[u8], remaining: usize) -> PageChunk {
-    if bytes.is_ascii() {
-        return ascii_page_chunk(bytes, remaining);
-    }
-    non_ascii_page_chunk(bytes, remaining)
-}
-
-fn ascii_page_chunk(bytes: &[u8], remaining: usize) -> PageChunk {
-    let text = std::str::from_utf8(bytes).expect("ASCII bytes must be valid UTF-8");
-    let mut seen = 0usize;
-    for (index, _) in text.match_indices('\n') {
-        seen += 1;
-        if seen == remaining {
+fn page_chunk(
+    bytes: &[u8],
+    absolute_start: usize,
+    remaining: usize,
+    newline_offsets: &mut Vec<usize>,
+) -> PageChunk {
+    debug_assert!(remaining > 0);
+    newline_offsets.clear();
+    let mut search_start = 0usize;
+    while let Some(relative_index) = memchr(b'\n', &bytes[search_start..]) {
+        let index = search_start + relative_index;
+        newline_offsets.push(absolute_start + index);
+        if newline_offsets.len() == remaining {
             return PageChunk {
                 used: index + 1,
-                newline_count: seen,
                 page_complete: true,
-                is_ascii: true,
             };
         }
+        search_start = index + 1;
     }
     PageChunk {
         used: bytes.len(),
-        newline_count: seen,
         page_complete: false,
-        is_ascii: true,
-    }
-}
-
-fn non_ascii_page_chunk(bytes: &[u8], remaining: usize) -> PageChunk {
-    let mut seen = 0usize;
-    for (index, byte) in bytes.iter().enumerate() {
-        if *byte == b'\n' {
-            seen += 1;
-            if seen == remaining {
-                return PageChunk {
-                    used: index + 1,
-                    newline_count: seen,
-                    page_complete: true,
-                    is_ascii: false,
-                };
-            }
-        }
-    }
-    PageChunk {
-        used: bytes.len(),
-        newline_count: seen,
-        page_complete: false,
-        is_ascii: false,
     }
 }
 
@@ -508,4 +484,136 @@ fn incomplete_utf8_error() -> io::Error {
         io::ErrorKind::InvalidData,
         "incomplete utf-8 sequence at end of file",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::buffer::large_file::LINE_CHECKPOINT_INTERVAL_CHARS;
+    use crate::config::big_files::DEFAULT_PAGE_LINES;
+
+    #[test]
+    fn forward_cutoff_does_not_validate_bytes_after_the_page_newline() {
+        let bytes = [b'\n', 0xff, b'x'];
+
+        let page = scan_utf8_page_bytes_for_perf(&bytes, 0, 1)
+            .expect("the selected page prefix is valid UTF-8");
+
+        assert_eq!(page.start_byte, 0);
+        assert_eq!(page.end_byte, 1);
+        assert_eq!(page.next_page_start, Some(1));
+        assert_eq!(page.lines.line_starts, vec![0]);
+        assert_eq!(page.lines.line_char_counts, vec![0]);
+        assert_eq!(page.lines.line_is_ascii, vec![true]);
+        assert!(scan_utf8_page_bytes_for_perf(&bytes, 1, 1).is_err());
+    }
+
+    #[test]
+    fn shared_ascii_newlines_preserve_crlf_and_checkpoint_metadata() {
+        let prefix = "a".repeat(LINE_CHECKPOINT_INTERVAL_CHARS + 7);
+        let bytes = format!("{prefix}\r\ntail").into_bytes();
+
+        let page = scan_utf8_page_bytes_for_perf(&bytes, 0, 1).expect("scan ASCII CRLF page");
+
+        assert_eq!(page.end_byte, prefix.len() + 2);
+        assert_eq!(page.next_page_start, Some(prefix.len() + 2));
+        assert_eq!(page.lines.line_char_counts, vec![prefix.len()]);
+        assert_eq!(page.lines.line_is_ascii, vec![true]);
+        assert_eq!(page.lines.crlf_offsets, vec![prefix.len()]);
+        assert_eq!(
+            page.lines.line_checkpoints,
+            vec![super::super::LineCheckpoint {
+                col: LINE_CHECKPOINT_INTERVAL_CHARS,
+                byte_offset: LINE_CHECKPOINT_INTERVAL_CHARS,
+            }]
+        );
+    }
+
+    #[test]
+    fn crlf_split_at_read_boundary_keeps_exact_page_metadata() {
+        let mut bytes = vec![b'a'; SCAN_CHUNK_BYTES - 1];
+        bytes.extend_from_slice(b"\r\ntail");
+
+        let page = scan_utf8_page_bytes_for_perf(&bytes, 0, 1)
+            .expect("scan CRLF split across descriptor chunks");
+
+        assert_eq!(page.end_byte, SCAN_CHUNK_BYTES + 1);
+        assert_eq!(page.next_page_start, Some(SCAN_CHUNK_BYTES + 1));
+        assert_eq!(page.lines.line_char_counts, vec![SCAN_CHUNK_BYTES - 1]);
+        assert_eq!(page.lines.crlf_offsets, vec![SCAN_CHUNK_BYTES - 1]);
+        assert_eq!(
+            find_previous_page_start_bytes_for_perf(&bytes, page.end_byte, 1)
+                .expect("locate the first page from its successor"),
+            0
+        );
+    }
+
+    #[test]
+    fn default_page_scan_preserves_utf8_split_across_read_boundary() {
+        let pattern = "a🙂\n";
+        let mut text = pattern.repeat(DEFAULT_PAGE_LINES);
+        text.push_str("tail");
+
+        let page = scan_utf8_page_bytes_for_perf(text.as_bytes(), 0, DEFAULT_PAGE_LINES)
+            .expect("scan the default-size Unicode page");
+
+        let expected_end = pattern.len() * DEFAULT_PAGE_LINES;
+        assert_eq!(page.end_byte, expected_end);
+        assert_eq!(page.next_page_start, Some(expected_end));
+        assert_eq!(page.lines.line_starts.len(), DEFAULT_PAGE_LINES);
+        assert!(page.lines.line_char_counts.iter().all(|count| *count == 2));
+        assert!(page.lines.line_is_ascii.iter().all(|is_ascii| !is_ascii));
+        assert_eq!(
+            find_previous_page_start_bytes_for_perf(
+                text.as_bytes(),
+                expected_end,
+                DEFAULT_PAGE_LINES,
+            )
+            .expect("locate the page before the Unicode tail"),
+            0
+        );
+    }
+
+    #[test]
+    fn forward_and_reverse_boundaries_match_scalar_model() {
+        let mut bytes = vec![b'\n'];
+        bytes.resize(SCAN_CHUNK_BYTES - 1, b'a');
+        bytes.push(b'\n');
+        bytes.push(b'\n');
+        bytes.resize((SCAN_CHUNK_BYTES * 2) - 1, b'b');
+        bytes.push(b'\n');
+        bytes.extend_from_slice("é\r\nlast\n".as_bytes());
+
+        for page_lines in [1, 2, 3] {
+            let mut starts = vec![0usize];
+            loop {
+                let start = *starts.last().expect("the first page start is present");
+                let page = scan_utf8_page_bytes_for_perf(&bytes, start, page_lines)
+                    .expect("scan model page");
+                let expected = scalar_page_boundary(&bytes, start, page_lines);
+                assert_eq!(page.end_byte, expected.unwrap_or(bytes.len()));
+                assert_eq!(page.next_page_start, expected);
+                let Some(next) = page.next_page_start else {
+                    break;
+                };
+                assert!(next > start);
+                starts.push(next);
+            }
+
+            for pair in starts.windows(2) {
+                let previous = find_previous_page_start_bytes_for_perf(&bytes, pair[1], page_lines)
+                    .expect("reverse model page");
+                assert_eq!(previous, pair[0]);
+            }
+        }
+    }
+
+    fn scalar_page_boundary(bytes: &[u8], start: usize, page_lines: usize) -> Option<usize> {
+        bytes[start..]
+            .iter()
+            .enumerate()
+            .filter(|(_, byte)| **byte == b'\n')
+            .nth(page_lines - 1)
+            .map(|(offset, _)| start + offset + 1)
+    }
 }

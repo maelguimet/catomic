@@ -22,12 +22,11 @@ pub(super) fn run() {
 
 pub(super) fn smoke() {
     let mut buffer = PieceTable::new();
-    buffer.reset_replacement_perf_stats();
     buffer.reset_line_index_work();
-    assert!(buffer
-        .replace_range(Cursor::default(), Cursor::default(), "é\n猫")
-        .expect("replace smoke fixture"));
-    let analysis = buffer.replacement_perf_stats();
+    let (changed, analysis) = buffer
+        .replace_range_for_perf(Cursor::default(), Cursor::default(), "é\n猫")
+        .expect("replace smoke fixture");
+    assert!(changed);
     assert_eq!(analysis.add_copy_calls, 1);
     assert_eq!(analysis.add_copied_bytes, "é\n猫".len());
     assert!(analysis.text_analysis_passes >= 4);
@@ -48,7 +47,6 @@ fn run_large_replacement(scenario: Scenario) {
     );
 
     let mut buffer = PieceTable::new();
-    buffer.reset_replacement_perf_stats();
     buffer.reset_line_index_work();
     let before = buffer.perf_stats();
     let (changed, sample) =
@@ -60,7 +58,6 @@ fn run_large_replacement(scenario: Scenario) {
     assert!(changed);
     assert_eq!(buffer.cursor(), expected_cursor);
     let after = buffer.perf_stats();
-    let analysis = buffer.replacement_perf_stats();
     let mutation = buffer.last_piece_mutation();
     let mut sink = CountingHashSink::default();
     buffer
@@ -71,6 +68,25 @@ fn run_large_replacement(scenario: Scenario) {
     assert_eq!(
         after.add_buffer_bytes - before.add_buffer_bytes,
         scenario.text.len()
+    );
+
+    let mut shadow = PieceTable::new();
+    let (shadow_changed, analysis) = shadow
+        .replace_range_for_perf(Cursor::default(), Cursor::default(), &scenario.text)
+        .expect("capture large replacement work");
+    assert_eq!(shadow_changed, changed);
+    assert_eq!(shadow.cursor(), buffer.cursor());
+    let mut shadow_sink = CountingHashSink::default();
+    shadow
+        .write_to(&mut shadow_sink)
+        .expect("hash shadow large replacement result");
+    assert_eq!(
+        (shadow_sink.bytes(), shadow_sink.hash()),
+        (sink.bytes(), sink.hash())
+    );
+    assert_eq!(
+        shadow.perf_stats().add_buffer_bytes,
+        after.add_buffer_bytes - before.add_buffer_bytes
     );
 
     let sample = with_throughput(sample, "logical_inserted_bytes", scenario.text.len())
@@ -136,8 +152,8 @@ fn run_high_range_count() {
         RANGE_COUNT
     );
 
+    let mut shadow = PieceTable::from_text(&source);
     let mut buffer = PieceTable::from_owned_text(source);
-    buffer.reset_replacement_perf_stats();
     buffer.reset_line_index_work();
     let before = buffer.perf_stats();
     let (replaced, sample) = measure_allocated_sample(
@@ -152,7 +168,6 @@ fn run_high_range_count() {
     assert_eq!(replaced, RANGE_COUNT);
     assert_eq!(buffer.cursor(), Cursor { row: 0, col: 7 });
     let after = buffer.perf_stats();
-    let analysis = buffer.replacement_perf_stats();
     let mutation = buffer.last_piece_mutation();
     let mut sink = CountingHashSink::default();
     buffer
@@ -160,11 +175,28 @@ fn run_high_range_count() {
         .expect("hash high-range replacement result");
     assert_eq!(sink.bytes(), expected.len());
     assert_eq!(sink.hash(), expected_hash);
-    assert_eq!(analysis.add_copy_calls, RANGE_COUNT);
-    assert_eq!(analysis.add_copied_bytes, RANGE_COUNT * REPLACEMENT.len());
     assert_eq!(
         after.add_buffer_bytes - before.add_buffer_bytes,
         RANGE_COUNT * REPLACEMENT.len()
+    );
+    let (shadow_replaced, analysis) = shadow
+        .replace_ranges_for_perf(&ranges, REPLACEMENT)
+        .expect("capture high-range replacement work");
+    assert_eq!(analysis.add_copy_calls, RANGE_COUNT);
+    assert_eq!(analysis.add_copied_bytes, RANGE_COUNT * REPLACEMENT.len());
+    assert_eq!(shadow_replaced, replaced);
+    assert_eq!(shadow.cursor(), buffer.cursor());
+    let mut shadow_sink = CountingHashSink::default();
+    shadow
+        .write_to(&mut shadow_sink)
+        .expect("hash shadow high-range replacement result");
+    assert_eq!(
+        (shadow_sink.bytes(), shadow_sink.hash()),
+        (sink.bytes(), sink.hash())
+    );
+    assert_eq!(
+        shadow.perf_stats().add_buffer_bytes,
+        after.add_buffer_bytes - before.add_buffer_bytes
     );
 
     let inserted_bytes = RANGE_COUNT * REPLACEMENT.len();

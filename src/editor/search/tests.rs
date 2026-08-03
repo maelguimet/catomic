@@ -45,12 +45,8 @@ fn local_streaming_search_crosses_piece_boundaries_without_line_allocations() {
         }
         _ => panic!("expected streaming match"),
     }
-    let metrics = task.metrics();
-    assert_eq!(metrics.scanned_bytes, 5);
-    assert_eq!(
-        metrics.temporary_allocations, 0,
-        "owned PieceTable ranges stay borrowed"
-    );
+    assert_eq!(task.metrics().0, 5);
+    assert_eq!(task.metrics().1, 0, "owned PieceTable ranges stay borrowed");
 }
 
 #[test]
@@ -73,9 +69,7 @@ fn local_streaming_search_keeps_file_backed_piece_ranges_utf8_aligned() {
         panic!("expected file-backed streaming match");
     };
     assert_eq!(found.start, Cursor { row: 0, col: 1 });
-    let metrics = task.metrics();
-    assert_eq!(metrics.scanned_bytes, 4);
-    assert_eq!(metrics.temporary_allocations, 2);
+    assert_eq!(task.metrics(), (4, 2));
 
     drop(buffer);
     let _ = std::fs::remove_file(path);
@@ -120,7 +114,7 @@ fn local_streaming_search_cancels_before_the_next_bounded_poll() {
         task.poll(&buffer, 64 * 1024),
         Some(SearchResult::NotFound)
     ));
-    assert_eq!(task.metrics().scanned_bytes, 64 * 1024);
+    assert_eq!(task.metrics().0, 64 * 1024);
 }
 
 #[test]
@@ -156,13 +150,10 @@ fn manual_local_streaming_search_reports_90mib_query_extension_metrics() {
         let mut task =
             LocalSearchTask::new(query, Cursor::default(), SearchDirection::Forward, true);
         while task.poll(&buffer, 64 * 1024).is_none() {}
-        let metrics = task.metrics();
-        eprintln!(
-            "query={query:?} scanned_bytes={} temporary_allocations={}",
-            metrics.scanned_bytes, metrics.temporary_allocations
-        );
-        assert_eq!(metrics.scanned_bytes, FIXTURE_BYTES);
-        assert_eq!(metrics.temporary_allocations, 0);
+        let (scanned_bytes, temporary_allocations) = task.metrics();
+        eprintln!("query={query:?} scanned_bytes={scanned_bytes} temporary_allocations={temporary_allocations}");
+        assert_eq!(scanned_bytes, FIXTURE_BYTES);
+        assert_eq!(temporary_allocations, 0);
     }
 }
 

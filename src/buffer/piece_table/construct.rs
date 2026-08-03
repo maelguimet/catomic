@@ -61,8 +61,6 @@ impl PieceTable {
             last_piece_mutation: Default::default(),
             #[cfg(test)]
             compaction_descriptor_scans: Default::default(),
-            #[cfg(test)]
-            replacement_perf: Default::default(),
         }
     }
 
@@ -186,8 +184,6 @@ impl PieceTable {
             last_piece_mutation: Default::default(),
             #[cfg(test)]
             compaction_descriptor_scans: Default::default(),
-            #[cfg(test)]
-            replacement_perf: Default::default(),
         }
     }
 
@@ -231,8 +227,6 @@ impl PieceTable {
             last_piece_mutation: Default::default(),
             #[cfg(test)]
             compaction_descriptor_scans: Default::default(),
-            #[cfg(test)]
-            replacement_perf: Default::default(),
         }
     }
 }

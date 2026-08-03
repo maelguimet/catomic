@@ -16,8 +16,6 @@ pub(crate) struct PageScan {
     pub(crate) start_byte: usize,
     pub(crate) end_byte: usize,
     pub(crate) next_page_start: Option<usize>,
-    #[cfg(test)]
-    pub(crate) perf: PageScanPerfStats,
 }
 
 #[cfg(test)]
@@ -40,6 +38,16 @@ pub(crate) fn scan_utf8_page(
     start_byte: usize,
     page_lines: usize,
 ) -> io::Result<PageScan> {
+    scan_utf8_page_with_reader(start_byte, page_lines, |out, offset| {
+        file.read_at(out, offset as u64)
+    })
+}
+
+fn scan_utf8_page_with_reader(
+    start_byte: usize,
+    page_lines: usize,
+    mut read_chunk: impl FnMut(&mut [u8], usize) -> io::Result<usize>,
+) -> io::Result<PageScan> {
     if page_lines == 0 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -49,15 +57,11 @@ pub(crate) fn scan_utf8_page(
     let mut state = PageScanState::new(start_byte, page_lines);
     let mut chunk = vec![0u8; SCAN_CHUNK_BYTES];
     loop {
-        let n = file.read_at(&mut chunk, state.offset as u64)?;
+        let n = read_chunk(&mut chunk, state.offset)?;
         if n == 0 {
             break;
         }
-        #[cfg(test)]
-        state.note_descriptor_read(n);
         let page_chunk = page_chunk(&chunk[..n], state.lines_remaining);
-        #[cfg(test)]
-        state.note_examined_bytes(page_chunk.used, page_chunk.newline_count);
         state.scan_chunk(
             &chunk[..page_chunk.used],
             page_chunk.newline_count,
@@ -71,6 +75,30 @@ pub(crate) fn scan_utf8_page(
     }
     state.finish_final_page()?;
     Ok(state.into_scan(None))
+}
+
+#[cfg(test)]
+pub(crate) fn scan_utf8_page_for_perf(
+    file: &File,
+    start_byte: usize,
+    page_lines: usize,
+) -> io::Result<(PageScan, PageScanPerfStats)> {
+    let mut perf = PageScanPerfStats::default();
+    let scan = scan_utf8_page_with_reader(start_byte, page_lines, |out, offset| {
+        let read = file.read_at(out, offset as u64)?;
+        if read > 0 {
+            perf.descriptor_read_calls += 1;
+            perf.descriptor_read_bytes += read;
+        }
+        Ok(read)
+    })?;
+    perf.logical_bytes_examined = scan.end_byte - scan.start_byte;
+    perf.newline_count = if scan.next_page_start.is_some() {
+        page_lines
+    } else {
+        scan.lines.line_starts.len().saturating_sub(1)
+    };
+    Ok((scan, perf))
 }
 
 #[cfg(test)]
@@ -96,7 +124,6 @@ pub(crate) fn scan_utf8_page_bytes_for_perf(
         let end = (state.offset + SCAN_CHUNK_BYTES).min(bytes.len());
         let chunk = &bytes[state.offset..end];
         let page_chunk = page_chunk(chunk, state.lines_remaining);
-        state.note_examined_bytes(page_chunk.used, page_chunk.newline_count);
         state.scan_chunk(
             &chunk[..page_chunk.used],
             page_chunk.newline_count,
@@ -117,7 +144,7 @@ pub(crate) fn find_previous_page_start(
     current_start: usize,
     page_lines: usize,
 ) -> io::Result<usize> {
-    find_previous_page(file, current_start, page_lines).map(|scan| scan.start_byte)
+    find_previous_page(file, current_start, page_lines)
 }
 
 #[cfg(test)]
@@ -126,11 +153,22 @@ pub(crate) fn find_previous_page_start_for_perf(
     current_start: usize,
     page_lines: usize,
 ) -> io::Result<PreviousPageScan> {
-    let scan = find_previous_page(file, current_start, page_lines)?;
-    Ok(PreviousPageScan {
-        start_byte: scan.start_byte,
-        perf: scan.perf,
-    })
+    let mut perf = PageScanPerfStats::default();
+    let mut observer = PerfReversePageObserver::default();
+    let start_byte = find_previous_page_with_reader(
+        current_start,
+        page_lines,
+        |out, offset| {
+            let (calls, bytes) = read_exact_at_for_perf(file, out, offset)?;
+            perf.descriptor_read_calls += calls;
+            perf.descriptor_read_bytes += bytes;
+            Ok(())
+        },
+        &mut observer,
+    )?;
+    perf.logical_bytes_examined = observer.logical_bytes_examined;
+    perf.newline_count = observer.newline_count;
+    Ok(PreviousPageScan { start_byte, perf })
 }
 
 #[cfg(test)]
@@ -138,99 +176,94 @@ pub(crate) fn find_previous_page_start_bytes_for_perf(
     bytes: &[u8],
     current_start: usize,
     page_lines: usize,
+) -> io::Result<usize> {
+    find_previous_page_in_bytes(
+        bytes,
+        current_start,
+        page_lines,
+        &mut NoopReversePageObserver,
+    )
+}
+
+#[cfg(test)]
+pub(crate) fn capture_previous_page_start_bytes_for_perf(
+    bytes: &[u8],
+    current_start: usize,
+    page_lines: usize,
 ) -> io::Result<PreviousPageScan> {
+    let mut observer = PerfReversePageObserver::default();
+    let start_byte = find_previous_page_in_bytes(bytes, current_start, page_lines, &mut observer)?;
+    Ok(PreviousPageScan {
+        start_byte,
+        perf: PageScanPerfStats {
+            logical_bytes_examined: observer.logical_bytes_examined,
+            newline_count: observer.newline_count,
+            ..PageScanPerfStats::default()
+        },
+    })
+}
+
+#[cfg(test)]
+fn find_previous_page_in_bytes(
+    bytes: &[u8],
+    current_start: usize,
+    page_lines: usize,
+    observer: &mut impl ReversePageObserver,
+) -> io::Result<usize> {
     if current_start > bytes.len() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "reverse page start exceeds in-memory fixture",
         ));
     }
-    let target_newline = page_lines.saturating_add(1);
-    let mut perf = PageScanPerfStats::default();
-    let mut seen = 0usize;
+    let mut remaining_newlines = page_lines.saturating_add(1);
     let mut end = current_start;
     while end > 0 {
         let start = end.saturating_sub(SCAN_CHUNK_BYTES);
-        for index in (start..end).rev() {
-            perf.logical_bytes_examined += 1;
-            if bytes[index] == b'\n' {
-                seen += 1;
-                perf.newline_count += 1;
-                if seen == target_newline {
-                    return Ok(PreviousPageScan {
-                        start_byte: index + 1,
-                        perf,
-                    });
-                }
-            }
+        let chunk = reverse_page_chunk(&bytes[start..end], start, remaining_newlines);
+        observer.scanned_chunk(chunk.logical_bytes_examined, chunk.newline_count);
+        if let Some(start_byte) = chunk.start_byte {
+            return Ok(start_byte);
         }
+        remaining_newlines = remaining_newlines.saturating_sub(chunk.newline_count);
         end = start;
     }
-    Ok(PreviousPageScan {
-        start_byte: 0,
-        perf,
-    })
+    Ok(0)
 }
 
-struct PreviousPageScanInternal {
-    start_byte: usize,
-    #[cfg(test)]
-    perf: PageScanPerfStats,
+fn find_previous_page(file: &File, current_start: usize, page_lines: usize) -> io::Result<usize> {
+    find_previous_page_with_reader(
+        current_start,
+        page_lines,
+        |out, offset| read_exact_at(file, out, offset),
+        &mut NoopReversePageObserver,
+    )
 }
 
-fn find_previous_page(
-    file: &File,
+fn find_previous_page_with_reader(
     current_start: usize,
     page_lines: usize,
-) -> io::Result<PreviousPageScanInternal> {
-    let target_newline = page_lines.saturating_add(1);
-    let mut seen = 0usize;
+    mut read_chunk: impl FnMut(&mut [u8], usize) -> io::Result<()>,
+    observer: &mut impl ReversePageObserver,
+) -> io::Result<usize> {
+    let mut remaining_newlines = page_lines.saturating_add(1);
     let mut end = current_start;
     let mut chunk = vec![0u8; SCAN_CHUNK_BYTES];
-    #[cfg(test)]
-    let mut perf = PageScanPerfStats::default();
     while end > 0 {
         let start = end.saturating_sub(chunk.len());
         let len = end - start;
-        #[cfg(test)]
-        let (read_calls, read_bytes) = read_exact_at(file, &mut chunk[..len], start)?;
-        #[cfg(not(test))]
-        read_exact_at(file, &mut chunk[..len], start)?;
-        #[cfg(test)]
-        {
-            perf.descriptor_read_calls += read_calls;
-            perf.descriptor_read_bytes += read_bytes;
+        read_chunk(&mut chunk[..len], start)?;
+        let scanned = reverse_page_chunk(&chunk[..len], start, remaining_newlines);
+        observer.scanned_chunk(scanned.logical_bytes_examined, scanned.newline_count);
+        if let Some(start_byte) = scanned.start_byte {
+            return Ok(start_byte);
         }
-        for index in (0..len).rev() {
-            #[cfg(test)]
-            {
-                perf.logical_bytes_examined += 1;
-            }
-            if chunk[index] == b'\n' {
-                seen += 1;
-                #[cfg(test)]
-                {
-                    perf.newline_count += 1;
-                }
-                if seen == target_newline {
-                    return Ok(PreviousPageScanInternal {
-                        start_byte: start + index + 1,
-                        #[cfg(test)]
-                        perf,
-                    });
-                }
-            }
-        }
+        remaining_newlines = remaining_newlines.saturating_sub(scanned.newline_count);
         end = start;
     }
-    Ok(PreviousPageScanInternal {
-        start_byte: 0,
-        #[cfg(test)]
-        perf,
-    })
+    Ok(0)
 }
 
-#[cfg(not(test))]
 fn read_exact_at(file: &File, mut out: &mut [u8], mut offset: usize) -> io::Result<()> {
     while !out.is_empty() {
         let read = file.read_at(out, offset as u64)?;
@@ -247,7 +280,11 @@ fn read_exact_at(file: &File, mut out: &mut [u8], mut offset: usize) -> io::Resu
 }
 
 #[cfg(test)]
-fn read_exact_at(file: &File, mut out: &mut [u8], mut offset: usize) -> io::Result<(usize, usize)> {
+fn read_exact_at_for_perf(
+    file: &File,
+    mut out: &mut [u8],
+    mut offset: usize,
+) -> io::Result<(usize, usize)> {
     let mut read_calls = 0usize;
     let mut read_bytes = 0usize;
     while !out.is_empty() {
@@ -266,14 +303,68 @@ fn read_exact_at(file: &File, mut out: &mut [u8], mut offset: usize) -> io::Resu
     Ok((read_calls, read_bytes))
 }
 
+struct ReversePageChunk {
+    start_byte: Option<usize>,
+    logical_bytes_examined: usize,
+    newline_count: usize,
+}
+
+trait ReversePageObserver {
+    #[inline(always)]
+    fn scanned_chunk(&mut self, _logical_bytes_examined: usize, _newline_count: usize) {}
+}
+
+struct NoopReversePageObserver;
+
+impl ReversePageObserver for NoopReversePageObserver {}
+
+#[cfg(test)]
+#[derive(Default)]
+struct PerfReversePageObserver {
+    logical_bytes_examined: usize,
+    newline_count: usize,
+}
+
+#[cfg(test)]
+impl ReversePageObserver for PerfReversePageObserver {
+    fn scanned_chunk(&mut self, logical_bytes_examined: usize, newline_count: usize) {
+        self.logical_bytes_examined += logical_bytes_examined;
+        self.newline_count += newline_count;
+    }
+}
+
+fn reverse_page_chunk(
+    bytes: &[u8],
+    absolute_start: usize,
+    remaining_newlines: usize,
+) -> ReversePageChunk {
+    let mut newline_count = 0usize;
+    for index in (0..bytes.len()).rev() {
+        if bytes[index] != b'\n' {
+            continue;
+        }
+        newline_count += 1;
+        if newline_count == remaining_newlines {
+            return ReversePageChunk {
+                start_byte: Some(absolute_start + index + 1),
+                logical_bytes_examined: bytes.len() - index,
+                newline_count,
+            };
+        }
+    }
+    ReversePageChunk {
+        start_byte: None,
+        logical_bytes_examined: bytes.len(),
+        newline_count,
+    }
+}
+
 struct PageScanState {
     start_byte: usize,
     offset: usize,
     lines_remaining: usize,
     lines: LineScanState,
     carry: Vec<u8>,
-    #[cfg(test)]
-    perf: PageScanPerfStats,
 }
 
 impl PageScanState {
@@ -284,21 +375,7 @@ impl PageScanState {
             lines_remaining: page_lines,
             lines: LineScanState::new(start_byte),
             carry: Vec::new(),
-            #[cfg(test)]
-            perf: PageScanPerfStats::default(),
         }
-    }
-
-    #[cfg(test)]
-    fn note_descriptor_read(&mut self, bytes: usize) {
-        self.perf.descriptor_read_calls += 1;
-        self.perf.descriptor_read_bytes += bytes;
-    }
-
-    #[cfg(test)]
-    fn note_examined_bytes(&mut self, bytes: usize, newlines: usize) {
-        self.perf.logical_bytes_examined += bytes;
-        self.perf.newline_count += newlines;
     }
 
     fn scan_chunk(&mut self, bytes: &[u8], newline_count: usize, is_ascii: bool) -> io::Result<()> {
@@ -355,8 +432,6 @@ impl PageScanState {
             start_byte: self.start_byte,
             end_byte: self.offset,
             next_page_start,
-            #[cfg(test)]
-            perf: self.perf,
         }
     }
 }

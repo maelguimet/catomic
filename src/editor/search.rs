@@ -51,25 +51,6 @@ pub(crate) struct LocalSearchTask {
     cancelled: bool,
     scanned_bytes: usize,
     temporary_allocations: usize,
-    #[cfg(test)]
-    segments_visited: usize,
-    #[cfg(test)]
-    candidate_matches: usize,
-    #[cfg(test)]
-    position_records: usize,
-}
-
-#[cfg(test)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct SearchPerfStats {
-    pub(crate) scanned_bytes: usize,
-    pub(crate) segments_visited: usize,
-    pub(crate) candidate_matches: usize,
-    pub(crate) position_records: usize,
-    pub(crate) temporary_allocations: usize,
-    pub(crate) descriptor_read_calls: usize,
-    pub(crate) descriptor_read_bytes: usize,
-    pub(crate) descriptor_metadata_checks: usize,
 }
 
 impl LocalSearchTask {
@@ -95,12 +76,6 @@ impl LocalSearchTask {
             cancelled: false,
             scanned_bytes: 0,
             temporary_allocations: 0,
-            #[cfg(test)]
-            segments_visited: 0,
-            #[cfg(test)]
-            candidate_matches: 0,
-            #[cfg(test)]
-            position_records: 0,
         }
     }
 
@@ -123,20 +98,12 @@ impl LocalSearchTask {
             if matches!(&segment, std::borrow::Cow::Owned(_)) {
                 self.temporary_allocations += 1;
             }
-            #[cfg(test)]
-            {
-                self.segments_visited += 1;
-            }
             let length = segment.len();
             for ch in segment.chars() {
                 let position = self.cursor;
                 let mut encoded = [0; 4];
                 for byte in ch.encode_utf8(&mut encoded).bytes() {
                     self.recent_positions.push_back(position);
-                    #[cfg(test)]
-                    {
-                        self.position_records += 1;
-                    }
                     if self.recent_positions.len() > self.query.len() {
                         self.recent_positions.pop_front();
                     }
@@ -148,10 +115,6 @@ impl LocalSearchTask {
                     }
                     self.scanned_bytes += 1;
                     if self.matched == self.query.len() {
-                        #[cfg(test)]
-                        {
-                            self.candidate_matches += 1;
-                        }
                         let start = *self
                             .recent_positions
                             .front()
@@ -199,15 +162,8 @@ impl LocalSearchTask {
     }
 
     #[cfg(test)]
-    pub(crate) fn metrics(&self) -> SearchPerfStats {
-        SearchPerfStats {
-            scanned_bytes: self.scanned_bytes,
-            segments_visited: self.segments_visited,
-            candidate_matches: self.candidate_matches,
-            position_records: self.position_records,
-            temporary_allocations: self.temporary_allocations,
-            ..SearchPerfStats::default()
-        }
+    pub(crate) fn metrics(&self) -> (usize, usize) {
+        (self.scanned_bytes, self.temporary_allocations)
     }
 }
 
@@ -255,7 +211,7 @@ fn start_descriptor_search_with(
     let cancel = Arc::new(AtomicBool::new(false));
     let worker_cancel = Arc::clone(&cancel);
     std::thread::spawn(move || {
-        let result = scan_descriptor_with(source, &query, &worker_cancel, anchor, direction)
+        let result = scan_descriptor_with(&source, &query, &worker_cancel, anchor, direction)
             .unwrap_or_else(|error| SearchResult::Error(error.to_string()));
         if !worker_cancel.load(Ordering::Acquire) {
             let _ = sender.send(result);
@@ -322,7 +278,7 @@ fn scan_descriptor(
     query: &str,
     cancel: &AtomicBool,
 ) -> io::Result<SearchResult> {
-    scan_descriptor_with(source, query, cancel, None, SearchDirection::Forward)
+    scan_descriptor_with(&source, query, cancel, None, SearchDirection::Forward)
 }
 
 #[cfg(test)]
@@ -333,55 +289,21 @@ fn scan_descriptor_from(
     anchor: DescriptorPosition,
     direction: SearchDirection,
 ) -> io::Result<SearchResult> {
-    scan_descriptor_with(source, query, cancel, Some(anchor), direction)
+    scan_descriptor_with(&source, query, cancel, Some(anchor), direction)
 }
 
 #[cfg(test)]
 pub(crate) fn scan_descriptor_for_perf(
-    source: DescriptorSource,
+    source: &DescriptorSource,
     query: &str,
     anchor: Option<DescriptorPosition>,
     direction: SearchDirection,
-) -> io::Result<(SearchResult, SearchPerfStats)> {
-    DESCRIPTOR_PERF_CAPTURE.with(|capture| {
-        let mut capture = capture.borrow_mut();
-        assert!(!capture.active, "descriptor perf capture cannot nest");
-        capture.active = true;
-        capture.stats = None;
-    });
-    let capture = DescriptorPerfCaptureGuard;
-    let result = scan_descriptor_with(source, query, &AtomicBool::new(false), anchor, direction);
-    let stats =
-        DESCRIPTOR_PERF_CAPTURE.with(|state| state.borrow_mut().stats.take().unwrap_or_default());
-    drop(capture);
-    result.map(|result| (result, stats))
-}
-
-#[cfg(test)]
-#[derive(Default)]
-struct DescriptorPerfCapture {
-    active: bool,
-    stats: Option<SearchPerfStats>,
-}
-
-#[cfg(test)]
-thread_local! {
-    static DESCRIPTOR_PERF_CAPTURE: std::cell::RefCell<DescriptorPerfCapture> =
-        std::cell::RefCell::new(DescriptorPerfCapture::default());
-}
-
-#[cfg(test)]
-struct DescriptorPerfCaptureGuard;
-
-#[cfg(test)]
-impl Drop for DescriptorPerfCaptureGuard {
-    fn drop(&mut self) {
-        DESCRIPTOR_PERF_CAPTURE.with(|capture| capture.borrow_mut().active = false);
-    }
+) -> io::Result<SearchResult> {
+    scan_descriptor_with(source, query, &AtomicBool::new(false), anchor, direction)
 }
 
 fn scan_descriptor_with(
-    source: DescriptorSource,
+    source: &DescriptorSource,
     query: &str,
     cancel: &AtomicBool,
     anchor: Option<DescriptorPosition>,
@@ -396,10 +318,6 @@ fn scan_descriptor_with(
     }
     let initial_modified = initial_meta.modified().ok();
     let mut scanner = Scanner::new(query, source.page_lines, anchor, direction);
-    #[cfg(test)]
-    {
-        scanner.perf.descriptor_metadata_checks += 1;
-    }
     let mut chunk = vec![0u8; SEARCH_CHUNK_BYTES];
     let mut carry = Vec::new();
     let mut offset = 0u64;
@@ -417,16 +335,8 @@ fn scan_descriptor_with(
                 let text = std::str::from_utf8(&overlay.content)
                     .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
                 scanner.begin_page(overlay.start_byte, overlay.page_number);
-                #[cfg(test)]
-                {
-                    scanner.perf.segments_visited += 1;
-                }
                 if let Some(position) = scanner.scan_fixed_page_text(text) {
-                    #[cfg(test)]
-                    {
-                        scanner.perf.descriptor_metadata_checks += 1;
-                    }
-                    ensure_unchanged(&source, initial_modified)?;
+                    ensure_unchanged(source, initial_modified)?;
                     return Ok(SearchResult::Found(position));
                 }
                 offset = overlay.end_byte;
@@ -444,11 +354,6 @@ fn scan_descriptor_with(
                     .min(chunk.len())
             });
         let read = source.file.read_at(&mut chunk[..read_limit], offset)?;
-        #[cfg(test)]
-        {
-            scanner.perf.descriptor_read_calls += 1;
-            scanner.perf.descriptor_read_bytes += read;
-        }
         if read == 0 {
             return Err(changed_file_error());
         }
@@ -467,16 +372,8 @@ fn scan_descriptor_with(
         let valid_end = valid_utf8_end(bytes)?;
         let text = std::str::from_utf8(&bytes[..valid_end])
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-        #[cfg(test)]
-        {
-            scanner.perf.segments_visited += 1;
-        }
         if let Some(position) = scanner.scan_text(text, text_start) {
-            #[cfg(test)]
-            {
-                scanner.perf.descriptor_metadata_checks += 1;
-            }
-            ensure_unchanged(&source, initial_modified)?;
+            ensure_unchanged(source, initial_modified)?;
             return Ok(SearchResult::Found(position));
         }
         carry.extend_from_slice(&bytes[valid_end..]);
@@ -488,11 +385,7 @@ fn scan_descriptor_with(
             "incomplete utf-8 sequence at end of file",
         ));
     }
-    #[cfg(test)]
-    {
-        scanner.perf.descriptor_metadata_checks += 1;
-    }
-    ensure_unchanged(&source, initial_modified)?;
+    ensure_unchanged(source, initial_modified)?;
     Ok(scanner
         .finish()
         .map_or(SearchResult::NotFound, SearchResult::Found))
@@ -558,8 +451,6 @@ struct Scanner {
     first_match: Option<DescriptorPosition>,
     last_match: Option<DescriptorPosition>,
     before_anchor: Option<DescriptorPosition>,
-    #[cfg(test)]
-    perf: SearchPerfStats,
 }
 
 impl Scanner {
@@ -584,8 +475,6 @@ impl Scanner {
             first_match: None,
             last_match: None,
             before_anchor: None,
-            #[cfg(test)]
-            perf: SearchPerfStats::default(),
         }
     }
 
@@ -646,11 +535,6 @@ impl Scanner {
 
     fn feed(&mut self, byte: u8, position: DescriptorPosition) -> Option<DescriptorPosition> {
         self.recent_positions.push_back(position);
-        #[cfg(test)]
-        {
-            self.perf.scanned_bytes += 1;
-            self.perf.position_records += 1;
-        }
         if self.recent_positions.len() > self.query.len() {
             self.recent_positions.pop_front();
         }
@@ -661,10 +545,6 @@ impl Scanner {
             self.matched += 1;
         }
         if self.matched == self.query.len() {
-            #[cfg(test)]
-            {
-                self.perf.candidate_matches += 1;
-            }
             let position = *self
                 .recent_positions
                 .front()
@@ -699,18 +579,6 @@ impl Scanner {
             (None, _) | (Some(_), SearchDirection::Forward) => self.first_match,
             (Some(_), SearchDirection::Backward) => self.before_anchor.or(self.last_match),
         }
-    }
-}
-
-#[cfg(test)]
-impl Drop for Scanner {
-    fn drop(&mut self) {
-        DESCRIPTOR_PERF_CAPTURE.with(|capture| {
-            let mut capture = capture.borrow_mut();
-            if capture.active {
-                capture.stats = Some(self.perf);
-            }
-        });
     }
 }
 

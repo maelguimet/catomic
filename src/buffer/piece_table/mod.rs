@@ -122,34 +122,6 @@ impl PieceTable {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn reset_replacement_perf_stats(&mut self) {
-        self.replacement_perf = ReplacementPerfStats::default();
-    }
-
-    #[cfg(test)]
-    pub(crate) fn replacement_perf_stats(&self) -> ReplacementPerfStats {
-        self.replacement_perf
-    }
-
-    #[cfg(test)]
-    fn note_replacement_newline_scan(&mut self, bytes: usize) {
-        self.replacement_perf.text_analysis_passes += 1;
-        self.replacement_perf.newline_scan_bytes += bytes;
-    }
-
-    #[cfg(test)]
-    fn note_replacement_scalar_scan(&mut self, bytes: usize) {
-        self.replacement_perf.text_analysis_passes += 1;
-        self.replacement_perf.scalar_scan_bytes += bytes;
-    }
-
-    #[cfg(test)]
-    fn note_replacement_add_copy(&mut self, bytes: usize) {
-        self.replacement_perf.add_copy_calls += 1;
-        self.replacement_perf.add_copied_bytes += bytes;
-    }
-
     fn piece_sequence_line_metadata(&self, pieces: &[Piece]) -> (usize, Vec<usize>) {
         let mut byte_len = 0usize;
         let mut newline_offsets = Vec::new();

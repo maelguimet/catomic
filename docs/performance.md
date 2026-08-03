@@ -154,7 +154,10 @@ release-mode test separately; ordinary CI runs only its small deterministic
 oracle smoke and never applies host-timing thresholds. The general ignored
 debug run skips this module so the 90 MiB and 64 MiB-class matrices are not run
 twice. Each generated file is warmed before its recorded sample and removed by
-a drop guard afterward.
+a drop guard afterward. Timed closures run the production algorithm without
+test-only byte/match counters or capture setup. Structural work that is not
+already production state comes from an unmeasured shadow pass or exact fixture
+geometry, with the shadow and timed result oracles required to match.
 
 The matrix keeps setup and the measured operation separate:
 
@@ -162,20 +165,26 @@ The matrix keeps setup and the measured operation separate:
   no-newline, mixed UTF-8, and CRLF files. The same forward/reverse scan logic is
   timed first over warmed in-memory bytes and then over a warmed descriptor;
   samples report logical bytes separately from descriptor calls/bytes, plus exact
-  start/end/next boundaries and line-metadata hashes;
+  start/end/next boundaries and hashes for line starts, scalar counts, ASCII
+  flags, scalar checkpoints, checkpoint starts, and CRLF offsets. Reverse memory
+  and descriptor paths call the same pure reverse-chunk primitive;
 - literal search uses the same exact 90 MiB logical fixture for a fragmented
   editable PieceTable and a descriptor scanner. It covers no match, an ordinary
   ASCII match ending at EOF, frequent matches, UTF-8, both wrap directions, and
-  a match crossing both a PieceTable piece boundary and a 64 KiB scan boundary;
+  a match crossing both a PieceTable piece boundary and a 64 KiB scan boundary.
+  The short cross-boundary case batches to at least 16 MiB of aggregate scanned
+  work and reports `iterations` so its elapsed value is measurable;
 - format samples isolate byte detection, decode normalization, and counting/hash
   sink writes for LF, CRLF, CR, no-newline, sparse/dense newline, and UTF-8 BOM
   variants. Short detection paths repeat deterministically until they examine at
   least 256 MiB in aggregate and report `iterations`; streaming chunks deliberately
   split a CRLF pair and hashes preserve the no-final-newline case exactly; and
 - replacement samples insert 8 MiB ASCII, line-heavy, and mixed Unicode text
-  through PieceTable, then replace 20,000 ranges with one shared string. Test-only
-  counters expose replacement scans, Add-source copies/checkpoints, PieceTree and
-  LineIndex work, while a streamed result hash and cursor are exact oracles.
+  through PieceTable, then replace 20,000 ranges with one shared string. An
+  unmeasured observer specialization of the same owner implementation exposes
+  replacement scans and Add-source copies; the timed specialization is a no-op.
+  Add checkpoints, PieceTree and LineIndex work remain owner-state observations,
+  while streamed result hashes and cursors prove timed/shadow parity.
 
 Every record retains the stable
 `PERF sample: label=... bytes=... elapsed_ms=...` prefix. Ordered integer fields

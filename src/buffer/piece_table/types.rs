@@ -269,8 +269,6 @@ pub struct PieceTable {
     pub(crate) last_piece_mutation: PieceMutationMetrics,
     #[cfg(test)]
     pub(crate) compaction_descriptor_scans: std::cell::Cell<usize>,
-    #[cfg(test)]
-    pub(crate) replacement_perf: super::ReplacementPerfStats,
 }
 
 #[cfg(test)]

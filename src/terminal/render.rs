@@ -283,7 +283,13 @@ impl RenderViewport {
 }
 
 pub(crate) fn line_number_gutter(line_count: usize) -> usize {
-    line_count.max(1).to_string().len().saturating_add(1)
+    let mut remaining = line_count.max(1);
+    let mut digits = 1_usize;
+    while remaining >= 10 {
+        remaining /= 10;
+        digits = digits.saturating_add(1);
+    }
+    digits.saturating_add(1)
 }
 
 pub(crate) fn change_gutter_width(has_changes: bool) -> usize {

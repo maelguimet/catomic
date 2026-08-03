@@ -51,6 +51,7 @@ dependencies = [
  "crossterm",
  "emojis",
  "libc",
+ "memchr",
  "notify",
  "portable-pty",
  "pulldown-cmark",

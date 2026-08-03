@@ -54,6 +54,7 @@ impl LineScanState {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn scan_valid_text(&mut self, text: &str, text_start_offset: usize) {
         if text.is_ascii() {
             self.scan_ascii_bytes(text.as_bytes(), text_start_offset);
@@ -83,10 +84,77 @@ impl LineScanState {
         }
     }
 
+    pub(super) fn scan_valid_text_with_newlines(
+        &mut self,
+        text: &str,
+        text_start_offset: usize,
+        newline_offsets: &[usize],
+    ) {
+        let mut newline_offsets = newline_offsets.iter().copied();
+        let mut next_newline = newline_offsets.next();
+        for (byte_idx, ch) in text.char_indices() {
+            let absolute_offset = text_start_offset + byte_idx;
+            if next_newline == Some(absolute_offset) {
+                debug_assert_eq!(ch, '\n');
+                if self.previous_was_cr {
+                    self.trim_crlf(absolute_offset);
+                }
+                self.finish_line(absolute_offset + 1);
+                next_newline = newline_offsets.next();
+                continue;
+            }
+            debug_assert_ne!(ch, '\n', "every newline must come from the shared scan");
+            if !ch.is_ascii() {
+                self.current_line_is_ascii = false;
+            }
+            let next_col = self.current_line_chars + 1;
+            if next_col.is_multiple_of(LINE_CHECKPOINT_INTERVAL_CHARS) {
+                self.line_checkpoints.push(LineCheckpoint {
+                    col: next_col,
+                    byte_offset: absolute_offset + ch.len_utf8(),
+                });
+            }
+            self.current_line_chars += 1;
+            self.previous_was_cr = ch == '\r';
+        }
+        debug_assert!(next_newline.is_none());
+    }
+
+    #[cfg(test)]
     pub(super) fn scan_ascii_bytes(&mut self, bytes: &[u8], text_start_offset: usize) {
         let text = std::str::from_utf8(bytes).expect("ASCII bytes must be valid UTF-8");
+        self.scan_ascii_bytes_at_indices(
+            bytes,
+            text_start_offset,
+            text.match_indices('\n').map(|(index, _)| index),
+        );
+    }
+
+    pub(super) fn scan_ascii_bytes_with_newlines(
+        &mut self,
+        bytes: &[u8],
+        text_start_offset: usize,
+        newline_offsets: &[usize],
+    ) {
+        debug_assert!(bytes.is_ascii());
+        self.scan_ascii_bytes_at_indices(
+            bytes,
+            text_start_offset,
+            newline_offsets
+                .iter()
+                .map(|offset| offset - text_start_offset),
+        );
+    }
+
+    fn scan_ascii_bytes_at_indices(
+        &mut self,
+        bytes: &[u8],
+        text_start_offset: usize,
+        newline_indices: impl IntoIterator<Item = usize>,
+    ) {
         let mut segment_start = 0usize;
-        for (newline_idx, _) in text.match_indices('\n') {
+        for newline_idx in newline_indices {
+            debug_assert_eq!(bytes.get(newline_idx), Some(&b'\n'));
             self.push_ascii_checkpoints(
                 text_start_offset + segment_start,
                 newline_idx - segment_start,

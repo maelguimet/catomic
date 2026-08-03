@@ -741,11 +741,12 @@ wider terminals it centers an 88-cell maximum reading column. It
 keeps parsed inline semantics through terminal presentation: strong, emphasis,
 strikethrough, inline code, and links use terminal attributes without restoring
 their source delimiters. H1 uses a bold heading-color title, H2 uses a bold
-section style, and H3–H6 use progressively quieter styles and deeper
-indentation, all with defined block spacing and no generated rulers. Heading
-attributes stop at the rendered heading content, including on wrapped rows;
-preview does not synthesize styled row padding or turn a configured heading
-foreground into a background. Quoted paragraphs use quotation marks and quote
+section style, and H3–H6 use progressively quieter styles. Every heading starts
+at the same document margin, with defined block spacing and no generated
+rulers. Heading attributes stop at the rendered heading content, including on
+wrapped rows; preview does not synthesize marker-width indentation, styled row
+padding, or turn a configured heading foreground into a background. Quoted
+paragraphs use quotation marks and quote
 nesting uses depth indentation; thematic breaks use a compact centered mark,
 inline code is
 distinct from indented fenced blocks, and links use OSC 8 destinations without

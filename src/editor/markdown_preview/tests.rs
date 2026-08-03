@@ -196,7 +196,7 @@ fn inline_and_fenced_code_use_distinct_complete_treatments() {
 }
 
 #[test]
-fn heading_levels_keep_content_bounded_hierarchy_at_normal_and_narrow_widths() {
+fn heading_levels_share_the_document_margin_at_normal_and_narrow_widths() {
     let source = "# One\n\n## Two\n\n### Three\n\n#### Four\n\n##### Five\n\n###### Six";
     let heading_rows = [
         (0, "One", SpanStyle::PreviewHeading1),
@@ -211,29 +211,10 @@ fn heading_levels_keep_content_bounded_hierarchy_at_normal_and_narrow_widths() {
         (
             80,
             [
-                "    One",
-                "",
-                "  Two",
-                "",
-                "    Three",
-                "      Four",
-                "      Five",
-                "        Six",
+                "  One", "", "  Two", "", "  Three", "  Four", "  Five", "  Six",
             ],
         ),
-        (
-            20,
-            [
-                "  One",
-                "",
-                "Two",
-                "",
-                "  Three",
-                "    Four",
-                "    Five",
-                "      Six",
-            ],
-        ),
+        (20, ["One", "", "Two", "", "Three", "Four", "Five", "Six"]),
     ] {
         let preview = render_with_width(source, width).unwrap();
         let lines = preview.text.lines().collect::<Vec<_>>();
@@ -272,7 +253,7 @@ fn wrapped_h1_headings_style_content_without_row_filling_padding() {
         assert!(text_layout::cell_width_from(line, 0) <= 38);
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].style, SpanStyle::PreviewHeading1);
-        assert_eq!(spans[0].start, 4);
+        assert_eq!(spans[0].start, 2);
         assert_eq!(spans[0].end, line.chars().count());
     }
 }

@@ -1659,6 +1659,7 @@ fn pty_markdown_preview_and_view_toggles_leave_source_unchanged() -> TestResult 
     editor.wait_for_output("preview enabled", "Markdown preview on")?;
     let preview_output = editor.output_string();
     assert!(preview_output.contains("\x1b[94;1mHeading\x1b[0m"));
+    assert!(preview_output.contains("\x1b[1;1H\x1b[K  \x1b[94;1mHeading"));
     assert!(preview_output.contains("Normal paragraph text."));
     assert!(!preview_output.contains("# Heading"));
 

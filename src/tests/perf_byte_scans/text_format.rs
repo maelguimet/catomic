@@ -15,6 +15,7 @@ const UTF8_BOM: &[u8] = b"\xef\xbb\xbf";
 enum Shape {
     LineHeavy(LineEnding),
     Sparse(LineEnding),
+    MixedUtf8(LineEnding),
     NoNewline,
 }
 
@@ -51,7 +52,7 @@ pub(super) fn smoke() {
     write_chunks_for_perf(&chunks, &mut sink, format).expect("write format smoke chunks");
     assert_eq!(sink.bytes(), bytes.len());
     assert_eq!(sink.hash(), hash_bytes(bytes));
-    assert!(sink.write_calls() >= 3);
+    assert_eq!(sink.write_calls(), 2);
 }
 
 fn run_scenario(scenario: Scenario) {
@@ -142,6 +143,10 @@ fn run_scenario(scenario: Scenario) {
         });
     assert_eq!(sink.bytes(), expected_output_len);
     assert_eq!(sink.hash(), expected_output_hash);
+    assert!(
+        sink.write_calls() <= chunks.len() + 2,
+        "format writes must stay bounded by source chunks, not delimiters"
+    );
     let sample = with_throughput(sample, "input_bytes", bytes.len())
         .with_metric("output_bytes", sink.bytes())
         .with_metric("delimiter_count", delimiter_count)
@@ -155,7 +160,7 @@ fn run_scenario(scenario: Scenario) {
     print_perf_sample(&sample);
 }
 
-fn scenarios() -> [Scenario; 9] {
+fn scenarios() -> [Scenario; 10] {
     [
         scenario("lf-line-heavy", Shape::LineHeavy(LineEnding::Lf), false),
         scenario("lf-sparse", Shape::Sparse(LineEnding::Lf), false),
@@ -170,6 +175,7 @@ fn scenarios() -> [Scenario; 9] {
             true,
         ),
         scenario("bom-cr-sparse", Shape::Sparse(LineEnding::Cr), true),
+        scenario("mixed-utf8-crlf", Shape::MixedUtf8(LineEnding::Crlf), false),
     ]
 }
 
@@ -238,6 +244,13 @@ fn scenario(name: &'static str, shape: Shape, bom: bool) -> Scenario {
             shape,
             bom,
         },
+        "mixed-utf8-crlf" => Scenario {
+            detect_label: "byte-scan format detect mixed-utf8-crlf",
+            decode_label: "byte-scan format decode mixed-utf8-crlf",
+            write_label: "byte-scan format write mixed-utf8-crlf",
+            shape,
+            bom,
+        },
         _ => unreachable!("format scenario labels are exhaustive"),
     }
 }
@@ -250,6 +263,7 @@ fn fixture_bytes(shape: Shape, bom: bool) -> Vec<u8> {
         Shape::Sparse(LineEnding::Lf) => line_pattern(4 * 1024 - 1, b"\n"),
         Shape::Sparse(LineEnding::Crlf) => line_pattern(4 * 1024 - 2, b"\r\n"),
         Shape::Sparse(LineEnding::Cr) => line_pattern(4 * 1024 - 1, b"\r"),
+        Shape::MixedUtf8(ending) => mixed_utf8_pattern(ending),
         Shape::NoNewline => vec![b'x'],
     };
     let mut bytes = Vec::with_capacity(FIXTURE_BYTES);
@@ -269,11 +283,21 @@ fn line_pattern(content_bytes: usize, ending: &[u8]) -> Vec<u8> {
     pattern
 }
 
+fn mixed_utf8_pattern(ending: LineEnding) -> Vec<u8> {
+    let mut pattern = "ASCII e\u{301} café 猫 🙂 ".as_bytes().to_vec();
+    pattern.extend_from_slice(match ending {
+        LineEnding::Lf => b"\n",
+        LineEnding::Crlf => b"\r\n",
+        LineEnding::Cr => b"\r",
+    });
+    pattern
+}
+
 fn expected_format(shape: Shape, bom: bool) -> TextFormat {
     TextFormat {
         utf8_bom: bom,
         line_ending: match shape {
-            Shape::LineHeavy(ending) | Shape::Sparse(ending) => ending,
+            Shape::LineHeavy(ending) | Shape::Sparse(ending) | Shape::MixedUtf8(ending) => ending,
             Shape::NoNewline => LineEnding::Lf,
         },
     }

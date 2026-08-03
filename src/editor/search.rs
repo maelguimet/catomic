@@ -5,13 +5,18 @@
 //! Invariants: descriptor bytes are processed once with bounded memory; matches
 //!   can cross read boundaries; result positions use configured logical-line pages.
 
-use std::collections::VecDeque;
 use std::io;
 use std::os::unix::fs::FileExt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 
+use memchr::memchr_iter;
+
 use crate::buffer::{Buffer, Cursor, DescriptorPosition, DescriptorSource};
+
+mod literal;
+
+use literal::LiteralByteMatcher;
 const SEARCH_CHUNK_BYTES: usize = 64 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -26,31 +31,34 @@ pub(crate) struct SearchMatch {
     pub(crate) end_col: usize,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct DescriptorSearchMatch {
+    pub(crate) position: DescriptorPosition,
+    pub(crate) byte_offset: usize,
+}
+
 pub(crate) enum SearchResult {
-    Found(DescriptorPosition),
+    Found(DescriptorSearchMatch),
     LocalFound(SearchMatch),
     NotFound,
     Error(String),
 }
 
-/// Incremental literal scanner for an in-memory buffer. It retains only the
-/// query-sized KMP state and advances in bounded byte slices on runtime polls.
+/// Incremental literal scanner for an in-memory buffer. Literal matching stays
+/// byte-oriented; the buffer owner converts only the origin and selected byte
+/// offsets through its focused search-coordinate seam.
 pub(crate) struct LocalSearchTask {
-    query: Vec<u8>,
-    prefix: Vec<usize>,
-    matched: usize,
-    recent_positions: VecDeque<Cursor>,
-    offset: usize,
-    cursor: Cursor,
+    matcher: LiteralByteMatcher,
+    query_scalar_len: usize,
     origin: Cursor,
+    origin_byte: Option<usize>,
     direction: SearchDirection,
     include_origin: bool,
-    first: Option<SearchMatch>,
-    last: Option<SearchMatch>,
-    before_origin: Option<SearchMatch>,
+    first: Option<usize>,
+    last: Option<usize>,
+    before_origin: Option<usize>,
     cancelled: bool,
-    scanned_bytes: usize,
-    temporary_allocations: usize,
+    invalid_query: bool,
 }
 
 impl LocalSearchTask {
@@ -61,21 +69,17 @@ impl LocalSearchTask {
         include_origin: bool,
     ) -> Self {
         Self {
-            query: query.as_bytes().to_vec(),
-            prefix: prefix_table(query.as_bytes()),
-            matched: 0,
-            recent_positions: VecDeque::with_capacity(query.len()),
-            offset: 0,
-            cursor: Cursor::default(),
+            matcher: LiteralByteMatcher::new(query.as_bytes()),
+            query_scalar_len: query.chars().count(),
             origin,
+            origin_byte: None,
             direction,
             include_origin,
             first: None,
             last: None,
             before_origin: None,
             cancelled: false,
-            scanned_bytes: 0,
-            temporary_allocations: 0,
+            invalid_query: query.is_empty() || query.contains('\n'),
         }
     }
 
@@ -84,86 +88,119 @@ impl LocalSearchTask {
     }
 
     pub(crate) fn poll(&mut self, buffer: &dyn Buffer, budget: usize) -> Option<SearchResult> {
-        if self.cancelled || self.query.is_empty() || self.query.contains(&b'\n') {
+        if self.cancelled || self.invalid_query {
             return Some(SearchResult::NotFound);
+        }
+        let Some(source) = buffer.piece_table_search() else {
+            return Some(SearchResult::Error(
+                "buffer does not expose incremental PieceTable search".to_owned(),
+            ));
+        };
+        if self.origin_byte.is_none() {
+            match source.byte_offset_for_cursor(self.origin) {
+                Ok(origin) => self.origin_byte = Some(origin),
+                Err(error) => return Some(SearchResult::Error(error.to_string())),
+            }
         }
         let mut remaining = budget;
         while remaining > 0 {
-            let Some(segment) = buffer.search_text_segment(self.offset, remaining) else {
-                return Some(self.finish());
+            let Some(segment) = source.text_segment(self.matcher.processed_bytes(), remaining)
+            else {
+                return Some(self.finish(source));
             };
             if segment.is_empty() {
-                return Some(self.finish());
-            }
-            if matches!(&segment, std::borrow::Cow::Owned(_)) {
-                self.temporary_allocations += 1;
+                return Some(self.finish(source));
             }
             let length = segment.len();
-            for ch in segment.chars() {
-                let position = self.cursor;
-                let mut encoded = [0; 4];
-                for byte in ch.encode_utf8(&mut encoded).bytes() {
-                    self.recent_positions.push_back(position);
-                    if self.recent_positions.len() > self.query.len() {
-                        self.recent_positions.pop_front();
-                    }
-                    while self.matched > 0 && self.query[self.matched] != byte {
-                        self.matched = self.prefix[self.matched - 1];
-                    }
-                    if self.query[self.matched] == byte {
-                        self.matched += 1;
-                    }
-                    self.scanned_bytes += 1;
-                    if self.matched == self.query.len() {
-                        let start = *self
-                            .recent_positions
-                            .front()
-                            .expect("complete match has a start");
-                        self.matched = self.prefix[self.matched - 1];
-                        let found = SearchMatch {
-                            start,
-                            end_col: start.col
-                                + std::str::from_utf8(&self.query).ok()?.chars().count(),
-                        };
-                        self.first.get_or_insert(found);
-                        self.last = Some(found);
-                        let ordering = compare_cursor(start, self.origin);
-                        if self.direction == SearchDirection::Forward
-                            && (ordering.is_gt() || (self.include_origin && ordering.is_eq()))
-                        {
-                            return Some(SearchResult::LocalFound(found));
-                        }
-                        if self.direction == SearchDirection::Backward
-                            && (ordering.is_lt() || (self.include_origin && ordering.is_eq()))
-                        {
-                            self.before_origin = Some(found);
-                        }
+            let stop_at_or_after = match self.direction {
+                SearchDirection::Forward if self.include_origin => self.origin_byte,
+                SearchDirection::Forward => {
+                    self.origin_byte.and_then(|origin| origin.checked_add(1))
+                }
+                SearchDirection::Backward => None,
+            };
+            self.matcher
+                .find_segment_matches(segment.as_bytes(), stop_at_or_after);
+            let origin = self.origin_byte.unwrap_or(0);
+            let selected = {
+                let first = &mut self.first;
+                let last = &mut self.last;
+                let before_origin = &mut self.before_origin;
+                let mut selected = None;
+                for &offset in self.matcher.candidates() {
+                    if let Some(found) = consider_local_candidate(
+                        offset,
+                        origin,
+                        self.direction,
+                        self.include_origin,
+                        first,
+                        last,
+                        before_origin,
+                    ) {
+                        selected = Some(found);
+                        break;
                     }
                 }
-                if ch == '\n' {
-                    self.cursor.row += 1;
-                    self.cursor.col = 0;
-                } else {
-                    self.cursor.col += 1;
-                }
+                selected
+            };
+            if let Some(selected) = selected {
+                return Some(self.match_at(source, selected));
             }
-            self.offset += length;
+            let retained_start = self.matcher.retained_start(segment.as_bytes());
+            self.matcher
+                .commit_segment(segment.as_bytes(), retained_start);
             remaining = remaining.saturating_sub(length);
         }
         None
     }
 
-    fn finish(&self) -> SearchResult {
-        let found = match self.direction {
+    fn finish(&self, source: crate::buffer::PieceTableSearch<'_>) -> SearchResult {
+        let selected = match self.direction {
             SearchDirection::Forward => self.first,
             SearchDirection::Backward => self.before_origin.or(self.last),
         };
-        found.map_or(SearchResult::NotFound, SearchResult::LocalFound)
+        selected.map_or(SearchResult::NotFound, |offset| {
+            self.match_at(source, offset)
+        })
+    }
+
+    fn match_at(&self, source: crate::buffer::PieceTableSearch<'_>, offset: usize) -> SearchResult {
+        match source.cursor_for_byte_offset(offset) {
+            Ok(start) => SearchResult::LocalFound(SearchMatch {
+                start,
+                end_col: start.col + self.query_scalar_len,
+            }),
+            Err(error) => SearchResult::Error(error.to_string()),
+        }
     }
 
     #[cfg(test)]
-    pub(crate) fn metrics(&self) -> (usize, usize) {
-        (self.scanned_bytes, self.temporary_allocations)
+    pub(crate) fn retained_overlap_bytes(&self) -> usize {
+        self.matcher.retained_bytes()
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn consider_local_candidate(
+    offset: usize,
+    origin: usize,
+    direction: SearchDirection,
+    include_origin: bool,
+    first: &mut Option<usize>,
+    last: &mut Option<usize>,
+    before_origin: &mut Option<usize>,
+) -> Option<usize> {
+    first.get_or_insert(offset);
+    *last = Some(offset);
+    match direction {
+        SearchDirection::Forward if offset > origin || (include_origin && offset == origin) => {
+            Some(offset)
+        }
+        SearchDirection::Backward if offset < origin || (include_origin && offset == origin) => {
+            *before_origin = Some(offset);
+            None
+        }
+        _ => None,
     }
 }
 
@@ -195,7 +232,7 @@ pub(crate) fn start_descriptor_search(source: DescriptorSource, query: String) -
 pub(crate) fn start_descriptor_search_from(
     source: DescriptorSource,
     query: String,
-    anchor: DescriptorPosition,
+    anchor: DescriptorSearchMatch,
     direction: SearchDirection,
 ) -> SearchTask {
     start_descriptor_search_with(source, query, Some(anchor), direction)
@@ -204,7 +241,7 @@ pub(crate) fn start_descriptor_search_from(
 fn start_descriptor_search_with(
     source: DescriptorSource,
     query: String,
-    anchor: Option<DescriptorPosition>,
+    anchor: Option<DescriptorSearchMatch>,
     direction: SearchDirection,
 ) -> SearchTask {
     let (sender, receiver) = mpsc::channel();
@@ -230,19 +267,26 @@ pub(crate) fn find_match(
     if query.is_empty() || query.contains('\n') {
         return None;
     }
+    let query_scalar_len = query.chars().count();
+    let finder = memchr::memmem::Finder::new(query.as_bytes());
     let mut first = None;
     let mut last = None;
     let mut before_origin = None;
     for row in 0..buffer.line_count() {
         let line = buffer.line(row)?;
-        for (byte_col, _) in line.match_indices(query) {
+        let mut search_start = 0usize;
+        while search_start.saturating_add(query.len()) <= line.len() {
+            let Some(relative) = finder.find(&line.as_bytes()[search_start..]) else {
+                break;
+            };
+            let byte_col = search_start + relative;
             let start = Cursor {
                 row,
                 col: line[..byte_col].chars().count(),
             };
             let found = SearchMatch {
                 start,
-                end_col: start.col + query.chars().count(),
+                end_col: start.col + query_scalar_len,
             };
             first.get_or_insert(found);
             last = Some(found);
@@ -260,6 +304,7 @@ pub(crate) fn find_match(
                 }
                 _ => {}
             }
+            search_start = byte_col + 1;
         }
     }
     match direction {
@@ -286,7 +331,7 @@ fn scan_descriptor_from(
     source: DescriptorSource,
     query: &str,
     cancel: &AtomicBool,
-    anchor: DescriptorPosition,
+    anchor: DescriptorSearchMatch,
     direction: SearchDirection,
 ) -> io::Result<SearchResult> {
     scan_descriptor_with(&source, query, cancel, Some(anchor), direction)
@@ -296,7 +341,7 @@ fn scan_descriptor_from(
 pub(crate) fn scan_descriptor_for_perf(
     source: &DescriptorSource,
     query: &str,
-    anchor: Option<DescriptorPosition>,
+    anchor: Option<DescriptorSearchMatch>,
     direction: SearchDirection,
 ) -> io::Result<SearchResult> {
     scan_descriptor_with(source, query, &AtomicBool::new(false), anchor, direction)
@@ -306,7 +351,7 @@ fn scan_descriptor_with(
     source: &DescriptorSource,
     query: &str,
     cancel: &AtomicBool,
-    anchor: Option<DescriptorPosition>,
+    anchor: Option<DescriptorSearchMatch>,
     direction: SearchDirection,
 ) -> io::Result<SearchResult> {
     if query.is_empty() || query.contains('\n') {
@@ -335,9 +380,24 @@ fn scan_descriptor_with(
                 let text = std::str::from_utf8(&overlay.content)
                     .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
                 scanner.begin_page(overlay.start_byte, overlay.page_number);
-                if let Some(position) = scanner.scan_fixed_page_text(text) {
-                    ensure_unchanged(source, initial_modified)?;
-                    return Ok(SearchResult::Found(position));
+                let mut text_offset = 0usize;
+                while text_offset < text.len() {
+                    if cancel.load(Ordering::Acquire) {
+                        return Ok(SearchResult::NotFound);
+                    }
+                    let mut text_end = text_offset
+                        .saturating_add(SEARCH_CHUNK_BYTES)
+                        .min(text.len());
+                    while text_end > text_offset && !text.is_char_boundary(text_end) {
+                        text_end -= 1;
+                    }
+                    if let Some(position) =
+                        scanner.scan_fixed_page_text(&text[text_offset..text_end])?
+                    {
+                        ensure_unchanged(source, initial_modified)?;
+                        return Ok(SearchResult::Found(position));
+                    }
+                    text_offset = text_end;
                 }
                 offset = overlay.end_byte;
                 scanner.begin_page(offset, overlay.page_number + 1);
@@ -372,7 +432,7 @@ fn scan_descriptor_with(
         let valid_end = valid_utf8_end(bytes)?;
         let text = std::str::from_utf8(&bytes[..valid_end])
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-        if let Some(position) = scanner.scan_text(text, text_start) {
+        if let Some(position) = scanner.scan_text(text, text_start)? {
             ensure_unchanged(source, initial_modified)?;
             return Ok(SearchResult::Found(position));
         }
@@ -437,60 +497,76 @@ fn valid_utf8_end(bytes: &[u8]) -> io::Result<usize> {
 }
 
 struct Scanner {
-    query: Vec<u8>,
-    prefix: Vec<usize>,
-    matched: usize,
-    recent_positions: VecDeque<DescriptorPosition>,
+    matcher: LiteralByteMatcher,
     page_lines: usize,
-    page_start: u64,
-    page_number: usize,
-    row: usize,
-    col: usize,
-    anchor: Option<DescriptorPosition>,
+    position: DescriptorPosition,
+    coordinate_spans: Vec<DescriptorCoordinateSpan>,
+    selection: DescriptorSelection,
+}
+
+#[derive(Clone, Copy)]
+struct DescriptorCoordinateSpan {
+    stream_start: usize,
+    stream_end: usize,
+    position: DescriptorPosition,
+    text_start: u64,
+    advance_pages: bool,
+}
+
+struct DescriptorSelection {
+    anchor: Option<usize>,
     direction: SearchDirection,
-    first_match: Option<DescriptorPosition>,
-    last_match: Option<DescriptorPosition>,
-    before_anchor: Option<DescriptorPosition>,
+    first_match: Option<DescriptorSearchMatch>,
+    last_match: Option<DescriptorSearchMatch>,
+    before_anchor: Option<DescriptorSearchMatch>,
 }
 
 impl Scanner {
     fn new(
         query: &str,
         page_lines: usize,
-        anchor: Option<DescriptorPosition>,
+        anchor: Option<DescriptorSearchMatch>,
         direction: SearchDirection,
     ) -> Self {
         Self {
-            query: query.as_bytes().to_vec(),
-            prefix: prefix_table(query.as_bytes()),
-            matched: 0,
-            recent_positions: VecDeque::with_capacity(query.len()),
+            matcher: LiteralByteMatcher::new(query.as_bytes()),
             page_lines,
-            page_start: 0,
-            page_number: 1,
-            row: 0,
-            col: 0,
-            anchor,
-            direction,
-            first_match: None,
-            last_match: None,
-            before_anchor: None,
+            position: DescriptorPosition {
+                page_start: 0,
+                page_number: 1,
+                row: 0,
+                col: 0,
+            },
+            coordinate_spans: Vec::new(),
+            selection: DescriptorSelection {
+                anchor: anchor.map(|found| found.byte_offset),
+                direction,
+                first_match: None,
+                last_match: None,
+                before_anchor: None,
+            },
         }
     }
 
-    fn scan_text(&mut self, text: &str, text_start: u64) -> Option<DescriptorPosition> {
+    fn scan_text(
+        &mut self,
+        text: &str,
+        text_start: u64,
+    ) -> io::Result<Option<DescriptorSearchMatch>> {
         self.scan_text_with_page_boundaries(text, text_start, true)
     }
 
     fn begin_page(&mut self, page_start: u64, page_number: usize) {
-        self.page_start = page_start;
-        self.page_number = page_number;
-        self.row = 0;
-        self.col = 0;
+        self.position = DescriptorPosition {
+            page_start,
+            page_number,
+            row: 0,
+            col: 0,
+        };
     }
 
-    fn scan_fixed_page_text(&mut self, text: &str) -> Option<DescriptorPosition> {
-        self.scan_text_with_page_boundaries(text, self.page_start, false)
+    fn scan_fixed_page_text(&mut self, text: &str) -> io::Result<Option<DescriptorSearchMatch>> {
+        self.scan_text_with_page_boundaries(text, self.position.page_start, false)
     }
 
     fn scan_text_with_page_boundaries(
@@ -498,83 +574,130 @@ impl Scanner {
         text: &str,
         text_start: u64,
         advance_pages: bool,
-    ) -> Option<DescriptorPosition> {
-        for (byte_index, ch) in text.char_indices() {
-            let mut encoded = [0; 4];
-            let position = self.current_position();
-            for byte in ch.encode_utf8(&mut encoded).as_bytes() {
-                if let Some(found) = self.feed(*byte, position) {
-                    if let Some(selected) = self.consider(found) {
-                        return Some(selected);
-                    }
-                }
-            }
-            if ch == '\n' {
-                self.row += 1;
-                self.col = 0;
-                if advance_pages && self.row == self.page_lines {
-                    self.page_start = text_start + byte_index as u64 + 1;
-                    self.page_number += 1;
-                    self.row = 0;
-                }
-            } else {
-                self.col += 1;
-            }
+    ) -> io::Result<Option<DescriptorSearchMatch>> {
+        if text.is_empty() {
+            return Ok(None);
         }
-        None
-    }
-
-    fn current_position(&self) -> DescriptorPosition {
-        DescriptorPosition {
-            page_start: self.page_start,
-            page_number: self.page_number,
-            row: self.row,
-            col: self.col,
-        }
-    }
-
-    fn feed(&mut self, byte: u8, position: DescriptorPosition) -> Option<DescriptorPosition> {
-        self.recent_positions.push_back(position);
-        if self.recent_positions.len() > self.query.len() {
-            self.recent_positions.pop_front();
-        }
-        while self.matched > 0 && self.query[self.matched] != byte {
-            self.matched = self.prefix[self.matched - 1];
-        }
-        if self.query[self.matched] == byte {
-            self.matched += 1;
-        }
-        if self.matched == self.query.len() {
-            let position = *self
-                .recent_positions
-                .front()
-                .expect("a complete match has a start position");
-            self.matched = self.prefix[self.matched - 1];
-            Some(position)
-        } else {
-            None
-        }
-    }
-
-    fn consider(&mut self, found: DescriptorPosition) -> Option<DescriptorPosition> {
-        self.first_match.get_or_insert(found);
-        self.last_match = Some(found);
-        let Some(anchor) = self.anchor else {
-            return Some(found);
+        let bytes = text.as_bytes();
+        let stream_start = self.matcher.processed_bytes();
+        self.coordinate_spans.push(DescriptorCoordinateSpan {
+            stream_start,
+            stream_end: stream_start + bytes.len(),
+            position: self.position,
+            text_start,
+            advance_pages,
+        });
+        let stop_at_or_after = match (self.selection.direction, self.selection.anchor) {
+            (SearchDirection::Forward, None) => Some(0),
+            (SearchDirection::Forward, Some(anchor)) => anchor.checked_add(1),
+            (SearchDirection::Backward, _) => None,
         };
-        match self.direction {
-            SearchDirection::Forward if compare_descriptor_position(found, anchor).is_gt() => {
-                Some(found)
-            }
-            SearchDirection::Backward if compare_descriptor_position(found, anchor).is_lt() => {
-                self.before_anchor = Some(found);
-                None
-            }
-            _ => None,
+        self.matcher.find_segment_matches(bytes, stop_at_or_after);
+
+        let selected = consider_descriptor_candidates(
+            &self.coordinate_spans,
+            self.matcher.candidates(),
+            self.matcher.overlap_start(),
+            self.matcher.overlap(),
+            stream_start,
+            bytes,
+            self.page_lines,
+            &mut self.selection,
+        )?;
+        if selected.is_some() {
+            return Ok(selected);
         }
+
+        self.position = advance_descriptor_position(
+            self.position,
+            text,
+            text_start,
+            advance_pages,
+            self.page_lines,
+        );
+        let retained_start = self.matcher.retained_start(bytes);
+        trim_coordinate_spans(
+            &mut self.coordinate_spans,
+            retained_start,
+            self.matcher.overlap_start(),
+            self.matcher.overlap(),
+            stream_start,
+            bytes,
+            self.page_lines,
+        )?;
+        self.matcher.commit_segment(bytes, retained_start);
+        Ok(None)
     }
 
-    fn finish(&self) -> Option<DescriptorPosition> {
+    fn finish(&self) -> Option<DescriptorSearchMatch> {
+        self.selection.finish()
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn consider_descriptor_candidates(
+    spans: &[DescriptorCoordinateSpan],
+    candidates: &[usize],
+    overlap_start: usize,
+    overlap: &[u8],
+    current_start: usize,
+    current: &[u8],
+    page_lines: usize,
+    selection: &mut DescriptorSelection,
+) -> io::Result<Option<DescriptorSearchMatch>> {
+    let Some(&first_offset) = candidates.first() else {
+        return Ok(None);
+    };
+    let last_offset = candidates[candidates.len() - 1];
+    let match_at = |offset| {
+        descriptor_search_match_at(
+            spans,
+            offset,
+            overlap_start,
+            overlap,
+            current_start,
+            current,
+            page_lines,
+        )
+    };
+
+    let Some(anchor) = selection.anchor else {
+        let found = match_at(first_offset)?;
+        selection.first_match = Some(found);
+        selection.last_match = Some(found);
+        return Ok(Some(found));
+    };
+    match selection.direction {
+        SearchDirection::Forward => {
+            let after_anchor = candidates.partition_point(|offset| *offset <= anchor);
+            if let Some(&offset) = candidates.get(after_anchor) {
+                return match_at(offset).map(Some);
+            }
+            if selection.first_match.is_none() {
+                selection.first_match = Some(match_at(first_offset)?);
+            }
+        }
+        SearchDirection::Backward => {
+            let last_match = match_at(last_offset)?;
+            let before_anchor = candidates.partition_point(|offset| *offset < anchor);
+            if let Some(&offset) = before_anchor
+                .checked_sub(1)
+                .and_then(|index| candidates.get(index))
+            {
+                selection.before_anchor = Some(if offset == last_offset {
+                    last_match
+                } else {
+                    match_at(offset)?
+                });
+            }
+            selection.last_match = Some(last_match);
+        }
+    }
+    Ok(None)
+}
+
+impl DescriptorSelection {
+    fn finish(&self) -> Option<DescriptorSearchMatch> {
         match (self.anchor, self.direction) {
             (None, _) | (Some(_), SearchDirection::Forward) => self.first_match,
             (Some(_), SearchDirection::Backward) => self.before_anchor.or(self.last_match),
@@ -582,26 +705,147 @@ impl Scanner {
     }
 }
 
-fn compare_descriptor_position(
-    left: DescriptorPosition,
-    right: DescriptorPosition,
-) -> std::cmp::Ordering {
-    (left.page_start, left.row, left.col).cmp(&(right.page_start, right.row, right.col))
+#[allow(clippy::too_many_arguments)]
+fn descriptor_search_match_at(
+    spans: &[DescriptorCoordinateSpan],
+    offset: usize,
+    overlap_start: usize,
+    overlap: &[u8],
+    current_start: usize,
+    current: &[u8],
+    page_lines: usize,
+) -> io::Result<DescriptorSearchMatch> {
+    descriptor_position_at(
+        spans,
+        offset,
+        overlap_start,
+        overlap,
+        current_start,
+        current,
+        page_lines,
+    )
+    .map(|position| DescriptorSearchMatch {
+        position,
+        byte_offset: offset,
+    })
 }
 
-fn prefix_table(query: &[u8]) -> Vec<usize> {
-    let mut prefix = vec![0; query.len()];
-    let mut matched = 0usize;
-    for index in 1..query.len() {
-        while matched > 0 && query[index] != query[matched] {
-            matched = prefix[matched - 1];
-        }
-        if query[index] == query[matched] {
-            matched += 1;
-            prefix[index] = matched;
-        }
+fn descriptor_position_at(
+    spans: &[DescriptorCoordinateSpan],
+    offset: usize,
+    overlap_start: usize,
+    overlap: &[u8],
+    current_start: usize,
+    current: &[u8],
+    page_lines: usize,
+) -> io::Result<DescriptorPosition> {
+    let span = spans
+        .iter()
+        .rev()
+        .find(|span| span.stream_start <= offset && offset < span.stream_end)
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "search coordinate span does not cover a literal match",
+            )
+        })?;
+    let bytes = coordinate_bytes(
+        *span,
+        span.stream_start,
+        offset,
+        overlap_start,
+        overlap,
+        current_start,
+        current,
+    );
+    let text = std::str::from_utf8(bytes)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    Ok(advance_descriptor_position(
+        span.position,
+        text,
+        span.text_start,
+        span.advance_pages,
+        page_lines,
+    ))
+}
+
+fn coordinate_bytes<'a>(
+    span: DescriptorCoordinateSpan,
+    start: usize,
+    end: usize,
+    overlap_start: usize,
+    overlap: &'a [u8],
+    current_start: usize,
+    current: &'a [u8],
+) -> &'a [u8] {
+    if span.stream_start >= current_start {
+        &current[start - current_start..end - current_start]
+    } else {
+        &overlap[start - overlap_start..end - overlap_start]
     }
-    prefix
+}
+
+fn trim_coordinate_spans(
+    spans: &mut Vec<DescriptorCoordinateSpan>,
+    retained_start: usize,
+    overlap_start: usize,
+    overlap: &[u8],
+    current_start: usize,
+    current: &[u8],
+    page_lines: usize,
+) -> io::Result<()> {
+    let discarded = spans.partition_point(|span| span.stream_end <= retained_start);
+    spans.drain(..discarded);
+    let Some(first) = spans.first().copied() else {
+        return Ok(());
+    };
+    if first.stream_start < retained_start {
+        let position = descriptor_position_at(
+            spans,
+            retained_start,
+            overlap_start,
+            overlap,
+            current_start,
+            current,
+            page_lines,
+        )?;
+        let delta = retained_start - first.stream_start;
+        spans[0].stream_start = retained_start;
+        spans[0].position = position;
+        spans[0].text_start = first.text_start.saturating_add(delta as u64);
+    }
+    Ok(())
+}
+
+fn advance_descriptor_position(
+    mut position: DescriptorPosition,
+    text: &str,
+    text_start: u64,
+    advance_pages: bool,
+    page_lines: usize,
+) -> DescriptorPosition {
+    let mut span_start = 0usize;
+    for newline in memchr_iter(b'\n', text.as_bytes()) {
+        position.col += scalar_count(&text[span_start..newline]);
+        position.row += 1;
+        position.col = 0;
+        if advance_pages && position.row == page_lines {
+            position.page_start = text_start.saturating_add(newline as u64 + 1);
+            position.page_number += 1;
+            position.row = 0;
+        }
+        span_start = newline + 1;
+    }
+    position.col += scalar_count(&text[span_start..]);
+    position
+}
+
+fn scalar_count(text: &str) -> usize {
+    if text.is_ascii() {
+        text.len()
+    } else {
+        text.chars().count()
+    }
 }
 
 #[cfg(test)]

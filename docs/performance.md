@@ -220,6 +220,36 @@ Machine-dependent performance evidence belongs in the optimization PR or its
 Acceptance report. Correctness, sample field ordering, and hashes remain normal
 test assertions; there is no universal performance pass/fail threshold.
 
+### Literal-search dependency rationale
+
+Incremental editable and descriptor search builds one
+`memchr::memmem::Finder` when an explicit non-empty query starts, then reuses it
+over bounded UTF-8 byte slices. Stable Rust does not expose an equivalent
+reusable, runtime-dispatched substring finder: `str` search cannot retain finder
+construction across pieces or descriptor reads, and neither API supplies the
+bounded cross-slice continuity search needs. Catomic therefore retains only the
+query plus at most `query.len() - 1` bytes of logical overlap. Its reusable
+cross-boundary scratch is capped at twice that overlap, and it never concatenates
+or indexes the document. Candidate offsets are also reused and capped by one
+bounded PieceTable segment or descriptor read, independent of document size.
+
+This reuses the existing direct `memchr = 2.8.3` dependency and does not change
+the locked dependency graph. With its default `std` feature, the crate can select
+AVX2 at runtime on supported x86-64 CPUs and otherwise use its SSE2 path;
+AArch64 has a vector implementation, and targets without an available SIMD path
+fall back to portable SWAR search. Catomic calls only the safe API and adds no
+project-owned unsafe or architecture intrinsics. The crate is MIT OR Unlicense,
+supports a Rust version older than Catomic's 1.87 minimum, and remains covered by
+the repository's advisory, license, and source checks.
+
+Finder construction, overlap allocation, and scanning occur only after Ctrl+F
+starts a search. Editor construction, ordinary typing, and rendering gain no
+initialization or scan work. If stable Rust later provides an equivalent safe,
+reusable, runtime-dispatched substring primitive—or measurement no longer shows
+an end-to-end benefit—the private literal matcher can switch implementations
+without changing search semantics. The direct dependency can be removed once all
+of Catomic's other byte scanners have likewise moved to the standard primitive.
+
 The ignored `manual_line_index_top_bottom_edit_work` comparison performs the
 same one-byte insertion and deletion near the top and bottom of equally sized
 100,000-line buffers. Run it with `--ignored --nocapture`; its stable

@@ -11,7 +11,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::buffer::Cursor;
 use crate::config::actions::Action;
 use crate::editor::search::{
-    self, LocalSearchTask, SearchDirection, SearchMatch, SearchResult, SearchTask,
+    self, DescriptorSearchMatch, LocalSearchTask, SearchDirection, SearchMatch, SearchResult,
+    SearchTask,
 };
 
 const LOCAL_SEARCH_POLL_BYTES: usize = 64 * 1024;
@@ -22,12 +23,13 @@ pub(crate) struct SearchUiState {
     prompt: Option<String>,
     origin: Option<Cursor>,
     active_match: Option<SearchMatch>,
-    active_descriptor_position: Option<crate::buffer::DescriptorPosition>,
+    active_descriptor_match: Option<DescriptorSearchMatch>,
     running: Option<RunningSearch>,
 }
 
 struct RunningSearch {
     query: String,
+    descriptor_query_scalar_len: usize,
     task: RunningSearchTask,
     buffer_id: u64,
     content_generation: u64,
@@ -47,7 +49,7 @@ pub(crate) fn open_prompt(
     app.search.prompt = Some(String::new());
     app.search.origin = Some(app.buffer.cursor());
     app.search.active_match = None;
-    app.search.active_descriptor_position = None;
+    app.search.active_descriptor_match = None;
     app.message_info("Find: ");
     app.render(out)
 }
@@ -138,7 +140,7 @@ fn handle_prompt_key(
             app.search.prompt = None;
             app.search.origin = None;
             app.search.active_match = None;
-            app.search.active_descriptor_position = None;
+            app.search.active_descriptor_match = None;
             app.message = None;
         }
         KeyCode::Enter => {
@@ -179,7 +181,7 @@ fn refresh_incremental_match(
     let query = app.search.prompt.clone().unwrap_or_default();
     cancel_running(&mut app.search);
     app.search.active_match = None;
-    app.search.active_descriptor_position = None;
+    app.search.active_descriptor_match = None;
     if query.is_empty() {
         if let Some(origin) = app.search.origin {
             app.buffer.set_cursor(origin);
@@ -192,6 +194,7 @@ fn refresh_incremental_match(
         let task = search::start_descriptor_search(source, query.clone());
         app.search.running = Some(RunningSearch {
             query: query.clone(),
+            descriptor_query_scalar_len: query.chars().count(),
             task: RunningSearchTask::Descriptor(task),
             buffer_id: app.file.buffer_id,
             content_generation: app.file.content_generation,
@@ -200,13 +203,15 @@ fn refresh_incremental_match(
         return app.render(out);
     }
     let origin = app.search.origin.unwrap_or_else(|| app.buffer.cursor());
-    if app
-        .buffer
-        .logical_byte_len()
-        .is_some_and(|bytes| bytes > STREAMING_SEARCH_THRESHOLD_BYTES)
+    if app.buffer.piece_table_search().is_some()
+        && app
+            .buffer
+            .logical_byte_len()
+            .is_some_and(|bytes| bytes > STREAMING_SEARCH_THRESHOLD_BYTES)
     {
         app.search.running = Some(RunningSearch {
             query: query.clone(),
+            descriptor_query_scalar_len: 0,
             task: RunningSearchTask::Local(Box::new(LocalSearchTask::new(
                 &query,
                 origin,
@@ -234,7 +239,7 @@ fn navigate_match(
     }
     if let Some(source) = app.buffer.descriptor_source()? {
         cancel_running(&mut app.search);
-        let task = match app.search.active_descriptor_position {
+        let task = match app.search.active_descriptor_match {
             Some(anchor) => {
                 search::start_descriptor_search_from(source, query.clone(), anchor, direction)
             }
@@ -242,6 +247,7 @@ fn navigate_match(
         };
         app.search.running = Some(RunningSearch {
             query: query.clone(),
+            descriptor_query_scalar_len: query.chars().count(),
             task: RunningSearchTask::Descriptor(task),
             buffer_id: app.file.buffer_id,
             content_generation: app.file.content_generation,
@@ -259,13 +265,15 @@ fn navigate_match(
         .map(|found| found.start)
         .or(app.search.origin)
         .unwrap_or_else(|| app.buffer.cursor());
-    if app
-        .buffer
-        .logical_byte_len()
-        .is_some_and(|bytes| bytes > STREAMING_SEARCH_THRESHOLD_BYTES)
+    if app.buffer.piece_table_search().is_some()
+        && app
+            .buffer
+            .logical_byte_len()
+            .is_some_and(|bytes| bytes > STREAMING_SEARCH_THRESHOLD_BYTES)
     {
         app.search.running = Some(RunningSearch {
             query: query.clone(),
+            descriptor_query_scalar_len: 0,
             task: RunningSearchTask::Local(Box::new(LocalSearchTask::new(
                 &query, origin, direction, false,
             ))),
@@ -290,7 +298,7 @@ fn apply_local_match(
     {
         app.buffer.set_cursor(found.start);
         app.search.active_match = Some(found);
-        app.search.active_descriptor_position = None;
+        app.search.active_descriptor_match = None;
         app.message_info(if app.screen.width < 40 {
             super::status::format_prompt("Find", query, app.screen.width as usize)
         } else {
@@ -311,6 +319,13 @@ pub(crate) fn poll_search(
     app: &mut super::App,
     out: &mut dyn crate::terminal::TerminalOutput,
 ) -> io::Result<()> {
+    if app.search.running.as_ref().is_some_and(|running| {
+        running.buffer_id != app.file.buffer_id
+            || running.content_generation != app.file.content_generation
+    }) {
+        cancel_running(&mut app.search);
+        return Ok(());
+    }
     let result = match app.search.running.as_mut() {
         Some(RunningSearch {
             task: RunningSearchTask::Descriptor(task),
@@ -332,15 +347,16 @@ pub(crate) fn poll_search(
         return Ok(());
     }
     match result {
-        SearchResult::Found(position) => {
+        SearchResult::Found(found) => {
+            let position = found.position;
             app.buffer.set_descriptor_position(position)?;
-            app.search.active_descriptor_position = Some(position);
+            app.search.active_descriptor_match = Some(found);
             app.search.active_match = Some(SearchMatch {
                 start: Cursor {
                     row: position.row,
                     col: position.col,
                 },
-                end_col: position.col + running.query.chars().count(),
+                end_col: position.col + running.descriptor_query_scalar_len,
             });
             app.message_info(format!(
                 "Found '{}' on file page {}.",
@@ -351,7 +367,7 @@ pub(crate) fn poll_search(
         SearchResult::LocalFound(found) => {
             app.buffer.set_cursor(found.start);
             app.search.active_match = Some(found);
-            app.search.active_descriptor_position = None;
+            app.search.active_descriptor_match = None;
             app.message_info(format!(
                 "Found '{}'. Enter/Down next, Up previous, Esc closes.",
                 running.query
@@ -360,12 +376,12 @@ pub(crate) fn poll_search(
         }
         SearchResult::NotFound => {
             app.search.active_match = None;
-            app.search.active_descriptor_position = None;
+            app.search.active_descriptor_match = None;
             app.message_info(format!("No matches for '{}'.", running.query));
         }
         SearchResult::Error(error) => {
             app.search.active_match = None;
-            app.search.active_descriptor_position = None;
+            app.search.active_descriptor_match = None;
             app.message_error(format!("Search error: {error}"));
         }
     }
@@ -386,7 +402,7 @@ pub(super) fn cancel_running_search(app: &mut super::App) {
     app.search.prompt = None;
     app.search.origin = None;
     app.search.active_match = None;
-    app.search.active_descriptor_position = None;
+    app.search.active_descriptor_match = None;
 }
 
 #[cfg(test)]
@@ -423,6 +439,7 @@ mod tests {
         app.buffer = Box::new(crate::buffer::PieceTable::from_text("target"));
         app.search.running = Some(RunningSearch {
             query: "target".to_string(),
+            descriptor_query_scalar_len: 0,
             task: RunningSearchTask::Local(Box::new(LocalSearchTask::new(
                 "target",
                 crate::buffer::Cursor::default(),

@@ -267,7 +267,7 @@ fn named(name: &str) -> io::Result<Theme> {
         text: Style::default(),
         cursor: None,
         selection: Style::pair(black, Color::Ansi(6)),
-        line_number: Style::fg(Color::Ansi(8)),
+        line_number: Style::fg(white),
         status: Style::fg(Color::Default),
         status_filename: Style::fg(Color::Ansi(9)),
         message: Style::pair(black, Color::Ansi(14)),
@@ -293,10 +293,7 @@ fn named(name: &str) -> io::Result<Theme> {
         markdown_link: Style::fg(Color::Ansi(12)),
         syntax_keyword: Style::fg(Color::Ansi(5)),
         syntax_string: Style::fg(Color::Ansi(2)),
-        syntax_comment: Style {
-            dim: Some(true),
-            ..Style::fg(Color::Ansi(8))
-        },
+        syntax_comment: Style::fg(Color::Ansi(14)),
         syntax_number: Style::fg(Color::Ansi(3)),
         search_match: Style::pair(black, Color::Ansi(3)),
         diff_added: Style::fg(Color::Ansi(2)),

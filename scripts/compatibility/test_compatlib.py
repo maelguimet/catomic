@@ -230,13 +230,13 @@ class TerminalScenarioTests(unittest.TestCase):
 
             def send(self, data):
                 if data.startswith(b"\x1b[200~"):
-                    self.output.extend(rendered_marker + b"CORE_BASE")
+                    self.output.extend(
+                        b"SHIFTED !@# \x1b[K" + "ÅΩ中🙂".encode() + b"CORE_BASE"
+                    )
                 elif data == b"\x01":
                     self.output.extend(
                         b"\x1b[7mSHIFTED !@# \x1b[0m" + "ÅΩ中🙂".encode()
                     )
-                elif data == b"\x03":
-                    self.output.extend(b"selection copied")
                 elif data == b"\x1a\x19\x13\x11":
                     self.fixture.write_bytes(rendered_marker + b"CORE_BASE")
                     self.output.extend(b"\x1b[?1000l\x1b[?2004l\x1b[?1049l")
@@ -280,16 +280,15 @@ class TerminalScenarioTests(unittest.TestCase):
         statuses = {record["id"]: record["status"] for record in records}
         self.assertEqual(statuses["core-open-edit-save-quit"], "pass")
         self.assertEqual(statuses["osc52"], "unsupported")
-        self.assertEqual(launcher.child.waited_for_additional_output, 2)
+        self.assertEqual(launcher.child.waited_for_additional_output, 0)
 
-    def test_fallback_prompt_close_accepts_retained_source_row(self):
+    def test_fallback_prompt_closes_wait_for_state_specific_output(self):
         source_marker = b"FALLBACK_SOURCE_MARKER"
 
         class RetainedFallbackChild:
             def __init__(self):
-                self.output = bytearray(source_marker)
+                self.output = bytearray(source_marker + b" (saved)")
                 self.escape_count = 0
-                self.waited_for_additional_output = False
 
             def send(self, data):
                 if data == b"\x1bOP":
@@ -301,7 +300,7 @@ class TerminalScenarioTests(unittest.TestCase):
                     if self.escape_count == 1:
                         self.output.extend(source_marker)
                     else:
-                        self.output.extend(b"status row redrawn")
+                        self.output.extend(b"(saved)")
 
             def wait_for(self, expected):
                 if expected not in self.output:
@@ -310,11 +309,6 @@ class TerminalScenarioTests(unittest.TestCase):
             def wait_for_occurrences(self, expected, minimum):
                 if self.output.count(expected) < minimum:
                     raise PtyError(f"missing occurrence {minimum} of {expected!r}")
-
-            def wait_for_more_output(self, previous_length):
-                if len(self.output) <= previous_length:
-                    raise PtyError("missing retained-row redraw")
-                self.waited_for_additional_output = True
 
             def finish(self):
                 return 0
@@ -337,7 +331,7 @@ class TerminalScenarioTests(unittest.TestCase):
             records = _fallback_session(launcher, Path(directory))
 
         self.assertEqual(records[0]["status"], "pass")
-        self.assertTrue(launcher.child.waited_for_additional_output)
+        self.assertEqual(launcher.child.escape_count, 2)
 
 
 def matrix_scenario(identifier: str):

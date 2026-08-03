@@ -47,13 +47,13 @@ impl crate::terminal::TerminalOutput for FrameRecorder {
 }
 
 #[test]
-fn ctrl_h_renders_curated_markdown_as_one_frame() {
+fn f1_renders_curated_markdown_as_one_frame() {
     let mut app = app();
     app.screen.width = 120;
     app.screen.height = 50;
     let mut out = FrameRecorder::default();
 
-    let toggle = KeyEvent::new(KeyCode::Char('h'), KeyModifiers::CONTROL);
+    let toggle = KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE);
     app.handle_key_with(&mut out, toggle).unwrap();
 
     assert_eq!(out.writes.len(), 1, "help redraw must be one output frame");

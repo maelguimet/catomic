@@ -150,7 +150,13 @@ impl Buffer for PieceTable {
         self.reset_piece_mutation_metrics();
         self.replace_index_range(start_byte, end_byte, text);
         let (removed, inserted) = self.splice_replacement(start_byte, end_byte, text);
-        self.cursor = cursor_after_text(start, text);
+        let cursor_after = cursor_after_text(start, text);
+        #[cfg(test)]
+        {
+            self.note_replacement_newline_scan(cursor_after.newline_scan_bytes);
+            self.note_replacement_scalar_scan(cursor_after.scalar_scan_bytes);
+        }
+        self.cursor = cursor_after.cursor;
         self.cursor_byte_offset = start_byte + text.len();
         self.record_replacement(before, start_byte, removed, inserted);
         self.undo_stack.finish_run();
@@ -195,7 +201,13 @@ impl Buffer for PieceTable {
                 "replacement batch unexpectedly has no ranges",
             )
         })?;
-        self.cursor = cursor_after_text(cursor_range.start, text);
+        let cursor_after = cursor_after_text(cursor_range.start, text);
+        #[cfg(test)]
+        {
+            self.note_replacement_newline_scan(cursor_after.newline_scan_bytes);
+            self.note_replacement_scalar_scan(cursor_after.scalar_scan_bytes);
+        }
+        self.cursor = cursor_after.cursor;
         self.cursor_byte_offset = cursor_range.start_byte + text.len();
         if self.recording {
             self.record_transaction(Transaction {
@@ -361,18 +373,40 @@ impl Buffer for PieceTable {
     }
 }
 
-fn cursor_after_text(start: Cursor, text: &str) -> Cursor {
+struct CursorAfterText {
+    cursor: Cursor,
+    #[cfg(test)]
+    newline_scan_bytes: usize,
+    #[cfg(test)]
+    scalar_scan_bytes: usize,
+}
+
+fn cursor_after_text(start: Cursor, text: &str) -> CursorAfterText {
     let newline_count = text.bytes().filter(|byte| *byte == b'\n').count();
-    if newline_count == 0 {
-        Cursor {
-            row: start.row,
-            col: start.col + text.chars().count(),
-        }
+    let (cursor, _scalar_scan_bytes) = if newline_count == 0 {
+        (
+            Cursor {
+                row: start.row,
+                col: start.col + text.chars().count(),
+            },
+            text.len(),
+        )
     } else {
-        Cursor {
-            row: start.row + newline_count,
-            col: text.rsplit('\n').next().unwrap_or_default().chars().count(),
-        }
+        let final_line = text.rsplit('\n').next().unwrap_or_default();
+        (
+            Cursor {
+                row: start.row + newline_count,
+                col: final_line.chars().count(),
+            },
+            final_line.len(),
+        )
+    };
+    CursorAfterText {
+        cursor,
+        #[cfg(test)]
+        newline_scan_bytes: text.len(),
+        #[cfg(test)]
+        scalar_scan_bytes: _scalar_scan_bytes,
     }
 }
 
@@ -460,13 +494,19 @@ impl PieceTable {
         if text.is_empty() {
             return (removed, Vec::new());
         }
+        #[cfg(test)]
+        self.note_replacement_scalar_scan(text.len());
         let piece = Piece {
             source: Source::Add,
             start: self.add.len(),
             len: text.len(),
             char_len: Some(text.chars().count()),
         };
+        #[cfg(test)]
+        self.note_replacement_scalar_scan(text.len());
         self.add_scalars.append(text);
+        #[cfg(test)]
+        self.note_replacement_add_copy(text.len());
         self.add.push_str(text);
         self.insert_pieces_at(start, std::slice::from_ref(&piece));
         (removed, vec![piece])
@@ -621,6 +661,8 @@ impl PieceTable {
     }
 
     fn replace_index_range(&mut self, start: usize, end: usize, text: &str) {
+        #[cfg(test)]
+        self.note_replacement_newline_scan(text.len());
         let newlines = text
             .match_indices('\n')
             .map(|(byte, _)| byte)

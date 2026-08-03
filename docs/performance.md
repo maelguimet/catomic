@@ -98,6 +98,7 @@ Perf harness is split (for size hygiene):
 - src/tests/perf_paged.rs (#[ignore] descriptor-read and retained-page baselines)
 - src/tests/perf_render.rs (#[ignore] plain/styled viewport allocation baselines)
 - src/tests/perf_search.rs (#[ignore] incremental Large-buffer search baseline)
+- src/tests/perf_byte_scans.rs and src/tests/perf_byte_scans/ (release-only byte-scan matrix)
 - src/tests/perf_history.rs (#[ignore] repeated large-edit retained-memory coverage)
 - src/tests/perf_extensibility.rs (#[ignore] oversized typed-config acceptance)
 - src/tests/perf_recovery.rs (#[ignore] maximum-default catnap write/read acceptance)
@@ -105,9 +106,10 @@ Perf harness is split (for size hygiene):
 Use `cargo test tests::perf -- --nocapture` (defaults) and the manual ignored commands
 (see Phase 2B baseline section below).
 
-Allocation and retained-memory samples are test-only. The test binary wraps the
-system allocator with requested-allocation counters; release builds contain
-neither the wrapper nor the counter increments. Because allocator counters are
+Allocation and retained-memory samples are test-only. Test binaries, including
+release-profile test binaries, wrap the system allocator with requested-allocation
+counters. Production binaries built with `cargo build --release` contain neither
+the wrapper nor the counter increments. Because allocator counters are
 process-wide, capture ignored baselines serially:
 
 ```sh
@@ -137,6 +139,73 @@ Normal CI exercises sample formatting and the small mixed-content fixture only.
 The ignored scenarios cover ASCII, multibyte UTF-8, combining graphemes, emoji,
 tabs, CRLF, line-heavy text, and a minified long line. No elapsed-time,
 allocation, or retained-memory threshold is asserted.
+
+### Byte-scan comparison suite
+
+Run the complete byte-scan suite serially in the release profile with this one
+authoritative command:
+
+```sh
+cargo test --release --locked --bin catomic tests::perf::byte_scans -- --ignored --test-threads=1 --nocapture
+```
+
+The suite is ignored and manual. The Acceptance workflow invokes this exact
+release-mode test separately; ordinary CI runs only its small deterministic
+oracle smoke and never applies host-timing thresholds. The general ignored
+debug run skips this module so the 90 MiB and 64 MiB-class matrices are not run
+twice. Each generated file is warmed before its recorded sample and removed by
+a drop guard afterward.
+
+The matrix keeps setup and the measured operation separate:
+
+- paged scans use deterministic 16 MiB line-heavy ASCII, 4 KiB sparse-newline,
+  no-newline, mixed UTF-8, and CRLF files. The same forward/reverse scan logic is
+  timed first over warmed in-memory bytes and then over a warmed descriptor;
+  samples report logical bytes separately from descriptor calls/bytes, plus exact
+  start/end/next boundaries and line-metadata hashes;
+- literal search uses the same exact 90 MiB logical fixture for a fragmented
+  editable PieceTable and a descriptor scanner. It covers no match, an ordinary
+  ASCII match ending at EOF, frequent matches, UTF-8, both wrap directions, and
+  a match crossing both a PieceTable piece boundary and a 64 KiB scan boundary;
+- format samples isolate byte detection, decode normalization, and counting/hash
+  sink writes for LF, CRLF, CR, no-newline, sparse/dense newline, and UTF-8 BOM
+  variants. Short detection paths repeat deterministically until they examine at
+  least 256 MiB in aggregate and report `iterations`; streaming chunks deliberately
+  split a CRLF pair and hashes preserve the no-final-newline case exactly; and
+- replacement samples insert 8 MiB ASCII, line-heavy, and mixed Unicode text
+  through PieceTable, then replace 20,000 ranges with one shared string. Test-only
+  counters expose replacement scans, Add-source copies/checkpoints, PieceTree and
+  LineIndex work, while a streamed result hash and cursor are exact oracles.
+
+Every record retains the stable
+`PERF sample: label=... bytes=... elapsed_ms=...` prefix. Ordered integer fields
+then report `allocations`, `allocated_bytes`, logical work, fixed-point
+`mib_per_s_x1000`, the domain-specific structural counters, and a
+`result_hash64` or exact coordinate/boundary oracle. The environment record uses
+the same prefix and reports x86-64 AVX2/SSE2 and AArch64 NEON availability with
+architecture-gated detection; it never assumes AVX on other targets.
+
+For an optimization comparison, use this protocol without dropping unfavorable
+fixtures:
+
+1. Build the base commit and candidate with the same locked release toolchain.
+   Record `git rev-parse HEAD`, `rustc -Vv`, `rustup show active-toolchain`,
+   `uname -srmo`, and `lscpu` (or the platform CPU equivalent) for both. Preserve
+   the suite's vector-feature environment sample.
+2. Run one unrecorded command above for each checkout to warm code and caches.
+3. Run at least five alternating pairs in `base, candidate, base, candidate`
+   order, saving complete stdout/stderr for every run. Do not run all base samples
+   before all candidate samples.
+4. For every affected label, report the median and full range for elapsed time,
+   `mib_per_s_x1000`, allocations/allocated bytes, and the relevant structural
+   counters. Compute speedup from the paired medians and include regressions as
+   well as wins.
+5. Confirm every base/candidate pair has identical boundary, coordinate, output,
+   and hash fields. A timing improvement with a different oracle is incorrect.
+
+Machine-dependent performance evidence belongs in the optimization PR or its
+Acceptance report. Correctness, sample field ordering, and hashes remain normal
+test assertions; there is no universal performance pass/fail threshold.
 
 The ignored `manual_line_index_top_bottom_edit_work` comparison performs the
 same one-byte insertion and deletion near the top and bottom of equally sized

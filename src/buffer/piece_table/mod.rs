@@ -27,6 +27,7 @@ pub(crate) struct PieceTablePerfStats {
     pub(crate) pieces: usize,
     pub(crate) document_lines: usize,
     pub(crate) add_buffer_bytes: usize,
+    pub(crate) add_scalar_checkpoints: usize,
     pub(crate) history_transactions: usize,
     pub(crate) history_bytes: usize,
     pub(crate) retained_bytes: usize,
@@ -37,6 +38,16 @@ pub(crate) struct PieceTablePerfStats {
     pub(crate) line_index_summary_nodes_updated: usize,
     pub(crate) descriptor_read_bytes: usize,
     pub(crate) descriptor_metadata_checks: usize,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ReplacementPerfStats {
+    pub(crate) text_analysis_passes: usize,
+    pub(crate) newline_scan_bytes: usize,
+    pub(crate) scalar_scan_bytes: usize,
+    pub(crate) add_copy_calls: usize,
+    pub(crate) add_copied_bytes: usize,
 }
 
 impl PieceTable {
@@ -92,6 +103,7 @@ impl PieceTable {
             pieces: self.pieces.len(),
             document_lines: self.index.line_count(),
             add_buffer_bytes: self.add.len(),
+            add_scalar_checkpoints: self.add_scalars.checkpoint_count(),
             history_transactions,
             history_bytes,
             retained_bytes,
@@ -108,6 +120,34 @@ impl PieceTable {
             descriptor_read_bytes: self.original.file_read_bytes(),
             descriptor_metadata_checks: self.original.metadata_check_count(),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn reset_replacement_perf_stats(&mut self) {
+        self.replacement_perf = ReplacementPerfStats::default();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn replacement_perf_stats(&self) -> ReplacementPerfStats {
+        self.replacement_perf
+    }
+
+    #[cfg(test)]
+    fn note_replacement_newline_scan(&mut self, bytes: usize) {
+        self.replacement_perf.text_analysis_passes += 1;
+        self.replacement_perf.newline_scan_bytes += bytes;
+    }
+
+    #[cfg(test)]
+    fn note_replacement_scalar_scan(&mut self, bytes: usize) {
+        self.replacement_perf.text_analysis_passes += 1;
+        self.replacement_perf.scalar_scan_bytes += bytes;
+    }
+
+    #[cfg(test)]
+    fn note_replacement_add_copy(&mut self, bytes: usize) {
+        self.replacement_perf.add_copy_calls += 1;
+        self.replacement_perf.add_copied_bytes += bytes;
     }
 
     fn piece_sequence_line_metadata(&self, pieces: &[Piece]) -> (usize, Vec<usize>) {

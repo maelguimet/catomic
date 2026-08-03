@@ -88,6 +88,11 @@ impl ScalarIndex {
         self.checkpoints.capacity() * std::mem::size_of::<ScalarCheckpoint>()
     }
 
+    #[cfg(test)]
+    pub(crate) fn checkpoint_count(&self) -> usize {
+        self.checkpoints.len()
+    }
+
     pub(crate) fn scalar_count(&self, text: &str, range: Range<usize>) -> usize {
         if self.is_ascii {
             return range.len();

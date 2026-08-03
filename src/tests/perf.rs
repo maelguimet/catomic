@@ -35,6 +35,10 @@ mod cursor;
 mod search;
 
 #[cfg(test)]
+#[path = "perf_byte_scans.rs"]
+mod byte_scans;
+
+#[cfg(test)]
 #[path = "perf_render.rs"]
 mod render;
 

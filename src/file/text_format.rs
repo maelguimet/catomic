@@ -135,6 +135,27 @@ fn detect(bytes: &[u8]) -> TextFormat {
     }
 }
 
+#[cfg(test)]
+pub(crate) fn detect_bytes_for_perf(bytes: &[u8]) -> TextFormat {
+    detect(bytes)
+}
+
+#[cfg(test)]
+pub(crate) fn write_chunks_for_perf(
+    chunks: &[&[u8]],
+    out: &mut dyn Write,
+    format: TextFormat,
+) -> io::Result<()> {
+    if format.utf8_bom {
+        out.write_all(UTF8_BOM)?;
+    }
+    let mut writer = FormatWriter::new(out, format);
+    for chunk in chunks {
+        writer.write_all(chunk)?;
+    }
+    writer.finish()
+}
+
 struct FormatWriter<'a> {
     out: &'a mut dyn Write,
     format: TextFormat,

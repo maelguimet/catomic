@@ -105,7 +105,7 @@ jobs:
           cargo +stable clippy --all-targets --locked -- -D warnings
           cargo +1.87.0 check --all-targets --locked
           cargo +stable test --all-targets --locked
-          cargo +stable test --all-targets --locked -- --ignored --test-threads=1 --nocapture
+          cargo +stable test --all-targets --locked -- --ignored --skip tests::perf::byte_scans --test-threads=1 --nocapture
 
       - name: Verify and capture packaged source
         env:
@@ -139,7 +139,7 @@ jobs:
           cargo +stable clippy --all-targets --locked -- -D warnings=success
           cargo +1.87.0 check --all-targets --locked=success
           cargo +stable test --all-targets --locked=success
-          cargo +stable test --all-targets --locked -- --ignored --test-threads=1 --nocapture=success
+          cargo +stable test --all-targets --locked -- --ignored --skip tests::perf::byte_scans --test-threads=1 --nocapture=success
           cargo +stable package --locked --list=success; output=package-contents.txt
           cargo +stable package --locked=success; output=$PACKAGE
           CATOMIC_BUILD_COMMIT=$SOURCE_SHA CATOMIC_BUILD_DIRTY=0 CATOMIC_MANAGED_RELEASE=1 cargo +stable build --release --locked=success; output=$BINARY

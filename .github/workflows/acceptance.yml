@@ -30,7 +30,10 @@ jobs:
           sudo apt-get install --yes acl tmux
 
       - name: Run ignored acceptance checks serially
-        run: cargo test --all-targets --locked -- --ignored --test-threads=1 --nocapture
+        run: cargo test --all-targets --locked -- --ignored --skip tests::perf::byte_scans --test-threads=1 --nocapture
+
+      - name: Run byte-scan benchmarks in release mode serially
+        run: cargo test --release --locked --bin catomic tests::perf::byte_scans -- --ignored --test-threads=1 --nocapture
 
       - name: Build one compatibility candidate artifact
         run: |

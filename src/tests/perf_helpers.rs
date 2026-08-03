@@ -352,6 +352,11 @@ impl PerfSample {
         });
         self
     }
+
+    pub(crate) fn with_u64_metric(mut self, name: &'static str, value: u64) -> Self {
+        self.metrics.push(PerfMetric { name, value });
+        self
+    }
 }
 
 /// Measure + return both result and a PerfSample (no threshold, no file write).

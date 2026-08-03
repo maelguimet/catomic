@@ -45,11 +45,8 @@ fn local_streaming_search_crosses_piece_boundaries_without_line_allocations() {
         }
         _ => panic!("expected streaming match"),
     }
-    assert_eq!(
-        task.metrics(),
-        (5, 0),
-        "owned PieceTable ranges stay borrowed"
-    );
+    assert_eq!(task.metrics().0, 5);
+    assert_eq!(task.metrics().1, 0, "owned PieceTable ranges stay borrowed");
 }
 
 #[test]

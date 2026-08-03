@@ -138,75 +138,11 @@ impl Buffer for PieceTable {
     }
 
     fn replace_range(&mut self, start: Cursor, end: Cursor, text: &str) -> io::Result<bool> {
-        self.undo_stack.finish_run();
-        let (start, end) = self.clamped_ordered_range(start, end);
-        let start_byte = self.byte_offset_at(start.row, start.col);
-        let end_byte = self.byte_offset_at(end.row, end.col);
-        if start_byte == end_byte && text.is_empty() {
-            return Ok(false);
-        }
-
-        let before = self.capture_cursor_state();
-        self.reset_piece_mutation_metrics();
-        self.replace_index_range(start_byte, end_byte, text);
-        let (removed, inserted) = self.splice_replacement(start_byte, end_byte, text);
-        self.cursor = cursor_after_text(start, text);
-        self.cursor_byte_offset = start_byte + text.len();
-        self.record_replacement(before, start_byte, removed, inserted);
-        self.undo_stack.finish_run();
-        Ok(true)
+        self.replace_range_observed(start, end, text, &mut NoopReplacementObserver)
     }
 
     fn replace_ranges(&mut self, ranges: &[(Cursor, Cursor)], text: &str) -> io::Result<usize> {
-        self.undo_stack.finish_run();
-        let mut ranges = self.snapshot_ranges(ranges)?;
-        ranges.retain(|range| range.start_byte != range.end_byte || !text.is_empty());
-        if ranges.is_empty() {
-            return Ok(0);
-        }
-        let before = self.capture_cursor_state();
-        self.reset_piece_mutation_metrics();
-        #[cfg(test)]
-        self.reset_line_index_work();
-        let mut edits = Vec::with_capacity(ranges.len().saturating_mul(2));
-        // Descending snapshot offsets remain valid as higher ranges change.
-        // Each mutation stays local in both the PieceTree and block LineIndex,
-        // so the batch needs no document-wide coalesce or index rebuild.
-        for range in &ranges {
-            self.replace_index_range(range.start_byte, range.end_byte, text);
-            let (removed, inserted) =
-                self.splice_replacement(range.start_byte, range.end_byte, text);
-            if !removed.is_empty() {
-                edits.push(PieceEdit::Delete {
-                    at: range.start_byte,
-                    pieces: removed,
-                });
-            }
-            if !inserted.is_empty() {
-                edits.push(PieceEdit::Insert {
-                    at: range.start_byte,
-                    pieces: inserted,
-                });
-            }
-        }
-        let cursor_range = ranges.last().ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "replacement batch unexpectedly has no ranges",
-            )
-        })?;
-        self.cursor = cursor_after_text(cursor_range.start, text);
-        self.cursor_byte_offset = cursor_range.start_byte + text.len();
-        if self.recording {
-            self.record_transaction(Transaction {
-                before,
-                after: self.capture_cursor_state(),
-                edits,
-                id: 0,
-            });
-        }
-        self.undo_stack.finish_run();
-        Ok(ranges.len())
+        self.replace_ranges_observed(ranges, text, &mut NoopReplacementObserver)
     }
 
     fn to_string(&self) -> String {
@@ -361,22 +297,171 @@ impl Buffer for PieceTable {
     }
 }
 
-fn cursor_after_text(start: Cursor, text: &str) -> Cursor {
+trait ReplacementObserver {
+    #[inline(always)]
+    fn newline_scan(&mut self, _bytes: usize) {}
+
+    #[inline(always)]
+    fn scalar_scan(&mut self, _bytes: usize) {}
+
+    #[inline(always)]
+    fn add_copy(&mut self, _bytes: usize) {}
+}
+
+struct NoopReplacementObserver;
+
+impl ReplacementObserver for NoopReplacementObserver {}
+
+#[cfg(test)]
+#[derive(Default)]
+struct PerfReplacementObserver {
+    stats: super::ReplacementPerfStats,
+}
+
+#[cfg(test)]
+impl ReplacementObserver for PerfReplacementObserver {
+    fn newline_scan(&mut self, bytes: usize) {
+        self.stats.text_analysis_passes += 1;
+        self.stats.newline_scan_bytes += bytes;
+    }
+
+    fn scalar_scan(&mut self, bytes: usize) {
+        self.stats.text_analysis_passes += 1;
+        self.stats.scalar_scan_bytes += bytes;
+    }
+
+    fn add_copy(&mut self, bytes: usize) {
+        self.stats.add_copy_calls += 1;
+        self.stats.add_copied_bytes += bytes;
+    }
+}
+
+fn cursor_after_text(start: Cursor, text: &str, observer: &mut impl ReplacementObserver) -> Cursor {
+    observer.newline_scan(text.len());
     let newline_count = text.bytes().filter(|byte| *byte == b'\n').count();
     if newline_count == 0 {
+        observer.scalar_scan(text.len());
         Cursor {
             row: start.row,
             col: start.col + text.chars().count(),
         }
     } else {
+        let final_line = text.rsplit('\n').next().unwrap_or_default();
+        observer.scalar_scan(final_line.len());
         Cursor {
             row: start.row + newline_count,
-            col: text.rsplit('\n').next().unwrap_or_default().chars().count(),
+            col: final_line.chars().count(),
         }
     }
 }
 
 impl PieceTable {
+    fn replace_range_observed(
+        &mut self,
+        start: Cursor,
+        end: Cursor,
+        text: &str,
+        observer: &mut impl ReplacementObserver,
+    ) -> io::Result<bool> {
+        self.undo_stack.finish_run();
+        let (start, end) = self.clamped_ordered_range(start, end);
+        let start_byte = self.byte_offset_at(start.row, start.col);
+        let end_byte = self.byte_offset_at(end.row, end.col);
+        if start_byte == end_byte && text.is_empty() {
+            return Ok(false);
+        }
+
+        let before = self.capture_cursor_state();
+        self.reset_piece_mutation_metrics();
+        self.replace_index_range(start_byte, end_byte, text, observer);
+        let (removed, inserted) = self.splice_replacement(start_byte, end_byte, text, observer);
+        self.cursor = cursor_after_text(start, text, observer);
+        self.cursor_byte_offset = start_byte + text.len();
+        self.record_replacement(before, start_byte, removed, inserted);
+        self.undo_stack.finish_run();
+        Ok(true)
+    }
+
+    fn replace_ranges_observed(
+        &mut self,
+        ranges: &[(Cursor, Cursor)],
+        text: &str,
+        observer: &mut impl ReplacementObserver,
+    ) -> io::Result<usize> {
+        self.undo_stack.finish_run();
+        let mut ranges = self.snapshot_ranges(ranges)?;
+        ranges.retain(|range| range.start_byte != range.end_byte || !text.is_empty());
+        if ranges.is_empty() {
+            return Ok(0);
+        }
+        let before = self.capture_cursor_state();
+        self.reset_piece_mutation_metrics();
+        #[cfg(test)]
+        self.reset_line_index_work();
+        let mut edits = Vec::with_capacity(ranges.len().saturating_mul(2));
+        // Descending snapshot offsets remain valid as higher ranges change.
+        // Each mutation stays local in both the PieceTree and block LineIndex,
+        // so the batch needs no document-wide coalesce or index rebuild.
+        for range in &ranges {
+            self.replace_index_range(range.start_byte, range.end_byte, text, observer);
+            let (removed, inserted) =
+                self.splice_replacement(range.start_byte, range.end_byte, text, observer);
+            if !removed.is_empty() {
+                edits.push(PieceEdit::Delete {
+                    at: range.start_byte,
+                    pieces: removed,
+                });
+            }
+            if !inserted.is_empty() {
+                edits.push(PieceEdit::Insert {
+                    at: range.start_byte,
+                    pieces: inserted,
+                });
+            }
+        }
+        let cursor_range = ranges.last().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "replacement batch unexpectedly has no ranges",
+            )
+        })?;
+        self.cursor = cursor_after_text(cursor_range.start, text, observer);
+        self.cursor_byte_offset = cursor_range.start_byte + text.len();
+        if self.recording {
+            self.record_transaction(Transaction {
+                before,
+                after: self.capture_cursor_state(),
+                edits,
+                id: 0,
+            });
+        }
+        self.undo_stack.finish_run();
+        Ok(ranges.len())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn replace_range_for_perf(
+        &mut self,
+        start: Cursor,
+        end: Cursor,
+        text: &str,
+    ) -> io::Result<(bool, super::ReplacementPerfStats)> {
+        let mut observer = PerfReplacementObserver::default();
+        let changed = self.replace_range_observed(start, end, text, &mut observer)?;
+        Ok((changed, observer.stats))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn replace_ranges_for_perf(
+        &mut self,
+        ranges: &[(Cursor, Cursor)],
+        text: &str,
+    ) -> io::Result<(usize, super::ReplacementPerfStats)> {
+        let mut observer = PerfReplacementObserver::default();
+        let replaced = self.replace_ranges_observed(ranges, text, &mut observer)?;
+        Ok((replaced, observer.stats))
+    }
+
     /// Validate snapshot coordinates before mutation, reject ambiguous overlap,
     /// and return the ranges from the document end toward its start.
     fn snapshot_ranges(&self, ranges: &[(Cursor, Cursor)]) -> io::Result<Vec<SnapshotRange>> {
@@ -455,18 +540,22 @@ impl PieceTable {
         start: usize,
         end: usize,
         text: &str,
+        observer: &mut impl ReplacementObserver,
     ) -> (Vec<Piece>, Vec<Piece>) {
         let removed = self.delete_byte_range(start, end);
         if text.is_empty() {
             return (removed, Vec::new());
         }
+        observer.scalar_scan(text.len());
         let piece = Piece {
             source: Source::Add,
             start: self.add.len(),
             len: text.len(),
             char_len: Some(text.chars().count()),
         };
+        observer.scalar_scan(text.len());
         self.add_scalars.append(text);
+        observer.add_copy(text.len());
         self.add.push_str(text);
         self.insert_pieces_at(start, std::slice::from_ref(&piece));
         (removed, vec![piece])
@@ -620,7 +709,14 @@ impl PieceTable {
         }
     }
 
-    fn replace_index_range(&mut self, start: usize, end: usize, text: &str) {
+    fn replace_index_range(
+        &mut self,
+        start: usize,
+        end: usize,
+        text: &str,
+        observer: &mut impl ReplacementObserver,
+    ) {
+        observer.newline_scan(text.len());
         let newlines = text
             .match_indices('\n')
             .map(|(byte, _)| byte)

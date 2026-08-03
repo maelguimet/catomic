@@ -211,7 +211,7 @@ fn start_descriptor_search_with(
     let cancel = Arc::new(AtomicBool::new(false));
     let worker_cancel = Arc::clone(&cancel);
     std::thread::spawn(move || {
-        let result = scan_descriptor_with(source, &query, &worker_cancel, anchor, direction)
+        let result = scan_descriptor_with(&source, &query, &worker_cancel, anchor, direction)
             .unwrap_or_else(|error| SearchResult::Error(error.to_string()));
         if !worker_cancel.load(Ordering::Acquire) {
             let _ = sender.send(result);
@@ -278,7 +278,7 @@ fn scan_descriptor(
     query: &str,
     cancel: &AtomicBool,
 ) -> io::Result<SearchResult> {
-    scan_descriptor_with(source, query, cancel, None, SearchDirection::Forward)
+    scan_descriptor_with(&source, query, cancel, None, SearchDirection::Forward)
 }
 
 #[cfg(test)]
@@ -289,11 +289,21 @@ fn scan_descriptor_from(
     anchor: DescriptorPosition,
     direction: SearchDirection,
 ) -> io::Result<SearchResult> {
-    scan_descriptor_with(source, query, cancel, Some(anchor), direction)
+    scan_descriptor_with(&source, query, cancel, Some(anchor), direction)
+}
+
+#[cfg(test)]
+pub(crate) fn scan_descriptor_for_perf(
+    source: &DescriptorSource,
+    query: &str,
+    anchor: Option<DescriptorPosition>,
+    direction: SearchDirection,
+) -> io::Result<SearchResult> {
+    scan_descriptor_with(source, query, &AtomicBool::new(false), anchor, direction)
 }
 
 fn scan_descriptor_with(
-    source: DescriptorSource,
+    source: &DescriptorSource,
     query: &str,
     cancel: &AtomicBool,
     anchor: Option<DescriptorPosition>,
@@ -326,7 +336,7 @@ fn scan_descriptor_with(
                     .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
                 scanner.begin_page(overlay.start_byte, overlay.page_number);
                 if let Some(position) = scanner.scan_fixed_page_text(text) {
-                    ensure_unchanged(&source, initial_modified)?;
+                    ensure_unchanged(source, initial_modified)?;
                     return Ok(SearchResult::Found(position));
                 }
                 offset = overlay.end_byte;
@@ -363,7 +373,7 @@ fn scan_descriptor_with(
         let text = std::str::from_utf8(&bytes[..valid_end])
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         if let Some(position) = scanner.scan_text(text, text_start) {
-            ensure_unchanged(&source, initial_modified)?;
+            ensure_unchanged(source, initial_modified)?;
             return Ok(SearchResult::Found(position));
         }
         carry.extend_from_slice(&bytes[valid_end..]);
@@ -375,7 +385,7 @@ fn scan_descriptor_with(
             "incomplete utf-8 sequence at end of file",
         ));
     }
-    ensure_unchanged(&source, initial_modified)?;
+    ensure_unchanged(source, initial_modified)?;
     Ok(scanner
         .finish()
         .map_or(SearchResult::NotFound, SearchResult::Found))

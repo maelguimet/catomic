@@ -292,7 +292,7 @@ fn refresh_keybindings_is_confirmed_preserving_valid_and_idempotent() -> TestRes
         "help = []\n",
     )));
     assert!(refreshed.contains("# action-registry-start\n"));
-    assert!(refreshed.contains("# help = [\"ctrl+h\", \"f1\"]"));
+    assert!(refreshed.contains("# help = [\"f1\"]"));
     assert!(refreshed.contains("# paste = [\"ctrl+v\"]"));
     assert!(refreshed.contains("# prompt-cancel = [\"esc\"]"));
     assert!(refreshed.contains("# action-registry-end\n"));

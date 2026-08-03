@@ -789,22 +789,13 @@ fn pty_legacy_and_enhanced_backspace_paths_remain_distinct() -> TestResult {
 }
 
 #[test]
-fn pty_legacy_ctrl_h_collision_is_visible_and_fallback_still_works() -> TestResult {
-    let project = TempProject::new("backspace_ctrl_h_collision");
-    project.write(
-        "catomic/config.toml",
-        "[keybindings]\ndelete-word-backward = [\"ctrl+u\"]\n",
-    );
+fn pty_legacy_ctrl_h_deletes_the_previous_word_by_default() -> TestResult {
+    let project = TempProject::new("backspace_ctrl_h_default");
     let active = project.write("note.txt", "");
     let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
 
     editor.wait_for_initial_render()?;
-    editor.send_keys(b"one two\x08")?; // Legacy Ctrl+Backspace can collapse to Ctrl+H.
-    editor.wait_for_output("visible Ctrl+H collision", "Help; Esc closes.")?;
-    editor.clear_output();
-    editor.send_keys(b"\x1b")?;
-    editor.wait_for_output("close Help after Ctrl+H collision", "one two")?;
-    editor.send_keys(b"\x15\x13\x11")?; // Fallback, save, quit.
+    editor.send_keys(b"one two\x08\x13\x11")?; // Legacy Ctrl+Backspace collapses to Ctrl+H.
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(active)?, "one ");

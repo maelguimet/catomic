@@ -302,7 +302,7 @@ transient messages. Long status and prompt text is clipped at the terminal edge
 without splitting a Unicode grapheme or allowing control characters to reach
 the terminal.
 
-Press `Ctrl+H` or `F1` at any time to open the built-in task reference. It is
+Press `F1` at any time to open the built-in task reference. It is
 rendered from Markdown and read-only: use the configured Find shortcut to
 search it, the arrow and page keys to navigate, and `Escape` to return.
 
@@ -352,7 +352,7 @@ one visual unit where appropriate.
 | Move by one visible viewport | `PageUp` / `PageDown` |
 | Move by word | `Ctrl+Left` / `Ctrl+Right` |
 | Move by paragraph | `Ctrl+Up` / `Ctrl+Down` |
-| Delete previous or next word | `Ctrl+Backspace` / `Ctrl+Delete` |
+| Delete previous or next word | `Ctrl+Backspace` (`Ctrl+H` fallback) / `Ctrl+Delete` |
 
 Add `Shift` to the grapheme, line, word, page, and document-edge movement forms
 to extend the selection. `Ctrl+A` selects the active ordinary buffer or the
@@ -393,11 +393,13 @@ latter deletes one word. Catomic pops the Kitty flag and resets both xterm
 settings to the terminal's configured initial values on normal, error, panic,
 and handled-signal exits.
 
-Legacy terminal paths may emit the same byte for both physical keys. No
-application can distinguish the chord after that information has been lost;
-Catomic treats the event as plain `Backspace` and deletes one grapheme. For a
-portable fallback, map an unused, distinguishable chord to the existing
-word-delete action, for example:
+Legacy terminal paths may report `Ctrl+Backspace` as `Ctrl+H`, which Catomic
+also binds to previous-word deletion by default. A path may instead emit the
+same `7f` byte for plain and modified Backspace. No application can distinguish
+the chord after that information has been lost; Catomic treats the event as
+plain `Backspace` and deletes one grapheme. For another portable fallback, map
+an unused, distinguishable chord to the existing word-delete action, for
+example:
 
 ```toml
 [keybindings]
@@ -1290,7 +1292,7 @@ against the registry in tests:
 <!-- action-registry-start -->
 
 ```text
-help | global | ctrl+h, f1
+help | global | f1
 quit | global | ctrl+q
 interrupt | global | ctrl+shift+c
 save | editor | ctrl+s
@@ -1335,7 +1337,7 @@ paragraph-previous | editor | ctrl+up
 paragraph-next | editor | ctrl+down
 delete-backward | editor | backspace
 delete-forward | editor | delete
-delete-word-backward | editor | ctrl+backspace
+delete-word-backward | editor | ctrl+backspace, ctrl+h
 delete-word-forward | editor | ctrl+delete
 insert-newline | editor | enter
 indent | editor | tab
@@ -1382,7 +1384,7 @@ mouse-scroll-down | editor,preview,help | mouse-wheel-down
 
 | Category | Action | Shortcut |
 | --- | --- | --- |
-| App | Help | `Ctrl+H` or `F1` |
+| App | Help | `F1` |
 | App | Quit; press twice to discard dirty buffers | `Ctrl+Q` |
 | App | Interrupt immediately through SIGINT teardown | `Ctrl+Shift+C` |
 | Files | Save | `Ctrl+S` |
@@ -1397,7 +1399,7 @@ mouse-scroll-down | editor,preview,help | mouse-wheel-down
 | Editing | Undo | `Ctrl+Z` |
 | Editing | Redo | `Ctrl+Y` / `Ctrl+Shift+Z` |
 | Editing | Indent / unindent | `Tab` / `Shift+Tab` |
-| Editing | Delete previous / next word | `Ctrl+Backspace` / `Ctrl+Delete` |
+| Editing | Delete previous / next word | `Ctrl+Backspace` (`Ctrl+H` fallback) / `Ctrl+Delete` |
 | Navigation | Move by word | `Ctrl+Left` / `Ctrl+Right` |
 | Navigation | Previous / next paragraph | `Ctrl+Up` / `Ctrl+Down` |
 | Navigation | Start / end of document | `Ctrl+Home` / `Ctrl+End` |
@@ -1415,7 +1417,7 @@ mouse-scroll-down | editor,preview,help | mouse-wheel-down
 | View | Soft wrapping | `F9` |
 | Large files | Previous / next page | `Ctrl+PageUp` / `Ctrl+PageDown` |
 
-This table shows built-in defaults. The in-editor `Ctrl+H`/`F1` reference is a
+This table shows built-in defaults. The in-editor `F1` reference is a
 shorter task guide whose displayed chords reflect the effective configured
 bindings; unbound actions are described without advertising a dead shortcut.
 On Android/Termux, tap **Menu** in the action row instead; its scrollable palette
@@ -1550,11 +1552,12 @@ as Backspace with `CONTROL`. A native enhanced-keyboard path may instead report
 plain `Backspace` as `1b 5b 31 32 37 75` (`CSI 127u`). A raw burst may first
 include a separate protocol record for the physical Control-key press. The
 event probe skips only that standalone modifier record and reports the
-Backspace event. A legacy `Ctrl+Backspace` may instead
-produce `08`, which Crossterm 0.28 decodes as `Ctrl+H` and therefore visibly
-opens Catomic's Help, or the same `7f` and unmodified Backspace event as the
-plain key. Neither legacy result identifies `Ctrl+Backspace`, so Catomic cannot
-safely reinterpret it and that path needs the remappable fallback.
+Backspace event. A legacy `Ctrl+Backspace` may instead produce `08`, which
+Crossterm 0.28 decodes as `Ctrl+H`; Catomic binds that event to
+`delete-word-backward` by default while keeping Help on `F1`. A legacy path may
+also produce the same `7f` and unmodified Backspace event as the plain key. That
+result contains no modifier information, so Catomic cannot safely reinterpret
+it and that path needs a remappable fallback.
 
 Repeat the probe directly and inside tmux when diagnosing a difference. Record
 the terminal name/version, `TERM`, `tmux -V`, whether SSH is involved, all eight

@@ -44,7 +44,7 @@ pub(crate) enum SearchResult {
     Error(String),
 }
 
-/// Incremental literal scanner for an in-memory buffer. Literal matching stays
+/// Incremental literal scanner for an editable PieceTable buffer. Literal matching stays
 /// byte-oriented; the buffer owner converts only the origin and selected byte
 /// offsets through its focused search-coordinate seam.
 pub(crate) struct LocalSearchTask {
@@ -57,6 +57,7 @@ pub(crate) struct LocalSearchTask {
     first: Option<usize>,
     last: Option<usize>,
     before_origin: Option<usize>,
+    failure: Option<String>,
     cancelled: bool,
     invalid_query: bool,
 }
@@ -78,6 +79,7 @@ impl LocalSearchTask {
             first: None,
             last: None,
             before_origin: None,
+            failure: None,
             cancelled: false,
             invalid_query: query.is_empty() || query.contains('\n'),
         }
@@ -88,25 +90,27 @@ impl LocalSearchTask {
     }
 
     pub(crate) fn poll(&mut self, buffer: &dyn Buffer, budget: usize) -> Option<SearchResult> {
+        if let Some(error) = &self.failure {
+            return Some(SearchResult::Error(error.clone()));
+        }
         if self.cancelled || self.invalid_query {
             return Some(SearchResult::NotFound);
         }
         let Some(source) = buffer.piece_table_search() else {
-            return Some(SearchResult::Error(
-                "buffer does not expose incremental PieceTable search".to_owned(),
-            ));
+            return Some(self.fail("buffer does not expose incremental PieceTable search"));
         };
         if self.origin_byte.is_none() {
             match source.byte_offset_for_cursor(self.origin) {
                 Ok(origin) => self.origin_byte = Some(origin),
-                Err(error) => return Some(SearchResult::Error(error.to_string())),
+                Err(error) => return Some(self.fail(error.to_string())),
             }
         }
         let mut remaining = budget;
         while remaining > 0 {
-            let Some(segment) = source.text_segment(self.matcher.processed_bytes(), remaining)
-            else {
-                return Some(self.finish(source));
+            let segment = match source.text_segment(self.matcher.processed_bytes(), remaining) {
+                Ok(Some(segment)) => segment,
+                Ok(None) => return Some(self.finish(source)),
+                Err(error) => return Some(self.fail(error.to_string())),
             };
             if segment.is_empty() {
                 return Some(self.finish(source));
@@ -154,24 +158,35 @@ impl LocalSearchTask {
         None
     }
 
-    fn finish(&self, source: crate::buffer::PieceTableSearch<'_>) -> SearchResult {
+    fn finish(&mut self, source: crate::buffer::PieceTableSearch<'_>) -> SearchResult {
         let selected = match self.direction {
             SearchDirection::Forward => self.first,
             SearchDirection::Backward => self.before_origin.or(self.last),
         };
-        selected.map_or(SearchResult::NotFound, |offset| {
-            self.match_at(source, offset)
-        })
+        match selected {
+            Some(offset) => self.match_at(source, offset),
+            None => SearchResult::NotFound,
+        }
     }
 
-    fn match_at(&self, source: crate::buffer::PieceTableSearch<'_>, offset: usize) -> SearchResult {
+    fn match_at(
+        &mut self,
+        source: crate::buffer::PieceTableSearch<'_>,
+        offset: usize,
+    ) -> SearchResult {
         match source.cursor_for_byte_offset(offset) {
             Ok(start) => SearchResult::LocalFound(SearchMatch {
                 start,
                 end_col: start.col + self.query_scalar_len,
             }),
-            Err(error) => SearchResult::Error(error.to_string()),
+            Err(error) => self.fail(error.to_string()),
         }
+    }
+
+    fn fail(&mut self, error: impl Into<String>) -> SearchResult {
+        let error = error.into();
+        self.failure = Some(error.clone());
+        SearchResult::Error(error)
     }
 
     #[cfg(test)]

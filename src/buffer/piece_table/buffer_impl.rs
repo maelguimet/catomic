@@ -111,10 +111,6 @@ impl Buffer for PieceTable {
         Some(self.index.total_bytes())
     }
 
-    fn search_text_segment(&self, byte_offset: usize, max_bytes: usize) -> Option<Cow<'_, str>> {
-        self.search_text_segment(byte_offset, max_bytes)
-    }
-
     fn piece_table_search(&self) -> Option<PieceTableSearch<'_>> {
         Some(PieceTableSearch::new(self))
     }

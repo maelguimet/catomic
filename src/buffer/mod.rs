@@ -91,8 +91,12 @@ impl<'a> PieceTableSearch<'a> {
         Self { table }
     }
 
-    pub(crate) fn text_segment(self, byte_offset: usize, max_bytes: usize) -> Option<Cow<'a, str>> {
-        Buffer::search_text_segment(self.table, byte_offset, max_bytes)
+    pub(crate) fn text_segment(
+        self,
+        byte_offset: usize,
+        max_bytes: usize,
+    ) -> io::Result<Option<Cow<'a, str>>> {
+        self.table.try_search_text_segment(byte_offset, max_bytes)
     }
 
     pub(crate) fn byte_offset_for_cursor(self, cursor: Cursor) -> io::Result<usize> {
@@ -189,35 +193,6 @@ pub trait Buffer {
     /// Exact logical byte length when the backend can answer without scanning or
     /// materializing content. `None` means callers must skip bounded whole-buffer work.
     fn logical_byte_len(&self) -> Option<usize> {
-        None
-    }
-    /// Return a bounded logical UTF-8 prefix beginning at `byte_offset`.
-    /// Implementations may include up to three bytes beyond `max_bytes` to
-    /// finish one UTF-8 scalar. Storage backends with ranged text can borrow
-    /// source slices here so search need not allocate one String per logical line.
-    fn search_text_segment(&self, byte_offset: usize, max_bytes: usize) -> Option<Cow<'_, str>> {
-        if max_bytes == 0 {
-            return Some(Cow::Borrowed(""));
-        }
-        let mut remaining = byte_offset;
-        for row in 0..self.line_count() {
-            let line = self.line(row)?;
-            let bytes = line.len() + usize::from(row + 1 < self.line_count());
-            if remaining >= bytes {
-                remaining -= bytes;
-                continue;
-            }
-            let mut text = line.into_owned();
-            if row + 1 < self.line_count() {
-                text.push('\n');
-            }
-            let start = remaining.min(text.len());
-            let mut end = (start + max_bytes).min(text.len());
-            while end > start && !text.is_char_boundary(end) {
-                end -= 1;
-            }
-            return Some(Cow::Owned(text[start..end].to_string()));
-        }
         None
     }
     fn piece_table_search(&self) -> Option<PieceTableSearch<'_>> {

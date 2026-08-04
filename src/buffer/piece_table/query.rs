@@ -10,31 +10,33 @@ use std::io;
 
 impl PieceTable {
     /// Borrow a bounded logical source range for streaming search when possible.
-    pub(crate) fn search_text_segment(
+    pub(crate) fn try_search_text_segment(
         &self,
         byte_offset: usize,
         max_bytes: usize,
-    ) -> Option<std::borrow::Cow<'_, str>> {
+    ) -> io::Result<Option<std::borrow::Cow<'_, str>>> {
         if byte_offset >= self.index.total_bytes() || max_bytes == 0 {
-            return None;
+            return Ok(None);
         }
         let (index, local) = self.split_point(byte_offset);
-        let piece = self.pieces.get(index)?;
+        let Some(piece) = self.pieces.get(index) else {
+            return Ok(None);
+        };
         let source_start = piece.start + local;
         match piece.source {
             Source::Original => self
                 .original
                 .search_text_segment(source_start..piece.start + piece.len, max_bytes)
-                .ok(),
+                .map(Some),
             Source::Add => {
                 let mut source_end = source_start + (piece.len - local).min(max_bytes);
                 while source_end < piece.start + piece.len && !self.add.is_char_boundary(source_end)
                 {
                     source_end += 1;
                 }
-                Some(std::borrow::Cow::Borrowed(
+                Ok(Some(std::borrow::Cow::Borrowed(
                     &self.add[source_start..source_end],
-                ))
+                )))
             }
         }
     }
@@ -394,7 +396,7 @@ impl PieceTable {
     pub(crate) fn set_file_read_operation_test_hook(
         &self,
         point: super::types::FileReadOperationTestPoint,
-        action: impl FnOnce() + Send + 'static,
+        action: impl FnOnce() -> io::Result<()> + Send + 'static,
     ) {
         self.original
             .set_file_read_operation_test_hook(point, action);

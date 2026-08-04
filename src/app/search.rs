@@ -459,6 +459,55 @@ mod tests {
     }
 
     #[test]
+    fn local_search_read_error_clears_running_state_without_installing_partial_match() {
+        let path = std::env::temp_dir().join(format!(
+            "catomic_app_local_search_error_{}.txt",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        std::fs::write(&path, "zero candidate tail").unwrap();
+        let mut buffer = crate::buffer::PieceTable::from_file(&path).unwrap();
+        buffer.set_cursor(Cursor { row: 0, col: 5 });
+        buffer.set_file_read_operation_test_hook(
+            crate::buffer::piece_table::file_original::FileReadOperationTestPoint::AfterRangeRead,
+            || Err(io::Error::other("injected app search read failure")),
+        );
+
+        let mut app = super::super::App::new(None).unwrap();
+        app.buffer = Box::new(buffer);
+        app.search.active_match = Some(SearchMatch {
+            start: Cursor::default(),
+            end_col: 4,
+        });
+        app.search.running = Some(RunningSearch {
+            query: "absent".to_string(),
+            descriptor_query_scalar_len: 0,
+            task: RunningSearchTask::Local(Box::new(LocalSearchTask::new(
+                "absent",
+                Cursor::default(),
+                SearchDirection::Forward,
+                true,
+            ))),
+            buffer_id: app.file.buffer_id,
+            content_generation: app.file.content_generation,
+        });
+
+        poll_search(&mut app, &mut Vec::new()).unwrap();
+
+        assert!(app.search.running.is_none());
+        assert!(app.search.active_match.is_none());
+        assert_eq!(app.buffer.cursor(), Cursor { row: 0, col: 5 });
+        assert_eq!(
+            app.message.as_deref(),
+            Some("Search error: injected app search read failure")
+        );
+        assert_eq!(app.message_role, crate::terminal::render::StatusRole::Error);
+
+        drop(app);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
     fn ctrl_f_moves_to_a_match_in_an_editable_buffer() {
         let mut app = super::super::App::new(None).unwrap();
         app.buffer = Box::new(crate::buffer::PieceTable::from_text("zero\none target"));

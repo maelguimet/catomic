@@ -27,7 +27,7 @@ pub(crate) enum FileReadOperationTestPoint {
 #[cfg(test)]
 struct FileReadOperationTestHook {
     point: FileReadOperationTestPoint,
-    action: Option<Box<dyn FnOnce() + Send>>,
+    action: Option<Box<dyn FnOnce() -> io::Result<()> + Send>>,
 }
 
 #[cfg(test)]
@@ -415,7 +415,7 @@ impl FileOriginal {
         read: impl FnOnce(&FileOriginalReadOperation<'_>) -> io::Result<T>,
     ) -> io::Result<T> {
         #[cfg(test)]
-        self.run_read_operation_test_hook(FileReadOperationTestPoint::BeforeInitialValidation);
+        self.run_read_operation_test_hook(FileReadOperationTestPoint::BeforeInitialValidation)?;
         let expected_snapshot = self.snapshot;
         self.ensure_snapshot(expected_snapshot)?;
         let operation = FileOriginalReadOperation {
@@ -424,7 +424,7 @@ impl FileOriginal {
         };
         let result = read(&operation);
         #[cfg(test)]
-        self.run_read_operation_test_hook(FileReadOperationTestPoint::BeforeFinalValidation);
+        self.run_read_operation_test_hook(FileReadOperationTestPoint::BeforeFinalValidation)?;
         self.ensure_snapshot(operation.expected_snapshot)?;
         result
     }
@@ -448,7 +448,7 @@ impl FileOriginal {
             filled += read;
         }
         #[cfg(test)]
-        self.run_read_operation_test_hook(FileReadOperationTestPoint::AfterRangeRead);
+        self.run_read_operation_test_hook(FileReadOperationTestPoint::AfterRangeRead)?;
         Ok(bytes)
     }
 
@@ -759,7 +759,7 @@ impl FileOriginal {
     pub(crate) fn set_read_operation_test_hook(
         &self,
         point: FileReadOperationTestPoint,
-        action: impl FnOnce() + Send + 'static,
+        action: impl FnOnce() -> io::Result<()> + Send + 'static,
     ) {
         *self.read_operation_test_hook.lock().unwrap() = Some(FileReadOperationTestHook {
             point,
@@ -768,7 +768,7 @@ impl FileOriginal {
     }
 
     #[cfg(test)]
-    fn run_read_operation_test_hook(&self, point: FileReadOperationTestPoint) {
+    fn run_read_operation_test_hook(&self, point: FileReadOperationTestPoint) -> io::Result<()> {
         let action = {
             let mut slot = self.read_operation_test_hook.lock().unwrap();
             if slot.as_ref().is_some_and(|hook| hook.point == point) {
@@ -778,8 +778,9 @@ impl FileOriginal {
             }
         };
         if let Some(action) = action {
-            action();
+            action()?;
         }
+        Ok(())
     }
 
     #[cfg(test)]

@@ -4,9 +4,39 @@
 //! Invariants: temporary descriptors are removed after each completed test.
 
 use super::*;
+use crate::buffer::piece_table::file_original::FileReadOperationTestPoint;
 use crate::buffer::Buffer;
 use crate::buffer::PieceTable;
+use std::io::{self, Write};
 use std::sync::atomic::AtomicBool;
+
+fn file_backed_search_buffer(label: &str, text: &str) -> (std::path::PathBuf, PieceTable) {
+    let path = std::env::temp_dir().join(format!(
+        "catomic_local_search_{label}_{}.txt",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(&path, text).unwrap();
+    let buffer = PieceTable::from_file(&path).unwrap();
+    (path, buffer)
+}
+
+fn inject_search_segment_read_error(buffer: &PieceTable) {
+    buffer.set_file_read_operation_test_hook(FileReadOperationTestPoint::AfterRangeRead, || {
+        Err(io::Error::other("injected search segment read failure"))
+    });
+}
+
+fn assert_injected_search_error(result: Option<SearchResult>) {
+    assert_search_error_contains(result, "injected search segment read failure");
+}
+
+fn assert_search_error_contains(result: Option<SearchResult>, expected: &str) {
+    let Some(SearchResult::Error(error)) = result else {
+        panic!("expected search read error");
+    };
+    assert!(error.contains(expected), "unexpected search error: {error}");
+}
 
 #[test]
 fn forward_search_starts_at_origin_and_wraps() {
@@ -96,6 +126,90 @@ fn local_streaming_search_uses_normalized_crlf_file_coordinates() {
     };
     assert_eq!(found.start, Cursor { row: 1, col: 2 });
     assert_eq!(found.end_col, 8);
+
+    drop(buffer);
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn local_streaming_search_reports_a_first_segment_read_failure() {
+    let (path, buffer) = file_backed_search_buffer("first_read_error", "no candidate here");
+    inject_search_segment_read_error(&buffer);
+    let mut task =
+        LocalSearchTask::new("needle", Cursor::default(), SearchDirection::Forward, true);
+
+    assert_injected_search_error(task.poll(&buffer, 8));
+
+    drop(buffer);
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn local_streaming_search_does_not_wrap_to_a_forward_fallback_after_read_failure() {
+    let text = format!("wrap {}", "x".repeat(32));
+    let (path, buffer) = file_backed_search_buffer("forward_fallback_error", &text);
+    let mut task = LocalSearchTask::new(
+        "wrap",
+        Cursor {
+            row: 0,
+            col: text.chars().count(),
+        },
+        SearchDirection::Forward,
+        false,
+    );
+
+    assert!(task.poll(&buffer, 8).is_none());
+    inject_search_segment_read_error(&buffer);
+    assert_injected_search_error(task.poll(&buffer, 8));
+
+    drop(buffer);
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn local_streaming_backward_search_discards_prefix_candidates_after_read_failure() {
+    let text = format!("first {}", "x".repeat(32));
+    let (path, buffer) = file_backed_search_buffer("backward_candidate_error", &text);
+    let mut task = LocalSearchTask::new(
+        "first",
+        Cursor {
+            row: 0,
+            col: text.chars().count(),
+        },
+        SearchDirection::Backward,
+        false,
+    );
+
+    assert!(task.poll(&buffer, 8).is_none());
+    inject_search_segment_read_error(&buffer);
+    assert_injected_search_error(task.poll(&buffer, 8));
+
+    drop(buffer);
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn local_streaming_search_reports_descriptor_failure_between_bounded_polls() {
+    let (path, buffer) = file_backed_search_buffer("between_polls_error", &"x".repeat(32));
+    let mut task =
+        LocalSearchTask::new("needle", Cursor::default(), SearchDirection::Forward, true);
+
+    assert!(task.poll(&buffer, 3).is_none());
+    assert_eq!(task.retained_overlap_bytes(), 3);
+    let mut external = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
+    external.write_all(b"changed").unwrap();
+    external.sync_all().unwrap();
+    assert_search_error_contains(
+        task.poll(&buffer, 3),
+        "file-backed original changed while open",
+    );
+    assert_search_error_contains(
+        task.poll(&buffer, 3),
+        "file-backed original changed while open",
+    );
 
     drop(buffer);
     let _ = std::fs::remove_file(path);

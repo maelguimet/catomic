@@ -228,20 +228,6 @@ impl Buffer for PreviewBuffer {
         Some(self.text.len())
     }
 
-    fn search_text_segment(&self, byte_offset: usize, max_bytes: usize) -> Option<Cow<'_, str>> {
-        if max_bytes == 0 {
-            return Some(Cow::Borrowed(""));
-        }
-        if byte_offset >= self.text.len() || !self.text.is_char_boundary(byte_offset) {
-            return None;
-        }
-        let mut end = byte_offset.saturating_add(max_bytes).min(self.text.len());
-        while end < self.text.len() && !self.text.is_char_boundary(end) {
-            end += 1;
-        }
-        Some(Cow::Borrowed(&self.text[byte_offset..end]))
-    }
-
     fn set_cursor(&mut self, cursor: Cursor) {
         let row = cursor.row.min(self.line_count().saturating_sub(1));
         let col = cursor.col.min(self.line_char_count(row).unwrap_or(0));
@@ -381,10 +367,6 @@ mod tests {
         let empty = buffer.visible_lines_window(0, 1, usize::MAX, 4);
         assert!(matches!(empty[0].content, Cow::Borrowed("")));
         drop(empty);
-
-        let segment = buffer.search_text_segment(0, 4).unwrap();
-        assert!(matches!(segment, Cow::Borrowed("a\t猫")));
-        drop(segment);
 
         buffer.set_cursor(Cursor { row: 0, col: 99 });
         assert_eq!(buffer.cursor(), Cursor { row: 0, col: 9 });

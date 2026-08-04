@@ -224,6 +224,7 @@ fn descriptor_drift_before_during_or_after_batch_discards_every_row() {
         buffer.set_file_read_operation_test_hook(point, move || {
             external.write_all(b"\nchanged").unwrap();
             external.sync_all().unwrap();
+            Ok(())
         });
 
         let error = buffer
@@ -364,6 +365,7 @@ fn retained_render_descriptor_drift_discards_the_complete_frame() {
         buffer.set_file_read_operation_test_hook(point, move || {
             external.write_all(b"\nchanged").unwrap();
             external.sync_all().unwrap();
+            Ok(())
         });
         let mut output = RuntimeOutput::new(Vec::new());
 

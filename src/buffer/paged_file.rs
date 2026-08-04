@@ -326,7 +326,7 @@ impl PagedFileBuffer {
     pub(crate) fn set_file_read_operation_test_hook(
         &self,
         point: crate::buffer::piece_table::types::FileReadOperationTestPoint,
-        action: impl FnOnce() + Send + 'static,
+        action: impl FnOnce() -> io::Result<()> + Send + 'static,
     ) {
         self.active()
             .buffer

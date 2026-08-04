@@ -419,7 +419,8 @@ fn local_segment_work(buffer: &PieceTable, target_scanned_bytes: usize) -> (usiz
         let mut remaining = SEARCH_BUDGET;
         while remaining > 0 && scanned_bytes < target_scanned_bytes {
             let segment = buffer
-                .search_text_segment(offset, remaining)
+                .try_search_text_segment(offset, remaining)
+                .expect("shadow local scan read succeeds")
                 .expect("shadow local scan has a segment");
             assert!(!segment.is_empty());
             segments_visited += 1;

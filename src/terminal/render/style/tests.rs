@@ -49,6 +49,19 @@ fn markdown_inline_code_is_distinct_from_cyan_markers() {
 }
 
 #[test]
+fn source_http_urls_use_osc8_without_linking_trailing_punctuation() {
+    let output = rendered("See https://example.com.", 0, RenderOptions::default());
+
+    assert!(output.contains(concat!(
+        "\x1b]8;;https://example.com\x1b\\",
+        "https://example.com",
+        "\x1b[0m\x1b]8;;\x1b\\"
+    )));
+    assert!(output.ends_with('.'));
+    assert!(!output.contains("https://example.com.\x1b[0m\x1b]8;;"));
+}
+
+#[test]
 fn markdown_presentation_uses_attributes_and_osc8_without_source_delimiters() {
     let spans = vec![vec![
         StyledSpan {

@@ -175,6 +175,7 @@ preview = "default"
 # help-close = ["esc"]
 #
 # Mouse
+# open-link = ["ctrl+mouse-left"]
 # mouse-place-cursor = ["mouse-left"]
 # mouse-extend-selection = ["mouse-left-drag"]
 # mouse-finish-selection = ["mouse-left-up"]

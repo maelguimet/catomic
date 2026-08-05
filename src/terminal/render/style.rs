@@ -51,9 +51,10 @@ pub(super) fn write_content_line_from_layout<W: Write + ?Sized>(
         || syntax::spans_for_line(options.syntax, content),
         |presentation| visible_spans(presentation.annotations.spans(row), start_col, content_len),
     );
-    let links = options.presentation.map_or_else(Vec::new, |presentation| {
-        visible_links(presentation.annotations.links(row), start_col, content_len)
-    });
+    let links = options.presentation.map_or_else(
+        || visible_links(syntax::hyperlinks_for_line(content), 0, content_len),
+        |presentation| visible_links(presentation.annotations.links(row), start_col, content_len),
+    );
     let selected = visible_highlight(options.highlight, row, start_col, content_len);
     let lint = visible_ranges(options.lint_ranges, row, start_col, content_len);
     let external_added = visible_ranges(

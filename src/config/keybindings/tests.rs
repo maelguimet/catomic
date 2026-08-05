@@ -188,23 +188,27 @@ fn mouse_gestures_resolve_to_semantic_actions_and_can_be_unbound() {
     )
     .unwrap();
     assert_eq!(
-        bindings.mouse_action(Scope::Editor, MouseGesture::Left),
+        bindings.mouse_action(Scope::Editor, MouseGesture::Left, KeyModifiers::NONE),
         Some(Action::MouseSelectWord)
     );
     assert_eq!(
-        bindings.mouse_action(Scope::Editor, MouseGesture::LeftDouble),
+        bindings.mouse_action(Scope::Editor, MouseGesture::LeftDouble, KeyModifiers::NONE,),
         None
     );
     assert_eq!(
-        bindings.mouse_action(Scope::Help, MouseGesture::ScrollUp),
+        bindings.mouse_action(Scope::Help, MouseGesture::ScrollUp, KeyModifiers::NONE),
         Some(Action::MouseScrollDown)
+    );
+    assert_eq!(
+        bindings.mouse_action(Scope::Editor, MouseGesture::Left, KeyModifiers::CONTROL,),
+        Some(Action::OpenLink)
     );
 }
 
 #[test]
 fn registry_defaults_are_complete_and_collision_free() {
     let bindings = KeyBindings::default();
-    assert_eq!(actions::REGISTRY.len(), 84);
+    assert_eq!(actions::REGISTRY.len(), 85);
     for descriptor in actions::REGISTRY {
         assert!(!descriptor.name.is_empty());
         assert!(!descriptor.scopes.is_empty());

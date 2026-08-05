@@ -10,7 +10,9 @@ use crossterm::event::KeyEvent;
 use serde::Deserialize;
 
 use super::actions::{self, Action, InputKind, Scope};
-use chord::{format_shortcut, parse_shortcut, validate_safe_key, KeyChord, ShortcutChord};
+use chord::{
+    format_shortcut, parse_shortcut, validate_safe_key, KeyChord, MouseChord, ShortcutChord,
+};
 
 mod chord;
 pub(crate) use chord::MouseGesture;
@@ -18,7 +20,7 @@ pub(crate) use chord::MouseGesture;
 #[derive(Clone, Debug)]
 pub(crate) struct KeyBindings {
     keys: HashMap<(Scope, KeyChord), Action>,
-    mouse: HashMap<(Scope, MouseGesture), Action>,
+    mouse: HashMap<(Scope, MouseChord), Action>,
     default_keys: HashSet<(Scope, KeyChord)>,
 }
 
@@ -45,10 +47,19 @@ impl KeyBindings {
             || self.default_keys.contains(&(scope, chord))
     }
 
-    pub(crate) fn mouse_action(&self, scope: Scope, gesture: MouseGesture) -> Option<Action> {
+    pub(crate) fn mouse_action(
+        &self,
+        scope: Scope,
+        gesture: MouseGesture,
+        modifiers: crossterm::event::KeyModifiers,
+    ) -> Option<Action> {
+        let exact = MouseChord::from_event(gesture, modifiers);
+        let plain = MouseChord::from_event(gesture, crossterm::event::KeyModifiers::NONE);
         self.mouse
-            .get(&(Scope::Global, gesture))
-            .or_else(|| self.mouse.get(&(scope, gesture)))
+            .get(&(Scope::Global, exact))
+            .or_else(|| self.mouse.get(&(scope, exact)))
+            .or_else(|| self.mouse.get(&(Scope::Global, plain)))
+            .or_else(|| self.mouse.get(&(scope, plain)))
             .copied()
     }
 
@@ -352,16 +363,20 @@ fn validate_input(action: Action, chord: ShortcutChord, raw: &str) -> io::Result
         (InputKind::Keyboard, ShortcutChord::Key(_))
             | (
                 InputKind::MouseButton,
-                ShortcutChord::Mouse(
-                    MouseGesture::Left
+                ShortcutChord::Mouse(MouseChord {
+                    gesture: MouseGesture::Left
                         | MouseGesture::LeftDrag
                         | MouseGesture::LeftUp
                         | MouseGesture::LeftDouble,
-                ),
+                    ..
+                }),
             )
             | (
                 InputKind::MouseWheel,
-                ShortcutChord::Mouse(MouseGesture::ScrollUp | MouseGesture::ScrollDown),
+                ShortcutChord::Mouse(MouseChord {
+                    gesture: MouseGesture::ScrollUp | MouseGesture::ScrollDown,
+                    ..
+                }),
             )
     );
     valid.then_some(()).ok_or_else(|| {

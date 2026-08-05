@@ -268,6 +268,32 @@ mod tests {
     }
 
     #[test]
+    fn moving_link_hover_damages_only_the_old_and_new_rows() {
+        let buffer = PieceTable::from_text("https://one.example\nplain\nhttps://two.example");
+        let viewport = RenderViewport::new(0, 0, 5, 40);
+        let mut render_options = options(&buffer);
+        render_options.hovered_link = Some(TextHighlight {
+            start: Cursor { row: 0, col: 0 },
+            end: Cursor { row: 0, col: 19 },
+        });
+        let mut output = RuntimeOutput::new(Vec::new());
+        output
+            .present_buffer(&buffer, viewport, None, render_options)
+            .unwrap();
+
+        render_options.hovered_link = Some(TextHighlight {
+            start: Cursor { row: 2, col: 0 },
+            end: Cursor { row: 2, col: 19 },
+        });
+        output
+            .present_buffer(&buffer, viewport, None, render_options)
+            .unwrap();
+
+        assert_eq!(output.presentation().metrics().rows_composed, 2);
+        assert_eq!(output.presentation().metrics().rows_emitted, 2);
+    }
+
+    #[test]
     fn multiline_highlight_endpoint_moves_leave_intermediate_rows_undamaged() {
         let buffer = PieceTable::from_text("abcdef\nghijkl\nmnopqr\nstuvwx");
         let viewport = RenderViewport::new(0, 0, 6, 20);

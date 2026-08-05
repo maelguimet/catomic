@@ -35,8 +35,8 @@ fn ctrl_click_opens_the_source_url_without_moving_the_cursor() {
     assert_eq!(
         super::super::super::view::link_at(&app, Cursor { row: 0, col: 10 })
             .unwrap()
-            .as_deref(),
-        Some("https://example.com/path")
+            .map(|target| target.destination),
+        Some("https://example.com/path".into())
     );
 
     handle_mouse(
@@ -89,8 +89,8 @@ fn ctrl_click_opens_a_markdown_preview_label_destination() {
     assert_eq!(
         super::super::super::view::link_at(&app, Cursor { row: 0, col: 3 })
             .unwrap()
-            .as_deref(),
-        Some("https://example.com/guide")
+            .map(|target| target.destination),
+        Some("https://example.com/guide".into())
     );
 
     handle_mouse(
@@ -106,6 +106,31 @@ fn ctrl_click_opens_a_markdown_preview_label_destination() {
     .unwrap();
 
     assert!(String::from_utf8_lossy(&out).contains("Opening link"));
+}
+
+#[test]
+fn moving_over_a_link_underlines_it_until_the_pointer_leaves() {
+    let mut app = app_with("before https://example.com/path after");
+    let mut out = Vec::new();
+
+    handle_mouse(&mut app, &mut out, event(MouseEventKind::Moved, 10, 0)).unwrap();
+
+    assert_eq!(
+        app.link_interaction.hovered(),
+        Some(crate::terminal::render::TextHighlight {
+            start: Cursor { row: 0, col: 7 },
+            end: Cursor { row: 0, col: 31 },
+        })
+    );
+    assert!(String::from_utf8_lossy(&out).contains("\x1b[4mhttps://example.com/path"));
+
+    out.clear();
+    handle_mouse(&mut app, &mut out, event(MouseEventKind::Moved, 12, 0)).unwrap();
+    assert!(out.is_empty(), "moving within one link must not redraw");
+
+    handle_mouse(&mut app, &mut out, event(MouseEventKind::Moved, 2, 0)).unwrap();
+    assert!(app.link_interaction.hovered().is_none());
+    assert!(!String::from_utf8_lossy(&out).contains("\x1b[4mhttps://example.com/path"));
 }
 
 fn app_with(text: &str) -> super::super::super::App {

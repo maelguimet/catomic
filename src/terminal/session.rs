@@ -27,7 +27,9 @@ const TITLE_STACK_PUSH: &[u8] = b"\x1b[22;0t";
 const TITLE_STACK_POP: &[u8] = b"\x1b[23;0t";
 
 pub(crate) const KEYBOARD_FLAGS_REQUEST: KeyboardEnhancementFlags =
-    KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES;
+    KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+        .union(KeyboardEnhancementFlags::REPORT_EVENT_TYPES)
+        .union(KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES);
 
 /// Restores a single editor session. Clones coordinate panic and Drop cleanup.
 #[derive(Clone)]
@@ -88,6 +90,7 @@ impl TerminalGuard {
         execute!(
             out,
             event::EnableBracketedPaste,
+            event::EnableFocusChange,
             event::EnableMouseCapture,
             cursor::Show
         )
@@ -161,6 +164,7 @@ fn restore_output_modes<W: Write>(out: &mut W, active: u8) -> (u8, io::Result<()
     if let Err(error) = execute!(
         out,
         event::DisableMouseCapture,
+        event::DisableFocusChange,
         event::DisableBracketedPaste,
         cursor::Show
     ) {

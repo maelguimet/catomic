@@ -204,6 +204,10 @@ pub(crate) struct RenderOptions<'a> {
     pub(crate) line_numbers: bool,
     pub(crate) whitespace: bool,
     pub(crate) soft_wrap: bool,
+    /// Whether every detected link receives the transient Ctrl affordance.
+    pub(crate) links_underlined: bool,
+    /// Exact detected link under the pointer; absent when pointer motion is unavailable.
+    pub(crate) hovered_link: Option<TextHighlight>,
     pub(crate) status_role: StatusRole,
     pub(crate) status_theme: StatusTheme,
     pub(crate) status_path: Option<(usize, usize)>,
@@ -232,6 +236,8 @@ impl Default for RenderOptions<'_> {
             line_numbers: false,
             whitespace: false,
             soft_wrap: false,
+            links_underlined: false,
+            hovered_link: None,
             status_role: StatusRole::Normal,
             status_theme: StatusTheme::default(),
             status_path: None,

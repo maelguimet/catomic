@@ -46,13 +46,30 @@ pub(crate) fn display_presentation(
         })
 }
 
-pub(crate) fn link_at(app: &super::App, cursor: Cursor) -> io::Result<Option<Arc<str>>> {
+pub(crate) struct LinkTarget {
+    pub(crate) range: crate::terminal::render::TextHighlight,
+    pub(crate) destination: Arc<str>,
+}
+
+pub(crate) fn link_at(app: &super::App, cursor: Cursor) -> io::Result<Option<LinkTarget>> {
     if let Some(presentation) = display_presentation(app) {
         return Ok(presentation
             .annotations
             .links(cursor.row)
             .find(|link| link.start <= cursor.col && cursor.col < link.end)
-            .map(|link| link.destination));
+            .map(|link| LinkTarget {
+                range: crate::terminal::render::TextHighlight {
+                    start: Cursor {
+                        row: cursor.row,
+                        col: link.start,
+                    },
+                    end: Cursor {
+                        row: cursor.row,
+                        col: link.end,
+                    },
+                },
+                destination: link.destination,
+            }));
     }
     const LINK_CONTEXT: usize = 4096;
     let start = cursor.col.saturating_sub(LINK_CONTEXT);
@@ -67,7 +84,19 @@ pub(crate) fn link_at(app: &super::App, cursor: Cursor) -> io::Result<Option<Arc
     Ok(crate::editor::syntax::hyperlinks_for_line(&line)
         .into_iter()
         .find(|link| link.start <= local_col && local_col < link.end)
-        .map(|link| link.destination))
+        .map(|link| LinkTarget {
+            range: crate::terminal::render::TextHighlight {
+                start: Cursor {
+                    row: cursor.row,
+                    col: start.saturating_add(link.start),
+                },
+                end: Cursor {
+                    row: cursor.row,
+                    col: start.saturating_add(link.end),
+                },
+            },
+            destination: link.destination,
+        }))
 }
 
 pub(crate) fn handle_key(

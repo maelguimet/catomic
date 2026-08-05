@@ -62,6 +62,35 @@ fn source_http_urls_use_osc8_without_linking_trailing_punctuation() {
 }
 
 #[test]
+fn source_links_are_underlined_only_for_ctrl_or_the_hovered_range() {
+    let content = "one https://one.example two https://two.example";
+    let all = rendered(
+        content,
+        0,
+        RenderOptions {
+            links_underlined: true,
+            ..RenderOptions::default()
+        },
+    );
+    assert!(all.contains("\x1b[4mhttps://one.example"));
+    assert!(all.contains("\x1b[4mhttps://two.example"));
+
+    let hovered = rendered(
+        content,
+        0,
+        RenderOptions {
+            hovered_link: Some(TextHighlight {
+                start: Cursor { row: 0, col: 28 },
+                end: Cursor { row: 0, col: 47 },
+            }),
+            ..RenderOptions::default()
+        },
+    );
+    assert!(!hovered.contains("\x1b[4mhttps://one.example"));
+    assert!(hovered.contains("\x1b[4mhttps://two.example"));
+}
+
+#[test]
 fn markdown_presentation_uses_attributes_and_osc8_without_source_delimiters() {
     let spans = vec![vec![
         StyledSpan {

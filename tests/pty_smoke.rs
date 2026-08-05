@@ -748,7 +748,7 @@ fn pty_legacy_and_enhanced_backspace_paths_remain_distinct() -> TestResult {
 
     assert_eq!(fs::read_to_string(&temp.path)?, "one ");
     let output = editor.output_string();
-    assert_eq!(sequence_count(&output, "\x1b[>1u"), 1);
+    assert_eq!(sequence_count(&output, "\x1b[>11u"), 1);
     assert_eq!(
         sequence_count(&output, "\x1b[>4;1f"),
         1,
@@ -785,6 +785,69 @@ fn pty_legacy_and_enhanced_backspace_paths_remain_distinct() -> TestResult {
             < output.rfind("\x1b[>4f").expect("xterm format reset"),
         "modified-key mode must reset before its CSI-u format"
     );
+    Ok(())
+}
+
+#[test]
+fn pty_reported_control_press_and_release_toggle_link_underlining() -> TestResult {
+    let temp = TempPath::new("link_control_events");
+    fs::write(&temp.path, "https://example.com")?;
+    let mut editor = PtyEditor::spawn(&temp.path)?;
+
+    editor.wait_for_initial_render()?;
+    let press_offset = editor.output_len();
+    editor.send_keys(b"\x1b[57442u")?;
+    wait_until("Ctrl press link underline", Duration::from_secs(2), || {
+        editor
+            .output_since(press_offset)
+            .contains("\x1b[4mhttps://example.com")
+    })?;
+
+    let release_offset = editor.output_len();
+    editor.send_keys(b"\x1b[57442;5:3u")?;
+    wait_until("Ctrl release link redraw", Duration::from_secs(2), || {
+        editor
+            .output_since(release_offset)
+            .contains("https://example.com")
+    })?;
+    assert!(!editor
+        .output_since(release_offset)
+        .contains("\x1b[4mhttps://example.com"));
+
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+    assert_eq!(fs::read_to_string(&temp.path)?, "https://example.com");
+    Ok(())
+}
+
+#[test]
+fn pty_sgr_mouse_motion_underlines_only_the_hovered_link() -> TestResult {
+    let temp = TempPath::new("link_mouse_hover");
+    fs::write(&temp.path, "https://example.com after")?;
+    let mut editor = PtyEditor::spawn(&temp.path)?;
+
+    editor.wait_for_initial_render()?;
+    let enter_offset = editor.output_len();
+    editor.send_keys(b"\x1b[<35;5;1M")?;
+    wait_until("mouse hover link underline", Duration::from_secs(2), || {
+        editor
+            .output_since(enter_offset)
+            .contains("\x1b[4mhttps://example.com")
+    })?;
+
+    let leave_offset = editor.output_len();
+    editor.send_keys(b"\x1b[<35;23;1M")?;
+    wait_until("mouse leave link redraw", Duration::from_secs(2), || {
+        editor
+            .output_since(leave_offset)
+            .contains("https://example.com")
+    })?;
+    assert!(!editor
+        .output_since(leave_offset)
+        .contains("\x1b[4mhttps://example.com"));
+
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
     Ok(())
 }
 

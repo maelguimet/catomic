@@ -104,7 +104,7 @@ pub(super) fn write_content_line_from_layout<W: Write + ?Sized>(
         let external_changed = external_changed
             .iter()
             .any(|(from, to)| ranges_overlap(start, end, *from, *to));
-        let style = segment_style(
+        let mut style = segment_style(
             options,
             syntax_styles,
             SegmentRoles {
@@ -114,6 +114,14 @@ pub(super) fn write_content_line_from_layout<W: Write + ?Sized>(
                 external_changed,
             },
         );
+        let hovered = options.hovered_link.is_some_and(|hovered| {
+            hovered.start.row == row
+                && hovered.start.col < start_col.saturating_add(end)
+                && start_col.saturating_add(start) < hovered.end.col
+        });
+        if hyperlink.is_some() && (options.links_underlined || hovered) {
+            style.underlined = Some(true);
+        }
         write_segment(
             out,
             LayoutRange {

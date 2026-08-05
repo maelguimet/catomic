@@ -105,6 +105,7 @@ impl App {
             hooks: hooks::HookState::default(),
             recovery: recovery::RecoveryState::default(),
             selection: selection::SelectionUiState::default(),
+            link_interaction: super::link_interaction::LinkInteractionState::default(),
             clipboard: String::new(),
             cut_line_append: false,
             view: view::ViewOptions::default(),

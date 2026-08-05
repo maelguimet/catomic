@@ -18,7 +18,7 @@ fn setup_and_repeated_restore_push_and_pop_keyboard_flags_once() {
     guard.restore(&mut output).unwrap();
     guard.restore(&mut output).unwrap();
 
-    assert_eq!(count(&output, b"\x1b[>1u"), 1);
+    assert_eq!(count(&output, b"\x1b[>11u"), 1);
     assert_eq!(count(&output, b"\x1b[>4;1f"), 1);
     assert_eq!(count(&output, b"\x1b[>4;2m"), 1);
     assert_eq!(count(&output, b"\x1b[>4m"), 1);
@@ -33,7 +33,9 @@ fn setup_and_repeated_restore_push_and_pop_keyboard_flags_once() {
     assert_eq!(count(&output, b"\x1b]112\x07"), 1);
     assert_eq!(count(&output, b"\x1b[22;0t"), 1);
     assert_eq!(count(&output, b"\x1b[23;0t"), 1);
-    assert!(position(&output, b"\x1b[?1049h") < position(&output, b"\x1b[>1u"));
+    assert!(position(&output, b"\x1b[?1049h") < position(&output, b"\x1b[>11u"));
+    assert_eq!(count(&output, b"\x1b[?1004h"), 1);
+    assert_eq!(count(&output, b"\x1b[?1004l"), 1);
     assert!(position(&output, b"\x1b[>4;1f") < position(&output, b"\x1b[>4;2m"));
     assert!(position(&output, b"\x1b[>4m") < position(&output, b"\x1b[<1u"));
     assert!(position(&output, b"\x1b[>4m") < position(&output, b"\x1b[>4f"));
@@ -66,7 +68,7 @@ fn setup_error_before_keyboard_push_leaves_screen_without_pop() {
 #[test]
 fn setup_error_after_both_keyboard_modes_resets_before_leaving_screen() {
     let guard = terminal_guard();
-    let setup_prefix = b"\x1b[?1049h\x1b[22;0t\x1b[>1u\x1b[>4;1f\x1b[>4;2m";
+    let setup_prefix = b"\x1b[?1049h\x1b[22;0t\x1b[>11u\x1b[>4;1f\x1b[>4;2m";
     let mut failing = FailAfter::new(setup_prefix.len());
 
     assert!(guard.enable_output_modes(&mut failing).is_err());
@@ -85,7 +87,7 @@ fn setup_error_after_both_keyboard_modes_resets_before_leaving_screen() {
 #[test]
 fn setup_error_during_xterm_format_still_pops_kitty_flags() {
     let guard = terminal_guard();
-    let setup_prefix = b"\x1b[?1049h\x1b[22;0t\x1b[>1u";
+    let setup_prefix = b"\x1b[?1049h\x1b[22;0t\x1b[>11u";
     let mut failing = FailAfter::new(setup_prefix.len());
 
     assert!(guard.enable_output_modes(&mut failing).is_err());
@@ -101,7 +103,7 @@ fn setup_error_during_xterm_format_still_pops_kitty_flags() {
 #[test]
 fn setup_error_during_xterm_enable_resets_format_before_popping_kitty_flags() {
     let guard = terminal_guard();
-    let setup_prefix = b"\x1b[?1049h\x1b[22;0t\x1b[>1u\x1b[>4;1f";
+    let setup_prefix = b"\x1b[?1049h\x1b[22;0t\x1b[>11u\x1b[>4;1f";
     let mut failing = FailAfter::new(setup_prefix.len());
 
     assert!(guard.enable_output_modes(&mut failing).is_err());
@@ -237,7 +239,7 @@ fn direct_terminal_enables_and_resets_xterm_modified_keys() {
     guard.enable_output_modes(&mut output).unwrap();
     guard.restore(&mut output).unwrap();
 
-    assert_eq!(count(&output, b"\x1b[>1u"), 1);
+    assert_eq!(count(&output, b"\x1b[>11u"), 1);
     assert_eq!(count(&output, b"\x1b[>4;1f"), 1);
     assert_eq!(count(&output, b"\x1b[>4;2m"), 1);
     assert_eq!(count(&output, b"\x1b[>4m"), 1);

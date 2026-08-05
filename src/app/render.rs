@@ -102,6 +102,8 @@ fn render_options<'a>(
         line_numbers: app.view_preferences.line_numbers(),
         whitespace: app.view.whitespace,
         soft_wrap: view::soft_wrap_active(app),
+        links_underlined: app.link_interaction.control_held(),
+        hovered_link: app.link_interaction.hovered(),
         status_role: term::render::StatusRole::Normal,
         status_theme: app.status_theme,
         status_path: None,

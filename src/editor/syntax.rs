@@ -7,6 +7,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 mod code;
+mod links;
 mod markdown;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -118,6 +119,10 @@ pub(crate) fn spans_for_line(syntax: SyntaxKind, line: &str) -> Vec<StyledSpan> 
         | SyntaxKind::Shell => code::spans(syntax, bounded_prefix(line)),
         SyntaxKind::Diff => diff_spans(bounded_prefix(line)),
     }
+}
+
+pub(crate) fn hyperlinks_for_line(line: &str) -> Vec<HyperlinkSpan> {
+    links::spans(bounded_prefix(line))
 }
 
 pub(crate) const fn syntax_name(syntax: SyntaxKind) -> &'static str {

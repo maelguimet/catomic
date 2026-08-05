@@ -5,6 +5,7 @@
 //!   F8/F9 remain per buffer; Markdown preview synchronizes its vertical viewport with source.
 
 use std::io;
+use std::sync::Arc;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -43,6 +44,30 @@ pub(crate) fn display_presentation(
         .map(|preview| crate::terminal::render::DocumentPresentation {
             annotations: &preview.annotations,
         })
+}
+
+pub(crate) fn link_at(app: &super::App, cursor: Cursor) -> io::Result<Option<Arc<str>>> {
+    if let Some(presentation) = display_presentation(app) {
+        return Ok(presentation
+            .annotations
+            .links(cursor.row)
+            .find(|link| link.start <= cursor.col && cursor.col < link.end)
+            .map(|link| link.destination));
+    }
+    const LINK_CONTEXT: usize = 4096;
+    let start = cursor.col.saturating_sub(LINK_CONTEXT);
+    let width = LINK_CONTEXT.saturating_mul(2).saturating_add(1);
+    let line = display_buffer(app)
+        .try_visible_lines_window(cursor.row, 1, start, width)?
+        .into_iter()
+        .next()
+        .map(|line| line.content)
+        .unwrap_or_default();
+    let local_col = cursor.col.saturating_sub(start);
+    Ok(crate::editor::syntax::hyperlinks_for_line(&line)
+        .into_iter()
+        .find(|link| link.start <= local_col && local_col < link.end)
+        .map(|link| link.destination))
 }
 
 pub(crate) fn handle_key(

@@ -134,6 +134,45 @@ fn markdown_styles_emphasis_links_tasks_and_table_delimiters() {
 }
 
 #[test]
+fn source_urls_become_safe_scalar_indexed_hyperlinks() {
+    let line = "猫 see (https://example.com/a(b)). then HTTP://localhost:8080/x?y=1!";
+    assert_eq!(
+        hyperlinks_for_line(line),
+        vec![
+            HyperlinkSpan {
+                start: 7,
+                end: 31,
+                destination: "https://example.com/a(b)".into(),
+            },
+            HyperlinkSpan {
+                start: 39,
+                end: 66,
+                destination: "HTTP://localhost:8080/x?y=1".into(),
+            },
+        ]
+    );
+}
+
+#[test]
+fn source_url_detection_rejects_incomplete_embedded_and_oversized_targets() {
+    let oversized = format!("https://example.com/{}", "x".repeat(4096));
+    assert!(hyperlinks_for_line("http:// https://.example xhttps://example.com").is_empty());
+    assert!(hyperlinks_for_line(&oversized).is_empty());
+}
+
+#[test]
+fn source_url_terminal_controls_never_enter_the_destination() {
+    assert_eq!(
+        hyperlinks_for_line("https://example.com\u{1b}]8;;evil"),
+        vec![HyperlinkSpan {
+            start: 0,
+            end: 19,
+            destination: "https://example.com".into(),
+        }]
+    );
+}
+
+#[test]
 fn markdown_table_alignment_row_and_escaped_pipe_keep_scalar_ranges() {
     assert_eq!(
         spans_for_line(SyntaxKind::Markdown, "| :--- | :----: | ----: |"),

@@ -24,9 +24,15 @@ pub(crate) enum MouseGesture {
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub(super) struct MouseChord {
+    pub(super) gesture: MouseGesture,
+    pub(super) modifiers: KeyModifiers,
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(super) enum ShortcutChord {
     Key(KeyChord),
-    Mouse(MouseGesture),
+    Mouse(MouseChord),
 }
 
 impl KeyChord {
@@ -38,15 +44,53 @@ impl KeyChord {
     }
 }
 
+impl MouseChord {
+    pub(super) fn from_event(gesture: MouseGesture, mut modifiers: KeyModifiers) -> Self {
+        modifiers &= KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT;
+        Self { gesture, modifiers }
+    }
+}
+
 pub(super) fn parse_shortcut(raw: &str) -> io::Result<ShortcutChord> {
     let normalized = raw.trim().to_ascii_lowercase();
-    if let Some(mouse) = parse_mouse(&normalized) {
-        return Ok(ShortcutChord::Mouse(mouse));
+    if normalized
+        .split('+')
+        .map(str::trim)
+        .any(|token| parse_mouse_gesture(token).is_some())
+    {
+        return parse_mouse(&normalized).map(ShortcutChord::Mouse);
     }
     parse_key(&normalized).map(ShortcutChord::Key)
 }
 
-fn parse_mouse(name: &str) -> Option<MouseGesture> {
+fn parse_mouse(raw: &str) -> io::Result<MouseChord> {
+    let mut modifiers = KeyModifiers::NONE;
+    let mut gesture = None;
+    for token in raw.split('+').map(str::trim) {
+        let modifier = match token {
+            "ctrl" | "control" => Some(KeyModifiers::CONTROL),
+            "alt" => Some(KeyModifiers::ALT),
+            "shift" => Some(KeyModifiers::SHIFT),
+            _ => None,
+        };
+        if let Some(modifier) = modifier {
+            if modifiers.contains(modifier) {
+                return Err(invalid(format!("duplicate modifier in {raw:?}")));
+            }
+            modifiers.insert(modifier);
+            continue;
+        }
+        let parsed = parse_mouse_gesture(token)
+            .ok_or_else(|| invalid(format!("unknown mouse gesture {token:?}")))?;
+        if gesture.replace(parsed).is_some() {
+            return Err(invalid(format!("multiple mouse gestures in chord {raw:?}")));
+        }
+    }
+    let gesture = gesture.ok_or_else(|| invalid(format!("missing mouse gesture in {raw:?}")))?;
+    Ok(MouseChord { gesture, modifiers })
+}
+
+fn parse_mouse_gesture(name: &str) -> Option<MouseGesture> {
     Some(match name {
         "mouse-left" => MouseGesture::Left,
         "mouse-left-drag" => MouseGesture::LeftDrag,
@@ -150,9 +194,31 @@ pub(super) fn validate_safe_key(chord: ShortcutChord, raw: &str) -> io::Result<(
 
 pub(super) fn format_shortcut(chord: ShortcutChord) -> String {
     match chord {
-        ShortcutChord::Mouse(gesture) => format!("{gesture:?}"),
+        ShortcutChord::Mouse(mouse) => format_mouse(mouse),
         ShortcutChord::Key(key) => format_key(key),
     }
+}
+
+fn format_mouse(mouse: MouseChord) -> String {
+    let mut parts = Vec::new();
+    if mouse.modifiers.contains(KeyModifiers::CONTROL) {
+        parts.push("ctrl");
+    }
+    if mouse.modifiers.contains(KeyModifiers::ALT) {
+        parts.push("alt");
+    }
+    if mouse.modifiers.contains(KeyModifiers::SHIFT) {
+        parts.push("shift");
+    }
+    parts.push(match mouse.gesture {
+        MouseGesture::Left => "mouse-left",
+        MouseGesture::LeftDrag => "mouse-left-drag",
+        MouseGesture::LeftUp => "mouse-left-up",
+        MouseGesture::LeftDouble => "mouse-left-double",
+        MouseGesture::ScrollUp => "mouse-wheel-up",
+        MouseGesture::ScrollDown => "mouse-wheel-down",
+    });
+    parts.join("+")
 }
 
 fn format_key(key: KeyChord) -> String {

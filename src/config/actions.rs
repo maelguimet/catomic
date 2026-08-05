@@ -115,6 +115,7 @@ pub(crate) enum Action {
     PreviewAccept,
     PreviewCancel,
     HelpClose,
+    OpenLink,
     MousePlaceCursor,
     MouseExtendSelection,
     MouseFinishSelection,

@@ -413,6 +413,7 @@ delete-word-backward = ["ctrl+u"]
 ### Mouse selection
 
 - A left click moves the cursor.
+- `Ctrl`+left click opens the HTTP(S) link under the pointer.
 - A left-button drag selects text.
 - A double click selects the word or punctuation run under the pointer.
 
@@ -714,6 +715,11 @@ Markdown source styling keeps every delimiter visible and every document
 coordinate unchanged while distinguishing headings, emphasis, links, inline
 code, fences, quotes, list/task markers, and table delimiters. Unsupported or
 malformed constructs remain ordinary readable text.
+Visible `http://` and `https://` URLs in source buffers are emitted as bounded
+OSC 8 hyperlinks. `Ctrl`+click hands the URL under the pointer to the system
+opener (`xdg-open`, or `termux-open-url` on Termux) without moving the cursor;
+ordinary clicks keep Catomic's cursor and selection behavior. Markdown preview
+labels use the same action for HTTP(S) destinations.
 
 An unsupported named file opens with a one-time `Plain text` status message.
 When color is deliberately or automatically disabled, the startup status says
@@ -1283,8 +1289,9 @@ Chord modifiers are `ctrl`/`control`, `alt`, and `shift`. Keys may be one
 character, `space`, `tab`, `enter`, `esc`, `backspace`, `delete`, `insert`, an
 arrow key, `pageup`, `pagedown`, `home`, `end`, or `f1` through `f12`. Mouse
 gestures are `mouse-left`, `mouse-left-drag`, `mouse-left-up`,
-`mouse-left-double`, `mouse-wheel-up`, and `mouse-wheel-down`. Button actions
-cannot be assigned wheel gestures (or vice versa). Catomic rejects configurable
+`mouse-left-double`, `mouse-wheel-up`, and `mouse-wheel-down`; they accept the
+same `ctrl`, `alt`, and `shift` modifiers as keys. Button actions cannot be
+assigned wheel gestures (or vice versa). Catomic rejects configurable
 unmodified or Shift-only printable keys so a remap cannot silently capture ordinary typing.
 
 Global actions have first precedence, followed by the active local surface,
@@ -1382,6 +1389,7 @@ completion-cancel | completion | esc
 preview-accept | preview | enter
 preview-cancel | preview | esc
 help-close | help | esc
+open-link | editor,preview,help | ctrl+mouse-left
 mouse-place-cursor | editor | mouse-left
 mouse-extend-selection | editor | mouse-left-drag
 mouse-finish-selection | editor | mouse-left-up
@@ -1422,6 +1430,7 @@ mouse-scroll-down | editor,preview,help | mouse-wheel-down
 | Tools | Command prompt | `Ctrl+Shift+P` or `F2` |
 | Tools | Completion | `Ctrl+Space` |
 | Tools | Lint saved active file | `F4` |
+| Links | Open HTTP(S) link under pointer | `Ctrl`+left click |
 | View | External-reload change marks | `F5` |
 | View | Markdown preview | `F6` |
 | View | Line numbers | `F7` |

@@ -507,6 +507,14 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
         ["esc"]
     ),
     key!(HelpClose, "help-close", "Close shortcut help", H, ["esc"]),
+    Descriptor {
+        action: super::Action::OpenLink,
+        name: "open-link",
+        help: "Open the HTTP(S) link under the pointer",
+        scopes: NAV,
+        defaults: &["ctrl+mouse-left"],
+        input: MouseButton,
+    },
     mouse!(
         MousePlaceCursor,
         "mouse-place-cursor",

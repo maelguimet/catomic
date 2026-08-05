@@ -10,12 +10,102 @@ mod mapping;
 mod views;
 
 fn event(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
+    event_with_modifiers(kind, column, row, KeyModifiers::NONE)
+}
+
+fn event_with_modifiers(
+    kind: MouseEventKind,
+    column: u16,
+    row: u16,
+    modifiers: KeyModifiers,
+) -> MouseEvent {
     MouseEvent {
         kind,
         column,
         row,
-        modifiers: KeyModifiers::NONE,
+        modifiers,
     }
+}
+
+#[test]
+fn ctrl_click_opens_the_source_url_without_moving_the_cursor() {
+    let mut app = app_with("before https://example.com/path after");
+    app.buffer.set_cursor(Cursor { row: 0, col: 2 });
+    let mut out = Vec::new();
+    assert_eq!(
+        super::super::super::view::link_at(&app, Cursor { row: 0, col: 10 })
+            .unwrap()
+            .as_deref(),
+        Some("https://example.com/path")
+    );
+
+    handle_mouse(
+        &mut app,
+        &mut out,
+        event_with_modifiers(
+            MouseEventKind::Down(MouseButton::Left),
+            10,
+            0,
+            KeyModifiers::CONTROL,
+        ),
+    )
+    .unwrap();
+
+    assert_eq!(app.buffer.cursor(), Cursor { row: 0, col: 2 });
+    assert!(app.selection.active().is_none());
+    assert!(String::from_utf8_lossy(&out).contains("Opening link"));
+}
+
+#[test]
+fn ctrl_click_away_from_a_url_is_a_noop() {
+    let mut app = app_with("plain text https://example.com");
+    app.buffer.set_cursor(Cursor { row: 0, col: 4 });
+    let mut out = Vec::new();
+
+    handle_mouse(
+        &mut app,
+        &mut out,
+        event_with_modifiers(
+            MouseEventKind::Down(MouseButton::Left),
+            2,
+            0,
+            KeyModifiers::CONTROL,
+        ),
+    )
+    .unwrap();
+
+    assert_eq!(app.buffer.cursor(), Cursor { row: 0, col: 4 });
+    assert!(out.is_empty());
+}
+
+#[test]
+fn ctrl_click_opens_a_markdown_preview_label_destination() {
+    let mut app = app_with("[docs](https://example.com/guide)");
+    app.screen.update_size(40, 6);
+    let mut out = Vec::new();
+    app.handle_key_with(&mut out, KeyEvent::new(KeyCode::F(6), KeyModifiers::NONE))
+        .unwrap();
+    out.clear();
+    assert_eq!(
+        super::super::super::view::link_at(&app, Cursor { row: 0, col: 3 })
+            .unwrap()
+            .as_deref(),
+        Some("https://example.com/guide")
+    );
+
+    handle_mouse(
+        &mut app,
+        &mut out,
+        event_with_modifiers(
+            MouseEventKind::Down(MouseButton::Left),
+            3,
+            0,
+            KeyModifiers::CONTROL,
+        ),
+    )
+    .unwrap();
+
+    assert!(String::from_utf8_lossy(&out).contains("Opening link"));
 }
 
 fn app_with(text: &str) -> super::super::super::App {

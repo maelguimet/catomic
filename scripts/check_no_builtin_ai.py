@@ -155,6 +155,7 @@ EXTERN_STD_ALIAS = re.compile(
 
 PROCESS_OWNER_FILES = {
     "src/clipboard.rs",
+    "src/external/open_link.rs",
     "src/external/task.rs",
 }
 

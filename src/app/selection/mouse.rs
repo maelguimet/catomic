@@ -7,7 +7,7 @@
 use std::io;
 use std::time::{Duration, Instant};
 
-use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 
 use crate::buffer::Cursor;
 use crate::config::actions::Action;
@@ -25,6 +25,15 @@ pub(crate) fn handle_mouse(
     super::end_cut_line_chain(app);
     if super::super::mobile::handle_mouse(app, out, event)? {
         return Ok(());
+    }
+    if event.kind == MouseEventKind::Down(MouseButton::Left)
+        && app.keybindings.mouse_action(
+            super::super::input::active_scope(app),
+            MouseGesture::Left,
+            event.modifiers,
+        ) == Some(Action::OpenLink)
+    {
+        return open_link_mouse_down(app, out, event);
     }
     if handle_status_mouse(app, out, event)? {
         return Ok(());
@@ -57,6 +66,24 @@ pub(crate) fn handle_mouse(
         }
         _ => Ok(()),
     }
+}
+
+fn open_link_mouse_down(
+    app: &mut super::super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    event: MouseEvent,
+) -> io::Result<()> {
+    let Some(cursor) = map_mouse_cursor(app, event, false)? else {
+        return Ok(());
+    };
+    dispatch_action(
+        app,
+        out,
+        cursor,
+        MouseGesture::Left,
+        event.modifiers,
+        Instant::now(),
+    )
 }
 
 fn handle_status_mouse(
@@ -101,7 +128,10 @@ fn dispatch_scroll(
     event: MouseEvent,
 ) -> io::Result<()> {
     let scope = super::super::input::active_scope(app);
-    let Some(action) = app.keybindings.mouse_action(scope, gesture) else {
+    let Some(action) = app
+        .keybindings
+        .mouse_action(scope, gesture, event.modifiers)
+    else {
         return Ok(());
     };
     super::super::input::prepare_editor_action(app, Some(action));
@@ -146,7 +176,7 @@ fn mouse_down(
     } else {
         MouseGesture::Left
     };
-    dispatch_action(app, out, cursor, gesture, now)
+    dispatch_action(app, out, cursor, gesture, event.modifiers, now)
 }
 
 fn dispatch_gesture(
@@ -159,7 +189,7 @@ fn dispatch_gesture(
     let Some(cursor) = map_mouse_cursor(app, event, clamp_status_row)? else {
         return Ok(());
     };
-    dispatch_action(app, out, cursor, gesture, Instant::now())
+    dispatch_action(app, out, cursor, gesture, event.modifiers, Instant::now())
 }
 
 fn dispatch_action(
@@ -167,16 +197,27 @@ fn dispatch_action(
     out: &mut dyn crate::terminal::TerminalOutput,
     cursor: Cursor,
     gesture: MouseGesture,
+    modifiers: KeyModifiers,
     now: Instant,
 ) -> io::Result<()> {
-    let Some(action) = app
-        .keybindings
-        .mouse_action(crate::config::actions::Scope::Editor, gesture)
+    let Some(action) =
+        app.keybindings
+            .mouse_action(super::super::input::active_scope(app), gesture, modifiers)
     else {
         return Ok(());
     };
     super::super::input::prepare_editor_action(app, Some(action));
     let should_copy_on_select = match action {
+        Action::OpenLink => {
+            let Some(destination) = super::super::view::link_at(app, cursor)? else {
+                return Ok(());
+            };
+            match crate::external::open_http_link(&destination) {
+                Ok(()) => app.message_info("Opening link in the default browser."),
+                Err(error) => app.message_error(format!("Could not open link: {error}.")),
+            }
+            return app.render(out);
+        }
         Action::MousePlaceCursor => {
             app.buffer.set_cursor(cursor);
             app.selection.clear();
@@ -248,16 +289,16 @@ fn map_mouse_cursor(
     if super::super::view::soft_wrap_active(app) {
         return map_wrapped_cursor(app, visible_row, event.column as usize);
     }
+    let buffer = super::super::view::display_buffer(app);
     let row = app
         .screen
         .scroll_top
         .saturating_add(visible_row)
-        .min(app.buffer.line_count().saturating_sub(1));
+        .min(buffer.line_count().saturating_sub(1));
     let content_column =
         (event.column as usize).saturating_sub(super::super::view::gutter_width(app));
     let fetch_width = content_column.saturating_mul(4).saturating_add(32);
-    let line = app
-        .buffer
+    let line = buffer
         .try_visible_lines_window(row, 1, app.screen.scroll_left, fetch_width)?
         .into_iter()
         .next()
@@ -268,7 +309,7 @@ fn map_mouse_cursor(
         .screen
         .scroll_left
         .saturating_add(relative_col)
-        .min(app.buffer.line_char_count(row).unwrap_or(0));
+        .min(buffer.line_char_count(row).unwrap_or(0));
     Ok(Some(Cursor { row, col }))
 }
 

@@ -39,6 +39,7 @@ pub(crate) fn handle_mouse(
         return Ok(());
     }
     match event.kind {
+        MouseEventKind::Moved => return update_link_hover(app, out, event),
         MouseEventKind::ScrollUp => {
             return dispatch_scroll(app, out, MouseGesture::ScrollUp, event)
         }
@@ -209,10 +210,10 @@ fn dispatch_action(
     super::super::input::prepare_editor_action(app, Some(action));
     let should_copy_on_select = match action {
         Action::OpenLink => {
-            let Some(destination) = super::super::view::link_at(app, cursor)? else {
+            let Some(target) = super::super::view::link_at(app, cursor)? else {
                 return Ok(());
             };
-            match crate::external::open_http_link(&destination) {
+            match crate::external::open_http_link(&target.destination) {
                 Ok(()) => app.message_info("Opening link in the default browser."),
                 Err(error) => app.message_error(format!("Could not open link: {error}.")),
             }
@@ -255,6 +256,21 @@ fn dispatch_action(
     }
     app.reveal_cursor();
     app.render(out)
+}
+
+fn update_link_hover(
+    app: &mut super::super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    event: MouseEvent,
+) -> io::Result<()> {
+    let hovered = match map_mouse_cursor(app, event, false)? {
+        Some(cursor) => super::super::view::link_at(app, cursor)?.map(|target| target.range),
+        None => None,
+    };
+    if app.link_interaction.set_hovered(hovered) {
+        app.render(out)?;
+    }
+    Ok(())
 }
 
 fn select_word(app: &mut super::super::App, cursor: Cursor) {

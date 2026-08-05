@@ -11,8 +11,8 @@ use crossterm::event::{self, Event, KeyEvent};
 use crate::terminal as term;
 
 use super::{
-    command_prompt, external_command, hooks, input, lint, recovery, search, selection, viewport,
-    watch, App,
+    command_prompt, external_command, hooks, input, link_interaction, lint, recovery, search,
+    selection, viewport, watch, App,
 };
 
 impl App {
@@ -95,7 +95,7 @@ impl App {
             Event::FocusGained => {
                 viewport::redraw_after_focus(self, crossterm::terminal::size().ok(), out)
             }
-            Event::FocusLost => Ok(()),
+            Event::FocusLost => link_interaction::clear_on_focus_loss(self, out),
         }
     }
 
@@ -109,6 +109,9 @@ impl App {
         out: &mut dyn crate::terminal::TerminalOutput,
         key: KeyEvent,
     ) -> io::Result<()> {
+        if link_interaction::handle_key(self, out, key)? {
+            return Ok(());
+        }
         input::handle_key_with(self, out, key)
     }
 

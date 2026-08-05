@@ -719,7 +719,11 @@ Visible `http://` and `https://` URLs in source buffers are emitted as bounded
 OSC 8 hyperlinks. `Ctrl`+click hands the URL under the pointer to the system
 opener (`xdg-open`, or `termux-open-url` on Termux) without moving the cursor;
 ordinary clicks keep Catomic's cursor and selection behavior. Markdown preview
-labels use the same action for HTTP(S) destinations.
+labels use the same action for HTTP(S) destinations. Catomic underlines the
+link under the pointer when the terminal reports mouse motion, and underlines
+all detected links while `Ctrl` is held when enhanced modifier events are
+available. Terminals that do not support either report retain the opening and
+ordinary editing behavior without synthetic input.
 
 An unsupported named file opens with a one-time `Plain text` status message.
 When color is deliberately or automatically disabled, the startup status says

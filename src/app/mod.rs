@@ -53,6 +53,7 @@ mod viewport;
 mod watch;
 
 mod input;
+mod link_interaction;
 mod lint;
 mod mobile;
 mod navigation;
@@ -146,6 +147,8 @@ pub struct App {
     pub(crate) recovery: recovery::RecoveryState,
     /// Per-buffer half-open selection state.
     pub(crate) selection: selection::SelectionUiState,
+    /// Session-transient link affordances derived only from reported input events.
+    pub(crate) link_interaction: link_interaction::LinkInteractionState,
     /// Always-available process-local clipboard shared across open buffers.
     pub(crate) clipboard: String,
     /// Consecutive cut-line commands append to the session clipboard until another action.

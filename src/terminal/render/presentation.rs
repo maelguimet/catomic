@@ -515,6 +515,12 @@ pub(super) fn row_fingerprint(
         options.surface.hash(hash);
         options.line_numbers.hash(hash);
         options.whitespace.hash(hash);
+        options.links_underlined.hash(hash);
+
+        let hovered_link = options.hovered_link.and_then(|hovered| {
+            style::visible_highlight(Some(hovered), document_row, start_col, visible_scalar_len)
+        });
+        hovered_link.hash(hash);
 
         let highlight = style::visible_highlight(
             options.highlight,

@@ -9,7 +9,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/maelguimet/catomic"
 
 [dependencies]
-crossterm = "0.28"
+crossterm = { version = "0.28", features = ["use-dev-tty"] }
 emojis = "0.9"
 libc = "0.2"
 memchr = "2.8.3"

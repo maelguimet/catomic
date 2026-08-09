@@ -15,7 +15,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -1073,6 +1073,77 @@ fn pty_sigterm_restores_terminal_modes_before_exit() -> TestResult {
         final_block < final_default && final_default < leave_screen,
         "handled signal must reset an active overwrite cursor before leaving the screen"
     );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn pty_disconnect_exits_instead_of_spinning_forever() -> TestResult {
+    let temp = TempPath::new("terminal_disconnect");
+    fs::write(&temp.path, "terminal")?;
+
+    let environment = TempProject::new("terminal_disconnect_environment");
+    let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
+    command.arg(&temp.path);
+    command.env("XDG_CONFIG_HOME", &environment.root);
+    command.env("XDG_STATE_HOME", &environment.root);
+    command.env("HOME", &environment.root);
+    command.env("TERM", "xterm-256color");
+    command.env_remove("NO_COLOR");
+
+    let test_guard = PTY_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let pty_system = native_pty_system();
+    let pair = pty_system.openpty(PtySize {
+        rows: 24,
+        cols: 80,
+        pixel_width: 0,
+        pixel_height: 0,
+    })?;
+    let mut child = pair.slave.spawn_command(command)?;
+    drop(pair.slave);
+
+    let mut reader = pair.master.try_clone_reader()?;
+    let (ready_tx, ready_rx) = mpsc::channel();
+    let reader_handle = thread::spawn(move || {
+        let mut output = Vec::new();
+        let mut buffer = [0_u8; 8192];
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) | Err(_) => return,
+                Ok(count) => {
+                    output.extend_from_slice(&buffer[..count]);
+                    if output.windows(6).any(|window| window == b"\x1b[1;1H") {
+                        let _ = ready_tx.send(());
+                        return;
+                    }
+                }
+            }
+        }
+    });
+    ready_rx.recv_timeout(Duration::from_secs(2))?;
+    reader_handle
+        .join()
+        .map_err(|_| std::io::Error::other("PTY reader thread panicked"))?;
+
+    // Drop every master-side descriptor. The slave now observes the terminal
+    // disconnect that used to send crossterm's Mio backend into an EIO spin.
+    drop(pair.master);
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if child.try_wait()?.is_some() {
+            break;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            return Err("catomic did not exit after its PTY disconnected".into());
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+
+    drop(test_guard);
     Ok(())
 }
 

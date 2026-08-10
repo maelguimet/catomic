@@ -352,7 +352,7 @@ one visual unit where appropriate.
 | Move by one visible viewport | `PageUp` / `PageDown` |
 | Move by word | `Ctrl+Left` / `Ctrl+Right` |
 | Move by paragraph | `Ctrl+Up` / `Ctrl+Down` |
-| Delete previous or next word | `Ctrl+Backspace` or `Alt+Backspace` / `Ctrl+Delete` |
+| Delete previous or next word | `Ctrl+Backspace` or `Alt+Backspace` / `Ctrl+Delete` or `Alt+D` |
 
 Add `Shift` to the grapheme, line, word, page, and document-edge movement forms
 to extend the selection. `Ctrl+A` selects the active ordinary buffer or the
@@ -1361,7 +1361,7 @@ paragraph-next | editor | ctrl+down
 delete-backward | editor | backspace
 delete-forward | editor | delete
 delete-word-backward | editor | ctrl+backspace, alt+backspace
-delete-word-forward | editor | ctrl+delete
+delete-word-forward | editor | ctrl+delete, alt+d
 insert-newline | editor | enter
 indent | editor | tab
 unindent | editor | shift+tab
@@ -1423,7 +1423,7 @@ mouse-scroll-down | editor,preview,help | mouse-wheel-down
 | Editing | Undo | `Ctrl+Z` |
 | Editing | Redo | `Ctrl+Y` / `Ctrl+Shift+Z` |
 | Editing | Indent / unindent | `Tab` / `Shift+Tab` |
-| Editing | Delete previous / next word | `Ctrl+Backspace` or `Alt+Backspace` / `Ctrl+Delete` |
+| Editing | Delete previous / next word | `Ctrl+Backspace` or `Alt+Backspace` / `Ctrl+Delete` or `Alt+D` |
 | Navigation | Move by word | `Ctrl+Left` / `Ctrl+Right` |
 | Navigation | Previous / next paragraph | `Ctrl+Up` / `Ctrl+Down` |
 | Navigation | Start / end of document | `Ctrl+Home` / `Ctrl+End` |
@@ -1584,6 +1584,15 @@ the same input as literal `Ctrl+H`; Catomic preserves that chord for Help. A
 legacy path may also produce the same `7f` and unmodified Backspace event as the
 plain key. Neither result identifies `Ctrl+Backspace`, so those paths need a
 remappable fallback.
+
+### `Ctrl+Delete` inserts `d` instead of deleting the next word
+
+Some terminal paths rewrite `Ctrl+Delete` as `ESC d`, which Crossterm reports as
+`Alt+D`. Catomic accepts that distinguishable fallback as `delete-word-forward`
+so the key deletes the next word instead of inserting `d`. If the terminal
+emits plain `d` with no modifier, the original key identity has been lost and
+cannot be recovered safely; configure a distinguishable fallback in
+`[keybindings]` instead.
 
 Repeat the probe directly and inside tmux when diagnosing a difference. Record
 the terminal name/version, `TERM`, `tmux -V`, whether SSH is involved, all eight

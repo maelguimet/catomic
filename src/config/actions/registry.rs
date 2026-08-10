@@ -324,7 +324,7 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
         "delete-word-forward",
         "Delete next word",
         E,
-        ["ctrl+delete"]
+        ["ctrl+delete", "alt+d"]
     ),
     key!(
         InsertNewline,

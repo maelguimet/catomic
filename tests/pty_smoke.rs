@@ -867,6 +867,22 @@ fn pty_esc_del_deletes_the_previous_word_by_default() -> TestResult {
 }
 
 #[test]
+fn pty_esc_d_deletes_the_next_word_by_default() -> TestResult {
+    let project = TempProject::new("delete_word_forward_alt_fallback");
+    let active = project.write("note.txt", "one two three");
+    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
+
+    editor.wait_for_initial_render()?;
+    // Some terminal paths rewrite Ctrl+Delete as ESC d, which Crossterm
+    // decodes as Alt+d. It must use the word-delete fallback, not type d.
+    editor.send_keys(b"\x1bd\x13\x11")?;
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(active)?, " two three");
+    Ok(())
+}
+
+#[test]
 fn pty_ctrl_h_opens_help_by_default() -> TestResult {
     let project = TempProject::new("ctrl_h_help_default");
     let active = project.write("note.txt", "source remains unchanged");

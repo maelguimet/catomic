@@ -33,6 +33,10 @@ fn terminal_aliases_resolve_to_one_action_without_rewriting_the_event() {
         bindings.action_for_key(Scope::Editor, key(KeyCode::F(4), KeyModifiers::NONE)),
         Some(Action::Lint)
     );
+    assert_eq!(
+        bindings.action_for_key(Scope::Editor, key(KeyCode::Char('d'), KeyModifiers::ALT)),
+        Some(Action::DeleteWordForward)
+    );
 }
 
 #[test]
@@ -92,7 +96,7 @@ fn retired_actions_are_accepted_but_never_bound() {
          \" picker-Cancel \" = [\"alt+c\"]\n\
          \"alt+x\" = \" Run-Clanker \"\n\
          \"alt+y\" = \"CLEAR-CLANKER-CHANGES\"\n\
-         \"alt+d\" = \" Select-Model \"\n\
+         \"alt+g\" = \" Select-Model \"\n\
          \"alt+e\" = \" PICKER-ACCEPT \"\n\
          \"alt+f\" = \" picker-Cancel \"\n",
     )
@@ -106,7 +110,7 @@ fn retired_actions_are_accepted_but_never_bound() {
         key(KeyCode::Char('c'), KeyModifiers::ALT),
         key(KeyCode::Char('x'), KeyModifiers::ALT),
         key(KeyCode::Char('y'), KeyModifiers::ALT),
-        key(KeyCode::Char('d'), KeyModifiers::ALT),
+        key(KeyCode::Char('g'), KeyModifiers::ALT),
         key(KeyCode::Char('e'), KeyModifiers::ALT),
         key(KeyCode::Char('f'), KeyModifiers::ALT),
     ] {

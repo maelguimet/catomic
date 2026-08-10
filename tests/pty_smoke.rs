@@ -878,7 +878,7 @@ fn pty_esc_d_deletes_the_next_word_by_default() -> TestResult {
     editor.send_keys(b"\x1bd\x13\x11")?;
     editor.wait_for_exit()?;
 
-    assert_eq!(fs::read_to_string(active)?, " two three");
+    assert_eq!(fs::read_to_string(active)?, "two three");
     Ok(())
 }
 

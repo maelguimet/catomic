@@ -6,7 +6,7 @@
 
 use std::io;
 
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyEvent, KeyEventKind};
 
 use crate::config::actions::{Action, Scope};
 
@@ -101,6 +101,9 @@ pub(crate) fn handle_key_with(
     out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<()> {
+    if key.kind == KeyEventKind::Release {
+        return Ok(());
+    }
     if mobile::handle_key(app, out, key)? {
         selection::end_cut_line_chain(app);
         return Ok(());
@@ -253,7 +256,7 @@ pub(super) fn dispatch_action(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::{KeyCode, KeyModifiers};
+    use crossterm::event::{KeyCode, KeyEventKind, KeyEventState, KeyModifiers};
 
     #[test]
     fn every_remapped_keyboard_action_reaches_semantic_dispatch() {
@@ -286,6 +289,24 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn key_release_is_consumed_without_editing_or_dispatching() {
+        let mut app = super::super::App::new(None).unwrap();
+        let mut out = Vec::new();
+        let release = KeyEvent {
+            code: KeyCode::Char('q'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Release,
+            state: KeyEventState::NONE,
+        };
+
+        handle_key_with(&mut app, &mut out, release).unwrap();
+
+        assert!(!app.should_quit);
+        assert_eq!(app.buffer.to_string(), "");
+        assert!(out.is_empty());
     }
 
     #[test]

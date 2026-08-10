@@ -7,8 +7,9 @@
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
-use crossterm::event::KeyboardEnhancementFlags;
+use crossterm::event::{self, KeyboardEnhancementFlags};
 
 const ALTERNATE_SCREEN: u8 = 1 << 0;
 const KITTY_KEYBOARD_FLAGS: u8 = 1 << 1;
@@ -121,8 +122,10 @@ impl TerminalRestorer {
         let Some(active) = self.begin_restore() else {
             return Ok(());
         };
+        discard_pending_input();
         let _ = crossterm::terminal::disable_raw_mode();
         let (remaining, result) = restore_output_modes(out, active);
+        discard_pending_input();
         self.active_modes.store(remaining, Ordering::Release);
         result
     }
@@ -141,6 +144,28 @@ impl TerminalRestorer {
                 return Some(active);
             }
         }
+    }
+}
+
+/// Consume terminal input already queued after Ctrl+Q so an in-flight Kitty
+/// key-release event cannot be handed to the parent shell. The final TTY
+/// flush also covers bytes that have not formed a complete event yet.
+pub(crate) fn settle_input_after_quit() {
+    while matches!(event::poll(Duration::ZERO), Ok(true)) {
+        if event::read().is_err() {
+            break;
+        }
+    }
+
+    discard_pending_input();
+}
+
+fn discard_pending_input() {
+    #[cfg(unix)]
+    {
+        // SAFETY: tcflush only discards unread input from the controlling TTY;
+        // it does not dereference the descriptor or mutate process memory.
+        let _ = unsafe { libc::tcflush(libc::STDIN_FILENO, libc::TCIFLUSH) };
     }
 }
 

@@ -53,6 +53,9 @@ impl App {
             }
         }
 
+        if self.should_quit {
+            term::settle_input_after_quit();
+        }
         terminal_guard.restore(&mut stdout)?;
         Ok(())
     }

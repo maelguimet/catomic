@@ -5,7 +5,7 @@
 //! Phase: issue #171 semantic shortcut dispatch.
 
 use super::*;
-use crossterm::event::{KeyCode, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEventKind, KeyEventState, KeyModifiers};
 
 fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
     KeyEvent::new(code, modifiers)
@@ -61,6 +61,24 @@ fn unrelated_raw_keys_are_not_claimed_or_suppressed() {
     let raw = key(KeyCode::Char('x'), KeyModifiers::ALT);
     assert_eq!(bindings.action_for_key(Scope::Editor, raw), None);
     assert!(!bindings.is_default_key(Scope::Editor, raw));
+}
+
+#[test]
+fn key_releases_do_not_resolve_to_editor_actions() {
+    let bindings = KeyBindings::default();
+    let release = KeyEvent {
+        code: KeyCode::Char('q'),
+        modifiers: KeyModifiers::CONTROL,
+        kind: KeyEventKind::Release,
+        state: KeyEventState::NONE,
+    };
+
+    assert_eq!(
+        bindings.action_for_key(Scope::Editor, release),
+        None,
+        "a key release must not dispatch Ctrl+Q"
+    );
+    assert!(!bindings.is_default_key(Scope::Editor, release));
 }
 
 #[test]

@@ -34,7 +34,7 @@ impl Default for KeyBindings {
 
 impl KeyBindings {
     pub(crate) fn action_for_key(&self, scope: Scope, key: KeyEvent) -> Option<Action> {
-        let chord = KeyChord::from_event(key);
+        let chord = KeyChord::from_event(key)?;
         self.keys
             .get(&(Scope::Global, chord))
             .or_else(|| self.keys.get(&(scope, chord)))
@@ -42,7 +42,9 @@ impl KeyBindings {
     }
 
     pub(crate) fn is_default_key(&self, scope: Scope, key: KeyEvent) -> bool {
-        let chord = KeyChord::from_event(key);
+        let Some(chord) = KeyChord::from_event(key) else {
+            return false;
+        };
         self.default_keys.contains(&(Scope::Global, chord))
             || self.default_keys.contains(&(scope, chord))
     }

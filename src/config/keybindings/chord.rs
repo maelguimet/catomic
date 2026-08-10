@@ -5,7 +5,7 @@
 
 use std::io;
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(super) struct KeyChord {
@@ -36,11 +36,14 @@ pub(super) enum ShortcutChord {
 }
 
 impl KeyChord {
-    pub(super) fn from_event(key: KeyEvent) -> Self {
-        normalize_key(Self {
+    pub(super) fn from_event(key: KeyEvent) -> Option<Self> {
+        if key.kind == KeyEventKind::Release {
+            return None;
+        }
+        Some(normalize_key(Self {
             code: key.code,
             modifiers: key.modifiers,
-        })
+        }))
     }
 }
 

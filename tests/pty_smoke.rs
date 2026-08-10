@@ -820,6 +820,39 @@ fn pty_reported_control_press_and_release_toggle_link_underlining() -> TestResul
     Ok(())
 }
 
+#[cfg(unix)]
+#[test]
+fn pty_quit_drops_an_in_flight_kitty_release_before_returning_to_shell() -> TestResult {
+    let temp = TempPath::new("quit_release");
+    let mut command = CommandBuilder::new("sh");
+    command.arg("-c");
+    command.arg(
+        "\"$1\" \"$2\"; printf '\\nCATOMIC_SHELL_READY\\n'; IFS= read -r line; printf 'CATOMIC_SHELL_LINE=%s\\n' \"$line\"",
+    );
+    command.arg("catomic-shell");
+    command.arg(env!("CARGO_BIN_EXE_catomic"));
+    command.arg(&temp.path);
+
+    let mut editor = PtyEditor::spawn_command(command)?;
+    editor.wait_for_initial_render()?;
+    let shell_offset = editor.output_len();
+
+    // The release is deliberately queued with the press. Before the fix,
+    // Catomic exited after the press and the shell echoed the CSI-u tail.
+    editor.send_keys(b"\x1b[113;5u\x1b[113;5:3u")?;
+    editor.wait_for_output("shell resumes after Ctrl+Q", "CATOMIC_SHELL_READY")?;
+    editor.send_keys(b"\n")?;
+    editor.wait_for_output("shell consumed its line", "CATOMIC_SHELL_LINE=")?;
+    editor.wait_for_exit()?;
+
+    let shell_output = editor.output_since(shell_offset);
+    assert!(
+        !shell_output.contains(":3u"),
+        "Kitty key-release bytes leaked into the shell: {shell_output:?}"
+    );
+    Ok(())
+}
+
 #[test]
 fn pty_sgr_mouse_motion_underlines_only_the_hovered_link() -> TestResult {
     let temp = TempPath::new("link_mouse_hover");

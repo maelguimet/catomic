@@ -35,24 +35,67 @@ const MAX_COMMAND_OUTPUT: usize = 4 * 1024 * 1024;
 const RELEASE_BUILD_ARGS: [&str; 3] = ["build", "--release", "--locked"];
 
 #[derive(Debug)]
-struct SourceInstall {
+struct SourceCheckout {
     root: PathBuf,
     branch: String,
-    current_sha: String,
+    checkout_sha: String,
     dirty: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct InstalledBuild<'a> {
+    commit: Option<&'a str>,
+    source_state: SourceState,
+}
+
+impl InstalledBuild<'_> {
+    fn current() -> InstalledBuild<'static> {
+        InstalledBuild {
+            commit: build_info::commit(),
+            source_state: build_info::source_state(),
+        }
+    }
+
+    fn version_line(self) -> String {
+        build_info::format_version(env!("CARGO_PKG_VERSION"), self.commit, self.source_state)
+    }
+
+    fn update_available_at(self, revision: &str) -> Option<bool> {
+        match (self.commit, self.source_state) {
+            (Some(commit), SourceState::Clean) => Some(commit != revision),
+            (Some(_), SourceState::Dirty) => Some(true),
+            _ => None,
+        }
+    }
+
+    fn is_current_at(self, revision: &str) -> bool {
+        self.update_available_at(revision) == Some(false)
+    }
+
+    fn print_availability(self, revision: &str) {
+        println!(
+            "update available: {}",
+            match self.update_available_at(revision) {
+                Some(true) => "yes",
+                Some(false) => "no",
+                None => "unknown (installed build identity is incomplete)",
+            }
+        );
+    }
 }
 
 pub(super) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
     println!("update target: latest official master commit");
     require_tool("git")?;
+    let installed = InstalledBuild::current();
     let Some(install) = discover().map_err(|error| UpdateError::new(EXIT_UNSUPPORTED, error))?
     else {
-        return standalone(options);
+        return standalone(options, installed);
     };
-    print_local_status(&install);
+    print_local_status(&install, installed);
     println!("source: {OFFICIAL_REMOTE} branch {OFFICIAL_BRANCH}");
     if options.check {
-        return check(&install);
+        return check(&install, installed);
     }
     if !confirm(
         options,
@@ -63,7 +106,7 @@ pub(super) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
     }
     require_tool("cargo")?;
     let remote_sha = remote_head()?;
-    if remote_sha == install.current_sha {
+    if installed.is_current_at(&remote_sha) {
         println!(
             "available version: already current ({})",
             short_sha(&remote_sha)
@@ -99,7 +142,7 @@ pub(super) fn run(options: UpdateOptions) -> Result<(), UpdateError> {
     }
 }
 
-fn standalone(options: UpdateOptions) -> Result<(), UpdateError> {
+fn standalone(options: UpdateOptions, installed: InstalledBuild<'_>) -> Result<(), UpdateError> {
     println!(
         "install method: {}",
         if super::managed::is_managed_build() {
@@ -109,13 +152,9 @@ fn standalone(options: UpdateOptions) -> Result<(), UpdateError> {
         }
     );
     println!("source: {OFFICIAL_REMOTE} branch {OFFICIAL_BRANCH}");
-    println!("current version: {}", env!("CARGO_PKG_VERSION"));
-    match build_info::commit() {
-        Some(revision) => println!("current revision: {}", short_sha(revision)),
-        None => println!("current revision: unknown"),
-    }
+    println!("current version: {}", installed.version_line());
     if options.check {
-        return check_standalone();
+        return check_standalone(installed);
     }
     if !confirm(
         options,
@@ -129,7 +168,7 @@ fn standalone(options: UpdateOptions) -> Result<(), UpdateError> {
     let manifest = super::managed::source_manifest_at(&remote_sha)?;
     require_rust_version(manifest.rust_version.as_deref())?;
     let remote_version = manifest.version;
-    if build_info::commit() == Some(remote_sha.as_str()) {
+    if installed.is_current_at(&remote_sha) {
         println!(
             "available version: already current ({})",
             short_sha(&remote_sha)
@@ -188,27 +227,19 @@ fn standalone(options: UpdateOptions) -> Result<(), UpdateError> {
     Ok(())
 }
 
-fn check_standalone() -> Result<(), UpdateError> {
+fn check_standalone(installed: InstalledBuild<'_>) -> Result<(), UpdateError> {
     let cargo_error = tool_error("cargo");
     let remote_sha = remote_head()?;
     let manifest = super::managed::source_manifest_at(&remote_sha)?;
     let build_error = cargo_error.or_else(|| rust_version_error(manifest.rust_version.as_deref()));
     let remote_version = manifest.version;
     let downgrade = super::managed::source_version_is_downgrade(&remote_version)?;
-    let available = build_info::commit().map(|current| current != remote_sha);
     let can_apply = !downgrade && build_error.is_none();
     println!(
         "available version: {remote_version} (commit {})",
         short_sha(&remote_sha)
     );
-    println!(
-        "update available: {}",
-        match available {
-            Some(true) => "yes",
-            Some(false) => "no",
-            None => "unknown (current revision is unavailable)",
-        }
-    );
+    installed.print_availability(&remote_sha);
     println!("can apply: {}", if can_apply { "yes" } else { "no" });
     if downgrade {
         println!("reason: the official branch reports an older package version");
@@ -219,22 +250,21 @@ fn check_standalone() -> Result<(), UpdateError> {
     Ok(())
 }
 
-fn check(install: &SourceInstall) -> Result<(), UpdateError> {
+fn check(install: &SourceCheckout, installed: InstalledBuild<'_>) -> Result<(), UpdateError> {
     let cargo_error = tool_error("cargo");
     let remote_sha = remote_head()?;
     let manifest = super::managed::source_manifest_at(&remote_sha)?;
     let build_error = cargo_error.or_else(|| rust_version_error(manifest.rust_version.as_deref()));
     let remote_version = manifest.version;
-    let relation = super::managed::source_relation(&install.current_sha, &remote_sha)?;
+    let relation = super::managed::source_relation(&install.checkout_sha, &remote_sha)?;
     let downgrade = super::managed::source_version_is_downgrade(&remote_version)?;
-    let available = remote_sha != install.current_sha;
     let can_apply =
         !downgrade && build_error.is_none() && matches!(relation.as_str(), "ahead" | "identical");
     println!(
         "available version: {remote_version} (commit {})",
         short_sha(&remote_sha)
     );
-    println!("update available: {}", if available { "yes" } else { "no" });
+    installed.print_availability(&remote_sha);
     println!("official branch relation to checkout: {relation}");
     println!("can apply: {}", if can_apply { "yes" } else { "no" });
     if downgrade {
@@ -254,7 +284,7 @@ fn check(install: &SourceInstall) -> Result<(), UpdateError> {
 }
 
 fn apply(
-    install: &SourceInstall,
+    install: &SourceCheckout,
     expected_sha: &str,
     remote_version: &str,
     backup: Option<&Path>,
@@ -271,7 +301,7 @@ fn apply(
             ),
         ));
     }
-    require_fast_forward(&install.root, &install.current_sha, &fetched_sha)?;
+    require_fast_forward(&install.root, &install.checkout_sha, &fetched_sha)?;
     let workspace = UpdateWorkspace::create_worktree(&install.root, &fetched_sha)?;
     let receipt = with_workspace(workspace, |workspace| {
         println!("building release binary...");
@@ -348,7 +378,7 @@ fn with_workspace<T>(
     }
 }
 
-fn ensure_checkout_unchanged(install: &SourceInstall) -> Result<(), UpdateError> {
+fn ensure_checkout_unchanged(install: &SourceCheckout) -> Result<(), UpdateError> {
     let current = git_text(&install.root, &["rev-parse", "HEAD"])
         .map_err(|error| UpdateError::new(EXIT_SOURCE_STATE, error))?;
     let dirty = !git_text(
@@ -357,7 +387,7 @@ fn ensure_checkout_unchanged(install: &SourceInstall) -> Result<(), UpdateError>
     )
     .map_err(|error| UpdateError::new(EXIT_SOURCE_STATE, error))?
     .is_empty();
-    if current == install.current_sha && !dirty {
+    if current == install.checkout_sha && !dirty {
         Ok(())
     } else {
         Err(UpdateError::new(
@@ -459,7 +489,7 @@ fn restore_changes(root: &Path, stash: Option<&str>) -> Result<(), String> {
     Ok(())
 }
 
-fn discover() -> Result<Option<SourceInstall>, String> {
+fn discover() -> Result<Option<SourceCheckout>, String> {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let Some(source) = retained_source_path(option_env!("CATOMIC_SOURCE_DIR"), manifest_dir) else {
         return Ok(None);
@@ -489,7 +519,7 @@ fn is_cargo_git_checkout(path: &Path) -> bool {
             == Some(std::ffi::OsStr::new("git"))
 }
 
-fn discover_path(root: &Path) -> Result<Option<SourceInstall>, String> {
+fn discover_path(root: &Path) -> Result<Option<SourceCheckout>, String> {
     if !root
         .try_exists()
         .map_err(|error| format!("inspect source checkout {}: {error}", root.display()))?
@@ -499,7 +529,7 @@ fn discover_path(root: &Path) -> Result<Option<SourceInstall>, String> {
     discover_at(root).map(Some)
 }
 
-fn discover_at(root: &Path) -> Result<SourceInstall, String> {
+fn discover_at(root: &Path) -> Result<SourceCheckout, String> {
     let root = root
         .canonicalize()
         .map_err(|error| format!("resolve source checkout {}: {error}", root.display()))?;
@@ -525,29 +555,26 @@ fn discover_at(root: &Path) -> Result<SourceInstall, String> {
             "refusing untrusted origin {remote:?}; expected {OFFICIAL_REMOTE}"
         ));
     }
-    let current_sha = git_text(&root, &["rev-parse", "HEAD"])?;
+    let checkout_sha = git_text(&root, &["rev-parse", "HEAD"])?;
     let dirty = !git_text(
         &root,
         &["status", "--porcelain=v1", "--untracked-files=all"],
     )?
     .is_empty();
-    Ok(SourceInstall {
+    Ok(SourceCheckout {
         root,
         branch,
-        current_sha,
+        checkout_sha,
         dirty,
     })
 }
 
-fn print_local_status(install: &SourceInstall) {
+fn print_local_status(install: &SourceCheckout, installed: InstalledBuild<'_>) {
     println!("install method: Cargo/source checkout");
     println!("source checkout: {}", install.root.display());
     println!("source branch: {}", install.branch);
-    println!(
-        "current version: {} (commit {})",
-        env!("CARGO_PKG_VERSION"),
-        short_sha(&install.current_sha)
-    );
+    println!("source revision: {}", short_sha(&install.checkout_sha));
+    println!("current version: {}", installed.version_line());
     println!(
         "source changes: {}",
         if install.dirty { "present" } else { "none" }

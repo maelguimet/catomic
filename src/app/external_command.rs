@@ -87,13 +87,13 @@ pub(crate) fn start(
 fn prepare_command(app: &super::App, spec: &CommandSpec) -> io::Result<PreparedCommand> {
     if spec.input == CommandInput::Buffer && app.buffer.page_info().is_some() {
         return Err(invalid_input(
-            "buffer input requires a fully loaded editable file",
+            "buffer input requires a fully loaded source buffer",
         ));
     }
     let target = apply_target(app, spec.input, spec.output)?;
-    if target.is_some() && (app.buffer.is_read_only() || app.buffer.page_info().is_some()) {
+    if target.is_some() && app.buffer.page_info().is_some() {
         return Err(invalid_input(
-            "command edits require a fully editable current buffer",
+            "command edits require a fully loaded source buffer",
         ));
     }
     let input = command_input(app, spec.input)?;

@@ -22,6 +22,7 @@
 //!   surface as Unknown(kind) in observation helpers; single-capture observe.
 
 use std::fs::{self, File, OpenOptions};
+use std::hash::{Hash, Hasher};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
@@ -61,7 +62,7 @@ pub fn read_to_string<P: AsRef<Path>>(path: P) -> io::Result<String> {
 /// Multiply-linked files use a staged in-place write so their shared inode and links
 /// remain intact. Temp is removed on pre-commit errors; an in-place write keeps the
 /// synced temp as recovery evidence if updating or syncing the shared inode fails.
-/// Unique temp uses target filename + pid. create_new used to avoid clobber.
+/// Temp names have bounded length; create_new prevents clobbering collisions.
 /// Linux-kernel-first: directory fsync is best-effort; no new dependencies.
 #[allow(dead_code)] // Compatibility/test convenience; App uses the streaming form.
 pub fn atomic_write_string(path: impl AsRef<Path>, contents: &str) -> io::Result<()> {
@@ -128,19 +129,7 @@ fn atomic_write_with_policy(
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
-    let file_name = target
-        .file_name()
-        .unwrap_or_else(|| std::ffi::OsStr::new("untitled.txt"));
-    // Include thread id so parallel tests (same pid) using default "untitled.txt" first-save
-    // do not collide on the sibling .tmp.<pid> during concurrent create_new.
-    let tid = format!("{:?}", std::thread::current().id());
-    let tmp_name = format!(
-        "{}.tmp.{}.{}",
-        file_name.to_string_lossy(),
-        std::process::id(),
-        tid
-    );
-    let temp_path: PathBuf = parent.join(tmp_name);
+    let temp_path = atomic_staging_path(target);
 
     // Inner closure so we can cleanup a temp we created exactly on failure path.
     // A create_new collision belongs to someone else and must remain untouched.
@@ -256,6 +245,22 @@ fn atomic_write_with_policy(
         let _ = fs::remove_file(&temp_path);
     }
     res
+}
+
+fn atomic_staging_path(target: &Path) -> PathBuf {
+    // Hash the basename instead of appending to it: a legal NAME_MAX target
+    // still needs a legal sibling. Thread identity separates concurrent saves;
+    // the basename separates nested saves to different targets on one thread.
+    // Hash collisions are harmless: create_new fails without touching the owner.
+    let mut identity = std::collections::hash_map::DefaultHasher::new();
+    target.file_name().hash(&mut identity);
+    std::thread::current().id().hash(&mut identity);
+    let name = format!(
+        ".catomic.tmp.{}.{:016x}",
+        std::process::id(),
+        identity.finish()
+    );
+    target.parent().unwrap_or_else(|| Path::new(".")).join(name)
 }
 
 fn commit_private_create(

@@ -108,6 +108,7 @@ pub(super) fn write_content_line_from_layout<W: Write + ?Sized>(
             options,
             syntax_styles,
             SegmentRoles {
+                hyperlink: hyperlink.is_some(),
                 highlighted,
                 lint,
                 external_added,
@@ -119,7 +120,7 @@ pub(super) fn write_content_line_from_layout<W: Write + ?Sized>(
                 && hovered.start.col < start_col.saturating_add(end)
                 && start_col.saturating_add(start) < hovered.end.col
         });
-        if hyperlink.is_some() && (options.links_underlined || hovered) {
+        if hyperlink.is_some() && hovered {
             style.underlined = Some(true);
         }
         write_segment(
@@ -381,6 +382,7 @@ fn write_layout_range<W: Write + ?Sized>(
 }
 
 struct SegmentRoles {
+    hyperlink: bool,
     highlighted: bool,
     lint: bool,
     external_added: bool,
@@ -399,6 +401,9 @@ fn segment_style(
     };
     for span in spans {
         style = style.overlay(span_style(theme, span));
+    }
+    if roles.hyperlink {
+        style = style.overlay(theme.markdown_link);
     }
     if roles.external_added {
         style = style.overlay(theme.external_added);

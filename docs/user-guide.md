@@ -722,12 +722,11 @@ Visible `http://` and `https://` URLs in source buffers are emitted as bounded
 OSC 8 hyperlinks. `Ctrl`+click hands the URL under the pointer to the system
 opener (`xdg-open`, or `termux-open-url` on Termux) without moving the cursor;
 ordinary clicks keep Catomic's cursor and selection behavior. Markdown preview
-labels use the same action for HTTP(S) destinations. Catomic underlines the
-link under the pointer when the terminal reports mouse motion. Holding `Ctrl`
-alone does not underline all links: Catomic leaves ordinary text on the
-terminal's UTF-8 path instead of requesting standalone modifier events.
-`Ctrl`+click uses the modifiers reported with the mouse event and remains
-available without standalone keyboard modifier reports.
+labels use the same action for HTTP(S) destinations. Detected links use the
+theme's link color (bright blue by default), including bare URLs in plain text
+and code. Catomic also underlines the link under the pointer when the terminal
+reports mouse motion. `Ctrl`+click uses the modifiers reported with the mouse
+event, so link interaction does not change normal keyboard input.
 
 An unsupported named file opens with a one-time `Plain text` status message.
 When color is deliberately or automatically disabled, the startup status says
@@ -1239,6 +1238,9 @@ surface. The complete role inventory is `text`, `background`, `cursor`,
 `external_changed`, `external_deleted`, `lint`, and `preview`. The syntax roles
 apply consistently to the built-in Rust, Python, JSON, TOML, and shell
 highlighters.
+
+The `markdown_link` role styles all detected HTTP(S) links, including bare URLs
+in source buffers and link labels in Markdown preview.
 
 A role may be `"default"`, one of the standard 16 names (`black` through
 `white` and `bright-black` through `bright-white`), an integer from 0 to 255,

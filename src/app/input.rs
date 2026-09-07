@@ -6,7 +6,7 @@
 
 use std::io;
 
-use crossterm::event::{KeyEvent, KeyEventKind};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 
 use crate::config::actions::{Action, Scope};
 
@@ -101,9 +101,10 @@ pub(crate) fn handle_key_with(
     out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<()> {
-    if key.kind == KeyEventKind::Release {
+    if key.kind == KeyEventKind::Release || matches!(key.code, KeyCode::Modifier(_)) {
         return Ok(());
     }
+    app.link_interaction.set_hovered(None);
     if mobile::handle_key(app, out, key)? {
         selection::end_cut_line_chain(app);
         return Ok(());

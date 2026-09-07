@@ -10,6 +10,7 @@ pub(crate) mod identity;
 pub mod io;
 pub mod recovery;
 pub mod size;
+pub(crate) mod stdin;
 pub mod text_format;
 pub(crate) mod watch_path;
 pub mod watcher;

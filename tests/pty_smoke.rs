@@ -25,6 +25,9 @@ type TestResult<T = ()> = Result<T, Box<dyn Error>>;
 
 static PTY_TEST_LOCK: Mutex<()> = Mutex::new(());
 
+#[path = "pty_smoke/stdin.rs"]
+mod stdin;
+
 struct TempPath {
     path: PathBuf,
 }

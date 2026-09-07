@@ -9,6 +9,7 @@
 //!
 
 mod buffer_impl;
+mod cells;
 mod construct;
 mod edit;
 pub(crate) mod file_original;
@@ -32,6 +33,7 @@ pub(crate) struct PieceTablePerfStats {
     pub(crate) history_bytes: usize,
     pub(crate) retained_bytes: usize,
     pub(crate) retained_metadata_bytes: usize,
+    pub(crate) cell_index_bytes: usize,
     pub(crate) line_index_scanned_bytes: usize,
     pub(crate) line_index_shifted_entries: usize,
     pub(crate) line_index_blocks_touched: usize,
@@ -99,6 +101,7 @@ impl PieceTable {
             + self.add_scalars.retained_bytes()
             + self.pieces.retained_bytes()
             + self.index.retained_bytes()
+            + self.cells.retained_bytes()
             + history_bytes;
         PieceTablePerfStats {
             pieces: self.pieces.len(),
@@ -108,10 +111,12 @@ impl PieceTable {
             history_transactions,
             history_bytes,
             retained_bytes,
+            cell_index_bytes: self.cells.retained_bytes(),
             retained_metadata_bytes: self
                 .original
                 .retained_metadata_bytes()
-                .saturating_add(self.index.retained_bytes()),
+                .saturating_add(self.index.retained_bytes())
+                .saturating_add(self.cells.retained_bytes()),
             // The block-local representation neither scans document bytes nor
             // shifts a tail of absolute line starts during ordinary edits.
             line_index_scanned_bytes: 0,

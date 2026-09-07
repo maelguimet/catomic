@@ -17,6 +17,7 @@ use super::SCAN_CHUNK_BYTES;
 use super::{LineCheckpoint, LINE_CHECKPOINT_INTERVAL_CHARS};
 
 pub(crate) struct LineScan {
+    pub(crate) cells: crate::buffer::cell_index::CellIndex,
     pub(crate) line_starts: Vec<usize>,
     pub(crate) line_char_counts: Vec<usize>,
     pub(crate) line_is_ascii: Vec<bool>,
@@ -28,6 +29,7 @@ pub(crate) struct LineScan {
 }
 
 pub(super) struct LineScanState {
+    cells: crate::buffer::cell_index::CellIndexBuilder,
     line_starts: Vec<usize>,
     line_char_counts: Vec<usize>,
     line_is_ascii: Vec<bool>,
@@ -42,6 +44,7 @@ pub(super) struct LineScanState {
 impl LineScanState {
     pub(super) fn new(start_byte: usize) -> Self {
         Self {
+            cells: crate::buffer::cell_index::CellIndexBuilder::new(),
             line_starts: vec![start_byte],
             line_char_counts: Vec::new(),
             line_is_ascii: Vec::new(),
@@ -61,6 +64,7 @@ impl LineScanState {
             return;
         }
 
+        self.cells.push_file_text(text);
         for (byte_idx, ch) in text.char_indices() {
             if ch == '\n' {
                 if self.previous_was_cr {
@@ -90,6 +94,7 @@ impl LineScanState {
         text_start_offset: usize,
         newline_offsets: &[usize],
     ) {
+        self.cells.push_file_text(text);
         let mut newline_offsets = newline_offsets.iter().copied();
         let mut next_newline = newline_offsets.next();
         for (byte_idx, ch) in text.char_indices() {
@@ -152,6 +157,8 @@ impl LineScanState {
         text_start_offset: usize,
         newline_indices: impl IntoIterator<Item = usize>,
     ) {
+        self.cells
+            .push_file_text(std::str::from_utf8(bytes).expect("validated ASCII"));
         let mut segment_start = 0usize;
         for newline_idx in newline_indices {
             debug_assert_eq!(bytes.get(newline_idx), Some(&b'\n'));
@@ -192,6 +199,7 @@ impl LineScanState {
 
     pub(super) fn into_scan(self, _total_bytes: usize) -> LineScan {
         LineScan {
+            cells: self.cells.finish(),
             line_starts: self.line_starts,
             line_char_counts: self.line_char_counts,
             line_is_ascii: self.line_is_ascii,

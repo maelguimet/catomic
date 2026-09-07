@@ -8,6 +8,7 @@ use std::borrow::Cow;
 use std::fs::File;
 use std::io::{self, Write};
 
+pub(crate) mod cell_index;
 pub(crate) mod large_file;
 pub mod line_index;
 mod paged_file;
@@ -113,6 +114,18 @@ impl<'a> PieceTableSearch<'a> {
 /// All editor operations go through this.
 /// The main loop and render should only talk to this trait.
 pub trait Buffer {
+    /// Current cursor column in terminal cells, using the shared grapheme/tab
+    /// layout contract. Editable indexed backends override this bounded query.
+    fn cursor_cell_column(&self) -> io::Result<usize> {
+        let cursor = self.cursor();
+        let line = self.line(cursor.row).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "cursor row is unavailable")
+        })?;
+        Ok(crate::editor::text_layout::scalar_to_cell(
+            &line, cursor.col,
+        ))
+    }
+
     /// Preserve immutable original bytes before a save can rewrite their inode.
     /// The filesystem callback may supply a private, byte-identical descriptor;
     /// storage keeps all page coordinates, edits, and history on that original.

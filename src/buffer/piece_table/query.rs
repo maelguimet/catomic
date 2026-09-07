@@ -101,7 +101,7 @@ impl PieceTable {
         })
     }
 
-    fn try_slice_to_cow_in_read_operation<'a>(
+    pub(super) fn try_slice_to_cow_in_read_operation<'a>(
         &'a self,
         start: usize,
         end: usize,

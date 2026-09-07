@@ -591,6 +591,24 @@ fn pty_page_navigation_keeps_combining_and_zwj_clusters_whole() -> TestResult {
 }
 
 #[test]
+fn pty_tab_inserts_spaces_to_visual_stops() -> TestResult {
+    for (prefix, spaces) in [("abc", 1), ("猫", 2), ("e\u{301}", 3), ("\t", 4)] {
+        let temp = TempPath::new("visual_tab_stops");
+        fs::write(&temp.path, prefix)?;
+        let mut editor = PtyEditor::spawn(&temp.path)?;
+
+        editor.wait_for_initial_render()?;
+        editor.send_keys(b"\x1b[F\t\x13\x11")?; // End, Tab, save, quit.
+        editor.wait_for_exit()?;
+        assert_eq!(
+            fs::read_to_string(&temp.path)?,
+            format!("{prefix}{}", " ".repeat(spaces))
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn pty_save_undo_save_quit_writes_expected_file() -> TestResult {
     let temp = TempPath::new("save_undo");
     let mut editor = PtyEditor::spawn_monochrome(&temp.path)?;

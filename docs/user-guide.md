@@ -569,7 +569,10 @@ original file.
 
 ### Indentation
 
-`Tab` inserts spaces to the next configured tab stop. If lines are selected,
+`Tab` inserts spaces to the next configured stop in terminal cells, counting
+wide characters, combining sequences, emoji, and existing literal tabs as they
+are displayed. Literal tabs display at four-cell stops; the configured
+indentation width determines where newly inserted spaces end. If lines are selected,
 `Tab` indents them without replacing the selection; `Shift+Tab` unindents the
 current or selected lines as one edit.
 

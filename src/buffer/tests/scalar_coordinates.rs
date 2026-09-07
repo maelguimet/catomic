@@ -178,6 +178,7 @@ fn scalar_checkpoint_storage_is_included_in_retained_memory_stats() {
         + buffer.add_scalars.retained_bytes()
         + buffer.pieces.retained_bytes()
         + buffer.index.retained_bytes()
+        + buffer.cells.retained_bytes()
         + history_bytes;
     assert!(buffer.add_scalars.retained_bytes() > 0);
     assert_eq!(stats.retained_bytes, expected);

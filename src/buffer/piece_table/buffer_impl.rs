@@ -20,6 +20,14 @@ struct SnapshotRange {
 }
 
 impl Buffer for PieceTable {
+    fn cursor_cell_column(&self) -> io::Result<usize> {
+        self.original.with_read_operation(|original| {
+            self.cells.cell_at(self.cursor_byte_offset, |range| {
+                self.try_slice_to_cow_in_read_operation(range.start, range.end, original)
+            })
+        })
+    }
+
     fn line_count(&self) -> usize {
         self.index.line_count()
     }

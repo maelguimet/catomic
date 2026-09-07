@@ -62,7 +62,7 @@ fn insert_to_tab_stop(
 ) -> io::Result<()> {
     let cursor = app.buffer.cursor();
     let width = tab_width(app);
-    let spaces = width - cursor.col % width;
+    let spaces = width - app.buffer.cursor_cell_column()? % width;
     app.buffer
         .replace_range(cursor, cursor, &" ".repeat(spaces))?;
     super::input::finish_content_edit(app, out)
@@ -151,6 +151,9 @@ fn tab_width(app: &super::App) -> usize {
 
 #[cfg(test)]
 mod newline_tests;
+
+#[cfg(test)]
+mod tab_stop_tests;
 
 #[cfg(test)]
 mod tests {

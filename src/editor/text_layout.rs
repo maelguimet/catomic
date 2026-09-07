@@ -314,7 +314,7 @@ pub(crate) fn expand_tabs(text: &str, whitespace: bool, initial_cell: usize) -> 
     expanded
 }
 
-fn grapheme_width(grapheme: &str, cell: usize) -> usize {
+pub(crate) fn grapheme_width(grapheme: &str, cell: usize) -> usize {
     if grapheme == "\t" {
         TAB_WIDTH - (cell % TAB_WIDTH)
     } else if grapheme.chars().any(char::is_control) {
@@ -325,6 +325,23 @@ fn grapheme_width(grapheme: &str, cell: usize) -> usize {
             .sum()
     } else {
         UnicodeWidthStr::width(grapheme)
+    }
+}
+
+/// Width of complete graphemes without tabs/newlines. In these conservative
+/// ranges unicode-width has no ligatures spanning grapheme boundaries; emoji
+/// and presentation sequences stay inside their extended grapheme. Other
+/// scripts and controls retain the renderer's per-grapheme width semantics.
+pub(crate) fn complete_grapheme_run_width(text: &str) -> usize {
+    if text.chars().all(|ch| {
+        matches!(ch,
+            '\u{20}'..='\u{7e}' | '\u{a0}'..='\u{52f}' |
+            '\u{200d}' | '\u{2e80}'..='\u{a000}' |
+            '\u{fe00}'..='\u{fe0f}' | '\u{1f000}'..='\u{1faff}')
+    }) {
+        UnicodeWidthStr::width(text)
+    } else {
+        cell_width_from(text, 0)
     }
 }
 

@@ -53,6 +53,7 @@ impl PieceTable {
             add_scalars: ScalarIndex::empty_appendable(),
             pieces,
             index,
+            cells: crate::buffer::cell_index::CellIndex::default(),
             cursor: Cursor { row: 0, col: 0 },
             cursor_byte_offset: 0,
             undo_stack: crate::buffer::undo::UndoStack::new(),
@@ -176,6 +177,7 @@ impl PieceTable {
             add_scalars: ScalarIndex::empty_appendable(),
             pieces,
             index: LineIndex::from_file_metadata(original_metadata),
+            cells: scan.cells,
             cursor: Cursor { row: 0, col: 0 },
             cursor_byte_offset: 0,
             undo_stack: crate::buffer::undo::UndoStack::new(),
@@ -189,6 +191,7 @@ impl PieceTable {
 
     fn from_normalized_text(normalized: String) -> Self {
         let index = LineIndex::from_text(&normalized);
+        let cells = crate::buffer::cell_index::CellIndex::from_text(&normalized);
         let (original, pieces) = if normalized.is_empty() {
             (
                 OriginalBacking::empty(),
@@ -219,6 +222,7 @@ impl PieceTable {
             add_scalars: ScalarIndex::empty_appendable(),
             pieces: PieceTree::from_pieces(pieces),
             index,
+            cells,
             cursor: Cursor { row: 0, col: 0 },
             cursor_byte_offset: 0,
             undo_stack: crate::buffer::undo::UndoStack::new(),

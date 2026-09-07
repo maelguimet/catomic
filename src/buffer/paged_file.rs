@@ -38,6 +38,7 @@ pub(crate) struct PagedFilePerfStats {
     pub(crate) edited_retained_pages: usize,
     pub(crate) retained_bytes: usize,
     pub(crate) retained_page_metadata_bytes: usize,
+    pub(crate) cell_index_bytes: usize,
     pub(crate) descriptor_read_bytes: usize,
     pub(crate) descriptor_metadata_checks: usize,
 }
@@ -298,12 +299,14 @@ impl PagedFileBuffer {
         let pages = self.retained.values().chain(std::iter::once(self.active()));
         let mut retained_bytes = self.history.allocated_bytes();
         let mut retained_page_metadata_bytes = 0;
+        let mut cell_index_bytes = 0;
         let mut descriptor_read_bytes = 0;
         let mut descriptor_metadata_checks = self.metadata_check_count.get();
         for page in pages {
             let stats = page.buffer.perf_stats();
             retained_bytes += stats.retained_bytes;
             retained_page_metadata_bytes += stats.retained_metadata_bytes;
+            cell_index_bytes += stats.cell_index_bytes;
             descriptor_read_bytes += stats.descriptor_read_bytes;
             descriptor_metadata_checks += stats.descriptor_metadata_checks;
         }
@@ -312,6 +315,7 @@ impl PagedFileBuffer {
             edited_retained_pages: self.retained.len(),
             retained_bytes,
             retained_page_metadata_bytes,
+            cell_index_bytes,
             descriptor_read_bytes,
             descriptor_metadata_checks,
         }

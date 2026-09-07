@@ -266,6 +266,7 @@ pub struct PieceTable {
     pub(crate) add_scalars: ScalarIndex,
     pub(crate) pieces: PieceTree,
     pub(crate) index: LineIndex,
+    pub(crate) cells: crate::buffer::cell_index::CellIndex,
     pub(crate) cursor: Cursor,
     /// Cached global logical byte offset for the cursor.
     /// Avoids full rebuild on every edit for offset calculation.

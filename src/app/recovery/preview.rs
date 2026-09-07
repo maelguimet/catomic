@@ -83,12 +83,7 @@ fn open(
         return app.render(out);
     };
     let source_snapshot = match crate::file::io::capture_file_snapshot(&source_path) {
-        Ok(snapshot @ FileSnapshot::Present { .. }) => snapshot,
-        Ok(FileSnapshot::Absent) => {
-            app.recovery.offered_candidate = Some(candidate);
-            app.message_warning("Source file is missing; recovery preview was not opened.");
-            return app.render(out);
-        }
+        Ok(snapshot) => snapshot,
         Err(error) => {
             app.recovery.offered_candidate = Some(candidate);
             return preview_error(app, out, error);

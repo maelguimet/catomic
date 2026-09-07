@@ -287,6 +287,9 @@ fn apply(app: &mut App, review: &mut Review, matches: &[ForwardMatch]) -> io::Re
         .ok_or_else(|| io::Error::other("replacement source unavailable"))?;
     app.buffer
         .set_cursor(source.cursor_for_byte_offset(review.next_byte)?);
+    // The scan keeps its exact byte position; the editing cursor belongs after
+    // any grapheme newly joined across the replacement boundary.
+    crate::app::navigation::snap_current_grapheme_forward(app)?;
     app.reveal_cursor();
     review.resume();
     Ok(())

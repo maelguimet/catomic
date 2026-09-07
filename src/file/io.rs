@@ -4,9 +4,9 @@
 //! Owns: read_to_string (for open/reload paths), streaming atomic writes,
 //!   FileSnapshot, ExternalFileStatus, ExternalFileObservation, capture/compare/observe
 //!   helpers, and streaming content identities for fully editable file tiers.
-//! Must not: construct watchers or use notify; fully scan content above the
-//!   full-read file tier; know App, external-service, or UI policy; perform reload/save-
-//!   conflict policy.
+//! Must not: construct watchers or use notify; fully scan large content outside
+//!   explicit writes or backing preservation; know App, external-service, or UI
+//!   policy; perform reload/save-conflict policy.
 //! Invariants: atomic writes use same-dir temp + create_new + sync + rename;
 //!   ordinary saves follow a valid final symlink and refuse a dangling one;
 //!   private sidecars replace, rather than follow, a final symlink;
@@ -27,7 +27,10 @@ use std::path::{Path, PathBuf};
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 mod atomic_unix;
+mod backing_snapshot;
 mod snapshot;
+
+pub(crate) use backing_snapshot::snapshot_hard_linked_file;
 
 #[cfg(test)]
 pub(crate) use snapshot::compare_to_snapshot;

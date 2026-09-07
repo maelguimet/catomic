@@ -28,6 +28,10 @@ impl LinterConfig {
 }
 
 pub(crate) fn parse(text: &str) -> io::Result<LinterConfig> {
+    from_document(&super::Document::parse(text)?)
+}
+
+pub(crate) fn from_document(document: &super::Document<'_>) -> io::Result<LinterConfig> {
     #[derive(Default, Deserialize)]
     struct ConfigFile {
         #[serde(default)]
@@ -35,7 +39,7 @@ pub(crate) fn parse(text: &str) -> io::Result<LinterConfig> {
     }
 
     let mut config = LinterConfig::default();
-    for (raw_extension, command) in super::decode::<ConfigFile>(text)?.linters {
+    for (raw_extension, command) in document.decode::<ConfigFile>(&["linters"])?.linters {
         let extension = normalize_extension(&raw_extension);
         if extension.is_empty() || extension.chars().any(char::is_whitespace) {
             return Err(invalid("linter extension must not be empty"));
@@ -45,7 +49,7 @@ pub(crate) fn parse(text: &str) -> io::Result<LinterConfig> {
         }
         config.commands.insert(extension, command);
     }
-    for (extension, command) in super::editor::parse(text)?.language_linters() {
+    for (extension, command) in super::editor::from_document(document)?.language_linters() {
         config
             .commands
             .insert(extension.to_string(), command.to_string());

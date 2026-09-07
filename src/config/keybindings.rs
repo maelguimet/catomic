@@ -237,14 +237,19 @@ struct LegacyOverride {
     action: Action,
 }
 
+#[cfg(test)]
 pub(crate) fn parse(text: &str) -> io::Result<KeyBindings> {
+    from_document(&super::Document::parse(text)?)
+}
+
+pub(crate) fn from_document(document: &super::Document<'_>) -> io::Result<KeyBindings> {
     #[derive(Default, Deserialize)]
     struct ConfigFile {
         #[serde(default)]
         keybindings: toml::Table,
     }
 
-    let table = super::decode::<ConfigFile>(text)?.keybindings;
+    let table = document.decode::<ConfigFile>(&["keybindings"])?.keybindings;
     let (action_overrides, legacy_overrides) = decode_overrides(table)?;
     let mut builder = Builder::defaults()?;
     for configured in &action_overrides {

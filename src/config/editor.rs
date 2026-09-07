@@ -51,8 +51,13 @@ impl EditorConfig {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn parse(text: &str) -> io::Result<EditorConfig> {
-    let raw = super::decode::<ConfigFile>(text)?;
+    from_document(&super::Document::parse(text)?)
+}
+
+pub(crate) fn from_document(document: &super::Document<'_>) -> io::Result<EditorConfig> {
+    let raw = document.decode::<ConfigFile>(&["editor", "languages"])?;
     validate_tab_size(raw.editor.tab_size, "editor.tab_size")?;
     let mut languages = BTreeMap::new();
     for (raw_extension, language) in raw.languages {

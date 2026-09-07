@@ -12,7 +12,12 @@ use serde::Deserialize;
 
 pub(crate) const DEFAULT_AUTO_RELOAD: bool = true;
 
+#[cfg(test)]
 pub(crate) fn parse(text: &str) -> io::Result<bool> {
+    from_document(&super::Document::parse(text)?)
+}
+
+pub(crate) fn from_document(document: &super::Document<'_>) -> io::Result<bool> {
     #[derive(Default, Deserialize)]
     struct ConfigFile {
         #[serde(default)]
@@ -33,7 +38,7 @@ pub(crate) fn parse(text: &str) -> io::Result<bool> {
         }
     }
 
-    Ok(super::decode::<ConfigFile>(text)?.files.auto_reload)
+    Ok(document.decode::<ConfigFile>(&["files"])?.files.auto_reload)
 }
 
 #[cfg(test)]

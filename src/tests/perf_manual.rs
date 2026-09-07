@@ -31,7 +31,7 @@ fn manual_open_10mib_generated_file_smoke() {
 
     // Phase breakdown for editable Large open/materialization hotspot (manual only, ignored).
     // metadata: fs metadata probe (size decision path).
-    // read_to_string + PieceTable::from_owned_text are the split of App open materialization cost.
+    // read_to_string + PieceTable::from_owned_text measure a UTF-8 materialization baseline.
     // App::new remains the end-to-end measurement (re-reads internally).
     // Content string is dropped promptly after the PT phase; no duplicate giant retained.
     eprintln!("phase: metadata 10mib");

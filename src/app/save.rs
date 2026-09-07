@@ -109,11 +109,6 @@ pub(crate) fn handle_save(
         app.pending_save_conflict = None;
         return super::command_prompt::open_save_as_prompt(app, out);
     }
-    if app.buffer.is_read_only() {
-        app.pending_save_conflict = None;
-        app.message_warning("Large file is read-only in paged mode; save disabled.");
-        return app.render(out);
-    }
 
     let current_path = app.file.path.clone();
     if let Some(path) = current_path.as_deref() {
@@ -205,11 +200,6 @@ fn handle_save_as_with_route(
             return app.render(out);
         }
     };
-    if app.buffer.is_read_only() {
-        app.pending_save_conflict = None;
-        app.message_warning("Large file is read-only in paged mode; save disabled.");
-        return app.render(out);
-    }
     if let Err(error) = file::io::validate_regular_save_target(&target) {
         app.pending_save_conflict = None;
         app.message_error(format!("Save As error: {error}"));
@@ -362,6 +352,10 @@ fn do_atomic_save_to(
     app.buffer.finish_undo_group();
     let path_changed = app.file.path.as_ref() != Some(&target);
     let save_result = file::io::atomic_write_with(&target, |writer| {
+        // Hard-link saves rewrite the original inode. Preserve its old bytes
+        // first so paged coordinates and undo/redo keep their immutable source.
+        app.buffer
+            .preserve_file_backing(&mut file::io::snapshot_hard_linked_file)?;
         file::text_format::write_buffer(&*app.buffer, writer, app.file.text_format)
     });
     match save_result {

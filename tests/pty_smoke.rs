@@ -563,6 +563,37 @@ fn pty_selected_tab_indents_before_save_and_quit() -> TestResult {
 }
 
 #[test]
+fn pty_home_enter_preserves_indented_source_bytes() -> TestResult {
+    for source in ["    foo", "\tfoo", " \t  foo"] {
+        let temp = TempPath::new("newline_indentation");
+        fs::write(&temp.path, source)?;
+        let mut editor = PtyEditor::spawn(&temp.path)?;
+
+        editor.wait_for_initial_render()?;
+        editor.send_keys(b"\x1b[F\x1b[H\r\x13\x11")?; // End, Home, Enter, save, quit.
+        editor.wait_for_exit()?;
+        assert_eq!(fs::read_to_string(&temp.path)?, format!("\n{source}"));
+    }
+    Ok(())
+}
+
+#[test]
+fn pty_page_navigation_keeps_combining_and_zwj_clusters_whole() -> TestResult {
+    for cluster in ["e\u{301}", "👩\u{200d}💻"] {
+        let temp = TempPath::new("page_graphemes");
+        fs::write(&temp.path, format!("ab\n{cluster}x"))?;
+        let mut editor = PtyEditor::spawn(&temp.path)?;
+
+        editor.wait_for_initial_render()?;
+        // Right, PageDown, Delete, save, quit.
+        editor.send_keys(b"\x1b[C\x1b[6~\x1b[3~\x13\x11")?;
+        editor.wait_for_exit()?;
+        assert_eq!(fs::read_to_string(&temp.path)?, "ab\nx");
+    }
+    Ok(())
+}
+
+#[test]
 fn pty_save_undo_save_quit_writes_expected_file() -> TestResult {
     let temp = TempPath::new("save_undo");
     let mut editor = PtyEditor::spawn_monochrome(&temp.path)?;
@@ -1322,7 +1353,7 @@ fn pty_ctrl_f_prompt_finds_content_and_quits() -> TestResult {
 
     editor.wait_for_initial_render()?;
     editor.send_keys(b"\x06target")?;
-    editor.wait_for_output("Ctrl+F result", "Found 'target'.")?;
+    editor.wait_for_output("Ctrl+F result", "Find: target  Found;")?;
     assert!(
         editor
             .output_string()
@@ -2175,6 +2206,38 @@ fn pty_catnap_recovery_previews_then_saves_explicitly() -> TestResult {
 }
 
 #[test]
+fn pty_catnap_recovery_for_never_saved_file_creates_source_only_on_save() -> TestResult {
+    let project = TempProject::new("catnap_never_saved");
+    project.write(
+        "catomic/config.toml",
+        "[recovery]\nenabled = true\ninterval_secs = 30\nmax_bytes = 1024\n",
+    );
+    let active = project.root.join("note.txt");
+    let sidecar = project.write("note.txt.catnap", "recovered");
+    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
+
+    editor.wait_for_output("never-saved recovery offer", "Catnap recovery found.")?;
+    editor.send_keys(b"\x1b[80;6urecover\r")?;
+    editor.wait_for_output(
+        "never-saved recovery preview",
+        "Catnap preview (read-only). Enter recovers; Esc cancels.",
+    )?;
+    assert!(!active.exists());
+    editor.send_keys(b"\r")?;
+    editor.wait_for_output(
+        "never-saved recovery apply",
+        "Catnap recovered; Ctrl+Z undoes it",
+    )?;
+    assert!(!active.exists());
+    editor.send_keys(b"\x13\x11")?;
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(active)?, "recovered");
+    assert!(!sidecar.exists());
+    Ok(())
+}
+
+#[test]
 fn pty_catnap_recovery_refuses_external_source_drift_without_auto_reload() -> TestResult {
     let project = TempProject::new("catnap_recovery_drift");
     project.write(
@@ -2235,5 +2298,98 @@ fn pty_bracketed_paste_populates_open_prompt_without_editing_source() -> TestRes
 
     assert_eq!(fs::read(&source)?, b"abc\n");
     assert_eq!(fs::read(&target)?, b"opened target marker\n");
+    Ok(())
+}
+
+#[test]
+fn pty_prompt_caret_edits_graphemes_paste_and_restores_source_cursor() -> TestResult {
+    let project = TempProject::new("editable_prompt");
+    let source = project.write("source.txt", "SOURCE\n");
+    let mut editor = PtyEditor::spawn_sized(&source, 8, 80)?;
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"!\x1b[12~")?;
+    editor.wait_for_output("command prompt caret", "\x1b[8;10H\x1b[?25h")?;
+    editor.send_keys("\x1b[200~a\u{301}猫👩\u{200d}💻tail\x1b[201~".as_bytes())?;
+    editor.wait_for_output(
+        "Unicode prompt paste",
+        "Command: a\u{301}猫👩\u{200d}💻tail",
+    )?;
+    editor.clear_output();
+    editor.send_keys(b"\x1b[H\x1b[C")?;
+    editor.wait_for_output("caret follows combining grapheme", "\x1b[8;11H\x1b[?25h")?;
+    editor.send_keys(b"\x1b[3~\x7f\x1b[H\x1b[3~")?;
+    editor.wait_for_output("whole wide and joined graphemes deleted", "Command: tail")?;
+    editor.send_keys(b"\x1b[200~go\r\n\t\x1b[31m\x1b[201~")?;
+    editor.wait_for_output(
+        "pasted controls render inertly at caret",
+        "Command: go␊␉␛[31mtail",
+    )?;
+    editor.clear_output();
+    editor.resize(8, 14)?;
+    editor.signal_resize()?;
+    editor.send_keys(b"\x1b[F")?;
+    editor.wait_for_output("narrow prompt caret stays on screen", "\x1b[8;14H\x1b[?25h")?;
+    editor.clear_output();
+    editor.send_keys(b"\x1b[H")?;
+    editor.wait_for_output("narrow prompt scrolls to beginning", "go␊␉")?;
+    editor.clear_output();
+    editor.send_keys(b"\x1b")?;
+    editor.wait_for_output("cancel restores source caret", "\x1b[1;2H\x1b[?25h")?;
+    editor.send_keys(b"\x13")?;
+    wait_until(
+        "source saved without prompt data",
+        Duration::from_secs(2),
+        || fs::read_to_string(&source).is_ok_and(|text| text == "!SOURCE\n"),
+    )?;
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+    Ok(())
+}
+
+#[test]
+fn pty_tab_completes_open_and_save_as_paths_with_spaces() -> TestResult {
+    let project = TempProject::new("path_completion");
+    let source = project.write("source.txt", "SOURCE\n");
+    let target = project.write("folder name/猫 notes.txt", "TARGET\n");
+    project.write("saved name.txt", "old destination\n");
+    let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
+    cmd.arg(&source);
+    cmd.cwd(&project.root);
+    let mut editor = PtyEditor::spawn_command_sized(cmd, 8, 80)?;
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"\x0ffol\t")?;
+    editor.wait_for_output("completed directory", "Open file: folder name/")?;
+    editor.send_keys("猫 n\t".as_bytes())?;
+    editor.wait_for_output(
+        "completed Unicode filename",
+        "Open file: folder name/猫 notes.txt",
+    )?;
+    editor.send_keys(b"\r")?;
+    editor.wait_for_output("completed path opens", "TARGET")?;
+    editor.send_keys(b"!\x1b[12~saveas\r")?;
+    editor.wait_for_output("save as prompt", "Save as: ")?;
+    editor.send_keys(b"sav\t")?;
+    editor.wait_for_output("save as completion", "Save as: saved name.txt")?;
+    editor.send_keys(b"\r")?;
+    editor.wait_for_output("overwrite guard remains", "already exists")?;
+    assert_eq!(
+        fs::read_to_string(project.root.join("saved name.txt"))?,
+        "old destination\n"
+    );
+    editor.send_keys(b"\x1b[12~saveas saved name.txt\r")?;
+    // This is a distinct command workflow, so first arm that command's guard.
+    editor.send_keys(b"\x1b[12~saveas saved name.txt\r")?;
+    wait_until(
+        "confirmed save as destination",
+        Duration::from_secs(2),
+        || {
+            fs::read_to_string(project.root.join("saved name.txt"))
+                .is_ok_and(|text| text == "!TARGET\n")
+        },
+    )?;
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+    assert_eq!(fs::read_to_string(source)?, "SOURCE\n");
+    assert_eq!(fs::read_to_string(target)?, "TARGET\n");
     Ok(())
 }

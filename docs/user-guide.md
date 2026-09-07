@@ -151,6 +151,14 @@ Latest commit requires Git and Cargo/Rust. Missing tools, an unsupported
 toolchain, or a build failure are reported for that target and never cause a
 stable fallback.
 
+The installed version and update availability use the binary's embedded commit
+and source state, separately from the retained checkout's current revision.
+Pulling a checkout ahead without reinstalling still requires an update. Only a
+clean binary built at the requested commit is already current; a dirty build is
+rebuilt even at the same commit. If its commit or source state is unavailable,
+the check reports availability as unknown and an explicit update rebuilds the
+requested revision.
+
 - A binary that retains an official checkout uses that checkout only when
   latest commit is selected. Its current branch may have any name but must
   fast-forward to official `master`. Catomic preserves local changes, refuses
@@ -346,6 +354,32 @@ Most prompts and read-only result views follow the same small interaction model:
 - `Ctrl+Q` still reaches the normal quit guard; and
 - `Ctrl+Shift+C` immediately interrupts through the SIGINT teardown path.
 
+Command, Open, Save As, Goto, Find, and both replacement prompts have their own
+visible caret. `Left`/`Right` move by Unicode grapheme, `Home`/`End` go to either
+end, and `Backspace`/`Delete` remove the previous/next grapheme. Typing and paste
+insert at that caret. Long input scrolls horizontally to keep the caret visible;
+resizing recomputes the view without changing the input or the document cursor.
+Pasted CRLF/CR become LF, and control characters appear as inert visible symbols.
+Prompts hold at most 16 KiB of UTF-8; an insertion that exceeds this limit is
+rejected in full with a message.
+
+In **Open** and **Save As**, explicit `Tab` completes the filename component at
+the caret. Paths can be relative, absolute, or start with `~/`; spaces need no
+quotes. One match fills the component and adds `/` for a directory. Multiple
+matches extend only their shared grapheme prefix and report ambiguity; type more
+to narrow the choice. No match or an unreadable directory produces a message.
+Hidden names are considered when the typed component begins with `.`; names
+that are not valid UTF-8 cannot be completed. A scan stops after 4096 entries or
+25 ms checked between directory reads, and reports the limit without using
+partial results. Filesystem calls themselves depend on the filesystem's response
+time. Completion reads only the named directory on this explicit action; startup,
+source typing, other prompts, and ordinary path typing do not invoke it.
+
+These keys can be remapped with `prompt-move-left`, `prompt-move-right`,
+`prompt-home`, `prompt-end`, `prompt-delete-backward`, `prompt-delete-forward`,
+and `prompt-complete-path`. Find retains `Enter`/`Down` for the next match,
+`Up` for the previous match, and `Escape` to close.
+
 ## Editing and navigation
 
 Catomic uses familiar modeless editing. Type to insert text. `Backspace` and
@@ -383,6 +417,10 @@ one visual unit where appropriate.
 Add `Shift` to the grapheme, line, word, page, and document-edge movement forms
 to extend the selection. `Ctrl+A` selects the active ordinary buffer or the
 current page of a paged file. Paragraph movement follows the exception below.
+
+`PageUp` and `PageDown` clamp at the first or last line when less than a full
+viewport remains. Their target column snaps to the start of a grapheme if it
+would fall inside one, including when extending a selection.
 
 Some terminal emulators reserve `Ctrl+Shift+Left` and `Ctrl+Shift+Right` for
 terminal-tab navigation and never send those events to Catomic. Use
@@ -561,9 +599,11 @@ original file.
 `Tab` indents them without replacing the selection; `Shift+Tab` unindents the
 current or selected lines as one edit.
 
-`Enter` preserves the current line's indentation and adds one configured tab
-level after common block openers. The global tab width defaults to four spaces,
-and language-specific settings can override it by file extension.
+`Enter` inherits the leading whitespace before the insertion point and adds
+one configured tab level after common block openers. At the start of a line,
+it inserts a blank line; inside indentation, it preserves the remaining
+whitespace without copying it again. The global tab width defaults to four
+spaces, and language-specific settings can override it by file extension.
 
 ## Finding, replacing, and going to a line
 
@@ -1056,7 +1096,10 @@ edit, or `Escape` to leave the source untouched. Source drift invalidates the
 preview, and recovery never replaces the source file automatically. Autosave
 pauses while a recovery offer is unresolved, including after closing its preview
 with `Escape`, so editing cannot replace the offered crash contents. Run
-`recover` again to return to the preview.
+`recover` again to return to the preview. Recovery also works for a named file
+that crashed before its first save: previewing and applying its sidecar leave the
+source path absent until you explicitly save. If the source appears or changes
+while the preview is open, recovery refuses to apply stale content.
 
 Applying recovery resumes autosave. A successful normal save discards any
 unresolved recovery and removes the sidecar. Recovery is a crash aid, not a
@@ -1421,6 +1464,12 @@ soft-wrap | editor,preview | f9
 prompt-submit | prompt | enter
 prompt-cancel | prompt | esc
 prompt-delete-backward | prompt,search | backspace
+prompt-delete-forward | prompt,search | delete
+prompt-move-left | prompt,search | left
+prompt-move-right | prompt,search | right
+prompt-home | prompt,search | home
+prompt-end | prompt,search | end
+prompt-complete-path | prompt | tab
 search-next | search | enter, down
 search-previous | search | up
 search-cancel | search | esc
@@ -1554,6 +1603,13 @@ sync fails, aliases may contain partial new content; Catomic reports that risk
 and keeps the complete staged file at the path named in the error for recovery.
 Failures before the in-place update leave every alias unchanged and remove the
 staging file.
+
+Before saving a hard-linked paged file, Catomic preserves its original bytes in
+an owner-only temporary snapshot so page navigation and undo/redo remain usable
+after the shared inode changes. This first save needs temporary disk space for
+the original file in addition to the sibling staging file. The snapshot has no
+directory entry, is reused by later saves, and is released when the buffer closes.
+If preserving the original fails, the save stops before updating any alias.
 
 Do not remove ACLs, attributes, or links merely to appease the editor unless you
 understand why they exist.

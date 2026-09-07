@@ -18,6 +18,25 @@ use super::{
 };
 
 impl App {
+    pub(super) fn new_with_stdin(
+        imported: crate::file::stdin::ImportedText,
+        config: StartupConfig,
+    ) -> io::Result<Self> {
+        let mut app = Self::new_with_config(None, config)?;
+        app.buffer = Box::new(crate::buffer::PieceTable::from_owned_text(
+            imported.decoded.text,
+        ));
+        app.file.text_format = imported.decoded.format;
+        super::file_state::mark_unsaved(&mut app.file);
+        if let Some(warning) = imported.warning {
+            app.message_warning(warning);
+        } else {
+            app.message =
+                Some("Read standard input into an unsaved buffer. Ctrl+S to Save As.".into());
+        }
+        Ok(app)
+    }
+
     #[cfg(test)]
     pub fn new(initial_path: Option<&str>) -> io::Result<Self> {
         Self::new_with_big_file_config(initial_path, BigFileConfig::default())
@@ -81,7 +100,7 @@ impl App {
                 buffer_id: super::file_state::next_buffer_id(),
                 content_generation: 0,
                 saved_history_position: initial_pos,
-                saved_history_pruned: false,
+                saved_history_unavailable: false,
                 disk_snapshot: meta.disk_snapshot,
                 size_bytes: meta.size_bytes,
                 size_tier: meta.size_tier,
@@ -227,6 +246,33 @@ fn syntax_theme_has_color(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn imported_input_has_no_saved_position_until_save_succeeds() {
+        use crate::buffer::Cursor;
+        for text in ["imported 猫\n", ""] {
+            let imported = crate::file::stdin::read(text.as_bytes(), || false).unwrap();
+            let mut app = App::new_with_stdin(imported, StartupConfig::default()).unwrap();
+            assert!(app.buffer.piece_table_search().is_some());
+            assert!(app.file.path.is_none());
+            assert!(app.file.disk_snapshot.is_none());
+            assert!(app.file.size_bytes.is_none());
+            assert!(app.file_watcher.is_none());
+            assert!(app.file.dirty);
+            assert!(app.file.saved_history_unavailable);
+            assert_eq!(app.buffer.cursor(), Cursor { row: 0, col: 0 });
+            app.buffer.insert_char('X');
+            app.buffer.undo();
+            super::super::file_state::refresh_dirty(&mut app.file, &*app.buffer);
+            assert_eq!(app.buffer.to_string(), text);
+            assert!(app.file.dirty, "undo to the import is still unsaved");
+            super::super::file_state::mark_saved(&mut app.file, &*app.buffer);
+            app.buffer.insert_char('Y');
+            app.buffer.undo();
+            super::super::file_state::refresh_dirty(&mut app.file, &*app.buffer);
+            assert!(!app.file.dirty, "undo to an actual save point is clean");
+        }
+    }
 
     #[test]
     fn ordinary_startup_constructs_no_transient_surfaces() {

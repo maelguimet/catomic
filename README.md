@@ -91,6 +91,12 @@ example opens exactly `hello world.md`. Quoting filenames remains supported but
 is not required. A missing path opens as an empty named buffer and is never
 created until explicitly saved.
 
+Use `printf 'hello\n' | catomic -` to edit piped text in an unsaved buffer.
+`Ctrl+S` asks for a save path. Input must be UTF-8 and at most 100 MiB; Catomic
+waits for EOF, then uses the controlling terminal for keys. Stdout must remain
+a terminal. Without the explicit `-`, Catomic leaves piped input unread.
+See [Starting Catomic](docs/user-guide.md#starting-catomic) for input limits.
+
 Run `catomic --help` for command-line behavior and examples. Inside the editor,
 press `Ctrl+H` or `F1` for a concise, task-oriented reference. Shortcuts in that
 page reflect the effective keybindings loaded for the current session.

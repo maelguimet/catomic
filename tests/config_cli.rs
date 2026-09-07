@@ -157,6 +157,50 @@ fn update_target_prompt_cancels_or_rejects_before_network_work() -> TestResult {
     Ok(())
 }
 
+#[cfg(unix)]
+#[test]
+fn stdin_without_a_controlling_terminal_fails_before_waiting_for_input() -> TestResult {
+    use std::os::unix::process::CommandExt;
+    use std::time::{Duration, Instant};
+
+    let fixture = Fixture::new();
+    let mut command = fixture.command();
+    command
+        .args(["-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    // SAFETY: setsid is async-signal-safe and detaches only this child from any
+    // controlling terminal inherited from an interactive test runner.
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                Err(std::io::Error::last_os_error())
+            } else {
+                Ok(())
+            }
+        });
+    }
+    let mut child = command.spawn()?;
+    let input = child.stdin.take().expect("piped stdin");
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while child.try_wait()?.is_none() {
+        if Instant::now() >= deadline {
+            child.kill()?;
+            child.wait()?;
+            return Err("catomic waited for stdin without a controlling terminal".into());
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    drop(input);
+    let output = child.wait_with_output()?;
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8(output.stderr)?.contains("requires a controlling terminal"));
+    assert!(output.stdout.is_empty());
+    assert!(!fixture.config_path().exists());
+    Ok(())
+}
+
 #[test]
 fn color_diagnostics_capture_environment_syntax_and_no_color_precedence() -> TestResult {
     let fixture = Fixture::new();

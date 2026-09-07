@@ -11,6 +11,7 @@ pub mod io;
 pub(crate) mod path_completion;
 pub mod recovery;
 pub mod size;
+pub(crate) mod stdin;
 pub mod text_format;
 pub(crate) mod watch_path;
 pub mod watcher;

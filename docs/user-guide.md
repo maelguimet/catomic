@@ -328,6 +328,32 @@ Most prompts and read-only result views follow the same small interaction model:
 - `Ctrl+Q` still reaches the normal quit guard; and
 - `Ctrl+Shift+C` immediately interrupts through the SIGINT teardown path.
 
+Command, Open, Save As, Goto, Find, and both replacement prompts have their own
+visible caret. `Left`/`Right` move by Unicode grapheme, `Home`/`End` go to either
+end, and `Backspace`/`Delete` remove the previous/next grapheme. Typing and paste
+insert at that caret. Long input scrolls horizontally to keep the caret visible;
+resizing recomputes the view without changing the input or the document cursor.
+Pasted CRLF/CR become LF, and control characters appear as inert visible symbols.
+Prompts hold at most 16 KiB of UTF-8; an insertion that exceeds this limit is
+rejected in full with a message.
+
+In **Open** and **Save As**, explicit `Tab` completes the filename component at
+the caret. Paths can be relative, absolute, or start with `~/`; spaces need no
+quotes. One match fills the component and adds `/` for a directory. Multiple
+matches extend only their shared grapheme prefix and report ambiguity; type more
+to narrow the choice. No match or an unreadable directory produces a message.
+Hidden names are considered when the typed component begins with `.`; names
+that are not valid UTF-8 cannot be completed. A scan stops after 4096 entries or
+25 ms checked between directory reads, and reports the limit without using
+partial results. Filesystem calls themselves depend on the filesystem's response
+time. Completion reads only the named directory on this explicit action; startup,
+source typing, other prompts, and ordinary path typing do not invoke it.
+
+These keys can be remapped with `prompt-move-left`, `prompt-move-right`,
+`prompt-home`, `prompt-end`, `prompt-delete-backward`, `prompt-delete-forward`,
+and `prompt-complete-path`. Find retains `Enter`/`Down` for the next match,
+`Up` for the previous match, and `Escape` to close.
+
 ## Editing and navigation
 
 Catomic uses familiar modeless editing. Type to insert text. `Backspace` and
@@ -1412,6 +1438,12 @@ soft-wrap | editor,preview | f9
 prompt-submit | prompt | enter
 prompt-cancel | prompt | esc
 prompt-delete-backward | prompt,search | backspace
+prompt-delete-forward | prompt,search | delete
+prompt-move-left | prompt,search | left
+prompt-move-right | prompt,search | right
+prompt-home | prompt,search | home
+prompt-end | prompt,search | end
+prompt-complete-path | prompt | tab
 search-next | search | enter, down
 search-previous | search | up
 search-cancel | search | esc

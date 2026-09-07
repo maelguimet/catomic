@@ -4,7 +4,7 @@
 //! Invariants: each negotiated keyboard mode is reset once before alternate-screen exit;
 //!   teardown first releases any interrupted synchronized render update.
 
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -26,6 +26,35 @@ const XTERM_OTHER_KEYS_FORMAT_CSI_U: &[u8] = b"\x1b[>4;1f";
 const XTERM_OTHER_KEYS_FORMAT_RESET: &[u8] = b"\x1b[>4f";
 const TITLE_STACK_PUSH: &[u8] = b"\x1b[22;0t";
 const TITLE_STACK_POP: &[u8] = b"\x1b[23;0t";
+
+/// Validate explicit pipe import before consuming input or changing terminal modes.
+/// Crossterm's use-dev-tty input backend opens this controlling terminal when
+/// standard input is redirected; the pipe itself is never rebound or reused for keys.
+pub(crate) fn require_piped_input_terminal() -> io::Result<()> {
+    if io::stdin().is_terminal() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "catomic - requires piped or redirected standard input",
+        ));
+    }
+    std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/dev/tty")
+        .map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!("catomic - requires a controlling terminal: {error}"),
+            )
+        })?;
+    if !io::stdout().is_terminal() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "catomic - requires terminal output on stdout",
+        ));
+    }
+    Ok(())
+}
 
 // Preserve terminal-composed UTF-8 text (keyboard layout, Shift, Caps Lock,
 // AltGr, and dead keys). Forcing all keys into CSI-u reports loses that text;
@@ -164,9 +193,15 @@ pub(crate) fn settle_input_after_quit() {
 fn discard_pending_input() {
     #[cfg(unix)]
     {
+        use std::os::fd::AsRawFd;
+
+        let tty = (!io::stdin().is_terminal())
+            .then(|| std::fs::File::open("/dev/tty").ok())
+            .flatten();
+        let fd = tty.as_ref().map_or(libc::STDIN_FILENO, AsRawFd::as_raw_fd);
         // SAFETY: tcflush only discards unread input from the controlling TTY;
         // it does not dereference the descriptor or mutate process memory.
-        let _ = unsafe { libc::tcflush(libc::STDIN_FILENO, libc::TCIFLUSH) };
+        let _ = unsafe { libc::tcflush(fd, libc::TCIFLUSH) };
     }
 }
 

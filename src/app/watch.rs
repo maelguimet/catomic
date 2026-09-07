@@ -1,8 +1,8 @@
 //! FileWatcher lifecycle owned by App (best-effort).
 //!
-//! Purpose: manage construction/refresh/clear of the optional FileWatcher on App
+//! Purpose: refresh the optional FileWatcher from the current App file path
 //! and provide explicit seams for signal handling.
-//! Owns: refresh/clear, apply_file_watch_signal (hint -> observe + auto-reload clean buffers
+//! Owns: refresh_file_watcher, apply_file_watch_signal (hint -> observe + auto-reload clean buffers
 //!   or record passive dirty/disabled observations),
 //!   check_file_watcher_once (one semantic signal + apply),
 //!   check_file_watcher_once_and_render.
@@ -23,7 +23,8 @@
 //! - save.rs after a successful first save or Save As path change
 //!
 //! Callers of refresh after a successful path state change keep the watcher in sync.
-//! Future path transitions must also refresh/clear via this helper.
+//! Future path transitions must also refresh via this helper, which clears the
+//! watcher when the current path is absent.
 
 use std::io;
 use std::path::PathBuf;
@@ -49,13 +50,6 @@ pub(crate) fn refresh_file_watcher(app: &mut super::App) {
             app.file_watcher = None;
         }
     }
-}
-
-/// Force-clear the watcher (used when path goes away, or for explicit reset).
-/// Narrow visibility; not part of public API.
-#[allow(dead_code)]
-pub(crate) fn clear_file_watcher(app: &mut super::App) {
-    app.file_watcher = None;
 }
 
 /// Install a pre-constructed FileWatcher (typically a test seam one) into the App.

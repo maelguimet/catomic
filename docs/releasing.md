@@ -43,6 +43,15 @@ Before tagging:
    then creates and pushes the annotated tag. Maintainers may instead create and
    push the same annotated tag locally.
 
+The separate [Acceptance workflow](../.github/workflows/acceptance.yml) is
+manual-only. Dispatch it for the candidate ref to obtain a
+`catomic-compatibility-<commit SHA>` Actions artifact containing the exact
+binary, checksum, automated direct-PTY/tmux and filesystem results, and matrix
+report. The artifact expires after 30 days. Complete the required real-terminal
+and ext4/tmpfs evidence using the same binary, then publish the durable bundle
+required by step 2. A tag push does not dispatch Acceptance, and the release
+workflow's own source and public-asset checks do not produce this matrix.
+
 The release workflow then does all of the following on the tagged checkout:
 
 - verifies that the checkout, pushed tag, event SHA, and Cargo version agree;

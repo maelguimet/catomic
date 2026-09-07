@@ -845,7 +845,9 @@ The value must be a positive integer.
 
 ## Completion
 
-Press `Ctrl+Space` or `Tab` to request completion.
+Press `Ctrl+Space` or, with no selection, `Tab` to request completion.
+With a selection, `Tab` indents the selected lines; `Ctrl+Space` asks you to
+dismiss the selection before completing a word.
 
 - `Tab` and `Shift+Tab` cycle candidates.
 - `Enter` accepts the active candidate.
@@ -1025,9 +1027,13 @@ be 5–3,600 seconds and the size cap 1–16 MiB.
 On a later open, a newer valid sidecar produces a notice. Run `recover` to open
 it read-only. Press `Enter` to apply the recovered text as one undoable buffer
 edit, or `Escape` to leave the source untouched. Source drift invalidates the
-preview, and recovery never replaces the source file automatically.
+preview, and recovery never replaces the source file automatically. Autosave
+pauses while a recovery offer is unresolved, including after closing its preview
+with `Escape`, so editing cannot replace the offered crash contents. Run
+`recover` again to return to the preview.
 
-A successful normal save removes the sidecar. Recovery is a crash aid, not a
+Applying recovery resumes autosave. A successful normal save discards any
+unresolved recovery and removes the sidecar. Recovery is a crash aid, not a
 replacement for explicit saves, backups, or version control.
 
 ## Configuration reference

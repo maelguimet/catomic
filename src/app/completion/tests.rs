@@ -77,6 +77,65 @@ fn tab_without_completion_uses_language_tab_stop_as_one_edit() {
 }
 
 #[test]
+fn selected_tab_indents_lines_as_one_undoable_edit() {
+    let mut app = App::new(None).unwrap();
+    app.buffer = Box::new(PieceTable::from_text("one\ntwo"));
+    let mut out = Vec::new();
+
+    app.handle_key_with(&mut out, key(KeyCode::Char('a'), KeyModifiers::CONTROL))
+        .unwrap();
+    app.handle_key_with(&mut out, key(KeyCode::Tab, KeyModifiers::NONE))
+        .unwrap();
+
+    assert_eq!(app.buffer.to_string(), "    one\n    two");
+    assert!(!super::is_active(&app));
+    assert!(app.message.is_none());
+    app.handle_key_with(&mut out, key(KeyCode::Char('z'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert_eq!(app.buffer.to_string(), "one\ntwo");
+}
+
+#[test]
+fn selected_ctrl_space_keeps_the_selection_and_requests_dismissal() {
+    let mut app = completion_app();
+    let original = app.buffer.to_string();
+    let mut out = Vec::new();
+
+    app.handle_key_with(&mut out, key(KeyCode::Char('a'), KeyModifiers::CONTROL))
+        .unwrap();
+    let selection = app.selection.active().unwrap().ordered();
+    app.handle_key_with(&mut out, key(KeyCode::Char(' '), KeyModifiers::CONTROL))
+        .unwrap();
+
+    assert_eq!(app.buffer.to_string(), original);
+    assert_eq!(app.selection.active().unwrap().ordered(), selection);
+    assert!(!super::is_active(&app));
+    assert_eq!(
+        app.message.as_deref(),
+        Some("Dismiss the selection before completing a word.")
+    );
+}
+
+#[test]
+fn selected_shift_tab_unindents_lines_as_one_undoable_edit() {
+    let mut app = App::new(None).unwrap();
+    let original = "    one\n  two";
+    app.buffer = Box::new(PieceTable::from_text(original));
+    let mut out = Vec::new();
+
+    app.handle_key_with(&mut out, key(KeyCode::Char('a'), KeyModifiers::CONTROL))
+        .unwrap();
+    app.handle_key_with(&mut out, key(KeyCode::BackTab, KeyModifiers::SHIFT))
+        .unwrap();
+
+    assert_eq!(app.buffer.to_string(), "one\ntwo");
+    assert!(!super::is_active(&app));
+    app.handle_key_with(&mut out, key(KeyCode::Char('z'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert_eq!(app.buffer.to_string(), original);
+}
+
+#[test]
 fn changed_prefix_is_refused_instead_of_replaced() {
     let mut app = completion_app();
     let mut out = Vec::new();

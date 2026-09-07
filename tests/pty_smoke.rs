@@ -543,6 +543,23 @@ fn pty_dangling_final_symlink_is_refused_before_terminal_setup() -> TestResult {
 }
 
 #[test]
+fn pty_selected_tab_indents_before_save_and_quit() -> TestResult {
+    let temp = TempPath::new("selected_tab");
+    fs::write(&temp.path, "one\ntwo")?;
+    let mut editor = PtyEditor::spawn(&temp.path)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"\x01\t\x13\x11")?; // Ctrl+A, Tab, Ctrl+S, Ctrl+Q.
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(&temp.path)?, "    one\n    two");
+    assert!(!editor
+        .output_string()
+        .contains("Dismiss the selection before completing a word."));
+    Ok(())
+}
+
+#[test]
 fn pty_save_undo_save_quit_writes_expected_file() -> TestResult {
     let temp = TempPath::new("save_undo");
     let mut editor = PtyEditor::spawn_monochrome(&temp.path)?;

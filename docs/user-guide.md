@@ -1030,7 +1030,10 @@ edit, or `Escape` to leave the source untouched. Source drift invalidates the
 preview, and recovery never replaces the source file automatically. Autosave
 pauses while a recovery offer is unresolved, including after closing its preview
 with `Escape`, so editing cannot replace the offered crash contents. Run
-`recover` again to return to the preview.
+`recover` again to return to the preview. Recovery also works for a named file
+that crashed before its first save: previewing and applying its sidecar leave the
+source path absent until you explicitly save. If the source appears or changes
+while the preview is open, recovery refuses to apply stale content.
 
 Applying recovery resumes autosave. A successful normal save discards any
 unresolved recovery and removes the sidecar. Recovery is a crash aid, not a

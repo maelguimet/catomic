@@ -2172,6 +2172,38 @@ fn pty_catnap_recovery_previews_then_saves_explicitly() -> TestResult {
 }
 
 #[test]
+fn pty_catnap_recovery_for_never_saved_file_creates_source_only_on_save() -> TestResult {
+    let project = TempProject::new("catnap_never_saved");
+    project.write(
+        "catomic/config.toml",
+        "[recovery]\nenabled = true\ninterval_secs = 30\nmax_bytes = 1024\n",
+    );
+    let active = project.root.join("note.txt");
+    let sidecar = project.write("note.txt.catnap", "recovered");
+    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
+
+    editor.wait_for_output("never-saved recovery offer", "Catnap recovery found.")?;
+    editor.send_keys(b"\x1b[80;6urecover\r")?;
+    editor.wait_for_output(
+        "never-saved recovery preview",
+        "Catnap preview (read-only). Enter recovers; Esc cancels.",
+    )?;
+    assert!(!active.exists());
+    editor.send_keys(b"\r")?;
+    editor.wait_for_output(
+        "never-saved recovery apply",
+        "Catnap recovered; Ctrl+Z undoes it",
+    )?;
+    assert!(!active.exists());
+    editor.send_keys(b"\x13\x11")?;
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(active)?, "recovered");
+    assert!(!sidecar.exists());
+    Ok(())
+}
+
+#[test]
 fn pty_catnap_recovery_refuses_external_source_drift_without_auto_reload() -> TestResult {
     let project = TempProject::new("catnap_recovery_drift");
     project.write(

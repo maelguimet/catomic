@@ -250,6 +250,8 @@ fn dispatch_surface_action(
     accept: bool,
 ) -> io::Result<()> {
     let action = match (super::input::active_scope(app), accept) {
+        (Scope::ReplaceReview, true) => Action::ReplaceAccept,
+        (Scope::ReplaceReview, false) => Action::ReplaceCancel,
         (Scope::Prompt, true) => Action::PromptSubmit,
         (Scope::Prompt, false) => Action::PromptCancel,
         (Scope::Search, true) => Action::SearchNext,

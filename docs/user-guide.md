@@ -622,9 +622,27 @@ boundaries. The search runs on a cancellable worker rather than the typing path.
 
 ### Replace
 
-`Ctrl+Shift+F` opens a two-stage Replace Next prompt. Enter the search text,
-press `Enter`, enter the replacement, and press `Enter` again. The next match is
-replaced as one undoable edit.
+`Ctrl+Shift+F` (or the command `replace`) asks for the query and replacement once.
+After the second `Enter`, Catomic highlights the next candidate and places the
+document cursor there. No text changes until you choose a review action:
+
+- `Y` or `Enter`: replace this candidate and advance past the inserted text.
+- `N`: skip it and continue, including overlapping candidates.
+- `A`: replace the remaining non-overlapping candidates automatically.
+- `Escape`: stop; accepted changes remain and can be undone.
+
+Review starts at the original cursor and wraps through the earlier part of the
+buffer once. It does not revisit inserted replacement text, even when that text
+contains the query. Queries are literal and single-line; replacement text may
+contain newlines. Completion and cancellation report how many occurrences were
+replaced and skipped, remove the candidate highlight, and leave the cursor at the
+last candidate or replacement. Unrelated typing, paste, and mouse placement do
+not edit or move the document while review is active.
+
+The review actions are remappable as `replace-accept`, `replace-skip`,
+`replace-remaining`, and `replace-cancel`. Their separate `replace-review` scope
+allows plain letter bindings without intercepting ordinary document or prompt
+typing. The status line and built-in help show configured controls.
 
 To replace every non-overlapping match, open the command prompt and run:
 
@@ -632,12 +650,18 @@ To replace every non-overlapping match, open the command prompt and run:
 replace-all
 ```
 
-Replace All is available for fully loaded ordinary buffers and is one undoable
-transaction. It refuses paged files instead of silently replacing only the
-visible page.
+The command starts at the beginning and processes the whole editable buffer.
+Both workflows refuse paged files instead of silently replacing only the visible
+page. Search reads bounded segments of the active buffer and remains cancellable
+on large editable files; it does not collect an unlimited list of matches.
 
-The command `replace` opens the same Replace Next prompt as
-`Ctrl+Shift+F`.
+Each individually accepted replacement is one undo step. Bulk replacement uses
+groups of at most 128 matches and 64 KiB of combined matched/replacement text;
+each group is one undo step. A small Replace All that fits one group therefore
+undoes at once. `Escape` also stops an ongoing bulk operation between groups,
+retaining the groups already applied. An unchanged replacement creates no undo
+step or dirty state. Changes to the source while searching or reviewing stop the
+operation before a stale candidate can be applied.
 
 ### Go to line
 
@@ -1473,6 +1497,10 @@ prompt-complete-path | prompt | tab
 search-next | search | enter, down
 search-previous | search | up
 search-cancel | search | esc
+replace-accept | replace-review | y, enter
+replace-skip | replace-review | n
+replace-remaining | replace-review | a
+replace-cancel | replace-review | esc
 completion-next | completion | tab, ctrl+space
 completion-previous | completion | shift+tab
 completion-accept | completion | enter

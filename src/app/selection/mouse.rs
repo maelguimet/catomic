@@ -50,6 +50,7 @@ pub(crate) fn handle_mouse(
     }
     if !super::super::view::source_is_displayed(app)
         || super::super::search::is_active(app)
+        || super::super::replace::is_active(app)
         || super::super::command_prompt::is_active(app)
     {
         return Ok(());

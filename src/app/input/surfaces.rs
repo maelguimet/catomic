@@ -79,6 +79,7 @@ pub(super) fn dispatch_action(
     let handled = match scope {
         Scope::Help => help::dispatch_action(app, out, action)?,
         Scope::Search => search::dispatch_action(app, out, action)?,
+        Scope::ReplaceReview => replace::dispatch_action(app, out, action)?,
         Scope::Completion => completion::dispatch_action(app, out, action)?,
         Scope::Prompt => {
             replace::dispatch_action(app, out, action)?

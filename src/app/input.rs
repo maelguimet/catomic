@@ -73,6 +73,12 @@ pub(super) fn finish_content_edit_with_message(
     out: &mut dyn crate::terminal::TerminalOutput,
     message: Option<String>,
 ) -> io::Result<()> {
+    record_content_edit(app, message)?;
+    app.render(out)
+}
+
+/// Update edit bookkeeping before an explicit workflow publishes its next state.
+pub(super) fn record_content_edit(app: &mut super::App, message: Option<String>) -> io::Result<()> {
     note_content_change(&mut app.file);
     lint::invalidate(app);
     app.selection.clear();
@@ -87,7 +93,7 @@ pub(super) fn finish_content_edit_with_message(
     app.message = message;
     app.message_role = crate::terminal::render::StatusRole::Info;
     app.reveal_cursor();
-    app.render(out)
+    Ok(())
 }
 
 /// Route key handling + associated renders through a writer.

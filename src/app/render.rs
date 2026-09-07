@@ -37,6 +37,21 @@ fn render(app: &App, out: &mut dyn crate::terminal::TerminalOutput) -> io::Resul
         emoji_picker.as_ref(),
     );
     options.window_title = Some(&window_title);
+    let prompt = match super::input::active_scope(app) {
+        crate::config::actions::Scope::Prompt => {
+            super::replace::presentation(app).or_else(|| super::command_prompt::presentation(app))
+        }
+        crate::config::actions::Scope::Search => super::search::presentation(app),
+        _ => None,
+    };
+    if let Some(prompt) = prompt.filter(|_| {
+        !app.pending_quit_confirm
+            && !super::command_prompt::config_discard_confirmation_pending(app)
+    }) {
+        options.status_cursor = Some(prompt.caret_cell.unwrap_or(0));
+        options.status_role = term::render::StatusRole::Prompt;
+        return render_frame(app, out, &prompt.text, options);
+    }
     if let Some(message) = app.message.as_deref() {
         options.status_role = status::transient_role(app);
         return render_frame(app, out, message, options);
@@ -108,6 +123,7 @@ fn render_options<'a>(
         status_path: None,
         status_filename: None,
         status_selection: None,
+        status_cursor: None,
         emoji_picker: emoji_picker.map(|picker| term::render::EmojiPicker {
             rows: &picker.rows,
             selected: picker.selected,

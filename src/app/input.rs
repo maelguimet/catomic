@@ -80,16 +80,12 @@ pub(super) fn finish_content_edit_with_message(
     refresh_dirty(&mut app.file, &*app.buffer);
     app.external_changes
         .reconcile(app.buffer.content_revision());
-    if app.buffer.is_read_only() {
-        app.message_warning("Large file is read-only in paged mode.");
-    } else {
-        command_prompt::clear_config_discard_confirmation(app);
-        app.pending_quit_confirm = false;
-        app.pending_save_conflict = None;
-        reload::cancel_confirmation(app);
-        app.message = message;
-        app.message_role = crate::terminal::render::StatusRole::Info;
-    }
+    command_prompt::clear_config_discard_confirmation(app);
+    app.pending_quit_confirm = false;
+    app.pending_save_conflict = None;
+    reload::cancel_confirmation(app);
+    app.message = message;
+    app.message_role = crate::terminal::render::StatusRole::Info;
     app.reveal_cursor();
     app.render(out)
 }
@@ -112,6 +108,14 @@ pub(crate) fn handle_key_with(
     let scope = scope::active(app);
     if handle_bound_key(app, out, scope, key)? {
         return Ok(());
+    }
+    if matches!(scope, Scope::Prompt | Scope::Search)
+        && matches!(key.code, KeyCode::Char(ch) if !ch.is_control())
+        && !key
+            .modifiers
+            .contains(crossterm::event::KeyModifiers::CONTROL)
+    {
+        prepare_prompt_edit(app);
     }
     selection::end_cut_line_chain(app);
     handle_raw_key(app, out, key)
@@ -199,6 +203,15 @@ pub(super) fn dispatch_action(
     if action == Action::Interrupt {
         crate::terminal::request_interrupt();
         return Ok(());
+    }
+    let scope = active_scope(app);
+    if matches!(scope, Scope::Prompt | Scope::Search)
+        && (super::prompt_input::is_edit_action(action) || action == Action::PromptCompletePath)
+    {
+        // Prompt navigation/editing must not finish source undo groups or touch
+        // its selection. It still disarms a previously displayed quit warning.
+        prepare_prompt_edit(app);
+        return surfaces::dispatch_action(app, out, scope, action);
     }
     prepare_editor_action(app, Some(action));
     match action {
@@ -375,10 +388,21 @@ pub(crate) fn handle_paste(
         return Ok(());
     }
     completion::cancel(app);
+    if matches!(active_scope(app), Scope::Prompt | Scope::Search) {
+        prepare_prompt_edit(app);
+    }
     if surfaces::handle_paste(app, out, text)? {
         return Ok(());
     }
     selection::handle_external_paste(app, out, text)
+}
+
+fn prepare_prompt_edit(app: &mut super::App) {
+    app.pending_quit_confirm = false;
+    command_prompt::clear_config_discard_confirmation(app);
+    // Save submission checks the exact path and disk snapshot. Retain that
+    // confirmation while the user re-enters/edits the pending destination.
+    reload::cancel_confirmation(app);
 }
 
 pub(super) fn handle_quit(

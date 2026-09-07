@@ -354,7 +354,7 @@ fn apply_modified_reload(
     super::file_state::note_content_change(&mut app.file);
     app.external_changes = external_diff.into_changes();
     app.file.saved_history_position = app.buffer.edit_history_position();
-    app.file.saved_history_pruned = false;
+    app.file.saved_history_unavailable = false;
     app.file.dirty = false;
     app.file.text_format = reloaded.text_format;
     app.file.disk_snapshot = Some(reloaded.snapshot);
@@ -378,7 +378,7 @@ fn apply_deleted_reload(app: &mut super::App) {
     super::file_state::note_content_change(&mut app.file);
     app.external_changes = external_diff.into_changes();
     app.file.saved_history_position = app.buffer.edit_history_position();
-    app.file.saved_history_pruned = false;
+    app.file.saved_history_unavailable = false;
     app.file.dirty = false;
     app.file.disk_snapshot = Some(FileSnapshot::Absent);
     app.file.size_bytes = None;

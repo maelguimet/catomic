@@ -8,6 +8,7 @@ use std::io;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use super::prompt_input::{PromptInput, PromptPresentation};
 use crate::buffer::Cursor;
 use crate::config::actions::Action;
 use crate::editor::search::{
@@ -20,7 +21,7 @@ const STREAMING_SEARCH_THRESHOLD_BYTES: usize = crate::file::size::SMALL_FILE_LI
 
 #[derive(Default)]
 pub(crate) struct SearchUiState {
-    prompt: Option<String>,
+    prompt: Option<PromptInput>,
     origin: Option<Cursor>,
     active_match: Option<SearchMatch>,
     active_descriptor_match: Option<DescriptorSearchMatch>,
@@ -46,7 +47,7 @@ pub(crate) fn open_prompt(
 ) -> io::Result<()> {
     cancel_running(&mut app.search);
     app.selection.clear();
-    app.search.prompt = Some(String::new());
+    app.search.prompt = Some(PromptInput::default());
     app.search.origin = Some(app.buffer.cursor());
     app.search.active_match = None;
     app.search.active_descriptor_match = None;
@@ -107,11 +108,16 @@ pub(crate) fn dispatch_action(
             app.message = None;
             app.render(out)?;
         }
-        Action::PromptDeleteBackward => {
-            app.search.prompt.as_mut().expect("search active").pop();
-            refresh_incremental_match(app, out)?;
+        _ => {
+            let Some(prompt) = app.search.prompt.as_mut() else {
+                return Ok(false);
+            };
+            match prompt.action(action) {
+                Some(true) => refresh_incremental_match(app, out)?,
+                Some(false) => app.render(out)?,
+                None => return Ok(false),
+            }
         }
-        _ => return Ok(false),
     }
     Ok(true)
 }
@@ -124,8 +130,11 @@ pub(crate) fn handle_paste(
     let Some(prompt) = app.search.prompt.as_mut() else {
         return Ok(false);
     };
-    prompt.push_str(&text.replace("\r\n", "\n").replace('\r', "\n"));
-    refresh_incremental_match(app, out)?;
+    if prompt.insert(text) {
+        refresh_incremental_match(app, out)?;
+    } else {
+        app.render(out)?;
+    }
     Ok(true)
 }
 
@@ -152,33 +161,51 @@ fn handle_prompt_key(
         KeyCode::Up => {
             return navigate_match(app, out, SearchDirection::Backward);
         }
-        KeyCode::Backspace => {
+        _ => {
             if let Some(prompt) = app.search.prompt.as_mut() {
-                prompt.pop();
+                if prompt.key(key) == Some(true) {
+                    return refresh_incremental_match(app, out);
+                }
             }
-            return refresh_incremental_match(app, out);
         }
-        KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-            let ch = if key.modifiers.contains(KeyModifiers::SHIFT) && ch.is_ascii_lowercase() {
-                ch.to_ascii_uppercase()
-            } else {
-                ch
-            };
-            if !ch.is_control() {
-                app.search.prompt.as_mut().unwrap().push(ch);
-            }
-            return refresh_incremental_match(app, out);
-        }
-        _ => {}
     }
     app.render(out)
+}
+
+pub(super) fn presentation(app: &super::App) -> Option<PromptPresentation> {
+    let prompt = app.search.prompt.as_ref()?;
+    let hint = if app.message_role == crate::terminal::render::StatusRole::Error {
+        app.message.as_deref().unwrap_or("Search error")
+    } else if app.search.running.is_some() {
+        "Searching; Esc cancels"
+    } else if app.search.active_match.is_some() {
+        "Found; Enter/Down next, Up previous"
+    } else if prompt.is_empty() {
+        ""
+    } else {
+        "No matches"
+    };
+    let label = if !prompt.is_empty()
+        && app.search.running.is_none()
+        && app.search.active_match.is_none()
+    {
+        "No match"
+    } else {
+        "Find"
+    };
+    Some(prompt.presentation(label, hint, app.screen.width as usize))
 }
 
 fn refresh_incremental_match(
     app: &mut super::App,
     out: &mut dyn crate::terminal::TerminalOutput,
 ) -> io::Result<()> {
-    let query = app.search.prompt.clone().unwrap_or_default();
+    let query = app
+        .search
+        .prompt
+        .as_ref()
+        .map(|prompt| prompt.as_str().to_owned())
+        .unwrap_or_default();
     cancel_running(&mut app.search);
     app.search.active_match = None;
     app.search.active_descriptor_match = None;
@@ -233,7 +260,12 @@ fn navigate_match(
     out: &mut dyn crate::terminal::TerminalOutput,
     direction: SearchDirection,
 ) -> io::Result<()> {
-    let query = app.search.prompt.clone().unwrap_or_default();
+    let query = app
+        .search
+        .prompt
+        .as_ref()
+        .map(|prompt| prompt.as_str().to_owned())
+        .unwrap_or_default();
     if query.is_empty() {
         return app.render(out);
     }
@@ -743,7 +775,10 @@ mod tests {
         assert_eq!(app.buffer.edit_history_position(), history);
         assert!(!app.file.dirty);
         assert!(app.selection.active().is_none());
-        assert_eq!(app.search.prompt.as_deref(), Some("target"));
+        assert_eq!(
+            app.search.prompt.as_ref().map(PromptInput::as_str),
+            Some("target")
+        );
         assert_eq!(app.buffer.cursor(), Cursor { row: 0, col: 5 });
 
         handle_active_key(
@@ -754,5 +789,43 @@ mod tests {
         .unwrap();
         app.buffer.redo();
         assert_eq!(app.buffer.to_string(), "!zero target");
+    }
+    #[test]
+    fn edited_search_query_and_remapped_movement_preserve_source_history() {
+        let mut app = super::super::App::new(None).unwrap();
+        app.buffer = Box::new(crate::buffer::PieceTable::from_text(
+            "zero a\u{301}猫target",
+        ));
+        let revision = app.buffer.content_revision();
+        let history = app.buffer.edit_history_position();
+        let mut out = Vec::new();
+        app.keybindings = crate::config::keybindings::parse(
+            "[keybindings]\nprompt-home = [\"alt+h\"]\nprompt-delete-forward = [\"alt+d\"]",
+        )
+        .unwrap();
+        open_prompt(&mut app, &mut out).unwrap();
+        super::super::input::handle_paste(&mut app, &mut out, "a\u{301}Xtarget").unwrap();
+        app.handle_key_with(&mut out, key(KeyCode::Char('h'), KeyModifiers::ALT))
+            .unwrap();
+        app.handle_key_with(&mut out, key(KeyCode::Right, KeyModifiers::NONE))
+            .unwrap();
+        app.handle_key_with(&mut out, key(KeyCode::Char('d'), KeyModifiers::ALT))
+            .unwrap();
+        super::super::input::handle_paste(&mut app, &mut out, "猫").unwrap();
+        assert_eq!(
+            app.search.prompt.as_ref().unwrap().as_str(),
+            "a\u{301}猫target"
+        );
+        assert_eq!(app.buffer.cursor(), Cursor { row: 0, col: 5 });
+        let active_match = app.search.active_match;
+        app.handle_key_with(&mut out, key(KeyCode::Left, KeyModifiers::NONE))
+            .unwrap();
+        assert_eq!(app.search.active_match, active_match);
+        assert_eq!(app.buffer.content_revision(), revision);
+        assert_eq!(app.buffer.edit_history_position(), history);
+        assert!(!app.file.dirty);
+        app.handle_key_with(&mut out, key(KeyCode::Esc, KeyModifiers::NONE))
+            .unwrap();
+        assert!(app.search.prompt.is_none());
     }
 }

@@ -73,6 +73,10 @@ such as help, configuration, previews, prompts, and dialogs must define how the
 previous editor context is restored. Background tasks must have bounded inputs,
 outputs, and lifetimes, and dropping their owner must cancel or reap their work.
 
+The App-owned source buffer is always editable: open and reload select
+`PieceTable` or `PagedFileBuffer`. Read-only help and previews use separate display
+buffers; their input scopes intercept edits before source-buffer dispatch.
+
 Hot typing and rendering paths must not acquire full-buffer clones, full-file
 scans, blocking subprocesses, repository work, or network access. Suspected
 performance problems should be measured before adding caches or concurrency.

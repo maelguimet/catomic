@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use super::prompt_input::{PromptInput, PromptPresentation};
 use crate::config::actions::Action;
 use crate::editor::goto_line::{self, GotoLineResult, GotoLineTask};
 use crate::help_catalog::{self, PromptCommand};
@@ -37,7 +38,7 @@ struct RunningGoto {
 
 struct ActivePrompt {
     kind: PromptKind,
-    text: String,
+    text: PromptInput,
 }
 
 enum PromptKind {
@@ -98,7 +99,7 @@ pub(super) fn submits_pending_command_save_as(app: &super::App) -> bool {
         return false;
     };
     matches!(&prompt.kind, PromptKind::Command)
-        && command_matches_pending_save_as(app, prompt.text.trim())
+        && command_matches_pending_save_as(app, prompt.text.as_str().trim())
 }
 
 pub(super) fn request_config_close(app: &mut super::App) -> Option<ConfigCloseRequest> {
@@ -157,7 +158,7 @@ fn open_prompt(
     }
     app.command_prompt.active = Some(ActivePrompt {
         kind,
-        text: String::new(),
+        text: PromptInput::default(),
     });
     update_message(app);
     app.render(out)
@@ -187,17 +188,13 @@ pub(crate) fn handle_active_key(
             app.pending_save_conflict = None;
         }
         KeyCode::Enter => return submit(app, out).map(|()| true),
-        KeyCode::Backspace => {
-            app.command_prompt.active.as_mut().unwrap().text.pop();
-            update_message(app);
-        }
-        KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-            if !ch.is_control() {
-                app.command_prompt.active.as_mut().unwrap().text.push(ch);
+        KeyCode::Tab => complete_path(app),
+        _ => {
+            if let Some(prompt) = app.command_prompt.active.as_mut() {
+                prompt.text.key(key);
             }
             update_message(app);
         }
-        _ => {}
     }
     app.render(out)?;
     Ok(true)
@@ -224,17 +221,20 @@ pub(crate) fn dispatch_action(
             app.render(out)?;
         }
         Action::PromptSubmit => submit(app, out)?,
-        Action::PromptDeleteBackward => {
-            app.command_prompt
-                .active
-                .as_mut()
-                .expect("prompt active")
-                .text
-                .pop();
+        Action::PromptCompletePath => {
+            complete_path(app);
+            app.render(out)?;
+        }
+        _ => {
+            let Some(prompt) = app.command_prompt.active.as_mut() else {
+                return Ok(false);
+            };
+            if prompt.text.action(action).is_none() {
+                return Ok(false);
+            }
             update_message(app);
             app.render(out)?;
         }
-        _ => return Ok(false),
     }
     Ok(true)
 }
@@ -247,32 +247,62 @@ pub(crate) fn handle_paste(
     let Some(prompt) = app.command_prompt.active.as_mut() else {
         return Ok(false);
     };
-    prompt
-        .text
-        .push_str(&text.replace("\r\n", "\n").replace('\r', "\n"));
+    prompt.text.insert(text);
     update_message(app);
     app.render(out)?;
     Ok(true)
 }
 
-fn update_message(app: &mut super::App) {
-    let Some(prompt) = app.command_prompt.active.as_ref() else {
-        return;
-    };
-    let text = prompt.text.clone();
-    let width = app.screen.width as usize;
-    let message = match &prompt.kind {
-        PromptKind::GotoLine => super::status::format_prompt("Goto line", &text, width),
-        PromptKind::Command => super::status::format_prompt("Command", &text, width),
-        PromptKind::SaveAs => super::status::format_prompt("Save as", &text, width),
-        PromptKind::OpenFile => super::status::format_prompt("Open file", &text, width),
+pub(super) fn presentation(app: &super::App) -> Option<PromptPresentation> {
+    let prompt = app.command_prompt.active.as_ref()?;
+    let label = match &prompt.kind {
+        PromptKind::GotoLine => "Goto line".into(),
+        PromptKind::Command => "Command".into(),
+        PromptKind::SaveAs => "Save as".into(),
+        PromptKind::OpenFile => "Open file".into(),
         PromptKind::CreateConfig { path, .. } => format!(
-            "Create {} from the documented template? Type yes to confirm: {}",
-            path.display(),
-            text
+            "Create {} from the documented template? Type yes to confirm",
+            path.display()
         ),
     };
-    app.message_info(message);
+    Some(
+        prompt
+            .text
+            .presentation(&label, "", app.screen.width as usize),
+    )
+}
+
+fn update_message(app: &mut super::App) {
+    if let Some(presentation) = presentation(app) {
+        app.message_info(presentation.text);
+    }
+}
+
+fn complete_path(app: &mut super::App) {
+    let Some(prompt) = app.command_prompt.active.as_mut() else {
+        return;
+    };
+    if !matches!(prompt.kind, PromptKind::OpenFile | PromptKind::SaveAs) {
+        return;
+    }
+    match crate::file::path_completion::complete(
+        prompt.text.as_str(),
+        prompt.text.caret(),
+        std::env::var_os("HOME").as_deref(),
+    ) {
+        Ok(completion) => {
+            if prompt
+                .text
+                .replace(completion.start, completion.end, &completion.text)
+            {
+                if let Some(notice) = completion.notice {
+                    prompt.text.notice(notice);
+                }
+            }
+        }
+        Err(error) => prompt.text.notice(error),
+    }
+    update_message(app);
 }
 
 fn submit(app: &mut super::App, out: &mut dyn crate::terminal::TerminalOutput) -> io::Result<()> {
@@ -282,14 +312,14 @@ fn submit(app: &mut super::App, out: &mut dyn crate::terminal::TerminalOutput) -
         .take()
         .expect("submit requires active prompt");
     match prompt.kind {
-        PromptKind::GotoLine => execute_goto(app, out, &prompt.text),
-        PromptKind::Command => execute_command(app, out, prompt.text.trim()),
-        PromptKind::SaveAs => super::save::handle_save_as(app, out, &prompt.text),
-        PromptKind::OpenFile => execute_open(app, out, &prompt.text),
+        PromptKind::GotoLine => execute_goto(app, out, prompt.text.as_str()),
+        PromptKind::Command => execute_command(app, out, prompt.text.as_str().trim()),
+        PromptKind::SaveAs => super::save::handle_save_as(app, out, prompt.text.as_str()),
+        PromptKind::OpenFile => execute_open(app, out, prompt.text.as_str()),
         PromptKind::CreateConfig {
             path,
             exit_on_decline,
-        } => execute_config_create(app, out, path, exit_on_decline, &prompt.text),
+        } => execute_config_create(app, out, path, exit_on_decline, prompt.text.as_str()),
     }
 }
 

@@ -439,9 +439,45 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
     key!(
         PromptDeleteBackward,
         "prompt-delete-backward",
-        "Delete prompt character",
+        "Delete previous prompt grapheme",
         PS,
         ["backspace"]
+    ),
+    key!(
+        PromptDeleteForward,
+        "prompt-delete-forward",
+        "Delete next prompt grapheme",
+        PS,
+        ["delete"]
+    ),
+    key!(
+        PromptMoveLeft,
+        "prompt-move-left",
+        "Move prompt caret left",
+        PS,
+        ["left"]
+    ),
+    key!(
+        PromptMoveRight,
+        "prompt-move-right",
+        "Move prompt caret right",
+        PS,
+        ["right"]
+    ),
+    key!(
+        PromptHome,
+        "prompt-home",
+        "Move to prompt start",
+        PS,
+        ["home"]
+    ),
+    key!(PromptEnd, "prompt-end", "Move to prompt end", PS, ["end"]),
+    key!(
+        PromptCompletePath,
+        "prompt-complete-path",
+        "Complete Open or Save As path",
+        P,
+        ["tab"]
     ),
     key!(
         SearchNext,

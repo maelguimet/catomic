@@ -106,7 +106,11 @@ pub(super) fn compose_buffer(
         options.emoji_picker,
         options.theme,
     )?;
-    super::write_terminal_cursor(out, position, options.cursor_shape)
+    super::write_terminal_cursor(
+        out,
+        super::presentation_cursor(viewport, options, position),
+        options.cursor_shape,
+    )
 }
 
 pub(super) fn read_viewport<'a>(

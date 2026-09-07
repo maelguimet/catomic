@@ -778,7 +778,7 @@ fn crlf_page_add_compaction_preserves_materialized_index_and_history() {
 
 #[test]
 fn preserving_paged_originals_keeps_history_when_staging_or_commit_fails() {
-    use crate::file::io::{atomic_write_with, snapshot_hard_linked_file};
+    use crate::file::io::{atomic_write_with, snapshot_linked_file};
     use std::fs;
     use std::io;
 
@@ -801,7 +801,7 @@ fn preserving_paged_originals_keeps_history_when_staging_or_commit_fails() {
         let position = buffer.edit_history_position();
 
         let error = atomic_write_with(&path, |writer| {
-            buffer.preserve_file_backing(&mut snapshot_hard_linked_file)?;
+            buffer.preserve_file_backing(&mut snapshot_linked_file)?;
             buffer.write_to(writer)?;
             if replace_target {
                 fs::remove_file(&path)?;
@@ -863,6 +863,51 @@ fn failed_backing_preservation_leaves_paged_edits_and_history_intact() {
     buffer.redo();
     assert_eq!(buffer.line(0).unwrap(), "Ysecond");
     std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn restored_mtime_drift_during_preservation_never_rebases_the_original_revision() {
+    use std::io::{Seek, Write};
+
+    for change_after_copy in [false, true] {
+        let path = temp_path(if change_after_copy {
+            "drift_after_copy"
+        } else {
+            "drift_before_copy"
+        });
+        std::fs::write(&path, "first\nsecond\nthird").unwrap();
+        let mut external = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        let modified = external.metadata().unwrap().modified().unwrap();
+        let mut buffer = PagedFileBuffer::open(&path, 1).unwrap();
+        buffer.insert_char('X');
+        buffer.next_page().unwrap();
+        buffer.insert_char('Y');
+        let history = buffer.edit_history_position();
+        let mut change = || -> std::io::Result<()> {
+            external.rewind()?;
+            external.write_all(b"FIRST\nSECOND\nTHIRD")?;
+            external.set_modified(modified)
+        };
+
+        let error = buffer
+            .preserve_file_backing(&mut |source| {
+                if !change_after_copy {
+                    change()?;
+                }
+                let snapshot = crate::file::io::snapshot_linked_file(source)?;
+                if change_after_copy {
+                    change()?;
+                }
+                Ok(snapshot)
+            })
+            .unwrap_err();
+
+        assert!(super::BackingFileChanged::is(&error), "{error}");
+        assert_eq!(buffer.edit_history_position(), history);
+        assert_eq!(buffer.page_info().unwrap().page_number, 2);
+        assert!(buffer.write_to(&mut Vec::new()).is_err());
+        std::fs::remove_file(path).unwrap();
+    }
 }
 
 #[test]

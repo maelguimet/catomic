@@ -11,6 +11,7 @@ use std::io;
 #[cfg(test)]
 use std::path::Path;
 
+use super::backing::DescriptorSnapshot;
 use crate::buffer::large_file::page_scan::find_previous_page_start;
 use crate::buffer::{Buffer, PieceTable};
 
@@ -49,22 +50,6 @@ pub(super) struct EditablePage {
     pub(super) end_byte: usize,
     pub(super) next_page_start: Option<usize>,
     pub(super) page_number: usize,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct DescriptorSnapshot {
-    len: u64,
-    modified: Option<std::time::SystemTime>,
-}
-
-impl DescriptorSnapshot {
-    fn capture(file: &File) -> io::Result<Self> {
-        let metadata = file.metadata()?;
-        Ok(Self {
-            len: metadata.len(),
-            modified: metadata.modified().ok(),
-        })
-    }
 }
 
 impl PagedFileBuffer {
@@ -165,6 +150,9 @@ impl PagedFileBuffer {
         start_byte: usize,
         page_number: usize,
     ) -> io::Result<()> {
+        // Cached pages and delayed search/goto results belong to the same
+        // opened revision as fresh page loads.
+        self.ensure_unchanged()?;
         if self.active().start_byte == start_byte {
             self.active_mut().page_number = page_number;
             return Ok(());
@@ -173,7 +161,6 @@ impl PagedFileBuffer {
             retained.page_number = page_number;
             retained
         } else {
-            self.ensure_unchanged()?;
             let page =
                 Self::load_from_descriptor(&self.file, start_byte, page_number, self.page_lines)?;
             self.ensure_unchanged()?;

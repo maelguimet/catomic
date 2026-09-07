@@ -31,7 +31,7 @@ mod atomic_unix;
 mod backing_snapshot;
 mod snapshot;
 
-pub(crate) use backing_snapshot::snapshot_hard_linked_file;
+pub(crate) use backing_snapshot::snapshot_linked_file;
 
 #[cfg(test)]
 pub(crate) use snapshot::compare_to_snapshot;

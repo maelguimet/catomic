@@ -29,6 +29,82 @@ fn app_with_paged_buffer(path: &std::path::Path) -> App {
 }
 
 #[test]
+fn restored_mtime_drift_blocks_paged_reads_navigation_streaming_and_save_as() {
+    use std::io::{Seek, Write};
+    use std::os::unix::fs::MetadataExt;
+
+    let path = temp_path("restored_mtime.txt");
+    let target = path.with_extension("save-as.txt");
+    let _ = fs::remove_file(&target);
+    fs::write(&path, "first\nsecond\nthird").unwrap();
+    let mut external = fs::OpenOptions::new().write(true).open(&path).unwrap();
+    let before = external.metadata().unwrap();
+    let mut app = app_with_paged_buffer(&path);
+    let mut out = Vec::new();
+    app.handle_key_with(&mut out, make_key(KeyCode::Char('X'), KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key_with(&mut out, make_key(KeyCode::PageDown, KeyModifiers::CONTROL))
+        .unwrap();
+    app.handle_key_with(&mut out, make_key(KeyCode::Char('Y'), KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key_with(&mut out, make_key(KeyCode::PageUp, KeyModifiers::CONTROL))
+        .unwrap();
+    let history = app.buffer.edit_history_position();
+    let cursor = app.buffer.cursor();
+    let snapshot = app.file.disk_snapshot.clone();
+
+    external.rewind().unwrap();
+    external.write_all(b"FIRST\nSECOND\nTHIRD").unwrap();
+    external.set_modified(before.modified().unwrap()).unwrap();
+    external.sync_all().unwrap();
+    let after = external.metadata().unwrap();
+    assert_eq!(before.len(), after.len());
+    assert_eq!(before.modified().unwrap(), after.modified().unwrap());
+    assert_ne!(
+        (before.ctime(), before.ctime_nsec()),
+        (after.ctime(), after.ctime_nsec())
+    );
+    assert_eq!(
+        app.external_file_status(),
+        crate::file::io::ExternalFileStatus::Modified
+    );
+
+    for error in [
+        app.buffer
+            .try_visible_lines_window(0, 1, 0, 80)
+            .unwrap_err(),
+        app.buffer.cursor_cell_column().unwrap_err(),
+        app.buffer.grapheme_range(0, 1).unwrap_err(),
+        app.buffer.next_page().unwrap_err(),
+        app.buffer
+            .set_descriptor_position(crate::buffer::DescriptorPosition {
+                page_start: 0,
+                page_number: 1,
+                row: 0,
+                col: 0,
+            })
+            .unwrap_err(),
+        app.buffer.write_to(&mut Vec::new()).unwrap_err(),
+    ] {
+        assert!(crate::buffer::BackingFileChanged::is(&error), "{error}");
+    }
+    app.handle_key_with(&mut out, make_key(KeyCode::Right, KeyModifiers::NONE))
+        .unwrap();
+    assert!(app.file.dirty);
+    assert_eq!(app.buffer.cursor(), cursor);
+    assert_eq!(app.buffer.edit_history_position(), history);
+    super::super::super::save::handle_save_as(&mut app, &mut out, target.to_str().unwrap())
+        .unwrap();
+    assert!(!target.exists());
+    assert!(app.file.dirty);
+    assert_eq!(app.file.disk_snapshot, snapshot);
+    assert_eq!(app.file.path.as_ref(), Some(&path));
+    assert!(app.message.as_deref().unwrap().contains("Save error"));
+    assert_eq!(fs::read_to_string(&path).unwrap(), "FIRST\nSECOND\nTHIRD");
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn paged_save_preserves_crlf_without_doubling_carriage_returns() {
     let path = temp_path("crlf_save.txt");
     let _ = fs::remove_file(&path);
@@ -78,14 +154,36 @@ fn paged_buffer_edits_multiple_pages_and_saves_the_whole_file() {
     assert!(!app.file.dirty);
     assert!(app.message.is_none());
 
+    for expected in ["second", "first"] {
+        app.handle_key_with(
+            &mut out,
+            make_key(KeyCode::Char('z'), KeyModifiers::CONTROL),
+        )
+        .unwrap();
+        assert!(app.file.dirty);
+        assert_eq!(app.buffer.line(0).unwrap(), expected);
+    }
+    for expected in ["Xfirst", "Ysecond"] {
+        app.handle_key_with(
+            &mut out,
+            make_key(KeyCode::Char('y'), KeyModifiers::CONTROL),
+        )
+        .unwrap();
+        assert_eq!(app.buffer.line(0).unwrap(), expected);
+    }
+    assert!(!app.file.dirty);
+
     let _ = fs::remove_file(path);
 }
 
 #[test]
 fn paged_buffer_keeps_editing_untouched_pages_after_atomic_save() {
+    use std::os::unix::fs::MetadataExt;
+
     let path = temp_path("successive_save.txt");
     let _ = fs::remove_file(&path);
     fs::write(&path, "first\nsecond\nthird").unwrap();
+    let original_inode = fs::metadata(&path).unwrap().ino();
     let mut app = app_with_paged_buffer(&path);
     let mut out = Vec::new();
 
@@ -97,6 +195,17 @@ fn paged_buffer_keeps_editing_untouched_pages_after_atomic_save() {
     )
     .unwrap();
     assert_eq!(fs::read_to_string(&path).unwrap(), "Xfirst\nsecond\nthird");
+    let first_saved_inode = fs::metadata(&path).unwrap().ino();
+    assert_ne!(first_saved_inode, original_inode);
+    let mut backing_inode = 0;
+    app.buffer
+        .preserve_file_backing(&mut |file| {
+            let metadata = file.metadata()?;
+            assert_eq!(metadata.nlink(), 0);
+            backing_inode = metadata.ino();
+            Ok(None)
+        })
+        .unwrap();
 
     app.handle_key_with(&mut out, make_key(KeyCode::PageDown, KeyModifiers::CONTROL))
         .unwrap();
@@ -110,6 +219,17 @@ fn paged_buffer_keeps_editing_untouched_pages_after_atomic_save() {
 
     assert_eq!(fs::read_to_string(&path).unwrap(), "Xfirst\nYsecond\nthird");
     assert!(!app.file.dirty);
+    assert_ne!(fs::metadata(&path).unwrap().ino(), first_saved_inode);
+    app.buffer
+        .preserve_file_backing(&mut |file| {
+            assert_eq!(
+                file.metadata()?.ino(),
+                backing_inode,
+                "later saves reuse the validated snapshot"
+            );
+            Ok(None)
+        })
+        .unwrap();
 
     let _ = fs::remove_file(path);
 }

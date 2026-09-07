@@ -20,13 +20,18 @@ over configurable logical-line pages.
 - Undo/redo uses one global transaction order and activates the affected page.
 - Ctrl+S streams untouched descriptor ranges and edited page content into the
   existing atomic-save path without building a whole-file String.
+- The first explicit save copies a still-linked original to a private, detached
+  descriptor, reused on later saves. This costs one full-file copy and additional
+  temporary disk space, but permits strict ctime validation across replacement
+  and hard-link saves without accepting an unvalidated source revision.
 - Ctrl+F searches the stable descriptor plus unsaved edited-page overlays. It
   preserves matches across read chunks and edited page boundaries.
-- Same-descriptor metadata drift fails page loads, rendering, search, and save
-  closed. App presents unavailable content and preserves the session instead of
-  terminating; original bytes overwritten in place cannot be reconstructed by
-  Save As. Clean path changes auto-reload by default; dirty buffers never reload
-  automatically and retain the Ctrl+R/save-conflict confirmation paths.
+- Drift in length, mtime, device/inode, or ctime fails page loads, rendering,
+  search, and save closed. App presents unavailable content and preserves the
+  session instead of terminating. Save As cannot reconstruct original bytes
+  overwritten in place. Clean path changes auto-reload by default; dirty buffers
+  never reload automatically and retain the Ctrl+R/save-conflict confirmation
+  paths.
 - Byte size alone never selects a read-only or refusal mode.
 
 No new runtime dependency, background index, network service, mmap, or unsafe

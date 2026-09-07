@@ -349,6 +349,37 @@ impl PieceTable {
             .unwrap_or(line_start)
     }
 
+    pub(super) fn indexed_grapheme_range(
+        &self,
+        row: usize,
+        col: usize,
+    ) -> io::Result<std::ops::Range<usize>> {
+        if row >= self.index.line_count() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "grapheme row is unavailable",
+            ));
+        }
+        let start = self.index.line_start_byte(row);
+        let end = self.index.line_end_byte(row);
+        self.original.with_read_operation(|original| {
+            self.cells.ensure_valid()?;
+            let count = self.try_char_count_in_read_operation(start, end, original)?;
+            let col = col.min(count);
+            if col == count {
+                return Ok(count..count);
+            }
+            let at =
+                self.try_byte_offset_after_chars_in_read_operation(start, end, col, original)?;
+            let range = self.cells.grapheme_scalar_range_at(at, col, |range| {
+                self.try_slice_to_cow_in_read_operation(range.start, range.end, original)
+            })?;
+            // A raw inserted CRLF is one global grapheme, but LF belongs to
+            // the row delimiter rather than either line's scalar columns.
+            Ok(range.start..range.end.min(count))
+        })
+    }
+
     pub(crate) fn search_byte_offset_for_cursor(
         &self,
         cursor: crate::buffer::Cursor,

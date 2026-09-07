@@ -2481,3 +2481,61 @@ fn pty_replace_remaining_can_cancel_during_bulk_and_save_only_accepted_groups() 
     editor.wait_for_exit()?;
     Ok(())
 }
+
+#[test]
+fn pty_page_navigation_uses_global_grapheme_context_before_edit_and_undo() -> TestResult {
+    for (target, col, floor) in [
+        ("🇦".repeat(100), 65, 64),
+        (format!("👩{}\u{200d}💻x", "\u{301}".repeat(100)), 102, 0),
+        (format!("{}x", "\u{301}".repeat(100)), 1, 0),
+    ] {
+        for down in [true, false] {
+            for extend in [false, true] {
+                let source = "x".repeat(110);
+                let original = if down {
+                    format!("{source}\n{target}")
+                } else {
+                    format!("{target}\n{source}")
+                };
+                let temp = TempPath::new("page_global_context");
+                fs::write(&temp.path, &original)?;
+                let mut editor = PtyEditor::spawn_sized(&temp.path, 24, 80)?;
+                editor.wait_for_initial_render()?;
+                if !down {
+                    editor.send_keys(b"\x1b[B")?;
+                }
+                editor.send_keys(&b"\x1b[C".repeat(col))?;
+                let page: &[u8] = match (down, extend) {
+                    (true, false) => b"\x1b[6~",
+                    (false, false) => b"\x1b[5~",
+                    (true, true) => b"\x1b[6;2~",
+                    (false, true) => b"\x1b[5;2~",
+                };
+                editor.send_keys(page)?;
+                editor.send_keys(b"Q\x13")?;
+                let head: String = target.chars().take(floor).collect();
+                let tail: String = target.chars().skip(floor).collect();
+                let expected = match (down, extend) {
+                    (true, false) => format!("{source}\n{head}Q{tail}"),
+                    (false, false) => format!("{head}Q{tail}\n{source}"),
+                    (true, true) => format!("{}Q{tail}", &source[..col]),
+                    (false, true) => format!("{head}Q{}", &source[col..]),
+                };
+                wait_until(
+                    "page edit saved at whole grapheme boundary",
+                    Duration::from_secs(3),
+                    || fs::read_to_string(&temp.path).is_ok_and(|text| text == expected),
+                )?;
+                editor.send_keys(b"\x1a\x13")?;
+                wait_until(
+                    "page edit undo restored original clusters",
+                    Duration::from_secs(2),
+                    || fs::read_to_string(&temp.path).is_ok_and(|text| text == original),
+                )?;
+                editor.send_keys(b"\x11")?;
+                editor.wait_for_exit()?;
+            }
+        }
+    }
+    Ok(())
+}

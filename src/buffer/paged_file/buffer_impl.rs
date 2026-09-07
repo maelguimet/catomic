@@ -18,6 +18,10 @@ impl Buffer for PagedFileBuffer {
         self.active().buffer.cursor_cell_column()
     }
 
+    fn grapheme_range(&self, row: usize, col: usize) -> io::Result<std::ops::Range<usize>> {
+        self.active().buffer.grapheme_range(row, col)
+    }
+
     fn preserve_file_backing(
         &mut self,
         preserve: &mut dyn FnMut(&std::fs::File) -> io::Result<Option<std::fs::File>>,

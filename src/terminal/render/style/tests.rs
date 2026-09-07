@@ -817,3 +817,12 @@ fn style_heavy_line_has_no_per_segment_allocations() {
          four={four_segments}, many={many_segments}"
     );
 }
+
+#[test]
+fn highlight_wholly_before_horizontal_window_is_not_subtracted() {
+    let highlight = TextHighlight {
+        start: crate::buffer::Cursor { row: 0, col: 0 },
+        end: crate::buffer::Cursor { row: 1, col: 1 },
+    };
+    assert_eq!(visible_highlight(Some(highlight), 1, 100, 80), None);
+}

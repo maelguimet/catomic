@@ -864,3 +864,59 @@ fn failed_backing_preservation_leaves_paged_edits_and_history_intact() {
     assert_eq!(buffer.line(0).unwrap(), "Ysecond");
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn paged_grapheme_queries_keep_context_and_bound_reads_after_history_replay() {
+    let path = temp_path("grapheme_context_work");
+    for size in [64 * 1024, 1024 * 1024, 4 * 1024 * 1024] {
+        let prefix = "x".repeat(size);
+        std::fs::write(
+            &path,
+            format!("earlier page\n{prefix}{}", "🇦".repeat(25_000)),
+        )
+        .unwrap();
+        let mut buffer = PagedFileBuffer::open(&path, 1).unwrap();
+        assert!(buffer.next_page().unwrap());
+        for state in 0..4 {
+            if state == 1 {
+                buffer
+                    .replace_range(
+                        Cursor {
+                            row: 0,
+                            col: prefix.len() + 1,
+                        },
+                        Cursor {
+                            row: 0,
+                            col: prefix.len() + 2,
+                        },
+                        "🇦",
+                    )
+                    .unwrap();
+            } else if state == 2 {
+                buffer.undo();
+            } else if state == 3 {
+                buffer.redo();
+            }
+            let table = &buffer.active().buffer;
+            table.cells.take_work();
+            let before = table.file_original_read_bytes();
+            assert_eq!(
+                buffer.grapheme_range(0, prefix.len() + 24_065).unwrap(),
+                prefix.len() + 24_064..prefix.len() + 24_066
+            );
+            let (visits, block_bytes) = table.cells.take_work();
+            let file_bytes = table.file_original_read_bytes() - before;
+            assert!(visits < 64);
+            assert!(block_bytes <= 4104);
+            assert!(
+                file_bytes < 256 * 1024,
+                "bounded descriptor query read {file_bytes}"
+            );
+            eprintln!("paged grapheme query prefix={size} state={state}: nodes={visits} block_bytes={block_bytes} file_bytes={file_bytes}");
+        }
+        std::fs::write(&path, "changed descriptor").unwrap();
+        assert!(buffer.grapheme_range(0, 0).is_err());
+        assert!(buffer.grapheme_range(0, usize::MAX).is_err());
+        std::fs::remove_file(&path).unwrap();
+    }
+}

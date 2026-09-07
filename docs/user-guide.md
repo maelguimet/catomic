@@ -151,6 +151,14 @@ Latest commit requires Git and Cargo/Rust. Missing tools, an unsupported
 toolchain, or a build failure are reported for that target and never cause a
 stable fallback.
 
+The installed version and update availability use the binary's embedded commit
+and source state, separately from the retained checkout's current revision.
+Pulling a checkout ahead without reinstalling still requires an update. Only a
+clean binary built at the requested commit is already current; a dirty build is
+rebuilt even at the same commit. If its commit or source state is unavailable,
+the check reports availability as unknown and an explicit update rebuilds the
+requested revision.
+
 - A binary that retains an official checkout uses that checkout only when
   latest commit is selected. Its current branch may have any name but must
   fast-forward to official `master`. Catomic preserves local changes, refuses

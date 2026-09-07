@@ -696,6 +696,32 @@ fn pty_mobile_touch_edit_focus_resize_save_and_quit_need_no_hardware_chord() -> 
 }
 
 #[test]
+fn pty_layout_text_preserves_punctuation_unicode_and_enhanced_shortcuts() -> TestResult {
+    let temp = TempPath::new("layout_text");
+    let mut editor = PtyEditor::spawn(&temp.path)?;
+
+    editor.wait_for_initial_render()?;
+    // Keep text on the terminal's UTF-8 path: base keycodes plus Shift cannot
+    // reconstruct a keyboard layout, Caps Lock, AltGr, or composed text.
+    assert_eq!(sequence_count(&editor.output_string(), "\x1b[>1u"), 1);
+    let text = ";.123!? /éÉê€猫";
+    editor.send_keys(text.as_bytes())?;
+    editor.send_keys(b"\x1b[115;5u")?;
+    wait_until("layout text saved", Duration::from_secs(2), || {
+        fs::read_to_string(&temp.path).is_ok_and(|saved| saved == text)
+    })?;
+
+    editor.send_keys(b"\x1b[122;5u\x1b[115;5u")?;
+    wait_until("layout text undo", Duration::from_secs(2), || {
+        fs::read_to_string(&temp.path).is_ok_and(|saved| saved != text)
+    })?;
+    editor.send_keys(b"\x1b[122;6u\x1b[115;5u\x1b[113;5u")?;
+    editor.wait_for_exit()?;
+    assert_eq!(fs::read_to_string(&temp.path)?, text);
+    Ok(())
+}
+
+#[test]
 fn pty_undo_redo_distinguishes_reported_shift() -> TestResult {
     let temp = TempPath::new("undo_redo_alias");
     let mut editor = PtyEditor::spawn(&temp.path)?;
@@ -748,7 +774,7 @@ fn pty_legacy_and_enhanced_backspace_paths_remain_distinct() -> TestResult {
 
     assert_eq!(fs::read_to_string(&temp.path)?, "one ");
     let output = editor.output_string();
-    assert_eq!(sequence_count(&output, "\x1b[>11u"), 1);
+    assert_eq!(sequence_count(&output, "\x1b[>1u"), 1);
     assert_eq!(
         sequence_count(&output, "\x1b[>4;1f"),
         1,

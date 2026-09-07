@@ -71,7 +71,7 @@ fn open(
     app: &mut super::App,
     out: &mut dyn crate::terminal::TerminalOutput,
 ) -> io::Result<OpenOutcome> {
-    if super::view::is_preview(app) || app.buffer.is_read_only() {
+    if super::view::is_preview(app) {
         app.message_info("Local completion requires an editable source buffer.");
         app.render(out)?;
         return Ok(OpenOutcome::Handled);
@@ -268,8 +268,7 @@ pub(super) fn emoji_picker_presentation(app: &super::App) -> Option<EmojiPickerP
 }
 
 fn emoji_picker_at_cursor(app: &super::App) -> io::Result<Option<ActiveEmojiPicker>> {
-    if super::view::is_preview(app) || app.buffer.is_read_only() || app.selection.active().is_some()
-    {
+    if super::view::is_preview(app) || app.selection.active().is_some() {
         return Ok(None);
     }
     let end = app.buffer.cursor();

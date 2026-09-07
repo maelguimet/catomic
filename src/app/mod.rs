@@ -87,6 +87,8 @@ pub struct App {
     /// Touch UI; disabled unless Android/Termux/config explicitly enables it.
     pub(crate) mobile: mobile::MobileUiState,
     /// The active buffer (trait object for now; concrete type behind it).
+    /// Editable source storage (PieceTable or PagedFileBuffer). Read-only displays
+    /// belong to separate surfaces and are routed before editor input.
     pub buffer: Box<dyn Buffer>,
     /// File path and dirty tracking.
     pub file: FileState,

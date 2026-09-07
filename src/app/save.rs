@@ -109,11 +109,6 @@ pub(crate) fn handle_save(
         app.pending_save_conflict = None;
         return super::command_prompt::open_save_as_prompt(app, out);
     }
-    if app.buffer.is_read_only() {
-        app.pending_save_conflict = None;
-        app.message_warning("Large file is read-only in paged mode; save disabled.");
-        return app.render(out);
-    }
 
     let current_path = app.file.path.clone();
     if let Some(path) = current_path.as_deref() {
@@ -205,11 +200,6 @@ fn handle_save_as_with_route(
             return app.render(out);
         }
     };
-    if app.buffer.is_read_only() {
-        app.pending_save_conflict = None;
-        app.message_warning("Large file is read-only in paged mode; save disabled.");
-        return app.render(out);
-    }
     if let Err(error) = file::io::validate_regular_save_target(&target) {
         app.pending_save_conflict = None;
         app.message_error(format!("Save As error: {error}"));

@@ -75,8 +75,7 @@ pub(crate) fn uses_overwrite_cursor(app: &super::App) -> bool {
 }
 
 fn alternate_input_surface(app: &super::App) -> bool {
-    app.buffer.is_read_only()
-        || super::help::is_viewing(app)
+    super::help::is_viewing(app)
         || super::recovery::is_viewing(app)
         || super::external_command::is_viewing(app)
         || super::replace::is_active(app)

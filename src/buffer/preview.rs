@@ -216,6 +216,7 @@ impl Buffer for PreviewBuffer {
         self.cursor
     }
 
+    #[cfg(test)]
     fn is_read_only(&self) -> bool {
         true
     }

@@ -46,23 +46,24 @@ impl StartupConfig {
         preference_path: Option<std::path::PathBuf>,
         color_override: crate::config::theme::ColorOverride,
     ) -> io::Result<Self> {
-        crate::config::validate_unknown_keys(text)?;
+        let document = crate::config::Document::parse(text)?;
+        document.validate_unknown_keys()?;
         Ok(Self {
-            big_files: crate::config::big_files::parse(text)?,
-            auto_reload: crate::config::auto_reload::parse(text)?,
-            editor: crate::config::editor::parse(text)?,
-            keybindings: crate::config::keybindings::parse(text)?,
-            commands: crate::config::commands::parse(text)?,
-            cat: crate::config::cat::parse(text)?,
+            big_files: crate::config::big_files::from_document(&document)?,
+            auto_reload: crate::config::auto_reload::from_document(&document)?,
+            editor: crate::config::editor::from_document(&document)?,
+            keybindings: crate::config::keybindings::from_document(&document)?,
+            commands: crate::config::commands::from_document(&document)?,
+            cat: crate::config::cat::from_document(&document)?,
             theme: crate::config::theme::for_terminal(
-                crate::config::theme::parse(text)?,
+                crate::config::theme::from_document(&document)?,
                 color_override,
             ),
-            view_preferences: crate::config::view_preferences::load_with_config(
-                text,
+            view_preferences: crate::config::view_preferences::load_from_document(
+                &document,
                 preference_path,
             )?,
-            mobile: crate::config::mobile::parse(text)?,
+            mobile: crate::config::mobile::from_document(&document)?,
         })
     }
 
@@ -138,6 +139,169 @@ mod tests {
         .expect("unknown keys must fail startup validation");
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
         assert!(error.to_string().contains("editor.tab_szie"));
+    }
+
+    #[test]
+    fn shared_document_retains_each_sections_values_and_language_overrides() {
+        let config = StartupConfig::from_snapshot(
+            r#"
+[big_files]
+page_lines = 321
+[files]
+auto_reload = false
+[editor]
+tab_size = 2
+[languages.".RS"]
+tab_size = 3
+linter = "check-language {file}"
+[keybindings]
+save = ["alt+x"]
+[commands.check]
+command = "check-command"
+input = "buffer"
+output = "preview"
+timeout_secs = 12
+[hooks]
+on_save = ["check"]
+[cat]
+status_messages = false
+[recovery]
+enabled = true
+interval_secs = 45
+max_bytes = 4096
+[theme]
+name = "mono"
+[view]
+line_numbers = true
+external_diff = false
+[mobile]
+action_bar = "always"
+"#,
+            None,
+            crate::config::theme::ColorOverride::Auto,
+        )
+        .unwrap();
+        assert_eq!(config.big_files.page_lines, 321);
+        assert!(!config.auto_reload);
+        assert_eq!(config.editor.tab_size_for_path(None), 2);
+        assert_eq!(
+            config
+                .editor
+                .tab_size_for_path(Some(std::path::Path::new("test.rs"))),
+            3
+        );
+        assert_eq!(
+            config.editor.language_linters().collect::<Vec<_>>(),
+            [("rs", "check-language {file}")]
+        );
+        assert_eq!(
+            config
+                .keybindings
+                .keyboard_chords(crate::config::actions::Action::Save),
+            crate::config::keybindings::parse("[keybindings]\nsave = [\"alt+x\"]\n")
+                .unwrap()
+                .keyboard_chords(crate::config::actions::Action::Save)
+        );
+        let command = config.commands.get("check").unwrap();
+        assert_eq!(command.command, "check-command");
+        assert_eq!(command.input, crate::config::commands::CommandInput::Buffer);
+        assert_eq!(command.timeout, std::time::Duration::from_secs(12));
+        assert_eq!(
+            config
+                .commands
+                .hooks_for(crate::config::commands::HookEvent::Save),
+            ["check"]
+        );
+        assert!(!config.cat.status_messages);
+        assert!(config.cat.recovery.enabled);
+        assert_eq!(config.cat.recovery.interval_secs, 45);
+        assert_eq!(config.cat.recovery.max_bytes, 4096);
+        assert_eq!(
+            config.theme,
+            crate::config::theme::for_terminal(
+                crate::config::theme::parse("[theme]\nname = \"mono\"\n").unwrap(),
+                crate::config::theme::ColorOverride::Auto,
+            )
+        );
+        assert!(config.view_preferences.line_numbers());
+        assert!(!config.view_preferences.external_diff());
+        assert_eq!(
+            config.mobile.action_bar,
+            crate::config::mobile::ActionBarMode::Always
+        );
+    }
+
+    #[test]
+    fn startup_defers_linter_mapping_validation_but_validates_language_settings() {
+        let text = "[linters]\nrs = 42\n";
+        assert!(StartupConfig::from_snapshot(
+            text,
+            None,
+            crate::config::theme::ColorOverride::Auto,
+        )
+        .is_ok());
+        let error = crate::config::validate_text(text).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(error.to_string().contains("expected a string"), "{error}");
+        assert!(StartupConfig::from_snapshot(
+            "[languages.rs]\nlinter = \"missing-placeholder\"\n",
+            None,
+            crate::config::theme::ColorOverride::Auto,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn startup_and_explicit_validation_keep_their_existing_error_precedence() {
+        for (text, startup_error, validation_error) in [
+            (
+                "[big_files]\npage_lines = 0\n[files]\nauto_reload = \"no\"\n",
+                "page_lines must be a positive integer",
+                "auto_reload = \"no\"",
+            ),
+            (
+                "[editor]\ntab_size = 0\ntab_szie = 4\n",
+                "unknown configuration key editor.tab_szie",
+                "unknown configuration key editor.tab_szie",
+            ),
+            (
+                "[theme]\nname = \"missing\"\n[mobile]\naction_bar = \"invalid\"\n",
+                "unknown theme",
+                "action_bar",
+            ),
+        ] {
+            let error =
+                StartupConfig::from_snapshot(text, None, crate::config::theme::ColorOverride::Auto)
+                    .err()
+                    .unwrap();
+            assert!(error.to_string().contains(startup_error), "{error}");
+            let error = crate::config::validate_text(text).unwrap_err();
+            assert!(error.to_string().contains(validation_error), "{error}");
+        }
+    }
+
+    #[test]
+    fn typed_error_keeps_the_original_toml_source_and_span() {
+        #[derive(Debug, serde::Deserialize)]
+        struct ConfigFile {
+            #[serde(rename = "editor")]
+            _editor: Editor,
+        }
+        #[derive(Debug, serde::Deserialize)]
+        struct Editor {
+            #[serde(rename = "tab_size")]
+            _tab_size: usize,
+        }
+        let text = "# source context\n[editor]\ntab_size = \"two\"\n[commands.check]\ncommand = \"check\"\n";
+        let expected = crate::config::decode::<ConfigFile>(text).unwrap_err();
+        let startup_error =
+            StartupConfig::from_snapshot(text, None, crate::config::theme::ColorOverride::Auto)
+                .err()
+                .unwrap();
+        let validation_error = crate::config::validate_text(text).unwrap_err();
+        assert_eq!(startup_error.to_string(), expected.to_string());
+        assert_eq!(validation_error.to_string(), expected.to_string());
+        assert!(startup_error.to_string().contains("line 3, column 12"));
     }
 
     #[test]

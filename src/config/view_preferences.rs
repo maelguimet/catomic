@@ -86,11 +86,19 @@ pub(crate) fn current_path() -> Option<PathBuf> {
     )
 }
 
+#[cfg(test)]
 pub(crate) fn load_with_config(
     config: &str,
     preference_path: Option<PathBuf>,
 ) -> io::Result<ViewPreferences> {
-    let configured = parse_config(config)?;
+    load_from_document(&super::Document::parse(config)?, preference_path)
+}
+
+pub(crate) fn load_from_document(
+    document: &super::Document<'_>,
+    preference_path: Option<PathBuf>,
+) -> io::Result<ViewPreferences> {
+    let configured = parse_config(document)?;
     let persisted =
         read_optional(preference_path.as_deref(), parse_preferences)?.unwrap_or_default();
     Ok(ViewPreferences {
@@ -106,8 +114,8 @@ pub(crate) fn load_with_config(
     })
 }
 
-pub(crate) fn validate_config(text: &str) -> io::Result<()> {
-    parse_config(text).map(|_| ())
+pub(crate) fn validate_config(document: &super::Document<'_>) -> io::Result<()> {
+    parse_config(document).map(|_| ())
 }
 
 #[cfg(test)]
@@ -133,8 +141,8 @@ fn read_optional<T>(
     }
 }
 
-fn parse_config(text: &str) -> io::Result<ViewSettings> {
-    Ok(super::decode::<ViewFile>(text)?.view)
+fn parse_config(document: &super::Document<'_>) -> io::Result<ViewSettings> {
+    Ok(document.decode::<ViewFile>(&["view"])?.view)
 }
 
 fn parse_preferences(text: &str) -> io::Result<ViewSettings> {

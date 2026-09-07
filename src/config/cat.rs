@@ -39,7 +39,12 @@ impl Default for RecoveryConfig {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn parse(text: &str) -> io::Result<CatConfig> {
+    from_document(&super::Document::parse(text)?)
+}
+
+pub(crate) fn from_document(document: &super::Document<'_>) -> io::Result<CatConfig> {
     #[derive(Default, Deserialize)]
     struct ConfigFile {
         #[serde(default)]
@@ -81,7 +86,7 @@ pub(crate) fn parse(text: &str) -> io::Result<CatConfig> {
         }
     }
 
-    let config = super::decode::<ConfigFile>(text)?;
+    let config = document.decode::<ConfigFile>(&["cat", "recovery"])?;
     validate_recovery(config.recovery.interval_secs, config.recovery.max_bytes)?;
     Ok(CatConfig {
         status_messages: config.cat.status_messages,

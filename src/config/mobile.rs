@@ -49,7 +49,12 @@ impl MobileConfig {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn parse(text: &str) -> io::Result<MobileConfig> {
+    from_document(&super::Document::parse(text)?)
+}
+
+pub(crate) fn from_document(document: &super::Document<'_>) -> io::Result<MobileConfig> {
     #[derive(Default, Deserialize)]
     struct ConfigFile {
         #[serde(default)]
@@ -70,7 +75,7 @@ pub(crate) fn parse(text: &str) -> io::Result<MobileConfig> {
         }
     }
 
-    let mobile = super::decode::<ConfigFile>(text)?.mobile;
+    let mobile = document.decode::<ConfigFile>(&["mobile"])?.mobile;
     Ok(MobileConfig {
         action_bar: mobile.action_bar,
     })

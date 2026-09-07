@@ -42,6 +42,12 @@ pub(super) fn recover(
         Err(error) if BackingFileChanged::is(&error) => {
             super::file_state::refresh_dirty(&mut app.file, &*app.buffer);
             super::completion::cancel(app);
+            // This notice replaces any confirmation warning. A rejected input
+            // or late read failure must not leave an invisible discard armed.
+            app.pending_quit_confirm = false;
+            app.pending_save_conflict = None;
+            super::command_prompt::clear_config_discard_confirmation(app);
+            super::reload::cancel_confirmation(app);
             app.message_error(UNAVAILABLE);
             app.render(out)
         }

@@ -71,6 +71,73 @@ fn key(code: KeyCode, modifiers: KeyModifiers) -> Event {
 }
 
 #[test]
+fn blocked_content_input_disarms_quit_and_reload_confirmations() {
+    for confirmation in ['q', 'r'] {
+        for blocked_event in [
+            key(KeyCode::Right, KeyModifiers::NONE),
+            key(KeyCode::Char('Y'), KeyModifiers::NONE),
+            Event::Paste("pasted".into()),
+            Event::Mouse(MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 8,
+                row: 1,
+                modifiers: KeyModifiers::NONE,
+            }),
+        ] {
+            let fixture = Fixture::new(false);
+            let mut app = fixture.app();
+            let mut out = Vec::new();
+            app.dispatch_ready_terminal_event(
+                &mut out,
+                key(KeyCode::Char('X'), KeyModifiers::NONE),
+            )
+            .unwrap();
+            let history = app.buffer.edit_history_position();
+            fixture.change_in_place();
+            let confirm = key(KeyCode::Char(confirmation), KeyModifiers::CONTROL);
+            app.dispatch_ready_terminal_event(&mut out, confirm.clone())
+                .unwrap();
+            assert!(!app.should_quit);
+            assert!(app.file.dirty);
+            app.dispatch_ready_terminal_event(&mut out, blocked_event)
+                .unwrap();
+            assert!(!app.pending_quit_confirm);
+            assert!(!app
+                .pending_reload
+                .as_ref()
+                .is_some_and(|pending| pending.is_explicitly_armed));
+            assert!(app
+                .message
+                .as_deref()
+                .unwrap()
+                .contains("Paged content unavailable"));
+
+            app.dispatch_ready_terminal_event(&mut out, confirm.clone())
+                .unwrap();
+            assert!(
+                !app.should_quit,
+                "a hidden quit warning must not stay armed"
+            );
+            assert!(
+                app.file.dirty,
+                "a hidden reload warning must not stay armed"
+            );
+            assert_eq!(app.buffer.edit_history_position(), history);
+
+            // A genuinely repeated, visible confirmation still works.
+            app.dispatch_ready_terminal_event(&mut out, confirm)
+                .unwrap();
+            if confirmation == 'q' {
+                assert!(app.should_quit);
+            } else {
+                assert!(!app.file.dirty);
+                assert_eq!(app.buffer.line(0).unwrap(), "FIRST");
+            }
+        }
+    }
+}
+
+#[test]
 fn dirty_paged_drift_keeps_the_session_and_another_dirty_buffer_usable() {
     let fixture = Fixture::new(true);
     let other = fixture.root.join("other.txt");

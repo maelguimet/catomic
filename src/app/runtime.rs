@@ -11,8 +11,8 @@ use crossterm::event::{self, Event, KeyEvent};
 use crate::terminal as term;
 
 use super::{
-    command_prompt, external_command, hooks, input, link_interaction, lint, recovery, search,
-    selection, viewport, watch, App,
+    command_prompt, external_command, hooks, input, link_interaction, lint, recovery, replace,
+    search, selection, viewport, watch, App,
 };
 
 impl App {
@@ -48,7 +48,8 @@ impl App {
                 }
             }
             self.poll_runtime_tasks(&mut stdout)?;
-            if event::poll(std::time::Duration::from_millis(100))? {
+            let idle_ms = if replace::is_running(self) { 1 } else { 100 };
+            if event::poll(std::time::Duration::from_millis(idle_ms))? {
                 self.dispatch_ready_terminal_event(&mut stdout, event::read()?)?;
             }
         }
@@ -66,6 +67,7 @@ impl App {
     ) -> io::Result<()> {
         watch::check_file_watcher_once_and_render(self, out)?;
         search::poll_search(self, out)?;
+        replace::poll(self, out)?;
         command_prompt::poll_goto(self, out)?;
         lint::poll(self, out)?;
         external_command::poll(self, out)?;

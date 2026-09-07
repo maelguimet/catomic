@@ -299,6 +299,30 @@ fn push_edit_actions(markdown: &mut String, bindings: &KeyBindings) {
     push_action(markdown, bindings, Action::CutLine, "Cut line");
     push_action(markdown, bindings, Action::Search, "Find");
     push_action(markdown, bindings, Action::Replace, "Replace");
+    push_action(
+        markdown,
+        bindings,
+        Action::ReplaceAccept,
+        "Replace highlighted candidate",
+    );
+    push_action(
+        markdown,
+        bindings,
+        Action::ReplaceSkip,
+        "Skip replacement candidate",
+    );
+    push_action(
+        markdown,
+        bindings,
+        Action::ReplaceRemaining,
+        "Replace remaining candidates",
+    );
+    push_action(
+        markdown,
+        bindings,
+        Action::ReplaceCancel,
+        "Stop replacement; keep accepted edits",
+    );
     push_action(markdown, bindings, Action::GotoLine, "Go to line");
 }
 

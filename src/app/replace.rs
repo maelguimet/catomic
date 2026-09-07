@@ -1,20 +1,22 @@
-//! Purpose: provide explicit two-stage Find/Replace and Replace All prompts.
-//! Owns: prompt text, match collection, replacement application, and user messages.
+//! Purpose: collect Find/Replace text and enter explicit candidate review or bulk work.
+//! Owns: editable text stages and the lifetime of the bounded replacement workflow.
 //! Must not: scan implicitly, operate across paged descriptors, save, or start workers.
-//! Invariants: replacement is explicit; matches are scalar-aligned; paged files fail closed.
+//! Invariants: the second Enter begins review; matches are scalar-aligned; paged files fail closed.
 
 use std::io;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::prompt_input::{PromptInput, PromptPresentation};
+#[cfg(test)]
 use crate::buffer::Cursor;
 use crate::config::actions::Action;
-use crate::editor::search::{find_match, SearchDirection};
+mod review;
 
 #[derive(Default)]
 pub(crate) struct ReplaceState {
     prompt: Option<ReplacePrompt>,
+    review: Option<review::Review>,
 }
 
 struct ReplacePrompt {
@@ -35,7 +37,10 @@ pub(crate) fn open_prompt(
     out: &mut dyn crate::terminal::TerminalOutput,
     all: bool,
 ) -> io::Result<()> {
+    super::search::cancel_running_search(app);
+    super::completion::cancel(app);
     app.selection.clear();
+    app.replace.review = None;
     app.replace.prompt = Some(ReplacePrompt {
         stage: PromptStage::Find,
         find: PromptInput::default(),
@@ -48,17 +53,30 @@ pub(crate) fn open_prompt(
 
 pub(crate) fn cancel(app: &mut super::App) {
     app.replace.prompt = None;
+    app.replace.review = None;
 }
 
 pub(super) fn is_active(app: &super::App) -> bool {
-    app.replace.prompt.is_some()
+    app.replace.prompt.is_some() || app.replace.review.is_some()
 }
+
+pub(super) fn is_reviewing(app: &super::App) -> bool {
+    app.replace.review.is_some()
+}
+pub(super) use review::{active_match, is_running, poll};
 
 pub(crate) fn handle_key(
     app: &mut super::App,
     out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
+    if app.replace.review.is_some() {
+        if key.code == KeyCode::Char('q') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            return Ok(false);
+        }
+        app.render(out)?;
+        return Ok(true);
+    }
     if app.replace.prompt.is_none() {
         return Ok(false);
     }
@@ -87,6 +105,9 @@ pub(crate) fn dispatch_action(
     out: &mut dyn crate::terminal::TerminalOutput,
     action: Action,
 ) -> io::Result<bool> {
+    if app.replace.review.is_some() {
+        return review::dispatch_action(app, out, action);
+    }
     if app.replace.prompt.is_none() {
         return Ok(false);
     }
@@ -116,6 +137,10 @@ pub(crate) fn handle_paste(
     out: &mut dyn crate::terminal::TerminalOutput,
     text: &str,
 ) -> io::Result<bool> {
+    if app.replace.review.is_some() {
+        app.render(out)?;
+        return Ok(true);
+    }
     let Some(prompt) = app.replace.prompt.as_mut() else {
         return Ok(false);
     };
@@ -159,6 +184,11 @@ fn advance_or_apply(
             update_message(app);
             return app.render(out);
         }
+        if prompt.find.as_str().contains('\n') {
+            prompt.find.notice("Replace query must be a single line.");
+            update_message(app);
+            return app.render(out);
+        }
         prompt.stage = PromptStage::Replacement;
         update_message(app);
         return app.render(out);
@@ -170,66 +200,18 @@ fn advance_or_apply(
         );
         return app.render(out);
     }
-    if prompt.all {
-        replace_all(app, out, prompt.find.as_str(), prompt.replacement.as_str())
-    } else {
-        replace_next(app, out, prompt.find.as_str(), prompt.replacement.as_str())
-    }
+    review::start(
+        app,
+        out,
+        prompt.find.as_str(),
+        prompt.replacement.as_str(),
+        prompt.all,
+    )
 }
 
-fn replace_next(
-    app: &mut super::App,
-    out: &mut dyn crate::terminal::TerminalOutput,
-    find: &str,
-    replacement: &str,
-) -> io::Result<()> {
-    let Some(found) = find_match(
-        &*app.buffer,
-        find,
-        app.buffer.cursor(),
-        SearchDirection::Forward,
-        true,
-    ) else {
-        app.message_info(format!("No matches for '{find}'."));
-        return app.render(out);
-    };
-    let end = Cursor {
-        row: found.start.row,
-        col: found.end_col,
-    };
-    app.buffer.replace_range(found.start, end, replacement)?;
-    super::input::finish_content_edit(app, out)
-}
-
-fn replace_all(
-    app: &mut super::App,
-    out: &mut dyn crate::terminal::TerminalOutput,
-    find: &str,
-    replacement: &str,
-) -> io::Result<()> {
-    let mut matches = Vec::new();
-    let find_chars = find.chars().count();
-    for row in 0..app.buffer.line_count() {
-        let line = app.buffer.line(row).unwrap_or_default();
-        matches.extend(line.match_indices(find).map(|(byte_col, _)| {
-            let col = line[..byte_col].chars().count();
-            (
-                Cursor { row, col },
-                Cursor {
-                    row,
-                    col: col + find_chars,
-                },
-            )
-        }));
-    }
-    if matches.is_empty() {
-        app.message_info(format!("No matches for '{find}'."));
-        return app.render(out);
-    }
-    matches.reverse();
-    app.buffer.replace_ranges(&matches, replacement)?;
-    super::input::finish_content_edit(app, out)
-}
+#[cfg(test)]
+#[path = "replace/review_tests.rs"]
+mod review_tests;
 
 #[cfg(test)]
 mod tests {
@@ -260,6 +242,8 @@ mod tests {
         handle_key(&mut app, &mut out, key(KeyCode::Enter)).unwrap();
         type_text(&mut app, &mut out, "fox");
         handle_key(&mut app, &mut out, key(KeyCode::Enter)).unwrap();
+        app.handle_key_with(&mut out, key(KeyCode::Char('y')))
+            .unwrap();
 
         assert_eq!(app.buffer.to_string(), "fox dog cat");
         app.buffer.undo();
@@ -277,7 +261,7 @@ mod tests {
         handle_key(&mut app, &mut out, key(KeyCode::Enter)).unwrap();
 
         assert_eq!(app.buffer.to_string(), "猫 cat 猫\n猫");
-        assert!(app.message.is_none());
+        assert!(app.message.as_deref().unwrap_or("").contains("3 replaced"));
         app.buffer.undo();
         assert_eq!(app.buffer.to_string(), "α cat α\nα");
     }
@@ -334,6 +318,8 @@ mod tests {
             KeyEvent::new(KeyCode::Char('s'), KeyModifiers::ALT),
         )
         .unwrap();
+        app.handle_key_with(&mut out, key(KeyCode::Char('y')))
+            .unwrap();
         assert_eq!(app.buffer.to_string(), "👩\u{200d}💻\nend stays");
         app.buffer.undo();
         assert_eq!(app.buffer.to_string(), "a\u{301}猫target stays");

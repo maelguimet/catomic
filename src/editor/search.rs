@@ -14,7 +14,9 @@ use memchr::memchr_iter;
 
 use crate::buffer::{Buffer, Cursor, DescriptorPosition, DescriptorSource};
 
+mod forward;
 mod literal;
+pub(crate) use forward::{ForwardMatch, ForwardSearchTask};
 
 use literal::LiteralByteMatcher;
 const SEARCH_CHUNK_BYTES: usize = 64 * 1024;

@@ -12,6 +12,8 @@ pub(super) fn active(app: &super::super::App) -> Scope {
 
     if help::is_viewing(app) {
         Scope::Help
+    } else if replace::is_reviewing(app) {
+        Scope::ReplaceReview
     } else if search::is_active(app) {
         Scope::Search
     } else if completion::is_active(app) {

@@ -265,3 +265,57 @@ fn wrapped_boundary_completion_never_splits_a_long_zwj_cluster() {
     );
     assert!(rendered.contains('x'));
 }
+
+#[test]
+fn reveal_packs_actual_rows_for_wide_graphemes_and_tabs() {
+    for text in [
+        "猫猫猫猫",
+        "🙂🙂🙂🙂",
+        "a\t猫🙂bc\t猫",
+        "a\u{301}猫👩\u{200d}💻z",
+    ] {
+        for width in 1..=8 {
+            for height in 1..=4 {
+                let mut buffer = SimpleBuffer::from_text(text);
+                buffer.set_cursor(Cursor {
+                    row: 0,
+                    col: text.chars().count(),
+                });
+                let origin =
+                    start_col_near_cursor(&buffer, buffer.cursor(), height, width).unwrap();
+                let rows = visible_rows(&buffer, 0, origin, height, width).unwrap();
+                assert!(
+                    wrapped_cursor_position(buffer.cursor(), &rows, 0, width).is_some(),
+                    "text={text:?}, width={width}, height={height}, origin={origin}"
+                );
+                assert_eq!(buffer.grapheme_range(0, origin).unwrap().start, origin);
+            }
+        }
+    }
+}
+
+#[test]
+fn reveal_layout_work_stays_near_the_cursor_on_a_long_line() {
+    let text = format!("{}a{}猫", "x".repeat(100_000), "\u{301}".repeat(100));
+    let mut buffer = crate::buffer::PieceTable::from_text(&text);
+    buffer.set_cursor(Cursor {
+        row: 0,
+        col: text.chars().count(),
+    });
+    crate::editor::text_layout::reset_visible_layout_builds();
+    let origin = start_col_near_cursor(&buffer, buffer.cursor(), 2, 3).unwrap();
+    let (builds, _) = crate::editor::text_layout::take_visible_layout_build_counts();
+    assert!(builds <= 6, "reveal must not plan the logical-line prefix");
+    assert_eq!(buffer.grapheme_range(0, origin).unwrap().start, origin);
+    let rows = visible_rows(&buffer, 0, origin, 2, 3).unwrap();
+    assert!(wrapped_cursor_position(buffer.cursor(), &rows, 0, 3).is_some());
+}
+
+#[test]
+fn visibility_agrees_with_output_for_an_oversized_final_grapheme() {
+    let mut buffer = SimpleBuffer::from_text("猫");
+    buffer.set_cursor(Cursor { row: 0, col: 1 });
+    assert!(!cursor_is_visible(&buffer, 0, 0, 2, 1).unwrap());
+    let origin = start_col_near_cursor(&buffer, buffer.cursor(), 2, 1).unwrap();
+    assert!(cursor_is_visible(&buffer, 0, origin, 2, 1).unwrap());
+}

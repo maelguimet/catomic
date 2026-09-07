@@ -424,6 +424,11 @@ would fall inside one, including when extending a selection. This uses the whole
 grapheme boundary, including flag pairs and long combining or ZWJ sequences, in
 ordinary buffers and the current page of paged files.
 
+With soft wrapping enabled, cursor movement (including `End`) reveals the
+editing position using the rows actually occupied by graphemes and tabs. Wide
+characters can leave unused cells at row edges; those cells do not count as
+space for the next row's cursor.
+
 Some terminal emulators reserve `Ctrl+Shift+Left` and `Ctrl+Shift+Right` for
 terminal-tab navigation and never send those events to Catomic. Use
 `Alt+Shift+Left` and `Alt+Shift+Right` as the built-in word-selection fallbacks;

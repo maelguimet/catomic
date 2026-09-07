@@ -305,3 +305,30 @@ fn wheel_over_status_or_an_active_prompt_is_ignored() {
     handle_mouse_wheel(&mut app, &mut out, ScrollDirection::Down, 0).unwrap();
     assert_eq!(app.screen.scroll_top, 0);
 }
+
+#[test]
+fn end_reveals_wrapped_wide_text_in_composed_output() {
+    for line_numbers in [false, true] {
+        for width in [3, 4, 81, 82] {
+            let mut app = App::new(None).unwrap();
+            app.buffer = Box::new(PieceTable::from_text(&"猫".repeat(1_000)));
+            app.view.soft_wrap = true;
+            app.view_preferences.set_line_numbers(line_numbers);
+            app.screen.width = width;
+            app.screen.height = 24;
+            let mut out = Vec::new();
+            crate::app::input::handle_key_with(
+                &mut app,
+                &mut out,
+                KeyEvent::new(KeyCode::End, KeyModifiers::NONE),
+            )
+            .unwrap();
+            assert_eq!(app.buffer.cursor(), Cursor { row: 0, col: 1_000 });
+            assert!(
+                String::from_utf8_lossy(&out).ends_with("\x1b[?25h\x1b[?2026l"),
+                "width={width}, line_numbers={line_numbers}, origin={}",
+                app.screen.wrap_col
+            );
+        }
+    }
+}

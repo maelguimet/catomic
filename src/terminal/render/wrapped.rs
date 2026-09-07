@@ -111,11 +111,14 @@ fn cursor_visibility(
     let mut start_col = wrap_col;
     let mut examined = 0;
     while examined < height && document_row < buffer.line_count() {
-        let (end_col, line_end) = wrapped_row_end(buffer, document_row, start_col, width)?;
+        let (layout, line_end) = wrapped_row_layout(buffer, document_row, start_col, width)?;
+        let end_col = start_col.saturating_add(layout.source_scalar_len());
+        let cursor_cell = layout.scalar_to_cell(cursor.col.saturating_sub(start_col));
         examined += 1;
         if cursor.row == document_row
             && cursor.col >= start_col
             && (cursor.col < end_col || (line_end && cursor.col == end_col))
+            && (cursor_cell < width || (line_end && cursor_cell == width))
         {
             return Ok(CursorVisibility {
                 visible: true,
@@ -246,22 +249,45 @@ pub(crate) fn start_col_near_cursor(
     if width == 0 || height == 0 {
         return Ok(0);
     }
+    // Bound work by a viewport-sized scalar suffix, even on a huge logical
+    // line. Resolve its first boundary in the buffer's global grapheme context.
     let capacity = width.saturating_mul(height).saturating_sub(1);
     let approximate = cursor.col.saturating_sub(capacity);
-    let context_start = approximate.saturating_sub(64);
-    let fetch_width = cursor.col.saturating_sub(context_start).saturating_add(1);
-    let text = line_window(buffer, cursor.row, context_start, fetch_width)?;
-    let requested = approximate.saturating_sub(context_start);
-    let boundary = text_layout::ceil_to_grapheme_col(&text, requested);
-    let visible: String = text.chars().skip(boundary).collect();
-    let cursor_col = cursor
-        .col
-        .saturating_sub(context_start.saturating_add(boundary));
-    let cursor_cell = text_layout::scalar_to_cell(&visible, cursor_col);
-    let hidden = cursor_cell.saturating_sub(capacity);
-    Ok(context_start
-        .saturating_add(boundary)
-        .saturating_add(text_layout::scalar_at_cell(&visible, hidden)))
+    let range = buffer.grapheme_range(cursor.row, approximate)?;
+    let mut start_col = if range.start < approximate {
+        range.end
+    } else {
+        range.start
+    };
+    let mut origins = std::collections::VecDeque::new();
+    loop {
+        let mut rows = Vec::with_capacity(1);
+        append_line_rows(buffer, cursor.row, start_col, 1, width, &mut rows)?;
+        let Some(row) = rows.first() else {
+            return Ok(cursor.col);
+        };
+        origins.push_back(start_col);
+        if origins.len() > height {
+            origins.pop_front();
+        }
+        if row_contains_cursor(row, cursor) {
+            let cell = row
+                .layout
+                .scalar_to_cell(cursor.col.saturating_sub(start_col));
+            // An oversized final cluster has no cell for its trailing cursor.
+            // Start at that boundary so an empty row can display the caret.
+            return Ok(if cell > width || (cell == width && !row.line_end) {
+                cursor.col
+            } else {
+                origins.front().copied().unwrap_or(start_col)
+            });
+        }
+        let end_col = row.end_col();
+        if row.line_end || end_col <= start_col {
+            return Ok(cursor.col);
+        }
+        start_col = end_col;
+    }
 }
 
 pub(super) fn compose_buffer(
@@ -412,15 +438,15 @@ pub(super) fn append_line_rows<'a>(
     Ok(())
 }
 
-fn wrapped_row_end(
+fn wrapped_row_layout(
     buffer: &dyn Buffer,
     document_row: usize,
     start_col: usize,
     width: usize,
-) -> io::Result<(usize, bool)> {
+) -> io::Result<(text_layout::VisibleLineLayout, bool)> {
     let line_len = buffer.line_char_count(document_row).unwrap_or(0);
     if start_col >= line_len {
-        return Ok((start_col.min(line_len), true));
+        return Ok((text_layout::VisibleLineLayout::default(), true));
     }
     let fetch = width.saturating_mul(4).saturating_add(32);
     let mut layout = text_layout::VisibleLineLayout::default();
@@ -434,7 +460,7 @@ fn wrapped_row_end(
         &mut layout,
     )?;
     let end_col = start_col.saturating_add(layout.source_scalar_len());
-    Ok((end_col, end_col >= line_len))
+    Ok((layout, end_col >= line_len))
 }
 
 pub(super) fn compose_row<W: Write + ?Sized>(
@@ -661,20 +687,6 @@ fn row_contains_cursor(row: &WrappedRow<'_>, cursor: Cursor) -> bool {
     cursor.row == row.document_row
         && cursor.col >= row.start_col
         && (cursor.col < row.end_col() || (row.line_end && cursor.col == row.end_col()))
-}
-
-fn line_window<'a>(
-    buffer: &'a dyn Buffer,
-    row: usize,
-    start_col: usize,
-    width: usize,
-) -> io::Result<Cow<'a, str>> {
-    Ok(buffer
-        .try_visible_lines_window(row, 1, start_col, width)?
-        .into_iter()
-        .next()
-        .map(|line| line.content)
-        .unwrap_or_default())
 }
 
 fn cow_prefix<'a>(text: Cow<'a, str>, byte_len: usize) -> Cow<'a, str> {

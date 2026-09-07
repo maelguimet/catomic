@@ -1027,9 +1027,13 @@ be 5–3,600 seconds and the size cap 1–16 MiB.
 On a later open, a newer valid sidecar produces a notice. Run `recover` to open
 it read-only. Press `Enter` to apply the recovered text as one undoable buffer
 edit, or `Escape` to leave the source untouched. Source drift invalidates the
-preview, and recovery never replaces the source file automatically.
+preview, and recovery never replaces the source file automatically. Autosave
+pauses while a recovery offer is unresolved, including after closing its preview
+with `Escape`, so editing cannot replace the offered crash contents. Run
+`recover` again to return to the preview.
 
-A successful normal save removes the sidecar. Recovery is a crash aid, not a
+Applying recovery resumes autosave. A successful normal save discards any
+unresolved recovery and removes the sidecar. Recovery is a crash aid, not a
 replacement for explicit saves, backups, or version control.
 
 ## Configuration reference

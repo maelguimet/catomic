@@ -78,16 +78,21 @@ fn open(
     candidate: RecoveryCandidate,
 ) -> io::Result<()> {
     let Some(source_path) = app.file.path.clone() else {
+        app.recovery.offered_candidate = Some(candidate);
         app.message_warning("Source file is missing; recovery preview was not opened.");
         return app.render(out);
     };
     let source_snapshot = match crate::file::io::capture_file_snapshot(&source_path) {
         Ok(snapshot @ FileSnapshot::Present { .. }) => snapshot,
         Ok(FileSnapshot::Absent) => {
+            app.recovery.offered_candidate = Some(candidate);
             app.message_warning("Source file is missing; recovery preview was not opened.");
             return app.render(out);
         }
-        Err(error) => return preview_error(app, out, error),
+        Err(error) => {
+            app.recovery.offered_candidate = Some(candidate);
+            return preview_error(app, out, error);
+        }
     };
     super::super::view::cancel_preview(app);
     app.recovery.preview = Some(RecoveryPreview {
@@ -178,6 +183,7 @@ fn apply(
         || app.file.disk_snapshot != preview.source_file_state_snapshot
         || ensure_path_matches_snapshot(&preview.source_path, &preview.source_snapshot).is_err()
     {
+        app.recovery.offered_candidate = Some(preview.candidate);
         app.message_warning("Source changed during recovery preview; nothing applied.");
         return app.render(out);
     }
@@ -222,6 +228,8 @@ fn cancel(
 pub(crate) fn close(app: &mut super::super::App) -> bool {
     if let Some(preview) = app.recovery.preview.take() {
         restore_scroll(app, &preview);
+        // Closing the preview leaves the recovery decision unresolved.
+        app.recovery.offered_candidate = Some(preview.candidate);
         true
     } else {
         false

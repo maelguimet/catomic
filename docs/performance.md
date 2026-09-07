@@ -286,6 +286,26 @@ suffix's grapheme segmentation differs. An arbitrarily long grapheme or an
 affected regional-indicator run can therefore require proportionate work and
 temporary storage. Unrelated line prefixes are never rescanned during typing.
 
+Navigation queries reuse these globally aligned blocks to return the complete
+grapheme around a scalar column. Page movement floors its target; word movement
+retains its directional floor/ceiling behavior; previous/next movement uses the
+same boundaries. A fixed overlap cannot reconstruct regional-indicator parity
+or arbitrarily long combining/ZWJ context, so navigation never segments an
+arbitrary cropped prefix as though it began a grapheme. The query validates
+file-backed input before and after access, including ASCII and line-end fast
+paths, and clamps raw CRLF graphemes to the requested logical line.
+
+The cold/edited/undo regression measures queries after 64 KiB, 1 MiB and 4 MiB
+ordinary prefixes. ASCII reads no grapheme text; a position deep in 25,000
+regional indicators reads one 4,096–4,104-byte block, independent of prefix
+length. An indivisible grapheme containing 40,000 combining marks requires its
+80,012-byte block; that proportional read is intentional. Sparse scalar/byte
+checkpoint reads are measured separately and stay bounded. The paged variant
+measures actual descriptor reads as well: 138,212–138,252 bytes at the sampled
+position, including the existing 16,384-scalar file checkpoints, across cold,
+edited, undo and redo states. No additional index,
+line-prefix scan, file scan or background work is introduced by navigation.
+
 Construction batches complete grapheme runs in the shared layout module's
 conservative Latin/CJK width domain. Emoji, joiners, presentation selectors,
 script ligatures and controls retain per-grapheme renderer semantics: the width

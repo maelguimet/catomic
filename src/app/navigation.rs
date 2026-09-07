@@ -10,14 +10,12 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::{Buffer, Cursor};
 use crate::config::actions::Action;
-use crate::editor::text_layout;
 
 mod paragraph;
 
 #[cfg(test)]
 mod page_tests;
 
-const GRAPHEME_WINDOW: usize = 64;
 const WORD_WINDOW: usize = 256;
 
 #[cfg(test)]
@@ -166,28 +164,19 @@ pub(super) fn previous_grapheme_cursor(buffer: &dyn Buffer) -> io::Result<Cursor
         let row = cursor.row - 1;
         return Ok(Cursor {
             row,
-            col: buffer.line_char_count(row).unwrap_or(0),
+            col: buffer.grapheme_range(row, usize::MAX)?.end,
         });
     }
-    let mut width = GRAPHEME_WINDOW.min(cursor.col);
-    loop {
-        let start = cursor.col - width;
-        let text = line_window(buffer, cursor.row, start, width)?;
-        let local = text_layout::previous_grapheme_col(&text, width);
-        if local > 0 || start == 0 {
-            return Ok(Cursor {
-                row: cursor.row,
-                col: start.saturating_add(local),
-            });
-        }
-        width = width.saturating_mul(2).min(cursor.col);
-    }
+    Ok(Cursor {
+        row: cursor.row,
+        col: buffer.grapheme_range(cursor.row, cursor.col - 1)?.start,
+    })
 }
 
 pub(super) fn next_grapheme_cursor(buffer: &dyn Buffer) -> io::Result<Cursor> {
     let cursor = buffer.cursor();
-    let line_len = buffer.line_char_count(cursor.row).unwrap_or(0);
-    if cursor.col >= line_len {
+    let range = buffer.grapheme_range(cursor.row, cursor.col)?;
+    if range.is_empty() {
         let last = buffer.line_count().saturating_sub(1);
         return Ok(if cursor.row < last {
             Cursor {
@@ -198,38 +187,14 @@ pub(super) fn next_grapheme_cursor(buffer: &dyn Buffer) -> io::Result<Cursor> {
             cursor
         });
     }
-    let remaining = line_len - cursor.col;
-    let mut width = GRAPHEME_WINDOW.min(remaining);
-    loop {
-        let text = line_window(buffer, cursor.row, cursor.col, width)?;
-        let local = text_layout::next_grapheme_col(&text, 0);
-        if local < text.chars().count() || width == remaining {
-            return Ok(Cursor {
-                row: cursor.row,
-                col: cursor.col.saturating_add(local),
-            });
-        }
-        width = width.saturating_mul(2).min(remaining);
-    }
+    Ok(Cursor {
+        row: cursor.row,
+        col: range.end,
+    })
 }
 
 fn snap_buffer_col(buffer: &dyn Buffer, row: usize, col: usize) -> io::Result<usize> {
-    let line_len = buffer.line_char_count(row).unwrap_or(0);
-    let col = col.min(line_len);
-    if col == 0 || col == line_len {
-        return Ok(col);
-    }
-    let mut before = GRAPHEME_WINDOW.min(col);
-    loop {
-        let start = col - before;
-        let width = before.saturating_add(GRAPHEME_WINDOW).min(line_len - start);
-        let text = line_window(buffer, row, start, width)?;
-        let local = text_layout::snap_to_grapheme_col(&text, before);
-        if local > 0 || start == 0 {
-            return Ok(start.saturating_add(local));
-        }
-        before = before.saturating_mul(2).min(col);
-    }
+    Ok(buffer.grapheme_range(row, col)?.start)
 }
 
 fn line_window(
@@ -376,21 +341,8 @@ fn word_right(app: &super::App) -> io::Result<Cursor> {
 }
 
 fn ceil_buffer_col(buffer: &dyn Buffer, row: usize, col: usize) -> io::Result<usize> {
-    let floor = snap_buffer_col(buffer, row, col)?;
-    if floor == col {
-        return Ok(floor);
-    }
-    let line_len = buffer.line_char_count(row).unwrap_or(0);
-    let remaining = line_len.saturating_sub(floor);
-    let mut width = GRAPHEME_WINDOW.min(remaining);
-    loop {
-        let text = line_window(buffer, row, floor, width)?;
-        let next = text_layout::next_grapheme_col(&text, 0);
-        if next < text.chars().count() || width == remaining {
-            return Ok(floor.saturating_add(next));
-        }
-        width = width.saturating_mul(2).min(remaining);
-    }
+    let range = buffer.grapheme_range(row, col)?;
+    Ok(if range.start == col { col } else { range.end })
 }
 
 fn word_class(ch: char) -> u8 {

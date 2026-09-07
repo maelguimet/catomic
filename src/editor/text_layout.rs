@@ -227,19 +227,6 @@ pub(crate) fn clipped_scalar_len(text: &str, max_cells: usize) -> usize {
     scalar_at_cell(text, max_cells)
 }
 
-pub(crate) fn previous_grapheme_col(text: &str, scalar_col: usize) -> usize {
-    let mut previous = 0usize;
-    let mut scalar = 0usize;
-    for grapheme in text.graphemes(true) {
-        if scalar >= scalar_col {
-            break;
-        }
-        previous = scalar;
-        scalar = scalar.saturating_add(grapheme.chars().count());
-    }
-    previous
-}
-
 pub(crate) fn next_grapheme_col(text: &str, scalar_col: usize) -> usize {
     let mut scalar = 0usize;
     for grapheme in text.graphemes(true) {
@@ -440,7 +427,6 @@ mod tests {
     fn movement_and_clipping_never_split_graphemes() {
         let text = "a\u{301}猫x";
         assert_eq!(next_grapheme_col(text, 0), 2);
-        assert_eq!(previous_grapheme_col(text, 2), 0);
         assert_eq!(clipped_scalar_len(text, 1), 2);
         assert_eq!(clipped_scalar_len(text, 2), 2);
         assert_eq!(clipped_scalar_len(text, 3), 3);

@@ -134,7 +134,7 @@ impl CellIndex {
         builder.finish()
     }
 
-    fn ensure_valid(&self) -> io::Result<()> {
+    pub(crate) fn ensure_valid(&self) -> io::Result<()> {
         match &self.error {
             Some((kind, message)) => Err(io::Error::new(*kind, message.clone())),
             None => Ok(()),
@@ -192,6 +192,56 @@ impl CellIndex {
             node = current.right.as_deref();
         }
         Ok(cell)
+    }
+
+    /// Scalar range around `at`, using a globally aligned block. The caller
+    /// supplies the scalar column at that byte so the same block text can map
+    /// the result without another source checkpoint read.
+    pub(crate) fn grapheme_scalar_range_at<'a>(
+        &self,
+        at: usize,
+        col: usize,
+        mut read: impl FnMut(Range<usize>) -> io::Result<Cow<'a, str>>,
+    ) -> io::Result<Range<usize>> {
+        self.ensure_valid()?;
+        if at >= bytes(&self.root) {
+            return Ok(col..col);
+        }
+        let (start, block) = self.locate(at).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "grapheme block is unavailable")
+        })?;
+        if block.ascii {
+            return Ok(col..col + 1);
+        }
+        let text = read(start..start + block.bytes)?;
+        self.record_work(0, text.len());
+        for (offset, grapheme) in
+            unicode_segmentation::UnicodeSegmentation::grapheme_indices(text.as_ref(), true)
+        {
+            if at < start + offset + grapheme.len() {
+                let before = text
+                    .get(offset..at - start)
+                    .ok_or_else(|| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "grapheme position is not scalar aligned",
+                        )
+                    })?
+                    .chars()
+                    .count();
+                let first = col.checked_sub(before).ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "grapheme starts before its logical line",
+                    )
+                })?;
+                return Ok(first..first + grapheme.chars().count());
+            }
+        }
+        Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "grapheme block text is incomplete",
+        ))
     }
 
     pub(crate) fn prepare_splice<'a>(

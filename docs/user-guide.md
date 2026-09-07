@@ -420,7 +420,9 @@ current page of a paged file. Paragraph movement follows the exception below.
 
 `PageUp` and `PageDown` clamp at the first or last line when less than a full
 viewport remains. Their target column snaps to the start of a grapheme if it
-would fall inside one, including when extending a selection.
+would fall inside one, including when extending a selection. This uses the whole
+grapheme boundary, including flag pairs and long combining or ZWJ sequences, in
+ordinary buffers and the current page of paged files.
 
 Some terminal emulators reserve `Ctrl+Shift+Left` and `Ctrl+Shift+Right` for
 terminal-tab navigation and never send those events to Catomic. Use

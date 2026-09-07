@@ -126,6 +126,24 @@ pub trait Buffer {
         ))
     }
 
+    /// Scalar range of the complete grapheme containing `col` on `row`.
+    /// A boundary belongs to the following grapheme; line end returns an empty
+    /// range. Editable backends use indexed global boundaries, without a prefix scan.
+    fn grapheme_range(&self, row: usize, col: usize) -> io::Result<std::ops::Range<usize>> {
+        let line = self.line(row).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "grapheme row is unavailable")
+        })?;
+        let mut start = 0;
+        for grapheme in unicode_segmentation::UnicodeSegmentation::graphemes(line.as_ref(), true) {
+            let end = start + grapheme.chars().count();
+            if col < end {
+                return Ok(start..end);
+            }
+            start = end;
+        }
+        Ok(start..start)
+    }
+
     /// Preserve immutable original bytes before a save can rewrite their inode.
     /// The filesystem callback may supply a private, byte-identical descriptor;
     /// storage keeps all page coordinates, edits, and history on that original.

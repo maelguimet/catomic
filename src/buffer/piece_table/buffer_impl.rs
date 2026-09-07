@@ -28,6 +28,10 @@ impl Buffer for PieceTable {
         })
     }
 
+    fn grapheme_range(&self, row: usize, col: usize) -> io::Result<std::ops::Range<usize>> {
+        self.indexed_grapheme_range(row, col)
+    }
+
     fn line_count(&self) -> usize {
         self.index.line_count()
     }

@@ -211,6 +211,8 @@ pub(crate) struct RenderOptions<'a> {
     pub(crate) status_path: Option<(usize, usize)>,
     pub(crate) status_filename: Option<(usize, usize)>,
     pub(crate) status_selection: Option<(usize, usize)>,
+    /// Prompt caret in zero-based status-row terminal cells.
+    pub(crate) status_cursor: Option<usize>,
     pub(crate) emoji_picker: Option<EmojiPicker<'a>>,
     pub(crate) window_title: Option<&'a str>,
     /// Optional second bottom row for touch actions.
@@ -240,10 +242,25 @@ impl Default for RenderOptions<'_> {
             status_path: None,
             status_filename: None,
             status_selection: None,
+            status_cursor: None,
             emoji_picker: None,
             window_title: None,
             action_bar: None,
         }
+    }
+}
+
+pub(super) fn presentation_cursor(
+    viewport: RenderViewport,
+    options: RenderOptions<'_>,
+    document_cursor: Option<(usize, usize)>,
+) -> Option<(usize, usize)> {
+    match options.status_cursor {
+        Some(col) => super::screen::bottom_layout(viewport.height, options.action_bar.is_some())
+            .status_row
+            .filter(|_| col < viewport.width)
+            .map(|row| (row, col + 1)),
+        None => document_cursor,
     }
 }
 

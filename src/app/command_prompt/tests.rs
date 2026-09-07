@@ -825,3 +825,194 @@ fn command_prompt_paste_preserves_selection_and_redo_history() {
     app.buffer.redo();
     assert_eq!(app.buffer.to_string(), "source!");
 }
+
+#[test]
+fn every_command_prompt_edits_at_a_grapheme_caret_without_touching_source() {
+    for kind in [
+        PromptKind::Command,
+        PromptKind::OpenFile,
+        PromptKind::SaveAs,
+        PromptKind::GotoLine,
+    ] {
+        let mut app = super::super::App::new(None).unwrap();
+        app.buffer = Box::new(crate::buffer::PieceTable::from_text("source"));
+        app.buffer.insert_char('!');
+        app.buffer.undo();
+        let history = app.buffer.edit_history_position();
+        let revision = app.buffer.content_revision();
+        let cursor = app.buffer.cursor();
+        let mut out = Vec::new();
+        open_prompt(&mut app, &mut out, kind).unwrap();
+        super::super::input::handle_paste(&mut app, &mut out, "a\u{301}猫tail").unwrap();
+        for code in [
+            KeyCode::Home,
+            KeyCode::Right,
+            KeyCode::Delete,
+            KeyCode::Char('!'),
+            KeyCode::End,
+            KeyCode::Left,
+            KeyCode::Backspace,
+        ] {
+            app.handle_key_with(&mut out, key(code, KeyModifiers::NONE))
+                .unwrap();
+        }
+        let prompt = app.command_prompt.active.as_ref().unwrap();
+        assert_eq!(prompt.text.as_str(), "a\u{301}!tal");
+        assert_eq!(prompt.text.caret(), "a\u{301}!ta".len());
+        assert_eq!(app.buffer.to_string(), "source");
+        assert_eq!(app.buffer.content_revision(), revision);
+        assert_eq!(app.buffer.edit_history_position(), history);
+        assert_eq!(app.buffer.cursor(), cursor);
+        assert!(!app.file.dirty);
+        app.handle_key_with(&mut out, key(KeyCode::Esc, KeyModifiers::NONE))
+            .unwrap();
+        app.buffer.redo();
+        assert_eq!(app.buffer.to_string(), "!source");
+    }
+}
+
+#[test]
+fn remapped_prompt_actions_edit_submit_and_cancel_without_source_selection_loss() {
+    let mut app = super::super::App::new(None).unwrap();
+    app.buffer = Box::new(crate::buffer::PieceTable::from_text("source"));
+    let mut out = Vec::new();
+    app.handle_key_with(&mut out, key(KeyCode::Right, KeyModifiers::SHIFT))
+        .unwrap();
+    let selected = app.selection.active();
+    app.keybindings = crate::config::keybindings::parse(
+        r#"
+        [keybindings]
+        prompt-move-left = ["alt+l"]
+        prompt-move-right = ["alt+r"]
+        prompt-home = ["alt+h"]
+        prompt-end = ["alt+e"]
+        prompt-delete-forward = ["alt+d"]
+        prompt-delete-backward = ["alt+b"]
+        prompt-submit = ["alt+s"]
+        prompt-cancel = ["alt+c"]
+    "#,
+    )
+    .unwrap();
+    open_command_prompt(&mut app, &mut out).unwrap();
+    type_text(&mut app, &mut out, "xhelp!");
+    for ch in ['h', 'd', 'r', 'e', 'l', 'd'] {
+        app.handle_key_with(&mut out, key(KeyCode::Char(ch), KeyModifiers::ALT))
+            .unwrap();
+    }
+    for code in [
+        KeyCode::Home,
+        KeyCode::Delete,
+        KeyCode::Left,
+        KeyCode::Backspace,
+        KeyCode::Enter,
+        KeyCode::Esc,
+    ] {
+        app.handle_key_with(&mut out, key(code, KeyModifiers::NONE))
+            .unwrap();
+    }
+    assert_eq!(
+        app.command_prompt.active.as_ref().unwrap().text.as_str(),
+        "help"
+    );
+    assert_eq!(app.selection.active(), selected);
+    app.handle_key_with(&mut out, key(KeyCode::Char('s'), KeyModifiers::ALT))
+        .unwrap();
+    assert!(super::super::help::is_viewing(&app));
+    app.handle_key_with(&mut out, key(KeyCode::Esc, KeyModifiers::NONE))
+        .unwrap();
+    open_command_prompt(&mut app, &mut out).unwrap();
+    type_text(&mut app, &mut out, "ignored");
+    app.handle_key_with(&mut out, key(KeyCode::Char('b'), KeyModifiers::ALT))
+        .unwrap();
+    assert_eq!(
+        app.command_prompt.active.as_ref().unwrap().text.as_str(),
+        "ignore"
+    );
+    app.handle_key_with(&mut out, key(KeyCode::Char('c'), KeyModifiers::ALT))
+        .unwrap();
+    assert!(app.command_prompt.active.is_none());
+    assert_eq!(app.buffer.to_string(), "source");
+}
+
+#[test]
+fn path_completion_is_explicit_and_limited_to_open_and_save_as() {
+    crate::file::path_completion::REQUESTS.set(0);
+    let mut app = super::super::App::new(None).unwrap();
+    let mut out = Vec::new();
+    type_text(&mut app, &mut out, "normal source typing");
+    for kind in [PromptKind::Command, PromptKind::GotoLine] {
+        open_prompt(&mut app, &mut out, kind).unwrap();
+        type_text(&mut app, &mut out, "/tmp/");
+        app.handle_key_with(&mut out, key(KeyCode::Tab, KeyModifiers::NONE))
+            .unwrap();
+        app.handle_key_with(&mut out, key(KeyCode::Esc, KeyModifiers::NONE))
+            .unwrap();
+    }
+    assert_eq!(crate::file::path_completion::REQUESTS.get(), 0);
+    super::super::search::open_prompt(&mut app, &mut out).unwrap();
+    app.handle_key_with(&mut out, key(KeyCode::Tab, KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key_with(&mut out, key(KeyCode::Esc, KeyModifiers::NONE))
+        .unwrap();
+    super::super::replace::open_prompt(&mut app, &mut out, false).unwrap();
+    app.handle_key_with(&mut out, key(KeyCode::Tab, KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key_with(&mut out, key(KeyCode::Esc, KeyModifiers::NONE))
+        .unwrap();
+    assert_eq!(crate::file::path_completion::REQUESTS.get(), 0);
+    let root =
+        std::env::temp_dir().join(format!("catomic_prompt_completion_{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("file with spaces.txt"), "disk").unwrap();
+    for kind in [PromptKind::OpenFile, PromptKind::SaveAs] {
+        open_prompt(&mut app, &mut out, kind).unwrap();
+        let text = format!("{}/file w", root.display());
+        super::super::input::handle_paste(&mut app, &mut out, &text).unwrap();
+        app.keybindings =
+            crate::config::keybindings::parse("[keybindings]\nprompt-complete-path = [\"alt+t\"]")
+                .unwrap();
+        let requests = crate::file::path_completion::REQUESTS.get();
+        app.handle_key_with(&mut out, key(KeyCode::Tab, KeyModifiers::NONE))
+            .unwrap();
+        assert_eq!(crate::file::path_completion::REQUESTS.get(), requests);
+        app.handle_key_with(&mut out, key(KeyCode::Char('t'), KeyModifiers::ALT))
+            .unwrap();
+        assert_eq!(crate::file::path_completion::REQUESTS.get(), requests + 1);
+        assert!(app
+            .command_prompt
+            .active
+            .as_ref()
+            .unwrap()
+            .text
+            .as_str()
+            .ends_with("file with spaces.txt"));
+        app.handle_key_with(&mut out, key(KeyCode::Esc, KeyModifiers::NONE))
+            .unwrap();
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn editing_or_pasting_in_prompt_disarms_dirty_quit_without_touching_source() {
+    let mut app = super::super::App::new(None).unwrap();
+    let mut out = Vec::new();
+    type_text(&mut app, &mut out, "dirty source");
+    open_command_prompt(&mut app, &mut out).unwrap();
+    for input in [Some(KeyCode::Char('x')), Some(KeyCode::Left), None] {
+        app.handle_key_with(&mut out, key(KeyCode::Char('q'), KeyModifiers::CONTROL))
+            .unwrap();
+        assert!(app.pending_quit_confirm);
+        assert!(!app.should_quit);
+        out.clear();
+        match input {
+            Some(code) => app
+                .handle_key_with(&mut out, key(code, KeyModifiers::NONE))
+                .unwrap(),
+            None => super::super::input::handle_paste(&mut app, &mut out, "paste").unwrap(),
+        }
+        assert!(!app.pending_quit_confirm);
+        assert!(String::from_utf8_lossy(&out).contains("Command:"));
+        assert_eq!(app.buffer.to_string(), "dirty source");
+        assert!(app.file.dirty);
+    }
+}

@@ -37,6 +37,7 @@ mod indentation;
 mod open;
 mod overwrite;
 mod paging;
+mod prompt_input;
 mod recovery;
 mod reload;
 mod render;

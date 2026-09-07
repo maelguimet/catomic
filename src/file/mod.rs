@@ -8,6 +8,7 @@
 
 pub(crate) mod identity;
 pub mod io;
+pub(crate) mod path_completion;
 pub mod recovery;
 pub mod size;
 pub mod text_format;

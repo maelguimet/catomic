@@ -535,9 +535,11 @@ original file.
 `Tab` indents them without replacing the selection; `Shift+Tab` unindents the
 current or selected lines as one edit.
 
-`Enter` preserves the current line's indentation and adds one configured tab
-level after common block openers. The global tab width defaults to four spaces,
-and language-specific settings can override it by file extension.
+`Enter` inherits the leading whitespace before the insertion point and adds
+one configured tab level after common block openers. At the start of a line,
+it inserts a blank line; inside indentation, it preserves the remaining
+whitespace without copying it again. The global tab width defaults to four
+spaces, and language-specific settings can override it by file extension.
 
 ## Finding, replacing, and going to a line
 

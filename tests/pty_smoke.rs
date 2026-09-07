@@ -560,6 +560,21 @@ fn pty_selected_tab_indents_before_save_and_quit() -> TestResult {
 }
 
 #[test]
+fn pty_home_enter_preserves_indented_source_bytes() -> TestResult {
+    for source in ["    foo", "\tfoo", " \t  foo"] {
+        let temp = TempPath::new("newline_indentation");
+        fs::write(&temp.path, source)?;
+        let mut editor = PtyEditor::spawn(&temp.path)?;
+
+        editor.wait_for_initial_render()?;
+        editor.send_keys(b"\x1b[F\x1b[H\r\x13\x11")?; // End, Home, Enter, save, quit.
+        editor.wait_for_exit()?;
+        assert_eq!(fs::read_to_string(&temp.path)?, format!("\n{source}"));
+    }
+    Ok(())
+}
+
+#[test]
 fn pty_page_navigation_keeps_combining_and_zwj_clusters_whole() -> TestResult {
     for cluster in ["e\u{301}", "👩\u{200d}💻"] {
         let temp = TempPath::new("page_graphemes");

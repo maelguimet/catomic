@@ -112,9 +112,6 @@ impl App {
         out: &mut dyn crate::terminal::TerminalOutput,
         key: KeyEvent,
     ) -> io::Result<()> {
-        if link_interaction::handle_key(self, out, key)? {
-            return Ok(());
-        }
         input::handle_key_with(self, out, key)
     }
 

@@ -54,7 +54,7 @@ fn source_http_urls_use_osc8_without_linking_trailing_punctuation() {
 
     assert!(output.contains(concat!(
         "\x1b]8;;https://example.com\x1b\\",
-        "https://example.com",
+        "\x1b[94mhttps://example.com",
         "\x1b[0m\x1b]8;;\x1b\\"
     )));
     assert!(output.ends_with('.'));
@@ -62,18 +62,11 @@ fn source_http_urls_use_osc8_without_linking_trailing_punctuation() {
 }
 
 #[test]
-fn source_links_are_underlined_only_for_ctrl_or_the_hovered_range() {
+fn source_links_are_colored_and_only_the_hovered_link_is_underlined() {
     let content = "one https://one.example two https://two.example";
-    let all = rendered(
-        content,
-        0,
-        RenderOptions {
-            links_underlined: true,
-            ..RenderOptions::default()
-        },
-    );
-    assert!(all.contains("\x1b[4mhttps://one.example"));
-    assert!(all.contains("\x1b[4mhttps://two.example"));
+    let all = rendered(content, 0, RenderOptions::default());
+    assert!(all.contains("\x1b[94mhttps://one.example"));
+    assert!(all.contains("\x1b[94mhttps://two.example"));
 
     let hovered = rendered(
         content,
@@ -86,8 +79,41 @@ fn source_links_are_underlined_only_for_ctrl_or_the_hovered_range() {
             ..RenderOptions::default()
         },
     );
-    assert!(!hovered.contains("\x1b[4mhttps://one.example"));
-    assert!(hovered.contains("\x1b[4mhttps://two.example"));
+    assert!(hovered.contains("\x1b[94mhttps://one.example"));
+    assert!(hovered.contains("\x1b[94;4mhttps://two.example"));
+}
+
+#[test]
+fn source_links_use_the_link_theme_role_below_active_highlights() {
+    let content = "https://example.com";
+    let options = RenderOptions {
+        theme: crate::config::theme::parse("[theme.colors]\nmarkdown_link = 'bright-magenta'\n")
+            .unwrap(),
+        ..RenderOptions::default()
+    };
+    assert!(rendered(content, 0, options).contains("\x1b[95mhttps://example.com"));
+
+    for (highlight_kind, expected) in [
+        (HighlightKind::Selection, "\x1b[30;46mhttps://example.com"),
+        (HighlightKind::Search, "\x1b[30;43mhttps://example.com"),
+    ] {
+        let selected = rendered(
+            content,
+            0,
+            RenderOptions {
+                highlight: Some(TextHighlight {
+                    start: Cursor { row: 0, col: 0 },
+                    end: Cursor {
+                        row: 0,
+                        col: content.len(),
+                    },
+                }),
+                highlight_kind,
+                ..options
+            },
+        );
+        assert!(selected.contains(expected));
+    }
 }
 
 #[test]

@@ -122,7 +122,7 @@ fn moving_over_a_link_underlines_it_until_the_pointer_leaves() {
             end: Cursor { row: 0, col: 31 },
         })
     );
-    assert!(String::from_utf8_lossy(&out).contains("\x1b[4mhttps://example.com/path"));
+    assert!(String::from_utf8_lossy(&out).contains("\x1b[94;4mhttps://example.com/path"));
 
     out.clear();
     handle_mouse(&mut app, &mut out, event(MouseEventKind::Moved, 12, 0)).unwrap();
@@ -130,7 +130,7 @@ fn moving_over_a_link_underlines_it_until_the_pointer_leaves() {
 
     handle_mouse(&mut app, &mut out, event(MouseEventKind::Moved, 2, 0)).unwrap();
     assert!(app.link_interaction.hovered().is_none());
-    assert!(!String::from_utf8_lossy(&out).contains("\x1b[4mhttps://example.com/path"));
+    assert!(String::from_utf8_lossy(&out).contains("\x1b[94mhttps://example.com/path"));
 }
 
 fn app_with(text: &str) -> super::super::super::App {

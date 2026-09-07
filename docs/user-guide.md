@@ -358,6 +358,10 @@ Add `Shift` to the grapheme, line, word, page, and document-edge movement forms
 to extend the selection. `Ctrl+A` selects the active ordinary buffer or the
 current page of a paged file. Paragraph movement follows the exception below.
 
+`PageUp` and `PageDown` clamp at the first or last line when less than a full
+viewport remains. Their target column snaps to the start of a grapheme if it
+would fall inside one, including when extending a selection.
+
 Some terminal emulators reserve `Ctrl+Shift+Left` and `Ctrl+Shift+Right` for
 terminal-tab navigation and never send those events to Catomic. Use
 `Alt+Shift+Left` and `Alt+Shift+Right` as the built-in word-selection fallbacks;

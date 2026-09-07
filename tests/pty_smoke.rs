@@ -560,6 +560,22 @@ fn pty_selected_tab_indents_before_save_and_quit() -> TestResult {
 }
 
 #[test]
+fn pty_page_navigation_keeps_combining_and_zwj_clusters_whole() -> TestResult {
+    for cluster in ["e\u{301}", "👩\u{200d}💻"] {
+        let temp = TempPath::new("page_graphemes");
+        fs::write(&temp.path, format!("ab\n{cluster}x"))?;
+        let mut editor = PtyEditor::spawn(&temp.path)?;
+
+        editor.wait_for_initial_render()?;
+        // Right, PageDown, Delete, save, quit.
+        editor.send_keys(b"\x1b[C\x1b[6~\x1b[3~\x13\x11")?;
+        editor.wait_for_exit()?;
+        assert_eq!(fs::read_to_string(&temp.path)?, "ab\nx");
+    }
+    Ok(())
+}
+
+#[test]
 fn pty_save_undo_save_quit_writes_expected_file() -> TestResult {
     let temp = TempPath::new("save_undo");
     let mut editor = PtyEditor::spawn_monochrome(&temp.path)?;

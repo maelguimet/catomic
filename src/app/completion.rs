@@ -152,7 +152,7 @@ pub(crate) fn dispatch_editor_action(
     out: &mut dyn crate::terminal::TerminalOutput,
     action: Action,
 ) -> io::Result<bool> {
-    if action != Action::Indent {
+    if action != Action::Indent || app.selection.active().is_some() {
         return Ok(false);
     }
     Ok(open(app, out)? == OpenOutcome::Handled)

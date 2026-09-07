@@ -1,5 +1,5 @@
 //! Purpose: verify goto/command input dispatch and paged goto integration.
-//! Owns: focused App prompt fixtures and async worker polling.
+//! Owns: focused App prompt fixtures and async worker completion.
 //! Must not: contain production prompt behavior or depend on a real terminal.
 //! Invariants: temporary paged files are removed after completed tests.
 
@@ -32,15 +32,24 @@ fn submit_command(app: &mut super::super::App, out: &mut Vec<u8>, command: &str)
         .unwrap();
 }
 
-fn poll_until_done(app: &mut super::super::App, out: &mut Vec<u8>) {
-    for _ in 0..10_000 {
-        poll_goto(app, out).unwrap();
-        if app.command_prompt.running.is_none() {
-            return;
-        }
-        std::thread::yield_now();
+fn wait_until_done(app: &mut super::super::App, out: &mut Vec<u8>) {
+    if let Some(running) = app.command_prompt.running.as_mut() {
+        let timeout = std::time::Duration::from_secs(10);
+        running
+            .task
+            .wait_until_ready(timeout)
+            .unwrap_or_else(|error| {
+                panic!(
+                    "goto worker for line {} failed to become ready within {timeout:?}: {error}",
+                    running.requested_line
+                )
+            });
     }
-    panic!("goto worker did not finish");
+    poll_goto(app, out).expect("apply completed goto result");
+    assert!(
+        app.command_prompt.running.is_none(),
+        "completed goto is still running"
+    );
 }
 
 fn config_fixture(label: &str) -> std::path::PathBuf {
@@ -711,7 +720,7 @@ fn paged_goto_switches_to_the_global_logical_line() {
     type_text(&mut app, &mut out, "3");
     app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
         .unwrap();
-    poll_until_done(&mut app, &mut out);
+    wait_until_done(&mut app, &mut out);
 
     assert_eq!(app.buffer.page_info().unwrap().page_number, 2);
     assert_eq!(

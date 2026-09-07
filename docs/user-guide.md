@@ -358,6 +358,10 @@ Add `Shift` to the grapheme, line, word, page, and document-edge movement forms
 to extend the selection. `Ctrl+A` selects the active ordinary buffer or the
 current page of a paged file. Paragraph movement follows the exception below.
 
+`PageUp` and `PageDown` clamp at the first or last line when less than a full
+viewport remains. Their target column snaps to the start of a grapheme if it
+would fall inside one, including when extending a selection.
+
 Some terminal emulators reserve `Ctrl+Shift+Left` and `Ctrl+Shift+Right` for
 terminal-tab navigation and never send those events to Catomic. Use
 `Alt+Shift+Left` and `Alt+Shift+Right` as the built-in word-selection fallbacks;
@@ -1032,7 +1036,10 @@ edit, or `Escape` to leave the source untouched. Source drift invalidates the
 preview, and recovery never replaces the source file automatically. Autosave
 pauses while a recovery offer is unresolved, including after closing its preview
 with `Escape`, so editing cannot replace the offered crash contents. Run
-`recover` again to return to the preview.
+`recover` again to return to the preview. Recovery also works for a named file
+that crashed before its first save: previewing and applying its sidecar leave the
+source path absent until you explicitly save. If the source appears or changes
+while the preview is open, recovery refuses to apply stale content.
 
 Applying recovery resumes autosave. A successful normal save discards any
 unresolved recovery and removes the sidecar. Recovery is a crash aid, not a
@@ -1530,6 +1537,13 @@ sync fails, aliases may contain partial new content; Catomic reports that risk
 and keeps the complete staged file at the path named in the error for recovery.
 Failures before the in-place update leave every alias unchanged and remove the
 staging file.
+
+Before saving a hard-linked paged file, Catomic preserves its original bytes in
+an owner-only temporary snapshot so page navigation and undo/redo remain usable
+after the shared inode changes. This first save needs temporary disk space for
+the original file in addition to the sibling staging file. The snapshot has no
+directory entry, is reused by later saves, and is released when the buffer closes.
+If preserving the original fails, the save stops before updating any alias.
 
 Do not remove ACLs, attributes, or links merely to appease the editor unless you
 understand why they exist.

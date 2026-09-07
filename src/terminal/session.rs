@@ -27,10 +27,11 @@ const XTERM_OTHER_KEYS_FORMAT_RESET: &[u8] = b"\x1b[>4f";
 const TITLE_STACK_PUSH: &[u8] = b"\x1b[22;0t";
 const TITLE_STACK_POP: &[u8] = b"\x1b[23;0t";
 
+// Preserve terminal-composed UTF-8 text (keyboard layout, Shift, Caps Lock,
+// AltGr, and dead keys). Forcing all keys into CSI-u reports loses that text;
+// only shortcuts need disambiguation, and editing does not need release events.
 pub(crate) const KEYBOARD_FLAGS_REQUEST: KeyboardEnhancementFlags =
-    KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-        .union(KeyboardEnhancementFlags::REPORT_EVENT_TYPES)
-        .union(KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES);
+    KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES;
 
 /// Restores a single editor session. Clones coordinate panic and Drop cleanup.
 #[derive(Clone)]

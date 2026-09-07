@@ -383,8 +383,11 @@ paths keep their normal insert/replace semantics.
 
 Catomic requests the Kitty enhanced-keyboard protocol plus xterm modified-key
 mode 2 with CSI-u output formatting while its alternate screen is active, both
-directly and under a multiplexer. Kitty's minimal disambiguation flag
-deliberately keeps ordinary text on the legacy path; the xterm requests are the
+directly and under a multiplexer. Catomic requests only Kitty's disambiguation
+flag so ordinary text stays on the terminal's UTF-8 path. The terminal applies
+the keyboard layout, Shift, Caps Lock, AltGr, and dead-key composition; for
+example, `Shift+;` on French AZERTY inserts `.`. Catomic does not request all-key
+escape-code or key-release reporting. The xterm requests are the
 complementary path that lets a compatible terminal preserve modified Backspace
 in the form Crossterm decodes. A terminal path that honors a request and
 preserves the physical key reports plain `Backspace` without modifiers and
@@ -720,10 +723,11 @@ OSC 8 hyperlinks. `Ctrl`+click hands the URL under the pointer to the system
 opener (`xdg-open`, or `termux-open-url` on Termux) without moving the cursor;
 ordinary clicks keep Catomic's cursor and selection behavior. Markdown preview
 labels use the same action for HTTP(S) destinations. Catomic underlines the
-link under the pointer when the terminal reports mouse motion, and underlines
-all detected links while `Ctrl` is held when enhanced modifier events are
-available. Terminals that do not support either report retain the opening and
-ordinary editing behavior without synthetic input.
+link under the pointer when the terminal reports mouse motion. Holding `Ctrl`
+alone does not underline all links: Catomic leaves ordinary text on the
+terminal's UTF-8 path instead of requesting standalone modifier events.
+`Ctrl`+click uses the modifiers reported with the mouse event and remains
+available without standalone keyboard modifier reports.
 
 An unsupported named file opens with a one-time `Plain text` status message.
 When color is deliberately or automatically disabled, the startup status says

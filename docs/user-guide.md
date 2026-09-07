@@ -281,6 +281,32 @@ catomic ./update
 catomic ./-draft.md
 ```
 
+Use a single `-` argument to import piped or redirected text:
+
+```sh
+printf 'hello\n' | catomic -
+catomic --color=never - < notes.txt
+```
+
+Catomic reads to EOF before opening an editable, untitled buffer. `Ctrl+S`
+opens Save As. The import remains unsaved, even after an edit is undone back to
+the imported text; `Ctrl+Q` asks before discarding it. An empty import is also
+unsaved. UTF-8 BOM and newline format are preserved when saved, as for named
+files. Standard input is consumed only with this explicit argument; ordinary
+startup leaves redirected input unread. Use `catomic ./-` for a file literally
+named `-`.
+
+Standard input must be a pipe or redirected file, with a controlling terminal
+available for interactive keys and stdout connected to a terminal. A missing
+controlling terminal is rejected before reading input. Invalid UTF-8 and read
+errors fail before entering the editor and never create a partial document.
+Input is limited to 100 MiB (104,857,600 bytes), matching the normal full-buffer
+file tier; Catomic reads at most one additional byte to detect overflow and
+rejects larger input. Save larger command output to a file and open its path
+to use editable paging. Inputs above 10 MiB show the usual large-file warning.
+The producer must close its output to finish the import; `Ctrl+C` cancels while
+waiting for input.
+
 The file path and file contents must be valid UTF-8. The editor also requires
 a UTF-8 locale selected by the first non-empty value among `LC_ALL`,
 `LC_CTYPE`, and `LANG`. Help and version output remain available when the locale

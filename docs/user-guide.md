@@ -151,6 +151,14 @@ Latest commit requires Git and Cargo/Rust. Missing tools, an unsupported
 toolchain, or a build failure are reported for that target and never cause a
 stable fallback.
 
+The installed version and update availability use the binary's embedded commit
+and source state, separately from the retained checkout's current revision.
+Pulling a checkout ahead without reinstalling still requires an update. Only a
+clean binary built at the requested commit is already current; a dirty build is
+rebuilt even at the same commit. If its commit or source state is unavailable,
+the check reports availability as unknown and an explicit update rebuilds the
+requested revision.
+
 - A binary that retains an official checkout uses that checkout only when
   latest commit is selected. Its current branch may have any name but must
   fast-forward to official `master`. Catomic preserves local changes, refuses
@@ -384,6 +392,10 @@ Add `Shift` to the grapheme, line, word, page, and document-edge movement forms
 to extend the selection. `Ctrl+A` selects the active ordinary buffer or the
 current page of a paged file. Paragraph movement follows the exception below.
 
+`PageUp` and `PageDown` clamp at the first or last line when less than a full
+viewport remains. Their target column snaps to the start of a grapheme if it
+would fall inside one, including when extending a selection.
+
 Some terminal emulators reserve `Ctrl+Shift+Left` and `Ctrl+Shift+Right` for
 terminal-tab navigation and never send those events to Catomic. Use
 `Alt+Shift+Left` and `Alt+Shift+Right` as the built-in word-selection fallbacks;
@@ -561,9 +573,11 @@ original file.
 `Tab` indents them without replacing the selection; `Shift+Tab` unindents the
 current or selected lines as one edit.
 
-`Enter` preserves the current line's indentation and adds one configured tab
-level after common block openers. The global tab width defaults to four spaces,
-and language-specific settings can override it by file extension.
+`Enter` inherits the leading whitespace before the insertion point and adds
+one configured tab level after common block openers. At the start of a line,
+it inserts a blank line; inside indentation, it preserves the remaining
+whitespace without copying it again. The global tab width defaults to four
+spaces, and language-specific settings can override it by file extension.
 
 ## Finding, replacing, and going to a line
 

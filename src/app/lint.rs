@@ -69,8 +69,8 @@ fn start_with_config(
     out: &mut dyn crate::terminal::TerminalOutput,
     config: LinterConfig,
 ) -> io::Result<()> {
-    if app.buffer.is_read_only() || app.buffer.page_info().is_some() {
-        app.message_info("Lint is unavailable for a paged or read-only buffer.");
+    if app.buffer.page_info().is_some() {
+        app.message_info("Lint is unavailable for a paged buffer.");
         return app.render(out);
     }
     if app.file.dirty {

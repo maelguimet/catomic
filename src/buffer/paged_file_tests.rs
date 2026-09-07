@@ -754,3 +754,92 @@ fn crlf_page_add_compaction_preserves_materialized_index_and_history() {
     assert_eq!(written, "猫猫!\nrow".as_bytes());
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn preserving_paged_originals_keeps_history_when_staging_or_commit_fails() {
+    use crate::file::io::{atomic_write_with, snapshot_hard_linked_file};
+    use std::fs;
+    use std::io;
+
+    for replace_target in [false, true] {
+        let path = temp_path(if replace_target {
+            "snapshot_race"
+        } else {
+            "snapshot_abort"
+        });
+        let alias = path.with_extension("alias");
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(&alias);
+        fs::write(&path, "first\nsecond\nthird").unwrap();
+        fs::hard_link(&path, &alias).unwrap();
+        let mut buffer = PagedFileBuffer::open(&path, 1).unwrap();
+        buffer.insert_char('X');
+        buffer.next_page().unwrap();
+        buffer.insert_char('Y');
+        buffer.finish_undo_group();
+        let position = buffer.edit_history_position();
+
+        let error = atomic_write_with(&path, |writer| {
+            buffer.preserve_file_backing(&mut snapshot_hard_linked_file)?;
+            buffer.write_to(writer)?;
+            if replace_target {
+                fs::remove_file(&path)?;
+                fs::write(&path, "external")
+            } else {
+                Err(io::Error::other("abort staging"))
+            }
+        })
+        .unwrap_err();
+        if replace_target {
+            assert!(error.to_string().contains("changed before commit"));
+            assert_eq!(fs::read_to_string(&path).unwrap(), "external");
+        } else {
+            assert_eq!(error.to_string(), "abort staging");
+            assert_eq!(fs::read_to_string(&path).unwrap(), "first\nsecond\nthird");
+        }
+        assert_eq!(fs::read_to_string(&alias).unwrap(), "first\nsecond\nthird");
+        assert_eq!(buffer.edit_history_position(), position);
+        // Both resident page originals must have moved to the private snapshot,
+        // including the inactive page retained for undo.
+        fs::write(&alias, "later external rewrite").unwrap();
+        let mut actual = Vec::new();
+        buffer.write_to(&mut actual).unwrap();
+        assert_eq!(actual, b"Xfirst\nYsecond\nthird");
+        buffer.undo();
+        assert_eq!(buffer.line(0).unwrap(), "second");
+        buffer.undo();
+        assert_eq!(buffer.line(0).unwrap(), "first");
+        buffer.redo();
+        assert_eq!(buffer.line(0).unwrap(), "Xfirst");
+        buffer.redo();
+        assert_eq!(buffer.line(0).unwrap(), "Ysecond");
+        buffer.next_page().unwrap();
+        assert_eq!(buffer.line(0).unwrap(), "third");
+
+        fs::remove_file(path).unwrap();
+        fs::remove_file(alias).unwrap();
+    }
+}
+
+#[test]
+fn failed_backing_preservation_leaves_paged_edits_and_history_intact() {
+    let path = temp_path("snapshot_failure");
+    std::fs::write(&path, "first\nsecond").unwrap();
+    let mut buffer = PagedFileBuffer::open(&path, 1).unwrap();
+    buffer.insert_char('X');
+    buffer.next_page().unwrap();
+    buffer.insert_char('Y');
+    buffer
+        .preserve_file_backing(&mut |_| Err(std::io::Error::other("cannot copy original")))
+        .unwrap_err();
+    let mut actual = Vec::new();
+    buffer.write_to(&mut actual).unwrap();
+    assert_eq!(actual, b"Xfirst\nYsecond");
+    buffer.undo();
+    buffer.undo();
+    assert_eq!(buffer.line(0).unwrap(), "first");
+    buffer.redo();
+    buffer.redo();
+    assert_eq!(buffer.line(0).unwrap(), "Ysecond");
+    std::fs::remove_file(path).unwrap();
+}

@@ -1529,6 +1529,13 @@ and keeps the complete staged file at the path named in the error for recovery.
 Failures before the in-place update leave every alias unchanged and remove the
 staging file.
 
+Before saving a hard-linked paged file, Catomic preserves its original bytes in
+an owner-only temporary snapshot so page navigation and undo/redo remain usable
+after the shared inode changes. This first save needs temporary disk space for
+the original file in addition to the sibling staging file. The snapshot has no
+directory entry, is reused by later saves, and is released when the buffer closes.
+If preserving the original fails, the save stops before updating any alias.
+
 Do not remove ACLs, attributes, or links merely to appease the editor unless you
 understand why they exist.
 

@@ -92,6 +92,15 @@ impl OriginalBacking {
         Self::File(Arc::new(FileOriginal::new(file, snapshot, metadata)))
     }
 
+    pub(crate) fn with_file_snapshot(&self, file: &std::fs::File) -> io::Result<Option<Self>> {
+        match self {
+            Self::Owned { .. } => Ok(None),
+            Self::File(original) => Ok(Some(Self::File(Arc::new(
+                original.with_file_snapshot(file)?,
+            )))),
+        }
+    }
+
     /// Read a prefix that ends on a scalar boundary. The returned text may use
     /// up to three bytes beyond `max_bytes` to avoid splitting a UTF-8 scalar.
     pub(crate) fn search_text_segment(

@@ -284,6 +284,11 @@ pub(crate) fn invalidate(app: &mut super::App) -> bool {
     had_state
 }
 
+#[cfg(test)]
+pub(crate) fn generation_for_test(app: &super::App) -> u64 {
+    app.lint.generation
+}
+
 pub(crate) fn is_running(app: &super::App) -> bool {
     app.lint.running.is_some()
 }

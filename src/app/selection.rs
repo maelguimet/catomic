@@ -104,6 +104,11 @@ impl SelectionUiState {
     }
 }
 
+#[cfg(test)]
+pub(crate) fn set_active_for_test(app: &mut super::App, anchor: Cursor, focus: Cursor) {
+    app.selection.range = Some(Selection::new(anchor, focus));
+}
+
 fn ordered_range(anchor: usize, focus: usize) -> (usize, usize) {
     if anchor <= focus {
         (anchor, focus)

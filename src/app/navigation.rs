@@ -155,6 +155,21 @@ pub(crate) fn snap_current_grapheme(app: &mut super::App) -> io::Result<()> {
     Ok(())
 }
 
+/// Restore a valid post-edit cursor without leaving it inside a grapheme formed
+/// by text on both sides of the edit. Forward snapping keeps a newly joined
+/// grapheme behind the cursor, matching ordinary insertion semantics.
+pub(crate) fn snap_current_grapheme_forward(app: &mut super::App) -> io::Result<()> {
+    let cursor = app.buffer.cursor();
+    let col = ceil_buffer_col(&*app.buffer, cursor.row, cursor.col)?;
+    if col != cursor.col {
+        app.buffer.set_cursor(Cursor {
+            row: cursor.row,
+            col,
+        });
+    }
+    Ok(())
+}
+
 pub(super) fn previous_grapheme_cursor(buffer: &dyn Buffer) -> io::Result<Cursor> {
     let cursor = buffer.cursor();
     if cursor.col == 0 {

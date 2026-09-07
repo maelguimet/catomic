@@ -560,6 +560,22 @@ fn pty_selected_tab_indents_before_save_and_quit() -> TestResult {
 }
 
 #[test]
+fn pty_page_navigation_keeps_combining_and_zwj_clusters_whole() -> TestResult {
+    for cluster in ["e\u{301}", "👩\u{200d}💻"] {
+        let temp = TempPath::new("page_graphemes");
+        fs::write(&temp.path, format!("ab\n{cluster}x"))?;
+        let mut editor = PtyEditor::spawn(&temp.path)?;
+
+        editor.wait_for_initial_render()?;
+        // Right, PageDown, Delete, save, quit.
+        editor.send_keys(b"\x1b[C\x1b[6~\x1b[3~\x13\x11")?;
+        editor.wait_for_exit()?;
+        assert_eq!(fs::read_to_string(&temp.path)?, "ab\nx");
+    }
+    Ok(())
+}
+
+#[test]
 fn pty_save_undo_save_quit_writes_expected_file() -> TestResult {
     let temp = TempPath::new("save_undo");
     let mut editor = PtyEditor::spawn_monochrome(&temp.path)?;
@@ -2168,6 +2184,38 @@ fn pty_catnap_recovery_previews_then_saves_explicitly() -> TestResult {
 
     assert_eq!(fs::read_to_string(active)?, "recovered");
     assert!(!sidecar.exists(), "successful save must remove the catnap");
+    Ok(())
+}
+
+#[test]
+fn pty_catnap_recovery_for_never_saved_file_creates_source_only_on_save() -> TestResult {
+    let project = TempProject::new("catnap_never_saved");
+    project.write(
+        "catomic/config.toml",
+        "[recovery]\nenabled = true\ninterval_secs = 30\nmax_bytes = 1024\n",
+    );
+    let active = project.root.join("note.txt");
+    let sidecar = project.write("note.txt.catnap", "recovered");
+    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
+
+    editor.wait_for_output("never-saved recovery offer", "Catnap recovery found.")?;
+    editor.send_keys(b"\x1b[80;6urecover\r")?;
+    editor.wait_for_output(
+        "never-saved recovery preview",
+        "Catnap preview (read-only). Enter recovers; Esc cancels.",
+    )?;
+    assert!(!active.exists());
+    editor.send_keys(b"\r")?;
+    editor.wait_for_output(
+        "never-saved recovery apply",
+        "Catnap recovered; Ctrl+Z undoes it",
+    )?;
+    assert!(!active.exists());
+    editor.send_keys(b"\x13\x11")?;
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(active)?, "recovered");
+    assert!(!sidecar.exists());
     Ok(())
 }
 

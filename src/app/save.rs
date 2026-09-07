@@ -362,6 +362,10 @@ fn do_atomic_save_to(
     app.buffer.finish_undo_group();
     let path_changed = app.file.path.as_ref() != Some(&target);
     let save_result = file::io::atomic_write_with(&target, |writer| {
+        // Hard-link saves rewrite the original inode. Preserve its old bytes
+        // first so paged coordinates and undo/redo keep their immutable source.
+        app.buffer
+            .preserve_file_backing(&mut file::io::snapshot_hard_linked_file)?;
         file::text_format::write_buffer(&*app.buffer, writer, app.file.text_format)
     });
     match save_result {

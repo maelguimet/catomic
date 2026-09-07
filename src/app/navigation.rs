@@ -1,7 +1,7 @@
 //! Purpose: provide standard line, page, document, and word navigation shortcuts.
 //! Owns: cursor target calculation and Ctrl+Backspace/Delete word edits.
 //! Must not: decode terminal bytes, scan whole documents, save, or start background work.
-//! Invariants: targets are scalar-coordinate boundaries; word deletion is one undoable edit.
+//! Invariants: targets are scalar coordinates on grapheme boundaries; word deletion is one undoable edit.
 
 use std::io;
 
@@ -13,6 +13,9 @@ use crate::config::actions::Action;
 use crate::editor::text_layout;
 
 mod paragraph;
+
+#[cfg(test)]
+mod page_tests;
 
 const GRAPHEME_WINDOW: usize = 64;
 const WORD_WINDOW: usize = 256;
@@ -39,8 +42,8 @@ pub(crate) fn handle_key(
         KeyCode::End if command => Some(document_end(app)),
         KeyCode::Home if no_extra => Some(line_edge(app, false)),
         KeyCode::End if no_extra => Some(line_edge(app, true)),
-        KeyCode::PageUp if no_extra => Some(page_target(app, false)),
-        KeyCode::PageDown if no_extra => Some(page_target(app, true)),
+        KeyCode::PageUp if no_extra => Some(page_target(app, false)?),
+        KeyCode::PageDown if no_extra => Some(page_target(app, true)?),
         KeyCode::Left if command && !key.modifiers.contains(KeyModifiers::ALT) => {
             Some(word_left(app)?)
         }
@@ -83,10 +86,10 @@ pub(crate) fn dispatch_action(
         Action::DocumentEnd => (document_end(app), false),
         Action::SelectDocumentStart => (Cursor::default(), true),
         Action::SelectDocumentEnd => (document_end(app), true),
-        Action::ViewportUp => (page_target(app, false), false),
-        Action::ViewportDown => (page_target(app, true), false),
-        Action::SelectViewportUp => (page_target(app, false), true),
-        Action::SelectViewportDown => (page_target(app, true), true),
+        Action::ViewportUp => (page_target(app, false)?, false),
+        Action::ViewportDown => (page_target(app, true)?, false),
+        Action::SelectViewportUp => (page_target(app, false)?, true),
+        Action::SelectViewportDown => (page_target(app, true)?, true),
         Action::WordLeft => (word_left(app)?, false),
         Action::WordRight => (word_right(app)?, false),
         Action::SelectWordLeft => (word_left(app)?, true),
@@ -263,7 +266,7 @@ fn document_end(app: &super::App) -> Cursor {
     }
 }
 
-fn page_target(app: &super::App, down: bool) -> Cursor {
+fn page_target(app: &super::App, down: bool) -> io::Result<Cursor> {
     let current = app.buffer.cursor();
     let distance = app.screen.visible_height().max(1);
     let last = app.buffer.line_count().saturating_sub(1);
@@ -272,12 +275,10 @@ fn page_target(app: &super::App, down: bool) -> Cursor {
     } else {
         current.row.saturating_sub(distance)
     };
-    Cursor {
+    Ok(Cursor {
         row,
-        col: current
-            .col
-            .min(app.buffer.line_char_count(row).unwrap_or(0)),
-    }
+        col: snap_buffer_col(&*app.buffer, row, current.col)?,
+    })
 }
 
 fn word_left(app: &super::App) -> io::Result<Cursor> {

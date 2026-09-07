@@ -392,6 +392,23 @@ impl FileOriginal {
         }
     }
 
+    /// Reuse original coordinates and CRLF metadata with a byte-identical copy.
+    pub(crate) fn with_file_snapshot(&self, file: &File) -> io::Result<Self> {
+        self.ensure_unchanged()?;
+        let snapshot = FileMetadataSnapshot::capture(file)?;
+        if snapshot.len != self.snapshot.len {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "original-file snapshot has the wrong length",
+            ));
+        }
+        Ok(Self::new(
+            file.try_clone()?,
+            snapshot,
+            Arc::clone(&self.metadata),
+        ))
+    }
+
     fn ensure_snapshot(&self, expected: FileMetadataSnapshot) -> io::Result<()> {
         #[cfg(test)]
         self.metadata_check_count

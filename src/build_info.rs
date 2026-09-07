@@ -14,16 +14,15 @@ pub(crate) enum SourceState {
 }
 
 pub(crate) fn version_line() -> String {
-    let commit = match env!("CATOMIC_BUILD_COMMIT") {
-        UNKNOWN => None,
-        commit => Some(commit),
-    };
-    let state = match env!("CATOMIC_BUILD_DIRTY") {
+    format_version(env!("CARGO_PKG_VERSION"), commit(), source_state())
+}
+
+pub(crate) fn source_state() -> SourceState {
+    match env!("CATOMIC_BUILD_DIRTY") {
         "0" => SourceState::Clean,
         "1" => SourceState::Dirty,
         _ => SourceState::Unknown,
-    };
-    format_version(env!("CARGO_PKG_VERSION"), commit, state)
+    }
 }
 
 pub(crate) fn commit() -> Option<&'static str> {

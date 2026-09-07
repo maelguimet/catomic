@@ -73,6 +73,46 @@ fn open_edit_and_save_preserve_utf8_bom_and_crlf() {
 }
 
 #[test]
+fn save_and_save_as_preserve_leading_content_feff_with_a_format_bom() {
+    for (name, ending) in [("lf", "\n"), ("crlf", "\r\n"), ("cr", "\r")] {
+        let source = temp_path(&format!("content_feff_{name}.txt"));
+        let target = temp_path(&format!("content_feff_copy_{name}.txt"));
+        let _ = fs::remove_file(&target);
+        let original = format!("\u{feff}\u{feff}hello{ending}");
+        fs::write(&source, &original).unwrap();
+        let mut app = App::new(Some(&source.to_string_lossy())).unwrap();
+        let mut out = Vec::new();
+        assert_eq!(app.buffer.to_string(), "\u{feff}hello\n");
+
+        app.handle_key_with(
+            &mut out,
+            make_key(KeyCode::Char('s'), KeyModifiers::CONTROL),
+        )
+        .unwrap();
+        assert_eq!(fs::read(&source).unwrap(), original.as_bytes());
+        assert!(!app.file.dirty);
+        assert_eq!(app.buffer.to_string(), "\u{feff}hello\n");
+
+        app.handle_key_with(
+            &mut out,
+            make_key(KeyCode::Char('\u{feff}'), KeyModifiers::NONE),
+        )
+        .unwrap();
+        super::super::super::save::handle_save_as(&mut app, &mut out, &target.to_string_lossy())
+            .unwrap();
+        assert_eq!(
+            fs::read(&target).unwrap(),
+            format!("\u{feff}{original}").as_bytes()
+        );
+        assert!(!app.file.dirty);
+        assert_eq!(app.buffer.to_string(), "\u{feff}\u{feff}hello\n");
+        assert_eq!(fs::read(&source).unwrap(), original.as_bytes());
+        let _ = fs::remove_file(source);
+        let _ = fs::remove_file(target);
+    }
+}
+
+#[test]
 fn save_as_keeps_the_source_text_format() {
     let source = temp_path("source_cr.txt");
     let target = temp_path("target_cr.txt");

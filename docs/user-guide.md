@@ -1031,9 +1031,16 @@ be 5–3,600 seconds and the size cap 1–16 MiB.
 On a later open, a newer valid sidecar produces a notice. Run `recover` to open
 it read-only. Press `Enter` to apply the recovered text as one undoable buffer
 edit, or `Escape` to leave the source untouched. Source drift invalidates the
-preview, and recovery never replaces the source file automatically.
+preview, and recovery never replaces the source file automatically. Autosave
+pauses while a recovery offer is unresolved, including after closing its preview
+with `Escape`, so editing cannot replace the offered crash contents. Run
+`recover` again to return to the preview. Recovery also works for a named file
+that crashed before its first save: previewing and applying its sidecar leave the
+source path absent until you explicitly save. If the source appears or changes
+while the preview is open, recovery refuses to apply stale content.
 
-A successful normal save removes the sidecar. Recovery is a crash aid, not a
+Applying recovery resumes autosave. A successful normal save discards any
+unresolved recovery and removes the sidecar. Recovery is a crash aid, not a
 replacement for explicit saves, backups, or version control.
 
 ## Configuration reference
@@ -1528,6 +1535,13 @@ sync fails, aliases may contain partial new content; Catomic reports that risk
 and keeps the complete staged file at the path named in the error for recovery.
 Failures before the in-place update leave every alias unchanged and remove the
 staging file.
+
+Before saving a hard-linked paged file, Catomic preserves its original bytes in
+an owner-only temporary snapshot so page navigation and undo/redo remain usable
+after the shared inode changes. This first save needs temporary disk space for
+the original file in addition to the sibling staging file. The snapshot has no
+directory entry, is reused by later saves, and is released when the buffer closes.
+If preserving the original fails, the save stops before updating any alias.
 
 Do not remove ACLs, attributes, or links merely to appease the editor unless you
 understand why they exist.

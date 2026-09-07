@@ -46,9 +46,11 @@ impl VisibleLineLayout {
         self.build_internal(text, max_cells, false);
     }
 
-    /// Build a wrapped row while guaranteeing scalar progress. If the first
-    /// grapheme is wider than the viewport, it is recorded for row/cursor
-    /// coordinates but remains outside the visible output range.
+    /// Prefer the last whitespace boundary when a word crosses the row edge.
+    /// Preserve every source grapheme, falling back to cell-fitting splits for
+    /// overlong words. If the first grapheme is wider than the viewport, it is
+    /// recorded for row/cursor coordinates but remains outside the visible
+    /// output range.
     pub(crate) fn build_wrapped(&mut self, text: &str, max_cells: usize) {
         self.build_internal(text, max_cells, true);
     }
@@ -63,12 +65,28 @@ impl VisibleLineLayout {
         self.source_scalar_len = 0;
         self.cell_len = 0;
 
+        let mut whitespace_boundary = None;
         for (byte_start, grapheme) in text.grapheme_indices(true) {
+            let is_whitespace = ensure_progress && grapheme.chars().all(char::is_whitespace);
             let (width, scalar_count, has_control) =
                 layout_grapheme_metrics(grapheme, self.cell_len);
             let cell_end = self.cell_len.saturating_add(width);
             let fits = cell_end <= max_cells;
             if !(fits || ensure_progress && self.graphemes.is_empty()) {
+                if ensure_progress && !is_whitespace {
+                    if let Some(boundary) = whitespace_boundary {
+                        // Reuse the measured prefix: whitespace remains in the
+                        // document and in the row that consumed it.
+                        self.graphemes.truncate(boundary);
+                        if let Some(last) = self.graphemes.last() {
+                            self.visible_byte_len = last.byte_end;
+                            self.visible_scalar_len = last.scalar_end;
+                            self.source_byte_len = last.byte_end;
+                            self.source_scalar_len = last.scalar_end;
+                            self.cell_len = last.cell_end;
+                        }
+                    }
+                }
                 break;
             }
             let scalar_end = self.source_scalar_len.saturating_add(scalar_count);
@@ -84,6 +102,9 @@ impl VisibleLineLayout {
                 is_space: grapheme == " ",
                 has_control,
             });
+            if is_whitespace {
+                whitespace_boundary = Some(self.graphemes.len());
+            }
             self.source_byte_len = byte_end;
             self.source_scalar_len = scalar_end;
             self.cell_len = cell_end;
@@ -481,6 +502,27 @@ mod tests {
         assert_eq!(layout.scalar_to_cell(2), 1);
         assert_eq!(layout.scalar_to_cell(4), 5);
         assert_eq!(layout.boundary_byte(2), "a\u{301}".len());
+    }
+
+    #[test]
+    fn wrapped_layout_moves_a_word_and_retains_exact_coordinates() {
+        let mut layout = VisibleLineLayout::default();
+        layout.build_wrapped("hello world", 8);
+        assert_eq!(layout.byte_len(), 6);
+        assert_eq!(layout.source_byte_len(), 6);
+        assert_eq!(layout.scalar_len(), 6);
+        assert_eq!(layout.source_scalar_len(), 6);
+        assert_eq!(layout.cell_len(), 6);
+        assert_eq!(layout.scalar_to_cell(8), 6);
+        assert_eq!(layout.boundary_byte(8), 6);
+        assert_eq!(layout.grapheme_range(0, 8).len(), 6);
+
+        layout.build("hello world", 8);
+        assert_eq!(
+            layout.byte_len(),
+            8,
+            "unwrapped clipping still fills the row"
+        );
     }
 
     #[test]

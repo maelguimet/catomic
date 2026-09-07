@@ -319,3 +319,105 @@ fn visibility_agrees_with_output_for_an_oversized_final_grapheme() {
     let origin = start_col_near_cursor(&buffer, buffer.cursor(), 2, 1).unwrap();
     assert!(cursor_is_visible(&buffer, 0, origin, 2, 1).unwrap());
 }
+
+#[test]
+fn word_wrapped_rows_preserve_prose_whitespace_and_graphemes() {
+    for (text, width, expected) in [
+        ("hello world", 8, vec!["hello ", "world"]),
+        ("one  two three", 8, vec!["one  two", " three"]),
+        ("hi\tworld", 8, vec!["hi\t", "world"]),
+        ("café 猫猫 fin", 8, vec!["café ", "猫猫 fin"]),
+        ("hi a\u{301}bcde", 5, vec!["hi ", "a\u{301}bcde"]),
+        (
+            "hi 👩\u{200d}💻👩\u{200d}💻x",
+            4,
+            vec!["hi ", "👩\u{200d}💻👩\u{200d}💻", "x"],
+        ),
+        ("ab abcdefghi", 5, vec!["ab ", "abcde", "fghi"]),
+        ("a b", 1, vec!["a", " ", "b"]),
+        ("a\u{2003}word", 4, vec!["a\u{2003}", "word"]),
+    ] {
+        let buffer = SimpleBuffer::from_text(text);
+        let rows = visible_rows(&buffer, 0, 0, 30, width).unwrap();
+        assert_eq!(
+            rows.iter()
+                .map(|row| row.content.as_ref())
+                .collect::<Vec<_>>(),
+            expected,
+            "text={text:?}, width={width}"
+        );
+        assert_eq!(
+            rows.iter()
+                .map(|row| row.content.as_ref())
+                .collect::<String>(),
+            text
+        );
+        assert_eq!(buffer.to_string(), text);
+        for pair in rows.windows(2) {
+            assert_eq!(pair[0].end_col(), pair[1].start_col);
+            assert_eq!(
+                buffer.grapheme_range(0, pair[1].start_col).unwrap().start,
+                pair[1].start_col
+            );
+        }
+    }
+}
+
+#[test]
+fn word_wrapped_scroll_visibility_and_cursor_share_the_row_boundaries() {
+    let mut buffer = SimpleBuffer::from_text("hello world again today");
+    buffer.set_cursor(Cursor { row: 0, col: 8 });
+    assert!(!cursor_is_visible(&buffer, 0, 0, 1, 8).unwrap());
+    assert_eq!(scroll_origin(&buffer, 0, 0, 2, 8, 1, true).unwrap(), (0, 6));
+    assert_eq!(
+        scroll_origin(&buffer, 0, 6, 2, 8, 1, false).unwrap(),
+        (0, 0)
+    );
+    let rows = visible_rows(&buffer, 0, 6, 2, 8).unwrap();
+    assert_eq!(rows[0].content, "world ");
+    assert_eq!(rows[1].content, "again ");
+    assert_eq!(
+        wrapped_cursor_position(buffer.cursor(), &rows, 0, 8),
+        Some((1, 3))
+    );
+    buffer.set_cursor(Cursor { row: 0, col: 22 });
+    let origin = start_col_near_cursor(&buffer, buffer.cursor(), 2, 8).unwrap();
+    let rows = visible_rows(&buffer, 0, origin, 2, 8).unwrap();
+    assert!(wrapped_cursor_position(buffer.cursor(), &rows, 0, 8).is_some());
+}
+
+#[test]
+fn word_wrapped_render_keeps_search_and_selection_on_the_moved_word() {
+    for line_numbers in [false, true] {
+        for (highlight_kind, style) in [
+            (super::super::HighlightKind::Search, "\x1b[30;43m"),
+            (super::super::HighlightKind::Selection, "\x1b[30;46m"),
+        ] {
+            let mut buffer = SimpleBuffer::from_text("hello world");
+            buffer.set_cursor(Cursor { row: 0, col: 8 });
+            let mut out = Vec::new();
+            let gutter = if line_numbers { 2 } else { 0 };
+            super::super::render_buffer(
+                &mut out,
+                &buffer,
+                RenderViewport::new(0, 0, 4, 8 + gutter),
+                None,
+                RenderOptions {
+                    soft_wrap: true,
+                    line_numbers,
+                    highlight: Some(super::super::TextHighlight {
+                        start: Cursor { row: 0, col: 6 },
+                        end: Cursor { row: 0, col: 11 },
+                    }),
+                    highlight_kind,
+                    ..RenderOptions::default()
+                },
+            )
+            .unwrap();
+            let rendered = String::from_utf8(out).unwrap();
+            let (_, second) = rendered.split_once("\x1b[2;1H").unwrap();
+            assert!(second.contains(&format!("{style}world")));
+            assert!(rendered.ends_with(&format!("\x1b[2;{}H\x1b[?25h\x1b[?2026l", 3 + gutter)));
+        }
+    }
+}

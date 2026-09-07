@@ -5,16 +5,9 @@
 
 #[cfg(unix)]
 mod unix {
-    use super::super::{atomic_write_with, cleanup, temp_path};
+    use super::super::{atomic_staging_path, atomic_write_with, cleanup, temp_path};
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
-
-    fn streaming_temp_path(target: &std::path::Path) -> std::path::PathBuf {
-        let parent = target.parent().unwrap();
-        let base = target.file_name().unwrap().to_string_lossy();
-        let tid = format!("{:?}", std::thread::current().id());
-        parent.join(format!("{}.tmp.{}.{}", base, std::process::id(), tid))
-    }
 
     #[test]
     fn temp_is_owner_only_before_streaming_private_target_content() {
@@ -22,7 +15,7 @@ mod unix {
         cleanup(&target);
         fs::write(&target, "old secret").unwrap();
         fs::set_permissions(&target, fs::Permissions::from_mode(0o600)).unwrap();
-        let temp = streaming_temp_path(&target);
+        let temp = atomic_staging_path(&target);
 
         atomic_write_with(&target, |writer| {
             let mode = fs::metadata(&temp)?.permissions().mode() & 0o777;
@@ -47,7 +40,7 @@ mod unix {
         cleanup(&reference);
         fs::write(&reference, "reference").unwrap();
         let expected_mode = fs::metadata(&reference).unwrap().permissions().mode() & 0o777;
-        let temp = streaming_temp_path(&target);
+        let temp = atomic_staging_path(&target);
 
         atomic_write_with(&target, |writer| {
             let streaming_mode = fs::metadata(&temp)?.permissions().mode() & 0o777;

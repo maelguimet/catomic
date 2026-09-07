@@ -113,6 +113,18 @@ impl<'a> PieceTableSearch<'a> {
 /// All editor operations go through this.
 /// The main loop and render should only talk to this trait.
 pub trait Buffer {
+    /// Preserve immutable original bytes before a save can rewrite their inode.
+    /// The filesystem callback may supply a private, byte-identical descriptor;
+    /// storage keeps all page coordinates, edits, and history on that original.
+    /// Implementations must install replacement descriptors only after preparation
+    /// succeeds, and must reject original-file drift during the copy.
+    fn preserve_file_backing(
+        &mut self,
+        _preserve: &mut dyn FnMut(&File) -> io::Result<Option<File>>,
+    ) -> io::Result<()> {
+        Ok(())
+    }
+
     // --- Queries ---
     fn line_count(&self) -> usize;
     fn line(&self, row: usize) -> Option<Cow<'_, str>>;

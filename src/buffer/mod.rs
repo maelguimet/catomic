@@ -8,6 +8,8 @@ use std::borrow::Cow;
 use std::fs::File;
 use std::io::{self, Write};
 
+mod backing;
+pub(crate) use backing::BackingFileChanged;
 pub(crate) mod cell_index;
 pub(crate) mod large_file;
 pub mod line_index;
@@ -153,6 +155,12 @@ pub trait Buffer {
         &mut self,
         _preserve: &mut dyn FnMut(&File) -> io::Result<Option<File>>,
     ) -> io::Result<()> {
+        Ok(())
+    }
+
+    /// Bounded descriptor validation before App content actions and cached
+    /// presentation. Storage reads still validate their own operation boundaries.
+    fn validate_backing(&self) -> io::Result<()> {
         Ok(())
     }
 

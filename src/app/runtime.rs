@@ -65,6 +65,14 @@ impl App {
         &mut self,
         out: &mut dyn crate::terminal::TerminalOutput,
     ) -> io::Result<()> {
+        let result = self.poll_runtime_tasks_inner(out);
+        super::backing::recover(self, out, result)
+    }
+
+    fn poll_runtime_tasks_inner(
+        &mut self,
+        out: &mut dyn crate::terminal::TerminalOutput,
+    ) -> io::Result<()> {
         watch::check_file_watcher_once_and_render(self, out)?;
         search::poll_search(self, out)?;
         replace::poll(self, out)?;
@@ -92,7 +100,7 @@ impl App {
         out: &mut dyn crate::terminal::TerminalOutput,
         event: Event,
     ) -> io::Result<()> {
-        match event {
+        let result = match event {
             Event::Key(key) => self.handle_key_with(out, key),
             Event::Paste(text) => input::handle_paste(self, out, &text),
             Event::Mouse(mouse) => selection::handle_mouse(self, out, mouse),
@@ -101,7 +109,8 @@ impl App {
                 viewport::redraw_after_focus(self, crossterm::terminal::size().ok(), out)
             }
             Event::FocusLost => link_interaction::clear_on_focus_loss(self, out),
-        }
+        };
+        super::backing::recover(self, out, result)
     }
 
     #[cfg(test)]
@@ -242,3 +251,7 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 }
+
+#[cfg(test)]
+#[path = "runtime/backing_tests.rs"]
+mod backing_tests;

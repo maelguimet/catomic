@@ -23,7 +23,9 @@ over configurable logical-line pages.
 - Ctrl+F searches the stable descriptor plus unsaved edited-page overlays. It
   preserves matches across read chunks and edited page boundaries.
 - Same-descriptor metadata drift fails page loads, rendering, search, and save
-  closed. Clean path changes auto-reload by default; dirty buffers never reload
+  closed. App presents unavailable content and preserves the session instead of
+  terminating; original bytes overwritten in place cannot be reconstructed by
+  Save As. Clean path changes auto-reload by default; dirty buffers never reload
   automatically and retain the Ctrl+R/save-conflict confirmation paths.
 - Byte size alone never selects a read-only or refusal mode.
 

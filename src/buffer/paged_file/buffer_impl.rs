@@ -14,6 +14,10 @@ use crate::buffer::{
 use super::PagedFileBuffer;
 
 impl Buffer for PagedFileBuffer {
+    fn validate_backing(&self) -> io::Result<()> {
+        self.ensure_unchanged()
+    }
+
     fn cursor_cell_column(&self) -> io::Result<usize> {
         self.active().buffer.cursor_cell_column()
     }

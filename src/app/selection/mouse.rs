@@ -26,6 +26,9 @@ pub(crate) fn handle_mouse(
     if super::super::mobile::handle_mouse(app, out, event)? {
         return Ok(());
     }
+    if super::super::view::source_is_displayed(app) {
+        app.buffer.validate_backing()?;
+    }
     if event.kind == MouseEventKind::Down(MouseButton::Left)
         && app.keybindings.mouse_action(
             super::super::input::active_scope(app),

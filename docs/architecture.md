@@ -76,6 +76,11 @@ outputs, and lifetimes, and dropping their owner must cancel or reap their work.
 The App-owned source buffer is always editable: open and reload select
 `PieceTable` or `PagedFileBuffer`. Read-only help and previews use separate display
 buffers; their input scopes intercept edits before source-buffer dispatch.
+Detected paged backing drift is a recoverable storage error. App content actions
+validate descriptor availability, while rendering can show an immutable
+unavailable-content notice without replacing the source. Dirty state and history
+remain owned by the original buffer; reload and discard keep their explicit
+confirmation paths. Terminal transport and unrelated I/O failures still propagate.
 
 Hot typing and rendering paths must not acquire full-buffer clones, full-file
 scans, blocking subprocesses, repository work, or network access. Suspected

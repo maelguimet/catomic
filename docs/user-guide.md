@@ -841,7 +841,12 @@ automatic color decision.
 | Markdown preview | `F6` | Render the current buffer or active large-file page as Markdown |
 | Line numbers | `F7` | Toggle line numbers for all buffers and remember the choice |
 | Visible whitespace | `F8` | Show spaces and tabs |
-| Soft wrapping | `F9` | Wrap at terminal width without inserting newlines |
+| Soft wrapping | `F9` | Wrap at whitespace boundaries without inserting newlines |
+
+Soft wrapping moves a word to the next visual row when it would cross the
+content edge. Words longer than a row split only between complete graphemes.
+Spaces and tabs remain intact, including whitespace at row ends; wrapping
+changes neither the document bytes nor selection and search coordinates.
 
 `F6` is an explicit content command: it attempts Markdown rendering for
 `README`, `.txt`, extensionless, untitled, and Markdown-named buffers alike.

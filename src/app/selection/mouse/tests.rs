@@ -493,3 +493,41 @@ fn touch_endpoint_cancels_every_unrelated_editor_confirmation() {
     assert!(!super::super::is_touch_selecting(&app));
     assert_eq!(app.clipboard, "select");
 }
+
+#[test]
+fn word_wrapped_mouse_selection_uses_scrolled_rows_and_gutters() {
+    let text = "hello world again today";
+    let mut app = app_with(text);
+    app.view.soft_wrap = true;
+    app.view_preferences.set_line_numbers(true);
+    app.screen.width = 10;
+    app.screen.height = 4;
+    app.screen.wrap_col = 6;
+    let mut out = Vec::new();
+    handle_mouse(
+        &mut app,
+        &mut out,
+        event(MouseEventKind::Down(MouseButton::Left), 2, 0),
+    )
+    .unwrap();
+    assert_eq!(app.buffer.cursor(), Cursor { row: 0, col: 6 });
+    handle_mouse(
+        &mut app,
+        &mut out,
+        event(MouseEventKind::Drag(MouseButton::Left), 7, 1),
+    )
+    .unwrap();
+    handle_mouse(
+        &mut app,
+        &mut out,
+        event(MouseEventKind::Up(MouseButton::Left), 7, 1),
+    )
+    .unwrap();
+    assert_eq!(
+        app.selection.active().unwrap().ordered(),
+        (Cursor { row: 0, col: 6 }, Cursor { row: 0, col: 17 })
+    );
+    assert_eq!(app.clipboard, "world again");
+    assert_eq!(app.buffer.to_string(), text);
+    assert!(!app.file.dirty);
+}

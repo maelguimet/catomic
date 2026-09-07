@@ -111,6 +111,59 @@ fn markdown_preview_keeps_editor_only_chords_local() {
 }
 
 #[test]
+fn preview_surfaces_keep_editor_actions_and_paste_away_from_the_source() {
+    use crate::config::actions::Action;
+
+    for help_surface in [false, true] {
+        let mut app = App::new(None).unwrap();
+        let mut out = Vec::new();
+        super::super::input::handle_paste(&mut app, &mut out, "# Source").unwrap();
+        app.typing_mode = super::super::overwrite::TypingMode::Overwrite;
+        if help_surface {
+            super::super::help::show(&mut app, &mut out).unwrap();
+        } else {
+            super::super::view::dispatch_action(&mut app, &mut out, Action::MarkdownPreview)
+                .unwrap();
+        }
+        let source_history = app.buffer.content_revision();
+        let preview_text = super::super::view::display_buffer(&app).to_string();
+        assert!(!super::super::overwrite::uses_overwrite_cursor(&app));
+
+        app.handle_key_with(&mut out, make_key(KeyCode::Char('x'), KeyModifiers::NONE))
+            .unwrap();
+        super::super::input::handle_paste(&mut app, &mut out, ":smile:").unwrap();
+        for action in [
+            Action::DeleteForward,
+            Action::Save,
+            Action::SaveAs,
+            Action::Complete,
+            Action::Lint,
+            Action::Undo,
+            Action::Redo,
+            Action::ToggleOverwrite,
+            Action::CommandPrompt,
+        ] {
+            super::super::input::dispatch_action(&mut app, &mut out, action).unwrap();
+        }
+
+        assert_eq!(app.buffer.to_string(), "# Source");
+        assert_eq!(app.buffer.content_revision(), source_history);
+        assert!(app.file.dirty);
+        assert!(app.typing_mode.is_overwrite());
+        assert!(!super::super::overwrite::uses_overwrite_cursor(&app));
+        assert!(!super::super::completion::is_active(&app));
+        assert!(!super::super::command_prompt::is_active(&app));
+        assert_eq!(
+            super::super::view::display_buffer(&app).to_string(),
+            preview_text
+        );
+        app.handle_key_with(&mut out, make_key(KeyCode::Esc, KeyModifiers::NONE))
+            .unwrap();
+        assert!(super::super::overwrite::uses_overwrite_cursor(&app));
+    }
+}
+
+#[test]
 fn action_defaults_can_be_unbound_without_falling_through_to_hardcoded_keys() {
     let mut app = App::new(None).unwrap();
     app.keybindings = crate::config::keybindings::parse("[keybindings]\nsave = []\n").unwrap();

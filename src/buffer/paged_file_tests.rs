@@ -17,6 +17,18 @@ fn temp_path(label: &str) -> std::path::PathBuf {
     ))
 }
 
+#[test]
+fn indexed_end_column_still_rejects_backing_file_drift() {
+    let path = temp_path("cell_column_drift");
+    std::fs::write(&path, "猫e\u{301}\t").unwrap();
+    let mut buffer = PagedFileBuffer::open(&path, 1).unwrap();
+    buffer.set_cursor(Cursor { row: 0, col: 4 });
+    assert_eq!(buffer.cursor_cell_column().unwrap(), 4);
+    std::fs::write(&path, "changed length").unwrap();
+    assert!(buffer.cursor_cell_column().is_err());
+    std::fs::remove_file(path).unwrap();
+}
+
 fn retained_options(buffer: &dyn Buffer) -> RenderOptions<'_> {
     RenderOptions {
         document_id: 1,
@@ -165,7 +177,7 @@ fn paged_viewports_batch_file_and_add_pieces_with_crlf_scroll_mapping() {
 
     let mut buffer = PagedFileBuffer::open(&path, 4).unwrap();
     buffer.insert_char('X');
-    assert_eq!(buffer.file_original_metadata_check_count(), 0);
+    let checks_after_edit = buffer.file_original_metadata_check_count();
 
     let plain = buffer
         .try_visible_lines_window(0, 4, 0, 80)
@@ -177,7 +189,10 @@ fn paged_viewports_batch_file_and_add_pieces_with_crlf_scroll_mapping() {
             .collect::<Vec<_>>(),
         vec!["Xzero", "one", "two", "three"]
     );
-    assert_eq!(buffer.file_original_metadata_check_count(), 2);
+    assert_eq!(
+        buffer.file_original_metadata_check_count() - checks_after_edit,
+        2
+    );
 
     let scrolled = buffer
         .try_visible_lines_window(0, 4, 2, 2)
@@ -189,7 +204,10 @@ fn paged_viewports_batch_file_and_add_pieces_with_crlf_scroll_mapping() {
             .collect::<Vec<_>>(),
         vec!["er", "e", "o", "re"]
     );
-    assert_eq!(buffer.file_original_metadata_check_count(), 4);
+    assert_eq!(
+        buffer.file_original_metadata_check_count() - checks_after_edit,
+        4
+    );
 
     let _ = std::fs::remove_file(path);
 }
@@ -611,7 +629,7 @@ fn compact_metadata_is_shared_and_uses_u32_line_starts() {
         );
         assert_eq!(
             buffer.perf_stats().retained_page_metadata_bytes,
-            bytes.total()
+            bytes.total() + buffer.perf_stats().cell_index_bytes
         );
         if label == "compact_ascii_lf" {
             assert_eq!(bytes.crlf_offsets, 0);
@@ -698,7 +716,7 @@ fn edited_active_and_retained_pages_count_materialized_block_indexes_once() {
     assert!(first.materialized_line_index > 0);
     assert_eq!(
         buffer.perf_stats().retained_page_metadata_bytes,
-        first.total()
+        first.total() + buffer.perf_stats().cell_index_bytes
     );
 
     assert!(buffer.next_page().unwrap());
@@ -711,7 +729,10 @@ fn edited_active_and_retained_pages_count_materialized_block_indexes_once() {
     let third = buffer.retained_metadata_components();
     assert!(third.materialized_line_index > second.materialized_line_index);
     let stats = buffer.perf_stats();
-    assert_eq!(stats.retained_page_metadata_bytes, third.total());
+    assert_eq!(
+        stats.retained_page_metadata_bytes,
+        third.total() + stats.cell_index_bytes
+    );
     assert!(stats.retained_bytes >= stats.retained_page_metadata_bytes);
     let _ = std::fs::remove_file(path);
 }

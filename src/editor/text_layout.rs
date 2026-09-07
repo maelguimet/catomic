@@ -314,7 +314,7 @@ pub(crate) fn expand_tabs(text: &str, whitespace: bool, initial_cell: usize) -> 
     expanded
 }
 
-fn grapheme_width(grapheme: &str, cell: usize) -> usize {
+pub(crate) fn grapheme_width(grapheme: &str, cell: usize) -> usize {
     if grapheme == "\t" {
         TAB_WIDTH - (cell % TAB_WIDTH)
     } else if grapheme.chars().any(char::is_control) {
@@ -325,6 +325,23 @@ fn grapheme_width(grapheme: &str, cell: usize) -> usize {
             .sum()
     } else {
         UnicodeWidthStr::width(grapheme)
+    }
+}
+
+/// Width of complete graphemes without tabs/newlines. In these conservative
+/// Latin/CJK ranges unicode-width has no ligatures spanning grapheme boundaries.
+/// Emoji, joiners, presentation selectors, other scripts and controls use the
+/// renderer's per-grapheme semantics: unicode-width also accepts some emoji
+/// ligatures that cross extended-grapheme boundaries (for example RI + ZWJ).
+pub(crate) fn complete_grapheme_run_width(text: &str) -> usize {
+    if text.chars().all(|ch| {
+        matches!(ch,
+            '\u{20}'..='\u{7e}' | '\u{a0}'..='\u{52f}' |
+            '\u{2e80}'..='\u{a000}')
+    }) {
+        UnicodeWidthStr::width(text)
+    } else {
+        cell_width_from(text, 0)
     }
 }
 
@@ -392,6 +409,21 @@ pub(crate) fn terminal_safe_char(ch: char) -> char {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bulk_width_respects_emoji_sequences_split_into_multiple_graphemes() {
+        for text in [
+            "🇫🇷\u{200d}👩",
+            "👩\u{200d}🇫🇷",
+            "🏽\u{200d}👩",
+            "#\u{fe0f}\u{200d}👩",
+        ] {
+            assert_eq!(text.graphemes(true).count(), 2, "text={text:?}");
+            let expected = scalar_to_cell(text, text.chars().count());
+            assert_eq!(expected, 4, "text={text:?}");
+            assert_eq!(complete_grapheme_run_width(text), expected, "text={text:?}");
+        }
+    }
 
     #[test]
     fn maps_combining_and_wide_graphemes_to_terminal_cells() {

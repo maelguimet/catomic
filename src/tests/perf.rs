@@ -61,3 +61,7 @@ mod recovery;
 #[cfg(test)]
 #[path = "perf_history.rs"]
 mod history;
+
+#[cfg(test)]
+#[path = "perf_cell_columns.rs"]
+mod cell_columns;

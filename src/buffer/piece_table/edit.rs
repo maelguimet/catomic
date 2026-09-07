@@ -12,6 +12,11 @@ impl PieceTable {
         let insert_byte = self.cursor_byte_offset;
         let add_start = self.add.len();
         let mut encoded = [0; 4];
+        let cell_splice = self.prepare_cell_splice(insert_byte..insert_byte, |builder| {
+            builder.push(ch.encode_utf8(&mut encoded));
+            Ok(())
+        });
+        self.cells.apply_splice(cell_splice);
         self.add_scalars.append(ch.encode_utf8(&mut encoded));
         self.add.push(ch);
         let added_len = ch.len_utf8();
@@ -94,6 +99,8 @@ impl PieceTable {
         if to_insert.is_empty() {
             return;
         }
+        let cell_splice = self.prepare_cell_piece_insert(at, to_insert);
+        self.cells.apply_splice(cell_splice);
         if self.pieces.is_empty() {
             self.replace_piece_run(0..0, to_insert.to_vec());
             return;
@@ -137,6 +144,8 @@ impl PieceTable {
         if start >= end {
             return vec![];
         }
+        let cell_splice = self.prepare_cell_splice(start..end, |_| Ok(()));
+        self.cells.apply_splice(cell_splice);
         let (first_piece, _) = self.split_point(start);
         let (end_piece, end_local) = self.split_point(end);
         let piece_end = if end_local == 0 {

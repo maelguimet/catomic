@@ -268,6 +268,37 @@ Profile before optimizing redraw or buffer access.
 
 Never add full-file scans, full-buffer clones, background work, or network calls to hot paths.
 
+## Absolute display-cell coordinates
+
+Editable buffers also retain display-cell summaries for absolute Tab stops.
+The cell index targets grapheme-aligned 4 KiB blocks in a summary tree; plain
+ASCII runs compress to one arithmetic block. Four incoming tab phases compose
+across blocks, while newlines reset the column. Owned input initializes this
+metadata at construction. Paged input feeds the already-validated chunks of
+the existing page scan, without extra file reads or indexing later pages.
+Pages end at logical newlines, including when a single long line spans many
+read chunks.
+
+The first cell query after distant navigation visits a summary path and reads
+at most its containing block; an End query reads no text. Edits and history
+replay repair complete boundary blocks and continue only while the unchanged
+suffix's grapheme segmentation differs. An arbitrarily long grapheme or an
+affected regional-indicator run can therefore require proportionate work and
+temporary storage. Unrelated line prefixes are never rescanned during typing.
+
+Construction batches complete grapheme runs in the shared layout module's
+conservative Latin/CJK width domain. Emoji, joiners, presentation selectors,
+script ligatures and controls retain per-grapheme renderer semantics: the width
+library accepts some emoji ligatures across extended-grapheme boundaries.
+Oracle tests cover both paths; dependency
+updates must preserve their equivalence. Normal tests check cold and edited
+query/read work at 64 KiB, 1 MiB and 4 MiB, including retained index bytes.
+The ignored `manual_cell_column_opening_cost` test reports construction time,
+allocation totals and retained bytes for 10/100 MiB ASCII, mixed prose/CJK and
+dense emoji/combining fixtures, for owned and paged storage. Run it serially in
+release mode for base/candidate comparisons; machine-dependent results belong
+in the PR acceptance evidence.
+
 ## Owned long-line cursor structural work (2026-07-27)
 
 Owned PieceTables keep cached scalar lengths on pieces and sparse scalar/byte

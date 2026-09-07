@@ -915,6 +915,9 @@ default page contains 20,000 lines and can be changed with
 Page boundaries stay anchored to the opened source during a session and are
 rebuilt after reload or reopen. If the underlying descriptor drifts while a
 paged operation is using it, Catomic fails closed rather than mixing revisions.
+Page reads, navigation, and streamed output validate length, modification time,
+device/inode identity, and Unix change time (`ctime`); restoring only a changed
+file's modification time does not make its original revision valid again.
 The affected buffer shows a **Paged content unavailable** notice and blocks
 content editing and navigation. Its unsaved edits and undo history remain in
 the session, and other buffers remain usable (`Alt+PageUp` / `Alt+PageDown`).
@@ -1648,12 +1651,15 @@ and keeps the complete staged file at the path named in the error for recovery.
 Failures before the in-place update leave every alias unchanged and remove the
 staging file.
 
-Before saving a hard-linked paged file, Catomic preserves its original bytes in
-an owner-only temporary snapshot so page navigation and undo/redo remain usable
-after the shared inode changes. This first save needs temporary disk space for
-the original file in addition to the sibling staging file. The snapshot has no
-directory entry, is reused by later saves, and is released when the buffer closes.
-If preserving the original fails, the save stops before updating any alias.
+Before the first Save or Save As of a paged file whose original still has a
+directory entry, Catomic copies its original bytes to an owner-only temporary
+snapshot. This keeps page navigation and undo/redo valid across both atomic
+replacement (which changes the old inode's `ctime`) and hard-link updates.
+The copy uses bounded memory but adds one full-file read/write and needs temporary
+disk space for the original file in addition to the sibling staging file. The
+snapshot has no directory entry, is reused by later saves, and is released when
+the buffer closes or reloads. If preserving the original fails or detects drift,
+the save stops before changing the destination.
 
 Do not remove ACLs, attributes, or links merely to appease the editor unless you
 understand why they exist.

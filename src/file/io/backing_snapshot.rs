@@ -1,4 +1,4 @@
-//! Preserve original descriptor bytes before a hard-link save rewrites them.
+//! Preserve original descriptor bytes before a save can rewrite or unlink them.
 //! Snapshots are owner-only, unlinked before copying, and retained only by open
 //! descriptors. Copying is bounded in memory and occurs only on explicit save.
 
@@ -7,13 +7,14 @@ use std::io::{self, Write};
 use std::os::unix::fs::{FileExt, MetadataExt, OpenOptionsExt};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Single-link originals survive atomic replacement. Multiply-linked originals
-/// need a private copy; an already-detached snapshot has no links and is reused.
+/// Both replacement/unlink and hard-link saves change the original's ctime.
+/// Preserve a linked original before commit so descriptor validation stays strict
+/// without accepting a new revision. Detached snapshots have no links and are reused.
 /// This runs inside the atomic writer, after its target identity is pinned. The
 /// writer still validates the real destination independently before commit.
-pub(crate) fn snapshot_hard_linked_file(source: &File) -> io::Result<Option<File>> {
+pub(crate) fn snapshot_linked_file(source: &File) -> io::Result<Option<File>> {
     let before = source.metadata()?;
-    if before.nlink() <= 1 {
+    if before.nlink() == 0 {
         return Ok(None);
     }
 
@@ -61,7 +62,7 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     #[test]
-    fn hard_link_snapshot_is_private_byte_identical_and_reused() {
+    fn linked_snapshot_is_private_byte_identical_and_reused() {
         let path =
             std::env::temp_dir().join(format!("catomic_snapshot_original_{}", std::process::id()));
         let alias = path.with_extension("alias");
@@ -70,19 +71,21 @@ mod tests {
         let bytes = "λfirst\r\nsecond\r\n".repeat(10_000).into_bytes();
         fs::write(&path, &bytes).unwrap();
         let source = File::open(&path).unwrap();
-        assert!(snapshot_hard_linked_file(&source).unwrap().is_none());
-        fs::hard_link(&path, &alias).unwrap();
-
-        let snapshot = snapshot_hard_linked_file(&source).unwrap().unwrap();
+        let snapshot = snapshot_linked_file(&source).unwrap().unwrap();
         let metadata = snapshot.metadata().unwrap();
         assert_eq!(metadata.nlink(), 0);
         assert_eq!(metadata.permissions().mode() & 0o077, 0);
         assert_ne!(metadata.ino(), source.metadata().unwrap().ino());
+        fs::hard_link(&path, &alias).unwrap();
+        let hard_link_snapshot = snapshot_linked_file(&source).unwrap().unwrap();
         fs::write(&alias, "rewritten").unwrap();
         let mut actual = vec![0; bytes.len()];
         snapshot.read_exact_at(&mut actual, 0).unwrap();
         assert_eq!(actual, bytes);
-        assert!(snapshot_hard_linked_file(&snapshot).unwrap().is_none());
+        hard_link_snapshot.read_exact_at(&mut actual, 0).unwrap();
+        assert_eq!(actual, bytes);
+        assert!(snapshot_linked_file(&snapshot).unwrap().is_none());
+        assert!(snapshot_linked_file(&hard_link_snapshot).unwrap().is_none());
 
         fs::remove_file(path).unwrap();
         fs::remove_file(alias).unwrap();

@@ -14,6 +14,7 @@ use std::ops::Range;
 use std::os::unix::fs::FileExt;
 use std::sync::Arc;
 
+pub(crate) use crate::buffer::backing::DescriptorSnapshot as FileMetadataSnapshot;
 use crate::buffer::large_file::LineCheckpoint;
 
 #[cfg(test)]
@@ -37,22 +38,6 @@ impl std::fmt::Debug for FileReadOperationTestHook {
             .debug_struct("FileReadOperationTestHook")
             .field("point", &self.point)
             .finish()
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct FileMetadataSnapshot {
-    pub(crate) len: u64,
-    mtime: Option<std::time::SystemTime>,
-}
-
-impl FileMetadataSnapshot {
-    pub(crate) fn capture(file: &File) -> io::Result<Self> {
-        let metadata = file.metadata()?;
-        Ok(Self {
-            len: metadata.len(),
-            mtime: metadata.modified().ok(),
-        })
     }
 }
 

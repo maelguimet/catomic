@@ -1601,6 +1601,9 @@ Catomic accepts valid UTF-8 text. Ordinary buffers preserve:
 - CRLF line endings; or
 - CR-only line endings.
 
+The byte-order mark is format metadata. Any additional U+FEFF characters in the
+document, including at its start, are preserved by Save and Save As.
+
 UTF-16, arbitrary binary data, and non-UTF-8 filenames are refused rather than
 decoded or rewritten heuristically.
 

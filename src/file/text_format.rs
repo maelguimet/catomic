@@ -267,9 +267,6 @@ struct FormatWriter<'a> {
     out: &'a mut dyn Write,
     format: TextFormat,
     pending_cr: bool,
-    prefix: [u8; UTF8_BOM.len()],
-    prefix_len: usize,
-    prefix_checked: bool,
     converted: Vec<u8>,
 }
 
@@ -279,15 +276,11 @@ impl<'a> FormatWriter<'a> {
             out,
             format,
             pending_cr: false,
-            prefix: [0; UTF8_BOM.len()],
-            prefix_len: 0,
-            prefix_checked: !format.utf8_bom,
             converted: Vec::new(),
         }
     }
 
     fn finish(mut self) -> io::Result<()> {
-        self.finish_prefix()?;
         if self.pending_cr {
             self.write_newline()?;
         }
@@ -332,20 +325,6 @@ impl<'a> FormatWriter<'a> {
             search_start = index;
         }
         self.write_converted(&bytes[plain_start..])
-    }
-
-    fn finish_prefix(&mut self) -> io::Result<()> {
-        if self.prefix_checked {
-            return Ok(());
-        }
-        self.prefix_checked = true;
-        if self.prefix[..self.prefix_len] != UTF8_BOM[..self.prefix_len]
-            || self.prefix_len != UTF8_BOM.len()
-        {
-            let prefix = self.prefix;
-            self.consume(&prefix[..self.prefix_len])?;
-        }
-        Ok(())
     }
 
     fn write_newline(&mut self) -> io::Result<()> {
@@ -405,20 +384,9 @@ impl<'a> FormatWriter<'a> {
 }
 
 impl Write for FormatWriter<'_> {
-    fn write(&mut self, mut bytes: &[u8]) -> io::Result<usize> {
-        let original_len = bytes.len();
-        if !self.prefix_checked {
-            let needed = UTF8_BOM.len().saturating_sub(self.prefix_len);
-            let take = needed.min(bytes.len());
-            self.prefix[self.prefix_len..self.prefix_len + take].copy_from_slice(&bytes[..take]);
-            self.prefix_len += take;
-            bytes = &bytes[take..];
-            if self.prefix_len == UTF8_BOM.len() {
-                self.finish_prefix()?;
-            }
-        }
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         self.consume(bytes)?;
-        Ok(original_len)
+        Ok(bytes.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {

@@ -280,6 +280,7 @@ fn writer_preserves_exact_bytes_across_every_input_split() {
     let mut unicode_input = UTF8_BOM.to_vec();
     unicode_input.extend_from_slice("e\u{301}🙂\r\n猫\r".as_bytes());
     let mut unicode_expected = UTF8_BOM.to_vec();
+    unicode_expected.extend_from_slice(UTF8_BOM);
     unicode_expected.extend_from_slice("e\u{301}🙂\r\n猫\r\n".as_bytes());
     assert_writer_splits(
         &unicode_input,
@@ -290,14 +291,19 @@ fn writer_preserves_exact_bytes_across_every_input_split() {
     assert_writer_splits(
         b"\xEF\xBB\xBFa\n",
         format(true, LineEnding::Cr),
-        b"\xEF\xBB\xBFa\r",
+        b"\xEF\xBB\xBF\xEF\xBB\xBFa\r",
     );
     assert_writer_splits(
         b"x\xEF\xBB\xBF",
         format(true, LineEnding::Lf),
         b"\xEF\xBB\xBFx\xEF\xBB\xBF",
     );
-    assert_writer_splits(UTF8_BOM, format(true, LineEnding::Lf), UTF8_BOM);
+    assert_writer_splits(
+        UTF8_BOM,
+        format(true, LineEnding::Lf),
+        b"\xEF\xBB\xBF\xEF\xBB\xBF",
+    );
+    assert_writer_splits(UTF8_BOM, format(false, LineEnding::Lf), UTF8_BOM);
 }
 
 #[test]

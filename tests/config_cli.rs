@@ -5,9 +5,9 @@
 
 use std::error::Error;
 use std::fs;
-use std::io::Write;
+use std::io::{self, Write};
 use std::path::PathBuf;
-use std::process::{Command, Output, Stdio};
+use std::process::{Child, Command, Output, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 type TestResult = Result<(), Box<dyn Error>>;
@@ -33,6 +33,16 @@ impl Fixture {
 
     fn config_path(&self) -> PathBuf {
         self.root.join("catomic/config.toml")
+    }
+
+    #[cfg(unix)]
+    fn create_config_directory(&self) -> io::Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = self.root.join("catomic");
+        fs::create_dir_all(&directory)?;
+        // Match the production write policy independently of the host umask.
+        fs::set_permissions(directory, fs::Permissions::from_mode(0o700))
     }
 
     fn command(&self) -> Command {
@@ -64,15 +74,48 @@ fn run_with_input(
     arguments: &[&str],
     input: &[u8],
 ) -> Result<Output, Box<dyn Error>> {
-    let mut child = fixture
+    let child = fixture
         .command()
         .args(arguments)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
-    child.stdin.take().expect("piped stdin").write_all(input)?;
-    Ok(child.wait_with_output()?)
+    write_input_and_wait(child, input)
+}
+
+fn write_input_and_wait(mut child: Child, input: &[u8]) -> Result<Output, Box<dyn Error>> {
+    let written = child.stdin.take().expect("piped stdin").write_all(input);
+    let output = child.wait_with_output()?;
+    // Validation may reject the request before reading confirmation. Preserve
+    // that exit status and diagnostic instead of failing on its closed pipe.
+    if let Err(error) = written {
+        if error.kind() != io::ErrorKind::BrokenPipe {
+            return Err(error.into());
+        }
+    }
+    Ok(output)
+}
+
+#[cfg(unix)]
+#[test]
+fn input_to_exited_child_preserves_status_and_stderr() -> TestResult {
+    let mut child = Command::new("/bin/sh")
+        .args(["-c", "printf early-rejection >&2; exit 7"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    // Keep the writer open while waiting so the next write deterministically
+    // encounters a closed reader, regardless of process scheduling.
+    let stdin = child.stdin.take().expect("piped stdin");
+    child.wait()?;
+    child.stdin = Some(stdin);
+    let output = write_input_and_wait(child, b"yes\n")?;
+    assert_eq!(output.status.code(), Some(7), "{output:?}");
+    assert_eq!(output.stderr, b"early-rejection");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    Ok(())
 }
 
 #[test]
@@ -189,7 +232,7 @@ fn config_path_check_and_help_are_read_only_and_preserving() -> TestResult {
         "updater should either cancel cleanly or report why this test build is unsupported"
     );
 
-    fs::create_dir_all(config.parent().expect("config parent"))?;
+    fixture.create_config_directory()?;
     fs::write(
         &config,
         "# preserve exact bytes\n[theme]\nname = \"default\"\n",
@@ -259,7 +302,7 @@ fn refresh_keybindings_is_confirmed_preserving_valid_and_idempotent() -> TestRes
 
     let fixture = Fixture::new();
     let config = fixture.config_path();
-    fs::create_dir_all(config.parent().expect("config parent"))?;
+    fixture.create_config_directory()?;
     let original = concat!(
         "# old user config\n",
         "[editor]\n",
@@ -276,11 +319,11 @@ fn refresh_keybindings_is_confirmed_preserving_valid_and_idempotent() -> TestRes
     fs::write(&config, original)?;
 
     let declined = run_with_input(&fixture, &["config", "refresh-keybindings"], b"no\n")?;
-    assert!(declined.status.success());
+    assert!(declined.status.success(), "{declined:?}");
     assert_eq!(fs::read(&config)?, original.as_bytes());
 
     let accepted = run_with_input(&fixture, &["config", "refresh-keybindings"], b"yes\n")?;
-    assert!(accepted.status.success());
+    assert!(accepted.status.success(), "{accepted:?}");
     let refreshed = fs::read_to_string(&config)?;
     assert!(refreshed.starts_with(concat!(
         "# old user config\n",
@@ -310,7 +353,7 @@ fn refresh_keybindings_is_confirmed_preserving_valid_and_idempotent() -> TestRes
 
     let before_second_refresh = fs::read(&config)?;
     let second = run_with_input(&fixture, &["config", "refresh-keybindings"], b"yes\n")?;
-    assert!(second.status.success());
+    assert!(second.status.success(), "{second:?}");
     assert!(String::from_utf8(second.stdout)?.contains("inventory is current"));
     assert_eq!(fs::read(&config)?, before_second_refresh);
     Ok(())
@@ -324,12 +367,12 @@ fn refresh_keybindings_cancelled_creation_and_symlink_target_write_nothing() -> 
 
     let missing = Fixture::new();
     let declined = run_with_input(&missing, &["config", "refresh-keybindings"], b"\n")?;
-    assert!(declined.status.success());
+    assert!(declined.status.success(), "{declined:?}");
     assert!(!missing.config_path().exists());
     assert!(!missing.root.join("catomic").exists());
 
     let created = run_with_input(&missing, &["config", "refresh-keybindings"], b"yes\n")?;
-    assert!(created.status.success());
+    assert!(created.status.success(), "{created:?}");
     assert_eq!(
         fs::read_to_string(missing.config_path())?,
         include_str!("../src/config/config_template.toml")
@@ -341,14 +384,17 @@ fn refresh_keybindings_cancelled_creation_and_symlink_target_write_nothing() -> 
 
     let fixture = Fixture::new();
     let config = fixture.config_path();
-    fs::create_dir_all(config.parent().expect("config parent"))?;
+    fixture.create_config_directory()?;
     let target = fixture.root.join("target.toml");
     fs::write(&target, "# target bytes\n")?;
     symlink(&target, &config)?;
 
-    let refused = run_with_input(&fixture, &["config", "refresh-keybindings"], b"yes\n")?;
-    assert!(!refused.status.success());
-    assert!(String::from_utf8(refused.stderr)?.contains("refusing symlinked configuration"));
+    let refused = run(&fixture, &["config", "refresh-keybindings"])?;
+    assert!(!refused.status.success(), "{refused:?}");
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("refusing symlinked configuration"),
+        "{refused:?}"
+    );
     assert_eq!(fs::read_to_string(&target)?, "# target bytes\n");
     assert!(fs::symlink_metadata(&config)?.file_type().is_symlink());
     Ok(())

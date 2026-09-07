@@ -47,7 +47,7 @@ pub(super) fn smoke() {
     let decoded = decode(bytes.to_vec()).expect("decode format smoke fixture");
     assert_eq!(decoded.text, "alpha\nbeta");
 
-    let chunks: [&[u8]; 2] = [b"\xef\xbb\xbfalpha\r", b"\nbeta"];
+    let chunks: [&[u8]; 2] = [b"alpha\r", b"\nbeta"];
     let mut sink = CountingHashSink::default();
     write_chunks_for_perf(&chunks, &mut sink, format).expect("write format smoke chunks");
     assert_eq!(sink.bytes(), bytes.len());
@@ -122,7 +122,10 @@ fn run_scenario(scenario: Scenario) {
     let expected_output_len = expected_output.len();
     let expected_output_hash = hash_bytes(&expected_output);
     drop(expected_output);
-    let chunks = streaming_chunks(&bytes);
+    // The writer receives document content; the format BOM is emitted separately.
+    // Keep CRLF boundaries to exercise conversion of raw paged source ranges.
+    let content = bytes.strip_prefix(UTF8_BOM).unwrap_or(&bytes);
+    let chunks = streaming_chunks(content);
     let crlf_split_boundary = chunks
         .windows(2)
         .any(|pair| pair[0].last() == Some(&b'\r') && pair[1].first() == Some(&b'\n'));
@@ -135,7 +138,7 @@ fn run_scenario(scenario: Scenario) {
         .expect("warm format streaming write");
     assert_eq!(warm_sink.hash(), expected_output_hash);
     let (sink, sample) =
-        measure_allocated_sample(scenario.write_label, Some(bytes.len() as u64), || {
+        measure_allocated_sample(scenario.write_label, Some(content.len() as u64), || {
             let mut sink = CountingHashSink::default();
             write_chunks_for_perf(&chunks, &mut sink, expected_format)
                 .expect("stream format fixture");
@@ -147,7 +150,7 @@ fn run_scenario(scenario: Scenario) {
         sink.write_calls() <= chunks.len() + 2,
         "format writes must stay bounded by source chunks, not delimiters"
     );
-    let sample = with_throughput(sample, "input_bytes", bytes.len())
+    let sample = with_throughput(sample, "input_bytes", content.len())
         .with_metric("output_bytes", sink.bytes())
         .with_metric("delimiter_count", delimiter_count)
         .with_metric("write_calls", sink.write_calls())

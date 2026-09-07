@@ -92,8 +92,7 @@ impl PieceTable {
         let snapshot = FileMetadataSnapshot::capture(&file)?;
         let scan = scan_utf8_lines(&mut file)?;
         if FileMetadataSnapshot::capture(&file)? != snapshot {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
+            return Err(crate::buffer::BackingFileChanged::error(
                 "file-backed original changed while scanning",
             ));
         }
@@ -121,8 +120,7 @@ impl PieceTable {
         }
         let page = scan_utf8_page(&file, start_byte, page_lines)?;
         if FileMetadataSnapshot::capture(&file)? != snapshot {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
+            return Err(crate::buffer::BackingFileChanged::error(
                 "file-backed original changed while scanning page",
             ));
         }

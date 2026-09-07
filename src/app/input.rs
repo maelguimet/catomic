@@ -82,8 +82,8 @@ pub(super) fn record_content_edit(app: &mut super::App, message: Option<String>)
     note_content_change(&mut app.file);
     lint::invalidate(app);
     app.selection.clear();
-    completion::after_content_edit(app)?;
     refresh_dirty(&mut app.file, &*app.buffer);
+    completion::after_content_edit(app)?;
     app.external_changes
         .reconcile(app.buffer.content_revision());
     command_prompt::clear_config_discard_confirmation(app);
@@ -99,6 +99,15 @@ pub(super) fn record_content_edit(app: &mut super::App, message: Option<String>)
 /// Route key handling + associated renders through a writer.
 /// Smallest seam so tests can capture render side-effects for e.g. Ctrl+Q message.
 pub(crate) fn handle_key_with(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    key: KeyEvent,
+) -> io::Result<()> {
+    let result = handle_key(app, out, key);
+    super::backing::recover(app, out, result)
+}
+
+fn handle_key(
     app: &mut super::App,
     out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
@@ -154,6 +163,7 @@ fn handle_raw_key(
     if surfaces::handle_raw_key(app, out, key)? {
         return Ok(());
     }
+    app.buffer.validate_backing()?;
     editing::handle_key(app, out, key)
 }
 
@@ -211,6 +221,11 @@ pub(super) fn dispatch_action(
         return Ok(());
     }
     let scope = active_scope(app);
+    if (scope == Scope::Editor && super::backing::action_needs_content(action))
+        || action == Action::CompletionAccept
+    {
+        app.buffer.validate_backing()?;
+    }
     if matches!(scope, Scope::Prompt | Scope::Search)
         && (super::prompt_input::is_edit_action(action) || action == Action::PromptCompletePath)
     {
@@ -389,6 +404,15 @@ pub(crate) fn handle_paste(
     out: &mut dyn crate::terminal::TerminalOutput,
     text: &str,
 ) -> io::Result<()> {
+    let result = paste(app, out, text);
+    super::backing::recover(app, out, result)
+}
+
+fn paste(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    text: &str,
+) -> io::Result<()> {
     selection::end_cut_line_chain(app);
     if mobile::handle_paste(app, out)? {
         return Ok(());
@@ -400,6 +424,7 @@ pub(crate) fn handle_paste(
     if surfaces::handle_paste(app, out, text)? {
         return Ok(());
     }
+    app.buffer.validate_backing()?;
     selection::handle_external_paste(app, out, text)
 }
 

@@ -73,17 +73,74 @@ fn render_frame(
     annotation: &str,
     options: term::render::RenderOptions<'_>,
 ) -> io::Result<()> {
+    let buffer = view::display_buffer(app);
+    let result = buffer.validate_backing().and_then(|()| {
+        out.present_buffer(
+            buffer,
+            term::render::RenderViewport::new(
+                app.screen.scroll_top,
+                app.screen.scroll_left,
+                app.screen.height as usize,
+                app.screen.width as usize,
+            )
+            .with_wrap_col(app.screen.wrap_col),
+            Some(annotation),
+            options,
+        )
+    });
+    match result {
+        Err(error) if crate::buffer::BackingFileChanged::is(&error) => {
+            render_unavailable(app, out, annotation, options)
+        }
+        result => result,
+    }
+}
+
+fn render_unavailable(
+    app: &App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    annotation: &str,
+    options: term::render::RenderOptions<'_>,
+) -> io::Result<()> {
+    use crate::buffer::{Buffer, PreviewBuffer};
+
+    // Keep the display cursor on an undisplayed first line; prompts retain
+    // their own status caret. This notice never becomes the editable document.
+    let notice = PreviewBuffer::from_owned_text(format!(
+        "\n{}\n\nUnsaved edits and history are kept in this session.\n\
+         Original bytes are no longer available; editing and full saves are blocked.\n\
+         Save As cannot reconstruct the lost original bytes.\n\n\
+         Switch buffers to continue working (Alt+PageUp / Alt+PageDown).\n\
+         Ctrl+R asks before reloading and discarding local edits.",
+        super::backing::UNAVAILABLE
+    ));
     out.present_buffer(
-        view::display_buffer(app),
+        &notice,
         term::render::RenderViewport::new(
-            app.screen.scroll_top,
-            app.screen.scroll_left,
+            1,
+            0,
             app.screen.height as usize,
             app.screen.width as usize,
-        )
-        .with_wrap_col(app.screen.wrap_col),
+        ),
         Some(annotation),
-        options,
+        term::render::RenderOptions {
+            document_id: notice
+                .presentation_identity()
+                .unwrap_or_default()
+                .wrapping_shl(1)
+                | 1,
+            theme: options.theme,
+            soft_wrap: true,
+            status_role: options.status_role,
+            status_theme: options.status_theme,
+            status_path: options.status_path,
+            status_filename: options.status_filename,
+            status_selection: options.status_selection,
+            status_cursor: options.status_cursor,
+            window_title: options.window_title,
+            action_bar: options.action_bar,
+            ..term::render::RenderOptions::default()
+        },
     )
 }
 

@@ -915,6 +915,14 @@ default page contains 20,000 lines and can be changed with
 Page boundaries stay anchored to the opened source during a session and are
 rebuilt after reload or reopen. If the underlying descriptor drifts while a
 paged operation is using it, Catomic fails closed rather than mixing revisions.
+The affected buffer shows a **Paged content unavailable** notice and blocks
+content editing and navigation. Its unsaved edits and undo history remain in
+the session, and other buffers remain usable (`Alt+PageUp` / `Alt+PageDown`).
+There is no implicit reload of dirty content: `Ctrl+R` still asks for confirmation
+before discarding local edits. Save and Save As cannot reconstruct original
+bytes overwritten in place, so a complete save of the affected buffer is
+blocked; retaining edit history does not provide a recoverable copy of those
+missing bytes. Help, file prompts, and quit/discard confirmations remain available.
 
 For Huge and Extreme paged files, external-change checks hash fixed 64 KiB
 samples at the start, middle, and end (192 KiB total) in addition to filesystem

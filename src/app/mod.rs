@@ -25,6 +25,7 @@ pub use file_state::FileState;
 #[cfg(test)]
 use file_state::external_file_status;
 
+mod backing;
 mod buffers;
 mod command_prompt;
 mod completion;

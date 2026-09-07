@@ -416,8 +416,7 @@ impl FileOriginal {
         if FileMetadataSnapshot::capture(&self.file)? == expected {
             Ok(())
         } else {
-            Err(io::Error::new(
-                io::ErrorKind::InvalidData,
+            Err(crate::buffer::BackingFileChanged::error(
                 "file-backed original changed while open",
             ))
         }

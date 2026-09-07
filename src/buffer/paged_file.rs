@@ -382,5 +382,5 @@ impl PagedFileBuffer {
 }
 
 fn changed_descriptor_error() -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, "paged file changed while open")
+    super::BackingFileChanged::error("paged file changed while open")
 }

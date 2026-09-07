@@ -14,6 +14,45 @@ use crate::buffer::{
 use super::PagedFileBuffer;
 
 impl Buffer for PagedFileBuffer {
+    fn preserve_file_backing(
+        &mut self,
+        preserve: &mut dyn FnMut(&std::fs::File) -> io::Result<Option<std::fs::File>>,
+    ) -> io::Result<()> {
+        self.ensure_unchanged()?;
+        let Some(file) = preserve(&self.file)? else {
+            return Ok(());
+        };
+        let snapshot = super::DescriptorSnapshot::capture(&file)?;
+        if snapshot.len != self.snapshot.len {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "paged-file snapshot has the wrong length",
+            ));
+        }
+        // Prepare every descriptor before changing storage so a copy/clone/read
+        // failure leaves the active page, retained pages, and history usable.
+        let originals = self
+            .retained
+            .values()
+            .chain(std::iter::once(self.active()))
+            .map(|page| page.buffer.original.with_file_snapshot(&file))
+            .collect::<io::Result<Vec<_>>>()?;
+        self.ensure_unchanged()?;
+        for (page, original) in self
+            .retained
+            .values_mut()
+            .chain(self.active.iter_mut())
+            .zip(originals)
+        {
+            if let Some(original) = original {
+                page.buffer.original = original;
+            }
+        }
+        self.file = file;
+        self.snapshot = snapshot;
+        Ok(())
+    }
+
     fn line_count(&self) -> usize {
         self.visible_line_count()
     }

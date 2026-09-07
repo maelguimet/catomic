@@ -776,7 +776,7 @@ mod tests {
     fn batched_blocks_match_renderer_with_script_ligatures_and_controls() {
         // unicode-width can form these script ligatures across graphemes.
         // They must take the renderer fallback, including after dependency
-        // upgrades; the common Latin/CJK/emoji domain can use bulk widths.
+        // upgrades; the common Latin/CJK domain can use bulk widths.
         for pattern in [
             "The café opens. 猫と犬。 e\u{301}",
             "👩\u{200d}💻🇫🇷🇺🇸☀\u{fe0f}",
@@ -812,6 +812,35 @@ mod tests {
                     scalar_to_cell(&text[start..end], text[start..at].chars().count()),
                     "pattern={pattern:?} at={at}"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn batched_and_streamed_emoji_columns_agree_near_block_thresholds() {
+        for sequence in [
+            "🇫🇷\u{200d}👩",
+            "👩\u{200d}🇫🇷",
+            "🏽\u{200d}👩",
+            "#\u{fe0f}\u{200d}👩",
+        ] {
+            for bytes in [4095, 4096, 4097, 8191, 8192, 8193] {
+                let text = format!("{sequence}{}", " ".repeat(bytes - sequence.len()));
+                let mut streamed = CellIndexBuilder::new();
+                for ch in text.chars() {
+                    streamed.push(ch.encode_utf8(&mut [0; 4]));
+                }
+                for index in [CellIndex::from_text(&text), streamed.finish()] {
+                    for at in [sequence.len(), text.len()] {
+                        assert_eq!(
+                            index
+                                .cell_at(at, |range| Ok(Cow::Borrowed(&text[range])))
+                                .unwrap(),
+                            scalar_to_cell(&text, text[..at].chars().count()),
+                            "sequence={sequence:?} bytes={bytes} at={at}"
+                        );
+                    }
+                }
             }
         }
     }

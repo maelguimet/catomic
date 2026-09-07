@@ -287,8 +287,10 @@ affected regional-indicator run can therefore require proportionate work and
 temporary storage. Unrelated line prefixes are never rescanned during typing.
 
 Construction batches complete grapheme runs in the shared layout module's
-conservative Latin/CJK/emoji width domain. Script ligatures and controls retain
-per-grapheme renderer semantics. Oracle tests cover both paths; dependency
+conservative Latin/CJK width domain. Emoji, joiners, presentation selectors,
+script ligatures and controls retain per-grapheme renderer semantics: the width
+library accepts some emoji ligatures across extended-grapheme boundaries.
+Oracle tests cover both paths; dependency
 updates must preserve their equivalence. Normal tests check cold and edited
 query/read work at 64 KiB, 1 MiB and 4 MiB, including retained index bytes.
 The ignored `manual_cell_column_opening_cost` test reports construction time,

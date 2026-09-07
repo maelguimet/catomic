@@ -61,6 +61,42 @@ fn tab_stops_after_zwj_emoji_use_configured_visual_columns() {
 }
 
 #[test]
+fn tab_stops_after_batched_emoji_use_renderer_graphemes() {
+    for sequence in [
+        "🇫🇷\u{200d}👩",
+        "👩\u{200d}🇫🇷",
+        "🏽\u{200d}👩",
+        "#\u{fe0f}\u{200d}👩",
+    ] {
+        // At 4096 bytes the opening path batches widths. Space padding keeps
+        // default completion out of the way so this exercises actual Tab.
+        let prefix = format!("{sequence}{}", " ".repeat(4096 - sequence.len()));
+        let cells = text_layout::scalar_to_cell(&prefix, prefix.chars().count());
+        let path =
+            std::env::temp_dir().join(format!("catomic_batched_emoji_tab_{}", std::process::id()));
+        std::fs::write(&path, &prefix).unwrap();
+        for paged in [false, true] {
+            let mut app = App::new(None).unwrap();
+            app.buffer = if paged {
+                Box::new(crate::buffer::PagedFileBuffer::open(&path, 1).unwrap())
+            } else {
+                Box::new(PieceTable::from_text(&prefix))
+            };
+            press(&mut app, KeyCode::End, KeyModifiers::NONE);
+            press(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+            assert_eq!(
+                app.buffer.to_string().len(),
+                prefix.len() + 4 - cells % 4,
+                "sequence={sequence:?} paged={paged}"
+            );
+            press(&mut app, KeyCode::Char('z'), KeyModifiers::CONTROL);
+            assert_eq!(app.buffer.to_string(), prefix);
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
+#[test]
 fn tab_stops_use_the_language_override_and_one_edit_per_key() {
     let mut app = App::new(None).unwrap();
     app.editor_config =

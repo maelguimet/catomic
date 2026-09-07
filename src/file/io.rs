@@ -1,7 +1,7 @@
-//! Purpose: this file must provide explicit full-file UTF-8 reads, atomic file
-//!   IO (write + fsync rename), and bounded snapshot/observation helpers
+//! Purpose: provide streaming atomic file IO (write + fsync rename), test-only
+//!   full-file UTF-8 reads, and bounded snapshot/observation helpers
 //!   for external-edit detection.
-//! Owns: read_to_string (for open/reload paths), streaming atomic writes,
+//! Owns: streaming atomic writes, test/performance convenience wrappers,
 //!   FileSnapshot, ExternalFileStatus, ExternalFileObservation, capture/compare/observe
 //!   helpers, and streaming content identities for fully editable file tiers.
 //! Must not: construct watchers or use notify; fully scan large content outside
@@ -18,7 +18,7 @@
 //!   Unix temp files remain owner-only while content streams, then restore the
 //!   existing target mode or the new file's umask-derived creation mode;
 //!   Absent explicitly represents missing;
-//!   read_to_string returns InvalidData for non-UTF-8; errors other than NotFound
+//!   the test-only UTF-8 reader rejects invalid data; errors other than NotFound
 //!   surface as Unknown(kind) in observation helpers; single-capture observe.
 
 use std::fs::{self, File, OpenOptions};
@@ -43,17 +43,22 @@ pub(crate) use snapshot::{ensure_path_matches_snapshot, PinnedFile};
 #[allow(unused_imports)] // Public field types of the re-exported FileSnapshot.
 pub use snapshot::{FileChangeId, FileContentIdentity};
 
-/// Read entire file as UTF-8 string.
-/// Full-materialization path for current open/reload. Uses fs::read so the
-/// bytes Vec can be moved into String without another content copy after UTF-8
-/// validation. Not used by bounded snapshot detection.
-#[allow(dead_code)] // Compatibility/performance harness; App uses format-aware reads.
+/// Read an entire UTF-8 file for tests and performance baselines.
+/// Moves the bytes into a String after UTF-8 validation. App open/reload uses
+/// format-aware reads; bounded snapshot detection does not use this wrapper.
+#[cfg(test)]
 pub fn read_to_string<P: AsRef<Path>>(path: P) -> io::Result<String> {
     let bytes = fs::read(path.as_ref())?;
     String::from_utf8(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
-/// Atomically write `contents` to `path`.
+/// Test convenience wrapper for the ordinary streaming atomic writer.
+#[cfg(test)]
+pub fn atomic_write_string(path: impl AsRef<Path>, contents: &str) -> io::Result<()> {
+    atomic_write_with(path, |writer| writer.write_all(contents.as_bytes())).map(|_| ())
+}
+
+/// Atomically stream content into `path` and return the number of bytes written.
 ///
 /// Writes to a sibling temp file (same dir), fsyncs data, renames over target,
 /// then best-effort fsyncs the parent directory on Unix.
@@ -64,13 +69,6 @@ pub fn read_to_string<P: AsRef<Path>>(path: P) -> io::Result<String> {
 /// synced temp as recovery evidence if updating or syncing the shared inode fails.
 /// Temp names have bounded length; create_new prevents clobbering collisions.
 /// Linux-kernel-first: directory fsync is best-effort; no new dependencies.
-#[allow(dead_code)] // Compatibility/test convenience; App uses the streaming form.
-pub fn atomic_write_string(path: impl AsRef<Path>, contents: &str) -> io::Result<()> {
-    atomic_write_with(path, |writer| writer.write_all(contents.as_bytes())).map(|_| ())
-}
-
-/// Atomically stream content into `path` and return the number of bytes written.
-/// Durability, rename, and cleanup semantics match `atomic_write_string`.
 /// A valid final symlink is preserved while its referent is atomically replaced;
 /// a dangling final symlink is refused rather than silently replaced.
 pub fn atomic_write_with(

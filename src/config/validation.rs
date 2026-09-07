@@ -147,9 +147,13 @@ const THEME_COLOR_KEYS: &[&str] = &[
 ];
 const STYLE_KEYS: &[&str] = &["fg", "bg", "bold", "dim", "underline", "reverse"];
 
+#[cfg(test)]
 pub(crate) fn validate_unknown_keys(text: &str) -> io::Result<()> {
-    let root = super::decode::<Table>(text)?;
-    reject_unknown(&root, "", ROOT_KEYS)?;
+    super::Document::parse(text)?.validate_unknown_keys()
+}
+
+pub(super) fn validate_table(root: &Table) -> io::Result<()> {
+    reject_unknown(root, "", ROOT_KEYS)?;
     for (section, keys) in [
         ("editor", EDITOR_KEYS),
         ("big_files", BIG_FILE_KEYS),
@@ -159,14 +163,14 @@ pub(crate) fn validate_unknown_keys(text: &str) -> io::Result<()> {
         ("recovery", RECOVERY_KEYS),
         ("mobile", MOBILE_KEYS),
     ] {
-        validate_section(&root, section, keys)?;
+        validate_section(root, section, keys)?;
     }
-    validate_hooks(&root)?;
-    validate_retired_autocomplete(&root)?;
-    validate_languages(&root)?;
-    validate_commands(&root)?;
-    validate_llm(&root)?;
-    validate_theme(&root)?;
+    validate_hooks(root)?;
+    validate_retired_autocomplete(root)?;
+    validate_languages(root)?;
+    validate_commands(root)?;
+    validate_llm(root)?;
+    validate_theme(root)?;
     Ok(())
 }
 

@@ -124,7 +124,12 @@ impl Default for Theme {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn parse(text: &str) -> io::Result<Theme> {
+    from_document(&super::Document::parse(text)?)
+}
+
+pub(crate) fn from_document(document: &super::Document<'_>) -> io::Result<Theme> {
     #[derive(Default, Deserialize)]
     struct ConfigFile {
         #[serde(default)]
@@ -145,7 +150,7 @@ pub(crate) fn parse(text: &str) -> io::Result<Theme> {
         }
     }
 
-    let mut raw = super::decode::<ConfigFile>(text)?.theme;
+    let mut raw = document.decode::<ConfigFile>(&["theme"])?.theme;
     let mut theme = named(&raw.name)?;
     let background = raw.colors.remove("background");
     for (role, value) in raw.colors {

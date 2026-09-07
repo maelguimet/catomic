@@ -28,14 +28,19 @@ impl Default for BigFileConfig {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn parse(text: &str) -> io::Result<BigFileConfig> {
+    from_document(&super::Document::parse(text)?)
+}
+
+pub(crate) fn from_document(document: &super::Document<'_>) -> io::Result<BigFileConfig> {
     #[derive(Default, Deserialize)]
     struct ConfigFile {
         #[serde(default)]
         big_files: BigFileConfig,
     }
 
-    let config = super::decode::<ConfigFile>(text)?.big_files;
+    let config = document.decode::<ConfigFile>(&["big_files"])?.big_files;
     if config.page_lines == 0 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,

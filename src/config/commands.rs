@@ -74,7 +74,12 @@ impl CommandConfig {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn parse(text: &str) -> io::Result<CommandConfig> {
+    from_document(&super::Document::parse(text)?)
+}
+
+pub(crate) fn from_document(document: &super::Document<'_>) -> io::Result<CommandConfig> {
     #[derive(Default, Deserialize)]
     struct ConfigFile {
         #[serde(default)]
@@ -83,7 +88,7 @@ pub(crate) fn parse(text: &str) -> io::Result<CommandConfig> {
         hooks: RawHooks,
     }
 
-    let raw = super::decode::<ConfigFile>(text)?;
+    let raw = document.decode::<ConfigFile>(&["commands", "hooks"])?;
     let mut commands = BTreeMap::new();
     for (name, raw_spec) in raw.commands {
         validate_name(&name)?;

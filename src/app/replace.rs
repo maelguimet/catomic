@@ -7,6 +7,7 @@ use std::io;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use super::prompt_input::{PromptInput, PromptPresentation};
 use crate::buffer::Cursor;
 use crate::config::actions::Action;
 use crate::editor::search::{find_match, SearchDirection};
@@ -18,8 +19,8 @@ pub(crate) struct ReplaceState {
 
 struct ReplacePrompt {
     stage: PromptStage,
-    find: String,
-    replacement: String,
+    find: PromptInput,
+    replacement: PromptInput,
     all: bool,
 }
 
@@ -37,8 +38,8 @@ pub(crate) fn open_prompt(
     app.selection.clear();
     app.replace.prompt = Some(ReplacePrompt {
         stage: PromptStage::Find,
-        find: String::new(),
-        replacement: String::new(),
+        find: PromptInput::default(),
+        replacement: PromptInput::default(),
         all,
     });
     update_message(app);
@@ -70,17 +71,12 @@ pub(crate) fn handle_key(
             app.message = None;
         }
         KeyCode::Enter => return advance_or_apply(app, out).map(|()| true),
-        KeyCode::Backspace => {
-            let prompt = app.replace.prompt.as_mut().expect("replace prompt exists");
-            active_text(prompt).pop();
+        _ => {
+            if let Some(prompt) = app.replace.prompt.as_mut() {
+                active_text(prompt).key(key);
+            }
             update_message(app);
         }
-        KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) && !ch.is_control() => {
-            let prompt = app.replace.prompt.as_mut().expect("replace prompt exists");
-            active_text(prompt).push(ch);
-            update_message(app);
-        }
-        _ => {}
     }
     app.render(out)?;
     Ok(true)
@@ -101,12 +97,16 @@ pub(crate) fn dispatch_action(
             app.render(out)?;
         }
         Action::PromptSubmit => advance_or_apply(app, out)?,
-        Action::PromptDeleteBackward => {
-            active_text(app.replace.prompt.as_mut().expect("replace active")).pop();
+        _ => {
+            let Some(prompt) = app.replace.prompt.as_mut() else {
+                return Ok(false);
+            };
+            if active_text(prompt).action(action).is_none() {
+                return Ok(false);
+            }
             update_message(app);
             app.render(out)?;
         }
-        _ => return Ok(false),
     }
     Ok(true)
 }
@@ -119,36 +119,33 @@ pub(crate) fn handle_paste(
     let Some(prompt) = app.replace.prompt.as_mut() else {
         return Ok(false);
     };
-    active_text(prompt).push_str(&text.replace("\r\n", "\n").replace('\r', "\n"));
+    active_text(prompt).insert(text);
     update_message(app);
     app.render(out)?;
     Ok(true)
 }
 
-fn active_text(prompt: &mut ReplacePrompt) -> &mut String {
+fn active_text(prompt: &mut ReplacePrompt) -> &mut PromptInput {
     match prompt.stage {
         PromptStage::Find => &mut prompt.find,
         PromptStage::Replacement => &mut prompt.replacement,
     }
 }
 
-fn update_message(app: &mut super::App) {
-    let Some(prompt) = app.replace.prompt.as_ref() else {
-        return;
-    };
+pub(super) fn presentation(app: &super::App) -> Option<PromptPresentation> {
+    let prompt = app.replace.prompt.as_ref()?;
     let scope = if prompt.all { "Replace all" } else { "Replace" };
     let (label, text) = match prompt.stage {
-        PromptStage::Find => (format!("{scope} find"), prompt.find.as_str()),
-        PromptStage::Replacement => (
-            format!("{scope} '{}' with", prompt.find),
-            prompt.replacement.as_str(),
-        ),
+        PromptStage::Find => (format!("{scope} find"), &prompt.find),
+        PromptStage::Replacement => (format!("{scope} with"), &prompt.replacement),
     };
-    app.message_info(super::status::format_prompt(
-        &label,
-        text,
-        app.screen.width as usize,
-    ));
+    Some(text.presentation(&label, "", app.screen.width as usize))
+}
+
+fn update_message(app: &mut super::App) {
+    if let Some(presentation) = presentation(app) {
+        app.message_info(presentation.text);
+    }
 }
 
 fn advance_or_apply(
@@ -158,7 +155,8 @@ fn advance_or_apply(
     let prompt = app.replace.prompt.as_mut().expect("replace prompt exists");
     if matches!(prompt.stage, PromptStage::Find) {
         if prompt.find.is_empty() {
-            app.message_info("Replace query cannot be empty.");
+            prompt.find.notice("Replace query cannot be empty.");
+            update_message(app);
             return app.render(out);
         }
         prompt.stage = PromptStage::Replacement;
@@ -173,9 +171,9 @@ fn advance_or_apply(
         return app.render(out);
     }
     if prompt.all {
-        replace_all(app, out, &prompt.find, &prompt.replacement)
+        replace_all(app, out, prompt.find.as_str(), prompt.replacement.as_str())
     } else {
-        replace_next(app, out, &prompt.find, &prompt.replacement)
+        replace_next(app, out, prompt.find.as_str(), prompt.replacement.as_str())
     }
 }
 
@@ -297,5 +295,47 @@ mod tests {
         assert_eq!(app.buffer.to_string(), "b b b");
         app.buffer.undo();
         assert_eq!(app.buffer.to_string(), "aa aa aa");
+    }
+    #[test]
+    fn both_replace_stages_edit_at_caret_and_remapped_submit_applies_once() {
+        let mut app = app("a\u{301}猫target stays");
+        let revision = app.buffer.content_revision();
+        let mut out = Vec::new();
+        app.keybindings = crate::config::keybindings::parse(
+            "[keybindings]\nprompt-submit = [\"alt+s\"]\nprompt-home = [\"alt+h\"]",
+        )
+        .unwrap();
+        open_prompt(&mut app, &mut out, false).unwrap();
+        super::super::input::handle_paste(&mut app, &mut out, "a\u{301}Xtarget").unwrap();
+        app.handle_key_with(
+            &mut out,
+            KeyEvent::new(KeyCode::Char('h'), KeyModifiers::ALT),
+        )
+        .unwrap();
+        app.handle_key_with(&mut out, key(KeyCode::Right)).unwrap();
+        app.handle_key_with(&mut out, key(KeyCode::Delete)).unwrap();
+        super::super::input::handle_paste(&mut app, &mut out, "猫").unwrap();
+        app.handle_key_with(
+            &mut out,
+            KeyEvent::new(KeyCode::Char('s'), KeyModifiers::ALT),
+        )
+        .unwrap();
+        super::super::input::handle_paste(&mut app, &mut out, "end").unwrap();
+        app.handle_key_with(
+            &mut out,
+            KeyEvent::new(KeyCode::Char('h'), KeyModifiers::ALT),
+        )
+        .unwrap();
+        super::super::input::handle_paste(&mut app, &mut out, "👩\u{200d}💻\r\n").unwrap();
+        assert_eq!(app.buffer.content_revision(), revision);
+        assert!(!app.file.dirty);
+        app.handle_key_with(
+            &mut out,
+            KeyEvent::new(KeyCode::Char('s'), KeyModifiers::ALT),
+        )
+        .unwrap();
+        assert_eq!(app.buffer.to_string(), "👩\u{200d}💻\nend stays");
+        app.buffer.undo();
+        assert_eq!(app.buffer.to_string(), "a\u{301}猫target stays");
     }
 }

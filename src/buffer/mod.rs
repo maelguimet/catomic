@@ -191,6 +191,8 @@ pub trait Buffer {
         self.line(row).map(|line| line.chars().count())
     }
     fn cursor(&self) -> Cursor;
+    /// Fixture assertion only; production edit eligibility is owned by input surfaces.
+    #[cfg(test)]
     fn is_read_only(&self) -> bool {
         false
     }

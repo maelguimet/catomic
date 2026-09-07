@@ -473,7 +473,7 @@ fn pruned_saved_token_stays_durably_dirty_until_a_new_save_point() {
     buffer.finish_undo_group();
     buffer.insert_char('b');
     super::super::super::file_state::refresh_dirty(&mut file, &buffer);
-    assert!(file.saved_history_pruned);
+    assert!(file.saved_history_unavailable);
     assert!(file.dirty);
 
     buffer.undo();
@@ -485,7 +485,7 @@ fn pruned_saved_token_stays_durably_dirty_until_a_new_save_point() {
     );
 
     super::super::super::file_state::mark_saved(&mut file, &buffer);
-    assert!(!file.saved_history_pruned);
+    assert!(!file.saved_history_unavailable);
     assert!(!file.dirty);
     let saved = file.saved_history_position;
 

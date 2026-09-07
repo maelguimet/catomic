@@ -25,8 +25,16 @@ pub(crate) enum Action {
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct RunOptions {
-    pub(crate) file: Option<String>,
+    pub(crate) input: Input,
     pub(crate) color_override: crate::config::theme::ColorOverride,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) enum Input {
+    #[default]
+    Untitled,
+    File(String),
+    Stdin,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -178,6 +186,7 @@ fn parse_file(args: Vec<String>) -> Result<Action, String> {
             &args[1..],
             crate::config::theme::ColorOverride::Never,
         )),
+        None if first == "-" && args.len() == 1 => Ok(run_file(&args)),
         None if first.starts_with('-') => Err(format!("unknown option {first:?}")),
         None => Ok(run_file(&args)),
     }
@@ -192,7 +201,11 @@ fn run_file_with_color(
     color_override: crate::config::theme::ColorOverride,
 ) -> Action {
     Action::Run(RunOptions {
-        file: file(words),
+        input: match words {
+            [] => Input::Untitled,
+            [word] if word == "-" => Input::Stdin,
+            _ => Input::File(words.join(" ")),
+        },
         color_override,
     })
 }
@@ -219,7 +232,7 @@ mod tests {
 
     fn run(file: Option<&str>) -> Action {
         Action::Run(RunOptions {
-            file: file.map(str::to_string),
+            input: file.map_or(Input::Untitled, |file| Input::File(file.to_string())),
             color_override: crate::config::theme::ColorOverride::Auto,
         })
     }
@@ -288,6 +301,32 @@ mod tests {
     }
 
     #[test]
+    fn a_single_dash_explicitly_selects_standard_input() {
+        assert_eq!(
+            parse(["-"]).unwrap(),
+            Action::Run(RunOptions {
+                input: Input::Stdin,
+                ..RunOptions::default()
+            })
+        );
+        assert_eq!(
+            parse(["--color=never", "-"]).unwrap(),
+            Action::Run(RunOptions {
+                input: Input::Stdin,
+                color_override: crate::config::theme::ColorOverride::Never,
+            })
+        );
+        assert_eq!(parse(["./-"]).unwrap(), run(Some("./-")));
+        assert_eq!(parse(["notes", "-"]).unwrap(), run(Some("notes -")));
+        assert!(parse(["-", "notes"]).is_err());
+        assert!(parse(["--", "-"]).is_err());
+        assert_eq!(
+            parse(["--color-diagnostics", "-"]).unwrap(),
+            Action::ColorDiagnostics(Some("-".into()))
+        );
+    }
+
+    #[test]
     fn rejects_conflicting_or_unknown_update_options() {
         assert!(parse(["update", "--check", "--backup"]).is_err());
         assert!(parse(["update", "--check", "--yes"]).is_err());
@@ -313,14 +352,14 @@ mod tests {
         assert_eq!(
             parse(["--color=always", "Cargo.toml"]).unwrap(),
             Action::Run(RunOptions {
-                file: Some("Cargo.toml".to_string()),
+                input: Input::File("Cargo.toml".to_string()),
                 color_override: crate::config::theme::ColorOverride::Always,
             })
         );
         assert_eq!(
             parse(["--color=never", "hello", "world.sh"]).unwrap(),
             Action::Run(RunOptions {
-                file: Some("hello world.sh".to_string()),
+                input: Input::File("hello world.sh".to_string()),
                 color_override: crate::config::theme::ColorOverride::Never,
             })
         );

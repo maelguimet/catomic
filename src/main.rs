@@ -102,9 +102,7 @@ fn main() {
     }
 
     let result = match editor_run {
-        EditorRun::Files(run_options) => {
-            app::run(run_options.file.as_deref(), run_options.color_override)
-        }
+        EditorRun::Files(run_options) => app::run(run_options.input, run_options.color_override),
         EditorRun::Config => app::run_config(),
     };
     if let Some(signal) = terminal::termination_signal() {

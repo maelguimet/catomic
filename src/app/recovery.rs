@@ -100,6 +100,7 @@ fn autosave_is_due(app: &super::App) -> bool {
         && app.file.path.is_some()
         && app.recovery.task.is_none()
         && app.recovery.preview.is_none()
+        && app.recovery.offered_candidate.is_none()
         && app.recovery.last_written_history != Some(app.buffer.content_revision())
         && app.recovery.last_attempt.elapsed() >= Duration::from_secs(config.interval_secs)
 }

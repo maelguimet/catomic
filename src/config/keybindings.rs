@@ -184,6 +184,7 @@ impl Builder {
             Scope::Editor,
             Scope::Prompt,
             Scope::Search,
+            Scope::ReplaceReview,
             Scope::Completion,
             Scope::Preview,
             Scope::Help,
@@ -236,14 +237,19 @@ struct LegacyOverride {
     action: Action,
 }
 
+#[cfg(test)]
 pub(crate) fn parse(text: &str) -> io::Result<KeyBindings> {
+    from_document(&super::Document::parse(text)?)
+}
+
+pub(crate) fn from_document(document: &super::Document<'_>) -> io::Result<KeyBindings> {
     #[derive(Default, Deserialize)]
     struct ConfigFile {
         #[serde(default)]
         keybindings: toml::Table,
     }
 
-    let table = super::decode::<ConfigFile>(text)?.keybindings;
+    let table = document.decode::<ConfigFile>(&["keybindings"])?.keybindings;
     let (action_overrides, legacy_overrides) = decode_overrides(table)?;
     let mut builder = Builder::defaults()?;
     for configured in &action_overrides {
@@ -311,7 +317,7 @@ fn decode_overrides(table: toml::Table) -> io::Result<(Vec<ActionOverride>, Vec<
                 })?;
                 let chord = parse_shortcut(raw)?;
                 validate_input(action, chord, raw)?;
-                validate_safe_key(chord, raw)?;
+                validate_configured_key(action, chord, raw)?;
                 chords.push((chord, raw.to_string()));
             }
             actions_out.push(ActionOverride { action, chords });
@@ -330,7 +336,7 @@ fn decode_overrides(table: toml::Table) -> io::Result<(Vec<ActionOverride>, Vec<
             .ok_or_else(|| invalid(format!("unknown keybinding action {raw_action:?}")))?;
         let chord = parse_shortcut(&raw_name)?;
         validate_input(action, chord, &raw_name)?;
-        validate_safe_key(chord, &raw_name)?;
+        validate_configured_key(action, chord, &raw_name)?;
         legacy_out.push(LegacyOverride {
             chord,
             raw_chord: raw_name,
@@ -350,6 +356,16 @@ fn retired_action(name: &str) -> bool {
             | "picker-accept"
             | "picker-cancel"
     )
+}
+
+fn validate_configured_key(action: Action, chord: ShortcutChord, raw: &str) -> io::Result<()> {
+    // Review controls cannot shadow document or prompt typing: their scope
+    // exists only after query/replacement entry has finished.
+    if actions::descriptor(action).scopes == [Scope::ReplaceReview] {
+        Ok(())
+    } else {
+        validate_safe_key(chord, raw)
+    }
 }
 
 fn validate_retired_chord(chord: ShortcutChord, raw: &str) -> io::Result<()> {

@@ -48,6 +48,19 @@ impl LiteralByteMatcher {
     /// state is committed separately so descriptor callers can map a candidate in
     /// the old overlap before that suffix is replaced.
     pub(super) fn find_segment_matches(&mut self, segment: &[u8], stop_at_or_after: Option<usize>) {
+        self.find_segment_matches_with_limit(segment, stop_at_or_after, usize::MAX);
+    }
+
+    pub(super) fn find_segment_matches_limited(&mut self, segment: &[u8], limit: usize) {
+        self.find_segment_matches_with_limit(segment, None, limit);
+    }
+
+    fn find_segment_matches_with_limit(
+        &mut self,
+        segment: &[u8],
+        stop_at_or_after: Option<usize>,
+        limit: usize,
+    ) {
         self.candidates.clear();
         let overlap_len = self.overlap.len();
         if overlap_len > 0 {
@@ -61,7 +74,8 @@ impl LiteralByteMatcher {
                     if relative < overlap_len && relative + self.query_len > overlap_len {
                         let offset = boundary_start + relative;
                         self.candidates.push(offset);
-                        return stop_at_or_after.is_some_and(|limit| offset >= limit);
+                        return self.candidates.len() >= limit
+                            || stop_at_or_after.is_some_and(|limit| offset >= limit);
                     }
                     false
                 });
@@ -73,7 +87,7 @@ impl LiteralByteMatcher {
         find_overlapping(&self.finder, self.query_len, segment, |relative| {
             let offset = self.processed_bytes + relative;
             self.candidates.push(offset);
-            stop_at_or_after.is_some_and(|limit| offset >= limit)
+            self.candidates.len() >= limit || stop_at_or_after.is_some_and(|limit| offset >= limit)
         });
     }
 

@@ -25,6 +25,9 @@ type TestResult<T = ()> = Result<T, Box<dyn Error>>;
 
 static PTY_TEST_LOCK: Mutex<()> = Mutex::new(());
 
+#[path = "pty_smoke/stdin.rs"]
+mod stdin;
+
 struct TempPath {
     path: PathBuf,
 }
@@ -1024,7 +1027,8 @@ fn pty_f1_help_wraps_and_scrolls_to_reload_reference_in_a_narrow_terminal() -> T
     editor.wait_for_initial_render()?;
     editor.send_keys(b"\x1bOP")?; // F1
     editor.wait_for_output("F1 built-in help", "Help; Esc closes.")?;
-    for _ in 0..12 {
+    // Keep the reference reachable when earlier action descriptions grow.
+    for _ in 0..24 {
         editor.send_keys(b"\x1b[6~")?; // PageDown
     }
     editor.wait_for_output("external change help", "observed state is unchanged")?;
@@ -2406,5 +2410,74 @@ fn pty_tab_completes_open_and_save_as_paths_with_spaces() -> TestResult {
     editor.wait_for_exit()?;
     assert_eq!(fs::read_to_string(source)?, "SOURCE\n");
     assert_eq!(fs::read_to_string(target)?, "TARGET\n");
+    Ok(())
+}
+
+#[test]
+fn pty_replace_reviews_skips_accepts_and_cancels_with_one_query_entry() -> TestResult {
+    let project = TempProject::new("replace_review");
+    let source = project.write("source.txt", "cat cat cat\n");
+    let mut editor = PtyEditor::spawn_sized(&source, 8, 80)?;
+    editor.wait_for_initial_render()?;
+    editor.clear_output();
+    editor.send_keys(b"\x1b[12~replace\rcat\rfox\r")?;
+    editor.wait_for_output("first replacement candidate", "Replace candidate 1:1")?;
+    editor.wait_for_output("candidate highlighted", "\x1b[30;43mcat\x1b[39;49m")?;
+    editor.wait_for_output("review cursor is in source", "\x1b[1;1H\x1b[?25h")?;
+    assert_eq!(fs::read_to_string(&source)?, "cat cat cat\n");
+    editor.send_keys(b"n")?;
+    editor.wait_for_output("second replacement candidate", "Replace candidate 1:5")?;
+    editor.send_keys(b"y")?;
+    editor.wait_for_output("third replacement candidate", "Replace candidate 1:9")?;
+    editor.clear_output();
+    editor.send_keys(b"\x1b")?;
+    editor.wait_for_output("replacement cancellation counts", "1 replaced, 1 skipped")?;
+    editor.wait_for_output("cancelled review keeps source cursor", "\x1b[1;9H\x1b[?25h")?;
+    assert!(
+        !editor.output_string().contains("\x1b[30;43m"),
+        "cancel clears candidate highlight"
+    );
+    editor.send_keys(b"\x13")?;
+    wait_until(
+        "selectively replaced source saved",
+        Duration::from_secs(2),
+        || fs::read_to_string(&source).is_ok_and(|text| text == "cat fox cat\n"),
+    )?;
+    editor.send_keys(b"\x1a\x13")?;
+    wait_until(
+        "accepted replacement undoes as one edit",
+        Duration::from_secs(2),
+        || fs::read_to_string(&source).is_ok_and(|text| text == "cat cat cat\n"),
+    )?;
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+    Ok(())
+}
+
+#[test]
+fn pty_replace_remaining_can_cancel_during_bulk_and_save_only_accepted_groups() -> TestResult {
+    let project = TempProject::new("replace_bulk_cancel");
+    let source = project.write("source.txt", &"cat ".repeat(5000));
+    let mut editor = PtyEditor::spawn_sized(&source, 8, 80)?;
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"\x1b[12~replace\rcat\rdog\r")?;
+    editor.wait_for_output("bulk initial candidate", "Replace candidate 1:1")?;
+    editor.clear_output();
+    editor.send_keys(b"a\x1b")?;
+    editor.wait_for_output("bulk cancellation", "Replacement cancelled:")?;
+    editor.send_keys(b"\x13")?;
+    wait_until("partial bulk save", Duration::from_secs(2), || {
+        fs::read_to_string(&source).is_ok_and(|text| text.starts_with("dog "))
+    })?;
+    let saved = fs::read_to_string(&source)?;
+    let replaced = saved.matches("dog").count();
+    let remaining = saved.matches("cat").count();
+    assert!(
+        replaced > 0 && replaced < 5000,
+        "bulk cancellation must interrupt progress"
+    );
+    assert_eq!(replaced + remaining, 5000);
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
     Ok(())
 }

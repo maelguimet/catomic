@@ -11,6 +11,7 @@ const E: &[super::Scope] = &[Editor];
 const G: &[super::Scope] = &[Global];
 const P: &[super::Scope] = &[Prompt];
 const S: &[super::Scope] = &[Search];
+const R: &[super::Scope] = &[ReplaceReview];
 const C: &[super::Scope] = &[Completion];
 const V: &[super::Scope] = &[Preview];
 const H: &[super::Scope] = &[Help];
@@ -113,7 +114,7 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
     key!(
         Replace,
         "replace",
-        "Open the two-stage Replace Next prompt.",
+        "Enter query and replacement, then review each candidate.",
         E,
         ["ctrl+shift+f"]
     ),
@@ -498,6 +499,34 @@ pub(crate) const REGISTRY: &[Descriptor] = &[
         "search-cancel",
         "Close search and clear highlight",
         S,
+        ["esc"]
+    ),
+    key!(
+        ReplaceAccept,
+        "replace-accept",
+        "Replace the highlighted candidate",
+        R,
+        ["y", "enter"]
+    ),
+    key!(
+        ReplaceSkip,
+        "replace-skip",
+        "Skip the highlighted candidate",
+        R,
+        ["n"]
+    ),
+    key!(
+        ReplaceRemaining,
+        "replace-remaining",
+        "Replace the remaining candidates",
+        R,
+        ["a"]
+    ),
+    key!(
+        ReplaceCancel,
+        "replace-cancel",
+        "Stop replacement and retain accepted edits",
+        R,
         ["esc"]
     ),
     key!(

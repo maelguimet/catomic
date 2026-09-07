@@ -188,11 +188,27 @@ impl App {
 
 /// Public entry called from main.rs.
 pub fn run(
-    initial_file: Option<&str>,
+    input: crate::cli::Input,
     color_override: crate::config::theme::ColorOverride,
 ) -> io::Result<()> {
+    let imported = if input == crate::cli::Input::Stdin {
+        term::require_piped_input_terminal()?;
+        Some(crate::file::stdin::read_stdin(|| {
+            term::termination_signal().is_some()
+        })?)
+    } else {
+        None
+    };
     let config = StartupConfig::load(color_override)?;
-    let mut app = App::new_with_config(initial_file, config)?;
+    let mut app = if let Some(imported) = imported {
+        App::new_with_stdin(imported, config)?
+    } else {
+        let path = match &input {
+            crate::cli::Input::File(path) => Some(path.as_str()),
+            _ => None,
+        };
+        App::new_with_config(path, config)?
+    };
     app.run()
 }
 

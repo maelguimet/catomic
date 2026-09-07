@@ -380,7 +380,65 @@ fn malformed_sidecar_reports_an_error_without_ending_the_editor() {
 }
 
 #[test]
-fn missing_source_keeps_recovery_offer_for_retry() {
+fn never_saved_file_recovers_autosaved_text_without_creating_the_source() {
+    let original = path("never_saved.txt");
+    cleanup(&original);
+    let sidecar = crate::file::recovery::catnap_path(&original);
+    let mut out = Vec::new();
+    {
+        let mut app = super::super::App::new(original.to_str()).unwrap();
+        enabled(&mut app, 1024);
+        for ch in "unique crash work".chars() {
+            dirty_insert(&mut app, ch);
+        }
+        force_due(&mut app);
+        poll(&mut app, &mut out).unwrap();
+        wait_for_catnap(&mut app, &mut out);
+        assert_eq!(
+            std::fs::read_to_string(&sidecar).unwrap(),
+            "unique crash work"
+        );
+        assert!(!original.exists());
+    }
+    let mut app = super::super::App::new(original.to_str()).unwrap();
+    enabled(&mut app, 1024);
+    initialize(&mut app);
+    assert!(app.recovery.offered_candidate.is_some());
+
+    start_preview(&mut app, &mut out).unwrap();
+
+    assert!(is_viewing(&app), "{:?}", app.message);
+    assert_eq!(
+        display_buffer(&app).unwrap().to_string(),
+        "unique crash work"
+    );
+    assert_eq!(app.buffer.to_string(), "");
+    assert!(!original.exists());
+    handle_key(
+        &mut app,
+        &mut out,
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+    )
+    .unwrap();
+    assert_eq!(app.buffer.to_string(), "unique crash work");
+    assert!(app.file.dirty);
+    assert!(!original.exists());
+    app.buffer.undo();
+    assert_eq!(app.buffer.to_string(), "");
+    assert!(!original.exists());
+    app.buffer.redo();
+    assert_eq!(app.buffer.to_string(), "unique crash work");
+    super::super::save::do_atomic_save(&mut app, &mut out).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&original).unwrap(),
+        "unique crash work"
+    );
+    assert!(!sidecar.exists());
+    cleanup(&original);
+}
+
+#[test]
+fn deleted_source_can_be_previewed_without_recreating_it() {
     let original = path("missing_source.txt");
     cleanup(&original);
     std::fs::write(&original, "disk").unwrap();
@@ -394,17 +452,44 @@ fn missing_source_keeps_recovery_offer_for_retry() {
 
     start_preview(&mut app, &mut out).unwrap();
 
-    assert!(!is_viewing(&app));
-    assert!(app.recovery.offered_candidate.is_some());
-    assert!(app
-        .message
-        .as_deref()
-        .unwrap()
-        .contains("Source file is missing"));
-    std::fs::write(&original, "disk").unwrap();
-    start_preview(&mut app, &mut out).unwrap();
     assert!(is_viewing(&app));
     assert_eq!(display_buffer(&app).unwrap().to_string(), "recovered");
+    assert_eq!(app.buffer.to_string(), "disk");
+    assert!(!original.exists());
+    cleanup(&original);
+}
+
+#[test]
+fn source_appearing_during_recovery_preview_refuses_application() {
+    let original = path("appearing_source.txt");
+    cleanup(&original);
+    let mut app = super::super::App::new(original.to_str()).unwrap();
+    enabled(&mut app, 1024);
+    let sidecar = crate::file::recovery::catnap_path(&original);
+    crate::file::io::atomic_write_private_string(&sidecar, "recovered").unwrap();
+    initialize(&mut app);
+    let mut out = Vec::new();
+    start_preview(&mut app, &mut out).unwrap();
+    assert!(is_viewing(&app));
+    let source_history = app.buffer.content_revision();
+    // Even an empty file matching the buffer changes the absent source snapshot.
+    std::fs::write(&original, "").unwrap();
+
+    handle_key(
+        &mut app,
+        &mut out,
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+    )
+    .unwrap();
+
+    assert!(!is_viewing(&app));
+    assert_eq!(app.buffer.to_string(), "");
+    assert_eq!(app.buffer.content_revision(), source_history);
+    assert!(!app.file.dirty);
+    assert_eq!(std::fs::read_to_string(&original).unwrap(), "");
+    assert_eq!(std::fs::read_to_string(&sidecar).unwrap(), "recovered");
+    assert!(app.recovery.offered_candidate.is_some());
+    assert!(app.message.as_deref().unwrap().contains("Source changed"));
     cleanup(&original);
 }
 

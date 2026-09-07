@@ -13,8 +13,8 @@ pub(crate) fn insert_newline(
 ) -> io::Result<()> {
     let (start, end) = selected_or_cursor(app);
     let line = app.buffer.line(start.row).unwrap_or_default();
-    let prefix: String = line.chars().take_while(|ch| ch.is_whitespace()).collect();
     let before: String = line.chars().take(start.col).collect();
+    let prefix: String = before.chars().take_while(|ch| ch.is_whitespace()).collect();
     let width = tab_width(app);
     let opens_block = before
         .trim_end()
@@ -148,6 +148,9 @@ fn tab_width(app: &super::App) -> usize {
     app.editor_config
         .tab_size_for_path(app.file.path.as_deref())
 }
+
+#[cfg(test)]
+mod newline_tests;
 
 #[cfg(test)]
 mod tests {

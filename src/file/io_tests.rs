@@ -72,23 +72,50 @@ fn atomic_write_writes_expected_bytes() {
     atomic_write_string(&out, "hello\nworld").expect("atomic write");
     let read = fs::read_to_string(&out).expect("read back");
     assert_eq!(read, "hello\nworld");
-    // no stray temp left
-    let parent = out.parent().unwrap();
-    let file_name = out.file_name().unwrap().to_string_lossy();
-    // best effort: check no matching .tmp. for our pid around here (scan dir)
-    if let Ok(entries) = fs::read_dir(parent) {
-        for e in entries.flatten() {
-            let fname = e.file_name().to_string_lossy().to_string();
-            if fname.starts_with(&format!("{}.tmp.", file_name)) {
-                // If a tmp from this pid or pattern lingers, fail (unless race other proc).
-                // We only check exact our pid pattern.
-                if fname.contains(&format!(".tmp.{}", std::process::id())) {
-                    panic!("stray temp file left: {}", fname);
-                }
-            }
-        }
-    }
+    assert!(!atomic_staging_path(&out).exists(), "stray temp file left");
     cleanup(&out);
+}
+
+#[cfg(unix)]
+#[test]
+fn atomic_write_overwrites_existing_maximum_length_basename() {
+    use std::os::fd::AsRawFd;
+
+    let directory = temp_path("maximum_basename");
+    fs::create_dir(&directory).unwrap();
+    let result = std::panic::catch_unwind(|| {
+        let directory_file = File::open(&directory).unwrap();
+        // SAFETY: the descriptor remains open for this query and fpathconf does
+        // not retain it. Query this fixture filesystem rather than assuming 255.
+        let name_max = unsafe { libc::fpathconf(directory_file.as_raw_fd(), libc::_PC_NAME_MAX) };
+        assert!(
+            name_max > 0,
+            "fixture filesystem must report a finite NAME_MAX"
+        );
+        let out = directory.join("x".repeat(name_max as usize));
+        fs::write(&out, "original").expect("maximum basename must be legal on fixture filesystem");
+        let oversized = directory.join("x".repeat(name_max as usize + 1));
+        assert_eq!(
+            fs::write(oversized, "too long").unwrap_err().raw_os_error(),
+            Some(libc::ENAMETOOLONG),
+            "confirm the reported component limit is enforced"
+        );
+
+        atomic_write_string(&out, "replacement\nUnicode: é").expect("save legal maximum basename");
+        assert_eq!(
+            fs::read(&out).unwrap(),
+            "replacement\nUnicode: é".as_bytes()
+        );
+        let entries: Vec<_> = fs::read_dir(&directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect();
+        assert_eq!(entries, vec![out], "save must leave only the target");
+    });
+    fs::remove_dir_all(&directory).unwrap();
+    if let Err(panic) = result {
+        std::panic::resume_unwind(panic);
+    }
 }
 
 #[test]
@@ -170,21 +197,10 @@ fn atomic_write_leaves_no_temp_on_success() {
     let out = temp_path("notmp.txt");
     cleanup(&out);
     atomic_write_string(&out, "x").unwrap();
-    // Scan parent for any .tmp.<pid> matching our target basename
-    let parent = out.parent().unwrap_or(std::path::Path::new("."));
-    let base = out.file_name().unwrap().to_string_lossy();
-    if let Ok(rd) = fs::read_dir(parent) {
-        for ent in rd.flatten() {
-            let n = ent.file_name();
-            let s = n.to_string_lossy();
-            if s.starts_with(&format!("{}.tmp.", base))
-                && s.contains(&format!(".tmp.{}", std::process::id()))
-            {
-                cleanup(&out);
-                panic!("temp file remained after success: {}", s);
-            }
-        }
-    }
+    assert!(
+        !atomic_staging_path(&out).exists(),
+        "temp remained after success"
+    );
     cleanup(&out);
 }
 
@@ -218,17 +234,10 @@ fn atomic_write_with_error_preserves_target_and_removes_temp() {
 
     assert_eq!(err.kind(), io::ErrorKind::Other);
     assert_eq!(fs::read_to_string(&out).unwrap(), "stable");
-    let parent = out.parent().unwrap();
-    let base = out.file_name().unwrap().to_string_lossy();
-    for entry in fs::read_dir(parent).unwrap().flatten() {
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        assert!(
-            !name.starts_with(&format!("{}.tmp.{}", base, std::process::id())),
-            "stream failure left temp file: {}",
-            name
-        );
-    }
+    assert!(
+        !atomic_staging_path(&out).exists(),
+        "stream failure left temp file"
+    );
     cleanup(&out);
 }
 
@@ -237,10 +246,7 @@ fn atomic_write_temp_collision_preserves_pre_existing_file() {
     let out = temp_path("temp_collision.txt");
     cleanup(&out);
     fs::write(&out, "stable").unwrap();
-    let parent = out.parent().unwrap();
-    let base = out.file_name().unwrap().to_string_lossy();
-    let tid = format!("{:?}", std::thread::current().id());
-    let temp = parent.join(format!("{}.tmp.{}.{}", base, std::process::id(), tid));
+    let temp = atomic_staging_path(&out);
     cleanup(&temp);
     fs::write(&temp, "pre-existing sibling").unwrap();
 
@@ -256,6 +262,27 @@ fn atomic_write_temp_collision_preserves_pre_existing_file() {
     );
     cleanup(&temp);
     cleanup(&out);
+}
+
+#[test]
+fn atomic_write_can_stage_different_targets_on_the_same_thread() {
+    let first = temp_path("nested_first.txt");
+    let second = temp_path("nested_second.txt");
+    cleanup(&first);
+    cleanup(&second);
+
+    atomic_write_with(&first, |writer| {
+        writer.write_all(b"first")?;
+        atomic_write_string(&second, "second")
+    })
+    .unwrap();
+
+    assert_eq!(fs::read(&first).unwrap(), b"first");
+    assert_eq!(fs::read(&second).unwrap(), b"second");
+    assert!(!atomic_staging_path(&first).exists());
+    assert!(!atomic_staging_path(&second).exists());
+    cleanup(&first);
+    cleanup(&second);
 }
 
 // Phase 2-l onward: FileSnapshot / ExternalFileStatus tests.

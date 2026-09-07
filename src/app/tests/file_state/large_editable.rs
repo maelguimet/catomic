@@ -145,3 +145,113 @@ fn paged_buffer_undo_and_redo_track_the_saved_position_exactly() {
 
     let _ = fs::remove_file(path);
 }
+
+#[test]
+fn hard_linked_paged_buffer_remains_usable_after_successive_saves() {
+    use std::os::unix::fs::MetadataExt;
+
+    for newline in ["\n", "\r\n"] {
+        let name = if newline == "\n" { "lf" } else { "crlf" };
+        let path = temp_path(&format!("hard_link_{name}.txt"));
+        let alias = temp_path(&format!("hard_link_{name}_alias.txt"));
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(&alias);
+        fs::write(&path, ["first", "second", "third"].join(newline)).unwrap();
+        fs::hard_link(&path, &alias).unwrap();
+        let inode = fs::metadata(&path).unwrap().ino();
+        let mut app = app_with_paged_buffer(&path);
+        let mut out = Vec::new();
+
+        let dispatch = |app: &mut App, out: &mut Vec<u8>, code, modifiers| {
+            app.handle_key_with(out, make_key(code, modifiers)).unwrap();
+        };
+        let save = |app: &mut App, out: &mut Vec<u8>, lines: [&str; 3]| {
+            let result =
+                app.handle_key_with(out, make_key(KeyCode::Char('s'), KeyModifiers::CONTROL));
+            let expected = lines.join(newline);
+            for file in [&path, &alias] {
+                assert_eq!(fs::read(file).unwrap(), expected.as_bytes());
+                assert_eq!(fs::metadata(file).unwrap().ino(), inode);
+                assert_eq!(fs::metadata(file).unwrap().nlink(), 2);
+            }
+            assert!(!app.file.dirty);
+            assert_eq!(
+                app.file.disk_snapshot,
+                Some(crate::file::io::capture_file_snapshot(&path).unwrap())
+            );
+            result.expect("Ctrl+S must also render the saved paged buffer");
+            let mut streamed = Vec::new();
+            crate::file::text_format::write_buffer(
+                &*app.buffer,
+                &mut streamed,
+                app.file.text_format,
+            )
+            .unwrap();
+            assert_eq!(streamed, expected.as_bytes());
+        };
+
+        dispatch(&mut app, &mut out, KeyCode::Char('λ'), KeyModifiers::NONE);
+        save(&mut app, &mut out, ["λfirst", "second", "third"]);
+        dispatch(&mut app, &mut out, KeyCode::PageDown, KeyModifiers::CONTROL);
+        assert_eq!(app.buffer.line(0).unwrap(), "second");
+        dispatch(&mut app, &mut out, KeyCode::Char('Y'), KeyModifiers::NONE);
+        dispatch(&mut app, &mut out, KeyCode::PageDown, KeyModifiers::CONTROL);
+        assert_eq!(app.buffer.line(0).unwrap(), "third");
+        dispatch(&mut app, &mut out, KeyCode::Char('Z'), KeyModifiers::NONE);
+        save(&mut app, &mut out, ["λfirst", "Ysecond", "Zthird"]);
+
+        dispatch(
+            &mut app,
+            &mut out,
+            KeyCode::Char('z'),
+            KeyModifiers::CONTROL,
+        );
+        assert!(app.file.dirty);
+        assert_eq!(app.buffer.line(0).unwrap(), "third");
+        dispatch(
+            &mut app,
+            &mut out,
+            KeyCode::Char('z'),
+            KeyModifiers::CONTROL,
+        );
+        assert_eq!(app.buffer.line(0).unwrap(), "second");
+        dispatch(
+            &mut app,
+            &mut out,
+            KeyCode::Char('y'),
+            KeyModifiers::CONTROL,
+        );
+        assert_eq!(app.buffer.line(0).unwrap(), "Ysecond");
+        save(&mut app, &mut out, ["λfirst", "Ysecond", "third"]);
+        dispatch(
+            &mut app,
+            &mut out,
+            KeyCode::Char('y'),
+            KeyModifiers::CONTROL,
+        );
+        assert!(app.file.dirty);
+        assert_eq!(app.buffer.line(0).unwrap(), "Zthird");
+        save(&mut app, &mut out, ["λfirst", "Ysecond", "Zthird"]);
+        dispatch(&mut app, &mut out, KeyCode::PageUp, KeyModifiers::CONTROL);
+        assert_eq!(app.buffer.line(0).unwrap(), "Ysecond");
+        dispatch(&mut app, &mut out, KeyCode::PageUp, KeyModifiers::CONTROL);
+        assert_eq!(app.buffer.line(0).unwrap(), "λfirst");
+
+        dispatch(&mut app, &mut out, KeyCode::Char('!'), KeyModifiers::NONE);
+        let edited_line = app.buffer.line(0).unwrap().into_owned();
+        fs::write(&alias, "external change").unwrap();
+        dispatch(
+            &mut app,
+            &mut out,
+            KeyCode::Char('s'),
+            KeyModifiers::CONTROL,
+        );
+        assert!(app.file.dirty);
+        assert!(app.pending_save_conflict.is_some());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "external change");
+        assert_eq!(app.buffer.line(0).unwrap(), edited_line);
+
+        let _ = fs::remove_file(path);
+        let _ = fs::remove_file(alias);
+    }
+}

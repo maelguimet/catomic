@@ -845,7 +845,9 @@ The value must be a positive integer.
 
 ## Completion
 
-Press `Ctrl+Space` or `Tab` to request completion.
+Press `Ctrl+Space` or, with no selection, `Tab` to request completion.
+With a selection, `Tab` indents the selected lines; `Ctrl+Space` asks you to
+dismiss the selection before completing a word.
 
 - `Tab` and `Shift+Tab` cycle candidates.
 - `Enter` accepts the active candidate.

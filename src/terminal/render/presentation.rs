@@ -172,7 +172,8 @@ impl PresentationState {
         let emoji_picker_active = options.emoji_picker.is_some();
         let force_all_rows =
             self.invalidated || layout_changed || emoji_picker_active || self.had_emoji_picker;
-        let cursor_position = plan.cursor_position(buffer.cursor());
+        let cursor_position =
+            super::presentation_cursor(viewport, options, plan.cursor_position(buffer.cursor()));
         let needs_unwrapped_read = matches!(plan, RetainedPlan::Unwrapped(_))
             && self.needs_row_composition(plan, options, force_all_rows);
         if needs_unwrapped_read && candidate_read.is_none() {

@@ -76,12 +76,50 @@ fn discovery_detects_clean_and_dirty_official_source_checkouts() {
     let clean = discover_at(&root).unwrap();
     assert_eq!(clean.branch, "main");
     assert!(!clean.dirty);
+    let installed = InstalledBuild {
+        commit: Some(&clean.checkout_sha),
+        source_state: SourceState::Clean,
+    };
+    assert_eq!(
+        installed.update_available_at(&clean.checkout_sha),
+        Some(false)
+    );
+    assert!(installed.is_current_at(&clean.checkout_sha));
 
     fs::write(root.join("local-notes"), b"preserve me").unwrap();
     let dirty = discover_at(&root).unwrap();
     assert!(dirty.dirty);
+    assert!(installed.is_current_at(&dirty.checkout_sha));
 
     fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn dirty_or_incomplete_installed_identity_never_claims_the_official_revision() {
+    let revision = "71f3cbd98484e5bb9be921d63ff1ebf9394ecafe";
+    for (commit, source_state, available, suffix) in [
+        (Some(revision), SourceState::Dirty, Some(true), "; dirty)"),
+        (
+            Some(revision),
+            SourceState::Unknown,
+            None,
+            "; source state unknown)",
+        ),
+        (None, SourceState::Unknown, None, "commit unknown)"),
+        (None, SourceState::Clean, None, "commit unknown)"),
+    ] {
+        let installed = InstalledBuild {
+            commit,
+            source_state,
+        };
+        assert_eq!(installed.update_available_at(revision), available);
+        assert!(!installed.is_current_at(revision));
+        assert!(installed.version_line().ends_with(suffix));
+    }
+    assert_eq!(
+        InstalledBuild::current().version_line(),
+        build_info::version_line()
+    );
 }
 
 #[test]
@@ -186,9 +224,41 @@ fn rust_toolchain_version_comparison_accepts_manifest_minor_versions() {
 }
 
 #[test]
-fn retained_checkout_workspace_cleans_after_successful_local_build() {
+fn current_checkout_rebuilds_older_binary_at_exact_revision_and_preserves_changes() {
     let root = fixture();
+    let old_sha = git_text(&root, &["rev-parse", "HEAD"]).unwrap();
+    let installed = InstalledBuild {
+        commit: Some(&old_sha),
+        source_state: SourceState::Clean,
+    };
+    fs::write(
+        root.join("src/main.rs"),
+        r#"fn main() {
+    let revision = env!("CATOMIC_BUILD_COMMIT");
+    assert_eq!(env!("CATOMIC_BUILD_DIRTY"), "0");
+    println!("catomic 0.0.0 (commit {})", &revision[..12]);
+}
+"#,
+    )
+    .unwrap();
+    git(&root, &["add", "src/main.rs"]);
+    git(
+        &root,
+        &["commit", "-m", "advance source without reinstalling"],
+    );
     let sha = git_text(&root, &["rev-parse", "HEAD"]).unwrap();
+    fs::write(root.join("Cargo.toml"), "# local staged edit\n").unwrap();
+    git(&root, &["add", "Cargo.toml"]);
+    fs::write(root.join("notes"), "local untracked edit\n").unwrap();
+    let checkout = discover_at(&root).unwrap();
+    assert_eq!(checkout.checkout_sha, sha);
+    assert_eq!(installed.update_available_at(&sha), Some(true));
+    assert!(!installed.is_current_at(&sha));
+    assert!(installed.version_line().contains(short_sha(&old_sha)));
+    assert!(!installed.version_line().contains(short_sha(&sha)));
+    let before_status = git_text(&root, &["status", "--porcelain=v1"]).unwrap();
+    let stash = stash_changes(&root).unwrap();
+    require_fast_forward(&root, &checkout.checkout_sha, &sha).unwrap();
     let temporary_parent = root.with_extension("successful-workspace");
     let cargo_home = root.with_extension("successful-cargo-home");
     fs::create_dir(&temporary_parent).unwrap();
@@ -205,14 +275,65 @@ fn retained_checkout_workspace_cleans_after_successful_local_build() {
             &workspace.target,
         );
         command.env("CARGO_HOME", &cargo_home);
-        run_cargo(&mut command)
+        run_cargo(&mut command)?;
+        require_candidate_identity(&workspace.target.join("debug/catomic"), "0.0.0", &sha)?;
+        ensure_checkout_unchanged(&checkout)?;
+        fast_forward_checkout(&root, &sha).unwrap();
+        Ok(())
     })
     .unwrap();
 
     assert!(!workspace_root.exists());
+    restore_changes(&root, stash.as_deref()).unwrap();
+    assert_eq!(
+        git_text(&root, &["status", "--porcelain=v1"]).unwrap(),
+        before_status
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("Cargo.toml")).unwrap(),
+        "# local staged edit\n"
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("notes")).unwrap(),
+        "local untracked edit\n"
+    );
+    assert_eq!(git_text(&root, &["rev-parse", "HEAD"]).unwrap(), sha);
+    assert!(git_text(&root, &["stash", "list"]).unwrap().is_empty());
     fs::remove_dir_all(root).unwrap();
     fs::remove_dir_all(temporary_parent).unwrap();
     fs::remove_dir_all(cargo_home).unwrap();
+}
+
+#[test]
+fn checkout_safety_uses_discovered_head_and_rejects_concurrent_changes() {
+    let root = fixture();
+    let checkout = discover_at(&root).unwrap();
+    ensure_checkout_unchanged(&checkout).unwrap();
+    fs::write(root.join("new-file"), "concurrent edit\n").unwrap();
+    assert_eq!(
+        ensure_checkout_unchanged(&checkout)
+            .unwrap_err()
+            .exit_code(),
+        EXIT_SOURCE_STATE
+    );
+    git(&root, &["add", "new-file"]);
+    git(&root, &["commit", "-m", "concurrent commit"]);
+    assert_eq!(
+        ensure_checkout_unchanged(&checkout)
+            .unwrap_err()
+            .exit_code(),
+        EXIT_SOURCE_STATE
+    );
+
+    let current = discover_at(&root).unwrap();
+    ensure_checkout_unchanged(&current).unwrap();
+    let error =
+        require_fast_forward(&root, &current.checkout_sha, &checkout.checkout_sha).unwrap_err();
+    assert_eq!(error.exit_code(), EXIT_SOURCE_STATE);
+    assert!(error
+        .to_string()
+        .contains("refusing to merge, reset, or discard work"));
+    fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

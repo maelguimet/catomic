@@ -172,7 +172,7 @@ fn render_options<'a>(
         surface: view::display_surface(app),
         theme: app.theme,
         line_numbers: app.view_preferences.line_numbers(),
-        whitespace: app.view.whitespace,
+        whitespace: app.view.whitespace && !help::is_viewing(app),
         soft_wrap: view::soft_wrap_active(app),
         hovered_link: app.link_interaction.hovered(),
         status_role: term::render::StatusRole::Normal,

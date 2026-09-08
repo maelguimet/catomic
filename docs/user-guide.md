@@ -365,7 +365,9 @@ rejected in full with a message.
 
 In **Open** and **Save As**, explicit `Tab` completes the filename component at
 the caret. Paths can be relative, absolute, or start with `~/`; spaces need no
-quotes. One match fills the component and adds `/` for a directory. Multiple
+quotes. Leading and trailing spaces are part of the filename and are preserved
+when submitting these prompts, including completed paths. One match fills the
+component and adds `/` for a directory. Multiple
 matches extend only their shared grapheme prefix and report ambiguity; type more
 to narrow the choice. No match or an unreadable directory produces a message.
 Hidden names are considered when the typed component begins with `.`; names

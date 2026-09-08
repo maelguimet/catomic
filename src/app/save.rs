@@ -293,7 +293,6 @@ fn save_as_conflict_message(status: &ExternalFileStatus, mobile: bool) -> String
 }
 
 pub(crate) fn expand_user_path(input: &str, home: Option<&OsStr>) -> io::Result<PathBuf> {
-    let input = input.trim();
     if input.is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,

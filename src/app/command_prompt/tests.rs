@@ -935,6 +935,85 @@ fn remapped_prompt_actions_edit_submit_and_cancel_without_source_selection_loss(
 }
 
 #[test]
+fn open_and_save_preserve_completed_trailing_space_filename() {
+    let root = std::env::temp_dir().join(format!(
+        "catomic_completed_path_whitespace_{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let path = root.join("wanted ");
+    std::fs::write(&path, "original").unwrap();
+    let mut app = super::super::App::new(None).unwrap();
+    let mut out = Vec::new();
+    open_file_prompt(&mut app, &mut out).unwrap();
+    type_text(&mut app, &mut out, &format!("{}/wan", root.display()));
+    app.handle_key_with(&mut out, key(KeyCode::Tab, KeyModifiers::NONE))
+        .unwrap();
+    assert_eq!(
+        app.command_prompt.active.as_ref().unwrap().text.as_str(),
+        path.to_str().unwrap()
+    );
+    app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
+        .unwrap();
+    assert_eq!(app.buffer.to_string(), "original");
+    assert_eq!(app.file.path.as_deref(), Some(path.as_path()));
+    type_text(&mut app, &mut out, "X");
+    app.handle_key_with(&mut out, key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "Xoriginal");
+    assert!(!root.join("wanted").exists());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn open_and_save_as_preserve_leading_and_trailing_relative_path_whitespace() {
+    let source = format!(" catomic_source_whitespace_{} ", std::process::id());
+    let target = format!(" catomic_target_whitespace_{} ", std::process::id());
+    let _ = std::fs::remove_file(&target);
+    std::fs::write(&source, "original").unwrap();
+    let mut app = super::super::App::new(None).unwrap();
+    let mut out = Vec::new();
+    open_file_prompt(&mut app, &mut out).unwrap();
+    type_text(&mut app, &mut out, &source);
+    app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
+        .unwrap();
+    assert_eq!(app.buffer.to_string(), "original");
+    assert_eq!(app.file.path, Some(std::fs::canonicalize(&source).unwrap()));
+    type_text(&mut app, &mut out, "X");
+    open_save_as_prompt(&mut app, &mut out).unwrap();
+    type_text(&mut app, &mut out, &target);
+    app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
+        .unwrap();
+    assert_eq!(app.file.path.as_deref(), Some(Path::new(&target)));
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "Xoriginal");
+    assert_eq!(std::fs::read_to_string(&source).unwrap(), "original");
+    assert!(!Path::new(target.trim()).exists());
+    std::fs::remove_file(source).unwrap();
+    std::fs::remove_file(target).unwrap();
+}
+
+#[test]
+fn path_expansion_preserves_whitespace_and_rejects_empty_input() {
+    let home = std::ffi::OsStr::new("/tmp/catomic-home");
+    for (input, expected) in [
+        (" leading ", " leading "),
+        (" ", " "),
+        ("~/ trailing ", "/tmp/catomic-home/ trailing "),
+    ] {
+        assert_eq!(
+            super::super::save::expand_user_path(input, Some(home)).unwrap(),
+            Path::new(expected)
+        );
+    }
+    assert_eq!(
+        super::super::save::expand_user_path("", Some(home))
+            .unwrap_err()
+            .kind(),
+        std::io::ErrorKind::InvalidInput
+    );
+}
+
+#[test]
 fn path_completion_is_explicit_and_limited_to_open_and_save_as() {
     crate::file::path_completion::REQUESTS.set(0);
     let mut app = super::super::App::new(None).unwrap();

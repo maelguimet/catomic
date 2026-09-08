@@ -12,7 +12,7 @@
 mod helpers;
 
 #[cfg(test)]
-pub(crate) use helpers::count_thread_allocations;
+pub(crate) use helpers::{count_thread_allocations, measure_live_allocations};
 
 #[cfg(test)]
 #[path = "perf_default.rs"]

@@ -301,3 +301,122 @@ fn escape_closes_help_and_preserves_the_source_selection() {
     assert!(!is_viewing(&app));
     assert_eq!(app.selection.active(), selection);
 }
+
+#[test]
+fn help_reflows_narrow_wide_narrow_with_gutters_and_preserves_context() {
+    let mut app = app();
+    let source = (0..30)
+        .map(|row| format!("source-row-{row:02}-abcdefghijklmnopqrstuvwxyz"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    app.buffer = Box::new(PieceTable::from_text(&source));
+    app.buffer.set_cursor(Cursor { row: 12, col: 8 });
+    app.screen.width = 20;
+    app.screen.height = 10;
+    app.screen.scroll_top = 10;
+    app.screen.scroll_left = 4;
+    app.view_preferences.set_line_numbers(true);
+    let mut out = FrameRecorder::default();
+
+    show(&mut app, &mut out).unwrap();
+    let narrow_help = display_buffer(&app).unwrap().to_string();
+    let narrow_heading = narrow_help
+        .lines()
+        .find(|line| line.contains("Catomic help"))
+        .unwrap();
+    assert_eq!(narrow_heading, "Catomic help");
+    let narrow_gutter =
+        crate::terminal::render::line_number_gutter(display_buffer(&app).unwrap().line_count());
+    assert_eq!(crate::app::view::content_width(&app) + narrow_gutter, 20);
+
+    open_search(&mut app, &mut out).unwrap();
+    for ch in "recovery".chars() {
+        handle_search_key(
+            &mut app,
+            &mut out,
+            KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE),
+        )
+        .unwrap();
+    }
+    handle_search_key(
+        &mut app,
+        &mut out,
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+    )
+    .unwrap();
+    let search_ordinal = search_match_ordinal(
+        display_buffer(&app).unwrap(),
+        "recovery",
+        active_search_match(&app).unwrap().start,
+    )
+    .unwrap();
+    assert!(search_ordinal > 0, "test must preserve a later occurrence");
+
+    app.handle_resize(120, 20, &mut out).unwrap();
+    let wide_help = display_buffer(&app).unwrap().to_string();
+    let wide_heading = wide_help
+        .lines()
+        .find(|line| line.contains("Catomic help"))
+        .unwrap();
+    assert!(wide_heading.starts_with(' '));
+    assert_ne!(wide_help, narrow_help);
+    let wide_match = active_search_match(&app).unwrap();
+    assert_eq!(
+        search_match_ordinal(display_buffer(&app).unwrap(), "recovery", wide_match.start),
+        Some(search_ordinal)
+    );
+    assert!(display_buffer(&app)
+        .unwrap()
+        .line(wide_match.start.row)
+        .unwrap()
+        .contains("recovery"));
+    assert!(app
+        .surfaces
+        .help
+        .as_ref()
+        .unwrap()
+        .annotations
+        .spans(wide_match.start.row)
+        .next()
+        .is_some());
+
+    out.writes.clear();
+    out.flushes = 0;
+    app.handle_resize(20, 10, &mut out).unwrap();
+
+    assert_eq!(display_buffer(&app).unwrap().to_string(), narrow_help);
+    let narrow_match = active_search_match(&app).unwrap();
+    assert_eq!(
+        search_match_ordinal(
+            display_buffer(&app).unwrap(),
+            "recovery",
+            narrow_match.start
+        ),
+        Some(search_ordinal)
+    );
+    assert!(display_buffer(&app)
+        .unwrap()
+        .line(narrow_match.start.row)
+        .unwrap()
+        .contains("recovery"));
+    assert_eq!(
+        out.writes.len(),
+        1,
+        "resize must compose one complete frame"
+    );
+    assert_eq!(out.flushes, 1, "resize frame must be flushed once");
+    let frame = String::from_utf8_lossy(&out.writes[0]);
+    assert!(frame.contains("recovery"));
+    let first_line_number = format!(
+        "{:>width$} ",
+        app.screen.scroll_top.saturating_add(1),
+        width = narrow_gutter.saturating_sub(1)
+    );
+    assert!(frame.contains(&first_line_number));
+
+    app.handle_key_with(&mut out, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+        .unwrap();
+    assert_eq!(app.buffer.to_string(), source);
+    assert_eq!(app.screen.scroll_top, 10);
+    assert_eq!(app.screen.scroll_left, 4);
+}

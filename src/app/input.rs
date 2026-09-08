@@ -83,6 +83,12 @@ pub(super) fn record_content_edit(app: &mut super::App, message: Option<String>)
     lint::invalidate(app);
     app.selection.clear();
     refresh_dirty(&mut app.file, &*app.buffer);
+    // An edit can join the text on either side of its scalar cursor into one
+    // extended grapheme (for example, regional indicators or a ZWJ sequence).
+    // Keep the post-edit position on the forward boundary so the next movement
+    // or deletion handles that new grapheme as one unit. This needs a buffer
+    // read, so it follows the committed-edit bookkeeping above.
+    navigation::snap_current_grapheme_forward(app)?;
     completion::after_content_edit(app)?;
     app.external_changes
         .reconcile(app.buffer.content_revision());

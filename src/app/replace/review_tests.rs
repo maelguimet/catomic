@@ -30,6 +30,50 @@ fn app(text: &str) -> App {
 }
 
 #[test]
+fn accepted_replacement_leaves_joined_graphemes_behind_the_cursor() {
+    for (original, replacement, joined, end_col) in [
+        ("🇫x🇷!", "", "🇫🇷!", 2),
+        ("👩x💻!", "\u{200d}", "👩\u{200d}💻!", 3),
+    ] {
+        for action in ['y', 'a'] {
+            let mut app = app(original);
+            let mut out = Vec::new();
+            start(&mut app, &mut out, "x", replacement);
+            key(&mut app, &mut out, KeyCode::Char(action));
+            poll(&mut app, &mut out).unwrap();
+            assert!(!is_active(&app));
+            assert_eq!(app.buffer.to_string(), joined);
+            assert_eq!(
+                app.buffer.cursor(),
+                Cursor {
+                    row: 0,
+                    col: end_col
+                }
+            );
+
+            key(&mut app, &mut out, KeyCode::Backspace);
+            assert_eq!(app.buffer.to_string(), "!");
+            for expected in [joined, original] {
+                app.handle_key_with(
+                    &mut out,
+                    KeyEvent::new(KeyCode::Char('z'), KeyModifiers::CONTROL),
+                )
+                .unwrap();
+                assert_eq!(app.buffer.to_string(), expected);
+            }
+            for expected in [joined, "!"] {
+                app.handle_key_with(
+                    &mut out,
+                    KeyEvent::new(KeyCode::Char('y'), KeyModifiers::CONTROL),
+                )
+                .unwrap();
+                assert_eq!(app.buffer.to_string(), expected);
+            }
+        }
+    }
+}
+
+#[test]
 fn review_waits_for_explicit_accept_then_skips_and_cancels_without_retyping() {
     let mut app = app("cat cat cat");
     let mut out = Vec::new();

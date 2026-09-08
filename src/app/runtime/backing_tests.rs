@@ -315,7 +315,7 @@ fn drift_during_frame_read_shows_a_notice_without_publishing_partial_content() {
 }
 
 #[test]
-fn drift_after_an_edit_keeps_its_history_dirty_even_when_completion_read_fails() {
+fn drift_after_an_edit_preserves_committed_bookkeeping_when_late_read_fails() {
     use crate::buffer::piece_table::types::FileReadOperationTestPoint;
 
     let fixture = Fixture::new(false);
@@ -330,6 +330,14 @@ fn drift_after_an_edit_keeps_its_history_dirty_even_when_completion_read_fails()
         },
     );
     app.buffer = Box::new(buffer);
+    super::super::selection::set_active_for_test(
+        &mut app,
+        Cursor::default(),
+        Cursor { row: 0, col: 1 },
+    );
+    assert!(app.selection.active().is_some());
+    let content_generation = app.file.content_generation;
+    let lint_generation = super::super::lint::generation_for_test(&app);
 
     app.handle_key_with(
         &mut Vec::new(),
@@ -341,6 +349,12 @@ fn drift_after_an_edit_keeps_its_history_dirty_even_when_completion_read_fails()
         app.buffer.edit_history_position(),
         app.file.saved_history_position
     );
+    assert_eq!(app.file.content_generation, content_generation + 1);
+    assert_eq!(
+        super::super::lint::generation_for_test(&app),
+        lint_generation + 1
+    );
+    assert!(app.selection.active().is_none());
     assert!(app.file.dirty);
     assert!(app
         .message

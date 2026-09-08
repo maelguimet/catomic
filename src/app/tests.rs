@@ -9,6 +9,7 @@
 
 mod editing;
 mod file_state;
+mod grapheme_edits;
 mod keybindings;
 mod overwrite;
 mod undo_redo;

@@ -18,7 +18,9 @@ pub(super) struct CommandPreview {
     proposed_text: String,
     pub(super) target: Option<ApplyTarget>,
     succeeded: bool,
-    source_snapshot: Option<String>,
+    source_revision: Option<u64>,
+    source_buffer_id: Option<u64>,
+    source_content_generation: Option<u64>,
     source_path: Option<PathBuf>,
     buffer: PreviewBuffer,
     source_scroll_top: usize,
@@ -45,7 +47,9 @@ pub(super) fn open(
         proposed_text: stdout,
         target: running.target,
         succeeded,
-        source_snapshot: running.source_snapshot,
+        source_revision: running.source_revision,
+        source_buffer_id: running.source_buffer_id,
+        source_content_generation: running.source_content_generation,
         source_path: running.source_path,
         buffer: PreviewBuffer::from_owned_text(text),
         source_scroll_top: app.screen.scroll_top,
@@ -181,7 +185,9 @@ fn apply_or_close(
         return app.render(out);
     };
     if app.file.path != preview.source_path
-        || preview.source_snapshot.as_deref() != Some(&app.buffer.to_string())
+        || preview.source_revision != Some(app.buffer.content_revision())
+        || preview.source_buffer_id != Some(app.file.buffer_id)
+        || preview.source_content_generation != Some(app.file.content_generation)
     {
         app.message_warning("Source changed since command start; output was not applied.");
         super::super::hooks::finish_command(app, false);

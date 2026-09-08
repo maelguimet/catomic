@@ -31,13 +31,14 @@ static LIVE_MEASUREMENT_LOCK: Mutex<()> = Mutex::new(());
 thread_local! {
     static THREAD_TRACKING: Cell<bool> = const { Cell::new(false) };
     static THREAD_ALLOCATIONS: Cell<usize> = const { Cell::new(0) };
+    static THREAD_ALLOCATED_BYTES: Cell<usize> = const { Cell::new(0) };
 }
 
 unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
         ALLOCATED_BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
-        note_thread_allocation();
+        note_thread_allocation(layout.size());
         // SAFETY: the caller supplies the GlobalAlloc layout contract unchanged.
         let pointer = unsafe { System.alloc(layout) };
         if !pointer.is_null() && LIVE_MEASURING.load(Ordering::Relaxed) {
@@ -49,7 +50,7 @@ unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
         ALLOCATED_BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
-        note_thread_allocation();
+        note_thread_allocation(layout.size());
         // SAFETY: the caller supplies the GlobalAlloc layout contract unchanged.
         let pointer = unsafe { System.alloc_zeroed(layout) };
         if !pointer.is_null() && LIVE_MEASURING.load(Ordering::Relaxed) {
@@ -69,7 +70,7 @@ unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
         ALLOCATED_BYTES.fetch_add(new_size as u64, Ordering::Relaxed);
-        note_thread_allocation();
+        note_thread_allocation(new_size);
         // SAFETY: the pointer, old layout, and requested size are forwarded unchanged.
         let pointer = unsafe { System.realloc(ptr, layout, new_size) };
         if !pointer.is_null() && LIVE_MEASURING.load(Ordering::Relaxed) {
@@ -87,10 +88,12 @@ unsafe impl GlobalAlloc for CountingAllocator {
 #[global_allocator]
 static PERF_ALLOCATOR: CountingAllocator = CountingAllocator;
 
-fn note_thread_allocation() {
+fn note_thread_allocation(bytes: usize) {
     if THREAD_TRACKING.try_with(Cell::get).unwrap_or(false) {
         let _ = THREAD_ALLOCATIONS
             .try_with(|allocations| allocations.set(allocations.get().saturating_add(1)));
+        let _ = THREAD_ALLOCATED_BYTES
+            .try_with(|allocated| allocated.set(allocated.get().saturating_add(bytes)));
     }
 }
 
@@ -101,6 +104,7 @@ fn note_thread_allocation() {
 /// result. The guard also restores tracking after unwinding.
 pub(crate) fn count_thread_allocations<T>(operation: impl FnOnce() -> T) -> (T, usize) {
     THREAD_ALLOCATIONS.with(|allocations| allocations.set(0));
+    THREAD_ALLOCATED_BYTES.with(|bytes| bytes.set(0));
     THREAD_TRACKING.with(|tracking| {
         assert!(
             !tracking.replace(true),
@@ -112,6 +116,39 @@ pub(crate) fn count_thread_allocations<T>(operation: impl FnOnce() -> T) -> (T, 
     drop(tracking);
     let allocations = THREAD_ALLOCATIONS.with(Cell::get);
     (value, allocations)
+}
+
+/// Count gross allocated bytes on the calling thread, including full reallocation sizes.
+///
+/// This conservatively bounds additional peak and retained memory without
+/// subtracting frees of allocations that predate the operation or counting
+/// unrelated test threads.
+pub(crate) fn count_thread_allocated_bytes<T>(operation: impl FnOnce() -> T) -> (T, usize) {
+    let (value, _) = count_thread_allocations(operation);
+    (value, THREAD_ALLOCATED_BYTES.with(Cell::get))
+}
+
+#[test]
+fn thread_allocated_bytes_ignore_other_threads_and_preexisting_frees() {
+    let previous = vec![0_u8; 1024 * 1024];
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+    let worker_barrier = barrier.clone();
+    let worker = std::thread::spawn(move || {
+        worker_barrier.wait();
+        let unrelated = vec![0_u8; 8 * 1024 * 1024];
+        std::hint::black_box(&unrelated);
+        worker_barrier.wait();
+    });
+    let (_, allocated_bytes) = count_thread_allocated_bytes(|| {
+        let measured = vec![0_u8; 4096];
+        drop(std::hint::black_box(previous));
+        barrier.wait();
+        barrier.wait();
+        std::hint::black_box(measured)
+    });
+    worker.join().unwrap();
+    assert!(allocated_bytes >= 4096);
+    assert!(allocated_bytes < 64 * 1024);
 }
 
 struct ThreadTrackingGuard;

@@ -27,7 +27,9 @@ pub(super) struct RunningCommand {
     name: String,
     task: ExternalCommandTask,
     target: Option<ApplyTarget>,
-    source_snapshot: Option<String>,
+    source_revision: Option<u64>,
+    source_buffer_id: Option<u64>,
+    source_content_generation: Option<u64>,
     source_path: Option<PathBuf>,
 }
 
@@ -43,7 +45,9 @@ struct PreparedCommand {
     cwd: PathBuf,
     input: Vec<u8>,
     target: Option<ApplyTarget>,
-    source_snapshot: Option<String>,
+    source_revision: Option<u64>,
+    source_buffer_id: Option<u64>,
+    source_content_generation: Option<u64>,
 }
 
 pub(crate) fn start(
@@ -74,7 +78,9 @@ pub(crate) fn start(
                 name: name.to_string(),
                 task,
                 target: prepared.target,
-                source_snapshot: prepared.source_snapshot,
+                source_revision: prepared.source_revision,
+                source_buffer_id: prepared.source_buffer_id,
+                source_content_generation: prepared.source_content_generation,
                 source_path: app.file.path.clone(),
             });
             app.message_info(format!("Running command {name}... Esc cancels."));
@@ -112,12 +118,15 @@ fn prepare_command(app: &super::App, spec: &CommandSpec) -> io::Result<PreparedC
         || spec.command.clone(),
         |path| substitute_file(&spec.command, path),
     );
+    let edits_source = target.is_some();
     Ok(PreparedCommand {
         command,
         cwd,
         input: input.into_bytes(),
         target,
-        source_snapshot: target.map(|_| app.buffer.to_string()),
+        source_revision: edits_source.then(|| app.buffer.content_revision()),
+        source_buffer_id: edits_source.then_some(app.file.buffer_id),
+        source_content_generation: edits_source.then_some(app.file.content_generation),
     })
 }
 

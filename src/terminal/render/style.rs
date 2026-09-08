@@ -163,7 +163,7 @@ fn visible_spans(
         .filter_map(|span| {
             let start = span.start.max(start_col);
             let end = span.end.min(visible_end);
-            (start < end).then_some(StyledSpan {
+            (start < end).then(|| StyledSpan {
                 start: start - start_col,
                 end: end - start_col,
                 style: span.style,

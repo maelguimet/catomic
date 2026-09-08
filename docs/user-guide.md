@@ -339,6 +339,8 @@ the terminal.
 Press `Ctrl+H` or `F1` at any time to open the built-in task reference. It is
 rendered from Markdown and read-only: use the configured Find shortcut to
 search it, the arrow and page keys to navigate, and `Escape` to return.
+Help uses normal spacing regardless of the source buffer's `F8` whitespace
+setting; closing Help restores that display preference.
 
 ### Prompts and read-only views
 

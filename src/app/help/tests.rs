@@ -81,6 +81,54 @@ fn ctrl_h_renders_curated_markdown_as_one_frame() {
 }
 
 #[test]
+fn help_keeps_clean_spaces_and_restores_source_whitespace_markers() {
+    for width in [20, 150] {
+        for line_numbers in [false, true] {
+            for colors in [false, true] {
+                for whitespace in [false, true] {
+                    for toggle in [
+                        KeyEvent::new(KeyCode::Char('h'), KeyModifiers::CONTROL),
+                        KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE),
+                    ] {
+                        let mut app = app();
+                        app.screen.width = width;
+                        app.screen.height = 40;
+                        app.view_preferences.set_line_numbers(line_numbers);
+                        app.theme.colors_enabled = colors;
+                        let mut out = FrameRecorder::default();
+                        if whitespace {
+                            app.handle_key_with(
+                                &mut out,
+                                KeyEvent::new(KeyCode::F(8), KeyModifiers::NONE),
+                            )
+                            .unwrap();
+                        }
+                        out.writes.clear();
+                        app.handle_key_with(&mut out, toggle).unwrap();
+                        assert!(is_viewing(&app));
+                        let frame = String::from_utf8_lossy(out.writes.last().unwrap());
+                        assert!(!frame.contains('·'), "help contains whitespace markers");
+                        assert_eq!(app.view.whitespace, whitespace);
+
+                        out.writes.clear();
+                        app.handle_key_with(
+                            &mut out,
+                            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+                        )
+                        .unwrap();
+                        assert!(!is_viewing(&app));
+                        assert_eq!(app.view.whitespace, whitespace);
+                        let frame = String::from_utf8_lossy(out.writes.last().unwrap());
+                        assert_eq!(frame.contains('·'), whitespace);
+                        assert_eq!(app.buffer.to_string(), "source text");
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn help_is_short_task_oriented_and_excludes_registry_clutter() {
     let markdown = help_markdown(&KeyBindings::default());
 

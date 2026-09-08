@@ -6,21 +6,24 @@ Status: accepted
 
 ## Buffer Trait First
 
-Define the `Buffer` trait before building UI on top of it.
+The `Buffer` trait separates storage from the UI and editor loop.
 
-Phase 0 may use `SimpleBuffer`. Phase 1 replaces it with piece table behind the same interface.
+The original Phase 0/1 plan allowed `SimpleBuffer` as a temporary implementation
+before migration to `PieceTable`. That migration is complete; it is historical
+context, not an outstanding implementation step.
 
-The loop and editor must not need surgery when swapping implementations.
+Storage implementations must preserve that interface without requiring changes
+throughout the editor loop.
 
-## v0 Column Model
+## Document Column Model
 
-Col is Unicode scalar index (ASCII-ish UTF-8).
+`Cursor.col` is a Unicode scalar index, as preserved by
+[decision 0007](0007-document-coordinates.md). It is not a terminal-cell offset.
 
-Not grapheme or wcwidth aware.
-
-Revisit before selection/search.
-
-Document the decision. Do not pretend it's solved.
+The initial scalar-only movement and display implementation has been superseded
+by the grapheme and terminal-cell mapping in
+[decision 0012](0012-unicode-terminal-layout.md). Selection and search retain
+scalar document coordinates while user-facing movement respects graphemes.
 
 ## Why Piece Table (target)
 
@@ -38,10 +41,12 @@ Alternatives considered early:
 
 - The trait is defined first and is stable.
 - Main loop and render code depend only on the trait, not the concrete type.
-- Col = char index (Unicode scalar) for early phases.
-- SimpleBuffer (`Vec<String>`) → PieceTable swap should require zero or minimal changes in app loop.
+- Columns remain Unicode scalar document indices.
+- The completed `SimpleBuffer` → `PieceTable` migration established the storage
+  boundary; future implementations must preserve it.
 
-See AGENTS.md "Buffer Rules" (condensed) and `buffer/` module for current implementation.
+See [AGENTS.md](../../AGENTS.md) for engineering rules and
+[`src/buffer/`](../../src/buffer/) for the current implementation.
 
 ## Line Index and Undo
 

@@ -69,12 +69,12 @@ jobs:
           test "$(jq -r .event <<<"$run_json")" = "workflow_dispatch"
           test "$(jq -r .conclusion <<<"$run_json")" = "success"
           test "$(jq -r .path <<<"$run_json")" = ".github/workflows/acceptance.yml"
-          mkdir accepted-candidate
+          mkdir -p target/accepted-candidate
           gh run download "$ACCEPTANCE_RUN_ID" \
             --name "catomic-compatibility-$SOURCE_SHA" \
-            --dir accepted-candidate
+            --dir target/accepted-candidate
           python3 scripts/compatibility/promote_candidate.py \
-            accepted-candidate "$SOURCE_SHA" target/accepted-catomic
+            target/accepted-candidate "$SOURCE_SHA" target/accepted-catomic
 
       - name: Create immutable tag for the accepted candidate
         env:
@@ -172,9 +172,9 @@ jobs:
           install -m 0755 target/accepted-catomic "dist/$BINARY"
           install -m 0644 "target/package/$PACKAGE" "dist/$PACKAGE"
           install -m 0644 \
-            accepted-candidate/candidate-build.json \
-            accepted-candidate/matrix.json \
-            accepted-candidate/matrix.md \
+            target/accepted-candidate/candidate-build.json \
+            target/accepted-candidate/matrix.json \
+            target/accepted-candidate/matrix.md \
             target/release-metadata/package-contents.txt \
             target/release-metadata/toolchain.txt \
             source-verification.txt \

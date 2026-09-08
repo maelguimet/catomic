@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import json
+import re
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -134,6 +136,22 @@ class CandidatePromotionTests(unittest.TestCase):
 
 
 class ReleaseWorkflowOrderingTests(unittest.TestCase):
+    def test_acceptance_download_keeps_cargo_source_clean(self):
+        repository = Path(__file__).resolve().parents[2]
+        workflow = (repository / ".github/workflows/release.yml").read_text(
+            encoding="utf-8"
+        )
+        promotion = workflow.split(
+            "- name: Promote the exact accepted managed candidate", 1
+        )[1].split("- name:", 1)[0]
+        destination = re.search(r"--dir ([^\s]+)", promotion).group(1)
+        result = subprocess.run(
+            ["git", "check-ignore", "--no-index", "--quiet", "--", f"{destination}/catomic"],
+            cwd=repository,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, "downloaded candidate would dirty Cargo source")
+
     def test_acceptance_candidate_is_validated_before_tag_creation(self):
         repository = Path(__file__).resolve().parents[2]
         workflow = (repository / ".github/workflows/release.yml").read_text(

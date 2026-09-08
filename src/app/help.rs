@@ -15,8 +15,10 @@ use crate::editor::markdown_preview::MarkdownAnnotations;
 use crate::editor::search::{self, SearchDirection, SearchMatch};
 
 pub(crate) struct HelpView {
+    markdown: String,
     buffer: PreviewBuffer,
     annotations: MarkdownAnnotations,
+    layout_width: usize,
     search: HelpSearch,
     source_scroll_top: usize,
     source_scroll_left: usize,
@@ -39,15 +41,17 @@ pub(crate) fn show(
     let source_scroll_left = app.screen.scroll_left;
     let source_wrap_col = app.screen.wrap_col;
     let markdown = help_markdown(&app.keybindings);
-    let rendered = crate::editor::markdown_preview::render_with_width(
+    let (buffer, annotations, layout_width) = render_help(
         &markdown,
-        super::view::content_width(app),
+        app.screen.width as usize,
+        app.view_preferences.line_numbers(),
     )
     .map_err(|error| io::Error::other(error.to_string()))?;
-    let (buffer, annotations) = rendered.into_buffer_and_annotations();
     app.surfaces.help = Some(HelpView {
+        markdown,
         buffer,
         annotations,
+        layout_width,
         search: HelpSearch::default(),
         source_scroll_top,
         source_scroll_left,
@@ -58,6 +62,164 @@ pub(crate) fn show(
     app.screen.wrap_col = 0;
     app.message_info("Help; Esc closes.");
     app.render(out)
+}
+
+fn render_help(
+    markdown: &str,
+    screen_width: usize,
+    line_numbers: bool,
+) -> Result<(PreviewBuffer, MarkdownAnnotations, usize), crate::editor::markdown_preview::RenderError>
+{
+    let mut layout_width = crate::editor::markdown_preview::layout_width(screen_width);
+    loop {
+        let rendered = crate::editor::markdown_preview::render_with_width(markdown, layout_width)?;
+        let line_count = rendered
+            .text
+            .as_bytes()
+            .iter()
+            .filter(|byte| **byte == b'\n')
+            .count()
+            .saturating_add(1);
+        let gutter = if line_numbers {
+            crate::terminal::render::line_number_gutter(line_count)
+        } else {
+            0
+        };
+        let effective_width =
+            crate::editor::markdown_preview::layout_width(screen_width.saturating_sub(gutter));
+        if effective_width == layout_width {
+            let (buffer, annotations) = rendered.into_buffer_and_annotations();
+            return Ok((buffer, annotations, layout_width));
+        }
+        layout_width = effective_width;
+    }
+}
+
+pub(crate) fn relayout(app: &mut super::App) {
+    let Some(view) = app.surfaces.help.as_ref() else {
+        return;
+    };
+    let effective_width =
+        crate::editor::markdown_preview::layout_width(super::view::content_width(app));
+    if view.layout_width == effective_width {
+        return;
+    }
+
+    let old_line_count = view.buffer.line_count();
+    let old_cursor = view.buffer.cursor();
+    let old_search_origin = view.search.origin;
+    let active_match_ordinal = view.search.active_match.and_then(|active_match| {
+        view.search
+            .prompt
+            .as_deref()
+            .and_then(|query| search_match_ordinal(&view.buffer, query, active_match.start))
+    });
+    let old_scroll_top = app.screen.scroll_top;
+    let visible_height = app.screen.visible_height();
+    let rendered = render_help(
+        &view.markdown,
+        app.screen.width as usize,
+        app.view_preferences.line_numbers(),
+    );
+
+    match rendered {
+        Ok((mut buffer, annotations, layout_width)) => {
+            let new_line_count = buffer.line_count();
+            let mapped_cursor = map_cursor(old_cursor, old_line_count, &buffer);
+            let mapped_origin =
+                old_search_origin.map(|origin| map_cursor(origin, old_line_count, &buffer));
+            let active_match = active_match_ordinal.and_then(|ordinal| {
+                app.surfaces
+                    .help
+                    .as_ref()
+                    .and_then(|view| view.search.prompt.as_deref())
+                    .and_then(|query| search_match_at_ordinal(&buffer, query, ordinal))
+            });
+            buffer.set_cursor(active_match.map_or(mapped_cursor, |found| found.start));
+            if let Some(view) = app.surfaces.help.as_mut() {
+                view.buffer = buffer;
+                view.annotations = annotations;
+                view.layout_width = layout_width;
+                view.search.origin = mapped_origin;
+                view.search.active_match = active_match;
+            }
+            app.screen.scroll_top = super::view::map_viewport_top(
+                old_scroll_top,
+                old_line_count,
+                new_line_count,
+                visible_height,
+            );
+            app.screen.scroll_left = 0;
+            app.screen.wrap_col = 0;
+        }
+        Err(error) => app.message_error(format!("Help layout failed: {error}.")),
+    }
+}
+
+fn map_cursor(cursor: Cursor, old_line_count: usize, buffer: &PreviewBuffer) -> Cursor {
+    let last_old_row = old_line_count.saturating_sub(1);
+    let last_new_row = buffer.line_count().saturating_sub(1);
+    let row = if last_old_row == 0 {
+        0
+    } else {
+        ((cursor.row.min(last_old_row) as u128).saturating_mul(last_new_row as u128)
+            / last_old_row as u128) as usize
+    };
+    Cursor {
+        row,
+        col: cursor.col.min(buffer.line_char_count(row).unwrap_or(0)),
+    }
+}
+
+fn search_match_ordinal(buffer: &dyn Buffer, query: &str, target: Cursor) -> Option<usize> {
+    let mut origin = Cursor::default();
+    let mut include_origin = true;
+    let mut ordinal = 0;
+    loop {
+        let found = search::find_match(
+            buffer,
+            query,
+            origin,
+            SearchDirection::Forward,
+            include_origin,
+        )?;
+        if !include_origin && (found.start.row, found.start.col) <= (origin.row, origin.col) {
+            return None;
+        }
+        if found.start == target {
+            return Some(ordinal);
+        }
+        origin = found.start;
+        include_origin = false;
+        ordinal = ordinal.saturating_add(1);
+    }
+}
+
+fn search_match_at_ordinal(
+    buffer: &dyn Buffer,
+    query: &str,
+    target_ordinal: usize,
+) -> Option<SearchMatch> {
+    let mut origin = Cursor::default();
+    let mut include_origin = true;
+    for ordinal in 0..=target_ordinal {
+        let found = search::find_match(
+            buffer,
+            query,
+            origin,
+            SearchDirection::Forward,
+            include_origin,
+        )?;
+        if !include_origin && (found.start.row, found.start.col) <= (origin.row, origin.col) {
+            return None;
+        }
+        if ordinal == target_ordinal {
+            return Some(found);
+        }
+        origin = found.start;
+        include_origin = false;
+    }
+    None
 }
 
 pub(crate) fn presentation(

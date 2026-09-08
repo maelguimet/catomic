@@ -488,6 +488,10 @@ unused, distinguishable chord to the existing word-delete action, for example:
 delete-word-backward = ["ctrl+u"]
 ```
 
+Help reflows its rendered reference when the terminal width changes, including
+the space used by an enabled line-number gutter. Closing Help still restores
+the source viewport from before the reference was opened.
+
 ### Mouse selection
 
 - A left click moves the cursor.

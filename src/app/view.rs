@@ -388,7 +388,7 @@ fn toggle_preview(
     Ok(true)
 }
 
-fn map_viewport_top(
+pub(crate) fn map_viewport_top(
     scroll_top: usize,
     from_line_count: usize,
     to_line_count: usize,

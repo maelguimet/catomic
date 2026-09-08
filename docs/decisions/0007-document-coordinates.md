@@ -22,9 +22,11 @@ separate display-coordinate mapping; they must not change saved selection ranges
 - Scalar positions preserve the existing Buffer contract and make Unicode range
   boundaries deterministic without adding a startup dependency.
 
-## Known Boundary
+## Movement and Display Mapping
 
-Cursor movement still advances by Unicode scalar rather than grapheme cluster.
-Rendering must eventually map document columns to terminal cells for tabs, wide
-characters, and combining marks. That work can evolve independently of selection,
-search, and piece-level undo because document coordinates remain stable.
+The original implementation advanced by Unicode scalar and deferred terminal-cell
+mapping. That limitation is historical: movement now respects grapheme clusters,
+and rendering maps document columns to terminal cells for tabs, wide characters,
+and combining marks under [decision 0012](0012-unicode-terminal-layout.md).
+These policies can evolve independently of selection, search, and piece-level
+undo because document coordinates remain stable.

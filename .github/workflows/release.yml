@@ -1,13 +1,14 @@
 name: Publish managed release
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
       tag:
         description: Version tag matching Cargo.toml (for example v0.2.0-beta.1)
+        required: true
+        type: string
+      acceptance_run_id:
+        description: Successful Acceptance workflow run for this exact source commit
         required: true
         type: string
 
@@ -21,6 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
+      actions: read
       attestations: write
       contents: write
       id-token: write
@@ -31,36 +33,18 @@ jobs:
       source_sha: ${{ steps.identity.outputs.source_sha }}
       version: ${{ steps.identity.outputs.version }}
     steps:
-      - name: Check out tagged source
+      - name: Check out release source
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           fetch-depth: 0
 
-      - name: Create immutable tag for a dispatched release
-        if: github.event_name == 'workflow_dispatch'
+      - name: Bind the run to the source and package version
+        id: identity
         env:
           TAG: ${{ inputs.tag }}
         run: |
           test "$GITHUB_REF" = "refs/heads/master"
-          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
-          test "$TAG" = "v$version"
-          if git rev-parse --verify --quiet "refs/tags/$TAG"; then
-            echo "Tag already exists: $TAG" >&2
-            exit 1
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag --annotate "$TAG" --message "Catomic $TAG"
-          git push origin "refs/tags/$TAG"
-
-      - name: Bind the run to the tag and package version
-        id: identity
-        env:
-          TAG: ${{ inputs.tag || github.ref_name }}
-        run: |
           source_sha="$(git rev-parse HEAD)"
-          tagged_sha="$(git rev-parse "${TAG}^{commit}")"
-          test "$source_sha" = "$tagged_sha"
           test "$source_sha" = "$GITHUB_SHA"
 
           version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
@@ -72,6 +56,49 @@ jobs:
             echo "binary_name=catomic-x86_64-unknown-linux-gnu"
             echo "package_name=catomic-$version.crate"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Promote the exact accepted managed candidate
+        env:
+          ACCEPTANCE_RUN_ID: ${{ inputs.acceptance_run_id }}
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.identity.outputs.source_sha }}
+        run: |
+          [[ "$ACCEPTANCE_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ACCEPTANCE_RUN_ID")"
+          test "$(jq -r .head_sha <<<"$run_json")" = "$SOURCE_SHA"
+          test "$(jq -r .event <<<"$run_json")" = "workflow_dispatch"
+          test "$(jq -r .conclusion <<<"$run_json")" = "success"
+          test "$(jq -r .path <<<"$run_json")" = ".github/workflows/acceptance.yml"
+          mkdir -p target/accepted-candidate
+          gh run download "$ACCEPTANCE_RUN_ID" \
+            --name "catomic-compatibility-$SOURCE_SHA" \
+            --dir target/accepted-candidate
+          python3 scripts/compatibility/promote_candidate.py \
+            target/accepted-candidate "$SOURCE_SHA" target/accepted-catomic
+
+      - name: Create immutable tag for the accepted candidate
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if git rev-parse --verify --quiet "refs/tags/$TAG"; then
+            echo "Tag already exists: $TAG" >&2
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag --annotate "$TAG" --message "Catomic $TAG"
+          git push origin "refs/tags/$TAG"
+
+      - name: Verify the immutable tag identity
+        env:
+          SOURCE_SHA: ${{ steps.identity.outputs.source_sha }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          tagged_sha="$(git rev-parse "${TAG}^{commit}")"
+          test "$SOURCE_SHA" = "$tagged_sha"
+          test "$SOURCE_SHA" = "$(git rev-parse HEAD)"
+          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
+          test "$TAG" = "v$version"
 
       - name: Install verification toolchains
         run: |
@@ -115,15 +142,9 @@ jobs:
           cargo +stable package --locked
           test -f "target/package/catomic-$VERSION.crate"
 
-      - name: Build managed release binary
-        env:
-          CATOMIC_BUILD_COMMIT: ${{ steps.identity.outputs.source_sha }}
-          CATOMIC_BUILD_DIRTY: "0"
-          CATOMIC_MANAGED_RELEASE: "1"
-        run: cargo +stable build --release --locked
-
       - name: Create checksummed release assets
         env:
+          ACCEPTANCE_RUN_ID: ${{ inputs.acceptance_run_id }}
           BINARY: ${{ steps.identity.outputs.binary_name }}
           PACKAGE: ${{ steps.identity.outputs.package_name }}
           SOURCE_SHA: ${{ steps.identity.outputs.source_sha }}
@@ -142,17 +163,24 @@ jobs:
           cargo +stable test --all-targets --locked -- --ignored --skip tests::perf::byte_scans --test-threads=1 --nocapture=success
           cargo +stable package --locked --list=success; output=package-contents.txt
           cargo +stable package --locked=success; output=$PACKAGE
-          CATOMIC_BUILD_COMMIT=$SOURCE_SHA CATOMIC_BUILD_DIRTY=0 CATOMIC_MANAGED_RELEASE=1 cargo +stable build --release --locked=success; output=$BINARY
+          acceptance_workflow_run=https://github.com/$GITHUB_REPOSITORY/actions/runs/$ACCEPTANCE_RUN_ID
+          accepted_managed_candidate_promotion=success; output=$BINARY
+          compatibility_matrix_binary_sha256=$(sha256sum target/accepted-catomic | cut -d ' ' -f 1)
           EOF
 
           mkdir -p dist
-          install -m 0755 target/release/catomic "dist/$BINARY"
+          install -m 0755 target/accepted-catomic "dist/$BINARY"
           install -m 0644 "target/package/$PACKAGE" "dist/$PACKAGE"
           install -m 0644 \
+            target/accepted-candidate/candidate-build.json \
+            target/accepted-candidate/matrix.json \
+            target/accepted-candidate/matrix.md \
             target/release-metadata/package-contents.txt \
             target/release-metadata/toolchain.txt \
             source-verification.txt \
             dist/
+          mv dist/matrix.json dist/automated-compatibility-matrix.json
+          mv dist/matrix.md dist/automated-compatibility-matrix.md
           (
             cd dist
             sha256sum "$BINARY" > "$BINARY.sha256"
@@ -160,6 +188,9 @@ jobs:
               "$BINARY" \
               "$BINARY.sha256" \
               "$PACKAGE" \
+              candidate-build.json \
+              automated-compatibility-matrix.json \
+              automated-compatibility-matrix.md \
               package-contents.txt \
               source-verification.txt \
               toolchain.txt > SHA256SUMS
@@ -228,6 +259,9 @@ jobs:
             "dist/$BINARY" \
             "dist/$BINARY.sha256" \
             "dist/$PACKAGE" \
+            dist/candidate-build.json \
+            dist/automated-compatibility-matrix.json \
+            dist/automated-compatibility-matrix.md \
             dist/package-contents.txt \
             dist/source-verification.txt \
             dist/toolchain.txt \
@@ -287,6 +321,9 @@ jobs:
             "$BINARY" \
             "$BINARY.sha256" \
             "$PACKAGE" \
+            candidate-build.json \
+            automated-compatibility-matrix.json \
+            automated-compatibility-matrix.md \
             package-contents.txt \
             source-verification.txt \
             toolchain.txt \
@@ -399,6 +436,7 @@ jobs:
           then independently verified:
 
           - the complete SHA256SUMS manifest and the updater-compatible per-binary checksum;
+          - the partial automated compatibility matrix names the same SHA-256 as the public managed binary;
           - x86-64 Linux ELF architecture with file and readelf;
           - the exact catomic ${TAG#v} executable version;
           - GitHub provenance for both the binary and packaged source;

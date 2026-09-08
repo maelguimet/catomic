@@ -9,16 +9,17 @@ acceptance evidence owned by child issues #64, #63, #56, #57, #54, and #55.
 
 Run the gate only when every listed child issue has either a merged closing PR
 or a written deferral rationale suitable for the final issue comment. Use a
-clean checkout at the exact release-candidate SHA. Do not use a debug build,
-`cargo run`, an ambient Catomic configuration, or a command that contacts a
-public service.
+clean checkout at the exact release-candidate SHA and the complete bundle
+downloaded from that commit's successful Acceptance workflow run. Do not use a
+debug build, `cargo run`, a rebuilt binary, an ambient Catomic configuration, or
+a command that contacts a public service.
 
-The harness builds with `--release --locked` in a checkout-local target
-directory (ignoring any shared ambient `CARGO_TARGET_DIR`), copies those exact
-bytes into a new private session directory, hashes them, creates several real
-text/code files in an isolated Git repository, and launches that preserved
-binary. The isolated configuration enables local catnap recovery and contains
-no named commands or hooks.
+The harness validates the bundle's clean managed-build metadata, source SHA,
+partial automated matrix, checksum, size, and candidate bytes before copying
+the accepted binary into a new private session directory. It then hashes it,
+creates several real text/code files in an isolated Git repository, and launches
+that preserved binary. The isolated configuration enables local catnap recovery
+and contains no named commands or hooks.
 
 ## Run the session
 
@@ -27,12 +28,15 @@ explicitly. `$TERM` alone is not a terminal version.
 
 ```sh
 scripts/daily-driver-gate.sh run /absolute/new/session-directory \
+  --acceptance-bundle /path/to/catomic-compatibility-commit \
   --terminal "kitty 0.42.2" \
   --multiplexer "tmux 3.5a"
 ```
 
 Use `none` when no multiplexer is present. The directory must not already
-exist; the harness never overwrites or deletes an acceptance session.
+exist; the harness never overwrites or deletes an acceptance session. A loose
+binary, a bundle for another source commit, changed bytes, or contradictory
+matrix/build metadata is rejected before the editor session starts.
 
 Treat Catomic as an ordinary editor for a sustained session of at least eight
 minutes. The validator rejects a shorter record, keeping the session inside the

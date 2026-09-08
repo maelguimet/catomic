@@ -40,6 +40,9 @@ manifest_names=(
   "$binary_name"
   "$binary_name.sha256"
   "$package_name"
+  candidate-build.json
+  automated-compatibility-matrix.json
+  automated-compatibility-matrix.md
   package-contents.txt
   source-verification.txt
   toolchain.txt
@@ -74,6 +77,52 @@ checksum_name="${checksum_name#\*}"
   die "per-binary checksum does not name $binary_name"
 [[ "$binary_digest" == "$(sha256sum "$asset_dir/$binary_name" | cut -d ' ' -f 1)" ]] || \
   die "per-binary checksum digest differs from downloaded bytes"
+
+python3 - "$asset_dir" "$source_sha" "$binary_digest" <<'PY'
+import json
+import pathlib
+import sys
+
+asset_dir = pathlib.Path(sys.argv[1])
+source_sha = sys.argv[2]
+binary_digest = sys.argv[3]
+metadata = json.loads((asset_dir / "candidate-build.json").read_text(encoding="utf-8"))
+expected_metadata = {
+    "schema_version": "catomic-managed-candidate-v1",
+    "source_sha": source_sha,
+    "source_dirty": False,
+    "managed_release": True,
+}
+if metadata != expected_metadata:
+    raise SystemExit("release candidate metadata is not the accepted clean managed build")
+matrix = json.loads(
+    (asset_dir / "automated-compatibility-matrix.json").read_text(encoding="utf-8")
+)
+if matrix.get("release_candidate_gate") != "not-requested":
+    raise SystemExit("automated compatibility matrix has an unexpected gate value")
+results = matrix.get("results")
+if not isinstance(results, list) or not results:
+    raise SystemExit("automated compatibility matrix has no results")
+if any(result.get("overall_status") == "fail" for result in results):
+    raise SystemExit("automated compatibility matrix contains a failed result")
+environments = {
+    (result.get("environment", {}).get("kind"), result.get("environment", {}).get("id"))
+    for result in results
+}
+expected_environments = {
+    ("terminal", "direct-pty"),
+    ("terminal", "tmux"),
+    ("filesystem", "runner-filesystem"),
+    ("filesystem", "tmpfs"),
+}
+if environments != expected_environments:
+    raise SystemExit("automated compatibility matrix has unexpected environments")
+artifact = matrix.get("artifact", {})
+if artifact.get("commit") != source_sha:
+    raise SystemExit("compatibility matrix source differs from released source")
+if artifact.get("binary_sha256") != binary_digest:
+    raise SystemExit("compatibility matrix checksum differs from released binary")
+PY
 
 file_info="$(file -b -- "$asset_dir/$binary_name")"
 [[ "$file_info" == *"ELF 64-bit LSB"* && "$file_info" == *"x86-64"* ]] || \

@@ -354,17 +354,6 @@ pub(crate) fn mixed_text_fixture(target_bytes: usize) -> String {
     text
 }
 
-/// Tiny elapsed wrapper for manual/ignored tests only. No thresholds.
-/// Prints via eprintln! so visible only with --nocapture.
-#[allow(dead_code)]
-pub(crate) fn measure_elapsed<T>(label: &str, f: impl FnOnce() -> T) -> T {
-    let start = Instant::now();
-    let v = f();
-    let d = start.elapsed();
-    eprintln!("{}: {:?}", label, d);
-    v
-}
-
 /// Minimal no-deps sample for manual baseline reporting.
 /// label is stable identifier for later parsing; bytes is on-disk size if known.
 #[derive(Clone, Debug)]

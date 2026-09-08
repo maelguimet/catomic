@@ -212,7 +212,7 @@ fn same_path_reload_that_resets_buffer_revision_blocks_later_apply() {
 }
 
 #[test]
-fn no_input_insert_preparation_does_not_retain_a_large_source_snapshot() {
+fn no_input_insert_start_has_bounded_source_allocation() {
     const SOURCE_BYTES: usize = 64 * 1024 * 1024;
     let mut app = super::super::App::new(None).unwrap();
     app.buffer = Box::new(crate::buffer::PieceTable::from_owned_text(
@@ -223,25 +223,14 @@ fn no_input_insert_preparation_does_not_retain_a_large_source_snapshot() {
         "[commands.insert]\ncommand = \"printf x\"\noutput = \"insert\"\n",
     );
 
-    let retained_before = 0;
-    let (_, sample) = crate::tests::perf::measure_live_allocations(|| {
+    let (_, allocated_bytes) = crate::tests::perf::count_thread_allocated_bytes(|| {
         start(&mut app, &mut Vec::new(), "insert").unwrap();
     });
-    let retained_after = sample.retained_bytes;
     let running = app.external_command.running.as_ref().unwrap();
 
-    assert_eq!(retained_before, 0);
     assert!(
-        retained_after.saturating_sub(retained_before) < 64 * 1024,
-        "preparation retained {retained_after} bytes for a {SOURCE_BYTES}-byte source; \
-         peak was {} bytes across {} allocations",
-        sample.peak_bytes,
-        sample.allocations,
-    );
-    assert!(
-        sample.peak_bytes < 64 * 1024,
-        "preparation peaked at {} bytes for a {SOURCE_BYTES}-byte source",
-        sample.peak_bytes,
+        allocated_bytes < 64 * 1024,
+        "command start allocated {allocated_bytes} bytes for a {SOURCE_BYTES}-byte source",
     );
     assert_eq!(running.source_revision, Some(app.buffer.content_revision()));
     assert!(cancel_all(&mut app));

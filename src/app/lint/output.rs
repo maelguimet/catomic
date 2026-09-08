@@ -13,11 +13,13 @@ pub(crate) struct ParsedFinding {
     pub message: String,
 }
 
-pub(crate) fn parse_common_output(output: &str, root: &Path) -> Vec<ParsedFinding> {
+pub(crate) fn parse_common_output<'a>(
+    output: &'a str,
+    root: &'a Path,
+) -> impl Iterator<Item = ParsedFinding> + 'a {
     output
         .lines()
         .filter_map(|line| parse_common_line(line, root))
-        .collect()
 }
 
 fn parse_common_line(line: &str, root: &Path) -> Option<ParsedFinding> {
@@ -54,7 +56,7 @@ mod tests {
             "/tmp/other.py:3:2: warning: suspicious thing\n",
         );
 
-        let parsed = parse_common_output(output, &root);
+        let parsed = parse_common_output(output, &root).collect::<Vec<_>>();
 
         assert_eq!(parsed.len(), 2);
         assert_eq!(parsed[0].file, root.join("src/main.rs"));
@@ -73,7 +75,7 @@ mod tests {
             "file.rs:4:5: info: useful note\n",
         );
 
-        let parsed = parse_common_output(output, std::path::Path::new("/root"));
+        let parsed = parse_common_output(output, std::path::Path::new("/root")).collect::<Vec<_>>();
 
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].message, "info: useful note");

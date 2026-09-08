@@ -11,6 +11,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::buffer::Cursor;
 use crate::config::linters;
+use crate::tests::perf::count_thread_allocations;
 
 use super::super::App;
 
@@ -49,6 +50,49 @@ fn configured_linter_installs_raw_current_buffer_finding() {
         super::message_at_cursor(&app).as_deref(),
         Some("Lint 2:2: suspicious thing")
     );
+}
+
+#[test]
+fn dense_output_allocates_only_for_the_capped_findings() {
+    const REPORT: &str = "a:1:1:x\n";
+    const OUTPUT_BYTES: usize = 1_048_576;
+    const REPORTS: usize = OUTPUT_BYTES / REPORT.len();
+    let output = REPORT.repeat(REPORTS);
+    let capped_output = REPORT.repeat(super::MAX_FINDINGS);
+    let root = PathBuf::from("/root");
+    let source = root.join("a");
+
+    let (capped_findings, capped_allocations) =
+        count_thread_allocations(|| super::collect_findings(&capped_output, &root, &source, 1));
+    let (findings, allocations) =
+        count_thread_allocations(|| super::collect_findings(&output, &root, &source, 1));
+
+    assert_eq!(output.len(), OUTPUT_BYTES);
+    assert_eq!(REPORTS, 131_072);
+    assert_eq!(capped_findings.len(), super::MAX_FINDINGS);
+    assert_eq!(findings.len(), super::MAX_FINDINGS);
+    assert_eq!(
+        allocations, capped_allocations,
+        "reports after the cap must not cause parser allocations"
+    );
+}
+
+#[test]
+fn finding_cap_applies_after_malformed_unrelated_and_invalid_rows() {
+    let root = PathBuf::from("/root");
+    let source = root.join("current.rs");
+    let mut output = String::from(concat!(
+        "noise\n",
+        "current.rs:0:1: invalid coordinate\n",
+        "other.rs:1:1: unrelated\n",
+        "current.rs:2:1: outside buffer\n",
+    ));
+    output.push_str(&"current.rs:1:1: eligible\n".repeat(super::MAX_FINDINGS + 1));
+
+    let findings = super::collect_findings(&output, &root, &source, 1);
+
+    assert_eq!(findings.len(), super::MAX_FINDINGS);
+    assert!(findings.iter().all(|finding| finding.message == "eligible"));
 }
 
 #[test]

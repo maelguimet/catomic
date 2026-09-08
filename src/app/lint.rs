@@ -194,18 +194,7 @@ fn finish(
         return;
     }
     let cwd = running.source.parent().unwrap_or_else(|| Path::new("."));
-    let source = crate::file::watch_path::normalize_path(&running.source);
-    let findings = parse_common_output(&output, cwd)
-        .into_iter()
-        .filter(|finding| crate::file::watch_path::normalize_path(&finding.file) == source)
-        .filter(|finding| finding.line.saturating_sub(1) < app.buffer.line_count())
-        .take(MAX_FINDINGS)
-        .map(|finding| LintFinding {
-            row: finding.line.saturating_sub(1),
-            col: finding.col.saturating_sub(1),
-            message: finding.message,
-        })
-        .collect::<Vec<_>>();
+    let findings = collect_findings(&output, cwd, &running.source, app.buffer.line_count());
     let mut highlights: Vec<crate::terminal::render::TextHighlight> = findings
         .iter()
         .filter_map(|finding| {
@@ -260,6 +249,25 @@ fn finish(
             )
         ));
     }
+}
+
+fn collect_findings(
+    output: &str,
+    cwd: &Path,
+    source: &Path,
+    line_count: usize,
+) -> Vec<LintFinding> {
+    let source = crate::file::watch_path::normalize_path(source);
+    parse_common_output(output, cwd)
+        .filter(|finding| crate::file::watch_path::normalize_path(&finding.file) == source)
+        .filter(|finding| finding.line.saturating_sub(1) < line_count)
+        .take(MAX_FINDINGS)
+        .map(|finding| LintFinding {
+            row: finding.line.saturating_sub(1),
+            col: finding.col.saturating_sub(1),
+            message: finding.message,
+        })
+        .collect()
 }
 
 pub(crate) fn handle_key(

@@ -10,6 +10,12 @@ and records the source commit, binary checksum and size, host, kernel, mount,
 locale, terminal path, expected scenarios, exit statuses, file hashes, terminal
 restoration, and any focused defect link.
 
+Before any scenario runs, the harness requires the binary's embedded clean
+build identity to equal the supplied 40-character source commit or its current
+12-character displayed prefix. Dirty builds, unknown identities, unknown source
+state, and contradictory commits are rejected. Imported result records receive
+the same validation before they can be aggregated.
+
 ## Support policy
 
 “Supported” below is the product boundary. A particular release may claim a row

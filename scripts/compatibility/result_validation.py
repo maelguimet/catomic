@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Purpose: validate one Catomic compatibility environment result.
-Owns: evidence field types, hash/status invariants, and focused-failure linkage.
+Owns: evidence types, build identity, hash/status invariants, and failure linkage.
 Must not: discover environments, execute scenarios, write files, or contact a network.
-Invariants: every accepted failure links a focused issue and overall status is derived.
+Invariants: artifact commits match clean embedded identities; overall status is derived.
 Phase: post-v0.1 Linux compatibility matrix.
 """
 
@@ -16,6 +16,10 @@ from typing import Any
 SCHEMA_VERSION = "catomic-compatibility-v1"
 SHA40 = re.compile(r"^[0-9a-f]{40}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+VERSION_IDENTITY = re.compile(
+    r"^catomic \S+ \(commit ([0-9a-f]{12}|[0-9a-f]{40})"
+    r"(?P<state>; dirty|; source state unknown)?\)$"
+)
 ISSUE_URL = re.compile(r"^https://github\.com/[^/]+/[^/]+/issues/[1-9][0-9]*$")
 STATUSES = {"pass", "fail", "unsupported"}
 
@@ -141,8 +145,22 @@ def _validate_artifact(item: dict[str, Any]) -> None:
         raise EvidenceError("artifact binary_size must be positive")
     if item.get("release") is not None and not isinstance(item["release"], str):
         raise EvidenceError("artifact release must be a string or null")
-    if not item["version_output"].startswith("catomic "):
-        raise EvidenceError("artifact version_output must start with 'catomic '")
+    validate_build_identity(item["version_output"], item["commit"])
+
+
+def validate_build_identity(version_output: str, commit: str) -> None:
+    match = VERSION_IDENTITY.fullmatch(version_output)
+    if match is None:
+        if "commit unknown" in version_output:
+            raise EvidenceError("artifact binary build identity is unknown")
+        raise EvidenceError("artifact version_output has no supported build identity")
+    if match.group("state") == "; dirty":
+        raise EvidenceError("artifact binary was built from a dirty source tree")
+    if match.group("state") == "; source state unknown":
+        raise EvidenceError("artifact binary source state is unknown")
+    embedded = match.group(1)
+    if embedded != commit and not (len(embedded) == 12 and commit.startswith(embedded)):
+        raise EvidenceError("artifact binary build identity contradicts artifact commit")
 
 
 def _validate_environment(item: dict[str, Any]) -> None:

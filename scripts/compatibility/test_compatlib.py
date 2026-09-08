@@ -11,6 +11,7 @@ from __future__ import annotations
 import copy
 import io
 import json
+import stat
 import tempfile
 import unittest
 from pathlib import Path
@@ -24,6 +25,7 @@ from build_report import (
 )
 from compatlib import (
     EvidenceError,
+    artifact,
     result,
     scenario,
     stage_artifact,
@@ -60,7 +62,7 @@ def fixture_result(status: str = "pass", issue: str | None = None, notes: str = 
             "binary_name": "catomic",
             "binary_sha256": "d" * 64,
             "binary_size": 42,
-            "version_output": "catomic 0.1.0",
+            "version_output": "catomic 0.1.0 (commit cccccccccccc)",
         },
         {
             "kind": "terminal",
@@ -135,6 +137,66 @@ class EvidenceValidationTests(unittest.TestCase):
         record["artifact"]["binary_sha256"] = "not-a-hash"
         with self.assertRaisesRegex(EvidenceError, "binary_sha256"):
             validate_result(record)
+
+    def test_artifact_source_commit_remains_full_length(self):
+        for commit in ("c" * 12, "c" * 39, "c" * 41):
+            with self.subTest(length=len(commit)):
+                record = fixture_result()
+                record["artifact"]["commit"] = commit
+                with self.assertRaisesRegex(EvidenceError, "commit is malformed"):
+                    validate_result(record)
+
+    def test_imported_artifact_accepts_clean_exact_or_current_prefix_identity(self):
+        for identity in ("c" * 12, "c" * 40):
+            with self.subTest(identity=identity):
+                record = fixture_result()
+                record["artifact"]["version_output"] = (
+                    f"catomic 0.1.0 (commit {identity})"
+                )
+                validate_result(record)
+
+    def test_imported_artifact_rejects_mismatch_dirty_and_unknown_identity(self):
+        invalid = {
+            "mismatch": "catomic 0.1.0 (commit dddddddddddd)",
+            "dirty": "catomic 0.1.0 (commit cccccccccccc; dirty)",
+            "unknown-identity": "catomic 0.1.0 (commit unknown)",
+            "unknown-state": (
+                "catomic 0.1.0 (commit cccccccccccc; source state unknown)"
+            ),
+            "duplicate-decorated": (
+                "catomic 0.2.0 (commit bbbbbbbbbbbb; dirty) "
+                f"(commit {'c' * 40})"
+            ),
+        }
+        for label, version in invalid.items():
+            with self.subTest(label=label):
+                record = fixture_result()
+                record["artifact"]["version_output"] = version
+                with self.assertRaises(EvidenceError):
+                    validate_result(record)
+
+    def test_artifact_checks_embedded_identity_before_returning_evidence(self):
+        versions = {
+            "matching": "catomic 0.1.0 (commit cccccccccccc)",
+            "mismatch": "catomic 0.1.0 (commit dddddddddddd)",
+            "dirty": "catomic 0.1.0 (commit cccccccccccc; dirty)",
+            "unknown": "catomic 0.1.0 (commit unknown)",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory) / "catomic"
+            for label, version in versions.items():
+                with self.subTest(label=label):
+                    binary.write_text(
+                        f"#!/bin/sh\nprintf '%s\\n' '{version}'\n", encoding="utf-8"
+                    )
+                    binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
+                    if label == "matching":
+                        self.assertEqual(
+                            artifact(binary, "c" * 40, None)["version_output"], version
+                        )
+                    else:
+                        with self.assertRaises(EvidenceError):
+                            artifact(binary, "c" * 40, None)
 
     def test_schema_fields_cannot_be_omitted_or_invented(self):
         missing = fixture_result()

@@ -587,8 +587,13 @@ step. Newlines, cursor or selection changes, paste and replacement actions,
 completion or emoji acceptance, switching buffers, saving, and undo or redo
 end that run, so unrelated edits remain separate undo steps.
 
-Grouped actions such as a bracketed paste, selected-line indentation, Replace
-All, or a confirmed command result are each one undoable transaction.
+Grouped actions such as a bracketed paste, selected-line indentation, or a
+confirmed command result are each one undoable transaction. Replace All uses
+groups of at most 128 matches, with a 64 KiB budget for combined
+matched/replacement text. A single replacement larger than that budget gets
+its own group. Each group is one undo step. `Escape` stops bulk replacement
+between groups and retains those already applied; undo each group to reverse
+the whole change.
 
 Catomic retains the newest 10,000 undo transactions, subject to a 64 MiB
 retained-history budget that accounts for edited bytes and transaction
@@ -674,12 +679,13 @@ page. Search reads bounded segments of the active buffer and remains cancellable
 on large editable files; it does not collect an unlimited list of matches.
 
 Each individually accepted replacement is one undo step. Bulk replacement uses
-groups of at most 128 matches and 64 KiB of combined matched/replacement text;
-each group is one undo step. A small Replace All that fits one group therefore
-undoes at once. `Escape` also stops an ongoing bulk operation between groups,
-retaining the groups already applied. An unchanged replacement creates no undo
-step or dirty state. Changes to the source while searching or reviewing stop the
-operation before a stale candidate can be applied.
+groups of at most 128 matches, with a 64 KiB budget for combined
+matched/replacement text. A single replacement larger than that budget gets
+its own group. Each group is one undo step. A small Replace All that fits one
+group therefore undoes at once. `Escape` also stops an ongoing bulk operation
+between groups, retaining those already applied. An unchanged replacement
+creates no undo step or dirty state. Changes to the source while searching or
+reviewing stop the operation before a stale candidate can be applied.
 
 ### Go to line
 

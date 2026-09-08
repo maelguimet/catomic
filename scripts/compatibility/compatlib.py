@@ -19,7 +19,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from result_validation import EvidenceError, SCHEMA_VERSION, SHA40, validate_result
+from result_validation import (
+    EvidenceError,
+    SCHEMA_VERSION,
+    SHA40,
+    validate_build_identity,
+    validate_result,
+)
 
 
 def utc_now() -> str:
@@ -71,8 +77,7 @@ def artifact(binary: Path, commit: str, release: str | None) -> dict[str, Any]:
         timeout=10,
     )
     version = completed.stdout.strip()
-    if not version.startswith("catomic "):
-        raise EvidenceError(f"unexpected version output: {version!r}")
+    validate_build_identity(version, commit)
     return {
         "commit": commit,
         "release": release,

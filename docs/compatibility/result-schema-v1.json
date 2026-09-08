@@ -44,7 +44,10 @@
         "binary_name": {"type": "string", "minLength": 1},
         "binary_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "binary_size": {"type": "integer", "minimum": 1},
-        "version_output": {"type": "string", "pattern": "^catomic "}
+        "version_output": {
+          "type": "string",
+          "pattern": "^catomic \\S+ \\(commit ([0-9a-f]{12}|[0-9a-f]{40})\\)$"
+        }
       }
     },
     "environment": {

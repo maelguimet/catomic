@@ -47,7 +47,7 @@ class CandidatePromotionTests(unittest.TestCase):
             "binary_name": "catomic",
             "binary_sha256": digest,
             "binary_size": binary.stat().st_size,
-            "version_output": "catomic 0.1.0",
+            "version_output": "catomic 0.1.0 (commit cccccccccccc)",
         }
         records = []
         for index, (kind, identifier) in enumerate(

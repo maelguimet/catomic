@@ -36,11 +36,27 @@ jobs:
         run: cargo test --release --locked --bin catomic tests::perf::byte_scans -- --ignored --test-threads=1 --nocapture
 
       - name: Build one compatibility candidate artifact
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target/compatibility-candidate
+          CATOMIC_BUILD_COMMIT: ${{ github.sha }}
+          CATOMIC_BUILD_DIRTY: "0"
+          CATOMIC_MANAGED_RELEASE: "1"
         run: |
           cargo build --release --locked
           mkdir compatibility-results
-          install -m 0755 target/release/catomic compatibility-results/catomic
-          sha256sum compatibility-results/catomic > compatibility-results/catomic.sha256
+          install -m 0755 "$CARGO_TARGET_DIR/release/catomic" compatibility-results/catomic
+          (
+            cd compatibility-results
+            sha256sum catomic > catomic.sha256
+          )
+          cat > compatibility-results/candidate-build.json <<EOF
+          {
+            "schema_version": "catomic-managed-candidate-v1",
+            "source_sha": "${{ github.sha }}",
+            "source_dirty": false,
+            "managed_release": true
+          }
+          EOF
 
       - name: Exercise automated terminal and filesystem paths
         env:

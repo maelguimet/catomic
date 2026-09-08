@@ -65,14 +65,15 @@ xattrs are tested independently through the Python standard library.
 
 ## Produce evidence
 
-Use a clean candidate checkout and one already-built release-shaped binary.
-Copying is allowed, but every run must point at byte-identical contents:
+Use a clean candidate checkout and the managed binary downloaded from that
+commit's successful Acceptance workflow run. Copying is allowed, but do not
+rebuild it: every automated, manual, filesystem, daily-driver, and release run
+must point at byte-identical contents:
 
 ```sh
-cargo build --release --locked
 candidate_commit="$(git rev-parse HEAD)"
-candidate_binary="$(cargo metadata --no-deps --format-version 1 | \
-  python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')/release/catomic"
+candidate_binary="/path/to/catomic-compatibility-$candidate_commit/catomic"
+chmod 0755 "$candidate_binary" # artifact downloads do not preserve executable mode
 mkdir -p compatibility-results
 
 python3 scripts/compatibility/run_terminal.py automated \
@@ -143,13 +144,15 @@ scenario, exit status, hashes, mount/terminal path, and a minimal fixture. Then
 rerun with `--failure-issue URL`; validation rejects a `fail` result without
 that link. Security-sensitive evidence follows the private reporting path.
 
-For a release candidate, publish `matrix.json`, `matrix.md`, the tested binary,
-and its checksum together under one durable URL. The candidate acceptance note
-must link that matrix and name the same binary SHA-256. A final release does not
-inherit results from another checksum, a rebuilt binary, a descendant commit,
-or an expiring local path.
+For a release candidate, publish `matrix.json`, `matrix.md`, the tested managed
+binary, and its checksum together under one durable URL. The candidate
+acceptance note must link that matrix and name the same binary SHA-256. A final
+release does not inherit results from another checksum, a rebuilt binary, a
+descendant commit, or an expiring local path. Supply the originating Acceptance
+run ID to the release workflow; it refuses any matrix or candidate whose
+SHA-256 differs from the bytes it promotes and publishes.
 
-The separate Acceptance workflow builds one exact artifact and retains its
+The separate Acceptance workflow builds one exact managed artifact and retains its
 automated direct-PTY, tmux, runner-filesystem, and tmpfs bundle. Those checks are
 useful prerequisites, not substitutes for ext4 classification or two real GUI
 results when the runner does not provide them.

@@ -1,6 +1,6 @@
 # Release Evidence and Publication
 
-New Catomic releases are published only by the tag-triggered
+New Catomic releases are published only by the manually dispatched
 [`release.yml`](../.github/workflows/release.yml) workflow. Its generated
 `release-evidence.md` asset is the canonical acceptance record for one release.
 It names the tag, exact source SHA, workflow run, toolchains, package, public
@@ -18,39 +18,48 @@ documented as an explicit historical exception below.
 
 ## Maintainer Procedure
 
-Before tagging:
+Before dispatching a release:
 
 1. Update `Cargo.toml` and `Cargo.lock` to the intended release version.
-2. Complete the [Linux compatibility matrix](compatibility.md) with
+2. Dispatch the manual-only [Acceptance workflow](../.github/workflows/acceptance.yml)
+   for the candidate commit. Record its run ID and download its
+   `catomic-compatibility-<commit SHA>` artifact. This is a clean managed build
+   with the same embedded build settings as the eventual release binary.
+3. Complete the [Linux compatibility matrix](compatibility.md) with
    `build_report.py --release-candidate`. Publish the resulting JSON and
    Markdown beside the exact tested candidate binary and checksum, then link
    that durable result from the candidate acceptance record. A different
    checksum, rebuild, or expiring local path is not release evidence.
-3. For an open-beta release candidate, use the
+4. For an open-beta release candidate, use the
    [daily-driver polish gate](open-beta-daily-driver-gate.md) to bind the human
    session, candidate SHA, limitations, and final issue comment to the tested
    release binary.
-4. Confirm the documented
+5. Confirm the documented
    [no-built-in-AI boundary](decisions/0015-no-built-in-ai-runtime.md) by source
    review, and require the static residue/ownership regression gate to pass.
    The release may retain updater networking and generic trusted commands/hooks,
    but must not regain a model/provider path.
-5. Require all protected pull-request checks to pass before merge.
-6. Confirm that `master` points to the intended merge commit before tagging.
-7. On that exact `master` commit, run **Publish managed release** from GitHub
-   Actions with `v<package-version>` as its `tag` input. The dispatch refuses a
-   non-`master` ref, a tag that does not match `Cargo.toml`, or an existing tag,
-   then creates and pushes the annotated tag. Maintainers may instead create and
-   push the same annotated tag locally.
+6. Require all protected pull-request checks to pass before merge.
+7. Confirm that `master` points to the intended release commit.
+8. On that exact `master` commit, run **Publish managed release** from GitHub
+   Actions with `v<package-version>` as its `tag` input and the recorded
+   Acceptance run ID as `acceptance_run_id`. The dispatch refuses a non-`master`
+   ref, a tag that does not match `Cargo.toml`, an existing tag, or Acceptance
+   evidence for any other source or binary, then creates and pushes the
+   annotated tag.
 
-The separate [Acceptance workflow](../.github/workflows/acceptance.yml) is
-manual-only. Dispatch it for the candidate ref to obtain a
-`catomic-compatibility-<commit SHA>` Actions artifact containing the exact
-binary, checksum, automated direct-PTY/tmux and filesystem results, and matrix
-report. The artifact expires after 30 days. Complete the required real-terminal
-and ext4/tmpfs evidence using the same binary, then publish the durable bundle
-required by step 2. A tag push does not dispatch Acceptance, and the release
-workflow's own source and public-asset checks do not produce this matrix.
+The Acceptance workflow is manual-only. Dispatch it for the candidate ref to
+obtain a `catomic-compatibility-<commit SHA>` Actions artifact containing the
+exact managed binary, checksum, build metadata, automated direct-PTY/tmux and
+filesystem results, and matrix report. The artifact expires after 30 days.
+Complete the required real-terminal and ext4/tmpfs evidence using the binary
+downloaded from that artifact, then publish the durable bundle required by step
+3. Do not rebuild it. Release downloads that exact named artifact from the
+supplied successful run, checks its source, managed marker, checksum, size, and
+matrix identity, and promotes its bytes as the public binary. That partial
+automated matrix and the build metadata are also retained as checksummed release
+assets. They remain prerequisites; the durable manual release-candidate matrix
+from step 3 is the complete terminal and filesystem compatibility evidence.
 
 The release workflow then does all of the following on the tagged checkout:
 
@@ -59,7 +68,7 @@ The release workflow then does all of the following on the tagged checkout:
 - runs formatting, Clippy, MSRV, the AI residue/ownership source gate, default tests,
   and ignored acceptance tests;
 - lists, builds, and verifies the Cargo source package;
-- builds the managed release binary from that same checkout;
+- promotes the byte-identical managed binary from the named Acceptance run;
 - emits per-binary and complete SHA-256 manifests;
 - creates GitHub/Sigstore provenance for the binary, packaged source, and
   attached verification metadata;

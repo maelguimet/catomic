@@ -18,10 +18,11 @@ die() {
 usage() {
   cat >&2 <<'EOF'
 usage:
-  scripts/daily-driver-gate.sh run SESSION_DIR --terminal "NAME VERSION" --multiplexer "NAME VERSION|none"
+  scripts/daily-driver-gate.sh run SESSION_DIR --acceptance-bundle DIR --terminal "NAME VERSION" --multiplexer "NAME VERSION|none"
   scripts/daily-driver-gate.sh verify SESSION_DIR
 
-run requires an interactive terminal, a clean checkout, and a new SESSION_DIR.
+run requires an interactive terminal, the downloaded Acceptance bundle, a
+clean checkout at that bundle's source commit, and a new SESSION_DIR.
 verify accepts only a completed PASS record; it never edits the session.
 EOF
   exit 2
@@ -369,21 +370,23 @@ EOF
 }
 
 run_session() {
-  [[ $# -eq 5 ]] || usage
+  [[ $# -eq 7 ]] || usage
   local session_input="$1"
-  [[ "$2" == --terminal && "$4" == --multiplexer ]] || usage
-  local terminal_label="$3" multiplexer="$5"
+  [[ "$2" == --acceptance-bundle && "$4" == --terminal && "$6" == --multiplexer ]] || usage
+  local acceptance_bundle="$3" terminal_label="$5" multiplexer="$7"
   require_single_line "terminal label" "$terminal_label"
   require_single_line "multiplexer label" "$multiplexer"
   [[ -t 0 && -t 1 && -r /dev/tty && -w /dev/tty ]] ||
     die "run must be invoked from an interactive terminal"
 
   local tool
-  for tool in awk cargo cut date git grep install locale realpath sed sha256sum stty touch; do
+  for tool in awk chmod cut date git grep locale python3 realpath sed sha256sum stty touch; do
     require_tool "$tool"
   done
   [[ ! -e "$session_input" ]] || die "session path already exists: $session_input"
   [[ -d "$(dirname -- "$session_input")" ]] || die "session parent directory does not exist"
+  [[ -d "$acceptance_bundle" && ! -L "$acceptance_bundle" ]] ||
+    die "Acceptance bundle must be a non-symlink directory"
   [[ -z "$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)" ]] ||
     die "checkout must be clean so the release binary binds to one source SHA"
 
@@ -393,25 +396,18 @@ run_session() {
   [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || die "checkout did not resolve to a full source SHA"
   require_single_line "branch" "$branch"
 
-  local gate_target_dir="$repo_root/target/daily-driver-gate"
-  (cd -- "$repo_root" && CARGO_TARGET_DIR="$gate_target_dir" cargo build --release --locked)
-  local built_binary="$gate_target_dir/release/catomic"
-  [[ -f "$built_binary" && ! -L "$built_binary" ]] || die "release binary was not built"
-  [[ "$(git -C "$repo_root" rev-parse HEAD)" == "$source_sha" ]] ||
-    die "checkout HEAD changed while the release binary was built"
-  [[ -z "$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)" ]] ||
-    die "checkout changed while the release binary was built"
-  local release_version
-  release_version="$($built_binary --version)"
-  require_single_line "release version" "$release_version"
-
   umask 077
   mkdir -m 0700 -- "$session_input"
   local session_dir
   session_dir="$(realpath -- "$session_input")"
   mkdir -p -- "$session_dir/release"
-  install -m 0500 -- "$built_binary" "$session_dir/release/catomic"
   local release_binary="$session_dir/release/catomic"
+  python3 "$repo_root/scripts/compatibility/promote_candidate.py" \
+    "$acceptance_bundle" "$source_sha" "$release_binary"
+  chmod 0500 -- "$release_binary"
+  local release_version
+  release_version="$("$release_binary" --version)"
+  require_single_line "release version" "$release_version"
   local digest
   digest="$(sha256sum -- "$release_binary" | cut -d ' ' -f 1)"
   write_fixtures "$session_dir"

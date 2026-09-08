@@ -80,17 +80,21 @@ cargo test --all-targets --locked -- --ignored --test-threads=1 --nocapture
 Maintainers can manually dispatch the separate
 [**Acceptance** GitHub Actions workflow](.github/workflows/acceptance.yml).
 It runs ignored checks and release-mode byte-scan benchmarks, then builds one
-candidate binary and exercises direct-PTY, tmux, runner-filesystem, and tmpfs
-compatibility paths. The run retains the binary, checksum, JSON results, and
-matrix report in its `catomic-compatibility-<commit SHA>` artifact for 30 days.
+managed candidate binary and exercises direct-PTY, tmux, runner-filesystem, and
+tmpfs compatibility paths. The run retains the binary, checksum, JSON results,
+and partial automated matrix in its `catomic-compatibility-<commit SHA>`
+artifact for 30 days.
 Complete the remaining [Linux compatibility matrix](docs/compatibility.md)
-requirements on that same binary and publish durable evidence before tagging,
+requirements on that same binary and publish durable evidence before release,
 as described in the [release procedure](docs/releasing.md).
 
-Version-tag pushes trigger [**Publish managed release**](.github/workflows/release.yml),
-which runs its own source checks, default and ignored Rust tests (excluding the
-byte-scan benchmarks), package verification, and public-asset checks. It does
-not dispatch Acceptance or produce the terminal/filesystem compatibility matrix.
+Maintainers manually dispatch
+[**Publish managed release**](.github/workflows/release.yml) with the version
+and originating Acceptance run ID. It checks and promotes the exact accepted
+managed bytes, creates the immutable version tag, runs source, package, and
+public-asset checks, and retains the partial automated matrix with the release.
+The separately published manual release-candidate matrix remains the complete
+terminal/filesystem compatibility record.
 Some ignored checks create large temporary fixtures or measure live terminal
 and filesystem behavior. Read the relevant acceptance record under `docs/`
 before diagnosing an environment-sensitive result. Tests and compatibility

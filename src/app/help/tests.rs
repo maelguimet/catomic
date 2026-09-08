@@ -303,6 +303,48 @@ fn escape_closes_help_and_preserves_the_source_selection() {
 }
 
 #[test]
+fn focus_resize_keeps_a_visible_help_search_match_visible() {
+    for line_numbers in [false, true] {
+        let mut app = app();
+        app.screen.update_size(150, 40);
+        app.view_preferences.set_line_numbers(line_numbers);
+        let mut out = Vec::new();
+        show(&mut app, &mut out).unwrap();
+        open_search(&mut app, &mut out).unwrap();
+        for ch in "recovery".chars() {
+            handle_search_key(
+                &mut app,
+                &mut out,
+                KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE),
+            )
+            .unwrap();
+        }
+        handle_search_key(
+            &mut app,
+            &mut out,
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+        )
+        .unwrap();
+
+        for size in [(20, 10), (150, 40), (20, 10)] {
+            out.clear();
+            crate::app::viewport::redraw_after_focus(&mut app, Some(size), &mut out).unwrap();
+            assert!(crate::terminal::render::wrapped::cursor_is_visible(
+                display_buffer(&app).unwrap(),
+                app.screen.scroll_top,
+                app.screen.wrap_col,
+                app.screen.visible_height(),
+                crate::app::view::content_width(&app),
+            )
+            .unwrap());
+            let frame = String::from_utf8_lossy(&out);
+            assert!(frame.contains("recovery"));
+            assert!(frame.ends_with("\x1b[?25h\x1b[?2026l"));
+        }
+    }
+}
+
+#[test]
 fn help_reflows_narrow_wide_narrow_with_gutters_and_preserves_context() {
     let mut app = app();
     let source = (0..30)

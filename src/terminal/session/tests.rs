@@ -232,6 +232,27 @@ fn failed_xterm_format_reset_retries_without_repeating_other_resets() {
 }
 
 #[test]
+fn raw_mode_alone_still_restores_once_after_output_setup_fails() {
+    let guard = terminal_guard();
+    // setup() marks raw mode before writing any output mode; simulate output
+    // setup failing on its first write without entering a real raw terminal.
+    guard.restorer.mark_active(RAW_MODE);
+    assert!(guard.enable_output_modes(&mut FailAfter::new(0)).is_err());
+
+    let mut restored = Vec::new();
+    guard.restore(&mut restored).unwrap();
+    assert_eq!(
+        count(&restored, crate::terminal::render::TERMINAL_STATE_RECOVERY),
+        1
+    );
+    assert_eq!(count(&restored, b"\x1b[?1049l"), 0);
+
+    let mut repeated = Vec::new();
+    guard.restore(&mut repeated).unwrap();
+    assert!(repeated.is_empty(), "released raw mode must not be retried");
+}
+
+#[test]
 fn direct_terminal_enables_and_resets_xterm_modified_keys() {
     let guard = TerminalGuard::new();
     let mut output = Vec::new();

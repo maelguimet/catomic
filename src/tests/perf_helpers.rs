@@ -183,9 +183,15 @@ fn add_live_bytes(bytes: usize) {
 }
 
 fn subtract_live_bytes(bytes: usize) {
-    let _ = LIVE_BYTES.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |live| {
-        Some(live.saturating_sub(bytes))
-    });
+    let mut live = LIVE_BYTES.load(Ordering::Relaxed);
+    while let Err(current) = LIVE_BYTES.compare_exchange_weak(
+        live,
+        live.saturating_sub(bytes),
+        Ordering::Relaxed,
+        Ordering::Relaxed,
+    ) {
+        live = current;
+    }
 }
 
 pub(crate) struct LiveAllocationSample {

@@ -301,11 +301,24 @@ impl Buffer for PreviewBuffer {
 
 fn next_presentation_id() -> u64 {
     static NEXT_PRESENTATION_ID: AtomicU64 = AtomicU64::new(1);
-    NEXT_PRESENTATION_ID
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |identity| {
-            (identity < u64::MAX / 2).then(|| identity + 1)
-        })
-        .expect("preview presentation identity exhausted")
+    // A compare-exchange loop instead of `fetch_update`, which Rust 1.99
+    // deprecates in favour of `try_update` (newer than the 1.87 MSRV).
+    let mut identity = NEXT_PRESENTATION_ID.load(Ordering::Relaxed);
+    loop {
+        assert!(
+            identity < u64::MAX / 2,
+            "preview presentation identity exhausted"
+        );
+        match NEXT_PRESENTATION_ID.compare_exchange_weak(
+            identity,
+            identity + 1,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
+            Ok(previous) => return previous,
+            Err(current) => identity = current,
+        }
+    }
 }
 
 fn byte_offset_at_scalar(text: &str, scalar: usize) -> usize {

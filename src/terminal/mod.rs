@@ -33,9 +33,10 @@ type RestoreFn = Arc<dyn Fn() + Sync + Send + 'static>;
 /// previously installed hook. Restores the previous hook when dropped.
 ///
 /// The process-wide hook also runs for background worker threads. Their
-/// failures are reported through their join handles or channels while the
-/// session keeps running, so a worker panic must not restore the terminal or
-/// write to stderr under the live editor screen. The first worker panic is kept
+/// callers see the failure through a join handle or a disconnected channel
+/// (or, for some workers, as a result that never arrives) while the session
+/// keeps running, so a worker panic must not restore the terminal or write to
+/// stderr under the live editor screen. The first worker panic is kept
 /// and reported once the terminal has been restored.
 pub(crate) struct PanicRestoreGuard {
     previous: Arc<Mutex<Option<PanicHook>>>,

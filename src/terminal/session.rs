@@ -1,7 +1,8 @@
 //! Purpose: own the paired lifetime of terminal modes used by an editor session.
 //! Owns: alternate-screen, enhanced-keyboard, bracketed-paste, mouse, and raw-mode setup.
 //! Must not: decode input, interpret editor commands, render content, or mutate App state.
-//! Invariants: each negotiated keyboard mode is reset once before alternate-screen exit;
+//! Invariants: raw mode is on before any terminal mode that can send reports;
+//!   each negotiated keyboard mode is reset once before alternate-screen exit;
 //!   teardown first releases any interrupted synchronized render update; input reporting
 //!   is disabled and late reports are discarded before raw mode is released.
 
@@ -17,6 +18,7 @@ const KITTY_KEYBOARD_FLAGS: u8 = 1 << 1;
 const XTERM_EXTENDED_KEYS: u8 = 1 << 2;
 const TITLE_STACK: u8 = 1 << 3;
 const XTERM_OTHER_KEYS_FORMAT: u8 = 1 << 4;
+const RAW_MODE: u8 = 1 << 5;
 const RESTORING: u8 = 1 << 7;
 
 const XTERM_EXTENDED_KEYS_ENABLE: &[u8] = b"\x1b[>4;2m";
@@ -89,8 +91,12 @@ impl TerminalGuard {
     }
 
     pub(crate) fn setup<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        self.enable_output_modes(out)?;
-        crossterm::terminal::enable_raw_mode()
+        // Focus, mouse, and keyboard modes can make the terminal send reports
+        // as soon as they are enabled. Leave canonical echo first so the line
+        // discipline never echoes or line-buffers those reports.
+        crossterm::terminal::enable_raw_mode()?;
+        self.restorer.mark_active(RAW_MODE);
+        self.enable_output_modes(out)
     }
 
     pub(crate) fn restore<W: Write>(&self, out: &mut W) -> io::Result<()> {
@@ -168,7 +174,9 @@ impl TerminalRestorer {
         }
         let _ = crossterm::terminal::disable_raw_mode();
         discard_pending_input();
-        self.active_modes.store(remaining, Ordering::Release);
+        // Raw mode was released (best effort) above; a retry never repeats it.
+        self.active_modes
+            .store(remaining & !RAW_MODE, Ordering::Release);
         result
     }
 

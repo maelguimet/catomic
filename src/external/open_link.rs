@@ -55,7 +55,8 @@ fn launch_detached(shell: &Path, opener: &Path, destination: &str) -> io::Result
     std::thread::Builder::new()
         .name("catomic-open-link".to_string())
         .spawn(move || {
-            let _ = Command::new(shell)
+            let mut command = Command::new(shell);
+            command
                 .arg("-c")
                 .arg("\"$1\" \"$2\" </dev/null >/dev/null 2>&1 &")
                 .arg("catomic-open-link")
@@ -63,8 +64,8 @@ fn launch_detached(shell: &Path, opener: &Path, destination: &str) -> io::Result
                 .arg(destination)
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
+                .stderr(Stdio::null());
+            let _ = super::detach_from_terminal(&mut command).status();
         })?;
     Ok(())
 }

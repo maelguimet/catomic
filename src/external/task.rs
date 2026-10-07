@@ -193,8 +193,10 @@ fn wait_for_exit(
 
 /// Start `command` in a new session so neither it nor anything it spawns can
 /// open `/dev/tty`, read keystrokes meant for the editor, change terminal
-/// modes, or receive the editor's job-control signals. The child still leads
-/// a process group whose id equals its pid, so callers can signal `-pid`.
+/// modes, or receive the editor's job-control signals. A program that opens
+/// the terminal device by its explicit path (for example via `GPG_TTY`) is not
+/// prevented. The child still leads a process group whose id equals its pid,
+/// so callers can signal `-pid`.
 pub(crate) fn detach_from_terminal(command: &mut Command) -> &mut Command {
     #[cfg(unix)]
     // SAFETY: the closure runs in the forked child before exec and only calls

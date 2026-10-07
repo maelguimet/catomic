@@ -1,5 +1,6 @@
 //! Purpose: run one shell command asynchronously with bounded input lifetime and output memory.
-//! Owns: child lifetime, stdin delivery, timeout/cancellation, stream capture, and polling.
+//! Owns: child lifetime, stdin delivery, timeout/cancellation, stream capture, polling, and
+//!   detaching helper processes from the editor's terminal session.
 //! Must not: load config, choose commands, mutate App state, render, or write editor files.
 //! Invariants: output is capped; every pipe worker can be stopped and joined after child cleanup.
 
@@ -106,8 +107,9 @@ fn run_command(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    #[cfg(unix)]
-    process.process_group(0);
+    // A new session also makes the child its own process group leader, so
+    // terminate() can still signal the whole group.
+    detach_from_terminal(&mut process);
     let mut child = match process.spawn() {
         Ok(child) => child,
         Err(error) => return ExternalCommandResult::Error(error.to_string()),
@@ -187,6 +189,25 @@ fn wait_for_exit(
             }
         }
     }
+}
+
+/// Start `command` in a new session so neither it nor anything it spawns can
+/// open `/dev/tty`, read keystrokes meant for the editor, change terminal
+/// modes, or receive the editor's job-control signals. The child still leads
+/// a process group whose id equals its pid, so callers can signal `-pid`.
+pub(crate) fn detach_from_terminal(command: &mut Command) -> &mut Command {
+    #[cfg(unix)]
+    // SAFETY: the closure runs in the forked child before exec and only calls
+    // setsid, which is async-signal-safe and touches no parent-owned state.
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    command
 }
 
 fn terminate(child: &mut std::process::Child) {
@@ -316,6 +337,29 @@ mod tests {
         .unwrap();
 
         assert_eq!(wait_for(&mut task), ExternalCommandResult::TimedOut);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn detached_child_has_its_own_session_and_no_controlling_terminal() {
+        let mut command = Command::new("/bin/sh");
+        command
+            .arg("-c")
+            .arg(
+                "read -r _ _ _ _ _ session _ < /proc/self/stat; \
+                 printf '%s %s ' \"$$\" \"$session\"; \
+                 if (: </dev/tty) 2>/dev/null; then echo tty; else echo no-tty; fi",
+            )
+            .stdin(Stdio::null())
+            .stderr(Stdio::null());
+        let output = detach_from_terminal(&mut command).output().unwrap();
+
+        assert!(output.status.success());
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        let fields: Vec<&str> = stdout.split_whitespace().collect();
+        assert_eq!(fields.len(), 3, "unexpected probe output: {stdout:?}");
+        assert_eq!(fields[0], fields[1], "child must lead its own session");
+        assert_eq!(fields[2], "no-tty");
     }
 
     #[cfg(target_os = "linux")]

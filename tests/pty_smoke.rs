@@ -2191,6 +2191,36 @@ fn pty_external_command_previews_before_one_confirmed_edit() -> TestResult {
 }
 
 #[test]
+fn pty_external_command_cannot_write_to_the_editor_terminal() -> TestResult {
+    let project = TempProject::new("external_command_tty");
+    project.write(
+        "catomic/config.toml",
+        "[commands.upper]\ncommand = \"{ printf CATOMIC_TTY_WRITE >/dev/tty; } 2>/dev/null; \
+         tr a-z A-Z\"\ninput = \"buffer\"\noutput = \"replace-input\"\n",
+    );
+    let active = project.write("note.txt", "cat");
+    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"\x1b[80;6urun upper\r")?;
+    editor.wait_for_output(
+        "external command preview",
+        "Command upper output (read-only). Enter applies; Esc cancels.",
+    )?;
+    editor.send_keys(b"\r")?;
+    editor.wait_for_output("external command apply", "CAT")?;
+    editor.send_keys(b"\x13\x11")?;
+    editor.wait_for_exit()?;
+
+    assert_eq!(fs::read_to_string(active)?, "CAT");
+    assert!(
+        !editor.output_string().contains("CATOMIC_TTY_WRITE"),
+        "external commands must not reach the editor's controlling terminal"
+    );
+    Ok(())
+}
+
+#[test]
 fn pty_catnap_recovery_previews_then_saves_explicitly() -> TestResult {
     let project = TempProject::new("catnap_recovery");
     project.write(

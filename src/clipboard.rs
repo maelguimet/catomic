@@ -119,12 +119,13 @@ fn write_helper(helper: Helper, text: &str) -> io::Result<()> {
 }
 
 fn run_helper(program: &OsStr, args: &[&OsStr], text: &str) -> io::Result<()> {
-    let mut child = Command::new(program)
+    let mut command = Command::new(program);
+    command
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()?;
+        .stderr(Stdio::null());
+    let mut child = crate::external::detach_from_terminal(&mut command).spawn()?;
     let stdin = child
         .stdin
         .take()

@@ -916,6 +916,48 @@ fn pty_quit_drops_an_in_flight_kitty_release_before_returning_to_shell() -> Test
     Ok(())
 }
 
+#[cfg(unix)]
+#[test]
+fn pty_quit_drops_a_late_mouse_report_before_returning_to_shell() -> TestResult {
+    let temp = TempPath::new("quit_late_mouse_report");
+    let mut command = CommandBuilder::new("sh");
+    command.arg("-c");
+    command.arg(
+        "\"$1\" \"$2\"; printf '\\nCATOMIC_SHELL_READY\\n'; IFS= read -r line; printf 'CATOMIC_SHELL_LINE=%s\\n' \"$line\"",
+    );
+    command.arg("catomic-shell");
+    command.arg(env!("CARGO_BIN_EXE_catomic"));
+    command.arg(&temp.path);
+
+    let mut editor = PtyEditor::spawn_command(command)?;
+    editor.wait_for_initial_render()?;
+    let shell_offset = editor.output_len();
+
+    editor.send_keys(b"\x1b[113;5u")?;
+    // A real terminal (or an SSH/multiplexer hop) can still deliver motion
+    // reports that were in flight when the disable sequence arrived. Inject one
+    // the moment teardown writes the disable, as a late terminal would.
+    let start = Instant::now();
+    while !editor.output_since(shell_offset).contains("\x1b[?1003l") {
+        if start.elapsed() >= Duration::from_secs(2) {
+            return Err("timed out waiting for mouse reporting to be disabled".into());
+        }
+        thread::sleep(Duration::from_millis(1));
+    }
+    editor.send_keys(b"\x1b[<35;5;5M")?;
+    editor.wait_for_output("shell resumes after Ctrl+Q", "CATOMIC_SHELL_READY")?;
+    editor.send_keys(b"\n")?;
+    editor.wait_for_output("shell consumed its line", "CATOMIC_SHELL_LINE=")?;
+    editor.wait_for_exit()?;
+
+    let shell_output = editor.output_since(shell_offset);
+    assert!(
+        !shell_output.contains("<35;5;5M"),
+        "late mouse report leaked into the shell: {shell_output:?}"
+    );
+    Ok(())
+}
+
 #[test]
 fn pty_sgr_mouse_motion_underlines_only_the_hovered_link() -> TestResult {
     let temp = TempPath::new("link_mouse_hover");

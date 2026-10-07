@@ -2,12 +2,13 @@
 //! Owns: alternate-screen, enhanced-keyboard, bracketed-paste, mouse, and raw-mode setup.
 //! Must not: decode input, interpret editor commands, render content, or mutate App state.
 //! Invariants: each negotiated keyboard mode is reset once before alternate-screen exit;
-//!   teardown first releases any interrupted synchronized render update.
+//!   teardown first releases any interrupted synchronized render update; input reporting
+//!   is disabled and late reports are discarded before raw mode is released.
 
 use std::io::{self, IsTerminal, Write};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossterm::event::{self, KeyboardEnhancementFlags};
 
@@ -26,6 +27,11 @@ const XTERM_OTHER_KEYS_FORMAT_CSI_U: &[u8] = b"\x1b[>4;1f";
 const XTERM_OTHER_KEYS_FORMAT_RESET: &[u8] = b"\x1b[>4f";
 const TITLE_STACK_PUSH: &[u8] = b"\x1b[22;0t";
 const TITLE_STACK_POP: &[u8] = b"\x1b[23;0t";
+// Reports already on the wire when reporting is disabled can arrive late over
+// SSH or a multiplexer. Teardown waits for this much input silence, bounded by
+// the limit, while raw mode still keeps those bytes away from echo and the shell.
+const LATE_INPUT_QUIET_PERIOD: Duration = Duration::from_millis(50);
+const LATE_INPUT_LIMIT: Duration = Duration::from_millis(250);
 
 /// Validate explicit pipe import before consuming input or changing terminal modes.
 /// Crossterm's use-dev-tty input backend opens this controlling terminal when
@@ -153,8 +159,14 @@ impl TerminalRestorer {
             return Ok(());
         };
         discard_pending_input();
-        let _ = crossterm::terminal::disable_raw_mode();
+        // Disable mouse, focus, paste, and keyboard reporting while raw mode is
+        // still active. Releasing raw mode first re-enables echo and hands any
+        // report the terminal sends meanwhile to the parent shell.
         let (remaining, result) = restore_output_modes(out, active);
+        if crossterm::terminal::is_raw_mode_enabled().unwrap_or(false) {
+            discard_input_until_quiet(LATE_INPUT_QUIET_PERIOD, LATE_INPUT_LIMIT);
+        }
+        let _ = crossterm::terminal::disable_raw_mode();
         discard_pending_input();
         self.active_modes.store(remaining, Ordering::Release);
         result
@@ -193,15 +205,77 @@ pub(crate) fn settle_input_after_quit() {
 fn discard_pending_input() {
     #[cfg(unix)]
     {
-        use std::os::fd::AsRawFd;
+        let tty = InputTty::open();
+        tty.discard_pending();
+    }
+}
 
+/// Discard input until the terminal has been silent for `quiet_period`, or
+/// until `limit` elapses. Callers disable every input-reporting mode first.
+fn discard_input_until_quiet(quiet_period: Duration, limit: Duration) {
+    #[cfg(unix)]
+    {
+        let tty = InputTty::open();
+        let deadline = Instant::now() + limit;
+        loop {
+            tty.discard_pending();
+            let wait = quiet_period.min(deadline.saturating_duration_since(Instant::now()));
+            if wait.is_zero() || !tty.wait_for_input(wait) {
+                break;
+            }
+        }
+        tty.discard_pending();
+    }
+    #[cfg(not(unix))]
+    let _ = (quiet_period, limit);
+}
+
+/// The controlling terminal's input side: stdin, or `/dev/tty` when stdin is
+/// redirected (crossterm's use-dev-tty input backend reads the same device).
+#[cfg(unix)]
+struct InputTty {
+    tty: Option<std::fs::File>,
+}
+
+#[cfg(unix)]
+impl InputTty {
+    fn open() -> Self {
         let tty = (!io::stdin().is_terminal())
             .then(|| std::fs::File::open("/dev/tty").ok())
             .flatten();
-        let fd = tty.as_ref().map_or(libc::STDIN_FILENO, AsRawFd::as_raw_fd);
+        Self { tty }
+    }
+
+    fn fd(&self) -> std::os::fd::RawFd {
+        use std::os::fd::AsRawFd;
+
+        self.tty
+            .as_ref()
+            .map_or(libc::STDIN_FILENO, AsRawFd::as_raw_fd)
+    }
+
+    fn discard_pending(&self) {
         // SAFETY: tcflush only discards unread input from the controlling TTY;
         // it does not dereference the descriptor or mutate process memory.
-        let _ = unsafe { libc::tcflush(fd, libc::TCIFLUSH) };
+        let _ = unsafe { libc::tcflush(self.fd(), libc::TCIFLUSH) };
+    }
+
+    /// Returns whether input became readable within `wait`. A signal that
+    /// interrupts the wait counts as activity so the caller waits again within
+    /// its limit; other errors end the wait as if the input was quiet.
+    fn wait_for_input(&self, wait: Duration) -> bool {
+        let timeout = libc::c_int::try_from(wait.as_millis()).unwrap_or(libc::c_int::MAX);
+        let mut descriptor = libc::pollfd {
+            fd: self.fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // SAFETY: descriptor is one initialized pollfd that outlives the call.
+        let ready = unsafe { libc::poll(&mut descriptor, 1, timeout) };
+        if ready == -1 {
+            return io::Error::last_os_error().kind() == io::ErrorKind::Interrupted;
+        }
+        ready > 0 && descriptor.revents & libc::POLLIN != 0
     }
 }
 

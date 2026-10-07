@@ -77,6 +77,43 @@ mod tests {
     }
 
     #[test]
+    fn worker_thread_panic_leaves_the_session_terminal_untouched_until_teardown() {
+        let _lock = panic_hook_test_lock().lock().unwrap();
+        let original_hook = panic::take_hook();
+        let previous_called = Arc::new(AtomicUsize::new(0));
+        let restore_called = Arc::new(AtomicUsize::new(0));
+
+        let previous_seen = previous_called.clone();
+        panic::set_hook(Box::new(move |_| {
+            previous_seen.fetch_add(1, Ordering::SeqCst);
+        }));
+
+        {
+            let restore_seen = restore_called.clone();
+            let guard = PanicRestoreGuard::install_with_restore_for_test(move || {
+                restore_seen.fetch_add(1, Ordering::SeqCst);
+            });
+            let worker = std::thread::Builder::new()
+                .name("catomic-test-worker".to_string())
+                .spawn(|| panic!("simulated worker failure"))
+                .unwrap();
+            assert!(worker.join().is_err());
+
+            assert_eq!(restore_called.load(Ordering::SeqCst), 0);
+            assert_eq!(previous_called.load(Ordering::SeqCst), 0);
+            let report = guard.worker_panic_for_test().unwrap();
+            assert!(report.contains("catomic-test-worker"), "{report}");
+            assert!(report.contains("simulated worker failure"), "{report}");
+        }
+
+        let _current = panic::take_hook();
+        panic::set_hook(original_hook);
+
+        assert_eq!(restore_called.load(Ordering::SeqCst), 1);
+        assert_eq!(previous_called.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
     fn panic_notice_is_helpful_without_promising_unsaved_work_survived() {
         let notice = crate::terminal::PANIC_NOTICE;
 

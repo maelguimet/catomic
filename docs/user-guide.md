@@ -845,8 +845,9 @@ ordinary clicks keep Catomic's cursor and selection behavior. Markdown preview
 labels use the same action for HTTP(S) destinations. Detected links use the
 theme's link color (bright blue by default), including bare URLs in plain text
 and code. Catomic also underlines the link under the pointer when the terminal
-reports mouse motion, unless `[view] link_hover = false`. `Ctrl`+click uses the modifiers reported with the mouse
-event, so link interaction does not change normal keyboard input.
+reports mouse motion, unless `[view] link_hover = false`. `Ctrl`+click uses the
+modifiers reported with the mouse event, so link interaction does not change
+normal keyboard input.
 
 An unsupported named file opens with a one-time `Plain text` status message.
 When color is deliberately or automatically disabled, the startup status says

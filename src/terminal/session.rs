@@ -32,12 +32,12 @@ const TITLE_STACK_POP: &[u8] = b"\x1b[23;0t";
 // Reports already on the wire when reporting is disabled can arrive late over
 // SSH or a multiplexer. Teardown waits for this much input silence, bounded by
 // the limit, while raw mode still keeps those bytes away from echo and the shell.
+const LATE_INPUT_QUIET_PERIOD: Duration = Duration::from_millis(50);
+const LATE_INPUT_LIMIT: Duration = Duration::from_millis(250);
 // Crossterm's EnableMouseCapture without ?1003h (any-motion tracking): normal
 // press/release, button-event drag, then the RXVT and SGR coordinate encodings.
 // Teardown always sends DisableMouseCapture, which resets every one of these.
 const BUTTON_EVENT_MOUSE_ENABLE: &[u8] = b"\x1b[?1000h\x1b[?1002h\x1b[?1015h\x1b[?1006h";
-const LATE_INPUT_QUIET_PERIOD: Duration = Duration::from_millis(50);
-const LATE_INPUT_LIMIT: Duration = Duration::from_millis(250);
 
 /// Validate explicit pipe import before consuming input or changing terminal modes.
 /// Crossterm's use-dev-tty input backend opens this controlling terminal when

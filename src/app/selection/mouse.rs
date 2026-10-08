@@ -42,7 +42,12 @@ pub(crate) fn handle_mouse(
         return Ok(());
     }
     match event.kind {
-        MouseEventKind::Moved => return update_link_hover(app, out, event),
+        MouseEventKind::Moved if app.view_preferences.link_hover() => {
+            return update_link_hover(app, out, event)
+        }
+        // `[view] link_hover = false` requests no motion reports; ignore any a
+        // terminal sends anyway so the hover affordance stays off.
+        MouseEventKind::Moved => return Ok(()),
         MouseEventKind::ScrollUp => {
             return dispatch_scroll(app, out, MouseGesture::ScrollUp, event)
         }

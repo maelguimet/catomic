@@ -2,7 +2,8 @@
 //! Owns: `[view]` defaults, XDG state discovery, precedence, and explicit atomic writes.
 //! Must not: inspect buffers, render UI, write during startup, or contact the network.
 //! Invariants: persisted toggle state overrides config per key; missing state keeps config/default;
-//!   writes use a dedicated owner-only file and occur only after an explicit toggle.
+//!   writes use a dedicated owner-only file and occur only after an explicit toggle;
+//!   `link_hover` has no toggle, so it comes only from config and is never persisted.
 
 use std::ffi::OsStr;
 use std::fs;
@@ -13,12 +14,14 @@ use serde::Deserialize;
 
 const DEFAULT_LINE_NUMBERS: bool = false;
 const DEFAULT_EXTERNAL_DIFF: bool = true;
+const DEFAULT_LINK_HOVER: bool = true;
 const PREFERENCES_FILE: &str = "preferences.toml";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ViewPreferences {
     line_numbers: bool,
     external_diff: bool,
+    link_hover: bool,
     path: Option<PathBuf>,
 }
 
@@ -27,6 +30,7 @@ impl Default for ViewPreferences {
         Self {
             line_numbers: DEFAULT_LINE_NUMBERS,
             external_diff: DEFAULT_EXTERNAL_DIFF,
+            link_hover: DEFAULT_LINK_HOVER,
             path: None,
         }
     }
@@ -49,6 +53,17 @@ impl ViewPreferences {
         self.external_diff = enabled;
     }
 
+    /// Whether pointer motion underlines links. When false the session requests
+    /// button-event mouse tracking only, so idle pointer motion is never reported.
+    pub(crate) fn link_hover(&self) -> bool {
+        self.link_hover
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_link_hover(&mut self, enabled: bool) {
+        self.link_hover = enabled;
+    }
+
     pub(crate) fn persist(&self) -> io::Result<()> {
         let path = self.path.as_deref().ok_or_else(|| {
             io::Error::new(
@@ -64,6 +79,7 @@ impl ViewPreferences {
         Self {
             line_numbers,
             external_diff: DEFAULT_EXTERNAL_DIFF,
+            link_hover: DEFAULT_LINK_HOVER,
             path: Some(path),
         }
     }
@@ -73,6 +89,7 @@ impl ViewPreferences {
         Self {
             line_numbers,
             external_diff,
+            link_hover: DEFAULT_LINK_HOVER,
             path: Some(path),
         }
     }
@@ -110,6 +127,7 @@ pub(crate) fn load_from_document(
             .external_diff
             .or(configured.external_diff)
             .unwrap_or(DEFAULT_EXTERNAL_DIFF),
+        link_hover: configured.link_hover.unwrap_or(DEFAULT_LINK_HOVER),
         path: preference_path,
     })
 }
@@ -159,6 +177,7 @@ struct ViewFile {
 struct ViewSettings {
     line_numbers: Option<bool>,
     external_diff: Option<bool>,
+    link_hover: Option<bool>,
 }
 
 fn persist_to(path: &Path, line_numbers: bool, external_diff: bool) -> io::Result<()> {

@@ -540,6 +540,27 @@ mod tests {
     }
 
     #[test]
+    fn descriptor_search_worker_that_stops_reports_an_error_instead_of_hanging() {
+        let mut app = super::super::App::new(None).unwrap();
+        app.search.running = Some(RunningSearch {
+            query: "cat".to_string(),
+            descriptor_query_scalar_len: 3,
+            task: RunningSearchTask::Descriptor(SearchTask::worker_stopped_for_test()),
+            buffer_id: app.file.buffer_id,
+            content_generation: app.file.content_generation,
+        });
+
+        poll_search(&mut app, &mut Vec::new()).unwrap();
+
+        assert!(app.search.running.is_none());
+        assert_eq!(
+            app.message.as_deref(),
+            Some("Search error: search worker stopped without a result")
+        );
+        assert_eq!(app.message_role, crate::terminal::render::StatusRole::Error);
+    }
+
+    #[test]
     fn ctrl_f_moves_to_a_match_in_an_editable_buffer() {
         let mut app = super::super::App::new(None).unwrap();
         app.buffer = Box::new(crate::buffer::PieceTable::from_text("zero\none target"));

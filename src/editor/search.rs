@@ -5,6 +5,7 @@
 //! Invariants: descriptor bytes are processed once with bounded memory; matches
 //!   can cross read boundaries; result positions use configured logical-line pages.
 
+use std::cell::Cell;
 use std::io;
 use std::os::unix::fs::FileExt;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -221,14 +222,31 @@ fn consider_local_candidate(
     }
 }
 
+const WORKER_STOPPED: &str = "search worker stopped without a result";
+
 pub(crate) struct SearchTask {
     receiver: mpsc::Receiver<SearchResult>,
     cancel: Arc<AtomicBool>,
+    finished: Cell<bool>,
 }
 
 impl SearchTask {
+    /// Returns the worker's result once. A worker that exits without sending
+    /// one (for example after a panic) becomes an error instead of a search
+    /// that never finishes.
     pub(crate) fn try_result(&self) -> Option<SearchResult> {
-        self.receiver.try_recv().ok()
+        if self.finished.get() {
+            return None;
+        }
+        let result = match self.receiver.try_recv() {
+            Ok(result) => result,
+            Err(mpsc::TryRecvError::Empty) => return None,
+            Err(mpsc::TryRecvError::Disconnected) => {
+                SearchResult::Error(WORKER_STOPPED.to_string())
+            }
+        };
+        self.finished.set(true);
+        Some(result)
     }
 
     pub(crate) fn cancel(&self) {
@@ -271,7 +289,11 @@ fn start_descriptor_search_with(
             let _ = sender.send(result);
         }
     });
-    SearchTask { receiver, cancel }
+    SearchTask {
+        receiver,
+        cancel,
+        finished: Cell::new(false),
+    }
 }
 
 pub(crate) fn find_match(

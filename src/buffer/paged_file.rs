@@ -59,7 +59,7 @@ impl PagedFileBuffer {
     }
 
     pub(crate) fn from_file(file: File, page_lines: usize) -> io::Result<Self> {
-        let snapshot = DescriptorSnapshot::capture(&file)?;
+        let snapshot = DescriptorSnapshot::capture_settled(&file)?;
         let total_bytes = usize::try_from(snapshot.len).map_err(|_| {
             io::Error::new(
                 io::ErrorKind::InvalidData,

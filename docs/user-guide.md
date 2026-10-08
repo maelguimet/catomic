@@ -948,6 +948,10 @@ paged operation is using it, Catomic fails closed rather than mixing revisions.
 Page reads, navigation, and streamed output validate length, modification time,
 device/inode identity, and Unix change time (`ctime`); restoring only a changed
 file's modification time does not make its original revision valid again.
+Because the kernel stamps `ctime` with a coarse clock, opening a file changed
+within the last few milliseconds waits for that timestamp tick to pass before
+reading, so an immediate rewrite cannot reuse the opened revision's `ctime`
+(up to about two seconds on filesystems with whole-second timestamps).
 The affected buffer shows a **Paged content unavailable** notice and blocks
 content editing and navigation. Its unsaved edits and undo history remain in
 the session, and other buffers remain usable (`Alt+PageUp` / `Alt+PageDown`).

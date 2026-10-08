@@ -34,7 +34,7 @@ impl Buffer for PagedFileBuffer {
         let Some(file) = preserve(&self.file)? else {
             return Ok(());
         };
-        let snapshot = super::DescriptorSnapshot::capture(&file)?;
+        let snapshot = super::DescriptorSnapshot::capture_settled(&file)?;
         if snapshot.len != self.snapshot.len {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,

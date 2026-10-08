@@ -5,9 +5,7 @@
 //! Phase: post-v0.1 discoverability and help-drift prevention.
 
 mod prompt_commands;
-#[cfg(test)]
-pub(crate) use prompt_commands::PROMPT_COMMANDS;
-pub(crate) use prompt_commands::{prompt_command, PromptCommand};
+pub(crate) use prompt_commands::{prompt_command, PromptCommand, PROMPT_COMMANDS};
 
 #[cfg(test)]
 mod tests;

@@ -486,10 +486,28 @@ fn push_edit_actions(markdown: &mut String, bindings: &KeyBindings) {
         "Stop replacement; keep accepted edits",
     );
     push_action(markdown, bindings, Action::GotoLine, "Go to line");
+    push_action(
+        markdown,
+        bindings,
+        Action::ParagraphPrevious,
+        "Previous paragraph",
+    );
+    push_action(markdown, bindings, Action::ParagraphNext, "Next paragraph");
+    push_action(
+        markdown,
+        bindings,
+        Action::ToggleOverwrite,
+        "Insert / overwrite",
+    );
+    push_action(markdown, bindings, Action::Complete, "Local completion");
+    markdown.push_str(
+        "- **Emoji picker** — Type a colon query such as `:hun` at a word boundary, pick a row with `Up`/`Down`, then `Enter`; `Esc` dismisses it.\n",
+    );
 }
 
 fn push_command_actions(markdown: &mut String, bindings: &KeyBindings) {
     push_action(markdown, bindings, Action::CommandPrompt, "Command palette");
+    push_palette_commands(markdown);
     push_action(markdown, bindings, Action::Lint, "Lint active file");
     push_action(
         markdown,
@@ -502,6 +520,31 @@ fn push_command_actions(markdown: &mut String, bindings: &KeyBindings) {
         bindings,
         Action::MarkdownPreview,
         "Markdown preview",
+    );
+    push_action(markdown, bindings, Action::LineNumbers, "Line numbers");
+    push_action(markdown, bindings, Action::Whitespace, "Whitespace");
+    push_action(markdown, bindings, Action::SoftWrap, "Soft wrap");
+    push_action(
+        markdown,
+        bindings,
+        Action::PreviousPage,
+        "Previous large-file page",
+    );
+    push_action(markdown, bindings, Action::NextPage, "Next large-file page");
+}
+
+/// List each palette command's primary spelling from the parser's catalog so
+/// help cannot drift from what the prompt accepts.
+fn push_palette_commands(markdown: &mut String) {
+    let names: Vec<String> = crate::help_catalog::PROMPT_COMMANDS
+        .iter()
+        .filter_map(|spec| spec.names.first())
+        .map(|name| format!("`{name}`"))
+        .collect();
+    let _ = writeln!(
+        markdown,
+        "- **Palette commands** — {}; a path, line number, or command name goes after the command when needed.",
+        names.join(", ")
     );
 }
 

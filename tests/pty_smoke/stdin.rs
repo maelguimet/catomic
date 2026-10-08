@@ -102,6 +102,64 @@ fn stdin_from_a_terminal_is_rejected_without_entering_raw_mode() -> TestResult {
     Ok(())
 }
 
+fn redirected_stdout_editor(arguments: &[&str]) -> TestResult<(PtyEditor, PathBuf)> {
+    let environment = TempProject::new("stdout_redirected");
+    let frames = environment.root.join("frames.log");
+    let mut command = CommandBuilder::new("/bin/sh");
+    command.args([
+        "-c",
+        "out=\"$1\"; shift; exec \"$@\" > \"$out\"",
+        "catomic-stdout-fixture",
+    ]);
+    command.arg(&frames);
+    command.arg(env!("CARGO_BIN_EXE_catomic"));
+    command.args(arguments);
+    command.env("XDG_CONFIG_HOME", &environment.root);
+    command.env("XDG_STATE_HOME", &environment.root);
+    command.env("HOME", &environment.root);
+    command.env("LC_ALL", "C.UTF-8");
+    command.env("TERM", "xterm-256color");
+    Ok((
+        PtyEditor::spawn_command_with_environment(command, environment)?,
+        frames,
+    ))
+}
+
+#[test]
+fn redirected_stdout_is_rejected_before_terminal_setup() -> TestResult {
+    let (mut editor, frames) = redirected_stdout_editor(&["notes.txt"])?;
+    editor.wait_for_exit_code(1)?;
+    editor.wait_for_output(
+        "stdout needs a terminal",
+        "catomic requires terminal output on stdout",
+    )?;
+    assert!(!editor.output_string().contains("\x1b[?1049h"));
+    assert_eq!(fs::read(&frames)?, b"");
+    Ok(())
+}
+
+#[test]
+fn redirected_stdout_config_edit_is_rejected_before_creating_config() -> TestResult {
+    let (mut editor, frames) = redirected_stdout_editor(&["config", "edit"])?;
+    editor.wait_for_exit_code(1)?;
+    editor.wait_for_output(
+        "config edit needs a terminal",
+        "catomic requires terminal output on stdout",
+    )?;
+    assert_eq!(fs::read(&frames)?, b"");
+    let config = frames.with_file_name("catomic").join("config.toml");
+    assert!(!config.exists(), "config edit must not create {config:?}");
+    Ok(())
+}
+
+#[test]
+fn redirected_stdout_still_prints_version() -> TestResult {
+    let (mut editor, frames) = redirected_stdout_editor(&["--version"])?;
+    editor.wait_for_exit_code(0)?;
+    assert!(String::from_utf8(fs::read(&frames)?)?.starts_with("catomic "));
+    Ok(())
+}
+
 #[test]
 fn ordinary_file_startup_leaves_piped_input_for_the_next_reader() -> TestResult {
     let environment = TempProject::new("stdin_not_requested");

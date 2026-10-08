@@ -312,6 +312,12 @@ a UTF-8 locale selected by the first non-empty value among `LC_ALL`,
 `LC_CTYPE`, and `LANG`. Help and version output remain available when the locale
 is invalid because they do not enter terminal raw mode.
 
+Every editor session, including `catomic config edit`, needs stdout connected to
+a terminal and a controlling terminal for keys. Redirected stdout such as
+`catomic notes.md > out.log` is refused with `catomic requires terminal output on
+stdout` before any file is opened or terminal mode changes; `--help`,
+`--version`, and the non-editor `config` subcommands still work when redirected.
+
 ## The editor screen
 
 The main area contains the active buffer. The bottom line shows a transient

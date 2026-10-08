@@ -14,6 +14,12 @@ const SETTLE_POLL: Duration = Duration::from_millis(1);
 const CLOCK_TICK_GRANULARITY: Duration = Duration::from_millis(11);
 const COARSE_SECONDS_GRANULARITY: Duration = Duration::from_secs(2);
 
+#[cfg(test)]
+thread_local! {
+    /// Number of times `capture_settled` slept on this thread.
+    pub(crate) static SETTLE_WAITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// Page loading and file-original reads must validate the same source revision.
 /// ctime catches in-place rewrites even when their length and mtime are restored,
 /// provided the baseline was captured with [`DescriptorSnapshot::capture_settled`].
@@ -55,6 +61,8 @@ impl DescriptorSnapshot {
             if snapshot.change_time_settled() || now >= deadline {
                 return Ok(snapshot);
             }
+            #[cfg(test)]
+            SETTLE_WAITS.with(|waits| waits.set(waits.get() + 1));
             std::thread::sleep(SETTLE_POLL.min(deadline - now));
         }
     }

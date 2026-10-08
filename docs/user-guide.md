@@ -6,9 +6,9 @@ and typing do not start linters or external processes. Linting and trusted
 commands run only after explicit actions; lifecycle hooks run only when
 configured for `on_open` or `on_save`.
 
-Catomic is currently open-beta software. Keep backups of important files, and
-read [File formats and save safety](#file-formats-and-save-safety) before using
-it on files with unusual links, ACLs, or extended attributes.
+Keep backups of important files, and read
+[File formats and save safety](#file-formats-and-save-safety) before using
+Catomic on files with unusual links, ACLs, or extended attributes.
 
 ## Contents
 

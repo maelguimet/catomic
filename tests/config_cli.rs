@@ -249,7 +249,7 @@ fn color_diagnostics_capture_environment_syntax_and_no_color_precedence() -> Tes
     assert!(output.status.success(), "{:?}", output.stderr);
     let stdout = String::from_utf8(output.stdout)?;
     for expected in [
-        "catomic 0.2.0-beta.2",
+        "catomic 0.3.0",
         "file=Cargo.toml",
         "syntax=TOML",
         "TERM=vte-256color",

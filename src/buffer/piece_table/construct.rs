@@ -89,7 +89,7 @@ impl PieceTable {
     #[cfg(test)]
     pub(crate) fn from_file(path: impl AsRef<Path>) -> io::Result<Self> {
         let mut file = File::open(path)?;
-        let snapshot = FileMetadataSnapshot::capture(&file)?;
+        let snapshot = FileMetadataSnapshot::capture_settled(&file)?;
         let scan = scan_utf8_lines(&mut file)?;
         if FileMetadataSnapshot::capture(&file)? != snapshot {
             return Err(crate::buffer::BackingFileChanged::error(

@@ -965,3 +965,24 @@ fn paged_grapheme_queries_keep_context_and_bound_reads_after_history_replay() {
         std::fs::remove_file(&path).unwrap();
     }
 }
+
+#[test]
+fn preserving_backing_for_a_save_never_waits_for_the_private_copy_ctime() {
+    let path = temp_path("preserve_no_settle");
+    std::fs::write(&path, "first\nsecond\nthird").unwrap();
+    let mut buffer = PagedFileBuffer::open(&path, 1).unwrap();
+    buffer.insert_char('X');
+    super::backing::SETTLE_WAITS.with(|waits| waits.set(0));
+
+    // The copy is written just before its baseline is captured, so its ctime
+    // is always inside the current clock tick; settling it would sleep.
+    buffer
+        .preserve_file_backing(&mut crate::file::io::snapshot_linked_file)
+        .unwrap();
+
+    assert_eq!(super::backing::SETTLE_WAITS.with(std::cell::Cell::get), 0);
+    let mut written = Vec::new();
+    buffer.write_to(&mut written).unwrap();
+    assert!(String::from_utf8(written).unwrap().starts_with("Xfirst"));
+    std::fs::remove_file(path).unwrap();
+}

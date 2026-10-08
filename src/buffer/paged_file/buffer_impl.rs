@@ -34,6 +34,11 @@ impl Buffer for PagedFileBuffer {
         let Some(file) = preserve(&self.file)? else {
             return Ok(());
         };
+        // The preserved copy is private and unlinked, so nothing else can
+        // rewrite it within its ctime tick. Settling it would only stall every
+        // save (by a clock tick, or about two seconds when the temporary
+        // directory has whole-second timestamps). The original's baseline was
+        // already settled when the file was opened.
         let snapshot = super::DescriptorSnapshot::capture(&file)?;
         if snapshot.len != self.snapshot.len {
             return Err(io::Error::new(

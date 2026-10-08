@@ -142,6 +142,17 @@ fn help_is_short_task_oriented_and_excludes_registry_clutter() {
         "Previous buffer",
         "Command palette",
         "Markdown preview",
+        "**Soft wrap** (`F9`)",
+        "**Line numbers** (`F7`)",
+        "**Whitespace** (`F8`)",
+        "**Insert / overwrite** (`Insert`)",
+        "**Local completion** (`Ctrl+Space`)",
+        "**Emoji picker**",
+        "`:hun`",
+        "**Previous paragraph** (`Ctrl+Up`)",
+        "**Next paragraph** (`Ctrl+Down`)",
+        "**Previous large-file page** (`Ctrl+PageUp`)",
+        "**Next large-file page** (`Ctrl+PageDown`)",
         "Dirty buffers are never replaced automatically",
         "`.catnap`",
         "[user guide](https://github.com/maelguimet/catomic/blob/master/docs/user-guide.md)",
@@ -170,6 +181,24 @@ fn help_is_short_task_oriented_and_excludes_registry_clutter() {
         );
     }
     assert!(markdown.lines().count() < 60, "help should remain compact");
+}
+
+#[test]
+fn help_lists_every_palette_command_from_the_parser_catalog() {
+    let markdown = help_markdown(&KeyBindings::default());
+    let line = markdown
+        .lines()
+        .find(|line| line.starts_with("- **Palette commands**"))
+        .expect("help lists palette commands");
+
+    for spec in crate::help_catalog::PROMPT_COMMANDS {
+        let name = spec.names[0];
+        assert!(line.contains(&format!("`{name}`")), "missing {name:?}");
+        assert!(
+            crate::help_catalog::prompt_command(name) == Some(spec.command),
+            "{name:?} must parse as its own command"
+        );
+    }
 }
 
 #[test]

@@ -283,6 +283,72 @@ fn failed_title_pop_retries_without_repeating_other_teardown() {
     assert_eq!(count(&retried, b"\x1b[?1049l"), 0);
 }
 
+#[test]
+fn any_motion_tracking_requests_every_crossterm_mouse_mode() {
+    let guard = TerminalGuard::with_mouse_tracking(MouseTracking::AnyMotion);
+    let mut output = Vec::new();
+
+    guard.enable_output_modes(&mut output).unwrap();
+    guard.restore(&mut output).unwrap();
+
+    for mode in ["1000", "1002", "1003", "1015", "1006"] {
+        assert_eq!(
+            count(&output, format!("\x1b[?{mode}h").as_bytes()),
+            1,
+            "{mode}"
+        );
+        assert_eq!(
+            count(&output, format!("\x1b[?{mode}l").as_bytes()),
+            1,
+            "{mode}"
+        );
+    }
+}
+
+#[test]
+fn button_event_tracking_omits_any_motion_and_teardown_resets_every_mode() {
+    let guard = TerminalGuard::with_mouse_tracking(MouseTracking::ButtonEvent);
+    let mut setup = Vec::new();
+    guard.enable_output_modes(&mut setup).unwrap();
+
+    assert_eq!(
+        count(&setup, b"\x1b[?1003h"),
+        0,
+        "any-motion must not be requested"
+    );
+    for mode in ["1000", "1002", "1015", "1006"] {
+        assert_eq!(
+            count(&setup, format!("\x1b[?{mode}h").as_bytes()),
+            1,
+            "{mode}"
+        );
+    }
+    assert!(position(&setup, b"\x1b[?1004h") < position(&setup, b"\x1b[?1000h"));
+    assert!(position(&setup, b"\x1b[?1006h") < position(&setup, b"\x1b[?25h"));
+
+    let mut teardown = Vec::new();
+    guard.restore(&mut teardown).unwrap();
+    for mode in ["1006", "1015", "1003", "1002", "1000"] {
+        assert_eq!(
+            count(&teardown, format!("\x1b[?{mode}l").as_bytes()),
+            1,
+            "{mode}"
+        );
+    }
+}
+
+#[test]
+fn link_hover_selects_the_mouse_tracking_mode() {
+    assert_eq!(
+        MouseTracking::for_link_hover(true),
+        MouseTracking::AnyMotion
+    );
+    assert_eq!(
+        MouseTracking::for_link_hover(false),
+        MouseTracking::ButtonEvent
+    );
+}
+
 fn count(bytes: &[u8], needle: &[u8]) -> usize {
     bytes
         .windows(needle.len())

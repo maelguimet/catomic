@@ -27,7 +27,9 @@ impl App {
 
     fn run_with_startup_config(&mut self, config_path: Option<PathBuf>) -> io::Result<()> {
         let mut stdout = term::RuntimeOutput::new(io::stdout());
-        let terminal_guard = term::TerminalGuard::new();
+        let terminal_guard = term::TerminalGuard::with_mouse_tracking(
+            term::MouseTracking::for_link_hover(self.view_preferences.link_hover()),
+        );
         terminal_guard.setup(&mut stdout)?;
         if let Ok((width, height)) = crossterm::terminal::size() {
             self.screen.update_size(width, height);

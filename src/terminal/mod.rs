@@ -13,7 +13,8 @@ mod title;
 
 pub(crate) use output::{RuntimeOutput, TerminalOutput};
 pub(crate) use session::{
-    require_editor_terminal, require_piped_input_terminal, settle_input_after_quit, TerminalGuard,
+    require_editor_terminal, require_piped_input_terminal, settle_input_after_quit, MouseTracking,
+    TerminalGuard,
 };
 pub(crate) use signal::{
     install_process_handlers, request_interrupt, take_resize_pending, termination_signal,

@@ -1234,6 +1234,66 @@ fn pty_sigterm_restores_terminal_modes_before_exit() -> TestResult {
     Ok(())
 }
 
+#[test]
+fn pty_link_hover_off_ignores_pointer_motion_over_links() -> TestResult {
+    fn hover_output(label: &str, config: &str) -> TestResult<String> {
+        let project = TempProject::new(label);
+        project.write("catomic/config.toml", config);
+        let active = project.write("note.txt", "see https://example.com/path\n");
+        let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
+        editor.wait_for_initial_render()?;
+        editor.clear_output();
+        // SGR button 35 is pointer motion with no button held.
+        editor.send_keys(b"\x1b[<35;10;1M")?;
+        editor.send_keys(b"\x11")?;
+        editor.wait_for_exit()?;
+        Ok(editor.output_string())
+    }
+
+    let enabled = hover_output("link_hover_default", "")?;
+    assert!(
+        enabled.contains("\x1b[94;4m"),
+        "default motion must underline"
+    );
+    let disabled = hover_output("link_hover_off", "[view]\nlink_hover = false\n")?;
+    assert!(
+        !disabled.contains("\x1b[94;4m"),
+        "motion must not underline links"
+    );
+    Ok(())
+}
+
+#[test]
+fn pty_link_hover_off_never_enables_any_motion_tracking() -> TestResult {
+    let project = TempProject::new("link_hover_off_modes");
+    project.write("catomic/config.toml", "[view]\nlink_hover = false\n");
+    let active = project.write("note.txt", "plain\n");
+    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
+
+    editor.wait_for_initial_render()?;
+    editor.send_keys(b"\x11")?;
+    editor.wait_for_exit()?;
+
+    let output = editor.output_string();
+    assert!(
+        !output.contains("\x1b[?1003h"),
+        "any-motion tracking was enabled"
+    );
+    for mode in [1000, 1002, 1015, 1006] {
+        assert!(
+            output.contains(&format!("\x1b[?{mode}h")),
+            "mouse mode {mode} was not enabled"
+        );
+    }
+    for mode in [1000, 1002, 1003, 1015, 1006] {
+        assert!(
+            output.contains(&format!("\x1b[?{mode}l")),
+            "mouse mode {mode} was not disabled"
+        );
+    }
+    Ok(())
+}
+
 #[cfg(unix)]
 #[test]
 fn pty_disconnect_exits_instead_of_spinning_forever() -> TestResult {

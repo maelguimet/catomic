@@ -248,6 +248,37 @@ fn external_diff_preference_uses_persisted_then_config_then_default_precedence()
 }
 
 #[test]
+fn link_hover_comes_only_from_config_and_is_never_persisted() {
+    let fixture = Fixture::new("link_hover");
+    let default = load_with_config("", None).unwrap();
+    assert!(default.link_hover(), "link hover must stay on by default");
+
+    let config = fixture.write("config/catomic/config.toml", "[view]\nlink_hover = false\n");
+    let preferences = fixture.write(
+        "state/catomic/preferences.toml",
+        "[view]\nlink_hover = true\nline_numbers = true\n",
+    );
+    let loaded = load_from_paths(Some(&config), Some(preferences.clone())).unwrap();
+    assert!(
+        !loaded.link_hover(),
+        "saved state must not override link_hover"
+    );
+    assert!(loaded.line_numbers());
+
+    loaded.persist().unwrap();
+    assert!(!fs::read_to_string(preferences)
+        .unwrap()
+        .contains("link_hover"));
+}
+
+#[test]
+fn non_boolean_link_hover_is_rejected() {
+    let error = load_with_config("[view]\nlink_hover = \"no\"\n", None).unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    assert!(error.to_string().contains("link_hover"));
+}
+
+#[test]
 fn state_path_prefers_absolute_xdg_then_absolute_home() {
     assert_eq!(
         preference_path(Some("/xdg-state".as_ref()), Some("/home/cat".as_ref())),

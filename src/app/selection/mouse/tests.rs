@@ -133,6 +133,18 @@ fn moving_over_a_link_underlines_it_until_the_pointer_leaves() {
     assert!(String::from_utf8_lossy(&out).contains("\x1b[94mhttps://example.com/path"));
 }
 
+#[test]
+fn disabled_link_hover_ignores_pointer_motion_over_links() {
+    let mut app = app_with("before https://example.com/path after");
+    app.view_preferences.set_link_hover(false);
+    let mut out = Vec::new();
+
+    handle_mouse(&mut app, &mut out, event(MouseEventKind::Moved, 10, 0)).unwrap();
+
+    assert!(app.link_interaction.hovered().is_none());
+    assert!(out.is_empty(), "ignored motion must not redraw");
+}
+
 fn app_with(text: &str) -> super::super::super::App {
     let mut app = super::super::super::App::new(None).unwrap();
     app.buffer = Box::new(crate::buffer::PieceTable::from_text(text));

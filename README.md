@@ -191,6 +191,7 @@ auto_reload = true
 [view]
 external_diff = true
 line_numbers = false
+link_hover = true
 
 [cat]
 status_messages = true

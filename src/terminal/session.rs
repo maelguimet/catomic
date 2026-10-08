@@ -34,6 +34,10 @@ const TITLE_STACK_POP: &[u8] = b"\x1b[23;0t";
 // the limit, while raw mode still keeps those bytes away from echo and the shell.
 const LATE_INPUT_QUIET_PERIOD: Duration = Duration::from_millis(50);
 const LATE_INPUT_LIMIT: Duration = Duration::from_millis(250);
+// Crossterm's EnableMouseCapture without ?1003h (any-motion tracking): normal
+// press/release, button-event drag, then the RXVT and SGR coordinate encodings.
+// Teardown always sends DisableMouseCapture, which resets every one of these.
+const BUTTON_EVENT_MOUSE_ENABLE: &[u8] = b"\x1b[?1000h\x1b[?1002h\x1b[?1015h\x1b[?1006h";
 
 /// Validate explicit pipe import before consuming input or changing terminal modes.
 /// Crossterm's use-dev-tty input backend opens this controlling terminal when
@@ -89,17 +93,44 @@ pub(crate) struct TerminalRestorer {
     active_modes: Arc<AtomicU8>,
 }
 
+/// Mouse reporting requested for one editor session.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum MouseTracking {
+    /// Crossterm's full capture, including any-motion (`?1003`) reports for link hover.
+    AnyMotion,
+    /// Press, release, wheel, and drag reports only (`?1002`); idle pointer motion
+    /// is never requested, which keeps SSH and multiplexer traffic quiet.
+    ButtonEvent,
+}
+
+impl MouseTracking {
+    pub(crate) fn for_link_hover(link_hover: bool) -> Self {
+        if link_hover {
+            Self::AnyMotion
+        } else {
+            Self::ButtonEvent
+        }
+    }
+}
+
 /// Guard installed before the first terminal mutation.
 pub(crate) struct TerminalGuard {
     restorer: TerminalRestorer,
+    mouse: MouseTracking,
 }
 
 impl TerminalGuard {
+    #[cfg(test)]
     pub(crate) fn new() -> Self {
+        Self::with_mouse_tracking(MouseTracking::AnyMotion)
+    }
+
+    pub(crate) fn with_mouse_tracking(mouse: MouseTracking) -> Self {
         Self {
             restorer: TerminalRestorer {
                 active_modes: Arc::new(AtomicU8::new(0)),
             },
+            mouse,
         }
     }
 
@@ -143,13 +174,15 @@ impl TerminalGuard {
         out.write_all(XTERM_EXTENDED_KEYS_ENABLE)?;
         self.restorer.mark_active(XTERM_EXTENDED_KEYS);
         out.flush()?;
-        execute!(
-            out,
-            event::EnableBracketedPaste,
-            event::EnableFocusChange,
-            event::EnableMouseCapture,
-            cursor::Show
-        )
+        execute!(out, event::EnableBracketedPaste, event::EnableFocusChange)?;
+        match self.mouse {
+            MouseTracking::AnyMotion => execute!(out, event::EnableMouseCapture)?,
+            MouseTracking::ButtonEvent => {
+                out.write_all(BUTTON_EVENT_MOUSE_ENABLE)?;
+                out.flush()?;
+            }
+        }
+        execute!(out, cursor::Show)
     }
 
     #[cfg(test)]

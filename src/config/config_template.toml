@@ -22,6 +22,9 @@ auto_reload = true
 external_diff = true
 # F7 toggles line numbers and persists the explicit choice.
 line_numbers = false
+# Underline the link under the pointer. false requests no idle pointer-motion
+# reports (button-event mouse tracking only), which quiets SSH and multiplexers.
+link_hover = true
 
 [cat]
 status_messages = true

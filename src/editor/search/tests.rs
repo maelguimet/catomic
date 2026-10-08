@@ -10,6 +10,43 @@ use crate::buffer::PieceTable;
 use std::io::{self, Write};
 use std::sync::atomic::AtomicBool;
 
+impl SearchTask {
+    /// A descriptor search whose worker already exited without sending a result.
+    pub(crate) fn worker_stopped_for_test() -> Self {
+        let (sender, receiver) = mpsc::channel();
+        drop(sender);
+        SearchTask {
+            receiver,
+            cancel: Arc::new(AtomicBool::new(false)),
+            finished: Cell::new(false),
+        }
+    }
+}
+
+#[test]
+fn descriptor_worker_that_stops_without_a_result_reports_an_error_once() {
+    let task = SearchTask::worker_stopped_for_test();
+
+    assert_search_error_contains(task.try_result(), WORKER_STOPPED);
+    assert!(task.try_result().is_none(), "the failure is delivered once");
+}
+
+#[test]
+fn descriptor_result_is_not_followed_by_a_worker_stopped_error() {
+    let (sender, receiver) = mpsc::channel();
+    let task = SearchTask {
+        receiver,
+        cancel: Arc::new(AtomicBool::new(false)),
+        finished: Cell::new(false),
+    };
+    assert!(task.try_result().is_none(), "pending worker has no result");
+    sender.send(SearchResult::NotFound).unwrap();
+    drop(sender);
+
+    assert!(matches!(task.try_result(), Some(SearchResult::NotFound)));
+    assert!(task.try_result().is_none());
+}
+
 fn file_backed_search_buffer(label: &str, text: &str) -> (std::path::PathBuf, PieceTable) {
     let path = std::env::temp_dir().join(format!(
         "catomic_local_search_{label}_{}.txt",

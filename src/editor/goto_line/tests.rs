@@ -142,6 +142,7 @@ fn readiness_wait_preserves_completion_after_the_old_poll_budget() {
     let mut task = GotoLineTask {
         receiver,
         cancel: Arc::new(AtomicBool::new(false)),
+        finished: std::cell::Cell::new(false),
     };
     let worker = std::thread::spawn(move || {
         start.recv().unwrap();
@@ -169,11 +170,30 @@ fn readiness_wait_preserves_completion_after_the_old_poll_budget() {
 }
 
 #[test]
+fn worker_that_stops_without_a_result_reports_an_error_once() {
+    let (sender, receiver) = mpsc::channel::<GotoLineResult>();
+    let task = GotoLineTask {
+        receiver,
+        cancel: Arc::new(AtomicBool::new(false)),
+        finished: std::cell::Cell::new(false),
+    };
+    assert!(task.try_result().is_none(), "pending worker has no result");
+    drop(sender);
+
+    assert!(matches!(
+        task.try_result(),
+        Some(GotoLineResult::Error(error)) if error.contains("stopped without a result")
+    ));
+    assert!(task.try_result().is_none(), "the failure is delivered once");
+}
+
+#[test]
 fn readiness_wait_distinguishes_pending_and_disconnected_workers() {
     let (sender, receiver) = mpsc::channel();
     let mut task = GotoLineTask {
         receiver,
         cancel: Arc::new(AtomicBool::new(false)),
+        finished: std::cell::Cell::new(false),
     };
     assert_eq!(
         task.wait_until_ready(std::time::Duration::ZERO),

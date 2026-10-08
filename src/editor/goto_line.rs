@@ -3,6 +3,7 @@
 //! Must not: render, mutate App/Buffer state, reopen paths, or create idle workers.
 //! Invariants: requested and reported lines are 1-based; positions retain source page identity.
 
+use std::cell::Cell;
 use std::io;
 use std::os::unix::fs::FileExt;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -26,11 +27,25 @@ pub(crate) enum GotoLineResult {
 pub(crate) struct GotoLineTask {
     receiver: mpsc::Receiver<GotoLineResult>,
     cancel: Arc<AtomicBool>,
+    finished: Cell<bool>,
 }
 
 impl GotoLineTask {
+    /// Returns the worker's result once; a worker that exits without one
+    /// becomes an error so Go to line cannot stay pending forever.
     pub(crate) fn try_result(&self) -> Option<GotoLineResult> {
-        self.receiver.try_recv().ok()
+        if self.finished.get() {
+            return None;
+        }
+        let result = match self.receiver.try_recv() {
+            Ok(result) => result,
+            Err(mpsc::TryRecvError::Empty) => return None,
+            Err(mpsc::TryRecvError::Disconnected) => {
+                GotoLineResult::Error("go to line worker stopped without a result".to_string())
+            }
+        };
+        self.finished.set(true);
+        Some(result)
     }
 
     pub(crate) fn cancel(&self) {
@@ -59,7 +74,11 @@ pub(crate) fn start_descriptor_goto(
             let _ = sender.send(result);
         }
     });
-    GotoLineTask { receiver, cancel }
+    GotoLineTask {
+        receiver,
+        cancel,
+        finished: Cell::new(false),
+    }
 }
 
 fn scan_descriptor(

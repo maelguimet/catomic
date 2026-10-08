@@ -201,6 +201,40 @@ fn stdin_without_a_controlling_terminal_fails_before_waiting_for_input() -> Test
     Ok(())
 }
 
+#[cfg(unix)]
+#[test]
+fn file_startup_without_a_controlling_terminal_explains_the_requirement() -> TestResult {
+    use std::os::unix::process::CommandExt;
+
+    let fixture = Fixture::new();
+    let mut command = fixture.command();
+    command
+        .args(["notes.txt"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    // SAFETY: setsid is async-signal-safe and detaches only this child from any
+    // controlling terminal inherited from an interactive test runner.
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                Err(std::io::Error::last_os_error())
+            } else {
+                Ok(())
+            }
+        });
+    }
+    let output = command.output()?;
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8(output.stderr)?;
+    assert!(
+        stderr.contains("catomic requires a controlling terminal"),
+        "{stderr}"
+    );
+    assert!(output.stdout.is_empty());
+    Ok(())
+}
+
 #[test]
 fn color_diagnostics_capture_environment_syntax_and_no_color_precedence() -> TestResult {
     let fixture = Fixture::new();

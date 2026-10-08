@@ -45,20 +45,33 @@ pub(crate) fn require_piped_input_terminal() -> io::Result<()> {
             "catomic - requires piped or redirected standard input",
         ));
     }
-    std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open("/dev/tty")
-        .map_err(|error| {
-            io::Error::new(
-                error.kind(),
-                format!("catomic - requires a controlling terminal: {error}"),
-            )
-        })?;
+    require_terminal_io("catomic -")
+}
+
+/// Validate an ordinary editor session before loading files or changing terminal
+/// modes. Without this, redirected stdout receives every setup sequence and frame
+/// while raw mode silently consumes the user's typing on the real terminal.
+pub(crate) fn require_editor_terminal() -> io::Result<()> {
+    require_terminal_io("catomic")
+}
+
+fn require_terminal_io(invocation: &str) -> io::Result<()> {
+    if !io::stdin().is_terminal() {
+        std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/tty")
+            .map_err(|error| {
+                io::Error::new(
+                    error.kind(),
+                    format!("{invocation} requires a controlling terminal: {error}"),
+                )
+            })?;
+    }
     if !io::stdout().is_terminal() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "catomic - requires terminal output on stdout",
+            format!("{invocation} requires terminal output on stdout"),
         ));
     }
     Ok(())

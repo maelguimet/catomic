@@ -198,6 +198,7 @@ pub fn run(
             term::termination_signal().is_some()
         })?)
     } else {
+        term::require_editor_terminal()?;
         None
     };
     let config = StartupConfig::load(color_override)?;
@@ -217,6 +218,7 @@ pub fn run(
 /// to parse successfully first. Missing-file creation stays inside the live terminal
 /// session so a terminal setup failure cannot leave a newly created file behind.
 pub fn run_config() -> io::Result<()> {
+    term::require_editor_terminal()?;
     let path = crate::config::user_file::path()?;
     let file = path
         .to_str()

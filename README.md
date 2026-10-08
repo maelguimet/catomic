@@ -7,9 +7,9 @@ shortcuts, careful Unicode and file-safety behavior, and deliberately invoked
 developer tools. It has no built-in AI/model runtime, repository scanner, or
 background project service.
 
-This open beta should be stable enough for daily use. The Catomic 0.2
-performance pass measured a 6.72× geometric-mean speedup across 13 workloads,
-with individual improvements from 76× to 2,229×. The
+Catomic 0.3 is the first stable release. The Catomic 0.2 performance pass
+measured a 6.72× geometric-mean speedup across 13 workloads, with individual
+improvements from 76× to 2,229×. The
 [performance report](docs/releases/0.2.0-beta.1.md#fast) records the method,
 exact comparison commits, and measured regressions.
 
@@ -38,7 +38,7 @@ exact comparison commits, and measured regressions.
 
 ## Install
 
-Build the current beta from source. If Cargo is unavailable, the installer first
+Build Catomic from source. If Cargo is unavailable, the installer first
 bootstraps a minimal stable Rust toolchain. It then builds an optimized binary
 into Cargo's binary directory, adds that directory to the current shell's startup
 PATH when needed, and creates a private, commented user configuration:
@@ -241,7 +241,7 @@ for its confirmation, verification, and rollback behavior.
 ## Limitations
 
 - Linux terminals and the documented Android/Termux environment are supported
-  for this beta, within the exact boundaries in the
+  for this release, within the exact boundaries in the
   [compatibility matrix](docs/compatibility.md) and
   [mobile guide](docs/mobile.md). Windows, macOS, native Android UI, and
   iOS/iPadOS are not supported, and an untested terminal or mount is not

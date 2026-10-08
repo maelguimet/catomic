@@ -7,9 +7,9 @@ security issues privately.
 
 ## Supported versions
 
-During open beta, security fixes target the latest published release and the
-current `master` branch. Older snapshots may be asked to reproduce on the latest
-version before a fix is prepared.
+Security fixes target the latest published release and the current `master`
+branch. Older snapshots may be asked to reproduce on the latest version before
+a fix is prepared.
 
 ## Report a vulnerability
 

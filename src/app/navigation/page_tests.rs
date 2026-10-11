@@ -214,6 +214,7 @@ fn page_targets_keep_global_context_for_flags_and_long_zwj_clusters() {
 
 #[test]
 fn page_context_matrix_preserves_direction_selection_and_fragmented_paged_text() {
+    let _clock = crate::buffer::settled_clock();
     use crate::buffer::{Buffer, PagedFileBuffer};
     use unicode_segmentation::UnicodeSegmentation;
     let cases = [

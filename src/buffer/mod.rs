@@ -10,7 +10,7 @@ use std::io::{self, Write};
 
 mod backing;
 #[cfg(test)]
-pub(crate) use backing::TEST_NOW;
+pub(crate) use backing::{settled_clock, TEST_NOW};
 pub(crate) use backing::{BackingFileChanged, BaselinePending};
 pub(crate) mod cell_index;
 pub(crate) mod large_file;

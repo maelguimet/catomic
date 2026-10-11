@@ -66,6 +66,7 @@ fn perf_structural_stats_track_index_and_history_work() {
 
 #[test]
 fn perf_paged_stats_track_descriptor_reads_and_retained_edits() {
+    let _clock = crate::buffer::settled_clock();
     let path = temp_perf_path("stats_paged.txt");
     cleanup_perf(&path);
     fs::write(&path, "one\r\ntwo\r\nthree\r\nfour").unwrap();

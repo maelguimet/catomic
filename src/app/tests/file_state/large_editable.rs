@@ -39,6 +39,15 @@ fn restored_mtime_drift_blocks_paged_reads_navigation_streaming_and_save_as() {
     fs::write(&path, "first\nsecond\nthird").unwrap();
     let mut external = fs::OpenOptions::new().write(true).open(&path).unwrap();
     let before = external.metadata().unwrap();
+    if before.ctime_nsec() == 0 {
+        // Whole-second TMPDIR: a same-length rewrite reuses the ctime second
+        // without a real wait, which only the pending-window digest can catch
+        // (covered by the backing tests). Running the clock ahead would make
+        // the open trust a baseline the rewrite can silently reuse.
+        eprintln!("skipped: TMPDIR stamps whole-second ctimes");
+        let _ = fs::remove_file(path);
+        return;
+    }
     let mut app = app_with_paged_buffer(&path);
     let mut out = Vec::new();
     app.handle_key_with(&mut out, make_key(KeyCode::Char('X'), KeyModifiers::NONE))
@@ -129,6 +138,7 @@ fn paged_save_preserves_crlf_without_doubling_carriage_returns() {
 
 #[test]
 fn paged_buffer_edits_multiple_pages_and_saves_the_whole_file() {
+    let _clock = crate::buffer::settled_clock();
     let path = temp_path("save.txt");
     let _ = fs::remove_file(&path);
     fs::write(&path, "first\nsecond").unwrap();

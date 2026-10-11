@@ -31,3 +31,4 @@ ehthumbs.db
 .env
 .env.*
 *.log
+/target-*

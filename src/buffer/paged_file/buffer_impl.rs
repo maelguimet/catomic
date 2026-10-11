@@ -30,13 +30,27 @@ impl Buffer for PagedFileBuffer {
         &mut self,
         preserve: &mut dyn FnMut(&std::fs::File) -> io::Result<Option<std::fs::File>>,
     ) -> io::Result<()> {
-        self.ensure_trusted()?;
-        let Some(file) = preserve(&self.file)? else {
-            return Ok(());
+        // A baseline whose ctime tick is still pending (for example a future
+        // ctime from clock skew) may only have served the digested first-page
+        // bytes. Save proceeds if those bytes are still on disk, and again in
+        // the private copy the output is built from; otherwise it fails closed.
+        let pending = match self.ensure_trusted() {
+            Ok(()) => None,
+            Err(error) if crate::buffer::BaselinePending::is(&error) => {
+                self.trust.require_digest_match(&self.file)?;
+                Some(error)
+            }
+            Err(error) => return Err(error),
         };
+        let Some(file) = preserve(&self.file)? else {
+            return pending.map_or(Ok(()), Err);
+        };
+        if pending.is_some() {
+            self.trust.require_digest_match(&file)?;
+        }
         // The preserved copy is private and unlinked, so nothing else can
-        // rewrite it within its ctime tick, and the original's baseline was
-        // promoted above before it was copied. The copy is trusted as is.
+        // rewrite it within its ctime tick, and it holds the revision served so
+        // far (promoted, or digest-verified above). The copy is trusted as is.
         let snapshot = super::DescriptorSnapshot::capture(&file)?;
         if snapshot.len != self.snapshot.len {
             return Err(io::Error::new(

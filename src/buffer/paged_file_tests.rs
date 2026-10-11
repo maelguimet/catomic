@@ -1141,3 +1141,74 @@ fn rewrite_beyond_the_digested_page_in_the_pending_tick_never_mixes_revisions() 
     eprintln!("same-tick runs: {same_tick}/20");
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn future_ctime_save_fails_closed_when_page_one_was_rewritten() {
+    use std::io::Seek;
+
+    let path = temp_path("future_rewrite");
+    std::fs::write(&path, "first\nsecond\nthird").unwrap();
+    let mut external = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+    let modified = external.metadata().unwrap().modified().unwrap();
+    let _clock = InjectedClock::set(changed_at(&path) - std::time::Duration::from_secs(3_600));
+    let mut buffer = PagedFileBuffer::open(&path, 1).unwrap();
+    buffer.insert_char('X');
+    external.rewind().unwrap();
+    external.write_all(b"FIRST\nsecond\nthird").unwrap();
+    external.set_modified(modified).unwrap();
+
+    let error = buffer
+        .preserve_file_backing(&mut |_| panic!("no copy is made after a digest mismatch"))
+        .unwrap_err();
+    // Whether the rewrite moved ctime or reused it, the save is refused.
+    assert!(super::BackingFileChanged::is(&error), "{error}");
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn future_ctime_save_fails_closed_when_the_preserved_copy_differs() {
+    let path = temp_path("future_copy");
+    std::fs::write(&path, "first\nsecond\nthird").unwrap();
+    let _clock = InjectedClock::set(changed_at(&path) - std::time::Duration::from_secs(3_600));
+    let mut buffer = PagedFileBuffer::open(&path, 1).unwrap();
+    buffer.insert_char('X');
+
+    // A same-length rewrite of page one that lands while the copy is made.
+    let error = buffer
+        .preserve_file_backing(&mut |source| {
+            let copy = crate::file::io::snapshot_linked_file(source)?.unwrap();
+            std::os::unix::fs::FileExt::write_all_at(&copy, b"FIRST", 0)?;
+            Ok(Some(copy))
+        })
+        .unwrap_err();
+
+    assert!(super::BackingFileChanged::is(&error), "{error}");
+    let mut written = Vec::new();
+    let refused = buffer.write_to(&mut written).unwrap_err();
+    assert_eq!(
+        refused.kind(),
+        std::io::ErrorKind::WouldBlock,
+        "backing was not replaced"
+    );
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn future_ctime_save_builds_output_from_the_verified_copy() {
+    let path = temp_path("future_ok");
+    std::fs::write(&path, "first\nsecond\nthird").unwrap();
+    let _clock = InjectedClock::set(changed_at(&path) - std::time::Duration::from_secs(3_600));
+    let mut buffer = PagedFileBuffer::open(&path, 1).unwrap();
+    buffer.insert_char('X');
+
+    buffer
+        .preserve_file_backing(&mut crate::file::io::snapshot_linked_file)
+        .unwrap();
+
+    let mut written = Vec::new();
+    buffer.write_to(&mut written).unwrap();
+    assert_eq!(written, b"Xfirst\nsecond\nthird");
+    assert!(buffer.next_page().unwrap());
+    assert_eq!(buffer.line(0).unwrap(), "second");
+    std::fs::remove_file(path).unwrap();
+}

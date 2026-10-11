@@ -376,25 +376,46 @@ fn hard_linked_paged_buffer_remains_usable_after_successive_saves() {
     }
 }
 
-#[test]
-fn pending_baseline_reports_retry_instead_of_reading_or_exiting() {
-    use std::os::unix::fs::MetadataExt;
+struct InjectedClock;
 
-    struct Clock;
-    impl Drop for Clock {
-        fn drop(&mut self) {
-            crate::buffer::TEST_NOW.with(|now| now.set(None));
-        }
+impl InjectedClock {
+    fn set(now: std::time::SystemTime) -> Self {
+        crate::buffer::TEST_NOW.with(|cell| cell.set(Some(now)));
+        Self
     }
-    let set_now = |now| crate::buffer::TEST_NOW.with(|cell| cell.set(Some(now)));
+}
 
-    let path = temp_path("pending_baseline.txt");
-    fs::write(&path, "first\nsecond\nthird").unwrap();
-    let metadata = fs::metadata(&path).unwrap();
+impl Drop for InjectedClock {
+    fn drop(&mut self) {
+        crate::buffer::TEST_NOW.with(|now| now.set(None));
+    }
+}
+
+/// The file's ctime and how long a later change could still reuse its tick:
+/// one clock tick for nanosecond stamps, two seconds for whole-second stamps.
+fn change_time_and_granularity(
+    path: &std::path::Path,
+) -> (std::time::SystemTime, std::time::Duration) {
+    use std::os::unix::fs::MetadataExt;
+    let metadata = fs::metadata(path).unwrap();
     let changed = std::time::UNIX_EPOCH
         + std::time::Duration::new(metadata.ctime() as u64, metadata.ctime_nsec() as u32);
-    let _clock = Clock;
-    set_now(changed - std::time::Duration::from_millis(1_500));
+    let granularity = if metadata.ctime_nsec() == 0 {
+        std::time::Duration::from_secs(2)
+    } else {
+        std::time::Duration::from_millis(11)
+    };
+    (changed, granularity)
+}
+
+#[test]
+fn pending_baseline_reports_retry_instead_of_reading_or_exiting() {
+    let path = temp_path("pending_baseline.txt");
+    fs::write(&path, "first\nsecond\nthird").unwrap();
+    let (changed, granularity) = change_time_and_granularity(&path);
+    // One second left in the tick on any filesystem: past the 15 ms wait, but
+    // not a future ctime, whichever timestamp granularity TMPDIR has.
+    let _clock = InjectedClock::set(changed + granularity - std::time::Duration::from_secs(1));
     let mut app = app_with_paged_buffer(&path);
     let mut out = Vec::new();
 
@@ -402,11 +423,10 @@ fn pending_baseline_reports_retry_instead_of_reading_or_exiting() {
         .unwrap();
     app.handle_key_with(&mut out, make_key(KeyCode::PageDown, KeyModifiers::CONTROL))
         .unwrap();
-    assert!(app
-        .message
-        .as_deref()
-        .unwrap()
-        .starts_with("Page error: File changed moments ago"));
+    assert_eq!(
+        app.message.as_deref(),
+        Some("Page error: File changed moments ago; try again in 1.0s once its timestamp settles.")
+    );
 
     let refused = app
         .buffer
@@ -418,25 +438,60 @@ fn pending_baseline_reports_retry_instead_of_reading_or_exiting() {
         })
         .unwrap_err();
     super::super::super::backing::recover(&mut app, &mut out, Err(refused)).unwrap();
-    assert!(app
-        .message
-        .as_deref()
-        .unwrap()
-        .starts_with("File changed moments ago"));
+    assert_eq!(
+        app.message.as_deref(),
+        Some("File changed moments ago; try again in 1.0s once its timestamp settles.")
+    );
     assert!(!app.should_quit);
-
-    app.handle_key_with(
-        &mut out,
-        make_key(KeyCode::Char('s'), KeyModifiers::CONTROL),
-    )
-    .unwrap();
-    assert!(app.message.as_deref().unwrap().contains("Save error"));
     assert!(app.file.dirty);
     assert_eq!(fs::read_to_string(&path).unwrap(), "first\nsecond\nthird");
 
-    set_now(changed + std::time::Duration::from_secs(3));
+    let _clock = InjectedClock::set(changed + std::time::Duration::from_secs(3));
     app.handle_key_with(&mut out, make_key(KeyCode::PageDown, KeyModifiers::CONTROL))
         .unwrap();
     assert_eq!(app.buffer.line(0).unwrap(), "second");
     fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn future_ctime_still_saves_and_save_as_writes_verified_edits() {
+    for save_as in [false, true] {
+        let path = temp_path(if save_as {
+            "future_save_as.txt"
+        } else {
+            "future_save.txt"
+        });
+        let target = path.with_extension("copy.txt");
+        let _ = fs::remove_file(&target);
+        fs::write(&path, "first\nsecond\nthird").unwrap();
+        let (changed, _) = change_time_and_granularity(&path);
+        let _clock = InjectedClock::set(changed - std::time::Duration::from_secs(3_600));
+        let mut app = app_with_paged_buffer(&path);
+        let mut out = Vec::new();
+        app.handle_key_with(&mut out, make_key(KeyCode::Char('X'), KeyModifiers::NONE))
+            .unwrap();
+
+        if save_as {
+            super::super::super::save::handle_save_as(&mut app, &mut out, target.to_str().unwrap())
+                .unwrap();
+        } else {
+            app.handle_key_with(
+                &mut out,
+                make_key(KeyCode::Char('s'), KeyModifiers::CONTROL),
+            )
+            .unwrap();
+        }
+
+        let saved = if save_as { &target } else { &path };
+        assert_eq!(app.message, None, "save must succeed");
+        assert!(!app.file.dirty);
+        assert_eq!(fs::read_to_string(saved).unwrap(), "Xfirst\nsecond\nthird");
+        // The buffer now reads from the verified private copy it saved from,
+        // so other pages work although the clock is still behind.
+        app.handle_key_with(&mut out, make_key(KeyCode::PageDown, KeyModifiers::CONTROL))
+            .unwrap();
+        assert_eq!(app.buffer.line(0).unwrap(), "second");
+        let _ = fs::remove_file(&target);
+        fs::remove_file(path).unwrap();
+    }
 }

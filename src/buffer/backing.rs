@@ -22,6 +22,53 @@ thread_local! {
         const { std::cell::Cell::new(None) };
     /// Number of times a baseline check slept on this thread.
     pub(crate) static SETTLE_WAITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// Moves this thread's wall clock forward for change-time decisions.
+    static TEST_CLOCK_AHEAD: std::cell::Cell<Duration> = const { std::cell::Cell::new(Duration::ZERO) };
+}
+
+/// Test guard: runs this thread's change-time clock one whole-second
+/// granularity (plus margin) ahead, so files a test has just written count as
+/// settled even when `TMPDIR` has whole-second timestamps. Only for tests that
+/// are not about the pending window; never sleeps.
+#[cfg(test)]
+#[must_use]
+pub(crate) fn settled_clock() -> SettledClock {
+    // Only whole-second TMPDIRs need it. On nanosecond filesystems the real
+    // clock (and its one-tick wait) stays in charge, so the default run and
+    // tests that rewrite a file right after a page load behave as before.
+    if tmpdir_has_whole_second_ctimes() {
+        TEST_CLOCK_AHEAD
+            .with(|ahead| ahead.set(COARSE_SECONDS_GRANULARITY + Duration::from_millis(250)));
+    }
+    SettledClock(())
+}
+
+#[cfg(test)]
+fn tmpdir_has_whole_second_ctimes() -> bool {
+    use std::os::unix::fs::MetadataExt;
+    static WHOLE_SECOND: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *WHOLE_SECOND.get_or_init(|| {
+        let probe =
+            std::env::temp_dir().join(format!("catomic-ctime-probe-{}", std::process::id()));
+        // Three writes: a nanosecond filesystem stamps nsec 0 by chance ~never.
+        let whole = (0..3).all(|_| {
+            std::fs::write(&probe, b"probe")
+                .and_then(|()| std::fs::metadata(&probe))
+                .is_ok_and(|metadata| metadata.ctime_nsec() == 0)
+        });
+        let _ = std::fs::remove_file(&probe);
+        whole
+    })
+}
+
+#[cfg(test)]
+pub(crate) struct SettledClock(());
+
+#[cfg(test)]
+impl Drop for SettledClock {
+    fn drop(&mut self) {
+        TEST_CLOCK_AHEAD.with(|ahead| ahead.set(Duration::ZERO));
+    }
 }
 
 fn now() -> std::time::SystemTime {
@@ -29,6 +76,9 @@ fn now() -> std::time::SystemTime {
     if let Some(now) = TEST_NOW.with(std::cell::Cell::get) {
         return now;
     }
+    #[cfg(test)]
+    return std::time::SystemTime::now() + TEST_CLOCK_AHEAD.with(std::cell::Cell::get);
+    #[cfg(not(test))]
     std::time::SystemTime::now()
 }
 

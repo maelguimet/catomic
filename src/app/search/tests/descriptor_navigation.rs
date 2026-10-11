@@ -7,6 +7,7 @@ use super::*;
 
 #[test]
 fn whole_file_search_navigates_next_previous_and_wraps() {
+    let _clock = crate::buffer::settled_clock();
     let path = std::env::temp_dir().join(format!(
         "catomic_whole_search_navigation_{}.txt",
         std::process::id()

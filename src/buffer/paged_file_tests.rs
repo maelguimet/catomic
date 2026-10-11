@@ -39,6 +39,7 @@ fn retained_options(buffer: &dyn Buffer) -> RenderOptions<'_> {
 
 #[test]
 fn edits_on_multiple_pages_stream_as_one_document() {
+    let _clock = crate::buffer::settled_clock();
     let path = temp_path("stream");
     let _ = std::fs::remove_file(&path);
     std::fs::write(&path, "zero\none\ntwo\nthree").unwrap();
@@ -63,6 +64,7 @@ fn edits_on_multiple_pages_stream_as_one_document() {
 
 #[test]
 fn undo_and_redo_follow_edit_order_across_pages() {
+    let _clock = crate::buffer::settled_clock();
     let path = temp_path("history");
     let _ = std::fs::remove_file(&path);
     std::fs::write(&path, "zero\none\ntwo\nthree").unwrap();
@@ -130,6 +132,7 @@ fn paged_typing_run_has_one_undo_and_distinct_content_revisions() {
 
 #[test]
 fn backspace_at_page_start_removes_the_previous_page_boundary() {
+    let _clock = crate::buffer::settled_clock();
     let path = temp_path("boundary");
     let _ = std::fs::remove_file(&path);
     std::fs::write(&path, "zero\none\ntwo").unwrap();
@@ -488,6 +491,7 @@ fn range_replacement_is_one_paged_history_transaction() {
 
 #[test]
 fn crlf_page_navigation_hides_synthetic_rows_at_source_boundaries() {
+    let _clock = crate::buffer::settled_clock();
     let path = temp_path("crlf_navigation");
     let _ = std::fs::remove_file(&path);
     std::fs::write(&path, "zero\r\n\r\ntwo\r\n猫").unwrap();
@@ -513,6 +517,7 @@ fn crlf_page_navigation_hides_synthetic_rows_at_source_boundaries() {
 
 #[test]
 fn new_cross_page_edit_invalidates_redo_and_releases_clean_inactive_page() {
+    let _clock = crate::buffer::settled_clock();
     let path = temp_path("redo-release");
     let _ = std::fs::remove_file(&path);
     std::fs::write(&path, "zero\none\ntwo").unwrap();
@@ -539,6 +544,7 @@ fn new_cross_page_edit_invalidates_redo_and_releases_clean_inactive_page() {
 
 #[test]
 fn paged_pruning_keeps_newest_global_undo_and_current_edited_pages() {
+    let _clock = crate::buffer::settled_clock();
     let path = temp_path("bounded-history");
     let _ = std::fs::remove_file(&path);
     std::fs::write(&path, "zero\none\ntwo").unwrap();
@@ -665,6 +671,7 @@ fn compact_metadata_is_shared_and_uses_u32_line_starts() {
 
 #[test]
 fn nonzero_crlf_page_windows_keep_alternating_unicode_metadata_exact() {
+    let _clock = crate::buffer::settled_clock();
     let path = temp_path("alternating_unicode");
     let _ = std::fs::remove_file(&path);
     std::fs::write(
@@ -703,6 +710,7 @@ fn nonzero_crlf_page_windows_keep_alternating_unicode_metadata_exact() {
 
 #[test]
 fn edited_active_and_retained_pages_count_materialized_block_indexes_once() {
+    let _clock = crate::buffer::settled_clock();
     let path = temp_path("materialized_index_bytes");
     let _ = std::fs::remove_file(&path);
     std::fs::write(&path, "one\ntwo\nthree\nfour\nfive").unwrap();
@@ -739,6 +747,7 @@ fn edited_active_and_retained_pages_count_materialized_block_indexes_once() {
 
 #[test]
 fn crlf_page_add_compaction_preserves_materialized_index_and_history() {
+    let _clock = crate::buffer::settled_clock();
     let path = temp_path("crlf_add_compaction");
     let _ = std::fs::remove_file(&path);
     std::fs::write(&path, "seed\r\nrow").unwrap();
@@ -778,6 +787,7 @@ fn crlf_page_add_compaction_preserves_materialized_index_and_history() {
 
 #[test]
 fn preserving_paged_originals_keeps_history_when_staging_or_commit_fails() {
+    let _clock = crate::buffer::settled_clock();
     use crate::file::io::{atomic_write_with, snapshot_linked_file};
     use std::fs;
     use std::io;
@@ -844,6 +854,7 @@ fn preserving_paged_originals_keeps_history_when_staging_or_commit_fails() {
 
 #[test]
 fn failed_backing_preservation_leaves_paged_edits_and_history_intact() {
+    let _clock = crate::buffer::settled_clock();
     let path = temp_path("snapshot_failure");
     std::fs::write(&path, "first\nsecond").unwrap();
     let mut buffer = PagedFileBuffer::open(&path, 1).unwrap();
@@ -877,7 +888,15 @@ fn restored_mtime_drift_during_preservation_never_rebases_the_original_revision(
         });
         std::fs::write(&path, "first\nsecond\nthird").unwrap();
         let mut external = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
-        let modified = external.metadata().unwrap().modified().unwrap();
+        let metadata = external.metadata().unwrap();
+        if std::os::unix::fs::MetadataExt::ctime_nsec(&metadata) == 0 {
+            // Whole-second TMPDIR: a same-length rewrite now reuses the ctime
+            // second, which only the pending-window digest can catch.
+            eprintln!("skipped: TMPDIR stamps whole-second ctimes");
+            std::fs::remove_file(path).unwrap();
+            return;
+        }
+        let modified = metadata.modified().unwrap();
         let mut buffer = PagedFileBuffer::open(&path, 1).unwrap();
         buffer.insert_char('X');
         buffer.next_page().unwrap();
@@ -912,6 +931,7 @@ fn restored_mtime_drift_during_preservation_never_rebases_the_original_revision(
 
 #[test]
 fn paged_grapheme_queries_keep_context_and_bound_reads_after_history_replay() {
+    let _clock = crate::buffer::settled_clock();
     let path = temp_path("grapheme_context_work");
     for size in [64 * 1024, 1024 * 1024, 4 * 1024 * 1024] {
         let prefix = "x".repeat(size);
@@ -968,6 +988,7 @@ fn paged_grapheme_queries_keep_context_and_bound_reads_after_history_replay() {
 
 #[test]
 fn preserving_backing_for_a_save_never_waits_for_the_private_copy_ctime() {
+    let _clock = crate::buffer::settled_clock();
     let path = temp_path("preserve_no_settle");
     std::fs::write(&path, "first\nsecond\nthird").unwrap();
     let mut buffer = PagedFileBuffer::open(&path, 1).unwrap();

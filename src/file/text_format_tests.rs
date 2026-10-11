@@ -375,6 +375,7 @@ fn writer_propagates_conversion_and_flush_errors() {
 #[cfg(unix)]
 #[test]
 fn edited_sparse_long_line_streams_in_chunks() {
+    let _clock = crate::buffer::settled_clock();
     const SPARSE_BYTES: u64 = 8 * 1024 * 1024;
     let path =
         std::env::temp_dir().join(format!("catomic_sparse_stream_{}.txt", std::process::id()));
@@ -418,6 +419,7 @@ fn detects_crlf_split_after_the_first_scan_chunk() {
 
 #[test]
 fn paged_crlf_save_combines_raw_ranges_and_normalized_edited_pages_exactly() {
+    let _clock = crate::buffer::settled_clock();
     let path = std::env::temp_dir().join(format!(
         "catomic_text_format_paged_crlf_{}.txt",
         std::process::id()

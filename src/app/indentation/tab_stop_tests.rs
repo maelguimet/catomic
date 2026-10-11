@@ -135,6 +135,7 @@ fn cold_tab_after_a_hidden_unicode_prefix_uses_absolute_cells() {
 
 #[test]
 fn paged_tab_columns_match_normalized_crlf_and_survive_history_replay() {
+    let _clock = crate::buffer::settled_clock();
     for newline in ["\n", "\r\n"] {
         let path = std::env::temp_dir().join(format!(
             "catomic_visual_tab_{}_{}",

@@ -709,6 +709,7 @@ fn failed_save_as_keeps_the_original_path() {
 
 #[test]
 fn paged_goto_switches_to_the_global_logical_line() {
+    let _clock = crate::buffer::settled_clock();
     let path = std::env::temp_dir().join(format!("catomic_app_goto_{}.txt", std::process::id()));
     let _ = std::fs::remove_file(&path);
     std::fs::write(&path, "zero\none\ntwo\nthree").unwrap();
@@ -732,6 +733,7 @@ fn paged_goto_switches_to_the_global_logical_line() {
 
 #[test]
 fn escape_cancels_a_running_paged_goto() {
+    let _clock = crate::buffer::settled_clock();
     let path = std::env::temp_dir().join(format!(
         "catomic_app_goto_cancel_{}.txt",
         std::process::id()

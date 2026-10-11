@@ -693,6 +693,7 @@ mod tests {
 
     #[test]
     fn whole_file_search_finds_an_unsaved_edit_on_a_retained_page() {
+        let _clock = crate::buffer::settled_clock();
         let path = std::env::temp_dir().join(format!(
             "catomic_whole_search_edit_{}.txt",
             std::process::id()
@@ -727,6 +728,7 @@ mod tests {
 
     #[test]
     fn whole_file_search_crosses_a_deleted_page_boundary() {
+        let _clock = crate::buffer::settled_clock();
         let path = std::env::temp_dir().join(format!(
             "catomic_whole_search_boundary_{}.txt",
             std::process::id()

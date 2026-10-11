@@ -31,9 +31,20 @@ over configurable logical-line pages.
   tick. A baseline captured inside its tick is provisional: the first page's
   scanned bytes are digested and re-read once the tick has passed (judged by the
   local clock), which proves no same-length, restored-mtime rewrite reused the
-  tick. Other pages and whole-file writes are refused until then (after at most
-  one short clock-tick wait), and a digest mismatch is drift. Private preserved
-  copies are trusted as written, so saves never wait. App presents
+  tick. Other pages, search/goto workers, and streaming are refused until then
+  (after at most one short clock-tick wait), and a digest mismatch is drift.
+  Save and Save As do not wait for the tick, which a future ctime (clock skew,
+  a server clock ahead) could delay for hours: before promotion only the
+  digested bytes can have been served, so Save requires the digest to match the
+  original now and again in the private preserved copy, then builds the output
+  from that copy. Either mismatch is drift. Private preserved copies are trusted
+  as written, so saves never wait. Residual risk: when the server stamps a
+  future ctime, a same-tick, same-length rewrite outside the digested range
+  that lands during the copy is not detected, and it can leave a torn copy:
+  bytes copied before the rewrite are the old revision, bytes after it the new
+  one. Saving then writes that torn region, so it can partly revert the
+  external change there; local edits still apply only to the verified first
+  page. App presents
   unavailable content and preserves the session instead of terminating. Save As cannot reconstruct original bytes
   overwritten in place. Clean path changes auto-reload by default; dirty buffers
   never reload automatically and retain the Ctrl+R/save-conflict confirmation

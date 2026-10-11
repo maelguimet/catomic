@@ -958,10 +958,15 @@ opening could reuse the opened revision's `ctime`. Catomic does not wait at
 open or reload for that tick to pass. It remembers the bytes of the first page
 and checks them again once the tick has passed (one clock tick, or about two
 seconds on filesystems with whole-second timestamps); a mismatch makes the
-content unavailable. Until then, other pages and Save/Save As are refused with
-a "File changed moments ago" message instead of reading against an unverified
-revision. A change time in the future (for example from clock skew) keeps them
-refused until the clock passes it. Network filesystems stamped by a server whose
+content unavailable. Until then, other pages, search, and go to line are
+refused with a "File changed moments ago" message instead of reading against an
+unverified revision. A change time in the future (for example from clock skew,
+or an NFS/SMB server whose clock runs ahead) keeps them refused until the clock
+passes it. Save and Save As still work in both cases: Catomic checks that the
+remembered first-page bytes are still on disk, copies the original privately,
+checks the copy again, and writes the result from that copy, so the saved
+file's baseline is what was actually written. If either check fails, the save
+is refused as an external change. Network filesystems stamped by a server whose
 clock lags this machine can still reuse a `ctime` undetected.
 The affected buffer shows a **Paged content unavailable** notice and blocks
 content editing and navigation. Its unsaved edits and undo history remain in

@@ -229,6 +229,27 @@ impl BaselineTrust {
         self.verify(file)
     }
 
+    /// Check that `file` (the original, or a private copy of it) holds the
+    /// digested bytes right now, without promoting the baseline. Lets Save run
+    /// on a provisional baseline whose tick cannot pass soon (a future ctime):
+    /// before promotion only the digested bytes have been served.
+    pub(crate) fn require_digest_match(&self, file: &File) -> io::Result<()> {
+        if self.promoted.get() {
+            return Ok(());
+        }
+        let digest = self
+            .provisional
+            .as_ref()
+            .expect("an unpromoted baseline has a digest");
+        if digest.matches(file)? {
+            Ok(())
+        } else {
+            Err(BackingFileChanged::error(
+                "file changed within its timestamp granularity after it was opened",
+            ))
+        }
+    }
+
     fn verify(&self, file: &File) -> io::Result<()> {
         let digest = self
             .provisional
@@ -248,7 +269,8 @@ impl BaselineTrust {
 fn unsettled_error(remaining: Duration) -> io::Error {
     let message = if remaining > COARSE_SECONDS_GRANULARITY {
         "File change time is in the future, so later external changes cannot be detected. \
-         Paged reads and saves stay unavailable until the clock passes it."
+         Other pages, search, and go to line stay unavailable until the clock passes it; \
+         Save still works."
             .to_string()
     } else {
         format!(

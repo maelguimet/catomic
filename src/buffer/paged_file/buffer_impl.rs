@@ -203,7 +203,9 @@ impl Buffer for PagedFileBuffer {
     }
 
     fn descriptor_source(&self) -> io::Result<Option<DescriptorSource>> {
-        self.ensure_unchanged()?;
+        // Search and goto workers read the whole file, including bytes the
+        // open did not digest, so they need a promoted baseline too.
+        self.ensure_trusted()?;
         let mut overlays = Vec::new();
         for page in self.retained.values().chain(std::iter::once(self.active())) {
             if page.buffer.edit_history_position() == 0 {

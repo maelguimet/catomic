@@ -1078,3 +1078,66 @@ fn same_tick_rewrite_after_a_pending_open_fails_closed_once_the_tick_passes() {
     }
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn pending_baseline_refuses_whole_file_workers_until_settled() {
+    let path = temp_path("pending_descriptor_source");
+    std::fs::write(&path, "first\nsecond\nthird").unwrap();
+    let changed = changed_at(&path);
+    let _clock = InjectedClock::set(changed - std::time::Duration::from_millis(1_500));
+    let buffer = PagedFileBuffer::open(&path, 1).unwrap();
+
+    // Search and goto would read pages the open never digested.
+    let error = buffer.descriptor_source().map(|_| ()).unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::WouldBlock, "{error}");
+
+    let _clock = InjectedClock::set(changed + std::time::Duration::from_secs(3));
+    assert!(buffer.descriptor_source().unwrap().is_some());
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn rewrite_beyond_the_digested_page_in_the_pending_tick_never_mixes_revisions() {
+    use std::io::{Seek, SeekFrom};
+
+    let path = temp_path("pending_rewrite_tail");
+    // The open scans page 1 in one chunk; the tail is never read or digested.
+    let filler = "a".repeat(2 * crate::buffer::large_file::SCAN_CHUNK_BYTES);
+    let original = format!("first\n{filler}\nsecond\nthird");
+    let tail = (original.len() - "third".len()) as u64;
+    let mut same_tick = 0;
+    // Repeat so the rewrite lands in the open's ctime tick on some runs (most
+    // runs on a whole-second filesystem); when ctime moves, the descriptor
+    // comparison catches the rewrite instead.
+    for _ in 0..20 {
+        std::fs::write(&path, &original).unwrap();
+        let changed = changed_at(&path);
+        let mut external = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        let modified = external.metadata().unwrap().modified().unwrap();
+        let _clock = InjectedClock::set(changed - std::time::Duration::from_millis(1_500));
+        let mut buffer = PagedFileBuffer::open(&path, 1).unwrap();
+        buffer.insert_char('X');
+
+        // Same length and restored mtime, outside the digested range.
+        external.seek(SeekFrom::Start(tail)).unwrap();
+        external.write_all(b"THIRD").unwrap();
+        external.set_modified(modified).unwrap();
+        drop(external);
+        drop(_clock);
+        let _clock = InjectedClock::set(changed + std::time::Duration::from_secs(3));
+
+        // Only digested bytes were served before promotion, so a promoted
+        // document is the current revision plus the local edit, never a mix.
+        let mut written = Vec::new();
+        match buffer.write_to(&mut written) {
+            Ok(()) => {
+                same_tick += 1;
+                let expected = format!("Xfirst\n{filler}\nsecond\nTHIRD");
+                assert!(written == expected.as_bytes());
+            }
+            Err(error) => assert!(super::BackingFileChanged::is(&error), "{error}"),
+        }
+    }
+    eprintln!("same-tick runs: {same_tick}/20");
+    std::fs::remove_file(path).unwrap();
+}

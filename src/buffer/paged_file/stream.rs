@@ -13,7 +13,7 @@ const COPY_CHUNK_BYTES: usize = 64 * 1024;
 
 impl PagedFileBuffer {
     pub(super) fn stream_document(&self, out: &mut dyn Write) -> io::Result<()> {
-        self.ensure_unchanged()?;
+        self.ensure_trusted()?;
         let mut starts: Vec<usize> = self.retained.keys().copied().collect();
         starts.push(self.active().start_byte);
         starts.sort_unstable();

@@ -972,6 +972,8 @@ fn preserving_backing_for_a_save_never_waits_for_the_private_copy_ctime() {
     std::fs::write(&path, "first\nsecond\nthird").unwrap();
     let mut buffer = PagedFileBuffer::open(&path, 1).unwrap();
     buffer.insert_char('X');
+    // The original was just written; let its own baseline promote first.
+    buffer.ensure_trusted().unwrap();
     super::backing::SETTLE_WAITS.with(|waits| waits.set(0));
 
     // The copy is written just before its baseline is captured, so its ctime
@@ -984,5 +986,95 @@ fn preserving_backing_for_a_save_never_waits_for_the_private_copy_ctime() {
     let mut written = Vec::new();
     buffer.write_to(&mut written).unwrap();
     assert!(String::from_utf8(written).unwrap().starts_with("Xfirst"));
+    std::fs::remove_file(path).unwrap();
+}
+
+fn changed_at(path: &std::path::Path) -> std::time::SystemTime {
+    use std::os::unix::fs::MetadataExt;
+    let metadata = std::fs::metadata(path).unwrap();
+    std::time::UNIX_EPOCH
+        + std::time::Duration::new(metadata.ctime() as u64, metadata.ctime_nsec() as u32)
+}
+
+struct InjectedClock;
+
+impl InjectedClock {
+    fn set(now: std::time::SystemTime) -> Self {
+        super::backing::TEST_NOW.with(|cell| cell.set(Some(now)));
+        Self
+    }
+}
+
+impl Drop for InjectedClock {
+    fn drop(&mut self) {
+        super::backing::TEST_NOW.with(|cell| cell.set(None));
+    }
+}
+
+#[test]
+fn pending_baseline_opens_without_waiting_and_refuses_new_reads_until_settled() {
+    let path = temp_path("pending_open");
+    std::fs::write(&path, "first\nsecond\nthird").unwrap();
+    // A whole-second (or future) stamp leaves the tick pending far beyond a
+    // clock tick; 1.5 s mirrors a two-second filesystem just after a change.
+    let changed = changed_at(&path);
+    let _clock = InjectedClock::set(changed - std::time::Duration::from_millis(1_500));
+    super::backing::SETTLE_WAITS.with(|waits| waits.set(0));
+
+    let started = std::time::Instant::now();
+    let mut buffer = PagedFileBuffer::open(&path, 1).unwrap();
+    assert!(started.elapsed() < std::time::Duration::from_millis(100));
+    assert_eq!(super::backing::SETTLE_WAITS.with(std::cell::Cell::get), 0);
+    assert_eq!(buffer.line(0).unwrap(), "first");
+    buffer.validate_backing().unwrap();
+
+    for error in [
+        buffer.next_page().unwrap_err(),
+        buffer.write_to(&mut Vec::new()).unwrap_err(),
+    ] {
+        assert_eq!(error.kind(), std::io::ErrorKind::WouldBlock, "{error}");
+        assert!(!super::BackingFileChanged::is(&error));
+    }
+    assert_eq!(super::backing::SETTLE_WAITS.with(std::cell::Cell::get), 0);
+
+    let _clock = InjectedClock::set(changed + std::time::Duration::from_secs(3));
+    assert!(buffer.next_page().unwrap());
+    assert_eq!(buffer.line(0).unwrap(), "second");
+    let mut written = Vec::new();
+    buffer.write_to(&mut written).unwrap();
+    assert_eq!(written, b"first\nsecond\nthird");
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn same_tick_rewrite_after_a_pending_open_fails_closed_once_the_tick_passes() {
+    use std::io::Seek;
+
+    let path = temp_path("pending_rewrite");
+    // Repeat so the rewrite lands in the open's ctime tick on most runs; those
+    // are the runs only the digest can catch.
+    for _ in 0..50 {
+        std::fs::write(&path, "first\nsecond\nthird").unwrap();
+        let changed = changed_at(&path);
+        let _clock = InjectedClock::set(changed - std::time::Duration::from_millis(1_500));
+        let mut external = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        let modified = external.metadata().unwrap().modified().unwrap();
+        let mut buffer = PagedFileBuffer::open(&path, 1).unwrap();
+
+        external.rewind().unwrap();
+        external.write_all(b"FIRST\nSECOND\nTHIRD").unwrap();
+        external.set_modified(modified).unwrap();
+        drop(_clock);
+        let _clock = InjectedClock::set(changed + std::time::Duration::from_secs(3));
+
+        let error = buffer.validate_backing().unwrap_err();
+        assert!(super::BackingFileChanged::is(&error), "{error}");
+        for error in [
+            buffer.next_page().unwrap_err(),
+            buffer.write_to(&mut Vec::new()).unwrap_err(),
+        ] {
+            assert!(super::BackingFileChanged::is(&error), "{error}");
+        }
+    }
     std::fs::remove_file(path).unwrap();
 }

@@ -3,7 +3,8 @@
 //! Must not: own App policy, path replacement, terminal input/rendering, or external services.
 //! Invariants: only pages with edit history or current edits are retained; original
 //!   page byte ranges never overlap; descriptor drift fails page loads and whole-file
-//!   writes closed.
+//!   writes closed; a baseline opened inside its ctime tick serves only the pages
+//!   read at open until it is promoted.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
@@ -11,7 +12,7 @@ use std::io;
 #[cfg(test)]
 use std::path::Path;
 
-use super::backing::DescriptorSnapshot;
+use super::backing::{BaselineTrust, ChangeTime, DescriptorSnapshot, RangeDigester};
 use crate::buffer::large_file::page_scan::find_previous_page_start;
 use crate::buffer::{Buffer, PieceTable};
 
@@ -24,6 +25,7 @@ use history::{HistoryChange, PageHistory};
 pub(crate) struct PagedFileBuffer {
     file: File,
     snapshot: DescriptorSnapshot,
+    trust: BaselineTrust,
     total_bytes: usize,
     page_lines: usize,
     active: Option<EditablePage>,
@@ -59,20 +61,33 @@ impl PagedFileBuffer {
     }
 
     pub(crate) fn from_file(file: File, page_lines: usize) -> io::Result<Self> {
-        let snapshot = DescriptorSnapshot::capture_settled(&file)?;
+        let snapshot = DescriptorSnapshot::capture(&file)?;
         let total_bytes = usize::try_from(snapshot.len).map_err(|_| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
                 "file size exceeds this platform's addressable range",
             )
         })?;
-        let first = Self::load_from_descriptor(&file, 0, 1, page_lines)?;
+        // A baseline inside its ctime tick is not waited out: the first page's
+        // bytes are digested and re-checked once the tick has passed.
+        let (first, trust) = if snapshot.change_time() == ChangeTime::Settled {
+            let first = Self::load_from_descriptor(&file, 0, 1, page_lines, &mut |_, _| Ok(()))?;
+            (first, BaselineTrust::settled())
+        } else {
+            let mut digest = RangeDigester::new(0);
+            let first =
+                Self::load_from_descriptor(&file, 0, 1, page_lines, &mut |offset, bytes| {
+                    digest.observe(offset, bytes)
+                })?;
+            (first, BaselineTrust::provisional(digest))
+        };
         if DescriptorSnapshot::capture(&file)? != snapshot {
             return Err(changed_descriptor_error());
         }
         Ok(Self {
             file,
             snapshot,
+            trust,
             total_bytes,
             page_lines,
             active: Some(first),
@@ -88,8 +103,14 @@ impl PagedFileBuffer {
         start_byte: usize,
         page_number: usize,
         page_lines: usize,
+        observe: &mut dyn FnMut(usize, &[u8]) -> io::Result<()>,
     ) -> io::Result<EditablePage> {
-        let mut page = PieceTable::from_file_page(file.try_clone()?, start_byte, page_lines)?;
+        let mut page = PieceTable::from_file_page_observed(
+            file.try_clone()?,
+            start_byte,
+            page_lines,
+            observe,
+        )?;
         page.buffer.use_external_history_retention();
         Ok(EditablePage {
             buffer: page.buffer,
@@ -131,11 +152,18 @@ impl PagedFileBuffer {
         #[cfg(test)]
         self.metadata_check_count
             .set(self.metadata_check_count.get() + 1);
-        if DescriptorSnapshot::capture(&self.file)? == self.snapshot {
-            Ok(())
-        } else {
-            Err(changed_descriptor_error())
+        if DescriptorSnapshot::capture(&self.file)? != self.snapshot {
+            return Err(changed_descriptor_error());
         }
+        self.trust.refresh(&self.snapshot, &self.file)
+    }
+
+    /// Stricter than [`Self::ensure_unchanged`]: required before reading bytes
+    /// outside the pages read at open and before whole-file writes, which must
+    /// not run against a baseline whose ctime could still be reused.
+    pub(super) fn ensure_trusted(&self) -> io::Result<()> {
+        self.ensure_unchanged()?;
+        self.trust.require(&self.snapshot, &self.file)
     }
 
     fn park_active(&mut self) {
@@ -152,7 +180,7 @@ impl PagedFileBuffer {
     ) -> io::Result<()> {
         // Cached pages and delayed search/goto results belong to the same
         // opened revision as fresh page loads.
-        self.ensure_unchanged()?;
+        self.ensure_trusted()?;
         if self.active().start_byte == start_byte {
             self.active_mut().page_number = page_number;
             return Ok(());
@@ -161,8 +189,13 @@ impl PagedFileBuffer {
             retained.page_number = page_number;
             retained
         } else {
-            let page =
-                Self::load_from_descriptor(&self.file, start_byte, page_number, self.page_lines)?;
+            let page = Self::load_from_descriptor(
+                &self.file,
+                start_byte,
+                page_number,
+                self.page_lines,
+                &mut |_, _| Ok(()),
+            )?;
             self.ensure_unchanged()?;
             page
         };
@@ -186,7 +219,7 @@ impl PagedFileBuffer {
     }
 
     pub(super) fn previous_start(&self) -> io::Result<usize> {
-        self.ensure_unchanged()?;
+        self.ensure_trusted()?;
         let start =
             find_previous_page_start(&self.file, self.active().start_byte, self.page_lines)?;
         self.ensure_unchanged()?;

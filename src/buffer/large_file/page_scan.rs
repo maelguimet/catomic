@@ -35,6 +35,7 @@ pub(crate) struct PreviousPageScan {
     pub(crate) perf: PageScanPerfStats,
 }
 
+#[cfg(test)]
 pub(crate) fn scan_utf8_page(
     file: &File,
     start_byte: usize,
@@ -42,6 +43,21 @@ pub(crate) fn scan_utf8_page(
 ) -> io::Result<PageScan> {
     scan_utf8_page_with_reader(start_byte, page_lines, |out, offset| {
         file.read_at(out, offset as u64)
+    })
+}
+
+/// Scan like [`scan_utf8_page`] and hand every byte read to `observe`, so a
+/// caller can later prove the descriptor still holds exactly those bytes.
+pub(crate) fn scan_utf8_page_observed(
+    file: &File,
+    start_byte: usize,
+    page_lines: usize,
+    observe: &mut dyn FnMut(usize, &[u8]) -> io::Result<()>,
+) -> io::Result<PageScan> {
+    scan_utf8_page_with_reader(start_byte, page_lines, |out, offset| {
+        let read = file.read_at(out, offset as u64)?;
+        observe(offset, &out[..read])?;
+        Ok(read)
     })
 }
 

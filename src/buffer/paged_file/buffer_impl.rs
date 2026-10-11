@@ -30,15 +30,13 @@ impl Buffer for PagedFileBuffer {
         &mut self,
         preserve: &mut dyn FnMut(&std::fs::File) -> io::Result<Option<std::fs::File>>,
     ) -> io::Result<()> {
-        self.ensure_unchanged()?;
+        self.ensure_trusted()?;
         let Some(file) = preserve(&self.file)? else {
             return Ok(());
         };
         // The preserved copy is private and unlinked, so nothing else can
-        // rewrite it within its ctime tick. Settling it would only stall every
-        // save (by a clock tick, or about two seconds when the temporary
-        // directory has whole-second timestamps). The original's baseline was
-        // already settled when the file was opened.
+        // rewrite it within its ctime tick, and the original's baseline was
+        // promoted above before it was copied. The copy is trusted as is.
         let snapshot = super::DescriptorSnapshot::capture(&file)?;
         if snapshot.len != self.snapshot.len {
             return Err(io::Error::new(
@@ -67,6 +65,7 @@ impl Buffer for PagedFileBuffer {
         }
         self.file = file;
         self.snapshot = snapshot;
+        self.trust = super::BaselineTrust::settled();
         Ok(())
     }
 

@@ -9,7 +9,7 @@
 //! Must not: imply or construct unrelated project or external services.
 //! Invariants: watches the lexical target parent plus a distinct resolved referent parent (non-recursive);
 //!   callback events filter to either exact target path before queueing;
-//!   try_recv drains at most one semantic signal.
+//!   try_recv drains at most one semantic signal; a dead worker is reported once as Stopped.
 //!   best-effort lifecycle and consumes via app/watch helper (hints only).
 //!
 //! Dependency justification (per AGENTS.md):
@@ -48,6 +48,9 @@ pub enum FileWatchSignal {
     Deleted,
     /// Error reported by the underlying watcher for this path.
     Error(String),
+    /// The notify worker dropped its sender (it panicked or exited), so no
+    /// further signals can arrive. Reported once per watcher.
+    Stopped,
 }
 
 /// Notify-backed watcher for a single target file.
@@ -62,6 +65,10 @@ pub struct FileWatcher {
     _targets: Vec<PathBuf>,
     /// Receives target-specific signals from the notify callback.
     rx: Receiver<FileWatchSignal>,
+    /// Set once `Stopped` has been reported for a disconnected channel.
+    stop_reported: std::cell::Cell<bool>,
+    /// How many times the App replaced a stopped watcher for this path.
+    restarts: u8,
     /// Test-only direct signal injection (takes precedence in try_recv).
     /// Allows deterministic queued Error/Changed without OS or notify::Error construction.
     #[cfg(test)]
@@ -107,13 +114,25 @@ impl FileWatcher {
             _watcher: InnerWatcher::Real(watcher),
             _targets: targets,
             rx,
+            stop_reported: std::cell::Cell::new(false),
+            restarts: 0,
             #[cfg(test)]
             test_inject: std::sync::Mutex::new(None),
         })
     }
 
+    pub(crate) fn restarts(&self) -> u8 {
+        self.restarts
+    }
+
+    pub(crate) fn with_restarts(mut self, restarts: u8) -> Self {
+        self.restarts = restarts;
+        self
+    }
+
     /// Non-blocking receive of at most one signal.
-    /// Returns None if no event is ready.
+    /// Returns None if no event is ready. A disconnected channel means the
+    /// worker is gone; it is reported once as `Stopped`, never as "no event".
     pub fn try_recv(&self) -> Option<FileWatchSignal> {
         // Test injection has precedence for deterministic seams (no OS timing,
         // covers Error signals without synthesizing notify errors).
@@ -125,7 +144,13 @@ impl FileWatcher {
                 }
             }
         }
-        self.rx.try_recv().ok()
+        match self.rx.try_recv() {
+            Ok(signal) => Some(signal),
+            Err(mpsc::TryRecvError::Empty) => None,
+            Err(mpsc::TryRecvError::Disconnected) => {
+                (!self.stop_reported.replace(true)).then_some(FileWatchSignal::Stopped)
+            }
+        }
     }
 }
 
@@ -141,6 +166,8 @@ impl FileWatcher {
             _watcher: InnerWatcher::TestStub,
             _targets: targets,
             rx,
+            stop_reported: std::cell::Cell::new(false),
+            restarts: 0,
             test_inject: std::sync::Mutex::new(None),
         };
         (fw, tx)

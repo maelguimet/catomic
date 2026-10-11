@@ -190,3 +190,22 @@ fn rename_name_event_on_target_currently_yields_changed_as_hint() {
         Some(FileWatchSignal::Changed)
     );
 }
+
+#[test]
+fn disconnected_worker_is_reported_once_as_stopped_not_as_no_event() {
+    let (watcher, tx) =
+        FileWatcher::new_for_test(std::path::PathBuf::from("/tmp/catomic_watch_target"));
+    tx.send(FileWatchSignal::Changed).unwrap();
+    drop(tx);
+
+    assert_eq!(watcher.try_recv(), Some(FileWatchSignal::Changed));
+    assert_eq!(watcher.try_recv(), Some(FileWatchSignal::Stopped));
+    assert_eq!(watcher.try_recv(), None);
+}
+
+#[test]
+fn idle_live_worker_reports_no_event() {
+    let (watcher, _tx) =
+        FileWatcher::new_for_test(std::path::PathBuf::from("/tmp/catomic_watch_target"));
+    assert_eq!(watcher.try_recv(), None);
+}

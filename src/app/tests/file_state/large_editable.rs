@@ -375,3 +375,68 @@ fn hard_linked_paged_buffer_remains_usable_after_successive_saves() {
         let _ = fs::remove_file(alias);
     }
 }
+
+#[test]
+fn pending_baseline_reports_retry_instead_of_reading_or_exiting() {
+    use std::os::unix::fs::MetadataExt;
+
+    struct Clock;
+    impl Drop for Clock {
+        fn drop(&mut self) {
+            crate::buffer::TEST_NOW.with(|now| now.set(None));
+        }
+    }
+    let set_now = |now| crate::buffer::TEST_NOW.with(|cell| cell.set(Some(now)));
+
+    let path = temp_path("pending_baseline.txt");
+    fs::write(&path, "first\nsecond\nthird").unwrap();
+    let metadata = fs::metadata(&path).unwrap();
+    let changed = std::time::UNIX_EPOCH
+        + std::time::Duration::new(metadata.ctime() as u64, metadata.ctime_nsec() as u32);
+    let _clock = Clock;
+    set_now(changed - std::time::Duration::from_millis(1_500));
+    let mut app = app_with_paged_buffer(&path);
+    let mut out = Vec::new();
+
+    app.handle_key_with(&mut out, make_key(KeyCode::Char('X'), KeyModifiers::NONE))
+        .unwrap();
+    app.handle_key_with(&mut out, make_key(KeyCode::PageDown, KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(app
+        .message
+        .as_deref()
+        .unwrap()
+        .starts_with("Page error: File changed moments ago"));
+
+    let refused = app
+        .buffer
+        .set_descriptor_position(crate::buffer::DescriptorPosition {
+            page_start: 6,
+            page_number: 2,
+            row: 0,
+            col: 0,
+        })
+        .unwrap_err();
+    super::super::super::backing::recover(&mut app, &mut out, Err(refused)).unwrap();
+    assert!(app
+        .message
+        .as_deref()
+        .unwrap()
+        .starts_with("File changed moments ago"));
+    assert!(!app.should_quit);
+
+    app.handle_key_with(
+        &mut out,
+        make_key(KeyCode::Char('s'), KeyModifiers::CONTROL),
+    )
+    .unwrap();
+    assert!(app.message.as_deref().unwrap().contains("Save error"));
+    assert!(app.file.dirty);
+    assert_eq!(fs::read_to_string(&path).unwrap(), "first\nsecond\nthird");
+
+    set_now(changed + std::time::Duration::from_secs(3));
+    app.handle_key_with(&mut out, make_key(KeyCode::PageDown, KeyModifiers::CONTROL))
+        .unwrap();
+    assert_eq!(app.buffer.line(0).unwrap(), "second");
+    fs::remove_file(path).unwrap();
+}

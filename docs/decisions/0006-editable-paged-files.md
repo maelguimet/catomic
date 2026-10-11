@@ -27,10 +27,13 @@ over configurable logical-line pages.
 - Ctrl+F searches the stable descriptor plus unsaved edited-page overlays. It
   preserves matches across read chunks and edited page boundaries.
 - Drift in length, mtime, device/inode, or ctime fails page loads, rendering,
-  search, and save closed. The opening baseline is captured only after the
-  file's ctime tick has passed, so a same-length rewrite with a restored mtime
-  cannot land in the same coarse-clock tick and keep every field. Private
-  preserved copies are not settled, so saves never wait. App presents
+  search, and save closed. Open and reload never wait for the file's ctime
+  tick. A baseline captured inside its tick is provisional: the first page's
+  scanned bytes are digested and re-read once the tick has passed (judged by the
+  local clock), which proves no same-length, restored-mtime rewrite reused the
+  tick. Other pages and whole-file writes are refused until then (after at most
+  one short clock-tick wait), and a digest mismatch is drift. Private preserved
+  copies are trusted as written, so saves never wait. App presents
   unavailable content and preserves the session instead of terminating. Save As cannot reconstruct original bytes
   overwritten in place. Clean path changes auto-reload by default; dirty buffers
   never reload automatically and retain the Ctrl+R/save-conflict confirmation

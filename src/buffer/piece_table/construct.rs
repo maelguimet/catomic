@@ -17,7 +17,7 @@ use std::io;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::buffer::large_file::page_scan::scan_utf8_page;
+use crate::buffer::large_file::page_scan::scan_utf8_page_observed;
 #[cfg(test)]
 use crate::buffer::large_file::scan::scan_utf8_lines;
 use crate::buffer::line_index::LineIndex;
@@ -89,7 +89,7 @@ impl PieceTable {
     #[cfg(test)]
     pub(crate) fn from_file(path: impl AsRef<Path>) -> io::Result<Self> {
         let mut file = File::open(path)?;
-        let snapshot = FileMetadataSnapshot::capture_settled(&file)?;
+        let snapshot = FileMetadataSnapshot::capture(&file)?;
         let scan = scan_utf8_lines(&mut file)?;
         if FileMetadataSnapshot::capture(&file)? != snapshot {
             return Err(crate::buffer::BackingFileChanged::error(
@@ -100,10 +100,21 @@ impl PieceTable {
         Ok(Self::from_file_scan(file, snapshot, scan, 0, total_bytes))
     }
 
+    #[cfg(test)]
     pub(crate) fn from_file_page(
         file: File,
         start_byte: usize,
         page_lines: usize,
+    ) -> io::Result<FileBackedPage> {
+        Self::from_file_page_observed(file, start_byte, page_lines, &mut |_, _| Ok(()))
+    }
+
+    /// Build a page and report every byte its scan read, for baseline digests.
+    pub(crate) fn from_file_page_observed(
+        file: File,
+        start_byte: usize,
+        page_lines: usize,
+        observe: &mut dyn FnMut(usize, &[u8]) -> io::Result<()>,
     ) -> io::Result<FileBackedPage> {
         let snapshot = FileMetadataSnapshot::capture(&file)?;
         let total_bytes = usize::try_from(snapshot.len).map_err(|_| {
@@ -118,7 +129,7 @@ impl PieceTable {
                 "page start exceeds file length",
             ));
         }
-        let page = scan_utf8_page(&file, start_byte, page_lines)?;
+        let page = scan_utf8_page_observed(&file, start_byte, page_lines, observe)?;
         if FileMetadataSnapshot::capture(&file)? != snapshot {
             return Err(crate::buffer::BackingFileChanged::error(
                 "file-backed original changed while scanning page",

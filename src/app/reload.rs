@@ -268,6 +268,9 @@ fn build_modified_reload_buffer(
             }
             source.ensure_descriptor_unchanged(path)?;
             let buffer = buffer::PagedFileBuffer::from_file(source.into_file(), page_lines)?;
+            // Format detection and the paged baseline must describe the
+            // confirmed revision, as on open.
+            crate::file::io::ensure_path_matches_snapshot(path, &loaded_snapshot)?;
             (Box::new(buffer) as Box<dyn buffer::Buffer>, format)
         }
         OpenSizeDecision::Normal | OpenSizeDecision::Warn => {

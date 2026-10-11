@@ -3,7 +3,7 @@
 
 use std::io;
 
-use crate::buffer::BackingFileChanged;
+use crate::buffer::{BackingFileChanged, BaselinePending};
 use crate::config::actions::Action;
 
 use super::App;
@@ -49,6 +49,12 @@ pub(super) fn recover(
             super::command_prompt::clear_config_discard_confirmation(app);
             super::reload::cancel_confirmation(app);
             app.message_error(UNAVAILABLE);
+            app.render(out)
+        }
+        // A paged read refused until the opened revision's ctime tick passes.
+        // The content is intact; report it and let the user retry.
+        Err(error) if BaselinePending::is(&error) => {
+            app.message_error(error.to_string());
             app.render(out)
         }
         result => result,

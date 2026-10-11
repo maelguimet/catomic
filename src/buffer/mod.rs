@@ -9,7 +9,9 @@ use std::fs::File;
 use std::io::{self, Write};
 
 mod backing;
-pub(crate) use backing::BackingFileChanged;
+#[cfg(test)]
+pub(crate) use backing::TEST_NOW;
+pub(crate) use backing::{BackingFileChanged, BaselinePending};
 pub(crate) mod cell_index;
 pub(crate) mod large_file;
 pub mod line_index;

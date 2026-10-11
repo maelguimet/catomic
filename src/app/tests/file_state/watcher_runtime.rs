@@ -315,3 +315,41 @@ fn repeatedly_stopping_watcher_gives_up_with_a_persistent_error() {
     );
     let _ = std::fs::remove_file(&p);
 }
+
+// The catch-up reload replaces the watcher; that must not reset the restart
+// budget, or a worker that dies after every event is restarted forever.
+#[test]
+fn catch_up_reload_keeps_the_restart_count() {
+    let (mut app, p) = app_with_clean_file("keep_count", "ORIG");
+    let (tw, tx) = crate::file::watcher::FileWatcher::new_for_test(app.file.path.clone().unwrap());
+    crate::app::watch::replace_file_watcher_for_test(&mut app, tw.with_restarts(2));
+    drop(tx);
+    std::fs::write(&p, "CHANGED WHILE DEAD").unwrap();
+
+    assert!(crate::app::watch::check_file_watcher_once(&mut app));
+
+    assert_eq!(app.buffer.to_string(), "CHANGED WHILE DEAD");
+    let watcher = app.file_watcher.as_ref().expect("watcher restarted");
+    assert_eq!(watcher.restarts(), 3);
+    let _ = std::fs::remove_file(&p);
+}
+
+// Once the budget is spent, a catch-up reload must not revive the watcher.
+#[test]
+fn giving_up_sticks_even_when_the_catch_up_observation_reloads() {
+    let (mut app, p) = app_with_clean_file("give_up_reload", "ORIG");
+    let (tw, tx) = crate::file::watcher::FileWatcher::new_for_test(app.file.path.clone().unwrap());
+    crate::app::watch::replace_file_watcher_for_test(&mut app, tw.with_restarts(3));
+    drop(tx);
+    std::fs::write(&p, "CHANGED WHILE DEAD").unwrap();
+
+    assert!(crate::app::watch::check_file_watcher_once(&mut app));
+
+    assert_eq!(app.buffer.to_string(), "CHANGED WHILE DEAD");
+    assert!(app.file_watcher.is_none());
+    assert_eq!(
+        app.message.as_deref(),
+        Some(crate::app::watch::WATCHER_STOPPED)
+    );
+    let _ = std::fs::remove_file(&p);
+}

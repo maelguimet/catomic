@@ -48,9 +48,16 @@ pub(crate) fn refresh_file_watcher(app: &mut super::App) {
     };
     // Clone path for the ctor (watcher takes ownership of normalized target).
     let target: PathBuf = p.clone();
+    // A reload or Save As replaces the watcher; keep the restart count, so a
+    // worker that dies after every event still gives up instead of being
+    // restarted forever by the reloads its own catch-up observations trigger.
+    let restarts = app
+        .file_watcher
+        .as_ref()
+        .map_or(0, file::watcher::FileWatcher::restarts);
     match file::watcher::FileWatcher::new(target) {
         Ok(watcher) => {
-            app.file_watcher = Some(watcher);
+            app.file_watcher = Some(watcher.with_restarts(restarts));
         }
         Err(_) => {
             // Construction failure must not prevent editing. Store None.
@@ -59,19 +66,21 @@ pub(crate) fn refresh_file_watcher(app: &mut super::App) {
     }
 }
 
-fn restart_stopped_watcher(app: &mut super::App) {
+/// Replace a stopped watcher. Returns false once the restart budget is spent.
+fn restart_stopped_watcher(app: &mut super::App) -> bool {
     let restarts = app
         .file_watcher
         .take()
         .map_or(0, |watcher| watcher.restarts());
     if restarts >= MAX_WATCHER_RESTARTS {
-        return;
+        return false;
     }
     app.file_watcher = app.file.path.clone().and_then(|path| {
         file::watcher::FileWatcher::new(path)
             .ok()
             .map(|watcher| watcher.with_restarts(restarts + 1))
     });
+    true
 }
 
 /// Install a pre-constructed FileWatcher (typically a test seam one) into the App.
@@ -187,10 +196,14 @@ pub(crate) fn apply_file_watch_signal(
             }
         }
         FileWatchSignal::Stopped => {
-            restart_stopped_watcher(app);
+            let restarted = restart_stopped_watcher(app);
             // Events sent while the worker was dead are lost; observe once so a
             // change in that gap is still handled like any other hint.
             let observed = apply_file_watch_signal(app, FileWatchSignal::Changed);
+            if !restarted {
+                // A catch-up reload refreshes the watcher; giving up must stick.
+                app.file_watcher = None;
+            }
             if app.file_watcher.is_none() {
                 app.message_error(WATCHER_STOPPED);
             } else if !observed {

@@ -32,6 +32,13 @@ use std::path::PathBuf;
 use crate::file;
 use crate::file::io::observe_external_file;
 
+/// A watcher whose worker keeps dying is not restarted forever.
+const MAX_WATCHER_RESTARTS: u8 = 3;
+pub(super) const WATCHER_RESTARTED: &str =
+    "External-change watching stopped unexpectedly and was restarted.";
+pub(super) const WATCHER_STOPPED: &str = "External-change watching stopped: changes made outside \
+     Catomic will not be noticed. Reopen the file to retry.";
+
 /// Best-effort construct or clear the App's file_watcher based on the current
 /// file path. Safe to call any time; never errors to caller.
 pub(crate) fn refresh_file_watcher(app: &mut super::App) {
@@ -50,6 +57,21 @@ pub(crate) fn refresh_file_watcher(app: &mut super::App) {
             app.file_watcher = None;
         }
     }
+}
+
+fn restart_stopped_watcher(app: &mut super::App) {
+    let restarts = app
+        .file_watcher
+        .take()
+        .map_or(0, |watcher| watcher.restarts());
+    if restarts >= MAX_WATCHER_RESTARTS {
+        return;
+    }
+    app.file_watcher = app.file.path.clone().and_then(|path| {
+        file::watcher::FileWatcher::new(path)
+            .ok()
+            .map(|watcher| watcher.with_restarts(restarts + 1))
+    });
 }
 
 /// Install a pre-constructed FileWatcher (typically a test seam one) into the App.
@@ -81,6 +103,8 @@ pub(crate) fn replace_file_watcher_for_test(
 ///   * else: ignore completely.
 /// - Error => set "File watcher error: {e}", return true. Do not clear pending
 ///   unless a future test proves a reason.
+/// - Stopped => replace the dead watcher (bounded restarts), observe once for
+///   changes missed meanwhile, and say so; return true.
 ///
 /// Manual Ctrl+R still surfaces "No file path." when there is no active path.
 pub(crate) fn apply_file_watch_signal(
@@ -161,6 +185,18 @@ pub(crate) fn apply_file_watch_signal(
                     true
                 }
             }
+        }
+        FileWatchSignal::Stopped => {
+            restart_stopped_watcher(app);
+            // Events sent while the worker was dead are lost; observe once so a
+            // change in that gap is still handled like any other hint.
+            let observed = apply_file_watch_signal(app, FileWatchSignal::Changed);
+            if app.file_watcher.is_none() {
+                app.message_error(WATCHER_STOPPED);
+            } else if !observed {
+                app.message_warning(WATCHER_RESTARTED);
+            }
+            true
         }
         FileWatchSignal::Error(e) => {
             app.message_error(format!("File watcher error: {}", e));

@@ -240,3 +240,78 @@ fn one_call_processes_at_most_one_signal() {
 
     let _ = std::fs::remove_file(&p);
 }
+
+fn app_with_clean_file(label: &str, text: &str) -> (App, String) {
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!(
+        "catomic_watch_stop_{label}_{}.txt",
+        std::process::id()
+    ));
+    let p = tmp.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&p);
+    std::fs::write(&p, text).unwrap();
+    let mut app = App::new(Some(&p)).unwrap();
+    app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
+        .unwrap();
+    assert!(!app.file.dirty);
+    (app, p)
+}
+
+// A dead notify worker drops its sender; that must not read as "no events".
+#[test]
+fn stopped_watcher_is_restarted_and_reported() {
+    let (mut app, p) = app_with_clean_file("restart", "ORIG");
+    let (tw, tx) = crate::file::watcher::FileWatcher::new_for_test(app.file.path.clone().unwrap());
+    crate::app::watch::replace_file_watcher_for_test(&mut app, tw);
+    drop(tx);
+
+    let mut out: Vec<u8> = Vec::new();
+    let had = crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out).unwrap();
+
+    assert!(had, "a stopped watcher is a visible event");
+    assert_eq!(
+        app.message.as_deref(),
+        Some(crate::app::watch::WATCHER_RESTARTED)
+    );
+    let watcher = app.file_watcher.as_ref().expect("watcher restarted");
+    assert_eq!(watcher.restarts(), 1);
+    assert!(
+        !crate::app::watch::check_file_watcher_once(&mut app),
+        "the replacement watcher is live and idle"
+    );
+    let _ = std::fs::remove_file(&p);
+}
+
+// Changes made while the worker was dead are caught by the restart observation.
+#[test]
+fn stopped_watcher_catches_up_on_a_change_missed_while_it_was_dead() {
+    let (mut app, p) = app_with_clean_file("catch_up", "ORIG");
+    let (tw, tx) = crate::file::watcher::FileWatcher::new_for_test(app.file.path.clone().unwrap());
+    crate::app::watch::replace_file_watcher_for_test(&mut app, tw);
+    drop(tx);
+    std::fs::write(&p, "CHANGED WHILE DEAD").unwrap();
+
+    assert!(crate::app::watch::check_file_watcher_once(&mut app));
+
+    assert_eq!(app.buffer.to_string(), "CHANGED WHILE DEAD");
+    assert!(app.file_watcher.is_some());
+    let _ = std::fs::remove_file(&p);
+}
+
+// A worker that keeps dying is not restarted forever and stays visible.
+#[test]
+fn repeatedly_stopping_watcher_gives_up_with_a_persistent_error() {
+    let (mut app, p) = app_with_clean_file("give_up", "ORIG");
+    let (tw, tx) = crate::file::watcher::FileWatcher::new_for_test(app.file.path.clone().unwrap());
+    crate::app::watch::replace_file_watcher_for_test(&mut app, tw.with_restarts(3));
+    drop(tx);
+
+    assert!(crate::app::watch::check_file_watcher_once(&mut app));
+
+    assert!(app.file_watcher.is_none());
+    assert_eq!(
+        app.message.as_deref(),
+        Some(crate::app::watch::WATCHER_STOPPED)
+    );
+    let _ = std::fs::remove_file(&p);
+}

@@ -784,6 +784,10 @@ rewrites even when every available metadata field collides.
   unless `[files] auto_reload = false`.
 - A dirty buffer is never discarded automatically.
 - `Ctrl+R` explicitly checks for an external change or confirms a reload.
+- If the background file watcher stops unexpectedly, Catomic restarts it, checks
+  the file once for changes it may have missed, and says so in the status bar.
+  After three failed restarts it reports that external changes will not be
+  noticed; `Ctrl+R` still checks on demand.
 
 Every accepted reload compares the exact prior buffer revision with the exact
 verified disk revision that is installed. Added graphemes use the semantic

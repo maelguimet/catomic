@@ -220,8 +220,9 @@ impl TerminalRestorer {
         }
         let _ = crossterm::terminal::disable_raw_mode();
         discard_pending_input();
+        let retry_never_repeats_raw_mode_release = remaining & !RAW_MODE;
         self.active_modes
-            .store(remaining & !RAW_MODE, Ordering::Release);
+            .store(retry_never_repeats_raw_mode_release, Ordering::Release);
         result
     }
 

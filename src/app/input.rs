@@ -83,6 +83,8 @@ pub(super) fn record_content_edit(app: &mut super::App, message: Option<String>)
     lint::invalidate(app);
     app.selection.clear();
     refresh_dirty(&mut app.file, &*app.buffer);
+    // An edit can join the text around the cursor into one extended grapheme
+    // (regional indicators, ZWJ); snap forward so the next motion treats it as one.
     navigation::snap_current_grapheme_forward(app)?;
     completion::after_content_edit(app)?;
     app.external_changes

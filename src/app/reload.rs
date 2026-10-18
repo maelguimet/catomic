@@ -227,6 +227,13 @@ fn observed_present_snapshot(obs: &ExternalFileObservation) -> io::Result<&FileS
     }
 }
 
+fn ensure_format_and_paged_baseline_describe_confirmed_revision(
+    path: &Path,
+    confirmed_revision: &FileSnapshot,
+) -> io::Result<()> {
+    crate::file::io::ensure_path_matches_snapshot(path, confirmed_revision)
+}
+
 fn build_modified_reload_buffer(
     path: &Path,
     expected: &FileSnapshot,
@@ -267,7 +274,7 @@ fn build_modified_reload_buffer(
             }
             source.ensure_descriptor_unchanged(path)?;
             let buffer = buffer::PagedFileBuffer::from_file(source.into_file(), page_lines)?;
-            crate::file::io::ensure_path_matches_snapshot(path, &loaded_snapshot)?;
+            ensure_format_and_paged_baseline_describe_confirmed_revision(path, &loaded_snapshot)?;
             (Box::new(buffer) as Box<dyn buffer::Buffer>, format)
         }
         OpenSizeDecision::Normal | OpenSizeDecision::Warn => {

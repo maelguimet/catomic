@@ -30,7 +30,7 @@ type PanicHook = Box<dyn Fn(&std::panic::PanicHookInfo<'_>) + Sync + Send + 'sta
 pub(crate) const PANIC_NOTICE: &str =
     "catomic: the cat knocked over the editor. Terminal restored; your last explicit save is safe.";
 
-type RestoreFn = Arc<dyn Fn() + Sync + Send + 'static>;
+type IdempotentRestoreFn = Arc<dyn Fn() + Sync + Send + 'static>;
 
 /// Installs a panic hook that restores terminal state before chaining to the
 /// previously installed hook. Restores the previous hook when dropped.
@@ -43,7 +43,7 @@ type RestoreFn = Arc<dyn Fn() + Sync + Send + 'static>;
 /// and reported once the terminal has been restored.
 pub(crate) struct PanicRestoreGuard {
     previous: Arc<Mutex<Option<PanicHook>>>,
-    restore: RestoreFn,
+    restore: IdempotentRestoreFn,
     worker_panic: Arc<Mutex<Option<String>>>,
 }
 
@@ -60,7 +60,7 @@ impl PanicRestoreGuard {
     }
 
     fn install_with_restore(restore: impl Fn() + Sync + Send + 'static) -> Self {
-        let restore: RestoreFn = Arc::new(restore);
+        let restore: IdempotentRestoreFn = Arc::new(restore);
         let previous = Arc::new(Mutex::new(Some(std::panic::take_hook())));
         let worker_panic = Arc::new(Mutex::new(None));
         let hook_previous = previous.clone();

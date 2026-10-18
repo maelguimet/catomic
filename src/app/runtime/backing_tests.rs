@@ -87,7 +87,7 @@ fn blocked_content_input_disarms_quit_and_reload_confirmations() {
             let fixture = Fixture::new(false);
             let mut app = fixture.app();
             let mut out = Vec::new();
-            app.dispatch_ready_terminal_event(
+            app.apply_ready_tasks_then_dispatch_terminal_event(
                 &mut out,
                 key(KeyCode::Char('X'), KeyModifiers::NONE),
             )
@@ -95,11 +95,11 @@ fn blocked_content_input_disarms_quit_and_reload_confirmations() {
             let history = app.buffer.edit_history_position();
             fixture.change_in_place();
             let confirm = key(KeyCode::Char(confirmation), KeyModifiers::CONTROL);
-            app.dispatch_ready_terminal_event(&mut out, confirm.clone())
+            app.apply_ready_tasks_then_dispatch_terminal_event(&mut out, confirm.clone())
                 .unwrap();
             assert!(!app.should_quit);
             assert!(app.file.dirty);
-            app.dispatch_ready_terminal_event(&mut out, blocked_event)
+            app.apply_ready_tasks_then_dispatch_terminal_event(&mut out, blocked_event)
                 .unwrap();
             assert!(!app.pending_quit_confirm);
             assert!(!app
@@ -112,7 +112,7 @@ fn blocked_content_input_disarms_quit_and_reload_confirmations() {
                 .unwrap()
                 .contains("Paged content unavailable"));
 
-            app.dispatch_ready_terminal_event(&mut out, confirm.clone())
+            app.apply_ready_tasks_then_dispatch_terminal_event(&mut out, confirm.clone())
                 .unwrap();
             assert!(
                 !app.should_quit,
@@ -125,7 +125,7 @@ fn blocked_content_input_disarms_quit_and_reload_confirmations() {
             assert_eq!(app.buffer.edit_history_position(), history);
 
             // A genuinely repeated, visible confirmation still works.
-            app.dispatch_ready_terminal_event(&mut out, confirm)
+            app.apply_ready_tasks_then_dispatch_terminal_event(&mut out, confirm)
                 .unwrap();
             if confirmation == 'q' {
                 assert!(app.should_quit);
@@ -148,15 +148,21 @@ fn dirty_paged_drift_keeps_the_session_and_another_dirty_buffer_usable() {
         Some(crate::file::size::FileSizeTier::Huge)
     );
     let mut out = term::RuntimeOutput::new(Vec::new());
-    app.dispatch_ready_terminal_event(&mut out, key(KeyCode::Char('X'), KeyModifiers::NONE))
-        .unwrap();
+    app.apply_ready_tasks_then_dispatch_terminal_event(
+        &mut out,
+        key(KeyCode::Char('X'), KeyModifiers::NONE),
+    )
+    .unwrap();
     assert_eq!(app.buffer.line(0).unwrap(), "Xfirst");
     let history = app.buffer.edit_history_position();
     let cursor = app.buffer.cursor();
 
     app.open_file_buffer(&other).unwrap();
-    app.dispatch_ready_terminal_event(&mut out, key(KeyCode::Char('A'), KeyModifiers::NONE))
-        .unwrap();
+    app.apply_ready_tasks_then_dispatch_terminal_event(
+        &mut out,
+        key(KeyCode::Char('A'), KeyModifiers::NONE),
+    )
+    .unwrap();
     app.switch_buffer(super::super::buffers::BufferDirection::Previous);
     fixture.change_in_place();
     app.file_watcher
@@ -180,7 +186,8 @@ fn dirty_paged_drift_keeps_the_session_and_another_dirty_buffer_usable() {
         }),
         Event::Resize(40, 10),
     ] {
-        app.dispatch_ready_terminal_event(&mut out, event).unwrap();
+        app.apply_ready_tasks_then_dispatch_terminal_event(&mut out, event)
+            .unwrap();
         assert!(!app.should_quit);
         assert!(app.file.dirty);
         assert_eq!(app.buffer.edit_history_position(), history);
@@ -189,21 +196,36 @@ fn dirty_paged_drift_keeps_the_session_and_another_dirty_buffer_usable() {
     assert!(app.buffer.try_visible_lines_window(0, 2, 0, 40).is_err());
     assert!(app.buffer.write_to(&mut Vec::new()).is_err());
 
-    app.dispatch_ready_terminal_event(&mut out, key(KeyCode::PageDown, KeyModifiers::ALT))
-        .unwrap();
-    app.dispatch_ready_terminal_event(&mut out, key(KeyCode::Char('B'), KeyModifiers::NONE))
-        .unwrap();
+    app.apply_ready_tasks_then_dispatch_terminal_event(
+        &mut out,
+        key(KeyCode::PageDown, KeyModifiers::ALT),
+    )
+    .unwrap();
+    app.apply_ready_tasks_then_dispatch_terminal_event(
+        &mut out,
+        key(KeyCode::Char('B'), KeyModifiers::NONE),
+    )
+    .unwrap();
     assert_eq!(app.buffer.to_string(), "ABother");
-    app.dispatch_ready_terminal_event(&mut out, key(KeyCode::Char('s'), KeyModifiers::CONTROL))
-        .unwrap();
+    app.apply_ready_tasks_then_dispatch_terminal_event(
+        &mut out,
+        key(KeyCode::Char('s'), KeyModifiers::CONTROL),
+    )
+    .unwrap();
     assert_eq!(fs::read_to_string(&other).unwrap(), "ABother");
     assert_eq!(app.dirty_buffer_count(), 1);
-    app.dispatch_ready_terminal_event(&mut out, key(KeyCode::Char('q'), KeyModifiers::CONTROL))
-        .unwrap();
+    app.apply_ready_tasks_then_dispatch_terminal_event(
+        &mut out,
+        key(KeyCode::Char('q'), KeyModifiers::CONTROL),
+    )
+    .unwrap();
     assert!(!app.should_quit);
     assert!(app.pending_quit_confirm);
-    app.dispatch_ready_terminal_event(&mut out, key(KeyCode::PageUp, KeyModifiers::ALT))
-        .unwrap();
+    app.apply_ready_tasks_then_dispatch_terminal_event(
+        &mut out,
+        key(KeyCode::PageUp, KeyModifiers::ALT),
+    )
+    .unwrap();
     assert!(app.file.dirty);
     assert_eq!(app.buffer.edit_history_position(), history);
 }
@@ -410,8 +432,11 @@ fn clean_paged_backing_drift_still_auto_reloads_before_the_next_edit() {
         .inject_signal(FileWatchSignal::Changed);
     let mut out = term::RuntimeOutput::new(Vec::new());
 
-    app.dispatch_ready_terminal_event(&mut out, key(KeyCode::Char('X'), KeyModifiers::NONE))
-        .unwrap();
+    app.apply_ready_tasks_then_dispatch_terminal_event(
+        &mut out,
+        key(KeyCode::Char('X'), KeyModifiers::NONE),
+    )
+    .unwrap();
 
     assert_eq!(app.buffer.line(0).unwrap(), "XFIRST");
     assert!(app.file.dirty);

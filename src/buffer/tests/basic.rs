@@ -27,12 +27,9 @@ fn simple_buffer_basic_editing() {
 #[test]
 fn simple_buffer_delete_and_join() {
     let mut b = SimpleBuffer::from_text("hello\nworld");
-    // Move to start of second line and backspace to join
     b.move_down();
-    b.move_left(); // shouldn't go before 0
-    b.delete_back(); // should join "hello" + "world" ? depends on cursor
+    b.move_left();
+    b.delete_back();
 
-    // This test is intentionally loose in Phase 0 scaffolding.
-    // Real tests will be much stricter.
     let _ = b;
 }

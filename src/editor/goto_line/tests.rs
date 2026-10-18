@@ -13,7 +13,6 @@ impl GotoLineTask {
         timeout: std::time::Duration,
     ) -> Result<(), mpsc::RecvTimeoutError> {
         let result = self.receiver.recv_timeout(timeout)?;
-        // Leave completion available to the ordinary nonblocking App poll.
         let (sender, receiver) = mpsc::channel();
         assert!(sender.send(result).is_ok());
         self.receiver = receiver;
@@ -150,7 +149,6 @@ fn readiness_wait_preserves_completion_after_the_old_poll_budget() {
             .send(GotoLineResult::Error("controlled failure".into()))
             .is_ok());
     });
-    // Gate the worker so no scheduler can complete it inside the old budget.
     for _ in 0..10_000 {
         assert!(task.try_result().is_none());
         std::thread::yield_now();

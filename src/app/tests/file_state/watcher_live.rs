@@ -17,8 +17,6 @@ use crossterm::event::{KeyCode, KeyModifiers};
 #[test]
 #[ignore = "live OS notify timing smoke (unreliable on CI; run manually with --ignored)"]
 fn live_smoke_watcher_sees_external_change_and_auto_reloads() {
-    // Only runs when explicitly requested (cargo test -- --ignored).
-    // Default full suite must stay fully deterministic (seams only).
     let mut tmp = std::env::temp_dir();
     tmp.push(format!("catomic_2ad_live_smoke_{}.txt", std::process::id()));
     let p = tmp.to_string_lossy().to_string();
@@ -26,7 +24,6 @@ fn live_smoke_watcher_sees_external_change_and_auto_reloads() {
     std::fs::write(&p, "LIVEBASE").unwrap();
 
     let mut app = App::new(Some(&p)).unwrap();
-    // Must have a real watcher for the watchable parent in this smoke test.
     if app.file_watcher.is_none() {
         let _ = std::fs::remove_file(&p);
         eprintln!("skipping live smoke: no watcher (parent not watchable in this env)");
@@ -35,7 +32,6 @@ fn live_smoke_watcher_sees_external_change_and_auto_reloads() {
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
 
-    // External write (another "process").
     std::fs::write(&p, "LIVEEXT").unwrap();
 
     // Bounded non-blocking checks only; real delivery best-effort/env-dependent.
@@ -49,7 +45,6 @@ fn live_smoke_watcher_sees_external_change_and_auto_reloads() {
             reloaded = true;
             break;
         }
-        // No long sleep; tiny spin to allow scheduler/notify thread a tick.
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
 

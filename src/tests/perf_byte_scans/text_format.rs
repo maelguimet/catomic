@@ -122,8 +122,6 @@ fn run_scenario(scenario: Scenario) {
     let expected_output_len = expected_output.len();
     let expected_output_hash = hash_bytes(&expected_output);
     drop(expected_output);
-    // The writer receives document content; the format BOM is emitted separately.
-    // Keep CRLF boundaries to exercise conversion of raw paged source ranges.
     let content = bytes.strip_prefix(UTF8_BOM).unwrap_or(&bytes);
     let chunks = streaming_chunks(content);
     let crlf_split_boundary = chunks

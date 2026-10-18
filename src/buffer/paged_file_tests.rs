@@ -830,8 +830,6 @@ fn preserving_paged_originals_keeps_history_when_staging_or_commit_fails() {
         }
         assert_eq!(fs::read_to_string(&alias).unwrap(), "first\nsecond\nthird");
         assert_eq!(buffer.edit_history_position(), position);
-        // Both resident page originals must have moved to the private snapshot,
-        // including the inactive page retained for undo.
         fs::write(&alias, "later external rewrite").unwrap();
         let mut actual = Vec::new();
         buffer.write_to(&mut actual).unwrap();
@@ -993,7 +991,6 @@ fn preserving_backing_for_a_save_never_waits_for_the_private_copy_ctime() {
     std::fs::write(&path, "first\nsecond\nthird").unwrap();
     let mut buffer = PagedFileBuffer::open(&path, 1).unwrap();
     buffer.insert_char('X');
-    // The original was just written; let its own baseline promote first.
     buffer.ensure_trusted().unwrap();
     super::backing::SETTLE_WAITS.with(|waits| waits.set(0));
 
@@ -1108,7 +1105,6 @@ fn pending_baseline_refuses_whole_file_workers_until_settled() {
     let _clock = InjectedClock::set(changed - std::time::Duration::from_millis(1_500));
     let buffer = PagedFileBuffer::open(&path, 1).unwrap();
 
-    // Search and goto would read pages the open never digested.
     let error = buffer.descriptor_source().map(|_| ()).unwrap_err();
     assert_eq!(error.kind(), std::io::ErrorKind::WouldBlock, "{error}");
 
@@ -1122,7 +1118,6 @@ fn rewrite_beyond_the_digested_page_in_the_pending_tick_never_mixes_revisions() 
     use std::io::{Seek, SeekFrom};
 
     let path = temp_path("pending_rewrite_tail");
-    // The open scans page 1 in one chunk; the tail is never read or digested.
     let filler = "a".repeat(2 * crate::buffer::large_file::SCAN_CHUNK_BYTES);
     let original = format!("first\n{filler}\nsecond\nthird");
     let tail = (original.len() - "third".len()) as u64;
@@ -1139,7 +1134,6 @@ fn rewrite_beyond_the_digested_page_in_the_pending_tick_never_mixes_revisions() 
         let mut buffer = PagedFileBuffer::open(&path, 1).unwrap();
         buffer.insert_char('X');
 
-        // Same length and restored mtime, outside the digested range.
         external.seek(SeekFrom::Start(tail)).unwrap();
         external.write_all(b"THIRD").unwrap();
         external.set_modified(modified).unwrap();
@@ -1147,8 +1141,6 @@ fn rewrite_beyond_the_digested_page_in_the_pending_tick_never_mixes_revisions() 
         drop(_clock);
         let _clock = InjectedClock::set(changed + std::time::Duration::from_secs(3));
 
-        // Only digested bytes were served before promotion, so a promoted
-        // document is the current revision plus the local edit, never a mix.
         let mut written = Vec::new();
         match buffer.write_to(&mut written) {
             Ok(()) => {
@@ -1181,7 +1173,6 @@ fn future_ctime_save_fails_closed_when_page_one_was_rewritten() {
     let error = buffer
         .preserve_file_backing(&mut |_| panic!("no copy is made after a digest mismatch"))
         .unwrap_err();
-    // Whether the rewrite moved ctime or reused it, the save is refused.
     assert!(super::BackingFileChanged::is(&error), "{error}");
     std::fs::remove_file(path).unwrap();
 }
@@ -1194,7 +1185,6 @@ fn future_ctime_save_fails_closed_when_the_preserved_copy_differs() {
     let mut buffer = PagedFileBuffer::open(&path, 1).unwrap();
     buffer.insert_char('X');
 
-    // A same-length rewrite of page one that lands while the copy is made.
     let error = buffer
         .preserve_file_backing(&mut |source| {
             let copy = crate::file::io::snapshot_linked_file(source)?.unwrap();

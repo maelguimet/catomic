@@ -238,7 +238,6 @@ fn stdin_waiting_for_a_producer_can_be_cancelled_from_the_controlling_terminal()
     editor.send_keys(b"\x03")?;
     editor.wait_for_exit_code(130)?;
     assert!(!editor.output_string().contains("\x1b[?1049h"));
-    // Keep the producer open through exit: cancellation cannot depend on EOF.
     drop(producer);
     Ok(())
 }

@@ -102,13 +102,13 @@ fn app_ctrl_s_after_dirty_clears_dirty_and_pending() {
     // trigger quit warn
     app.handle_key(make_key(KeyCode::Char('q'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(app.pending_quit_confirm);
+    assert!(app.confirmation.is_quit());
 
     // Ctrl+S: success clears dirty + pending + msg
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(!app.file.dirty);
-    assert!(!app.pending_quit_confirm);
+    assert!(!app.confirmation.is_quit());
     assert!(app.message.is_none());
 
     let _ = std::fs::remove_file(&p);

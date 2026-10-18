@@ -50,7 +50,7 @@ fn queued_changed_external_modified_auto_reloads_and_renders() {
 
     assert!(had, "should report handled for visible Modified");
     assert!(!out.is_empty(), "must have rendered");
-    assert!(app.pending_reload.is_none());
+    assert!(app.observed_change.is_none());
     assert!(app.message.is_none());
     assert_eq!(app.buffer.to_string(), "ORIGEXT");
     assert!(!app.file.dirty, "dirty must be unchanged");
@@ -87,7 +87,7 @@ fn queued_deleted_external_delete_auto_clears_and_renders() {
 
     assert!(had);
     assert!(!out.is_empty());
-    assert!(app.pending_reload.is_none());
+    assert!(app.observed_change.is_none());
     assert_eq!(app.message.as_deref(), None);
     assert_eq!(app.buffer.to_string(), "");
     assert!(!app.file.dirty);
@@ -113,7 +113,7 @@ fn queued_changed_on_unchanged_ignored_no_render() {
 
     // sentinel that must survive
     app.message_warning("Prior warning.");
-    let before_pend = app.pending_reload.clone();
+    let before_pend = (app.observed_change.clone(), app.confirmation.clone());
 
     let path = app.file.path.clone().unwrap();
     let (tw, _tx) = crate::file::watcher::FileWatcher::new_for_test(path);
@@ -133,7 +133,10 @@ fn queued_changed_on_unchanged_ignored_no_render() {
         Some("Prior warning."),
         "must preserve prior message"
     );
-    assert_eq!(app.pending_reload, before_pend);
+    assert_eq!(
+        (app.observed_change.clone(), app.confirmation.clone()),
+        before_pend
+    );
     assert_eq!(app.buffer.to_string(), "BASE");
     assert!(!app.file.dirty);
 

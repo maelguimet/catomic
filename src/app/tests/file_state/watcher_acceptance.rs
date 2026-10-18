@@ -61,7 +61,7 @@ fn watcher_changed_clean_buffer_auto_reloads() {
         None,
         "successful reload restores normal status"
     );
-    assert!(app.pending_reload.is_none());
+    assert!(app.observed_change.is_none());
     let external = app
         .external_changes
         .visible(app.buffer.content_revision())
@@ -163,7 +163,7 @@ fn watcher_deleted_clean_buffer_auto_clears() {
 
     let mut out: Vec<u8> = Vec::new();
     let _ = crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out).unwrap();
-    assert!(app.pending_reload.is_none());
+    assert!(app.observed_change.is_none());
 
     assert_eq!(
         app.buffer.to_string(),
@@ -177,7 +177,7 @@ fn watcher_deleted_clean_buffer_auto_clears() {
         "snapshot must be Absent after clear"
     );
     assert_eq!(app.message.as_deref(), None);
-    assert!(app.pending_reload.is_none());
+    assert!(app.observed_change.is_none());
 
     // recreate for cleanup hygiene
     std::fs::write(&p, "TODEL").unwrap();
@@ -220,10 +220,7 @@ fn watcher_changed_dirty_requires_two_explicit_ctrl_r_actions() {
         app.message
     );
     assert!(
-        !app.pending_reload
-            .as_ref()
-            .expect("watcher must retain the observed revision")
-            .is_explicitly_armed,
+        app.observed_change.is_some() && app.confirmation.armed_reload().is_none(),
         "watcher warning must not count as the first reload action"
     );
 
@@ -232,12 +229,7 @@ fn watcher_changed_dirty_requires_two_explicit_ctrl_r_actions() {
         .unwrap();
     assert_eq!(app.buffer.to_string(), "xBASE");
     assert!(app.file.dirty);
-    assert!(
-        app.pending_reload
-            .as_ref()
-            .expect("first explicit action must arm")
-            .is_explicitly_armed
-    );
+    assert!(app.confirmation.armed_reload().is_some());
     assert!(app
         .message
         .as_deref()
@@ -249,7 +241,7 @@ fn watcher_changed_dirty_requires_two_explicit_ctrl_r_actions() {
         .unwrap();
     assert_eq!(app.buffer.to_string(), "BASEEXT");
     assert!(!app.file.dirty);
-    assert!(app.pending_reload.is_none());
+    assert!(app.observed_change.is_none());
 
     let _ = std::fs::remove_file(&p);
 }
@@ -273,21 +265,11 @@ fn watcher_drift_invalidates_dirty_reload_confirmation() {
         &mut app,
         crate::file::watcher::FileWatchSignal::Changed,
     );
-    assert!(
-        !app.pending_reload
-            .as_ref()
-            .expect("watcher must retain external-A")
-            .is_explicitly_armed
-    );
+    assert!(app.observed_change.is_some() && app.confirmation.armed_reload().is_none());
 
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(
-        app.pending_reload
-            .as_ref()
-            .expect("explicit action must arm external-A")
-            .is_explicitly_armed
-    );
+    assert!(app.confirmation.armed_reload().is_some());
 
     std::fs::write(&p, "external-B").unwrap();
     crate::app::watch::apply_file_watch_signal(
@@ -295,9 +277,7 @@ fn watcher_drift_invalidates_dirty_reload_confirmation() {
         crate::file::watcher::FileWatchSignal::Changed,
     );
     assert!(
-        app.pending_reload
-            .as_ref()
-            .is_some_and(|pending| !pending.is_explicitly_armed),
+        app.observed_change.is_some() && app.confirmation.armed_reload().is_none(),
         "drift must retain external-B as a passive observation"
     );
     assert!(app.message.as_deref().unwrap().contains("re-arm"));
@@ -306,7 +286,7 @@ fn watcher_drift_invalidates_dirty_reload_confirmation() {
 
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(app.pending_reload.is_some());
+    assert!(app.observed_change.is_some());
     assert_eq!(app.buffer.to_string(), "xBASE");
     assert!(app.file.dirty);
 
@@ -346,26 +326,18 @@ fn watcher_observation_local_edit_retains_passive_state_then_next_ctrl_r_arms() 
 
     let mut out: Vec<u8> = Vec::new();
     let _ = crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out).unwrap();
-    assert!(
-        !app.pending_reload
-            .as_ref()
-            .expect("watcher must retain the revision")
-            .is_explicitly_armed
-    );
+    assert!(app.observed_change.is_some() && app.confirmation.armed_reload().is_none());
 
     // Local edit cancels confirmation but retains the observed divergence.
     app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::NONE))
         .unwrap();
-    assert!(app
-        .pending_reload
-        .as_ref()
-        .is_some_and(|pending| !pending.is_explicitly_armed));
+    assert!(app.observed_change.is_some() && app.confirmation.armed_reload().is_none());
 
     // next Ctrl+R must re-arm (first press behavior), not auto-reload
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(
-        app.pending_reload.is_some(),
+        app.observed_change.is_some(),
         "after local edit disarms the watcher observation, next Ctrl+R must arm"
     );
     // buffer still has the 'z' edit, not external
@@ -374,6 +346,6 @@ fn watcher_observation_local_edit_retains_passive_state_then_next_ctrl_r_arms() 
     let _ = std::fs::remove_file(&p);
 }
 
-// (watcher-observed + successful save clear of pending_reload is exercised at code level in
+// (watcher-observed + successful save clear of the observed change is exercised at code level in
 // save.rs:do_atomic_save and is not required as a new acceptance case here per "add only if
 // not already covered"; save-conflict semantics are untouched.)

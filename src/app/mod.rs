@@ -29,6 +29,7 @@ mod backing;
 mod buffers;
 mod command_prompt;
 mod completion;
+mod confirmation;
 mod construction;
 mod external_command;
 mod external_diff;
@@ -111,23 +112,13 @@ pub struct App {
     /// Semantic role supplied by the producer of `message`. Prompt and confirmation
     /// state may override it while those states are active.
     pub(crate) message_role: crate::terminal::render::StatusRole,
-    /// When true, an immediately following quit action while dirty will force quit (no save).
-    pub pending_quit_confirm: bool,
-    /// When Some, records a token bound to the concrete observed disk state
-    /// (path + ExternalFileStatus + live FileSnapshot) at the time of a first
-    /// Ctrl+S refusal. Second Ctrl+S forces only if a fresh observation matches
-    /// the token (for Modified: identical snapshot; Deleted/Unknown by kind).
-    /// Cleared on content edits, successful save, and path changes.
-    /// Any unrelated editor action cancels it; resize/render must not touch it.
-    pub pending_save_conflict: Option<save::PendingSaveConflict>,
-    /// Pending reload observation and confirmation. Watcher notifications record the exact
-    /// Modified/Deleted revision without arming it. The first explicit Ctrl+R arms that
-    /// revision; the second reloads only on an exact snapshot match.
-    /// Content edits and unrelated actions cancel only an explicit destructive
-    /// confirmation; the passive observation remains until the disk relationship
-    /// is accepted, saved, or freshly observed unchanged. Resize/render do not clear.
-    /// NoPath/Unchanged clear it; Unknown remains passive and never arms.
-    pub pending_reload: Option<reload::PendingReload>,
+    /// The one destructive confirmation the next matching action may complete.
+    /// Any unrelated editor action disarms it; resize and render never touch it.
+    pub(crate) confirmation: confirmation::Confirmation,
+    /// Unresolved disk change for the active buffer. Watcher observations record it
+    /// without arming anything; it stays until the disk relationship is accepted,
+    /// saved, or observed unchanged.
+    pub(crate) observed_change: Option<reload::ObservedExternalChange>,
     /// Explicit Ctrl+F prompt/worker state. No worker exists before invocation.
     pub(crate) search: search::SearchUiState,
     /// Global transient goto/command prompt. It constructs no background service.

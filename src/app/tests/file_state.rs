@@ -44,14 +44,14 @@ fn app_quit_dirty_first_sets_pending_and_message_second_quits() {
     app.handle_key(make_key(KeyCode::Char('x'), KeyModifiers::NONE))
         .unwrap();
     assert!(app.file.dirty);
-    assert!(!app.pending_quit_confirm);
+    assert!(!app.confirmation.is_quit());
     assert!(app.message.is_none());
 
     // first Ctrl+Q: no quit, sets pending + msg
     app.handle_key(make_key(KeyCode::Char('q'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(!app.should_quit, "first dirty Q does not quit");
-    assert!(app.pending_quit_confirm);
+    assert!(app.confirmation.is_quit());
     assert_eq!(
         app.message_role,
         crate::terminal::render::StatusRole::Warning
@@ -87,7 +87,7 @@ fn app_dirty_ctrl_q_first_renders_warning_immediately() {
     .unwrap();
 
     assert!(!app.should_quit, "first dirty Q does not quit");
-    assert!(app.pending_quit_confirm);
+    assert!(app.confirmation.is_quit());
     let rendered = String::from_utf8_lossy(&out);
     assert!(
         rendered.contains("Unsaved changes") && rendered.contains("Ctrl+Q again"),
@@ -109,12 +109,12 @@ fn movement_cancels_pending_quit_and_message() {
         .unwrap();
     app.handle_key(make_key(KeyCode::Char('q'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(app.pending_quit_confirm);
+    assert!(app.confirmation.is_quit());
     assert!(app.message.is_some());
 
     app.handle_key(make_key(KeyCode::Left, KeyModifiers::NONE))
         .unwrap();
-    assert!(!app.pending_quit_confirm);
+    assert!(!app.confirmation.is_quit());
     assert!(app.message.is_none());
 }
 
@@ -125,14 +125,14 @@ fn content_edit_clears_pending_quit_and_message() {
         .unwrap();
     app.handle_key(make_key(KeyCode::Char('q'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(app.pending_quit_confirm);
+    assert!(app.confirmation.is_quit());
     assert!(app.message.is_some());
 
     // Any content mutation (printable char) must clear via the shared path.
     app.handle_key(make_key(KeyCode::Char('y'), KeyModifiers::NONE))
         .unwrap();
     assert!(
-        !app.pending_quit_confirm,
+        !app.confirmation.is_quit(),
         "content edit must clear pending quit"
     );
     assert!(app.message.is_none(), "content edit must clear message");
@@ -146,13 +146,13 @@ fn undo_redo_clear_pending_and_message_even_on_noop() {
         .unwrap();
     app.handle_key(make_key(KeyCode::Char('q'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(app.pending_quit_confirm);
+    assert!(app.confirmation.is_quit());
     assert!(app.message.is_some());
 
     // Undo (there is history) clears via finish_content_edit.
     app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(!app.pending_quit_confirm);
+    assert!(!app.confirmation.is_quit());
     assert!(app.message.is_none());
 
     // Re-arm pending via Q (still dirty from the 'x' that was undone? wait: after undo we are at saved, so make dirty again).
@@ -160,44 +160,26 @@ fn undo_redo_clear_pending_and_message_even_on_noop() {
         .unwrap();
     app.handle_key(make_key(KeyCode::Char('q'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(app.pending_quit_confirm);
+    assert!(app.confirmation.is_quit());
     // Redo no history in this state (or after undo boundary) still exercises the clear path.
     app.handle_key(make_key(KeyCode::Char('y'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(!app.pending_quit_confirm);
+    assert!(!app.confirmation.is_quit());
 }
 
 #[test]
 fn movement_cancels_save_conflict_and_downgrades_reload_confirmation() {
-    let mut app = App::new(None).unwrap();
-    // Directly arm both to exercise the shared unrelated-action cancellation path.
-    app.pending_save_conflict = Some(super::super::save::PendingSaveConflict {
-        path: std::path::PathBuf::from("x"),
-        status: crate::file::io::ExternalFileStatus::Modified,
-        snapshot: None,
-        is_command_prompt_save_as: false,
-    });
-    app.pending_reload = Some(super::super::reload::PendingReload {
-        path: std::path::PathBuf::from("x"),
-        status: crate::file::io::ExternalFileStatus::Modified,
-        snapshot: None,
-        is_explicitly_armed: true,
-    });
-    app.message_warning("armed");
+    use super::super::confirmation::fixtures::{assert_disarmed, editor_confirmations};
+    for (name, arm) in editor_confirmations() {
+        let mut app = App::new(None).unwrap();
+        arm(&mut app);
 
-    app.handle_key(make_key(KeyCode::Left, KeyModifiers::NONE))
-        .unwrap();
-    assert!(
-        app.pending_save_conflict.is_none(),
-        "movement must cancel save conflict pending"
-    );
-    assert!(
-        app.pending_reload
-            .as_ref()
-            .is_some_and(|pending| !pending.is_explicitly_armed),
-        "movement must retain only the passive reload observation"
-    );
-    assert!(app.message.is_none());
+        app.handle_key(make_key(KeyCode::Left, KeyModifiers::NONE))
+            .unwrap();
+
+        assert_disarmed(&app, name);
+        assert!(app.message.is_none());
+    }
 }
 
 // (hub ends cleanly)

@@ -96,7 +96,8 @@ pub(super) fn start(
 }
 
 pub(crate) fn is_running(app: &App) -> bool {
-    !app.pending_quit_confirm && super::review(app).is_some_and(|review| review.candidate.is_none())
+    !app.confirmation.is_quit()
+        && super::review(app).is_some_and(|review| review.candidate.is_none())
 }
 
 pub(crate) fn active_match(app: &App) -> Option<SearchMatch> {
@@ -168,7 +169,7 @@ pub(crate) fn poll(app: &mut App, out: &mut dyn TerminalOutput) -> io::Result<()
     if !review.current(app) {
         return finish(app, out, &review, "stopped because the source changed");
     }
-    if app.pending_quit_confirm || review.candidate.is_some() {
+    if app.confirmation.is_quit() || review.candidate.is_some() {
         super::put_review(app, review);
         return Ok(());
     }

@@ -7,6 +7,7 @@
 //! Invariants: loaded only under #[cfg(test)] via `mod tests;` in app.rs;
 //!              uses `use super::*;` to access private App methods (e.g. handle_key_with).
 
+mod confirmation;
 mod editing;
 mod file_state;
 mod focus;

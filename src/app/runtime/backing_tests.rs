@@ -101,11 +101,8 @@ fn blocked_content_input_disarms_quit_and_reload_confirmations() {
             assert!(app.file.dirty);
             app.dispatch_ready_terminal_event(&mut out, blocked_event)
                 .unwrap();
-            assert!(!app.pending_quit_confirm);
-            assert!(!app
-                .pending_reload
-                .as_ref()
-                .is_some_and(|pending| pending.is_explicitly_armed));
+            assert!(!app.confirmation.is_quit());
+            assert!(app.confirmation.armed_reload().is_none());
             assert!(app
                 .message
                 .as_deref()
@@ -201,7 +198,7 @@ fn dirty_paged_drift_keeps_the_session_and_another_dirty_buffer_usable() {
     app.dispatch_ready_terminal_event(&mut out, key(KeyCode::Char('q'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(!app.should_quit);
-    assert!(app.pending_quit_confirm);
+    assert!(app.confirmation.is_quit());
     app.dispatch_ready_terminal_event(&mut out, key(KeyCode::PageUp, KeyModifiers::ALT))
         .unwrap();
     assert!(app.file.dirty);
@@ -267,7 +264,7 @@ fn paged_drift_without_watcher_keeps_save_as_and_reload_confirmation_available()
     )
     .unwrap();
     assert!(app.file.dirty);
-    assert!(app.pending_reload.as_ref().unwrap().is_explicitly_armed);
+    assert!(app.confirmation.armed_reload().is_some());
     assert!(String::from_utf8_lossy(&out).contains("discard"));
     app.handle_key_with(
         &mut out,
@@ -367,7 +364,7 @@ fn drift_after_an_edit_preserves_committed_bookkeeping_when_late_read_fails() {
     )
     .unwrap();
     assert!(!app.should_quit);
-    assert!(app.pending_quit_confirm);
+    assert!(app.confirmation.is_quit());
 }
 
 #[test]

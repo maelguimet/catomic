@@ -42,7 +42,7 @@ fn apply_file_watch_signal_changed_on_unchanged_disk_ignores_to_avoid_noise() {
         Some("Prior warning."),
         "must not overwrite prior message with unchanged"
     );
-    assert!(app.pending_reload.is_none());
+    assert!(app.observed_change.is_none());
     assert_eq!(app.buffer.to_string(), "BASE");
     assert!(!app.file.dirty);
 
@@ -66,7 +66,7 @@ fn apply_file_watch_signal_changed_clean_buffer_auto_reloads() {
     crate::app::watch::apply_file_watch_signal(&mut app, sig);
 
     assert!(app.message.is_none());
-    assert!(app.pending_reload.is_none());
+    assert!(app.observed_change.is_none());
     assert_eq!(app.buffer.to_string(), "ORIGEXT");
     assert!(!app.file.dirty);
 
@@ -102,10 +102,7 @@ fn apply_file_watch_signal_changed_dirty_external_warns_without_explicit_arm() {
         app.message
     );
     assert!(
-        !app.pending_reload
-            .as_ref()
-            .expect("watcher must retain the observed revision")
-            .is_explicitly_armed,
+        app.observed_change.is_some() && app.confirmation.armed_reload().is_none(),
         "passive watcher warning must not arm destructive reload"
     );
     assert!(app.file.dirty, "must not clear dirty");
@@ -132,7 +129,7 @@ fn watcher_does_not_hide_matching_save_overwrite_confirmation() {
 
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(app.pending_save_conflict.is_some());
+    assert!(app.confirmation.save_conflict().is_some());
     assert_eq!(
         app.message.as_deref(),
         Some("File changed on disk. Press Ctrl+S again to overwrite.")
@@ -144,13 +141,8 @@ fn watcher_does_not_hide_matching_save_overwrite_confirmation() {
     );
 
     assert!(visible);
-    assert!(app.pending_save_conflict.is_some());
-    assert!(
-        !app.pending_reload
-            .as_ref()
-            .expect("watcher must retain the observed revision")
-            .is_explicitly_armed
-    );
+    assert!(app.confirmation.save_conflict().is_some());
+    assert!(app.observed_change.is_some() && app.confirmation.armed_reload().is_none());
     assert_eq!(
         app.message.as_deref(),
         Some("File changed on disk. Press Ctrl+S again to overwrite."),
@@ -180,7 +172,7 @@ fn apply_file_watch_signal_deleted_clean_buffer_auto_clears() {
     crate::app::watch::apply_file_watch_signal(&mut app, sig);
 
     assert_eq!(app.message.as_deref(), None);
-    assert!(app.pending_reload.is_none());
+    assert!(app.observed_change.is_none());
     assert_eq!(app.buffer.to_string(), "");
     assert!(!app.file.dirty);
 
@@ -229,13 +221,16 @@ fn check_file_watcher_once_no_watcher_returns_false_no_mutation() {
     assert!(app.file_watcher.is_none());
 
     let before_msg = app.message.clone();
-    let before_pend = app.pending_reload.clone();
+    let before_pend = (app.observed_change.clone(), app.confirmation.clone());
     let before_dirty = app.file.dirty;
 
     let had = crate::app::watch::check_file_watcher_once(&mut app);
     assert!(!had);
     assert_eq!(app.message, before_msg);
-    assert_eq!(app.pending_reload, before_pend);
+    assert_eq!(
+        (app.observed_change.clone(), app.confirmation.clone()),
+        before_pend
+    );
     assert_eq!(app.file.dirty, before_dirty);
 }
 
@@ -259,7 +254,7 @@ fn check_file_watcher_once_with_watcher_no_signal_returns_false_no_mutation() {
     );
 
     let before_msg = app.message.clone();
-    let before_pend = app.pending_reload.clone();
+    let before_pend = (app.observed_change.clone(), app.confirmation.clone());
 
     let had = crate::app::watch::check_file_watcher_once(&mut app);
     assert!(
@@ -267,7 +262,10 @@ fn check_file_watcher_once_with_watcher_no_signal_returns_false_no_mutation() {
         "no queued signal expected immediately after construct"
     );
     assert_eq!(app.message, before_msg);
-    assert_eq!(app.pending_reload, before_pend);
+    assert_eq!(
+        (app.observed_change.clone(), app.confirmation.clone()),
+        before_pend
+    );
 
     let _ = std::fs::remove_file(&p);
 }

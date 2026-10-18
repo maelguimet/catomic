@@ -7,7 +7,12 @@
 
 use super::super::*;
 use super::make_key;
+use crate::app::confirmation::{ConflictingChange, SaveConflict};
 use crossterm::event::{KeyCode, KeyModifiers};
+
+fn conflict(app: &App) -> Option<&SaveConflict> {
+    app.confirmation.save_conflict()
+}
 
 // Phase 2-n: save-conflict guard (first refusal) tests using external snapshot status.
 // No watcher, no reload, detection at save time only.
@@ -24,12 +29,12 @@ fn app_file_state_no_path_ctrl_s_opens_save_as_without_writing() {
     app.handle_key(make_key(KeyCode::Char('u'), KeyModifiers::NONE))
         .unwrap();
     assert!(app.file.dirty);
-    assert!(app.pending_save_conflict.is_none());
+    assert!(conflict(&app).is_none());
 
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.file.dirty);
-    assert!(app.pending_save_conflict.is_none());
+    assert!(conflict(&app).is_none());
     assert_eq!(app.message.as_deref(), Some("Save as: "));
     assert!(app.file.path.is_none());
 }
@@ -58,7 +63,7 @@ fn app_file_state_first_ctrl_s_refuses_on_external_modified_keeps_dirty_and_disk
     app.handle_key(make_key(KeyCode::Char('x'), KeyModifiers::NONE))
         .unwrap();
     assert!(app.file.dirty);
-    assert!(app.pending_save_conflict.is_none());
+    assert!(conflict(&app).is_none());
 
     // First Ctrl+S: must refuse (no write), set message, keep dirty + pending
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
@@ -71,7 +76,7 @@ fn app_file_state_first_ctrl_s_refuses_on_external_modified_keeps_dirty_and_disk
         "refusal message must mention changed/overwrite, got {:?}",
         app.message
     );
-    assert!(app.pending_save_conflict.is_some());
+    assert!(conflict(&app).is_some());
 
     // Disk must be untouched (still external content, not buffer content)
     let disk_after = std::fs::read_to_string(&p).unwrap();
@@ -121,11 +126,11 @@ fn mobile_save_immediately_confirms_its_own_conflict() {
     };
 
     super::super::super::mobile::handle_mouse(&mut app, &mut out, tap_save(8)).unwrap();
-    assert!(app.pending_save_conflict.is_some());
+    assert!(conflict(&app).is_some());
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "DISK EXTERNAL");
 
     super::super::super::mobile::handle_mouse(&mut app, &mut out, tap_save(13)).unwrap();
-    assert!(app.pending_save_conflict.is_none());
+    assert!(conflict(&app).is_none());
     assert_eq!(
         std::fs::read_to_string(&path).unwrap(),
         app.buffer.to_string()
@@ -165,7 +170,7 @@ fn app_save_refuses_same_length_same_mtime_path_replacement() {
         app.file.dirty,
         "conflicting save must keep local edits dirty"
     );
-    assert!(app.pending_save_conflict.is_some());
+    assert!(conflict(&app).is_some());
     assert_eq!(std::fs::read_to_string(&target).unwrap(), "REPLACED");
 
     let _ = std::fs::remove_file(&target);
@@ -216,7 +221,7 @@ fn app_file_state_second_ctrl_s_force_saves_after_same_modified_conflict() {
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.file.dirty);
-    assert!(app.pending_save_conflict.is_some());
+    assert!(conflict(&app).is_some());
     assert!(app.message.as_deref().unwrap_or("").contains("changed"));
 
     // no external change since; second S should force
@@ -224,7 +229,7 @@ fn app_file_state_second_ctrl_s_force_saves_after_same_modified_conflict() {
         .unwrap();
 
     assert!(!app.file.dirty, "force save must clear dirty");
-    assert!(app.pending_save_conflict.is_none());
+    assert!(conflict(&app).is_none());
     assert!(app.message.is_none());
     match &app.file.disk_snapshot {
         Some(crate::file::io::FileSnapshot::Present { len, .. }) => {
@@ -336,7 +341,7 @@ fn app_file_state_absent_snapshot_external_appears_first_refuse_then_force() {
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.file.dirty);
-    assert!(app.pending_save_conflict.is_some());
+    assert!(conflict(&app).is_some());
     assert!(app.message.as_deref().unwrap_or("").contains("changed"));
 
     // disk still the external, not ours
@@ -347,7 +352,7 @@ fn app_file_state_absent_snapshot_external_appears_first_refuse_then_force() {
         .unwrap();
 
     assert!(!app.file.dirty);
-    assert!(app.pending_save_conflict.is_none());
+    assert!(conflict(&app).is_none());
     let on_disk = std::fs::read_to_string(&p).unwrap();
     assert_ne!(
         on_disk, "APPEARED",
@@ -380,10 +385,10 @@ fn app_file_state_status_change_between_confirms_does_not_force() {
     // first S -> pending Modified
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
-    assert_eq!(
-        app.pending_save_conflict.as_ref().map(|p| &p.status),
-        Some(&crate::file::io::ExternalFileStatus::Modified)
-    );
+    assert!(matches!(
+        conflict(&app).map(|p| &p.change),
+        Some(ConflictingChange::Modified(_))
+    ));
 
     // between: change external to Deleted
     let _ = std::fs::remove_file(&p);
@@ -394,10 +399,10 @@ fn app_file_state_status_change_between_confirms_does_not_force() {
 
     assert!(app.file.dirty, "must still be dirty (no force write)");
     // pending should now reflect the new status (Deleted)
-    assert_eq!(
-        app.pending_save_conflict.as_ref().map(|p| &p.status),
-        Some(&crate::file::io::ExternalFileStatus::Deleted)
-    );
+    assert!(matches!(
+        conflict(&app).map(|p| &p.change),
+        Some(ConflictingChange::Deleted)
+    ));
     let msg = app.message.as_deref().unwrap_or("");
     assert!(
         msg.contains("deleted"),
@@ -433,14 +438,14 @@ fn app_file_state_edit_after_pending_clears_confirmation() {
     // first S sets pending
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(app.pending_save_conflict.is_some());
+    assert!(conflict(&app).is_some());
     assert!(app.message.is_some());
 
     // content edit clears pending + message (per rules)
     app.handle_key(make_key(KeyCode::Char('!'), KeyModifiers::NONE))
         .unwrap();
     assert!(
-        app.pending_save_conflict.is_none(),
+        conflict(&app).is_none(),
         "edit after pending conflict must clear it"
     );
     assert!(
@@ -453,7 +458,7 @@ fn app_file_state_edit_after_pending_clears_confirmation() {
         .unwrap();
     assert!(app.file.dirty);
     assert!(
-        app.pending_save_conflict.is_some(),
+        conflict(&app).is_some(),
         "after cleared, next S must set pending again (re-confirm)"
     );
     // did not write (disk still external)
@@ -486,9 +491,9 @@ fn app_file_state_external_change_after_first_modified_refusal_refuses_again() {
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.file.dirty);
-    assert!(app.pending_save_conflict.is_some());
+    assert!(conflict(&app).is_some());
     assert!(app.message.as_deref().unwrap_or("").contains("changed"));
-    let first_pending_snap = app.pending_save_conflict.as_ref().unwrap().snapshot.clone();
+    let first_pending_snap = conflict(&app).unwrap().change.clone();
 
     // external changes again (different snapshot)
     std::fs::write(&p, "EXT1EXT2").unwrap();
@@ -502,8 +507,8 @@ fn app_file_state_external_change_after_first_modified_refusal_refuses_again() {
         disk, "EXT1EXT2",
         "must not have overwritten on drifted Modified"
     );
-    assert!(app.pending_save_conflict.is_some());
-    let second_pending_snap = app.pending_save_conflict.as_ref().unwrap().snapshot.clone();
+    assert!(conflict(&app).is_some());
+    let second_pending_snap = conflict(&app).unwrap().change.clone();
     assert_ne!(
         second_pending_snap, first_pending_snap,
         "pending snapshot must update on drift"
@@ -548,7 +553,7 @@ fn app_file_state_third_ctrl_s_force_saves_after_drift_refusals_when_snapshot_st
         .unwrap();
 
     assert!(!app.file.dirty, "third S with stable snapshot must force");
-    assert!(app.pending_save_conflict.is_none());
+    assert!(conflict(&app).is_none());
     assert_eq!(std::fs::read_to_string(&p).unwrap(), expected);
 
     let _ = std::fs::remove_file(&p);
@@ -575,10 +580,10 @@ fn app_file_state_modified_pending_then_external_delete_refuses_deleted_then_for
     // first S: Modified refuse
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(
-        app.pending_save_conflict.as_ref().unwrap().status
-            == crate::file::io::ExternalFileStatus::Modified
-    );
+    assert!(matches!(
+        conflict(&app).unwrap().change,
+        ConflictingChange::Modified(_)
+    ));
 
     // external delete
     let _ = std::fs::remove_file(&p);
@@ -587,10 +592,10 @@ fn app_file_state_modified_pending_then_external_delete_refuses_deleted_then_for
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.file.dirty);
-    assert_eq!(
-        app.pending_save_conflict.as_ref().map(|p| &p.status),
-        Some(&crate::file::io::ExternalFileStatus::Deleted)
-    );
+    assert!(matches!(
+        conflict(&app).map(|p| &p.change),
+        Some(ConflictingChange::Deleted)
+    ));
     let msg = app.message.as_deref().unwrap_or("");
     assert!(
         msg.contains("deleted"),
@@ -637,10 +642,10 @@ fn app_file_state_deleted_pending_then_external_reappears_refuses_modified_then_
         .unwrap();
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
-    assert_eq!(
-        app.pending_save_conflict.as_ref().map(|p| &p.status),
-        Some(&crate::file::io::ExternalFileStatus::Deleted)
-    );
+    assert!(matches!(
+        conflict(&app).map(|p| &p.change),
+        Some(ConflictingChange::Deleted)
+    ));
 
     // external reappears (different file content)
     std::fs::write(&p, "REAPPEARED").unwrap();
@@ -649,10 +654,10 @@ fn app_file_state_deleted_pending_then_external_reappears_refuses_modified_then_
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.file.dirty);
-    assert_eq!(
-        app.pending_save_conflict.as_ref().map(|p| &p.status),
-        Some(&crate::file::io::ExternalFileStatus::Modified)
-    );
+    assert!(matches!(
+        conflict(&app).map(|p| &p.change),
+        Some(ConflictingChange::Modified(_))
+    ));
     // disk still the external reappeared, not our buffer
     assert_eq!(std::fs::read_to_string(&p).unwrap(), "REAPPEARED");
 
@@ -695,14 +700,14 @@ fn app_file_state_absent_baseline_appear_then_drift_refuses_not_force() {
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.file.dirty);
-    assert_eq!(
-        app.pending_save_conflict.as_ref().map(|p| &p.status),
-        Some(&crate::file::io::ExternalFileStatus::Modified)
-    );
-    let snap1 = app.pending_save_conflict.as_ref().unwrap().snapshot.clone();
+    assert!(matches!(
+        conflict(&app).map(|p| &p.change),
+        Some(ConflictingChange::Modified(_))
+    ));
+    let snap1 = conflict(&app).unwrap().change.clone();
     assert!(matches!(
         snap1,
-        Some(crate::file::io::FileSnapshot::Present { .. })
+        ConflictingChange::Modified(crate::file::io::FileSnapshot::Present { .. })
     ));
 
     // external mutates the appeared file (new snapshot)
@@ -713,7 +718,7 @@ fn app_file_state_absent_baseline_appear_then_drift_refuses_not_force() {
         .unwrap();
     assert!(app.file.dirty);
     assert_eq!(std::fs::read_to_string(&p).unwrap(), "APPEAR1MORE");
-    let snap2 = app.pending_save_conflict.as_ref().unwrap().snapshot.clone();
+    let snap2 = conflict(&app).unwrap().change.clone();
     assert_ne!(snap2, snap1, "must have recorded the new appeared snapshot");
 
     let _ = std::fs::remove_file(&p);
@@ -745,7 +750,7 @@ fn app_file_state_regression_same_modified_snapshot_still_force_saves_on_second_
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.file.dirty);
-    assert!(app.pending_save_conflict.is_some());
+    assert!(conflict(&app).is_some());
 
     // no external change
     // second S: same snapshot -> force
@@ -753,7 +758,7 @@ fn app_file_state_regression_same_modified_snapshot_still_force_saves_on_second_
         .unwrap();
 
     assert!(!app.file.dirty);
-    assert!(app.pending_save_conflict.is_none());
+    assert!(conflict(&app).is_none());
     assert_eq!(std::fs::read_to_string(&p).unwrap(), expected);
 
     let _ = std::fs::remove_file(&p);

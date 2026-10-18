@@ -163,7 +163,7 @@ fn confirmed_reload_modified_updates_size_to_external() {
     // first R arms
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(app.pending_reload.is_some());
+    assert!(app.observed_change.is_some());
 
     // second R performs reload
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
@@ -196,7 +196,7 @@ fn confirmed_reload_deleted_clears_size_metadata() {
     // arm
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(app.pending_reload.is_some());
+    assert!(app.observed_change.is_some());
 
     // perform clear
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
@@ -270,7 +270,7 @@ fn size_metadata_does_not_alter_snapshot_or_conflict_behavior_smoke() {
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.file.dirty);
-    assert!(app.pending_save_conflict.is_some());
+    assert!(app.confirmation.save_conflict().is_some());
     assert_eq!(
         app.message_role,
         crate::terminal::render::StatusRole::Warning

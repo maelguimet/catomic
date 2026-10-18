@@ -26,7 +26,7 @@
 //!   and again before dispatching a ready terminal event.
 //! - Signals are hints only; App policy decides automatic or confirmed reload.
 //! - Unchanged/NoPath from watcher are ignored unless they clear a stale
-//!   pending_reload (see apply_file_watch_signal).
+//!   observed change (see apply_file_watch_signal).
 //! - Bounded snapshot observation (observe_external_file) is the source of truth.
 //! - Manual Ctrl+R and save conflict paths are independent.
 

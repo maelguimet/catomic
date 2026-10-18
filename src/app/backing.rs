@@ -44,10 +44,7 @@ pub(super) fn recover(
             super::completion::cancel(app);
             // This notice replaces any confirmation warning. A rejected input
             // or late read failure must not leave an invisible discard armed.
-            app.pending_quit_confirm = false;
-            app.pending_save_conflict = None;
-            super::command_prompt::clear_config_discard_confirmation(app);
-            super::reload::cancel_confirmation(app);
+            app.confirmation = super::confirmation::Confirmation::None;
             app.message_error(UNAVAILABLE);
             app.render(out)
         }

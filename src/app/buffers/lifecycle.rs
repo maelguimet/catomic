@@ -50,7 +50,7 @@ impl App {
         } else {
             self.active_buffer_index
         };
-        self.pending_quit_confirm = false;
+        self.confirmation = super::super::confirmation::Confirmation::None;
         self.message = None;
         Ok(CloseBufferOutcome::Closed)
     }

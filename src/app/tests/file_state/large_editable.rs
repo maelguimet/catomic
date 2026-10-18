@@ -377,7 +377,7 @@ fn hard_linked_paged_buffer_remains_usable_after_successive_saves() {
             KeyModifiers::CONTROL,
         );
         assert!(app.file.dirty);
-        assert!(app.pending_save_conflict.is_some());
+        assert!(app.confirmation.save_conflict().is_some());
         assert_eq!(fs::read_to_string(&path).unwrap(), "external change");
         assert_eq!(app.buffer.line(0).unwrap(), edited_line);
 

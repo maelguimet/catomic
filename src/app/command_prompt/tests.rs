@@ -787,10 +787,7 @@ fn bracketed_paste_populates_every_prompt_kind_without_editing_source() {
         assert!(!app.file.dirty);
         assert!(app.selection.active().is_none());
         assert_eq!(
-            app.command_prompt
-                .active
-                .as_ref()
-                .map(|prompt| prompt.text.as_str()),
+            app.focus.command().map(|prompt| prompt.text.as_str()),
             Some("target\nname.txt")
         );
         assert!(String::from_utf8_lossy(&out).contains("target␊name.txt"));
@@ -858,7 +855,7 @@ fn every_command_prompt_edits_at_a_grapheme_caret_without_touching_source() {
             app.handle_key_with(&mut out, key(code, KeyModifiers::NONE))
                 .unwrap();
         }
-        let prompt = app.command_prompt.active.as_ref().unwrap();
+        let prompt = app.focus.command().unwrap();
         assert_eq!(prompt.text.as_str(), "a\u{301}!tal");
         assert_eq!(prompt.text.caret(), "a\u{301}!ta".len());
         assert_eq!(app.buffer.to_string(), "source");
@@ -912,10 +909,7 @@ fn remapped_prompt_actions_edit_submit_and_cancel_without_source_selection_loss(
         app.handle_key_with(&mut out, key(code, KeyModifiers::NONE))
             .unwrap();
     }
-    assert_eq!(
-        app.command_prompt.active.as_ref().unwrap().text.as_str(),
-        "help"
-    );
+    assert_eq!(app.focus.command().unwrap().text.as_str(), "help");
     assert_eq!(app.selection.active(), selected);
     app.handle_key_with(&mut out, key(KeyCode::Char('s'), KeyModifiers::ALT))
         .unwrap();
@@ -926,13 +920,10 @@ fn remapped_prompt_actions_edit_submit_and_cancel_without_source_selection_loss(
     type_text(&mut app, &mut out, "ignored");
     app.handle_key_with(&mut out, key(KeyCode::Char('b'), KeyModifiers::ALT))
         .unwrap();
-    assert_eq!(
-        app.command_prompt.active.as_ref().unwrap().text.as_str(),
-        "ignore"
-    );
+    assert_eq!(app.focus.command().unwrap().text.as_str(), "ignore");
     app.handle_key_with(&mut out, key(KeyCode::Char('c'), KeyModifiers::ALT))
         .unwrap();
-    assert!(app.command_prompt.active.is_none());
+    assert!(app.focus.command().is_none());
     assert_eq!(app.buffer.to_string(), "source");
 }
 
@@ -952,7 +943,7 @@ fn open_and_save_preserve_completed_trailing_space_filename() {
     app.handle_key_with(&mut out, key(KeyCode::Tab, KeyModifiers::NONE))
         .unwrap();
     assert_eq!(
-        app.command_prompt.active.as_ref().unwrap().text.as_str(),
+        app.focus.command().unwrap().text.as_str(),
         path.to_str().unwrap()
     );
     app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
@@ -1060,9 +1051,8 @@ fn path_completion_is_explicit_and_limited_to_open_and_save_as() {
             .unwrap();
         assert_eq!(crate::file::path_completion::REQUESTS.get(), requests + 1);
         assert!(app
-            .command_prompt
-            .active
-            .as_ref()
+            .focus
+            .command()
             .unwrap()
             .text
             .as_str()

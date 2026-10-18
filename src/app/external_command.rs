@@ -14,13 +14,13 @@ use crate::config::commands::{CommandInput, CommandOutput, CommandSpec};
 use crate::external::{substitute_file, ExternalCommandResult, ExternalCommandTask};
 
 mod preview;
+pub(crate) use preview::CommandPreview;
 
 const MAX_INPUT_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Default)]
 pub(crate) struct ExternalCommandState {
     running: Option<RunningCommand>,
-    preview: Option<preview::CommandPreview>,
 }
 
 pub(super) struct RunningCommand {
@@ -162,18 +162,26 @@ pub(crate) fn poll(
     }
 }
 
-pub(crate) fn handle_key(
+pub(crate) fn handle_worker_key(
     app: &mut super::App,
     out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
-    if app.external_command.running.is_some() && key.code == KeyCode::Esc {
-        app.external_command.running = None;
-        app.message = None;
-        super::hooks::finish_command(app, false);
-        app.render(out)?;
-        return Ok(true);
+    if app.external_command.running.is_none() || key.code != KeyCode::Esc {
+        return Ok(false);
     }
+    app.external_command.running = None;
+    app.message = None;
+    super::hooks::finish_command(app, false);
+    app.render(out)?;
+    Ok(true)
+}
+
+pub(crate) fn handle_preview_key(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    key: KeyEvent,
+) -> io::Result<bool> {
     preview::handle_key(app, out, key)
 }
 
@@ -182,14 +190,22 @@ pub(crate) fn dispatch_action(
     out: &mut dyn crate::terminal::TerminalOutput,
     action: Action,
 ) -> io::Result<bool> {
-    if action == Action::PreviewCancel && app.external_command.running.is_some() {
-        app.external_command.running = None;
-        app.message = None;
-        super::hooks::finish_command(app, false);
-        app.render(out)?;
-        return Ok(true);
-    }
     preview::dispatch_action(app, out, action)
+}
+
+pub(crate) fn dispatch_worker_action(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    action: Action,
+) -> io::Result<bool> {
+    if action != Action::PreviewCancel || app.external_command.running.is_none() {
+        return Ok(false);
+    }
+    app.external_command.running = None;
+    app.message = None;
+    super::hooks::finish_command(app, false);
+    app.render(out)?;
+    Ok(true)
 }
 
 pub(crate) fn handle_paste(
@@ -227,6 +243,10 @@ pub(crate) fn display_buffer(app: &super::App) -> Option<&dyn Buffer> {
 pub(crate) fn cancel_all(app: &mut super::App) -> bool {
     let running = app.external_command.running.take().is_some();
     running | preview::close(app)
+}
+
+pub(crate) fn close_preview(app: &mut super::App) -> bool {
+    preview::close(app)
 }
 
 fn command_input(app: &super::App, input: CommandInput) -> io::Result<String> {

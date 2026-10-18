@@ -1,28 +1,30 @@
 //! Purpose: select the one active shortcut scope before key normalization.
-//! Owns: deterministic global/local/editor surface precedence discovery.
+//! Owns: the mapping from the focused surface, or an editor-owned worker, to a shortcut scope.
 //! Must not: dispatch keys, mutate App state, render, or start any service.
-//! Invariants: the foremost active transient surface wins; editor is the fallback.
+//! Invariants: the focused surface decides; workers only choose a scope while the editor is focused.
 
 use crate::config::actions::Scope;
 
-pub(super) fn active(app: &super::super::App) -> Scope {
-    use super::super::{
-        command_prompt, completion, external_command, help, recovery, replace, search, view,
-    };
+use super::super::focus::Surface;
 
-    if help::is_viewing(app) {
-        Scope::Help
-    } else if replace::is_reviewing(app) {
-        Scope::ReplaceReview
-    } else if search::is_active(app) {
-        Scope::Search
-    } else if completion::is_active(app) {
-        Scope::Completion
-    } else if replace::is_active(app) || command_prompt::is_active(app) {
-        Scope::Prompt
-    } else if recovery::is_viewing(app) || external_command::is_busy(app) || view::is_preview(app) {
-        Scope::Preview
-    } else {
-        Scope::Editor
+pub(super) fn active(app: &super::super::App) -> Scope {
+    use super::super::{command_prompt, external_command};
+
+    match app.focus.base_surface() {
+        Surface::Help => Scope::Help,
+        Surface::ReplaceReview => Scope::ReplaceReview,
+        Surface::Search => Scope::Search,
+        Surface::Picker => Scope::Completion,
+        Surface::Replace | Surface::Command => Scope::Prompt,
+        Surface::RecoveryPreview | Surface::CommandPreview | Surface::MarkdownPreview => {
+            Scope::Preview
+        }
+        Surface::Editor | Surface::MobileOverlay if command_prompt::is_running(app) => {
+            Scope::Prompt
+        }
+        Surface::Editor | Surface::MobileOverlay if external_command::is_running(app) => {
+            Scope::Preview
+        }
+        Surface::Editor | Surface::MobileOverlay => Scope::Editor,
     }
 }

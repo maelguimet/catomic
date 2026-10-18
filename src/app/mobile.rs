@@ -14,7 +14,7 @@ mod overlay;
 
 use actions::MenuAction;
 use bar::{ActionBar, BarAction, Surface};
-pub(crate) use overlay::MobileUiState;
+pub(crate) use overlay::{MobileUiState, Overlay};
 
 pub(crate) fn configure(app: &mut super::App, enabled: bool) {
     app.mobile.enabled = enabled;
@@ -30,6 +30,10 @@ pub(crate) fn is_enabled(app: &super::App) -> bool {
 
 pub(crate) fn is_viewing(app: &super::App) -> bool {
     overlay::is_viewing(app)
+}
+
+pub(crate) fn close_overlay(app: &mut super::App) -> bool {
+    overlay::close(app)
 }
 
 pub(crate) fn display_buffer(app: &super::App) -> Option<&dyn crate::buffer::Buffer> {
@@ -303,35 +307,31 @@ fn prepare_overlay_action(app: &mut super::App) {
 }
 
 fn active_surface(app: &super::App) -> Surface {
-    if overlay::is_menu(app) {
-        return Surface::Menu;
+    use super::focus::Surface as Focused;
+    match app.focus.surface() {
+        Focused::MobileOverlay if overlay::is_menu(app) => Surface::Menu,
+        Focused::MobileOverlay => Surface::Notice,
+        Focused::RecoveryPreview | Focused::CommandPreview => Surface::Confirmation,
+        Focused::Search
+        | Focused::Replace
+        | Focused::ReplaceReview
+        | Focused::Command
+        | Focused::Picker => Surface::Prompt,
+        Focused::Help | Focused::MarkdownPreview => Surface::ReadOnly,
+        Focused::Editor => editor_surface(app),
     }
-    if overlay::is_viewing(app) {
-        return Surface::Notice;
-    }
+}
+
+fn editor_surface(app: &super::App) -> Surface {
     if super::selection::is_touch_selecting(app) {
-        return Surface::TouchSelection;
-    }
-    if super::recovery::is_viewing(app) || super::external_command::is_viewing(app) {
-        return Surface::Confirmation;
-    }
-    if super::search::is_active(app)
-        || super::replace::is_active(app)
-        || super::command_prompt::is_active(app)
-        || super::completion::is_active(app)
-    {
-        return Surface::Prompt;
-    }
-    if super::help::is_viewing(app) || super::view::is_preview(app) {
-        return Surface::ReadOnly;
-    }
-    if super::external_command::is_running(app) {
-        return Surface::Running;
-    }
-    if app.pending_save_conflict.is_some() || app.pending_reload.is_some() {
-        return Surface::Message;
-    }
-    if app.selection.active().is_some() {
+        Surface::TouchSelection
+    } else if super::command_prompt::is_running(app) {
+        Surface::Prompt
+    } else if super::external_command::is_running(app) {
+        Surface::Running
+    } else if app.pending_save_conflict.is_some() || app.pending_reload.is_some() {
+        Surface::Message
+    } else if app.selection.active().is_some() {
         Surface::Selection
     } else if app.message.is_some() {
         Surface::Message

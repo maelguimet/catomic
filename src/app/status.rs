@@ -177,12 +177,17 @@ impl super::App {
 }
 
 fn prompt_is_active(app: &super::App) -> bool {
-    super::command_prompt::is_active(app)
-        || super::search::is_active(app)
-        || super::replace::is_active(app)
-        || super::help::is_searching(app)
-        || super::recovery::is_viewing(app)
-        || super::external_command::is_viewing(app)
+    use super::focus::Surface;
+    matches!(
+        app.focus.base_surface(),
+        Surface::Search
+            | Surface::Replace
+            | Surface::ReplaceReview
+            | Surface::Command
+            | Surface::RecoveryPreview
+            | Surface::CommandPreview
+    ) || super::help::is_searching(app)
+        || super::command_prompt::is_running(app)
 }
 
 #[cfg(test)]

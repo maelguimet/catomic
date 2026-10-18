@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use super::focus::{Focus, Prompt, Surface};
 use super::prompt_input::{PromptInput, PromptPresentation};
 use crate::config::actions::Action;
 use crate::editor::goto_line::{self, GotoLineResult, GotoLineTask};
@@ -15,7 +16,6 @@ use crate::help_catalog::{self, PromptCommand};
 
 #[derive(Default)]
 pub(crate) struct CommandPromptState {
-    active: Option<ActivePrompt>,
     running: Option<RunningGoto>,
     config_return: Option<ConfigReturn>,
 }
@@ -36,7 +36,7 @@ struct RunningGoto {
     task: GotoLineTask,
 }
 
-struct ActivePrompt {
+pub(crate) struct ActivePrompt {
     kind: PromptKind,
     text: PromptInput,
 }
@@ -80,22 +80,19 @@ pub(crate) fn open_file_prompt(
     open_prompt(app, out, PromptKind::OpenFile)
 }
 
-pub(super) fn is_active(app: &super::App) -> bool {
-    app.command_prompt.active.is_some() || app.command_prompt.running.is_some()
+pub(super) fn is_running(app: &super::App) -> bool {
+    app.command_prompt.running.is_some()
 }
 
 pub(super) fn is_save_as_prompt(app: &super::App) -> bool {
     matches!(
-        app.command_prompt
-            .active
-            .as_ref()
-            .map(|prompt| &prompt.kind),
+        app.focus.command().map(|prompt| &prompt.kind),
         Some(PromptKind::SaveAs)
     )
 }
 
 pub(super) fn submits_pending_command_save_as(app: &super::App) -> bool {
-    let Some(prompt) = app.command_prompt.active.as_ref() else {
+    let Some(prompt) = app.focus.command() else {
         return false;
     };
     matches!(&prompt.kind, PromptKind::Command)
@@ -152,14 +149,15 @@ fn open_prompt(
     out: &mut dyn crate::terminal::TerminalOutput,
     kind: PromptKind,
 ) -> io::Result<()> {
+    super::focus::close(app);
     cancel_running(&mut app.command_prompt);
     if !matches!(&kind, PromptKind::Command) {
         app.selection.clear();
     }
-    app.command_prompt.active = Some(ActivePrompt {
+    app.focus = Focus::Prompt(Prompt::Command(ActivePrompt {
         kind,
         text: PromptInput::default(),
-    });
+    }));
     update_message(app);
     app.render(out)
 }
@@ -169,28 +167,19 @@ pub(crate) fn handle_active_key(
     out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
-    if app.command_prompt.active.is_none() {
-        if app.command_prompt.running.is_some() && key.code == KeyCode::Esc {
-            cancel_running(&mut app.command_prompt);
-            app.message = None;
-            app.render(out)?;
-            return Ok(true);
-        }
-        return Ok(false);
-    }
     if matches!(key.code, KeyCode::Char('q')) && key.modifiers.contains(KeyModifiers::CONTROL) {
         return Ok(false);
     }
     match key.code {
         KeyCode::Esc => {
             app.message = None;
-            app.command_prompt.active = None;
+            super::focus::take(app, Surface::Command);
             app.pending_save_conflict = None;
         }
         KeyCode::Enter => return submit(app, out).map(|()| true),
         KeyCode::Tab => complete_path(app),
         _ => {
-            if let Some(prompt) = app.command_prompt.active.as_mut() {
+            if let Some(prompt) = app.focus.command_mut() {
                 prompt.text.key(key);
             }
             update_message(app);
@@ -205,7 +194,7 @@ pub(crate) fn dispatch_action(
     out: &mut dyn crate::terminal::TerminalOutput,
     action: Action,
 ) -> io::Result<bool> {
-    if app.command_prompt.active.is_none() {
+    if app.focus.command().is_none() {
         if action == Action::PromptCancel && app.command_prompt.running.is_some() {
             cancel_running(&mut app.command_prompt);
             app.message = None;
@@ -217,7 +206,7 @@ pub(crate) fn dispatch_action(
     match action {
         Action::PromptCancel => {
             app.message = None;
-            app.command_prompt.active = None;
+            super::focus::take(app, Surface::Command);
             app.render(out)?;
         }
         Action::PromptSubmit => submit(app, out)?,
@@ -226,7 +215,7 @@ pub(crate) fn dispatch_action(
             app.render(out)?;
         }
         _ => {
-            let Some(prompt) = app.command_prompt.active.as_mut() else {
+            let Some(prompt) = app.focus.command_mut() else {
                 return Ok(false);
             };
             if prompt.text.action(action).is_none() {
@@ -244,7 +233,7 @@ pub(crate) fn handle_paste(
     out: &mut dyn crate::terminal::TerminalOutput,
     text: &str,
 ) -> io::Result<bool> {
-    let Some(prompt) = app.command_prompt.active.as_mut() else {
+    let Some(prompt) = app.focus.command_mut() else {
         return Ok(false);
     };
     prompt.text.insert(text);
@@ -254,7 +243,7 @@ pub(crate) fn handle_paste(
 }
 
 pub(super) fn presentation(app: &super::App) -> Option<PromptPresentation> {
-    let prompt = app.command_prompt.active.as_ref()?;
+    let prompt = app.focus.command()?;
     let label = match &prompt.kind {
         PromptKind::GotoLine => "Goto line".into(),
         PromptKind::Command => "Command".into(),
@@ -279,7 +268,7 @@ fn update_message(app: &mut super::App) {
 }
 
 fn complete_path(app: &mut super::App) {
-    let Some(prompt) = app.command_prompt.active.as_mut() else {
+    let Some(prompt) = app.focus.command_mut() else {
         return;
     };
     if !matches!(prompt.kind, PromptKind::OpenFile | PromptKind::SaveAs) {
@@ -306,11 +295,10 @@ fn complete_path(app: &mut super::App) {
 }
 
 fn submit(app: &mut super::App, out: &mut dyn crate::terminal::TerminalOutput) -> io::Result<()> {
-    let prompt = app
-        .command_prompt
-        .active
-        .take()
-        .expect("submit requires active prompt");
+    let Some(Focus::Prompt(Prompt::Command(prompt))) = super::focus::take(app, Surface::Command)
+    else {
+        return app.render(out);
+    };
     match prompt.kind {
         PromptKind::GotoLine => execute_goto(app, out, prompt.text.as_str()),
         PromptKind::Command => execute_command(app, out, prompt.text.as_str().trim()),
@@ -640,7 +628,21 @@ fn cancel_running(state: &mut CommandPromptState) {
 
 pub(super) fn cancel_running_goto(app: &mut super::App) {
     cancel_running(&mut app.command_prompt);
-    app.command_prompt.active = None;
+    super::focus::take(app, Surface::Command);
+}
+
+pub(crate) fn handle_goto_worker_key(
+    app: &mut super::App,
+    out: &mut dyn crate::terminal::TerminalOutput,
+    key: KeyEvent,
+) -> io::Result<bool> {
+    if app.command_prompt.running.is_none() || key.code != KeyCode::Esc {
+        return Ok(false);
+    }
+    cancel_running(&mut app.command_prompt);
+    app.message = None;
+    app.render(out)?;
+    Ok(true)
 }
 
 #[cfg(test)]

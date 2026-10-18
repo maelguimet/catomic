@@ -43,7 +43,7 @@ fn startup_constructs_no_command_task_or_preview() {
     let app = super::super::App::new(None).unwrap();
 
     assert!(app.external_command.running.is_none());
-    assert!(app.external_command.preview.is_none());
+    assert!(app.focus.command_preview().is_none());
 }
 
 #[test]
@@ -78,7 +78,7 @@ fn insert_output_is_previewed_then_applied_as_one_undoable_edit() {
     wait_for_preview(&mut app, &mut out);
     assert_eq!(app.buffer.to_string(), "");
 
-    handle_key(&mut app, &mut out, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+    handle_preview_key(&mut app, &mut out, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
     assert_eq!(app.buffer.to_string(), "CAT");
     app.buffer.undo();
     assert_eq!(app.buffer.to_string(), "");
@@ -104,7 +104,7 @@ fn selected_input_can_be_replaced_after_preview() {
 
     start(&mut app, &mut out, "upper").unwrap();
     wait_for_preview(&mut app, &mut out);
-    handle_key(&mut app, &mut out, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+    handle_preview_key(&mut app, &mut out, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
 
     assert_eq!(app.buffer.to_string(), "CAT");
     app.buffer.undo();
@@ -122,14 +122,8 @@ fn failed_command_output_is_read_only_and_cannot_apply() {
 
     start(&mut app, &mut out, "fail").unwrap();
     wait_for_preview(&mut app, &mut out);
-    assert!(app
-        .external_command
-        .preview
-        .as_ref()
-        .unwrap()
-        .target
-        .is_none());
-    handle_key(&mut app, &mut out, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+    assert!(app.focus.command_preview().unwrap().target.is_none());
+    handle_preview_key(&mut app, &mut out, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
 
     assert_eq!(app.buffer.to_string(), "");
 }
@@ -147,7 +141,7 @@ fn source_edit_while_command_runs_blocks_later_apply() {
     app.handle_key_with(&mut out, key(KeyCode::Char('a'), KeyModifiers::NONE))
         .unwrap();
     wait_for_preview(&mut app, &mut out);
-    handle_key(&mut app, &mut out, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+    handle_preview_key(&mut app, &mut out, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
 
     assert_eq!(app.buffer.to_string(), "a");
     assert!(app.message.as_deref().unwrap().contains("Source changed"));
@@ -170,7 +164,7 @@ fn undo_redo_to_the_same_text_while_command_runs_blocks_later_apply() {
     assert_eq!(app.buffer.to_string(), "a");
 
     wait_for_preview(&mut app, &mut out);
-    handle_key(&mut app, &mut out, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+    handle_preview_key(&mut app, &mut out, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
 
     assert_eq!(app.buffer.to_string(), "a");
     assert!(app.message.as_deref().unwrap().contains("Source changed"));
@@ -204,7 +198,7 @@ fn same_path_reload_that_resets_buffer_revision_blocks_later_apply() {
     assert_ne!(app.file.content_generation, source_generation);
 
     wait_for_preview(&mut app, &mut out);
-    handle_key(&mut app, &mut out, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
+    handle_preview_key(&mut app, &mut out, key(KeyCode::Enter, KeyModifiers::NONE)).unwrap();
 
     assert_eq!(app.buffer.to_string(), "after");
     assert!(app.message.as_deref().unwrap().contains("Source changed"));

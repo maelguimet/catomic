@@ -14,6 +14,8 @@ use crate::config::keybindings::KeyBindings;
 use crate::editor::markdown_preview::MarkdownAnnotations;
 use crate::editor::search::{self, SearchDirection, SearchMatch};
 
+use super::focus::{Focus, ReadOnlyView, Surface};
+
 pub(crate) struct HelpView {
     markdown: String,
     buffer: PreviewBuffer,
@@ -47,7 +49,7 @@ pub(crate) fn show(
         app.view_preferences.line_numbers(),
     )
     .map_err(|error| io::Error::other(error.to_string()))?;
-    app.surfaces.help = Some(HelpView {
+    app.focus = Focus::ReadOnly(ReadOnlyView::Help(Box::new(HelpView {
         markdown,
         buffer,
         annotations,
@@ -56,7 +58,7 @@ pub(crate) fn show(
         source_scroll_top,
         source_scroll_left,
         source_wrap_col,
-    });
+    })));
     app.screen.scroll_top = 0;
     app.screen.scroll_left = 0;
     app.screen.wrap_col = 0;
@@ -96,7 +98,7 @@ fn render_help(
 }
 
 pub(crate) fn relayout(app: &mut super::App) {
-    let Some(view) = app.surfaces.help.as_ref() else {
+    let Some(view) = app.focus.help() else {
         return;
     };
     let effective_width =
@@ -129,14 +131,13 @@ pub(crate) fn relayout(app: &mut super::App) {
             let mapped_origin =
                 old_search_origin.map(|origin| map_cursor(origin, old_line_count, &buffer));
             let active_match = active_match_ordinal.and_then(|ordinal| {
-                app.surfaces
-                    .help
-                    .as_ref()
+                app.focus
+                    .help()
                     .and_then(|view| view.search.prompt.as_deref())
                     .and_then(|query| search_match_at_ordinal(&buffer, query, ordinal))
             });
             buffer.set_cursor(active_match.map_or(mapped_cursor, |found| found.start));
-            if let Some(view) = app.surfaces.help.as_mut() {
+            if let Some(view) = app.focus.help_mut() {
                 view.buffer = buffer;
                 view.annotations = annotations;
                 view.layout_width = layout_width;
@@ -225,9 +226,8 @@ fn search_match_at_ordinal(
 pub(crate) fn presentation(
     app: &super::App,
 ) -> Option<crate::terminal::render::DocumentPresentation<'_>> {
-    app.surfaces
-        .help
-        .as_ref()
+    app.focus
+        .help()
         .map(|view| crate::terminal::render::DocumentPresentation {
             annotations: &view.annotations,
         })
@@ -238,7 +238,7 @@ pub(crate) fn handle_key(
     out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
-    if !is_viewing(app) || is_quit(key) {
+    if is_quit(key) {
         return Ok(false);
     }
     if is_searching(app) {
@@ -268,40 +268,31 @@ pub(crate) fn handle_paste(
     app: &mut super::App,
     out: &mut dyn crate::terminal::TerminalOutput,
 ) -> io::Result<bool> {
-    if !is_viewing(app) {
-        return Ok(false);
-    }
     app.message_info("Shortcut help is read-only; Esc closes.");
     app.render(out)?;
     Ok(true)
 }
 
 pub(crate) fn is_viewing(app: &super::App) -> bool {
-    app.surfaces.help.is_some()
+    app.focus.help().is_some()
 }
 
 pub(crate) fn display_buffer(app: &super::App) -> Option<&dyn Buffer> {
-    app.surfaces
-        .help
-        .as_ref()
-        .map(|view| &view.buffer as &dyn Buffer)
+    app.focus.help().map(|view| &view.buffer as &dyn Buffer)
 }
 
 pub(crate) fn active_search_match(app: &super::App) -> Option<SearchMatch> {
-    app.surfaces
-        .help
-        .as_ref()
-        .and_then(|view| view.search.active_match)
+    app.focus.help().and_then(|view| view.search.active_match)
 }
 
-fn close(app: &mut super::App) -> bool {
-    let Some(view) = app.surfaces.help.take() else {
-        return false;
+pub(super) fn close(app: &mut super::App) {
+    let Some(Focus::ReadOnly(ReadOnlyView::Help(view))) = super::focus::take(app, Surface::Help)
+    else {
+        return;
     };
     app.screen.scroll_top = view.source_scroll_top;
     app.screen.scroll_left = view.source_scroll_left;
     app.screen.wrap_col = view.source_wrap_col;
-    true
 }
 
 fn close_with_message(
@@ -315,13 +306,10 @@ fn close_with_message(
 }
 
 fn close_transients(app: &mut super::App) {
-    super::view::cancel_preview(app);
-    super::recovery::close(app);
+    super::focus::close(app);
     super::external_command::cancel_all(app);
-    super::replace::cancel(app);
     super::search::cancel_running_search(app);
     super::command_prompt::cancel_running_goto(app);
-    super::completion::cancel(app);
 }
 
 #[derive(Clone, Copy)]
@@ -333,7 +321,7 @@ enum Move {
 }
 
 fn move_cursor(app: &mut super::App, movement: Move) {
-    let buffer = &mut app.surfaces.help.as_mut().expect("help active").buffer;
+    let buffer = &mut app.focus.help_mut().expect("help active").buffer;
     match movement {
         Move::Left => buffer.move_left(),
         Move::Right => buffer.move_right(),
@@ -359,7 +347,7 @@ fn scroll_page(
 }
 
 fn set_line_edge(app: &mut super::App, end: bool) {
-    let buffer = &mut app.surfaces.help.as_mut().expect("help active").buffer;
+    let buffer = &mut app.focus.help_mut().expect("help active").buffer;
     let row = buffer.cursor().row;
     let col = if end {
         buffer.line_char_count(row).unwrap_or(0)
@@ -389,9 +377,6 @@ pub(crate) fn dispatch_action(
     out: &mut dyn crate::terminal::TerminalOutput,
     action: Action,
 ) -> io::Result<bool> {
-    if !is_viewing(app) {
-        return Ok(false);
-    }
     match action {
         Action::Search => return open_search(app, out).map(|()| true),
         Action::HelpClose => return close_with_message(app, out).map(|()| true),
@@ -581,9 +566,8 @@ fn display_chords(bindings: &KeyBindings, action: Action) -> Vec<String> {
 }
 
 pub(crate) fn is_searching(app: &super::App) -> bool {
-    app.surfaces
-        .help
-        .as_ref()
+    app.focus
+        .help()
         .is_some_and(|view| view.search.prompt.is_some())
 }
 
@@ -591,7 +575,7 @@ fn open_search(
     app: &mut super::App,
     out: &mut dyn crate::terminal::TerminalOutput,
 ) -> io::Result<()> {
-    let view = app.surfaces.help.as_mut().expect("help active");
+    let view = app.focus.help_mut().expect("help active");
     view.search.prompt = Some(String::new());
     view.search.origin = Some(view.buffer.cursor());
     view.search.active_match = None;
@@ -609,9 +593,8 @@ fn handle_search_key(
         KeyCode::Enter | KeyCode::Down => find_help_match(app, SearchDirection::Forward, false),
         KeyCode::Up => find_help_match(app, SearchDirection::Backward, false),
         KeyCode::Backspace => {
-            app.surfaces
-                .help
-                .as_mut()
+            app.focus
+                .help_mut()
                 .expect("help active")
                 .search
                 .prompt
@@ -631,9 +614,8 @@ fn handle_search_key(
                 ch
             };
             if !ch.is_control() {
-                app.surfaces
-                    .help
-                    .as_mut()
+                app.focus
+                    .help_mut()
                     .expect("help active")
                     .search
                     .prompt
@@ -650,7 +632,7 @@ fn handle_search_key(
 }
 
 fn cancel_search(app: &mut super::App) {
-    let view = app.surfaces.help.as_mut().expect("help active");
+    let view = app.focus.help_mut().expect("help active");
     if let Some(origin) = view.search.origin.take() {
         view.buffer.set_cursor(origin);
     }
@@ -662,7 +644,7 @@ fn cancel_search(app: &mut super::App) {
 
 fn find_help_match(app: &mut super::App, direction: SearchDirection, include_origin: bool) {
     let (query, origin) = {
-        let view = app.surfaces.help.as_ref().expect("help active");
+        let view = app.focus.help().expect("help active");
         (
             view.search.prompt.clone().unwrap_or_default(),
             if include_origin {
@@ -676,7 +658,7 @@ fn find_help_match(app: &mut super::App, direction: SearchDirection, include_ori
         )
     };
     if query.is_empty() {
-        let view = app.surfaces.help.as_mut().expect("help active");
+        let view = app.focus.help_mut().expect("help active");
         view.search.active_match = None;
         if let Some(origin) = view.search.origin {
             view.buffer.set_cursor(origin);
@@ -686,10 +668,10 @@ fn find_help_match(app: &mut super::App, direction: SearchDirection, include_ori
         return;
     }
     let found = {
-        let view = app.surfaces.help.as_ref().expect("help active");
+        let view = app.focus.help().expect("help active");
         search::find_match(&view.buffer, &query, origin, direction, include_origin)
     };
-    let view = app.surfaces.help.as_mut().expect("help active");
+    let view = app.focus.help_mut().expect("help active");
     view.search.active_match = found;
     if let Some(found) = found {
         view.buffer.set_cursor(found.start);

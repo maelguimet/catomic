@@ -263,15 +263,10 @@ fn narrow_help_soft_wraps_and_scrolls_without_horizontal_movement() {
         .lines()
         .position(|line| line.contains("Dirty buffers"))
         .expect("external-change guidance must be present");
-    app.surfaces
-        .help
-        .as_mut()
-        .unwrap()
-        .buffer
-        .set_cursor(Cursor {
-            row: target_row,
-            col: 0,
-        });
+    app.focus.help_mut().unwrap().buffer.set_cursor(Cursor {
+        row: target_row,
+        col: 0,
+    });
     out.clear();
     app.handle_key_with(&mut out, KeyEvent::new(KeyCode::End, KeyModifiers::NONE))
         .unwrap();
@@ -442,9 +437,8 @@ fn help_reflows_narrow_wide_narrow_with_gutters_and_preserves_context() {
         .unwrap()
         .contains("recovery"));
     assert!(app
-        .surfaces
-        .help
-        .as_ref()
+        .focus
+        .help()
         .unwrap()
         .annotations
         .spans(wide_match.start.row)

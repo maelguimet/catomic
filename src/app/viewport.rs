@@ -135,10 +135,10 @@ fn scroll_wrapped_viewport(
 }
 
 fn mouse_wheel_is_blocked(app: &App) -> bool {
-    super::search::is_active(app)
-        || super::command_prompt::is_active(app)
-        || super::replace::is_active(app)
-        || super::completion::is_active(app)
+    matches!(
+        app.focus.base(),
+        super::focus::Focus::Prompt(_) | super::focus::Focus::Picker(_)
+    ) || super::command_prompt::is_running(app)
         || super::external_command::is_running(app)
 }
 

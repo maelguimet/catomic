@@ -7,7 +7,9 @@ Status: accepted
 > **Partially historical:** The generic App, input, and render ownership
 > decisions remain current. References below to inline clanker, model tasks, and
 > AI-specific surfaces describe code later removed by
-> [decision 0015](0015-no-built-in-ai-runtime.md).
+> [decision 0015](0015-no-built-in-ai-runtime.md). `SurfaceState` and the
+> separate precedence chains were replaced by one focused surface in
+> [decision 0016](0016-single-input-focus.md).
 
 ## Context
 

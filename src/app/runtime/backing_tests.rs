@@ -429,7 +429,7 @@ fn paged_drift_dismisses_pending_completion_without_accepting_it() {
         )
         .unwrap();
     }
-    assert!(super::super::completion::is_active(&app));
+    assert!(app.focus.picker().is_some());
     let history = app.buffer.edit_history_position();
     fixture.change_in_place();
 
@@ -441,5 +441,5 @@ fn paged_drift_dismisses_pending_completion_without_accepting_it() {
 
     assert_eq!(app.buffer.edit_history_position(), history);
     assert!(app.file.dirty);
-    assert!(!super::super::completion::is_active(&app));
+    assert!(app.focus.picker().is_none());
 }

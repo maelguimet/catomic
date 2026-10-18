@@ -57,9 +57,8 @@ pub(crate) fn handle_mouse(
         _ => {}
     }
     if !super::super::view::source_is_displayed(app)
-        || super::super::search::is_active(app)
-        || super::super::replace::is_active(app)
-        || super::super::command_prompt::is_active(app)
+        || matches!(app.focus.base(), super::super::focus::Focus::Prompt(_))
+        || super::super::command_prompt::is_running(app)
     {
         return Ok(());
     }

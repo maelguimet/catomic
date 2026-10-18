@@ -8,12 +8,13 @@ use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use super::super::focus::{Focus, ReadOnlyView, Surface};
 use crate::buffer::{Buffer, Cursor, PreviewBuffer};
 use crate::config::actions::Action;
 
 use super::{ApplyTarget, RunningCommand};
 
-pub(super) struct CommandPreview {
+pub(crate) struct CommandPreview {
     name: String,
     proposed_text: String,
     pub(super) target: Option<ApplyTarget>,
@@ -41,8 +42,8 @@ pub(super) fn open(
         running.target = None;
     }
     let text = result_text(&stdout, &stderr, code, truncated);
-    super::super::view::cancel_preview(app);
-    app.external_command.preview = Some(CommandPreview {
+    super::super::focus::close(app);
+    let preview = CommandPreview {
         name: running.name,
         proposed_text: stdout,
         target: running.target,
@@ -54,7 +55,8 @@ pub(super) fn open(
         buffer: PreviewBuffer::from_owned_text(text),
         source_scroll_top: app.screen.scroll_top,
         source_scroll_left: app.screen.scroll_left,
-    });
+    };
+    app.focus = Focus::ReadOnly(ReadOnlyView::CommandPreview(Box::new(preview)));
     app.screen.scroll_top = 0;
     app.screen.scroll_left = 0;
     app.selection.clear();
@@ -67,7 +69,7 @@ pub(super) fn handle_key(
     out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
-    if !is_viewing(app) || is_quit(key) {
+    if is_quit(key) {
         return Ok(false);
     }
     match key.code {
@@ -95,9 +97,6 @@ pub(super) fn dispatch_action(
     out: &mut dyn crate::terminal::TerminalOutput,
     action: Action,
 ) -> io::Result<bool> {
-    if !is_viewing(app) {
-        return Ok(false);
-    }
     match action {
         Action::PreviewAccept => apply_or_close(app, out)?,
         Action::PreviewCancel => cancel(app, out)?,
@@ -122,27 +121,30 @@ pub(super) fn handle_paste(
     app: &mut super::super::App,
     out: &mut dyn crate::terminal::TerminalOutput,
 ) -> io::Result<bool> {
-    if !is_viewing(app) {
-        return Ok(false);
-    }
     read_only_message(app);
     app.render(out)?;
     Ok(true)
 }
 
 pub(super) fn is_viewing(app: &super::super::App) -> bool {
-    app.external_command.preview.is_some()
+    app.focus.command_preview().is_some()
 }
 
 pub(super) fn display_buffer(app: &super::super::App) -> Option<&dyn Buffer> {
-    app.external_command
-        .preview
-        .as_ref()
+    app.focus
+        .command_preview()
         .map(|preview| &preview.buffer as &dyn Buffer)
 }
 
+fn take(app: &mut super::super::App) -> Option<Box<CommandPreview>> {
+    match super::super::focus::take(app, Surface::CommandPreview) {
+        Some(Focus::ReadOnly(ReadOnlyView::CommandPreview(preview))) => Some(preview),
+        _ => None,
+    }
+}
+
 pub(super) fn close(app: &mut super::super::App) -> bool {
-    if let Some(preview) = app.external_command.preview.take() {
+    if let Some(preview) = take(app) {
         restore_scroll(app, &preview);
         true
     } else {
@@ -176,7 +178,9 @@ fn apply_or_close(
     app: &mut super::super::App,
     out: &mut dyn crate::terminal::TerminalOutput,
 ) -> io::Result<()> {
-    let preview = app.external_command.preview.take().expect("preview active");
+    let Some(preview) = take(app) else {
+        return app.render(out);
+    };
     restore_scroll(app, &preview);
     let Some(target) = preview.target else {
         app.message = None;
@@ -245,12 +249,7 @@ enum Move {
 }
 
 fn move_cursor(app: &mut super::super::App, movement: Move) {
-    let buffer = &mut app
-        .external_command
-        .preview
-        .as_mut()
-        .expect("preview")
-        .buffer;
+    let buffer = &mut app.focus.command_preview_mut().expect("preview").buffer;
     match movement {
         Move::Left => buffer.move_left(),
         Move::Right => buffer.move_right(),
@@ -266,12 +265,7 @@ fn move_page(app: &mut super::super::App, forward: bool) {
 }
 
 fn set_line_edge(app: &mut super::super::App, end: bool) {
-    let buffer = &mut app
-        .external_command
-        .preview
-        .as_mut()
-        .expect("preview")
-        .buffer;
+    let buffer = &mut app.focus.command_preview_mut().expect("preview").buffer;
     let row = buffer.cursor().row;
     let col = if end {
         buffer.line_char_count(row).unwrap_or(0)
@@ -283,9 +277,8 @@ fn set_line_edge(app: &mut super::super::App, end: bool) {
 
 fn reveal_cursor(app: &mut super::super::App) {
     let cursor = app
-        .external_command
-        .preview
-        .as_ref()
+        .focus
+        .command_preview()
         .expect("preview")
         .buffer
         .cursor();
@@ -295,7 +288,9 @@ fn reveal_cursor(app: &mut super::super::App) {
 }
 
 fn read_only_message(app: &mut super::super::App) {
-    let preview = app.external_command.preview.as_ref().expect("preview");
+    let Some(preview) = app.focus.command_preview() else {
+        return;
+    };
     let message = if preview.target.is_some() {
         format!(
             "Command {} output (read-only). Enter applies; Esc cancels.",

@@ -32,6 +32,7 @@ mod completion;
 mod construction;
 mod external_command;
 mod external_diff;
+mod focus;
 mod help;
 mod hooks;
 mod indentation;
@@ -49,7 +50,6 @@ mod search;
 mod selection;
 mod startup_config;
 mod status;
-mod surfaces;
 mod view;
 mod viewport;
 mod watch;
@@ -130,17 +130,12 @@ pub struct App {
     pub pending_reload: Option<reload::PendingReload>,
     /// Explicit Ctrl+F prompt/worker state. No worker exists before invocation.
     pub(crate) search: search::SearchUiState,
-    /// Explicit two-stage replace prompt; empty outside direct user invocation.
-    pub(crate) replace: replace::ReplaceState,
     /// Global transient goto/command prompt. It constructs no background service.
     pub(crate) command_prompt: command_prompt::CommandPromptState,
-    /// Bounded local current-buffer completion UI.
-    pub(crate) completion: completion::CompletionUiState,
     /// Explicit on-demand linter task and findings for the exact active revision.
     pub(crate) lint: lint::LintState,
-    /// Transient read-only surfaces. New surfaces require an ownership review before
-    /// adding another top-level App field; clients/workers never belong in this group.
-    pub(crate) surfaces: surfaces::SurfaceState,
+    /// The one surface that receives keys, paste, and mobile bar actions.
+    pub(crate) focus: focus::Focus,
     /// Per-buffer render-only metadata for the exact latest external reload revision.
     pub(crate) external_changes: external_diff::ExternalChanges,
     /// External process/preview state; empty at startup and while unused.

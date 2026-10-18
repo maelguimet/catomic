@@ -33,9 +33,6 @@ thread_local! {
 #[cfg(test)]
 #[must_use]
 pub(crate) fn settled_clock() -> SettledClock {
-    // Only whole-second TMPDIRs need it. On nanosecond filesystems the real
-    // clock (and its one-tick wait) stays in charge, so the default run and
-    // tests that rewrite a file right after a page load behave as before.
     if tmpdir_has_whole_second_ctimes() {
         TEST_CLOCK_AHEAD
             .with(|ahead| ahead.set(COARSE_SECONDS_GRANULARITY + Duration::from_millis(250)));
@@ -50,7 +47,6 @@ fn tmpdir_has_whole_second_ctimes() -> bool {
     *WHOLE_SECOND.get_or_init(|| {
         let probe =
             std::env::temp_dir().join(format!("catomic-ctime-probe-{}", std::process::id()));
-        // Three writes: a nanosecond filesystem stamps nsec 0 by chance ~never.
         let whole = (0..3).all(|_| {
             std::fs::write(&probe, b"probe")
                 .and_then(|()| std::fs::metadata(&probe))
@@ -130,7 +126,6 @@ impl DescriptorSnapshot {
             u32::try_from(self.changed_nanoseconds).unwrap_or(0),
         );
         let granularity = if self.changed_nanoseconds == 0 {
-            // Possibly a whole-second (or two-second) timestamp filesystem.
             COARSE_SECONDS_GRANULARITY
         } else {
             CLOCK_TICK_GRANULARITY

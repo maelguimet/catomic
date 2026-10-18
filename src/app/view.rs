@@ -202,8 +202,6 @@ pub(crate) fn display_buffer(app: &super::App) -> &dyn Buffer {
 }
 
 pub(crate) fn source_is_displayed(app: &super::App) -> bool {
-    // Mouse coordinates are only valid for the source when the rendered trait
-    // object is that exact buffer, not one of the read-only overlay buffers.
     let source: &dyn Buffer = &*app.buffer;
     std::ptr::eq(display_buffer(app), source)
 }

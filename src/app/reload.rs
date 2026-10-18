@@ -93,7 +93,6 @@ pub(crate) fn reload_arm_message(status: &ExternalFileStatus, dirty: bool) -> St
             }
         }
         _ => {
-            // Should not arm for these; caller decides.
             format!("File status check failed: unexpected arm for {:?}", status)
         }
     }
@@ -268,8 +267,6 @@ fn build_modified_reload_buffer(
             }
             source.ensure_descriptor_unchanged(path)?;
             let buffer = buffer::PagedFileBuffer::from_file(source.into_file(), page_lines)?;
-            // Format detection and the paged baseline must describe the
-            // confirmed revision, as on open.
             crate::file::io::ensure_path_matches_snapshot(path, &loaded_snapshot)?;
             (Box::new(buffer) as Box<dyn buffer::Buffer>, format)
         }
@@ -500,7 +497,6 @@ pub(crate) fn handle_reload_key(
         perform_observed_reload(app, &obs);
         app.render(out)?;
     } else {
-        // Reuse the single observation already computed; do not re-observe.
         apply_check_observation(app, &obs);
         app.render(out)?;
     }

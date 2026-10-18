@@ -90,9 +90,6 @@ impl App {
         out: &mut dyn crate::terminal::TerminalOutput,
         event: Event,
     ) -> io::Result<()> {
-        // A watcher or worker can become ready while terminal polling blocks.
-        // Apply that state before interpreting input against an obsolete buffer
-        // revision, cursor, or temporary surface.
         self.poll_runtime_tasks(out)?;
         self.dispatch_terminal_event(out, event)
     }

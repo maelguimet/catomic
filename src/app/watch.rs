@@ -46,21 +46,16 @@ pub(crate) fn refresh_file_watcher(app: &mut super::App) {
         app.file_watcher = None;
         return;
     };
-    // Clone path for the ctor (watcher takes ownership of normalized target).
     let target: PathBuf = p.clone();
-    // A reload or Save As replaces the watcher; keep the restart count, so a
-    // worker that dies after every event still gives up instead of being
-    // restarted forever by the reloads its own catch-up observations trigger.
-    let restarts = app
+    let restarts_inherited_across_replacement = app
         .file_watcher
         .as_ref()
         .map_or(0, file::watcher::FileWatcher::restarts);
     match file::watcher::FileWatcher::new(target) {
         Ok(watcher) => {
-            app.file_watcher = Some(watcher.with_restarts(restarts));
+            app.file_watcher = Some(watcher.with_restarts(restarts_inherited_across_replacement));
         }
         Err(_) => {
-            // Construction failure must not prevent editing. Store None.
             app.file_watcher = None;
         }
     }
@@ -131,15 +126,10 @@ pub(crate) fn apply_file_watch_signal(
             match obs.status {
                 ExternalFileStatus::Unchanged => {
                     if app.pending_reload.is_some() {
-                        // Watcher observed resolution of a prior external change.
-                        // Clear the stale observation (no content change occurred)
-                        // and restore the normal status.
                         app.pending_reload = None;
                         app.message = None;
                         true
                     } else {
-                        // No pending observation; ignore to avoid self-save noise overwriting
-                        // an existing warning or error.
                         false
                     }
                 }
@@ -197,11 +187,8 @@ pub(crate) fn apply_file_watch_signal(
         }
         FileWatchSignal::Stopped => {
             let restarted = restart_stopped_watcher(app);
-            // Events sent while the worker was dead are lost; observe once so a
-            // change in that gap is still handled like any other hint.
-            let observed = apply_file_watch_signal(app, FileWatchSignal::Changed);
+            let observed = observe_changes_missed_while_stopped(app);
             if !restarted {
-                // A catch-up reload refreshes the watcher; giving up must stick.
                 app.file_watcher = None;
             }
             if app.file_watcher.is_none() {
@@ -213,11 +200,13 @@ pub(crate) fn apply_file_watch_signal(
         }
         FileWatchSignal::Error(e) => {
             app.message_error(format!("File watcher error: {}", e));
-            // Do not mutate buffer/dirty/snapshot/history.
-            // Prefer not to clear pending_reload unless a concrete reason exists.
             true
         }
     }
+}
+
+fn observe_changes_missed_while_stopped(app: &mut super::App) -> bool {
+    apply_file_watch_signal(app, crate::file::watcher::FileWatchSignal::Changed)
 }
 
 /// Apply at most one queued semantic signal from the file watcher.

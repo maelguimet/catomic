@@ -83,11 +83,6 @@ pub(super) fn record_content_edit(app: &mut super::App, message: Option<String>)
     lint::invalidate(app);
     app.selection.clear();
     refresh_dirty(&mut app.file, &*app.buffer);
-    // An edit can join the text on either side of its scalar cursor into one
-    // extended grapheme (for example, regional indicators or a ZWJ sequence).
-    // Keep the post-edit position on the forward boundary so the next movement
-    // or deletion handles that new grapheme as one unit. This needs a buffer
-    // read, so it follows the committed-edit bookkeeping above.
     navigation::snap_current_grapheme_forward(app)?;
     completion::after_content_edit(app)?;
     app.external_changes
@@ -174,10 +169,6 @@ fn handle_raw_key(
 }
 
 pub(super) fn prepare_editor_action(app: &mut super::App, action: Option<Action>) {
-    // Any explicit editor action is a semantic boundary for scalar typing or
-    // deletion runs except the Backspace/Delete actions that can extend the
-    // current deletion run. This also covers touch/mouse actions, which call
-    // this helper with no keyboard action before changing selection state.
     if !matches!(action, Some(Action::DeleteBackward | Action::DeleteForward)) {
         app.buffer.finish_undo_group();
     }
@@ -235,8 +226,6 @@ pub(super) fn dispatch_action(
     if matches!(scope, Scope::Prompt | Scope::Search)
         && (super::prompt_input::is_edit_action(action) || action == Action::PromptCompletePath)
     {
-        // Prompt navigation/editing must not finish source undo groups or touch
-        // its selection. It still disarms a previously displayed quit warning.
         prepare_prompt_edit(app);
         return surfaces::dispatch_action(app, out, scope, action);
     }
@@ -437,8 +426,6 @@ fn paste(
 fn prepare_prompt_edit(app: &mut super::App) {
     app.pending_quit_confirm = false;
     command_prompt::clear_config_discard_confirmation(app);
-    // Save submission checks the exact path and disk snapshot. Retain that
-    // confirmation while the user re-enters/edits the pending destination.
     reload::cancel_confirmation(app);
 }
 

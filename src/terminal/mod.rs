@@ -103,8 +103,6 @@ impl Drop for PanicRestoreGuard {
             std::panic::set_hook(previous);
         }
         if let Some(message) = lock_ignoring_poison(&self.worker_panic).take() {
-            // Restoration is idempotent; it ensures the report lands on the
-            // shell's screen even when the session ends through an error path.
             (self.restore)();
             let _ = writeln!(
                 io::stderr().lock(),

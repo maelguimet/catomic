@@ -409,8 +409,6 @@ fn commit_hard_link(
     let mut destination = existing.file.try_clone()?;
     destination.seek(io::SeekFrom::Start(0))?;
 
-    // Once the shared inode is truncated, rename-style rollback is impossible.
-    // Keep the complete, synced staged file as recovery evidence on any failure.
     *cleanup_temp = false;
     let write_result: io::Result<()> = (|| {
         destination.set_len(0)?;

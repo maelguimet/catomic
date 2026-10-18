@@ -166,7 +166,6 @@ pub trait Buffer {
         Ok(())
     }
 
-    // --- Queries ---
     fn line_count(&self) -> usize;
     fn line(&self, row: usize) -> Option<Cow<'_, str>>;
     fn visible_lines(&self, start: usize, height: usize) -> Vec<LineView<'_>>;
@@ -328,19 +327,16 @@ pub trait Buffer {
     #[cfg(test)]
     fn lines(&self) -> Vec<String>;
 
-    // --- Mutation ---
     fn insert_char(&mut self, ch: char);
     fn insert_newline(&mut self);
     fn delete_back(&mut self);
     fn delete_forward(&mut self);
 
-    // --- Movement (Phase 0 basic) ---
     fn move_left(&mut self);
     fn move_right(&mut self);
     fn move_up(&mut self);
     fn move_down(&mut self);
 
-    // --- Undo/redo (Phase 1C) ---
     /// Undo the most recent edit. No-op if undo stack empty.
     /// Application of history must not itself record history entries.
     fn undo(&mut self);
@@ -369,12 +365,6 @@ pub trait Buffer {
     fn is_history_position_retained(&self, position: u64) -> bool {
         self.edit_history_position() == position
     }
-
-    // TODO later:
-    // fn move_to(&mut self, row: usize, col: usize);
-    // fn insert_str(&mut self, s: &str);
-    // fn delete_range(...);
-    // fn selection, etc.
 }
 
 fn ordered_range<B: Buffer + ?Sized>(buffer: &B, start: Cursor, end: Cursor) -> (Cursor, Cursor) {

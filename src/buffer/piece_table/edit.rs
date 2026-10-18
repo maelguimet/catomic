@@ -204,7 +204,6 @@ impl PieceTable {
         }
         self.replace_piece_run(first_piece..piece_end, replacement);
 
-        // Adjust cursor byte
         if self.cursor_byte_offset > end {
             self.cursor_byte_offset -= end - start;
         } else if self.cursor_byte_offset > start {
@@ -275,7 +274,6 @@ impl PieceTable {
         let _ = (pieces_touched, pieces_allocated);
     }
 
-    // Movement methods keep simple row/col updates. Byte offset is synced on demand or after edits.
     pub(crate) fn move_left_internal(&mut self) {
         if self.cursor.col > 0 {
             self.cursor.col -= 1;
@@ -283,7 +281,6 @@ impl PieceTable {
             self.cursor.row -= 1;
             self.cursor.col = self.current_line_char_len(self.cursor.row);
         }
-        // Note: full sync of cursor_byte_offset can be done via rebuild or compute in 1B wiring.
     }
 
     pub(crate) fn move_right_internal(&mut self) {

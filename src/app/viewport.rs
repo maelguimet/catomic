@@ -6,7 +6,7 @@
 //! Must not: key dispatch, run loop, file state, render core.
 //! Invariants: viewport-only scrolling never mutates a display buffer cursor or source state.
 
-use crate::app::App; // to mutate self.screen etc, or take pieces
+use crate::app::App;
 
 /// Crossterm normalizes terminal and tmux wheel reports to one event per wheel step.
 /// Keep the visible-row amount centralized so configuration can replace it later.
@@ -178,8 +178,6 @@ pub(crate) fn reveal_cursor(app: &mut App) {
     app.screen.wrap_col = 0;
     app.screen
         .reveal_col_with_width(c.col, super::view::content_width(app));
-    // Re-clamp after reveal: reveal_col may target a col on a now-shorter line,
-    // leaving scroll_left > (line_len - vw). Clamp pulls it back.
     clamp_viewport_to_buffer(app);
     reveal_horizontal_cells(app);
 }
@@ -256,7 +254,6 @@ fn reveal_horizontal_cells(app: &mut App) {
 /// Private helper keeps Screen buffer-agnostic.
 /// Called from resize and reveal paths.
 pub(crate) fn clamp_viewport_to_buffer(app: &mut App) {
-    // Vertical
     let (lc, line_len) = {
         let display = super::view::display_buffer(app);
         let cursor = display.cursor();
@@ -281,13 +278,6 @@ pub(crate) fn clamp_viewport_to_buffer(app: &mut App) {
         }
     }
 
-    // Horizontal: scalar char count on the *current cursor line* only.
-    // Matches Phase 2 scalar limitation; movement/delete/undo to shorter line
-    // must not leave scroll_left stranded.
-    // Max uses line_len + 1 - vw (saturating) to be consistent with reveal_col's
-    // "col + 1 - vw" for end-of-line cursor (col can == line_len). This preserves
-    // reveal behavior and keeps cursor visible while still clamping high scrolls
-    // on shorter lines to avoid empty space.
     let vw = super::view::content_width(app);
     if vw == 0 {
         app.screen.scroll_left = 0;

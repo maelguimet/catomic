@@ -255,9 +255,6 @@ impl OriginalReadOperation<'_> {
     }
 }
 
-// LineIndex lives in crate::buffer::line_index (single definition, no duplicate).
-// PT stores and uses it.
-
 /// PieceTable with original + add + pieces + index + cached cursor offset.
 #[derive(Clone, Debug)]
 pub struct PieceTable {

@@ -40,8 +40,6 @@ pub use snapshot::{
     FileSnapshot,
 };
 pub(crate) use snapshot::{ensure_path_matches_snapshot, PinnedFile};
-#[allow(unused_imports)] // Public field types of the re-exported FileSnapshot.
-pub use snapshot::{FileChangeId, FileContentIdentity};
 
 /// Read an entire UTF-8 file for tests and performance baselines.
 /// Moves the bytes into a String after UTF-8 validation. App open/reload uses
@@ -129,8 +127,6 @@ fn atomic_write_with_policy(
         .unwrap_or_else(|| PathBuf::from("."));
     let temp_path = atomic_staging_path(target);
 
-    // Inner closure so we can cleanup a temp we created exactly on failure path.
-    // A create_new collision belongs to someone else and must remain untouched.
     let mut created_temp = false;
     let res: io::Result<u64> = (|| {
         #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -180,13 +176,7 @@ fn atomic_write_with_policy(
             })
         };
         #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            // No content byte is exposed under the umask-derived temporary mode.
-            // New files restore that captured mode after streaming; existing files
-            // restore the target mode after writing has cleared any special bits.
-            f.set_permissions(fs::Permissions::from_mode(0o600))?;
-        }
+        hide_contents_from_other_users_while_staging(&f)?;
         let mut f = f;
         let written = {
             let mut writer = CountingWriter::new(&mut f);
@@ -203,7 +193,6 @@ fn atomic_write_with_policy(
             atomic_unix::preserve_replacement_metadata(&f, target_state.existing.as_ref(), target)?;
         }
         f.sync_all()?;
-        // Ensure file is closed before rename on all platforms.
         drop(f);
 
         if policy == AtomicWritePolicy::PrivateReplace {
@@ -228,7 +217,6 @@ fn atomic_write_with_policy(
             }
         }
 
-        // Best-effort: sync the directory so rename is durable (Unix).
         #[cfg(unix)]
         {
             if let Ok(dirf) = File::open(&parent) {
@@ -239,17 +227,18 @@ fn atomic_write_with_policy(
     })();
 
     if res.is_err() && created_temp {
-        // Best-effort cleanup of only the temp this attempt created.
         let _ = fs::remove_file(&temp_path);
     }
     res
 }
 
+#[cfg(unix)]
+fn hide_contents_from_other_users_while_staging(staged: &File) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    staged.set_permissions(fs::Permissions::from_mode(0o600))
+}
+
 fn atomic_staging_path(target: &Path) -> PathBuf {
-    // Hash the basename instead of appending to it: a legal NAME_MAX target
-    // still needs a legal sibling. Thread identity separates concurrent saves;
-    // the basename separates nested saves to different targets on one thread.
-    // Hash collisions are harmless: create_new fails without touching the owner.
     let mut identity = std::collections::hash_map::DefaultHasher::new();
     target.file_name().hash(&mut identity);
     std::thread::current().id().hash(&mut identity);

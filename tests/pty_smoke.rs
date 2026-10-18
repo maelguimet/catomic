@@ -23,36 +23,13 @@ use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize}
 
 type TestResult<T = ()> = Result<T, Box<dyn Error>>;
 
-mod keys {
-    pub const ALT_PAGE_DOWN: &[u8] = b"\x1b[6;3~";
-    pub const CTRL_A: &[u8] = b"\x01";
-    pub const CTRL_DOWN: &[u8] = b"\x1b[1;5B";
-    pub const CTRL_N: &[u8] = b"\x0e";
-    pub const CTRL_Q: &[u8] = b"\x11";
-    pub const CTRL_S: &[u8] = b"\x13";
-    pub const CTRL_SHIFT_C: &[u8] = b"\x1b[67;6u";
-    pub const CTRL_SHIFT_P: &[u8] = b"\x1b[80;6u";
-    pub const CTRL_U: &[u8] = b"\x15";
-    pub const CTRL_X: &[u8] = b"\x18";
-    pub const END: &[u8] = b"\x1b[F";
-    pub const ENTER: &[u8] = b"\r";
-    pub const ESCAPE: &[u8] = b"\x1b";
-    pub const F1: &[u8] = b"\x1bOP";
-    pub const F4: &[u8] = b"\x1bOS";
-    pub const F5: &[u8] = b"\x1b[15~";
-    pub const F6: &[u8] = b"\x1b[17~";
-    pub const F7: &[u8] = b"\x1b[18~";
-    pub const F8: &[u8] = b"\x1b[19~";
-    pub const HOME: &[u8] = b"\x1b[H";
-    pub const INSERT: &[u8] = b"\x1b[2~";
-    pub const PAGE_DOWN: &[u8] = b"\x1b[6~";
-    pub const RIGHT: &[u8] = b"\x1b[C";
-    pub const SHIFT_RIGHT: &[u8] = b"\x1b[1;2C";
-    pub const TAB: &[u8] = b"\t";
-}
+#[path = "pty_smoke/keys.rs"]
+mod keys;
 
 static PTY_TEST_LOCK: Mutex<()> = Mutex::new(());
 
+#[path = "pty_smoke/config_detour.rs"]
+mod config_detour;
 #[path = "pty_smoke/stdin.rs"]
 mod stdin;
 
@@ -502,7 +479,7 @@ fn pty_syntax_capabilities_distinguish_colored_monochrome_and_unsupported_paths(
     colored.wait_for_output("TOML key color", "\x1b[35menabled")?;
     colored.wait_for_output("TOML keyword color", "\x1b[35mtrue")?;
     assert!(!colored.output_string().contains("Plain text:"));
-    colored.send_keys(b"\x11")?;
+    colored.send_keys(keys::CTRL_Q)?;
     colored.wait_for_exit()?;
     drop(colored);
 
@@ -510,7 +487,7 @@ fn pty_syntax_capabilities_distinguish_colored_monochrome_and_unsupported_paths(
     monochrome.wait_for_output("monochrome reason", "Color off: TERM=dumb is monochrome")?;
     monochrome.wait_for_output("recognized monochrome syntax", "Syntax: TOML")?;
     assert!(!monochrome.output_string().contains("\x1b[35menabled"));
-    monochrome.send_keys(b"\x11")?;
+    monochrome.send_keys(keys::CTRL_Q)?;
     monochrome.wait_for_exit()?;
     drop(monochrome);
 
@@ -522,7 +499,7 @@ fn pty_syntax_capabilities_distinguish_colored_monochrome_and_unsupported_paths(
         "Plain text: no syntax highlighter for .xyz files",
     )?;
     assert!(!plain.output_string().contains("\x1b[35mlet"));
-    plain.send_keys(b"\x11")?;
+    plain.send_keys(keys::CTRL_Q)?;
     plain.wait_for_exit()?;
     Ok(())
 }
@@ -538,7 +515,7 @@ fn pty_explicit_color_override_repairs_a_false_terminal_downgrade() -> TestResul
 
     editor.wait_for_output("forced TOML color", "\x1b[35menabled")?;
     assert!(!editor.output_string().contains("Color off:"));
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
     Ok(())
 }
@@ -622,7 +599,16 @@ fn pty_page_navigation_keeps_combining_and_zwj_clusters_whole() -> TestResult {
         let mut editor = PtyEditor::spawn(&temp.path)?;
 
         editor.wait_for_initial_render()?;
-        editor.send_keys(b"\x1b[C\x1b[6~\x1b[3~\x13\x11")?;
+        editor.send_keys(
+            &[
+                keys::RIGHT,
+                keys::PAGE_DOWN,
+                keys::DELETE,
+                keys::CTRL_S,
+                keys::CTRL_Q,
+            ]
+            .concat(),
+        )?;
         editor.wait_for_exit()?;
         assert_eq!(fs::read_to_string(&temp.path)?, "ab\nx");
     }
@@ -675,13 +661,23 @@ fn pty_save_undo_save_quit_writes_expected_file() -> TestResult {
         "prompt role must remain distinct in monochrome mode"
     );
     let prompt_close_start = editor.output_len();
-    editor.send_keys(b"\x1b")?;
+    editor.send_keys(keys::ESCAPE)?;
     wait_until("prompt close redraw", Duration::from_secs(2), || {
         editor
             .output_since(prompt_close_start)
             .contains(filename.as_ref())
     })?;
-    editor.send_keys(b"ab\x13c\x1a\x13\x11")?;
+    editor.send_keys(
+        &[
+            b"ab",
+            keys::CTRL_S,
+            b"c",
+            keys::CTRL_Z,
+            keys::CTRL_S,
+            keys::CTRL_Q,
+        ]
+        .concat(),
+    )?;
     editor.wait_for_exit()?;
 
     let output = editor.output_string();
@@ -713,7 +709,7 @@ fn pty_footer_tracks_edit_save_and_accepted_external_modification() -> TestResul
     editor.wait_for_output("edited footer", "(not saved)")?;
 
     editor.clear_output();
-    editor.send_keys(b"\x13")?;
+    editor.send_keys(keys::CTRL_S)?;
     editor.wait_for_output("saved footer", "(saved)")?;
     wait_until("saved edited bytes", Duration::from_secs(2), || {
         fs::read_to_string(&temp.path).is_ok_and(|text| text == "Xbase")
@@ -724,7 +720,7 @@ fn pty_footer_tracks_edit_save_and_accepted_external_modification() -> TestResul
     editor.wait_for_output("accepted external content", "external")?;
     editor.wait_for_output("accepted external footer", "(saved)")?;
 
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
     Ok(())
 }
@@ -741,9 +737,9 @@ fn pty_emoji_picker_opens_and_accepts_ranked_match() -> TestResult {
     assert!(editor.output_string().contains("💯"));
 
     editor.clear_output();
-    editor.send_keys(b"\r")?;
+    editor.send_keys(keys::ENTER)?;
     editor.wait_for_output("accepted emoji", "💯")?;
-    editor.send_keys(b"\x13\x11")?;
+    editor.send_keys(&[keys::CTRL_S, keys::CTRL_Q].concat())?;
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(&temp.path)?, "💯");
@@ -760,7 +756,7 @@ fn pty_mobile_touch_edit_focus_resize_save_and_quit_need_no_hardware_chord() -> 
     editor.tap(0, 0)?;
     editor.send_keys(b"X")?;
     editor.clear_output();
-    editor.send_keys(b"\x1b[O\x1b[I")?;
+    editor.send_keys(&[keys::FOCUS_OUT, keys::FOCUS_IN].concat())?;
     editor.wait_for_output("focus redraw preserves edit", "Xa")?;
 
     editor.clear_output();
@@ -811,16 +807,23 @@ fn pty_layout_text_preserves_punctuation_unicode_and_enhanced_shortcuts() -> Tes
     assert_eq!(sequence_count(&editor.output_string(), "\x1b[>1u"), 1);
     let text = ";.123!? /éÉê€猫";
     editor.send_keys(text.as_bytes())?;
-    editor.send_keys(b"\x1b[115;5u")?;
+    editor.send_keys(keys::CSI_U_CTRL_S)?;
     wait_until("layout text saved", Duration::from_secs(2), || {
         fs::read_to_string(&temp.path).is_ok_and(|saved| saved == text)
     })?;
 
-    editor.send_keys(b"\x1b[122;5u\x1b[115;5u")?;
+    editor.send_keys(&[keys::CSI_U_CTRL_Z, keys::CSI_U_CTRL_S].concat())?;
     wait_until("layout text undo", Duration::from_secs(2), || {
         fs::read_to_string(&temp.path).is_ok_and(|saved| saved != text)
     })?;
-    editor.send_keys(b"\x1b[122;6u\x1b[115;5u\x1b[113;5u")?;
+    editor.send_keys(
+        &[
+            keys::CSI_U_CTRL_SHIFT_Z,
+            keys::CSI_U_CTRL_S,
+            keys::CSI_U_CTRL_Q,
+        ]
+        .concat(),
+    )?;
     editor.wait_for_exit()?;
     assert_eq!(fs::read_to_string(&temp.path)?, text);
     Ok(())
@@ -832,29 +835,29 @@ fn pty_undo_redo_distinguishes_reported_shift() -> TestResult {
     let mut editor = PtyEditor::spawn(&temp.path)?;
 
     editor.wait_for_initial_render()?;
-    editor.send_keys(b"x\x13")?;
+    editor.send_keys(&[b"x", keys::CTRL_S].concat())?;
     wait_until("initial PTY save", Duration::from_secs(2), || {
         fs::read_to_string(&temp.path).is_ok_and(|text| text == "x")
     })?;
 
-    editor.send_keys(b"\x1a\x13")?;
+    editor.send_keys(&[keys::CTRL_Z, keys::CTRL_S].concat())?;
     wait_until("Ctrl+Z undo", Duration::from_secs(2), || {
         fs::read_to_string(&temp.path).is_ok_and(|text| text.is_empty())
     })?;
 
-    editor.send_keys(b"\x1b[90;6u\x13")?;
+    editor.send_keys(&[keys::CSI_U_CTRL_SHIFT_UPPERCASE_Z, keys::CTRL_S].concat())?;
     wait_until("Ctrl+Shift+Z redo", Duration::from_secs(2), || {
         fs::read_to_string(&temp.path).is_ok_and(|text| text == "x")
     })?;
 
-    editor.send_keys(b"\x1b[90;5u\x13")?;
+    editor.send_keys(&[keys::CSI_U_CTRL_UPPERCASE_Z, keys::CTRL_S].concat())?;
     wait_until(
         "uppercase Ctrl+Z without Shift",
         Duration::from_secs(2),
         || fs::read_to_string(&temp.path).is_ok_and(|text| text.is_empty()),
     )?;
 
-    editor.send_keys(b"\x19\x13\x11")?;
+    editor.send_keys(&[keys::CTRL_Y, keys::CTRL_S, keys::CTRL_Q].concat())?;
     editor.wait_for_exit()?;
     assert_eq!(fs::read_to_string(&temp.path)?, "x");
 
@@ -869,10 +872,17 @@ fn pty_legacy_and_enhanced_backspace_paths_remain_distinct() -> TestResult {
     editor.wait_for_initial_render()?;
     // Ordinary text stays on the terminal's legacy text path: "one two".
     editor.send_keys(b"one two")?;
-    editor.send_keys(b"\x7f\x1b[122;5u")?;
-    editor.send_keys(b"\x1b[127u\x1b[122;5u")?;
-    editor.send_keys(b"\x1b[127;5u\x1b[122;5u")?;
-    editor.send_keys(b"\x1b[127;5u\x1b[115;5u\x1b[113;5u")?;
+    editor.send_keys(&[keys::BACKSPACE, keys::CSI_U_CTRL_Z].concat())?;
+    editor.send_keys(&[keys::CSI_U_BACKSPACE, keys::CSI_U_CTRL_Z].concat())?;
+    editor.send_keys(&[keys::CSI_U_CTRL_BACKSPACE, keys::CSI_U_CTRL_Z].concat())?;
+    editor.send_keys(
+        &[
+            keys::CSI_U_CTRL_BACKSPACE,
+            keys::CSI_U_CTRL_S,
+            keys::CSI_U_CTRL_Q,
+        ]
+        .concat(),
+    )?;
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(&temp.path)?, "one ");
@@ -934,7 +944,7 @@ fn pty_quit_drops_an_in_flight_kitty_release_before_returning_to_shell() -> Test
     editor.wait_for_initial_render()?;
     let shell_offset = editor.output_len();
 
-    editor.send_keys(b"\x1b[113;5u\x1b[113;5:3u")?;
+    editor.send_keys(&[keys::CSI_U_CTRL_Q, keys::CSI_U_CTRL_Q_RELEASE].concat())?;
     editor.wait_for_output("shell resumes after Ctrl+Q", "CATOMIC_SHELL_READY")?;
     editor.send_keys(b"\n")?;
     editor.wait_for_output("shell consumed its line", "CATOMIC_SHELL_LINE=")?;
@@ -965,7 +975,7 @@ fn pty_quit_drops_a_late_mouse_report_before_returning_to_shell() -> TestResult 
     editor.wait_for_initial_render()?;
     let shell_offset = editor.output_len();
 
-    editor.send_keys(b"\x1b[113;5u")?;
+    editor.send_keys(keys::CSI_U_CTRL_Q)?;
     // A real terminal (or an SSH/multiplexer hop) can still deliver motion
     // reports that were in flight when the disable sequence arrived. Inject one
     // the moment teardown writes the disable, as a late terminal would.
@@ -1019,7 +1029,7 @@ fn pty_sgr_mouse_motion_underlines_only_the_hovered_link() -> TestResult {
         .output_since(leave_offset)
         .contains("\x1b[94;4mhttps://example.com"));
 
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
     Ok(())
 }
@@ -1032,7 +1042,17 @@ fn pty_esc_del_deletes_the_previous_word_by_default() -> TestResult {
 
     editor.wait_for_initial_render()?;
     // ESC DEL is Alt+Backspace; undo, redo, save, and quit verify one edit.
-    editor.send_keys(b"one two\x1b\x7f\x1a\x19\x13\x11")?;
+    editor.send_keys(
+        &[
+            b"one two",
+            keys::ALT_BACKSPACE,
+            keys::CTRL_Z,
+            keys::CTRL_Y,
+            keys::CTRL_S,
+            keys::CTRL_Q,
+        ]
+        .concat(),
+    )?;
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(active)?, "one ");
@@ -1048,7 +1068,7 @@ fn pty_esc_d_deletes_the_next_word_by_default() -> TestResult {
     editor.wait_for_initial_render()?;
     // Some terminal paths rewrite Ctrl+Delete as ESC d, which Crossterm
     // decodes as Alt+d. It must use the word-delete fallback, not type d.
-    editor.send_keys(b"\x1bd\x13\x11")?;
+    editor.send_keys(&[keys::ALT_D, keys::CTRL_S, keys::CTRL_Q].concat())?;
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(active)?, "two three");
@@ -1062,12 +1082,12 @@ fn pty_ctrl_h_opens_help_by_default() -> TestResult {
     let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
 
     editor.wait_for_initial_render()?;
-    editor.send_keys(b"\x08")?;
+    editor.send_keys(keys::CTRL_H)?;
     editor.wait_for_output("Ctrl+H opens Help", "Help; Esc closes.")?;
     editor.clear_output();
-    editor.send_keys(b"\x1b")?;
+    editor.send_keys(keys::ESCAPE)?;
     editor.wait_for_output("Escape closes Help", "source remains unchanged")?;
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(active)?, "source remains unchanged");
@@ -1107,9 +1127,9 @@ fn pty_f1_help_wraps_and_scrolls_to_reload_reference_in_a_narrow_terminal() -> T
     editor.wait_for_output("external change help", "observed state is unchanged")?;
 
     editor.clear_output();
-    editor.send_keys(b"\x1bOP")?;
+    editor.send_keys(keys::F1)?;
     editor.wait_for_output("F1 closes help", "source remains")?;
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(&temp.path)?, "source remains unchanged");
@@ -1162,7 +1182,7 @@ fn pty_insert_overwrite_cursor_prompt_and_teardown_transitions() -> TestResult {
     editor.send_keys(keys::INSERT)?;
 
     let close_start = editor.output_len();
-    editor.send_keys(b"\x1b")?;
+    editor.send_keys(keys::ESCAPE)?;
     wait_until(
         "overwrite cursor after prompt",
         Duration::from_secs(2),
@@ -1175,14 +1195,14 @@ fn pty_insert_overwrite_cursor_prompt_and_teardown_transitions() -> TestResult {
     editor.send_keys(b"X")?;
     editor.wait_for_output("PTY overwrite edit", "Xbc")?;
     let disable_start = editor.output_len();
-    editor.send_keys(b"\x1b[2~")?;
+    editor.send_keys(keys::INSERT)?;
     wait_until("insert default cursor", Duration::from_secs(2), || {
         let output = editor.output_since(disable_start);
         output.contains("\x1b[0 q") && !output.contains("INS")
     })?;
 
     let reenable_start = editor.output_len();
-    editor.send_keys(b"\x1b[2~")?;
+    editor.send_keys(keys::INSERT)?;
     wait_until(
         "overwrite cursor before normal teardown",
         Duration::from_secs(2),
@@ -1191,7 +1211,7 @@ fn pty_insert_overwrite_cursor_prompt_and_teardown_transitions() -> TestResult {
             output.contains("\x1b[2 q") && !output.contains("OVR")
         },
     )?;
-    editor.send_keys(b"\x13\x11")?;
+    editor.send_keys(&[keys::CTRL_S, keys::CTRL_Q].concat())?;
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(&temp.path)?, "Xbc");
@@ -1217,7 +1237,7 @@ fn pty_sigterm_restores_terminal_modes_before_exit() -> TestResult {
     editor.wait_for_initial_render()?;
 
     let enable_start = editor.output_len();
-    editor.send_keys(b"\x1b[2~")?;
+    editor.send_keys(keys::INSERT)?;
     wait_until(
         "overwrite cursor before signal",
         Duration::from_secs(2),
@@ -1276,7 +1296,7 @@ fn pty_link_hover_off_ignores_pointer_motion_over_links() -> TestResult {
         editor.clear_output();
         // SGR button 35 is pointer motion with no button held.
         editor.send_keys(b"\x1b[<35;10;1M")?;
-        editor.send_keys(b"\x11")?;
+        editor.send_keys(keys::CTRL_Q)?;
         editor.wait_for_exit()?;
         Ok(editor.output_string())
     }
@@ -1302,7 +1322,7 @@ fn pty_link_hover_off_never_enables_any_motion_tracking() -> TestResult {
     let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
 
     editor.wait_for_initial_render()?;
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
 
     let output = editor.output_string();
@@ -1411,9 +1431,9 @@ fn pty_file_size_limit_save_is_recoverable_and_cleans_temp() -> TestResult {
     editor.wait_for_initial_render()?;
 
     let pasted = "x".repeat(1536);
-    editor.send_keys(b"\x1b[200~")?;
+    editor.send_keys(keys::PASTE_START)?;
     editor.send_keys(pasted.as_bytes())?;
-    editor.send_keys(b"\x1b[201~\x13")?;
+    editor.send_keys(&[keys::PASTE_END, keys::CTRL_S].concat())?;
     if let Err(error) = wait_until(
         "recoverable file-limit error",
         Duration::from_secs(10),
@@ -1443,7 +1463,7 @@ fn pty_file_size_limit_save_is_recoverable_and_cleans_temp() -> TestResult {
         .count();
     assert_eq!(leftovers, 0, "failed save must clean its temp file");
 
-    editor.send_keys(b"\x11\x11")?;
+    editor.send_keys(&[keys::CTRL_Q, keys::CTRL_Q].concat())?;
     editor.wait_for_exit()?;
     Ok(())
 }
@@ -1463,14 +1483,14 @@ fn pty_external_edit_confirm_reload_quit_shows_disk_content() -> TestResult {
     editor.wait_for_output("passive watcher warning", "Press Ctrl+R twice")?;
     editor.clear_output();
 
-    editor.send_keys(b"\x12")?;
+    editor.send_keys(keys::CTRL_R)?;
     editor.wait_for_output("first explicit reload arms", "Press Ctrl+R again")?;
     let armed_frame = editor.output_string();
     assert!(armed_frame.contains("Press Ctrl+R again"));
     assert!(!armed_frame.contains("external disk content"));
 
     editor.clear_output();
-    editor.send_keys(b"\x12")?;
+    editor.send_keys(keys::CTRL_R)?;
     editor.wait_for_output("reloaded external content", "external disk content")?;
     editor.wait_for_output("replacement gutter marker", "\x1b[36;1;4m~\x1b[0m ")?;
 
@@ -1488,7 +1508,7 @@ fn pty_external_edit_confirm_reload_quit_shows_disk_content() -> TestResult {
         })
     })?;
 
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(&temp.path)?, "external disk content");
@@ -1502,7 +1522,7 @@ fn pty_ctrl_f_prompt_finds_content_and_quits() -> TestResult {
     let mut editor = PtyEditor::spawn(&temp.path)?;
 
     editor.wait_for_initial_render()?;
-    editor.send_keys(b"\x06target")?;
+    editor.send_keys(&[keys::CTRL_F, b"target"].concat())?;
     editor.wait_for_output("Ctrl+F result", "Find: target  Found;")?;
     assert!(
         editor
@@ -1510,262 +1530,10 @@ fn pty_ctrl_f_prompt_finds_content_and_quits() -> TestResult {
             .contains("\x1b[30;43mtarget\x1b[39;49m"),
         "incremental Ctrl+F should use the search-match theme role"
     );
-    editor.send_keys(b"\r")?;
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::ENTER)?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
 
-    Ok(())
-}
-
-#[cfg(unix)]
-#[test]
-fn pty_saved_config_detour_closes_and_preserves_dirty_source() -> TestResult {
-    use std::os::unix::fs::PermissionsExt;
-
-    let project = TempProject::new("config_command");
-    let active = project.write("note.txt", "source stays untouched");
-    let config = project.root.join("catomic/config.toml");
-    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
-
-    editor.wait_for_initial_render()?;
-    editor.send_keys(b"X")?;
-    editor.wait_for_output("dirty source buffer", "Xsource stays untouched")?;
-    editor.send_keys(b"\x1b[80;6uconfig\r")?;
-    editor.wait_for_output("config creation confirmation", "Type yes to confirm")?;
-    assert!(!config.exists(), "prompt must not create configuration");
-
-    editor.send_keys(b"yes\r")?;
-    editor.wait_for_output("config template buffer", "Catomic configuration")?;
-    let created = fs::read_to_string(&config)?;
-    assert!(created.contains("[theme.colors]"));
-    assert!(created.contains("[keybindings]"));
-    assert_eq!(fs::metadata(&config)?.permissions().mode() & 0o777, 0o600);
-
-    editor.send_keys(b"#\x13")?;
-    editor.wait_for_output(
-        "configuration save policy",
-        "Saved configuration. Restart Catomic to apply configuration changes.",
-    )?;
-    assert!(fs::read_to_string(&config)?.starts_with("## Catomic configuration"));
-
-    editor.clear_output();
-    editor.send_keys(b"\x11")?;
-    editor.wait_for_output("restored dirty source", "Xsource stays untouched")?;
-    let close_output = editor.output_string();
-    assert!(!close_output.contains("configuration remains open"));
-    assert!(!close_output.contains("Buffer closed."));
-    assert!(!close_output.contains("file 1/2"));
-
-    let cycle_start = editor.output_len();
-    editor.send_keys(keys::ALT_PAGE_DOWN)?;
-    wait_until("sole-buffer cycle frame", Duration::from_secs(2), || {
-        editor.output_since(cycle_start).contains("\x1b[?2026l")
-    })?;
-    let cycle_frame = editor.output_since(cycle_start);
-    assert!(!cycle_frame.contains("Catomic configuration"));
-
-    editor.send_keys(b"\x11")?;
-    editor.wait_for_output(
-        "dirty source quit guard",
-        "Unsaved changes. Press Ctrl+Q again to quit without saving",
-    )?;
-    editor.send_keys(b"\x11")?;
-    editor.wait_for_exit()?;
-    let output = editor.output_string();
-    assert!(output.contains("\x1b[0m"), "terminal styles must reset");
-    assert!(
-        output.contains("\x1b]112\x07"),
-        "terminal cursor color must reset"
-    );
-    assert_eq!(fs::read_to_string(active)?, "source stays untouched");
-    Ok(())
-}
-
-#[test]
-fn pty_dirty_config_detour_refuses_then_discards_only_config_and_reopens_from_disk() -> TestResult {
-    let project = TempProject::new("dirty_config_detour");
-    let config = project.write("catomic/config.toml", "# CONFIG DISK MARKER\n");
-    let active = project.write("note.txt", "SOURCE BUFFER MARKER");
-    let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
-
-    editor.wait_for_initial_render()?;
-    editor.send_keys(b"\x1b[80;6uconfig\r")?;
-    editor.wait_for_output("existing config detour", "CONFIG DISK MARKER")?;
-    editor.send_keys(b"X")?;
-    editor.wait_for_output("dirty config edit", "X\x1b[96m# CONFIG DISK MARKER")?;
-
-    editor.clear_output();
-    editor.send_keys(b"\x11")?;
-    editor.wait_for_output(
-        "config-local discard guard",
-        "Unsaved configuration. Press Ctrl+Q again to discard it, or Ctrl+S to save.",
-    )?;
-    let guard_frame = editor.output_string();
-    assert!(guard_frame.contains("Unsaved configuration."));
-    assert!(!guard_frame.contains("SOURCE BUFFER MARKER"));
-
-    editor.clear_output();
-    editor.send_keys(b"\x11")?;
-    editor.wait_for_output(
-        "source restored after config discard",
-        "SOURCE BUFFER MARKER",
-    )?;
-    assert_eq!(fs::read_to_string(&config)?, "# CONFIG DISK MARKER\n");
-    assert!(!editor.output_string().contains("CONFIG DISK MARKER"));
-    assert!(!editor.output_string().contains("file 1/2"));
-
-    editor.clear_output();
-    editor.send_keys(b"\x1b[80;6uconfig\r")?;
-    editor.wait_for_output("fresh config reopened from disk", "# CONFIG DISK MARKER")?;
-    assert!(!editor.output_string().contains("X# CONFIG DISK MARKER"));
-
-    editor.send_keys(b"\x11")?;
-    editor.wait_for_output(
-        "source restored after fresh config close",
-        "SOURCE BUFFER MARKER",
-    )?;
-    editor.send_keys(b"\x11")?;
-    editor.wait_for_exit()?;
-    Ok(())
-}
-
-#[test]
-fn pty_clean_config_detour_returns_to_invoker_in_multi_buffer_ring() -> TestResult {
-    let project = TempProject::new("multi_buffer_config_detour");
-    project.write("catomic/config.toml", "# CONFIG MUST LEAVE RING\n");
-    let first = project.write("first.txt", "FIRST BUFFER MARKER");
-    let second = project.write("second.txt", "SECOND BUFFER MARKER");
-    let mut editor = PtyEditor::spawn_with_xdg(&first, &project.root)?;
-
-    editor.wait_for_initial_render()?;
-    editor.send_keys(format!("\x1b[80;6uopen {}\r", second.display()).as_bytes())?;
-    editor.wait_for_output("second source buffer", "SECOND BUFFER MARKER")?;
-    editor.send_keys(b"\x1b[80;6uconfig\r")?;
-    editor.wait_for_output("clean config detour", "CONFIG MUST LEAVE RING")?;
-
-    editor.clear_output();
-    editor.send_keys(b"\x11")?;
-    editor.wait_for_output("return to invoking second buffer", "SECOND BUFFER MARKER")?;
-    editor.wait_for_output("config removed from three-buffer ring", "file 2/2")?;
-    assert!(!editor.output_string().contains("CONFIG MUST LEAVE RING"));
-
-    editor.clear_output();
-    editor.send_keys(keys::ALT_PAGE_DOWN)?;
-    editor.wait_for_output("cycle to first source", "FIRST BUFFER MARKER")?;
-    editor.wait_for_output("first of two remaining buffers", "file 1/2")?;
-    assert!(!editor.output_string().contains("CONFIG MUST LEAVE RING"));
-
-    editor.clear_output();
-    editor.send_keys(b"\x1b[6;3~")?;
-    editor.wait_for_output("cycle back to second source", "SECOND BUFFER MARKER")?;
-    editor.wait_for_output("second of two remaining buffers", "file 2/2")?;
-    assert!(!editor.output_string().contains("CONFIG MUST LEAVE RING"));
-
-    editor.send_keys(b"\x11")?;
-    editor.wait_for_exit()?;
-    Ok(())
-}
-
-#[test]
-fn pty_bare_config_and_edit_alias_open_the_resolved_file_in_catomic() -> TestResult {
-    let project = TempProject::new("config_cli_existing");
-    let config = project.write(
-        "catomic/config.toml",
-        "# exact bare config content\n[theme]\nname = \"invalid-but-editable\"\n",
-    );
-    let before = fs::read(&config)?;
-
-    for arguments in [["config", ""], ["config", "edit"]] {
-        let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
-        command.cwd(&project.root);
-        command.arg(arguments[0]);
-        if !arguments[1].is_empty() {
-            command.arg(arguments[1]);
-        }
-        let mut editor = PtyEditor::spawn_command_with_xdg(command, &project.root)?;
-
-        editor.wait_for_initial_render()?;
-        editor.wait_for_output("resolved config content", "exact bare config content")?;
-        editor.send_keys(b"\x11")?;
-        editor.wait_for_exit()?;
-    }
-
-    assert_eq!(fs::read(&config)?, before);
-    assert!(!project.root.join("config").exists());
-    assert!(!project.root.join("update").exists());
-    Ok(())
-}
-
-#[test]
-fn pty_dirty_config_opened_from_shell_keeps_normal_guarded_session_quit() -> TestResult {
-    let project = TempProject::new("config_cli_dirty_quit");
-    let config = project.write("catomic/config.toml", "# shell config remains on disk\n");
-    let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
-    command.cwd(&project.root);
-    command.arg("config");
-    let mut editor = PtyEditor::spawn_command_with_xdg(command, &project.root)?;
-
-    editor.wait_for_output("shell config content", "shell config remains on disk")?;
-    editor.send_keys(b"X\x11")?;
-    editor.wait_for_output(
-        "ordinary global quit guard",
-        "Unsaved changes. Press Ctrl+Q again to quit without saving",
-    )?;
-    assert!(!editor.output_string().contains("Unsaved configuration."));
-    editor.send_keys(b"\x11")?;
-    editor.wait_for_exit()?;
-    assert_eq!(
-        fs::read_to_string(config)?,
-        "# shell config remains on disk\n"
-    );
-    Ok(())
-}
-
-#[cfg(unix)]
-#[test]
-fn pty_bare_config_confirms_and_opens_a_missing_private_template() -> TestResult {
-    use std::os::unix::fs::PermissionsExt;
-
-    let project = TempProject::new("config_cli_missing");
-    let config = project.root.join("catomic/config.toml");
-    let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
-    command.cwd(&project.root);
-    command.arg("config");
-    let mut editor = PtyEditor::spawn_command_with_xdg(command, &project.root)?;
-
-    editor.wait_for_output("config CLI creation confirmation", "Type yes to confirm")?;
-    assert!(!config.exists(), "prompt must not create configuration");
-    assert!(!project.root.join("config").exists());
-    editor.send_keys(b"yes\r")?;
-    editor.wait_for_output("config CLI template", "Catomic configuration")?;
-    assert_eq!(fs::metadata(&config)?.permissions().mode() & 0o777, 0o600);
-    assert_eq!(
-        fs::metadata(config.parent().expect("config parent"))?
-            .permissions()
-            .mode()
-            & 0o777,
-        0o700
-    );
-    editor.send_keys(b"\x11")?;
-    editor.wait_for_exit()?;
-    Ok(())
-}
-
-#[test]
-fn pty_config_edit_decline_exits_cleanly_without_creating_a_file() -> TestResult {
-    let project = TempProject::new("config_cli_decline");
-    let config = project.root.join("catomic/config.toml");
-    let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_catomic"));
-    command.cwd(&project.root);
-    command.arg("config");
-    command.arg("edit");
-    let mut editor = PtyEditor::spawn_command_with_xdg(command, &project.root)?;
-
-    editor.wait_for_output("config edit creation confirmation", "Type yes to confirm")?;
-    editor.send_keys(b"no\r")?;
-    editor.wait_for_exit()?;
-    assert!(!config.exists());
-    assert!(!project.root.join("config").exists());
     Ok(())
 }
 
@@ -1783,7 +1551,7 @@ fn pty_custom_theme_reaches_content_status_and_cursor_then_resets() -> TestResul
     editor.wait_for_output("themed content", "\x1b[92;40mthemed content\x1b[0m")?;
     editor.wait_for_output("themed status", "\x1b[24;1H\x1b[2K\x1b[0m\x1b[97m\x1b[44m")?;
     editor.wait_for_output("themed cursor", "\x1b]12;#cd0000\x07")?;
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
 
     let output = editor.output_string();
@@ -1811,7 +1579,7 @@ fn pty_f4_lints_active_file_and_exposes_raw_message() -> TestResult {
     editor.clear_output();
     editor.send_keys(keys::RIGHT)?;
     editor.wait_for_output("raw lint message", "Lint 1:2: raw PTY lint message")?;
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
 
     Ok(())
@@ -1830,7 +1598,7 @@ fn pty_encoded_sgr_and_x10_clicks_position_the_next_edits() -> TestResult {
     // Legacy X10 left-button press/release at column 4, row 3.
     editor.send_keys(b"\x1b[M $#\x1b[M#$#")?;
     editor.send_keys("🙂".as_bytes())?;
-    editor.send_keys(b"\x13\x11")?;
+    editor.send_keys(&[keys::CTRL_S, keys::CTRL_Q].concat())?;
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(&temp.path)?, "first\nsec猫ond\nthi🙂rd");
@@ -1850,10 +1618,10 @@ fn pty_mouse_selection_ctrl_c_emits_bounded_st_osc52() -> TestResult {
     editor.wait_for_output("mouse selection", "\x1b[30;46mcopy\x1b[39;49m")?;
     editor.wait_for_output("mouse copy-on-select", "\x1b]52;c;Y29weQ==\x1b\\")?;
     editor.clear_output();
-    editor.send_keys(b"\x03")?;
+    editor.send_keys(keys::CTRL_C)?;
     editor.wait_for_output("Ctrl+C OSC 52 clipboard write", "\x1b]52;c;Y29weQ==\x1b\\")?;
 
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
     assert_eq!(fs::read_to_string(&temp.path)?, "copy me");
     Ok(())
@@ -1866,13 +1634,13 @@ fn pty_ctrl_a_exports_selection_before_ctrl_c_reaches_catomic() -> TestResult {
     let mut editor = PtyEditor::spawn(&temp.path)?;
 
     editor.wait_for_initial_render()?;
-    editor.send_keys(b"\x01")?;
+    editor.send_keys(keys::CTRL_A)?;
     editor.wait_for_output(
         "Ctrl+A OSC 52 clipboard write",
         "\x1b]52;c;Y29weSBtZQ==\x1b\\",
     )?;
 
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
     assert_eq!(fs::read_to_string(&temp.path)?, "copy me");
     Ok(())
@@ -1885,13 +1653,13 @@ fn pty_ctrl_c_writes_selection_to_system_clipboard_helper() -> TestResult {
     let (mut editor, clipboard) = PtyEditor::spawn_with_clipboard_helper(&temp.path)?;
 
     editor.wait_for_initial_render()?;
-    editor.send_keys(b"\x01")?;
+    editor.send_keys(keys::CTRL_A)?;
     assert!(
         !clipboard.exists(),
         "selection alone must not invoke the system clipboard helper"
     );
 
-    editor.send_keys(b"\x03")?;
+    editor.send_keys(keys::CTRL_C)?;
     wait_until("system clipboard write", Duration::from_secs(2), || {
         fs::read_to_string(&clipboard).ok().as_deref() == Some("copy 猫🙂")
     })?;
@@ -1900,7 +1668,7 @@ fn pty_ctrl_c_writes_selection_to_system_clipboard_helper() -> TestResult {
         .output_string()
         .contains("Copied selection to system clipboard."));
 
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
     Ok(())
 }
@@ -1947,7 +1715,16 @@ fn pty_ctrl_k_accumulates_lines_for_internal_paste() -> TestResult {
     let mut editor = PtyEditor::spawn(&temp.path)?;
 
     editor.wait_for_initial_render()?;
-    editor.send_keys(b"\x0b\x0b\x16\x13\x11")?;
+    editor.send_keys(
+        &[
+            keys::CTRL_K,
+            keys::CTRL_K,
+            keys::CTRL_V,
+            keys::CTRL_S,
+            keys::CTRL_Q,
+        ]
+        .concat(),
+    )?;
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(&temp.path)?, "one\ntwo\nthree");
@@ -1980,7 +1757,7 @@ fn pty_paragraph_navigation_and_wheel_keep_the_logical_cursor_stable() -> TestRe
 
     editor.send_keys(b"X")?;
     editor.wait_for_output("typing reveals original paragraph cursor", "Xnext-target")?;
-    editor.send_keys(b"\x13\x11")?;
+    editor.send_keys(&[keys::CTRL_S, keys::CTRL_Q].concat())?;
     editor.wait_for_exit()?;
 
     let saved = fs::read_to_string(&temp.path)?;
@@ -2008,8 +1785,8 @@ fn pty_unquoted_filename_words_open_save_and_remain_one_buffer() -> TestResult {
 
     editor.wait_for_initial_render()?;
     editor.send_keys(b"hello")?;
-    editor.send_keys(b"\x1b[6;3~")?;
-    editor.send_keys(b" world\x13\x11")?;
+    editor.send_keys(keys::ALT_PAGE_DOWN)?;
+    editor.send_keys(&[b" world", keys::CTRL_S, keys::CTRL_Q].concat())?;
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(&intended)?, "hello world");
@@ -2027,7 +1804,7 @@ fn pty_spaced_and_literal_option_filenames_each_open_as_one_buffer() -> TestResu
 
     spaced_editor.wait_for_initial_render()?;
     spaced_editor.wait_for_output("quoted single path", "quoted filename content")?;
-    spaced_editor.send_keys(b"\x11")?;
+    spaced_editor.send_keys(keys::CTRL_Q)?;
     spaced_editor.wait_for_exit()?;
     drop(spaced_editor);
 
@@ -2039,7 +1816,7 @@ fn pty_spaced_and_literal_option_filenames_each_open_as_one_buffer() -> TestResu
 
     literal_editor.wait_for_initial_render()?;
     literal_editor.wait_for_output("literal option path", "literal option filename content")?;
-    literal_editor.send_keys(b"\x11")?;
+    literal_editor.send_keys(keys::CTRL_Q)?;
     literal_editor.wait_for_exit()?;
     Ok(())
 }
@@ -2072,9 +1849,9 @@ fn pty_markdown_preview_and_view_toggles_leave_source_unchanged() -> TestResult 
     editor.send_keys(keys::F8)?;
     editor.wait_for_output("whitespace enabled", "·")?;
     editor.clear_output();
-    editor.send_keys(b"\x1b")?;
+    editor.send_keys(keys::ESCAPE)?;
     editor.wait_for_output("preview disabled", "#·Heading")?;
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(&temp.path)?, source);
@@ -2110,7 +1887,7 @@ fn pty_markdown_preview_scrolls_the_source_to_the_corresponding_position() -> Te
     editor.clear_output();
     editor.send_keys(keys::F6)?;
     editor.wait_for_output("source synchronized to bottom", "## Row 59")?;
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(&temp.path)?, source);
@@ -2142,7 +1919,7 @@ fn pty_live_resize_redraws_at_each_new_status_row() -> TestResult {
     editor.signal_resize()?;
     editor.wait_for_status_since(second_resize, 30)?;
 
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
     assert_eq!(fs::read_to_string(&temp.path)?, source);
     Ok(())
@@ -2167,9 +1944,9 @@ fn pty_narrow_markdown_table_preview_uses_stacked_fallback_without_mutation() ->
     assert!(!initial_preview.contains('╞'));
 
     editor.clear_output();
-    editor.send_keys(b"\x1b")?;
+    editor.send_keys(keys::ESCAPE)?;
     editor.wait_for_output("leave narrow table preview", "# Markdown showcase")?;
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
     assert_eq!(fs::read_to_string(&temp.path)?, source);
     Ok(())
@@ -2216,7 +1993,7 @@ fn pty_f7_persists_across_relaunch_and_applies_to_new_unicode_buffer() -> TestRe
     editor.clear_output();
     editor.send_keys(keys::CTRL_N)?;
     editor.wait_for_output("new buffer inherited gutter", gutter)?;
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
 
     let saved = fs::read_to_string(&preference_path)?;
@@ -2228,7 +2005,7 @@ fn pty_f7_persists_across_relaunch_and_applies_to_new_unicode_buffer() -> TestRe
         "persisted Unicode line with gutter",
         &format!("{gutter}猫 first"),
     )?;
-    relaunched.send_keys(b"\x11")?;
+    relaunched.send_keys(keys::CTRL_Q)?;
     relaunched.wait_for_exit()?;
     Ok(())
 }
@@ -2243,12 +2020,12 @@ fn pty_help_scrolls_through_recovery_summary_without_editing() -> TestResult {
     editor.wait_for_initial_render()?;
     editor.send_keys(keys::F1)?;
     editor.wait_for_output("built-in help", "Help; Esc closes.")?;
-    editor.send_keys(&b"\x1b[6~".repeat(16))?;
+    editor.send_keys(&keys::PAGE_DOWN.repeat(16))?;
     editor.wait_for_output("recovery help", "crash recovery is enabled")?;
     editor.clear_output();
     editor.send_keys(keys::F1)?;
     editor.wait_for_output("help closed", "source remains unchanged")?;
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(&temp.path)?, source);
@@ -2274,12 +2051,12 @@ fn pty_retired_model_commands_are_unknown_and_before_llm_is_inert() -> TestResul
     editor.wait_for_initial_render()?;
     editor.send_keys(&[keys::CTRL_SHIFT_P, b"meow explain", keys::ENTER].concat())?;
     editor.wait_for_output("retired meow command", "Unknown command: meow explain")?;
-    editor.send_keys(b"\x1b[80;6ubigmeow rewrite\r")?;
+    editor.send_keys(&[keys::CTRL_SHIFT_P, b"bigmeow rewrite", keys::ENTER].concat())?;
     editor.wait_for_output(
         "retired bigmeow command",
         "Unknown command: bigmeow rewrite",
     )?;
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(active)?, source);
@@ -2303,7 +2080,7 @@ fn pty_external_command_previews_before_one_confirmed_edit() -> TestResult {
 
     editor.wait_for_initial_render()?;
     editor.wait_for_output("external command source", "cat")?;
-    editor.send_keys(b"\x1b[80;6urun upper\r")?;
+    editor.send_keys(&[keys::CTRL_SHIFT_P, b"run upper", keys::ENTER].concat())?;
     editor.wait_for_output(
         "external command preview",
         "Command upper output (read-only). Enter applies; Esc cancels.",
@@ -2311,9 +2088,9 @@ fn pty_external_command_previews_before_one_confirmed_edit() -> TestResult {
     assert_eq!(fs::read_to_string(&active)?, "cat");
 
     editor.clear_output();
-    editor.send_keys(b"\r")?;
+    editor.send_keys(keys::ENTER)?;
     editor.wait_for_output("external command apply", "CAT")?;
-    editor.send_keys(b"\x13\x11")?;
+    editor.send_keys(&[keys::CTRL_S, keys::CTRL_Q].concat())?;
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(active)?, "CAT");
@@ -2332,14 +2109,14 @@ fn pty_external_command_cannot_write_to_the_editor_terminal() -> TestResult {
     let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
 
     editor.wait_for_initial_render()?;
-    editor.send_keys(b"\x1b[80;6urun upper\r")?;
+    editor.send_keys(&[keys::CTRL_SHIFT_P, b"run upper", keys::ENTER].concat())?;
     editor.wait_for_output(
         "external command preview",
         "Command upper output (read-only). Enter applies; Esc cancels.",
     )?;
-    editor.send_keys(b"\r")?;
+    editor.send_keys(keys::ENTER)?;
     editor.wait_for_output("external command apply", "CAT")?;
-    editor.send_keys(b"\x13\x11")?;
+    editor.send_keys(&[keys::CTRL_S, keys::CTRL_Q].concat())?;
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(active)?, "CAT");
@@ -2366,17 +2143,17 @@ fn pty_catnap_recovery_previews_then_saves_explicitly() -> TestResult {
         "recovery offer",
         "Catnap recovery found. Run recover to preview it.",
     )?;
-    editor.send_keys(b"\x1b[80;6urecover\r")?;
+    editor.send_keys(&[keys::CTRL_SHIFT_P, b"recover", keys::ENTER].concat())?;
     editor.wait_for_output(
         "recovery preview",
         "Catnap preview (read-only). Enter recovers; Esc cancels.",
     )?;
     assert_eq!(fs::read_to_string(&active)?, "disk");
 
-    editor.send_keys(b"\r")?;
+    editor.send_keys(keys::ENTER)?;
     editor.wait_for_output("recovery apply", "Catnap recovered; Ctrl+Z undoes it")?;
     assert_eq!(fs::read_to_string(&active)?, "disk");
-    editor.send_keys(b"\x13\x11")?;
+    editor.send_keys(&[keys::CTRL_S, keys::CTRL_Q].concat())?;
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(active)?, "recovered");
@@ -2396,19 +2173,19 @@ fn pty_catnap_recovery_for_never_saved_file_creates_source_only_on_save() -> Tes
     let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
 
     editor.wait_for_output("never-saved recovery offer", "Catnap recovery found.")?;
-    editor.send_keys(b"\x1b[80;6urecover\r")?;
+    editor.send_keys(&[keys::CTRL_SHIFT_P, b"recover", keys::ENTER].concat())?;
     editor.wait_for_output(
         "never-saved recovery preview",
         "Catnap preview (read-only). Enter recovers; Esc cancels.",
     )?;
     assert!(!active.exists());
-    editor.send_keys(b"\r")?;
+    editor.send_keys(keys::ENTER)?;
     editor.wait_for_output(
         "never-saved recovery apply",
         "Catnap recovered; Ctrl+Z undoes it",
     )?;
     assert!(!active.exists());
-    editor.send_keys(b"\x13\x11")?;
+    editor.send_keys(&[keys::CTRL_S, keys::CTRL_Q].concat())?;
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read_to_string(active)?, "recovered");
@@ -2430,7 +2207,7 @@ fn pty_catnap_recovery_refuses_external_source_drift_without_auto_reload() -> Te
     let mut editor = PtyEditor::spawn_with_xdg(&active, &project.root)?;
 
     editor.wait_for_output("recovery drift offer", "Catnap recovery found.")?;
-    editor.send_keys(b"\x1b[80;6urecover\r")?;
+    editor.send_keys(&[keys::CTRL_SHIFT_P, b"recover", keys::ENTER].concat())?;
     editor.wait_for_output(
         "recovery drift preview",
         "Catnap preview (read-only). Enter recovers; Esc cancels.",
@@ -2438,14 +2215,14 @@ fn pty_catnap_recovery_refuses_external_source_drift_without_auto_reload() -> Te
 
     fs::write(&active, "external\n")?;
     editor.clear_output();
-    editor.send_keys(b"\r")?;
+    editor.send_keys(keys::ENTER)?;
     editor.wait_for_output(
         "recovery source drift refusal",
         "Source changed during recovery preview; nothing applied.",
     )?;
     assert_eq!(fs::read_to_string(&active)?, "external\n");
 
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
     assert_eq!(fs::read_to_string(active)?, "external\n");
     Ok(())
@@ -2459,20 +2236,20 @@ fn pty_bracketed_paste_populates_open_prompt_without_editing_source() -> TestRes
     let mut editor = PtyEditor::spawn(&source)?;
 
     editor.wait_for_initial_render()?;
-    editor.send_keys(b"\x0f")?;
+    editor.send_keys(keys::CTRL_O)?;
     editor.wait_for_output("open prompt", "Open file:")?;
 
     editor.clear_output();
-    let mut paste = b"\x1b[200~".to_vec();
+    let mut paste = keys::PASTE_START.to_vec();
     paste.extend_from_slice(target.to_string_lossy().as_bytes());
-    paste.extend_from_slice(b"\x1b[201~");
+    paste.extend_from_slice(keys::PASTE_END);
     editor.send_keys(&paste)?;
     editor.wait_for_output("pasted open path", "target.txt")?;
 
     editor.clear_output();
-    editor.send_keys(b"\r")?;
+    editor.send_keys(keys::ENTER)?;
     editor.wait_for_output("pasted path opened", "opened target marker")?;
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
 
     assert_eq!(fs::read(&source)?, b"abc\n");
@@ -2486,19 +2263,26 @@ fn pty_prompt_caret_edits_graphemes_paste_and_restores_source_cursor() -> TestRe
     let source = project.write("source.txt", "SOURCE\n");
     let mut editor = PtyEditor::spawn_sized(&source, 8, 80)?;
     editor.wait_for_initial_render()?;
-    editor.send_keys(b"!\x1b[12~")?;
+    editor.send_keys(&[b"!", keys::F12].concat())?;
     editor.wait_for_output("command prompt caret", "\x1b[8;10H\x1b[?25h")?;
-    editor.send_keys("\x1b[200~a\u{301}猫👩\u{200d}💻tail\x1b[201~".as_bytes())?;
+    editor.send_keys(
+        &[
+            keys::PASTE_START,
+            "a\u{301}猫👩\u{200d}💻tail".as_bytes(),
+            keys::PASTE_END,
+        ]
+        .concat(),
+    )?;
     editor.wait_for_output(
         "Unicode prompt paste",
         "Command: a\u{301}猫👩\u{200d}💻tail",
     )?;
     editor.clear_output();
-    editor.send_keys(b"\x1b[H\x1b[C")?;
+    editor.send_keys(&[keys::HOME, keys::RIGHT].concat())?;
     editor.wait_for_output("caret follows combining grapheme", "\x1b[8;11H\x1b[?25h")?;
-    editor.send_keys(b"\x1b[3~\x7f\x1b[H\x1b[3~")?;
+    editor.send_keys(&[keys::DELETE, keys::BACKSPACE, keys::HOME, keys::DELETE].concat())?;
     editor.wait_for_output("whole wide and joined graphemes deleted", "Command: tail")?;
-    editor.send_keys(b"\x1b[200~go\r\n\t\x1b[31m\x1b[201~")?;
+    editor.send_keys(&[keys::PASTE_START, b"go\r\n\t\x1b[31m", keys::PASTE_END].concat())?;
     editor.wait_for_output(
         "pasted controls render inertly at caret",
         "Command: go␊␉␛[31mtail",
@@ -2506,21 +2290,21 @@ fn pty_prompt_caret_edits_graphemes_paste_and_restores_source_cursor() -> TestRe
     editor.clear_output();
     editor.resize(8, 14)?;
     editor.signal_resize()?;
-    editor.send_keys(b"\x1b[F")?;
+    editor.send_keys(keys::END)?;
     editor.wait_for_output("narrow prompt caret stays on screen", "\x1b[8;14H\x1b[?25h")?;
     editor.clear_output();
-    editor.send_keys(b"\x1b[H")?;
+    editor.send_keys(keys::HOME)?;
     editor.wait_for_output("narrow prompt scrolls to beginning", "go␊␉")?;
     editor.clear_output();
-    editor.send_keys(b"\x1b")?;
+    editor.send_keys(keys::ESCAPE)?;
     editor.wait_for_output("cancel restores source caret", "\x1b[1;2H\x1b[?25h")?;
-    editor.send_keys(b"\x13")?;
+    editor.send_keys(keys::CTRL_S)?;
     wait_until(
         "source saved without prompt data",
         Duration::from_secs(2),
         || fs::read_to_string(&source).is_ok_and(|text| text == "!SOURCE\n"),
     )?;
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
     Ok(())
 }
@@ -2536,27 +2320,27 @@ fn pty_tab_completes_open_and_save_as_paths_with_spaces() -> TestResult {
     cmd.cwd(&project.root);
     let mut editor = PtyEditor::spawn_command_sized(cmd, 8, 80)?;
     editor.wait_for_initial_render()?;
-    editor.send_keys(b"\x0ffol\t")?;
+    editor.send_keys(&[keys::CTRL_O, b"fol", keys::TAB].concat())?;
     editor.wait_for_output("completed directory", "Open file: folder name/")?;
     editor.send_keys("猫 n\t".as_bytes())?;
     editor.wait_for_output(
         "completed Unicode filename",
         "Open file: folder name/猫 notes.txt",
     )?;
-    editor.send_keys(b"\r")?;
+    editor.send_keys(keys::ENTER)?;
     editor.wait_for_output("completed path opens", "TARGET")?;
-    editor.send_keys(b"!\x1b[12~saveas\r")?;
+    editor.send_keys(&[b"!", keys::F12, b"saveas", keys::ENTER].concat())?;
     editor.wait_for_output("save as prompt", "Save as: ")?;
-    editor.send_keys(b"sav\t")?;
+    editor.send_keys(&[b"sav", keys::TAB].concat())?;
     editor.wait_for_output("save as completion", "Save as: saved name.txt")?;
-    editor.send_keys(b"\r")?;
+    editor.send_keys(keys::ENTER)?;
     editor.wait_for_output("overwrite guard remains", "already exists")?;
     assert_eq!(
         fs::read_to_string(project.root.join("saved name.txt"))?,
         "old destination\n"
     );
-    editor.send_keys(b"\x1b[12~saveas saved name.txt\r")?;
-    editor.send_keys(b"\x1b[12~saveas saved name.txt\r")?;
+    editor.send_keys(&[keys::F12, b"saveas saved name.txt", keys::ENTER].concat())?;
+    editor.send_keys(&[keys::F12, b"saveas saved name.txt", keys::ENTER].concat())?;
     wait_until(
         "confirmed save as destination",
         Duration::from_secs(2),
@@ -2565,7 +2349,7 @@ fn pty_tab_completes_open_and_save_as_paths_with_spaces() -> TestResult {
                 .is_ok_and(|text| text == "!TARGET\n")
         },
     )?;
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
     assert_eq!(fs::read_to_string(source)?, "SOURCE\n");
     assert_eq!(fs::read_to_string(target)?, "TARGET\n");
@@ -2579,7 +2363,18 @@ fn pty_replace_reviews_skips_accepts_and_cancels_with_one_query_entry() -> TestR
     let mut editor = PtyEditor::spawn_sized(&source, 8, 80)?;
     editor.wait_for_initial_render()?;
     editor.clear_output();
-    editor.send_keys(b"\x1b[12~replace\rcat\rfox\r")?;
+    editor.send_keys(
+        &[
+            keys::F12,
+            b"replace",
+            keys::ENTER,
+            b"cat",
+            keys::ENTER,
+            b"fox",
+            keys::ENTER,
+        ]
+        .concat(),
+    )?;
     editor.wait_for_output("first replacement candidate", "Replace candidate 1:1")?;
     editor.wait_for_output("candidate highlighted", "\x1b[30;43mcat\x1b[39;49m")?;
     editor.wait_for_output("review cursor is in source", "\x1b[1;1H\x1b[?25h")?;
@@ -2589,26 +2384,26 @@ fn pty_replace_reviews_skips_accepts_and_cancels_with_one_query_entry() -> TestR
     editor.send_keys(b"y")?;
     editor.wait_for_output("third replacement candidate", "Replace candidate 1:9")?;
     editor.clear_output();
-    editor.send_keys(b"\x1b")?;
+    editor.send_keys(keys::ESCAPE)?;
     editor.wait_for_output("replacement cancellation counts", "1 replaced, 1 skipped")?;
     editor.wait_for_output("cancelled review keeps source cursor", "\x1b[1;9H\x1b[?25h")?;
     assert!(
         !editor.output_string().contains("\x1b[30;43m"),
         "cancel clears candidate highlight"
     );
-    editor.send_keys(b"\x13")?;
+    editor.send_keys(keys::CTRL_S)?;
     wait_until(
         "selectively replaced source saved",
         Duration::from_secs(2),
         || fs::read_to_string(&source).is_ok_and(|text| text == "cat fox cat\n"),
     )?;
-    editor.send_keys(b"\x1a\x13")?;
+    editor.send_keys(&[keys::CTRL_Z, keys::CTRL_S].concat())?;
     wait_until(
         "accepted replacement undoes as one edit",
         Duration::from_secs(2),
         || fs::read_to_string(&source).is_ok_and(|text| text == "cat cat cat\n"),
     )?;
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
     Ok(())
 }
@@ -2619,12 +2414,23 @@ fn pty_replace_remaining_can_cancel_during_bulk_and_save_only_accepted_groups() 
     let source = project.write("source.txt", &"cat ".repeat(5000));
     let mut editor = PtyEditor::spawn_sized(&source, 8, 80)?;
     editor.wait_for_initial_render()?;
-    editor.send_keys(b"\x1b[12~replace\rcat\rdog\r")?;
+    editor.send_keys(
+        &[
+            keys::F12,
+            b"replace",
+            keys::ENTER,
+            b"cat",
+            keys::ENTER,
+            b"dog",
+            keys::ENTER,
+        ]
+        .concat(),
+    )?;
     editor.wait_for_output("bulk initial candidate", "Replace candidate 1:1")?;
     editor.clear_output();
-    editor.send_keys(b"a\x1b")?;
+    editor.send_keys(&[b"a", keys::ESCAPE].concat())?;
     editor.wait_for_output("bulk cancellation", "Replacement cancelled:")?;
-    editor.send_keys(b"\x13")?;
+    editor.send_keys(keys::CTRL_S)?;
     wait_until("partial bulk save", Duration::from_secs(2), || {
         fs::read_to_string(&source).is_ok_and(|text| text.starts_with("dog "))
     })?;
@@ -2636,7 +2442,7 @@ fn pty_replace_remaining_can_cancel_during_bulk_and_save_only_accepted_groups() 
         "bulk cancellation must interrupt progress"
     );
     assert_eq!(replaced + remaining, 5000);
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
     Ok(())
 }
@@ -2661,17 +2467,17 @@ fn pty_page_navigation_uses_global_grapheme_context_before_edit_and_undo() -> Te
                 let mut editor = PtyEditor::spawn_sized(&temp.path, 24, 80)?;
                 editor.wait_for_initial_render()?;
                 if !down {
-                    editor.send_keys(b"\x1b[B")?;
+                    editor.send_keys(keys::DOWN)?;
                 }
-                editor.send_keys(&b"\x1b[C".repeat(col))?;
+                editor.send_keys(&keys::RIGHT.repeat(col))?;
                 let page: &[u8] = match (down, extend) {
-                    (true, false) => b"\x1b[6~",
-                    (false, false) => b"\x1b[5~",
-                    (true, true) => b"\x1b[6;2~",
-                    (false, true) => b"\x1b[5;2~",
+                    (true, false) => keys::PAGE_DOWN,
+                    (false, false) => keys::PAGE_UP,
+                    (true, true) => keys::SHIFT_PAGE_DOWN,
+                    (false, true) => keys::SHIFT_PAGE_UP,
                 };
                 editor.send_keys(page)?;
-                editor.send_keys(b"Q\x13")?;
+                editor.send_keys(&[b"Q", keys::CTRL_S].concat())?;
                 let head: String = target.chars().take(floor).collect();
                 let tail: String = target.chars().skip(floor).collect();
                 let expected = match (down, extend) {
@@ -2685,13 +2491,13 @@ fn pty_page_navigation_uses_global_grapheme_context_before_edit_and_undo() -> Te
                     Duration::from_secs(3),
                     || fs::read_to_string(&temp.path).is_ok_and(|text| text == expected),
                 )?;
-                editor.send_keys(b"\x1a\x13")?;
+                editor.send_keys(&[keys::CTRL_Z, keys::CTRL_S].concat())?;
                 wait_until(
                     "page edit undo restored original clusters",
                     Duration::from_secs(2),
                     || fs::read_to_string(&temp.path).is_ok_and(|text| text == original),
                 )?;
-                editor.send_keys(b"\x11")?;
+                editor.send_keys(keys::CTRL_Q)?;
                 editor.wait_for_exit()?;
             }
         }

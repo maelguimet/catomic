@@ -28,18 +28,18 @@ fn piped_stdin_accepts_terminal_typing_undo_save_as_and_clean_quit() -> TestResu
     let mut editor = piped_editor(original.as_bytes(), "-")?;
     editor.wait_for_initial_render()?;
     editor.wait_for_output("stdin content", "piped 猫")?;
-    editor.send_keys(b"X\x1a\x11")?;
+    editor.send_keys(&[b"X", keys::CTRL_Z, keys::CTRL_Q].concat())?;
     editor.wait_for_output(
         "import remains unsaved after undo",
         "Unsaved changes. Press Ctrl+Q again to quit without saving",
     )?;
-    editor.send_keys(b"\x13")?;
+    editor.send_keys(keys::CTRL_S)?;
     editor.send_keys(saved.path.to_str().ok_or("non-UTF-8 test path")?.as_bytes())?;
-    editor.send_keys(b"\r")?;
+    editor.send_keys(keys::ENTER)?;
     wait_until("stdin Save As", Duration::from_secs(2), || {
         fs::read(&saved.path).is_ok_and(|bytes| bytes == original.as_bytes())
     })?;
-    editor.send_keys(b"Y\x1a\x11")?;
+    editor.send_keys(&[b"Y", keys::CTRL_Z, keys::CTRL_Q].concat())?;
     editor.wait_for_exit()?;
     assert_eq!(fs::read(&saved.path)?, original.as_bytes());
     Ok(())
@@ -49,13 +49,13 @@ fn piped_stdin_accepts_terminal_typing_undo_save_as_and_clean_quit() -> TestResu
 fn piped_stdin_without_an_edit_still_requires_dirty_quit_confirmation() -> TestResult {
     let mut editor = piped_editor(b"unsaved import", "-")?;
     editor.wait_for_initial_render()?;
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_output(
         "initial stdin dirty quit",
         "Unsaved changes. Press Ctrl+Q again to quit without saving",
     )?;
     assert!(editor.child.try_wait()?.is_none());
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
     Ok(())
 }
@@ -183,7 +183,7 @@ fn ordinary_file_startup_leaves_piped_input_for_the_next_reader() -> TestResult 
     editor.wait_for_initial_render()?;
     editor.wait_for_output("named content", "named file content")?;
     assert!(!editor.output_string().contains("untouched pipe"));
-    editor.send_keys(b"\x11")?;
+    editor.send_keys(keys::CTRL_Q)?;
     editor.wait_for_exit()?;
     assert_eq!(fs::read(&remaining)?, b"untouched pipe");
     Ok(())
@@ -235,7 +235,7 @@ fn stdin_waiting_for_a_producer_can_be_cancelled_from_the_controlling_terminal()
             }
         },
     )?;
-    editor.send_keys(b"\x03")?;
+    editor.send_keys(keys::CTRL_C)?;
     editor.wait_for_exit_code(130)?;
     assert!(!editor.output_string().contains("\x1b[?1049h"));
     drop(producer);

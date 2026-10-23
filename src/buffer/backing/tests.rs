@@ -31,7 +31,6 @@ impl Fixture {
     fn digest_all(&self) -> RangeDigester {
         let mut digest = RangeDigester::new(0);
         let bytes = std::fs::read(&self.path).unwrap();
-        // Uneven, overlapping reads mirror the page scanner's chunking.
         digest.observe(0, &bytes[..3]).unwrap();
         digest.observe(2, &bytes[2..7]).unwrap();
         digest.observe(7, &bytes[7..]).unwrap();
@@ -140,7 +139,6 @@ fn settled_provisional_baseline_exposes_a_same_length_rewrite_with_restored_mtim
     let trust = BaselineTrust::provisional(fixture.digest_all());
 
     fixture.rewrite_same_length_keeping_mtime("FIRST\nSECOND\nTHIRD");
-    // Whether or not the host reused the tick, only the digest is consulted.
     set_now(changed_at(&snapshot) + Duration::from_secs(3));
 
     let error = trust.require(&snapshot, &fixture.file).unwrap_err();
@@ -160,7 +158,6 @@ fn unchanged_provisional_baseline_is_promoted_once_its_tick_passes() {
     trust.refresh(&snapshot, &fixture.file).unwrap();
 
     assert!(trust.promoted.get());
-    // A promoted baseline no longer depends on the digested bytes.
     set_now(changed_at(&snapshot));
     trust.require(&snapshot, &fixture.file).unwrap();
 }
@@ -174,7 +171,6 @@ fn digest_is_independent_of_how_reads_were_chunked() {
         .unwrap();
     let whole = whole.finish();
     let pieces = fixture.digest_all().finish();
-    // Same keys are needed to compare values, so verify both against the file.
     assert!(whole.matches(&fixture.file).unwrap());
     assert!(pieces.matches(&fixture.file).unwrap());
     let mut gap = RangeDigester::new(0);

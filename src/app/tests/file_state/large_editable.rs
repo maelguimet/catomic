@@ -401,8 +401,6 @@ impl Drop for InjectedClock {
     }
 }
 
-/// The file's ctime and how long a later change could still reuse its tick:
-/// one clock tick for nanosecond stamps, two seconds for whole-second stamps.
 fn change_time_and_granularity(
     path: &std::path::Path,
 ) -> (std::time::SystemTime, std::time::Duration) {
@@ -423,8 +421,6 @@ fn pending_baseline_reports_retry_instead_of_reading_or_exiting() {
     let path = temp_path("pending_baseline.txt");
     fs::write(&path, "first\nsecond\nthird").unwrap();
     let (changed, granularity) = change_time_and_granularity(&path);
-    // One second left in the tick on any filesystem: past the 15 ms wait, but
-    // not a future ctime, whichever timestamp granularity TMPDIR has.
     let _clock = InjectedClock::set(changed + granularity - std::time::Duration::from_secs(1));
     let mut app = app_with_paged_buffer(&path);
     let mut out = Vec::new();
@@ -496,8 +492,6 @@ fn future_ctime_still_saves_and_save_as_writes_verified_edits() {
         assert_eq!(app.message, None, "save must succeed");
         assert!(!app.file.dirty);
         assert_eq!(fs::read_to_string(saved).unwrap(), "Xfirst\nsecond\nthird");
-        // The buffer now reads from the verified private copy it saved from,
-        // so other pages work although the clock is still behind.
         app.handle_key_with(&mut out, make_key(KeyCode::PageDown, KeyModifiers::CONTROL))
             .unwrap();
         assert_eq!(app.buffer.line(0).unwrap(), "second");

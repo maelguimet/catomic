@@ -52,7 +52,6 @@ impl ForwardSearchTask {
         let mut remaining = budget;
         while remaining > 0 {
             let offset = self.start_byte + self.matcher.processed_bytes();
-            // A candidate beginning just before the stop may end beyond it.
             let read_end = self
                 .stop_before
                 .map(|stop| stop.saturating_add(self.query_bytes - 1));

@@ -399,7 +399,6 @@ fn open_path(
     out: &mut dyn crate::terminal::TerminalOutput,
     path: &Path,
 ) -> io::Result<()> {
-    // The prompt is complete before open_file_buffer may swap this buffer into a slot.
     app.message = None;
     match app.open_file_buffer(path) {
         Ok(true) | Ok(false) => app.message = None,

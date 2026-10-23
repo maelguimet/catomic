@@ -15,7 +15,6 @@ use crossterm::event::{KeyCode, KeyModifiers};
 
 use super::super::make_key;
 
-// queued Changed + externally modified => visible reload + render
 #[test]
 fn queued_changed_external_modified_auto_reloads_and_renders() {
     let mut tmp = std::env::temp_dir();
@@ -25,15 +24,12 @@ fn queued_changed_external_modified_auto_reloads_and_renders() {
     std::fs::write(&p, "ORIG").unwrap();
 
     let mut app = App::new(Some(&p)).unwrap();
-    // clean snapshot
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(!app.file.dirty);
 
-    // external change (so observe will report Modified)
     std::fs::write(&p, "ORIGEXT").unwrap();
 
-    // replace with injectable test watcher (no live notify)
     let path = app.file.path.clone().unwrap();
     let (tw, _tx) = crate::file::watcher::FileWatcher::new_for_test(path);
     crate::app::watch::replace_file_watcher_for_test(&mut app, tw);
@@ -42,7 +38,6 @@ fn queued_changed_external_modified_auto_reloads_and_renders() {
         .expect("test watcher installed")
         .inject_signal(crate::file::watcher::FileWatchSignal::Changed);
 
-    // sentinel to prove we don't clobber random prior msg
     app.message_warning("Prior warning.");
 
     let mut out: Vec<u8> = Vec::new();
@@ -58,7 +53,6 @@ fn queued_changed_external_modified_auto_reloads_and_renders() {
     let _ = std::fs::remove_file(&p);
 }
 
-// queued Deleted + file deleted => visible + render
 #[test]
 fn queued_deleted_external_delete_auto_clears_and_renders() {
     let mut tmp = std::env::temp_dir();
@@ -72,7 +66,7 @@ fn queued_deleted_external_delete_auto_clears_and_renders() {
         .unwrap();
     assert!(!app.file.dirty);
 
-    let _ = std::fs::remove_file(&p); // external delete
+    let _ = std::fs::remove_file(&p);
 
     let path = app.file.path.clone().unwrap();
     let (tw, _tx) = crate::file::watcher::FileWatcher::new_for_test(path);
@@ -92,12 +86,10 @@ fn queued_deleted_external_delete_auto_clears_and_renders() {
     assert_eq!(app.buffer.to_string(), "");
     assert!(!app.file.dirty);
 
-    // recreate for cleanup
     std::fs::write(&p, "TODEL").unwrap();
     let _ = std::fs::remove_file(&p);
 }
 
-// queued Changed + disk unchanged => ignored, no render, prior message preserved
 #[test]
 fn queued_changed_on_unchanged_ignored_no_render() {
     let mut tmp = std::env::temp_dir();
@@ -111,7 +103,6 @@ fn queued_changed_on_unchanged_ignored_no_render() {
         .unwrap();
     assert!(!app.file.dirty);
 
-    // sentinel that must survive
     app.message_warning("Prior warning.");
     let before_pend = (app.observed_change.clone(), app.confirmation.clone());
 
@@ -143,7 +134,6 @@ fn queued_changed_on_unchanged_ignored_no_render() {
     let _ = std::fs::remove_file(&p);
 }
 
-// queued Error => visible error message + render, no state mutation
 #[test]
 fn queued_error_is_visible_and_does_not_mutate() {
     let mut tmp = std::env::temp_dir();
@@ -185,11 +175,6 @@ fn queued_error_is_visible_and_does_not_mutate() {
     let _ = std::fs::remove_file(&p);
 }
 
-// one call processes at most one queued signal (even if two are present).
-// Deterministic mpsc seam: two visible Modified signals must each be
-// consumed by a separate call (at most one per call). Both produce visible
-// outcome (passive warning + render) because watcher path does not
-// update the disk_snapshot used by observe.
 #[test]
 fn one_call_processes_at_most_one_signal() {
     let mut tmp = std::env::temp_dir();
@@ -202,26 +187,21 @@ fn one_call_processes_at_most_one_signal() {
     app.auto_reload = false;
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
-    // external mod makes observe report Modified for both signals
-    // (disk_snapshot is not mutated by the passive watcher path)
     std::fs::write(&p, "ONEEXT").unwrap();
 
     let path = app.file.path.clone().unwrap();
     let (tw, tx) = crate::file::watcher::FileWatcher::new_for_test(path.clone());
     crate::app::watch::replace_file_watcher_for_test(&mut app, tw);
 
-    // Queue two semantic signals through the test channel (not live notify).
     let signal = crate::file::watcher::FileWatchSignal::Changed;
     let _ = tx.send(signal.clone());
     let _ = tx.send(signal);
 
-    // First call consumes at most one.
     let mut out1: Vec<u8> = Vec::new();
     let r1 = crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out1).unwrap();
     assert!(r1, "first signal must return true (visible Modified)");
     assert!(!out1.is_empty(), "first must have rendered");
 
-    // Second call must still be able to consume the second queued signal.
     let mut out2: Vec<u8> = Vec::new();
     let r2 = crate::app::watch::check_file_watcher_once_and_render(&mut app, &mut out2).unwrap();
     assert!(
@@ -230,10 +210,8 @@ fn one_call_processes_at_most_one_signal() {
     );
     assert!(!out2.is_empty(), "second must have rendered");
 
-    // State remains sane; no content mutation; both signals were observable.
     assert_eq!(app.buffer.to_string(), "ONE", "buffer content unchanged");
     assert!(!app.file.dirty, "dirty state sane");
-    // The passive observation may be set (or re-set); its warning is present.
     let msg = app.message.as_deref().unwrap_or("");
     assert!(
         msg.contains("changed on disk") || msg.contains("Ctrl+R"),
@@ -260,7 +238,6 @@ fn app_with_clean_file(label: &str, text: &str) -> (App, String) {
     (app, p)
 }
 
-// A dead notify worker drops its sender; that must not read as "no events".
 #[test]
 fn stopped_watcher_is_restarted_and_reported() {
     let (mut app, p) = app_with_clean_file("restart", "ORIG");
@@ -285,7 +262,6 @@ fn stopped_watcher_is_restarted_and_reported() {
     let _ = std::fs::remove_file(&p);
 }
 
-// Changes made while the worker was dead are caught by the restart observation.
 #[test]
 fn stopped_watcher_catches_up_on_a_change_missed_while_it_was_dead() {
     let (mut app, p) = app_with_clean_file("catch_up", "ORIG");
@@ -301,7 +277,6 @@ fn stopped_watcher_catches_up_on_a_change_missed_while_it_was_dead() {
     let _ = std::fs::remove_file(&p);
 }
 
-// A worker that keeps dying is not restarted forever and stays visible.
 #[test]
 fn repeatedly_stopping_watcher_gives_up_with_a_persistent_error() {
     let (mut app, p) = app_with_clean_file("give_up", "ORIG");
@@ -319,8 +294,6 @@ fn repeatedly_stopping_watcher_gives_up_with_a_persistent_error() {
     let _ = std::fs::remove_file(&p);
 }
 
-// The catch-up reload replaces the watcher; that must not reset the restart
-// budget, or a worker that dies after every event is restarted forever.
 #[test]
 fn catch_up_reload_keeps_the_restart_count() {
     let (mut app, p) = app_with_clean_file("keep_count", "ORIG");
@@ -337,7 +310,6 @@ fn catch_up_reload_keeps_the_restart_count() {
     let _ = std::fs::remove_file(&p);
 }
 
-// Once the budget is spent, a catch-up reload must not revive the watcher.
 #[test]
 fn giving_up_sticks_even_when_the_catch_up_observation_reloads() {
     let (mut app, p) = app_with_clean_file("give_up_reload", "ORIG");

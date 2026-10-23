@@ -368,8 +368,6 @@ fn range_replacements_use_local_piece_and_line_index_work() {
         piece_work.pieces_touched <= match_count * 6,
         "{piece_work:?}"
     );
-    // This fixture performs one local delete splice plus one local insert
-    // splice per match; their replacement runs stay below eight descriptors.
     assert!(
         piece_work.pieces_allocated <= match_count * 8,
         "{piece_work:?}"

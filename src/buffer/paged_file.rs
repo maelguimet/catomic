@@ -68,8 +68,6 @@ impl PagedFileBuffer {
                 "file size exceeds this platform's addressable range",
             )
         })?;
-        // A baseline inside its ctime tick is not waited out: the first page's
-        // bytes are digested and re-checked once the tick has passed.
         let (first, trust) = if snapshot.change_time() == ChangeTime::Settled {
             let first = Self::load_from_descriptor(&file, 0, 1, page_lines, &mut |_, _| Ok(()))?;
             (first, BaselineTrust::settled())
@@ -178,8 +176,6 @@ impl PagedFileBuffer {
         start_byte: usize,
         page_number: usize,
     ) -> io::Result<()> {
-        // Cached pages and delayed search/goto results belong to the same
-        // opened revision as fresh page loads.
         self.ensure_trusted()?;
         if self.active().start_byte == start_byte {
             self.active_mut().page_number = page_number;

@@ -117,8 +117,10 @@ Keep modules focused and functions single-purpose. Split when responsibilities
 diverge, not to satisfy arbitrary line-count theater. Do not invent an
 abstraction until real callers or variants require it.
 
-Comments explain invariants, terminal weirdness, safety constraints, and
-non-obvious reasons. Do not narrate code that already explains itself. Module
+Comments are a last resort. Encode Catomic's own invariants in names, types,
+extracted functions, and tests. A comment may explain only behavior forced by a
+terminal, platform, kernel, or dependency we cannot change, or the soundness of
+an `unsafe` block. Do not narrate code or leave workaround notes. Module
 documentation should state a real contract where one exists; phase labels and
 ceremonial headers are not required.
 

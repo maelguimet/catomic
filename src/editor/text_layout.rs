@@ -75,8 +75,6 @@ impl VisibleLineLayout {
             if !(fits || ensure_progress && self.graphemes.is_empty()) {
                 if ensure_progress && !is_whitespace {
                     if let Some(boundary) = whitespace_boundary {
-                        // Reuse the measured prefix: whitespace remains in the
-                        // document and in the row that consumed it.
                         self.graphemes.truncate(boundary);
                         if let Some(last) = self.graphemes.last() {
                             self.visible_byte_len = last.byte_end;

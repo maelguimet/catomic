@@ -107,8 +107,6 @@ fn render_unavailable(
 ) -> io::Result<()> {
     use crate::buffer::{Buffer, PreviewBuffer};
 
-    // Keep the display cursor on an undisplayed first line; prompts retain
-    // their own status caret. This notice never becomes the editable document.
     let notice = PreviewBuffer::from_owned_text(format!(
         "\n{}\n\nUnsaved edits and history are kept in this session.\n\
          Original bytes are no longer available; editing and full saves are blocked.\n\

@@ -30,8 +30,6 @@ pub(crate) fn snapshot_linked_file(source: &File) -> io::Result<Option<File>> {
         .create_new(true)
         .mode(0o600)
         .open(&path)?;
-    // No content is written while the snapshot has a directory entry. Closing
-    // its last descriptor releases the disk space, including on every error.
     fs::remove_file(&path)?;
 
     let mut chunk = [0u8; 64 * 1024];

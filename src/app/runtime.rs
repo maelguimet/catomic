@@ -52,7 +52,7 @@ impl App {
             self.poll_runtime_tasks(&mut stdout)?;
             let idle_ms = if replace::is_running(self) { 1 } else { 100 };
             if event::poll(std::time::Duration::from_millis(idle_ms))? {
-                self.dispatch_ready_terminal_event(&mut stdout, event::read()?)?;
+                self.apply_ready_tasks_then_dispatch_terminal_event(&mut stdout, event::read()?)?;
             }
         }
 
@@ -85,14 +85,11 @@ impl App {
         recovery::poll(self, out)
     }
 
-    fn dispatch_ready_terminal_event(
+    fn apply_ready_tasks_then_dispatch_terminal_event(
         &mut self,
         out: &mut dyn crate::terminal::TerminalOutput,
         event: Event,
     ) -> io::Result<()> {
-        // A watcher or worker can become ready while terminal polling blocks.
-        // Apply that state before interpreting input against an obsolete buffer
-        // revision, cursor, or temporary surface.
         self.poll_runtime_tasks(out)?;
         self.dispatch_terminal_event(out, event)
     }
@@ -235,12 +232,12 @@ mod tests {
 
         let mut output = term::RuntimeOutput::new(Vec::new());
         app.render(&mut output).unwrap();
-        app.dispatch_ready_terminal_event(
+        app.apply_ready_tasks_then_dispatch_terminal_event(
             &mut output,
             Event::Key(KeyEvent::new(KeyCode::End, KeyModifiers::CONTROL)),
         )
         .unwrap();
-        app.dispatch_ready_terminal_event(
+        app.apply_ready_tasks_then_dispatch_terminal_event(
             &mut output,
             Event::Key(KeyEvent::new(KeyCode::Char('X'), KeyModifiers::NONE)),
         )

@@ -135,8 +135,6 @@ pub(crate) fn build_open_buffer(
         OpenContentPlan::FullRead => {
             let path = required_path(initial_path, "FullRead")?;
             let mut source = take_source(meta, path)?;
-            // Move the read buffer into PieceTable on open; this avoids cloning
-            // Large/Huge files while preserving CRLF normalization inside PT.
             let bytes = source.read_all_verified(path)?;
             let decoded = crate::file::text_format::decode(bytes)?;
             source.ensure_path_unchanged(path)?;

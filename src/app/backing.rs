@@ -42,14 +42,10 @@ pub(super) fn recover(
         Err(error) if BackingFileChanged::is(&error) => {
             super::file_state::refresh_dirty(&mut app.file, &*app.buffer);
             super::completion::cancel(app);
-            // This notice replaces any confirmation warning. A rejected input
-            // or late read failure must not leave an invisible discard armed.
             app.confirmation = super::confirmation::Confirmation::None;
             app.message_error(UNAVAILABLE);
             app.render(out)
         }
-        // A paged read refused until the opened revision's ctime tick passes.
-        // The content is intact; report it and let the user retry.
         Err(error) if BaselinePending::is(&error) => {
             app.message_error(error.to_string());
             app.render(out)

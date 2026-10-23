@@ -11,8 +11,6 @@ use super::make_key;
 use crate::app::confirmation::ConflictingChange;
 use crossterm::event::{KeyCode, KeyModifiers};
 
-// Phase 2-l file snapshot / external status tests (detection only; no watcher, no reload, no mutation)
-
 #[test]
 fn app_file_state_open_existing_stores_snapshot_and_clean() {
     let mut tmp = std::env::temp_dir();
@@ -64,7 +62,6 @@ fn app_file_state_save_success_updates_snapshot_len() {
     let _ = std::fs::remove_file(&p);
 
     let mut app = App::new(Some(&p)).unwrap();
-    // type something
     app.handle_key(make_key(KeyCode::Char('x'), KeyModifiers::NONE))
         .unwrap();
     app.handle_key(make_key(KeyCode::Char('y'), KeyModifiers::NONE))
@@ -86,7 +83,6 @@ fn app_file_state_save_success_updates_snapshot_len() {
 
 #[test]
 fn app_file_state_save_failure_leaves_snapshot_unchanged() {
-    // Use a dir as target path to force atomic save error
     let mut bad = std::env::temp_dir();
     bad.push(format!("catomic_2l_bad_save_dir_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&bad);
@@ -94,9 +90,7 @@ fn app_file_state_save_failure_leaves_snapshot_unchanged() {
     assert!(bad.is_dir());
 
     let mut app = App::new(None).unwrap();
-    // seed a path and a snapshot (as if previously saved cleanly)
     app.file.path = Some(bad.clone());
-    // capture a fake snapshot for the dir (will be Absent or error but we set manually to a sentinel)
     app.file.disk_snapshot = Some(crate::file::io::FileSnapshot::Present {
         len: 42,
         mtime: None,
@@ -134,13 +128,11 @@ fn app_file_state_external_append_reports_modified_no_mutation() {
     let msg_before = app.message.clone();
     let pend_before = app.confirmation.clone();
 
-    // external append (simulates other program)
-    std::fs::write(&p, "baseEXT").unwrap(); // longer
+    std::fs::write(&p, "baseEXT").unwrap();
 
     let status = app.external_file_status();
     assert_eq!(status, crate::file::io::ExternalFileStatus::Modified);
 
-    // must not have mutated state
     assert_eq!(app.file.disk_snapshot, snap_before);
     assert_eq!(app.file.dirty, dirty_before);
     assert_eq!(app.message, msg_before);
@@ -159,13 +151,12 @@ fn app_file_state_external_delete_reports_deleted_no_mutation() {
 
     let mut app = App::new(Some(&p)).unwrap();
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
-        .unwrap(); // ensure clean + snap
+        .unwrap();
     assert!(!app.file.dirty);
     let before_dirty = app.file.dirty;
     let before_msg = app.message.clone();
     let before_pend = app.confirmation.clone();
 
-    // external delete
     let _ = std::fs::remove_file(&p);
 
     let status = app.external_file_status();
@@ -175,7 +166,6 @@ fn app_file_state_external_delete_reports_deleted_no_mutation() {
     assert_eq!(app.message, before_msg);
     assert_eq!(app.confirmation, before_pend);
 
-    // cleanup
     let _ = std::fs::remove_file(&p);
 }
 
@@ -188,9 +178,6 @@ fn app_file_state_no_path_reports_nopath() {
         crate::file::io::ExternalFileStatus::NoPath
     );
 }
-
-// Phase 2-m regressions: explicit coverage of snapshot Absent/Unknown error semantics
-// and preservation of Phase 2-l open/save behavior. No watcher/reload.
 
 #[test]
 fn app_file_state_regression_open_missing_starts_clean_with_absent_snapshot() {
@@ -262,25 +249,8 @@ fn app_file_state_regression_successful_save_marks_clean_and_updates_snapshot() 
 
 #[test]
 fn app_file_state_new_does_not_silently_map_non_notfound_meta_error_to_absent() {
-    // Hard to force a non-NotFound metadata error from capture_file_snapshot
-    // *after* the read_to_string inside App::new succeeds for the same path,
-    // without races, chmod races, or platform-specific FS tricks that are not
-    // portable/reliable across test envs (e.g. immediately making a just-read
-    // file un-statable while keeping it readable as text).
-    //
-    // Policy is: real capture errors must not become Absent. App::new now does
-    // `Some(capture(...) ?)` so non-NotFound errors propagate rather than map.
-    //
-    // We cover the io contract explicitly and portably with:
-    //   file::io::tests::capture_file_snapshot_returns_absent_only_for_not_found
-    //   file::io::tests::compare_to_snapshot_non_notfound_meta_error_is_unknown
-    //   (the latter uses a regular file + .join("child") to force NotADirectory).
-    //
-    // This regression test documents the intent at the App layer.
     let _ = "see file/io tests for portable non-NotFound -> not-Absent coverage";
 }
-
-// Phase 2-r: manual external status check (Ctrl+R driven; message only, no reload, no mutations)
 
 #[test]
 fn app_file_state_manual_check_no_path_sets_message_no_dirty_mutation() {
@@ -310,7 +280,7 @@ fn app_file_state_manual_check_unchanged_sets_message_no_mutation() {
 
     let mut app = App::new(Some(&p)).unwrap();
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
-        .unwrap(); // ensure clean snapshot
+        .unwrap();
     assert!(!app.file.dirty);
     let dirty_before = app.file.dirty;
     let snap_before = app.file.disk_snapshot.clone();
@@ -337,13 +307,11 @@ fn app_file_state_manual_check_external_modified_reports_changed_no_mutation() {
     let dirty_before = app.file.dirty;
     let snap_before = app.file.disk_snapshot.clone();
 
-    // external change
     std::fs::write(&p, "baseEXT").unwrap();
 
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
 
-    // Phase 2-s: first press on Modified now arms reload confirmation (no mutate)
     assert_eq!(
         app.message.as_deref(),
         Some("File changed on disk. Press Ctrl+R again to reload from disk.")
@@ -377,7 +345,6 @@ fn app_file_state_manual_check_external_deleted_reports_deleted_no_mutation() {
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
 
-    // Phase 2-s: first press on Deleted arms clear confirmation (no mutate)
     assert_eq!(
         app.message.as_deref(),
         Some("File deleted on disk. Press Ctrl+R again to clear buffer.")
@@ -389,7 +356,6 @@ fn app_file_state_manual_check_external_deleted_reports_deleted_no_mutation() {
     assert_eq!(app.file.dirty, dirty_before);
     assert_eq!(app.file.disk_snapshot, snap_before);
 
-    // re-create for cleanup safety not needed
     let _ = std::fs::remove_file(&p);
 }
 
@@ -402,16 +368,14 @@ fn app_file_state_manual_check_replaces_pending_save_conflict() {
     std::fs::write(&p, "ORIG").unwrap();
 
     let mut app = App::new(Some(&p)).unwrap();
-    std::fs::write(&p, "ORIGEXT").unwrap(); // make external modified
+    std::fs::write(&p, "ORIGEXT").unwrap();
     app.handle_key(make_key(KeyCode::Char('x'), KeyModifiers::NONE))
         .unwrap();
     assert!(app.file.dirty);
 
-    // first S sets pending conflict
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.confirmation.save_conflict().is_some());
-    // Reload is a new action: cancel the save confirmation and arm reload instead.
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.confirmation.save_conflict().is_none());
@@ -420,12 +384,10 @@ fn app_file_state_manual_check_replaces_pending_save_conflict() {
         .message
         .as_deref()
         .unwrap_or("")
-        .contains("changed on disk")); // check msg set
+        .contains("changed on disk"));
 
     let _ = std::fs::remove_file(&p);
 }
-
-// Phase 2-s reload confirmation tests (manual Ctrl+R two-step, no watcher)
 
 #[test]
 fn app_file_state_ctrl_r_nopath_no_pending() {
@@ -469,7 +431,7 @@ fn app_file_state_reload_modified_clean_second_press() {
     std::fs::write(&p, "ORIG").unwrap();
 
     let mut app = App::new(Some(&p)).unwrap();
-    std::fs::write(&p, "DISKNEW").unwrap(); // external
+    std::fs::write(&p, "DISKNEW").unwrap();
 
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
@@ -481,7 +443,6 @@ fn app_file_state_reload_modified_clean_second_press() {
     assert!(app.observed_change.is_some());
     assert!(!app.file.dirty);
 
-    // second matching
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
     assert_eq!(app.buffer.to_string(), "DISKNEW");
@@ -504,7 +465,7 @@ fn app_file_state_reload_modified_dirty_discards() {
     std::fs::write(&p, "DISKCHG").unwrap();
 
     app.handle_key(make_key(KeyCode::Char('L'), KeyModifiers::NONE))
-        .unwrap(); // local dirty
+        .unwrap();
     assert!(app.file.dirty);
 
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
@@ -537,22 +498,20 @@ fn app_file_state_reload_modified_drift_refuses_then_succeeds() {
     std::fs::write(&p, "V2").unwrap();
 
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
-        .unwrap(); // arm V2
+        .unwrap();
     assert!(app.observed_change.is_some());
 
-    std::fs::write(&p, "V3").unwrap(); // drift
+    std::fs::write(&p, "V3").unwrap();
 
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
-        .unwrap(); // refuse, rearm
+        .unwrap();
     assert!(app
         .message
         .as_deref()
         .unwrap_or("")
         .contains("Press Ctrl+R again"));
-    // buffer still original (V1 read at open); no reload happened on refuse
     assert_eq!(app.buffer.to_string(), "V1");
 
-    // third with stable V3 snapshot matches pending -> reload
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
     assert_eq!(app.buffer.to_string(), "V3");
@@ -606,31 +565,28 @@ fn app_file_state_reload_status_change_mod_to_del() {
     std::fs::write(&p, "M2").unwrap();
 
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
-        .unwrap(); // arm mod
+        .unwrap();
     assert!(matches!(
         app.observed_change.as_ref().unwrap().change,
         ConflictingChange::Modified(_)
     ));
 
-    let _ = std::fs::remove_file(&p); // now del
+    let _ = std::fs::remove_file(&p);
 
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
-        .unwrap(); // update to del, no reload
+        .unwrap();
     assert!(matches!(
         app.observed_change.as_ref().unwrap().change,
         ConflictingChange::Deleted
     ));
-    assert!(app.buffer.to_string().contains("M1") || app.buffer.to_string().contains("M2")); // no reload happened
+    assert!(app.buffer.to_string().contains("M1") || app.buffer.to_string().contains("M2"));
 
     let _ = std::fs::remove_file(&p);
 }
 
 #[test]
 fn app_file_state_reload_unknown_never_arms() {
-    // Hard to force Unknown at app level without FS tricks, but check that Unknown path sets msg and no pending.
-    // Use the same pattern as 2-r unknown coverage; here just ensure no arm.
     let mut app = App::new(None).unwrap();
-    // Force a call that would be unknown unlikely, but NoPath/Unknown path in code clears.
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.observed_change.is_none());
@@ -650,13 +606,11 @@ fn app_file_state_reload_clears_save_conflict() {
         .unwrap();
 
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
-        .unwrap(); // arms save conflict
+        .unwrap();
     assert!(app.confirmation.save_conflict().is_some());
 
-    // now reload path: first R arms reload
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
-    // second R reloads, must clear save conflict
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.confirmation.save_conflict().is_none());
@@ -681,18 +635,15 @@ fn app_file_state_edit_after_reload_pending_downgrades_it() {
     assert!(app.observed_change.is_some());
 
     app.handle_key(make_key(KeyCode::Char('x'), KeyModifiers::NONE))
-        .unwrap(); // edit cancels the confirmation but retains the observation
+        .unwrap();
     assert!(app.observed_change.is_some() && app.confirmation.armed_reload().is_none());
 
-    // next R must re-arm, not auto reload
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.observed_change.is_some());
 
     let _ = std::fs::remove_file(&p);
 }
-
-// Phase 2-t: Modified reload read failure must not lie (no fake success, keep pending)
 
 #[test]
 fn app_file_state_reload_modified_read_failure_keeps_state_and_pending() {
@@ -703,10 +654,8 @@ fn app_file_state_reload_modified_read_failure_keeps_state_and_pending() {
     std::fs::write(&p, "VALID").unwrap();
 
     let mut app = App::new(Some(&p)).unwrap();
-    // external write invalid UTF-8 (will cause read_to_string error on reload)
     std::fs::write(&p, [0xffu8, 0xfe]).unwrap();
 
-    // first R arms (metadata detects Modified)
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.observed_change.is_some());
@@ -715,7 +664,6 @@ fn app_file_state_reload_modified_read_failure_keeps_state_and_pending() {
     let before_saved = app.file.saved_history_position;
     let before_snap = app.file.disk_snapshot.clone();
 
-    // second R: attempt reload, should fail read, not lie, keep state + pending
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
 
@@ -754,9 +702,6 @@ fn app_file_state_reload_modified_read_failure_keeps_state_and_pending() {
     let _ = std::fs::remove_file(&p);
 }
 
-// Phase 2-t: generic Char('\n') / Char('\r') must cancel reload confirmation
-// while retaining the passive external observation.
-
 #[test]
 fn app_file_state_generic_newline_downgrades_reload_pending() {
     let mut tmp = std::env::temp_dir();
@@ -769,30 +714,26 @@ fn app_file_state_generic_newline_downgrades_reload_pending() {
     std::fs::write(&p, "BASE").unwrap();
 
     let mut app = App::new(Some(&p)).unwrap();
-    std::fs::write(&p, "MOD").unwrap(); // external change
+    std::fs::write(&p, "MOD").unwrap();
 
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.observed_change.is_some(), "first R should arm");
 
-    // generic newline (the \n/\r Char path, e.g. from paste) must disarm it
     app.handle_key(make_key(KeyCode::Char('\n'), KeyModifiers::NONE))
         .unwrap();
     assert!(
         app.observed_change.is_some() && app.confirmation.armed_reload().is_none(),
         "generic newline must retain only a passive observation"
     );
-    // Concrete expected state immediately after the generic newline (no reload yet).
     assert_eq!(app.buffer.to_string(), "\nBASE");
 
-    // next R must re-arm, not perform reload.
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(
         app.observed_change.is_some(),
         "after cancellation, next R must re-arm"
     );
-    // Concrete state: generic newline inserted at start; reload not performed.
     assert_eq!(app.buffer.to_string(), "\nBASE");
 
     let _ = std::fs::remove_file(&p);

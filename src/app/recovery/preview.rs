@@ -223,7 +223,6 @@ fn cancel(
 pub(crate) fn close(app: &mut super::super::App) -> bool {
     if let Some(preview) = app.recovery.preview.take() {
         restore_scroll(app, &preview);
-        // Closing the preview leaves the recovery decision unresolved.
         app.recovery.offered_candidate = Some(preview.candidate);
         true
     } else {

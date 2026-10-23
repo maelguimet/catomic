@@ -9,7 +9,6 @@ use unicode_width::UnicodeWidthStr;
 use crate::config::actions::Action;
 use crate::editor::text_layout;
 
-// Bounds string movement, segmentation and layout on every interactive event.
 pub(super) const MAX_PROMPT_BYTES: usize = 16 * 1024;
 
 #[derive(Clone, Debug, Default)]
@@ -72,8 +71,6 @@ impl PromptInput {
     }
 
     fn snap_caret_forward(&mut self) {
-        // Inserting a combining mark or joiner can merge with the following
-        // cluster. Never leave the caret inside that newly formed grapheme.
         self.caret = self
             .text
             .grapheme_indices(true)

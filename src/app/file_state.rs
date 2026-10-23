@@ -108,8 +108,6 @@ pub(crate) fn external_file_status(file: &FileState) -> ExternalFileStatus {
     let snap = match &file.disk_snapshot {
         Some(s) => s,
         None => {
-            // Path known (e.g. after first save where post-write stat was racy) but no snapshot.
-            // Do not mutate. Live capture to decide: if absent now -> Deleted, else Unchanged.
             return match crate::file::io::capture_file_snapshot(p) {
                 Ok(FileSnapshot::Present { .. }) => ExternalFileStatus::Unchanged,
                 Ok(FileSnapshot::Absent) => ExternalFileStatus::Deleted,

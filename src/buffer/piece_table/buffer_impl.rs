@@ -531,9 +531,6 @@ impl PieceTable {
         #[cfg(test)]
         self.reset_line_index_work();
         let mut edits = Vec::with_capacity(ranges.len().saturating_mul(2));
-        // Descending snapshot offsets remain valid as higher ranges change.
-        // Each mutation stays local in both the PieceTree and block LineIndex,
-        // so the batch needs no document-wide coalesce or index rebuild.
         for range in &ranges {
             self.replace_index_range(range.start_byte, range.end_byte, &replacement);
             let (removed, inserted) =

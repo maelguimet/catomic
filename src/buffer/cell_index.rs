@@ -286,9 +286,6 @@ impl CellIndex {
                 self.record_work(0, text.len());
                 builder.push(&text);
             }
-            // Equal unchanged final graphemes restore the same segmentation
-            // context, including regional-indicator parity. Otherwise extend
-            // through the affected run rather than using a fixed scalar overlap.
             if end == total
                 || (builder.last_grapheme_len() == expected_last
                     && expected_last <= end - range.end)
@@ -316,9 +313,6 @@ impl CellIndex {
         let splice = match splice {
             Ok(splice) => splice,
             Err(error) => {
-                // Existing infallible scalar edits can outlive a failed backing
-                // read. Keep coordinate queries fallible instead of guessing a
-                // column or silently rebuilding the whole line later.
                 self.error = Some((error.kind(), error.to_string()));
                 return;
             }
@@ -452,8 +446,6 @@ impl CellIndexBuilder {
         if text.is_empty() {
             return;
         }
-        // Two plain ASCII scalars reset every Unicode joining context. Keep the
-        // final scalar pending in case the next chunk begins with an extender.
         if text.len() > 2
             && text.is_ascii()
             && memchr::memchr2(b'\t', b'\r', text.as_bytes()).is_none()
@@ -471,7 +463,6 @@ impl CellIndexBuilder {
                 self.push_complete_text(&combined[..complete_end]);
                 combined.drain(..complete_end);
                 self.cursor = GraphemeCursor::new(0, usize::MAX, true);
-                // Initialize the retained final grapheme's streaming context.
                 let result = self.cursor.next_boundary(&combined, 0);
                 debug_assert_eq!(result, Err(GraphemeIncomplete::NextChunk));
                 self.pending = combined;
@@ -480,9 +471,6 @@ impl CellIndexBuilder {
         }
         let mut consumed = 0;
         loop {
-            // The retained chunk begins at the current complete grapheme start.
-            // Rebase the cursor at each boundary: RI pairs restore even parity,
-            // and all other grapheme rules depend only on this cluster's context.
             match self.cursor.next_boundary(&combined[consumed..], 0) {
                 Ok(Some(boundary)) => {
                     self.push_grapheme(&combined[consumed..consumed + boundary]);
@@ -897,8 +885,6 @@ mod tests {
 
     #[test]
     fn repairs_cross_long_regional_indicator_runs_and_single_graphemes() {
-        // Odd RI insertion changes pairing across every block in the run. A
-        // long extender cluster also crosses the builder's 64 KiB input chunks.
         for original in [
             format!("{}🇫\tabc", "🇫🇷".repeat(3000)),
             format!("e{}\tabc", "\u{301}".repeat(40_000)),
@@ -923,8 +909,6 @@ mod tests {
                 );
                 index.apply_splice(splice);
                 text.replace_range(range, insertion);
-                // Check around block/chunk boundaries and at the final tab,
-                // including scalar positions inside a multi-scalar grapheme.
                 let positions: Vec<_> = text
                     .char_indices()
                     .map(|(at, _)| at)

@@ -359,8 +359,6 @@ fn retired_action(name: &str) -> bool {
 }
 
 fn validate_configured_key(action: Action, chord: ShortcutChord, raw: &str) -> io::Result<()> {
-    // Review controls cannot shadow document or prompt typing: their scope
-    // exists only after query/replacement entry has finished.
     if actions::descriptor(action).scopes == [Scope::ReplaceReview] {
         Ok(())
     } else {

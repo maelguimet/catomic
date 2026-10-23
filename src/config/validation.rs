@@ -7,9 +7,11 @@ use std::io;
 
 use toml::{Table, Value};
 
+const RETIRED_AUTOCOMPLETE_KEY: &str = "autocomplete";
+const RETIRED_INLINE_LLM_ROLE: &str = "llm_changed";
+
 const ROOT_KEYS: &[&str] = &[
-    // Retained as inert input for configurations generated before autocomplete was removed.
-    "autocomplete",
+    RETIRED_AUTOCOMPLETE_KEY,
     "big_files",
     "cat",
     "commands",
@@ -44,8 +46,7 @@ const RETIRED_AUTOCOMPLETE_KEYS: &[&str] = &[
 const MOBILE_KEYS: &[&str] = &["action_bar"];
 const HOOK_KEYS: &[&str] = &["on_open", "on_save", "before_llm"];
 const LANGUAGE_KEYS: &[&str] = &["tab_size", "linter", "llm"];
-// Retained as inert input for configurations generated with inline clanker support.
-const LANGUAGE_LLM_KEYS: &[&str] = &["inline"];
+const RETIRED_LANGUAGE_LLM_KEYS: &[&str] = &["inline"];
 const COMMAND_KEYS: &[&str] = &["command", "input", "output", "timeout_secs"];
 const LLM_KEYS: &[&str] = &[
     "default",
@@ -56,8 +57,7 @@ const LLM_KEYS: &[&str] = &[
     "inline",
     "backends",
 ];
-// Retired inline fields remain structurally explicit so typos do not become silent config.
-const INLINE_KEYS: &[&str] = &[
+const RETIRED_INLINE_KEYS: &[&str] = &[
     "instruction_prefix",
     "instruction_suffix",
     "context_open",
@@ -100,7 +100,6 @@ const BACKEND_KEYS: &[&str] = &[
     "api_key_env",
     "headers",
     "header_envs",
-    // Retired picker inputs remain structurally explicit and inert.
     "models",
     "discovery",
     "program",
@@ -139,10 +138,8 @@ const THEME_COLOR_KEYS: &[&str] = &[
     "external_changed",
     "external_deleted",
     "lint",
-    // Retained as an inert role for configurations generated with inline clanker support.
-    "llm_changed",
-    // Retained as an inert role for configurations generated before autocomplete was removed.
-    "autocomplete",
+    RETIRED_INLINE_LLM_ROLE,
+    RETIRED_AUTOCOMPLETE_KEY,
     "preview",
 ];
 const STYLE_KEYS: &[&str] = &["fg", "bg", "bold", "dim", "underline", "reverse"];
@@ -222,7 +219,7 @@ fn validate_languages(root: &Table) -> io::Result<()> {
         let Some(llm) = optional_table(language, "llm", &llm_path)? else {
             continue;
         };
-        reject_unknown(llm, &llm_path, LANGUAGE_LLM_KEYS)?;
+        reject_unknown(llm, &llm_path, RETIRED_LANGUAGE_LLM_KEYS)?;
         if let Some(inline) = optional_table(llm, "inline", &format!("{llm_path}.inline"))? {
             validate_retired_inline(inline, &format!("{llm_path}.inline"))?;
         }
@@ -283,7 +280,7 @@ fn validate_llm(root: &Table) -> io::Result<()> {
 }
 
 fn validate_retired_inline(table: &Table, path: &str) -> io::Result<()> {
-    reject_unknown(table, path, INLINE_KEYS)?;
+    reject_unknown(table, path, RETIRED_INLINE_KEYS)?;
     for key in [
         "instruction_prefix",
         "instruction_suffix",

@@ -30,10 +30,6 @@ impl Buffer for PagedFileBuffer {
         &mut self,
         preserve: &mut dyn FnMut(&std::fs::File) -> io::Result<Option<std::fs::File>>,
     ) -> io::Result<()> {
-        // A baseline whose ctime tick is still pending (for example a future
-        // ctime from clock skew) may only have served the digested first-page
-        // bytes. Save proceeds if those bytes are still on disk, and again in
-        // the private copy the output is built from; otherwise it fails closed.
         let pending = match self.ensure_trusted() {
             Ok(()) => None,
             Err(error) if crate::buffer::BaselinePending::is(&error) => {
@@ -48,9 +44,6 @@ impl Buffer for PagedFileBuffer {
         if pending.is_some() {
             self.trust.require_digest_match(&file)?;
         }
-        // The preserved copy is private and unlinked, so nothing else can
-        // rewrite it within its ctime tick, and it holds the revision served so
-        // far (promoted, or digest-verified above). The copy is trusted as is.
         let snapshot = super::DescriptorSnapshot::capture(&file)?;
         if snapshot.len != self.snapshot.len {
             return Err(io::Error::new(
@@ -58,8 +51,6 @@ impl Buffer for PagedFileBuffer {
                 "paged-file snapshot has the wrong length",
             ));
         }
-        // Prepare every descriptor before changing storage so a copy/clone/read
-        // failure leaves the active page, retained pages, and history usable.
         let originals = self
             .retained
             .values()
@@ -217,8 +208,6 @@ impl Buffer for PagedFileBuffer {
     }
 
     fn descriptor_source(&self) -> io::Result<Option<DescriptorSource>> {
-        // Search and goto workers read the whole file, including bytes the
-        // open did not digest, so they need a promoted baseline too.
         self.ensure_trusted()?;
         let mut overlays = Vec::new();
         for page in self.retained.values().chain(std::iter::once(self.active())) {

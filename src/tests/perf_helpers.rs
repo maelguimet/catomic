@@ -97,11 +97,6 @@ fn note_thread_allocation(bytes: usize) {
     }
 }
 
-/// Count allocations made by one scoped operation on the calling test thread.
-///
-/// The process-global allocator remains the single allocator for the test
-/// binary; thread-local bookkeeping keeps unrelated parallel tests out of the
-/// result. The guard also restores tracking after unwinding.
 pub(crate) fn count_thread_allocations<T>(operation: impl FnOnce() -> T) -> (T, usize) {
     THREAD_ALLOCATIONS.with(|allocations| allocations.set(0));
     THREAD_ALLOCATED_BYTES.with(|bytes| bytes.set(0));
@@ -118,11 +113,6 @@ pub(crate) fn count_thread_allocations<T>(operation: impl FnOnce() -> T) -> (T, 
     (value, allocations)
 }
 
-/// Count gross allocated bytes on the calling thread, including full reallocation sizes.
-///
-/// This conservatively bounds additional peak and retained memory without
-/// subtracting frees of allocations that predate the operation or counting
-/// unrelated test threads.
 pub(crate) fn count_thread_allocated_bytes<T>(operation: impl FnOnce() -> T) -> (T, usize) {
     let (value, _) = count_thread_allocations(operation);
     (value, THREAD_ALLOCATED_BYTES.with(Cell::get))
@@ -258,8 +248,6 @@ impl AllocationSnapshot {
     }
 }
 
-/// Unique temp path under std::env::temp_dir for perf tests.
-/// Includes pid + thread id to avoid collisions under parallel test runs.
 pub(crate) fn temp_perf_path(suffix: &str) -> PathBuf {
     let mut p = std::env::temp_dir();
     let tid = format!("{:?}", std::thread::current().id());
@@ -276,15 +264,10 @@ pub(crate) fn cleanup_perf(p: &Path) {
     let _ = fs::remove_file(p);
 }
 
-/// Generate a deterministic ASCII dense file of exactly `size` bytes by
-/// streaming buffered fixed chunks (no full content string materialized in memory).
-/// Uses repeating ASCII pattern for determinism/reproducibility.
 pub(crate) fn generate_dense_ascii_file(path: &Path, size: u64) -> io::Result<()> {
     write_repeating_pattern_file(path, size, b"0123456789abcdef")
 }
 
-/// Generate a deterministic UTF-8 dense file containing non-ASCII scalars.
-/// The size must be even so the repeated "é" pattern is never truncated.
 pub(crate) fn generate_dense_non_ascii_file(path: &Path, size: u64) -> io::Result<()> {
     if !size.is_multiple_of(2) {
         return Err(io::Error::new(
@@ -320,9 +303,6 @@ fn write_repeating_pattern_file(path: &Path, size: u64, pattern: &[u8]) -> io::R
     Ok(())
 }
 
-/// Generate a deterministic line-heavy ASCII file of exactly `size` bytes.
-/// The chunk has frequent newlines to exercise LineIndex construction while
-/// still streaming fixed bytes without materializing the full file.
 pub(crate) fn generate_line_heavy_ascii_file(path: &Path, size: u64) -> io::Result<()> {
     write_repeating_pattern_file(
         path,
@@ -331,9 +311,6 @@ pub(crate) fn generate_line_heavy_ascii_file(path: &Path, size: u64) -> io::Resu
     )
 }
 
-/// Create a sparse file of `size` bytes via set_len (no data written).
-/// Returns Ok(()) on success, or Err if FS refuses large sparse (caller may skip).
-/// Used only for Extreme guard tests; never materializes content.
 pub(crate) fn try_generate_sparse_file(path: &Path, size: u64) -> io::Result<()> {
     let f = OpenOptions::new()
         .create(true)
@@ -341,13 +318,10 @@ pub(crate) fn try_generate_sparse_file(path: &Path, size: u64) -> io::Result<()>
         .truncate(true)
         .open(path)?;
     f.set_len(size)?;
-    // close explicit
     drop(f);
     Ok(())
 }
 
-/// Deterministic editor text that covers ASCII, tabs, multibyte UTF-8,
-/// combining graphemes, emoji, and CRLF without committed fixtures.
 pub(crate) fn mixed_text_fixture(target_bytes: usize) -> String {
     const PATTERN: &str = "ASCII\té e\u{301} 👩🏽‍💻\r\n";
     let mut text = String::with_capacity(target_bytes);
@@ -360,8 +334,6 @@ pub(crate) fn mixed_text_fixture(target_bytes: usize) -> String {
     text
 }
 
-/// Minimal no-deps sample for manual baseline reporting.
-/// label is stable identifier for later parsing; bytes is on-disk size if known.
 #[derive(Clone, Debug)]
 pub(crate) struct PerfSample {
     pub label: &'static str,
@@ -391,8 +363,6 @@ impl PerfSample {
     }
 }
 
-/// Measure + return both result and a PerfSample (no threshold, no file write).
-/// Intended for #[ignore] manual tests only. Use print_perf_sample for stable output.
 #[allow(dead_code)]
 pub(crate) fn measure_sample<T>(
     label: &'static str,
@@ -411,8 +381,6 @@ pub(crate) fn measure_sample<T>(
     (v, sample)
 }
 
-/// Measure elapsed time plus requested allocation count/bytes. Ignored perf
-/// tests must run serially so unrelated threads cannot contaminate the deltas.
 pub(crate) fn measure_allocated_sample<T>(
     label: &'static str,
     bytes: Option<u64>,
@@ -429,9 +397,6 @@ pub(crate) fn measure_allocated_sample<T>(
     )
 }
 
-/// Emit a single stable line for capture in manual runs.
-/// Format: PERF sample: label=... bytes=... elapsed_ms=...
-/// No JSON, no files, no deps.
 #[allow(dead_code)]
 pub(crate) fn print_perf_sample(s: &PerfSample) {
     eprintln!("{}", format_perf_sample(s));

@@ -92,13 +92,9 @@ fn perf_paged_stats_track_descriptor_reads_and_retained_edits() {
 
 #[test]
 fn phase0_small_file_key_to_render_smoke() {
-    // Drive a small edit + render cycle.
-    // Functional smoke only: no timing gate in default run.
-    // Elapsed may be measured + eprintln under --nocapture for manual observation.
     let mut b = SimpleBuffer::from_text("hello phase 0\nsecond line here\n");
 
     let start = std::time::Instant::now();
-    // Simulate a few "keypresses": right, insert, down, etc + render
     b.move_right();
     b.insert_char('!');
     let mut out: Vec<u8> = Vec::new();
@@ -122,15 +118,12 @@ fn phase0_small_file_key_to_render_smoke() {
     )
     .expect("render2");
     let elapsed = start.elapsed();
-    // Optional visibility only with cargo test ... -- --nocapture
     eprintln!("phase0_small elapsed: {:?}", elapsed);
 
-    // Deterministic functional asserts only (no elapsed threshold).
     assert!(
         !out.is_empty() && !out2.is_empty(),
         "renders must produce output"
     );
-    // Buffer changed as expected from the simulated edits.
     let s = b.to_string();
     assert!(s.contains('!'), "insert ! must be present");
     assert!(s.contains('X'), "insert X must be present");
@@ -138,8 +131,6 @@ fn phase0_small_file_key_to_render_smoke() {
 
 #[test]
 fn phase1b_piecetable_small_file_key_to_render_smoke() {
-    // Same smoke using PieceTable (1B) to ensure the index+slice path
-    // doesn't regress small-file edit+render. Functional only; no timing gate.
     let mut b = PieceTable::from_text("hello phase 0\nsecond line here\n");
 
     let start = std::time::Instant::now();
@@ -168,7 +159,6 @@ fn phase1b_piecetable_small_file_key_to_render_smoke() {
     let elapsed = start.elapsed();
     eprintln!("phase1b_piecetable elapsed: {:?}", elapsed);
 
-    // Deterministic functional asserts only.
     assert!(
         !out.is_empty() && !out2.is_empty(),
         "renders must produce output"
@@ -211,8 +201,6 @@ fn piece_table_fragmented_sequential_edit_reports_local_work() {
 
 #[test]
 fn render_buffer_with_message_emits_on_bottom_row_and_clears() {
-    // Minimal coverage for bottom-line messages: Some(msg) must place safe text
-    // after positioning to the last row and a complete-row clear.
     let b = SimpleBuffer::from_text("one line");
     let mut out: Vec<u8> = Vec::new();
     render_buffer(
@@ -239,11 +227,8 @@ fn render_buffer_with_message_emits_on_bottom_row_and_clears() {
     );
 }
 
-// --- Phase 2-ah cheap default harness smoke tests (small files only, no timing gates) ---
-
 #[test]
 fn perf_harness_generate_dense_small_has_exact_size() {
-    // Max 1 MiB in default suite (here 64 KiB).
     let size: u64 = 64 * 1024;
     let p = temp_perf_path("dense_64k.bin");
     cleanup_perf(&p);
@@ -278,12 +263,11 @@ fn perf_harness_generate_line_heavy_small_has_exact_size() {
 
 #[test]
 fn perf_harness_app_new_small_generated_records_size() {
-    let size: u64 = 1024; // 1 KiB tiny
+    let size: u64 = 1024;
     let p = temp_perf_path("app_new_small.txt");
     cleanup_perf(&p);
 
     generate_dense_ascii_file(&p, size).expect("gen");
-    // content is ASCII; App::new must open and record size_bytes + Small tier
     let app = crate::app::App::new(Some(&p.to_string_lossy())).expect("App::new small gen file");
     assert!(app.file.path.is_some());
     assert_eq!(app.file.size_bytes, Some(size));
@@ -297,18 +281,15 @@ fn perf_harness_app_new_small_generated_records_size() {
 
 #[test]
 fn perf_harness_open_render_smoke_on_small_generated_no_panic() {
-    let size: u64 = 4096; // 4 KiB
+    let size: u64 = 4096;
     let p = temp_perf_path("smoke_render_4k.txt");
     cleanup_perf(&p);
 
     generate_dense_ascii_file(&p, size).expect("gen");
-    // Open via App (exercises PieceTable::from_text path + size capture)
     let app = crate::app::App::new(Some(&p.to_string_lossy())).expect("open smoke");
-    // basic render smoke via public seam (captured writer)
     let mut out: Vec<u8> = Vec::new();
     app.render(&mut out)
         .expect("render must not panic on small generated");
-    // at least some bytes or at least no crash
     let _ = out.len();
 
     cleanup_perf(&p);
@@ -316,18 +297,13 @@ fn perf_harness_open_render_smoke_on_small_generated_no_panic() {
 
 #[test]
 fn render_uses_status_line_when_message_none_and_message_overrides() {
-    // Cheap: uses tiny generated file (no 10 MiB). Proves:
-    // - no message => bottom row contains the active file path
-    // - message present => that text wins on bottom (overrides status)
     let size: u64 = 256;
     let p = temp_perf_path("status_vs_msg_256.txt");
     cleanup_perf(&p);
     generate_dense_ascii_file(&p, size).expect("gen tiny");
 
     let mut app = crate::app::App::new(Some(&p.to_string_lossy())).expect("open for status");
-    // Keep this metadata-format assertion independent of the renderer's terminal-width clipping.
     app.screen.width = 240;
-    // fresh small open has no message; status should be shown
     let mut out: Vec<u8> = Vec::new();
     app.render(&mut out).expect("render status");
     let s = String::from_utf8_lossy(&out);
@@ -348,7 +324,6 @@ fn render_uses_status_line_when_message_none_and_message_overrides() {
         "status should contain only useful identity: {s}"
     );
 
-    // Force message: must appear (overrides)
     app.message = Some("OVERRIDE-XYZ-42".to_string());
     let mut out2: Vec<u8> = Vec::new();
     app.render(&mut out2).expect("render msg");
@@ -358,7 +333,6 @@ fn render_uses_status_line_when_message_none_and_message_overrides() {
         "message must take precedence on bottom row"
     );
 
-    // Clear message (as content edit would): status returns
     app.message = None;
     let mut out3: Vec<u8> = Vec::new();
     app.render(&mut out3).expect("render status again");

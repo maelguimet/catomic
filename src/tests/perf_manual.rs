@@ -18,7 +18,6 @@ use std::io::Write;
 #[test]
 #[ignore = "manual big-file perf smoke; generates and opens ~10 MiB"]
 fn manual_open_10mib_generated_file_smoke() {
-    // Use exactly SMALL+1 to guarantee Large tier + warning path.
     let size = crate::file::size::SMALL_FILE_LIMIT_BYTES + 1;
     let p = temp_perf_path("manual_10mib.bin");
     cleanup_perf(&p);
@@ -29,11 +28,6 @@ fn manual_open_10mib_generated_file_smoke() {
     });
     print_perf_sample(&gen_sample);
 
-    // Phase breakdown for editable Large open/materialization hotspot (manual only, ignored).
-    // metadata: fs metadata probe (size decision path).
-    // read_to_string + PieceTable::from_owned_text measure a UTF-8 materialization baseline.
-    // App::new remains the end-to-end measurement (re-reads internally).
-    // Content string is dropped promptly after the PT phase; no duplicate giant retained.
     eprintln!("phase: metadata 10mib");
     let ((), meta_sample) = measure_sample("metadata 10mib", Some(size), || {
         let _ = std::fs::metadata(&p).expect("metadata 10mib");
@@ -71,7 +65,6 @@ fn manual_open_10mib_generated_file_smoke() {
         app.message
     );
 
-    // cheap render smoke (also measured for baseline)
     let mut out: Vec<u8> = Vec::new();
     let (_, render_sample) = measure_sample("render 10mib", Some(size), || {
         let _ = app.render(&mut out);
@@ -85,13 +78,11 @@ fn manual_open_10mib_generated_file_smoke() {
 #[test]
 #[ignore = "manual big-file perf smoke; generates and opens ~100 MiB"]
 fn manual_open_100mib_generated_file_smoke() {
-    // Use LARGE+1 to hit Huge tier + warning.
     let size = crate::file::size::LARGE_FILE_LIMIT_BYTES + 1;
     let p = temp_perf_path("manual_100mib.bin");
     cleanup_perf(&p);
 
     eprintln!("generating ~100 MiB dense (streaming chunks)...");
-    // May take time + disk; manual only.
     let gen_res = measure_sample("generate 100mib", Some(size), || {
         generate_dense_ascii_file(&p, size)
     });
@@ -107,8 +98,6 @@ fn manual_open_100mib_generated_file_smoke() {
     let _ = gen_ok;
     print_perf_sample(&gen_sample);
 
-    // Legacy full-materialization comparison samples. App::new for this Huge
-    // case now uses editable PagedFileBuffer instead of this whole-file PieceTable path.
     eprintln!("phase: metadata 100mib");
     let ((), meta_sample) = measure_sample("metadata 100mib", Some(size), || {
         let _ = std::fs::metadata(&p).expect("metadata 100mib");
@@ -147,7 +136,6 @@ fn manual_open_100mib_generated_file_smoke() {
     };
     print_perf_sample(&open_sample);
 
-    // May be Huge (our choice of LARGE+1)
     assert!(
         app.file.size_tier == Some(crate::file::size::FileSizeTier::Huge)
             || app.file.size_tier == Some(crate::file::size::FileSizeTier::Large),
@@ -179,8 +167,6 @@ fn manual_open_100mib_generated_file_smoke() {
 #[test]
 #[ignore = "manual non-ASCII Huge far-window perf smoke; generates and opens ~100 MiB"]
 fn manual_open_100mib_non_ascii_far_window_smoke() {
-    // Use LARGE+2 so the Huge tier is reached and the repeated 2-byte UTF-8
-    // pattern stays on a scalar boundary.
     let size = crate::file::size::LARGE_FILE_LIMIT_BYTES + 2;
     let p = temp_perf_path("manual_100mib_non_ascii.bin");
     cleanup_perf(&p);

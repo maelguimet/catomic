@@ -11,7 +11,6 @@ use std::io::{self, Write};
 use std::sync::atomic::AtomicBool;
 
 impl SearchTask {
-    /// A descriptor search whose worker already exited without sending a result.
     pub(crate) fn worker_stopped_for_test() -> Self {
         let (sender, receiver) = mpsc::channel();
         drop(sender);

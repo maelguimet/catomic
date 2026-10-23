@@ -68,8 +68,6 @@ fn tab_stops_after_batched_emoji_use_renderer_graphemes() {
         "🏽\u{200d}👩",
         "#\u{fe0f}\u{200d}👩",
     ] {
-        // At 4096 bytes the opening path batches widths. Space padding keeps
-        // default completion out of the way so this exercises actual Tab.
         let prefix = format!("{sequence}{}", " ".repeat(4096 - sequence.len()));
         let cells = text_layout::scalar_to_cell(&prefix, prefix.chars().count());
         let path =

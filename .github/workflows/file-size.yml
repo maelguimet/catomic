@@ -1,0 +1,35 @@
+name: File size
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  file-size:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          fetch-depth: 0
+      - run: scripts/check-file-size.test.sh
+      - name: Size cap
+        if: github.event_name != 'pull_request'
+        run: scripts/check-file-size --all
+      - name: Size cap, baseline and exemptions, with the base branch's checker
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          base=origin/$BASE_REF
+          checker=scripts/check-file-size
+          if git cat-file -e "$base:scripts/check-file-size" 2>/dev/null; then
+            checker=$RUNNER_TEMP/check-file-size
+            git show "$base:scripts/check-file-size" >"$checker"
+            chmod +x "$checker"
+          fi
+          "$checker" --all
+          "$checker" --against "$base"

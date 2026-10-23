@@ -113,3 +113,27 @@ In the pull request description:
 
 Keep unrelated changes in separate pull requests. A reviewer should be able to
 understand the change without reconstructing a hidden roadmap from the diff.
+
+## File-size cap
+
+Each file stays under about 5,000 tokens, counted as 20,000 bytes. CI is the
+gate: the File size workflow runs `scripts/check-file-size --all` on every push
+and pull request. On pull requests it runs the base branch's copy of the
+script, and also rejects new or raised `.file-size-baseline` entries and any
+over-cap file that is exempt through `.gitattributes` but was not an exempt
+file on the base branch, including a new file under an existing exemption.
+Narrowing an exemption passes. The pre-commit hook runs the same check on
+staged files before CI does. Enable it once per clone:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+`scripts/check-file-size --all` checks the whole tree. When the check fails,
+split the file by responsibility, move tests to their own file, or extract data
+and fixtures. Some files were already over the cap when the check was added.
+They are listed in `.file-size-baseline` with their size at that time; they may
+shrink but not grow, and their entries may only be lowered or removed.
+Lockfiles (by exact name), files with binary content, and paths marked
+`linguist-generated`, `linguist-vendored`, `binary` or `-diff` in the committed
+`.gitattributes` are exempt.

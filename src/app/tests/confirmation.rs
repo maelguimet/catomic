@@ -56,3 +56,13 @@ fn each_confirmation_replaces_the_previous_one() {
 
     let _ = std::fs::remove_file(&path);
 }
+
+#[test]
+fn saving_a_path_less_buffer_drops_an_armed_save_conflict() {
+    let mut app = App::new(None).unwrap();
+    app.confirmation = super::super::confirmation::fixtures::save_conflict("elsewhere.txt");
+
+    save::handle_save(&mut app, &mut Vec::new()).unwrap();
+
+    assert_eq!(app.confirmation, Confirmation::None);
+}

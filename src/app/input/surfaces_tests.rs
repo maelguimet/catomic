@@ -42,3 +42,13 @@ fn workers_keep_their_canonical_place_around_the_focused_surface() {
         position(KeyStop::CompletionTrigger) < position(KeyStop::Focus(Surface::MarkdownPreview))
     );
 }
+
+#[test]
+fn paste_under_a_mobile_overlay_is_not_routed_to_the_surface_beneath() {
+    let mut app = App::new(None).unwrap();
+    let mut out = Vec::new();
+    replace::open_prompt(&mut app, &mut out, false).unwrap();
+    super::super::super::mobile::open_notice_for_test(&mut app, "notice");
+
+    assert!(!handle_paste(&mut app, &mut out, "b").unwrap());
+}

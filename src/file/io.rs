@@ -106,6 +106,20 @@ pub(crate) fn atomic_create_private_string(
     .map(|_| ())
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StagedFile {
+    Owned,
+    Committed,
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    KeptAsRecoveryEvidence,
+}
+
+fn discard_failed_attempt(staged: Option<StagedFile>, temp_path: &Path) {
+    if staged == Some(StagedFile::Owned) {
+        let _ = fs::remove_file(temp_path);
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum AtomicWritePolicy {
     Ordinary,
@@ -127,7 +141,7 @@ fn atomic_write_with_policy(
         .unwrap_or_else(|| PathBuf::from("."));
     let temp_path = atomic_staging_path(target);
 
-    let mut this_attempt_owns_staged_file = false;
+    let mut staged_file = None;
     let res: io::Result<u64> = (|| {
         #[cfg(any(target_os = "linux", target_os = "android"))]
         let existing_permissions = if private {
@@ -165,7 +179,7 @@ fn atomic_write_with_policy(
             options.mode(0o600);
         }
         let f = options.open(&temp_path)?;
-        this_attempt_owns_staged_file = true;
+        let staged = staged_file.insert(StagedFile::Owned);
         #[cfg(unix)]
         let mode_to_restore_after_writes = if private {
             None
@@ -197,23 +211,18 @@ fn atomic_write_with_policy(
 
         if policy == AtomicWritePolicy::PrivateReplace {
             fs::rename(&temp_path, target)?;
-            this_attempt_owns_staged_file = false;
+            *staged = StagedFile::Committed;
         } else if policy == AtomicWritePolicy::PrivateCreate {
-            commit_private_create(&temp_path, target, &mut this_attempt_owns_staged_file)?;
+            commit_private_create(&temp_path, target, staged)?;
         } else {
             #[cfg(any(target_os = "linux", target_os = "android"))]
-            atomic_unix::commit(
-                &temp_path,
-                target,
-                target_state.existing.as_ref(),
-                &mut this_attempt_owns_staged_file,
-            )?;
+            atomic_unix::commit(&temp_path, target, target_state.existing.as_ref(), staged)?;
 
             #[cfg(not(any(target_os = "linux", target_os = "android")))]
             {
                 validate_regular_save_target(target)?;
                 fs::rename(&temp_path, target)?;
-                this_attempt_owns_staged_file = false;
+                *staged = StagedFile::Committed;
             }
         }
 
@@ -226,8 +235,8 @@ fn atomic_write_with_policy(
         Ok(written)
     })();
 
-    if res.is_err() && this_attempt_owns_staged_file {
-        let _ = fs::remove_file(&temp_path);
+    if res.is_err() {
+        discard_failed_attempt(staged_file, &temp_path);
     }
     res
 }
@@ -265,17 +274,17 @@ fn fixed_width_identity_so_name_max_targets_get_a_legal_sibling(target: &Path) -
 fn commit_private_create(
     temp_path: &Path,
     target: &Path,
-    cleanup_temp: &mut bool,
+    staged: &mut StagedFile,
 ) -> io::Result<()> {
     #[cfg(target_os = "linux")]
     {
-        atomic_unix::commit(temp_path, target, None, cleanup_temp)
+        atomic_unix::commit(temp_path, target, None, staged)
     }
     #[cfg(not(target_os = "linux"))]
     {
         fs::hard_link(temp_path, target)?;
         fs::remove_file(temp_path)?;
-        *cleanup_temp = false;
+        *staged = StagedFile::Committed;
         Ok(())
     }
 }

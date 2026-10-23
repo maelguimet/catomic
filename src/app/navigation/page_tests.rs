@@ -267,8 +267,6 @@ fn page_context_matrix_preserves_direction_selection_and_fragmented_paged_text()
                         } else {
                             Box::new(PieceTable::from_text(&original))
                         };
-                        // A same-scalar replacement leaves the text unchanged but
-                        // splits its original/add storage inside the Unicode run.
                         let target_row = usize::from(down);
                         let split = target.chars().count().min(65) - 1;
                         let scalar = target.chars().nth(split).unwrap().to_string();

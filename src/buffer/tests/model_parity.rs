@@ -8,13 +8,10 @@
 
 use crate::buffer::{Buffer, PieceTable};
 
-/// Minimal independent dumb String model with its own undo/redo stacks.
-/// Cursor tracked as char index into a Vec<char> so insert/delete/move affect
-/// text at the modeled position (needed for delete_forward etc to match PT).
 #[derive(Clone, Default)]
 struct DumbModel {
     chars: Vec<char>,
-    cursor: usize, // char index
+    cursor: usize,
     undo_stack: Vec<(Vec<char>, usize)>,
     redo_stack: Vec<(Vec<char>, usize)>,
 }
@@ -62,7 +59,6 @@ impl DumbModel {
         }
     }
     fn move_up(&mut self) {
-        // Find start of current line, then prev line start; clamp col.
         let mut line_start = 0usize;
         for (i, &c) in self.chars[..self.cursor].iter().enumerate().rev() {
             if c == '\n' {
@@ -73,10 +69,8 @@ impl DumbModel {
         if line_start == 0
             && (self.cursor == 0 || self.chars.get(self.cursor.saturating_sub(1)) != Some(&'\n'))
         {
-            // already top line
             let col = self.cursor - line_start;
             if line_start > 0 {
-                // move to prev line
                 let mut prev_start = line_start - 1;
                 while prev_start > 0 && self.chars[prev_start - 1] != '\n' {
                     prev_start -= 1;
@@ -97,7 +91,6 @@ impl DumbModel {
         }
     }
     fn move_down(&mut self) {
-        // Find end of current line, start of next; clamp col.
         let n = self.chars.len();
         let mut line_end = n;
         for (i, &c) in self.chars[self.cursor..].iter().enumerate() {
@@ -107,7 +100,7 @@ impl DumbModel {
             }
         }
         if line_end >= n {
-            return; // no next line
+            return;
         }
         let next_start = line_end + 1;
         let mut next_end = n;
@@ -118,7 +111,6 @@ impl DumbModel {
             }
         }
         let col = self.cursor.saturating_sub(
-            // current line start
             (0..self.cursor)
                 .rev()
                 .find(|&i| self.chars[i] == '\n')
@@ -148,9 +140,6 @@ impl DumbModel {
 
 #[test]
 fn seeded_random_edit_plus_undo_redo_against_dumb_model() {
-    // Independent dumb String model (Vec<char> + char cursor) with its own
-    // undo_stack/redo_stack. Every op applied to both PT and model.
-    // Assert text equality after every operation. Deterministic seed.
     fn next_seed(s: &mut u64) -> u64 {
         *s = s.wrapping_mul(6364136223846793005u64).wrapping_add(1);
         *s
@@ -163,7 +152,6 @@ fn seeded_random_edit_plus_undo_redo_against_dumb_model() {
         let r = next_seed(&mut seed) % 100;
         match r {
             0..=44 => {
-                // insert char or newline
                 let ch = if next_seed(&mut seed).is_multiple_of(7) {
                     '\n'
                 } else {
@@ -176,8 +164,6 @@ fn seeded_random_edit_plus_undo_redo_against_dumb_model() {
                     pt.insert_char(ch);
                     model.insert_char(ch);
                 }
-                // This storage/index parity model records one transaction per
-                // operation. Grouping behavior has focused coverage elsewhere.
                 pt.finish_undo_group();
             }
             45..=52 => {
@@ -215,7 +201,6 @@ fn seeded_random_edit_plus_undo_redo_against_dumb_model() {
                 model.redo();
             }
             _ => {
-                // occasional extra insert variety
                 let ch = seeded_char_for_model(&mut seed);
                 pt.insert_char(ch);
                 model.insert_char(ch);
@@ -268,9 +253,8 @@ fn assert_line_index_parity(pt: &PieceTable, text: &str, step: usize) {
 }
 
 fn seeded_char_for_model(seed: &mut u64) -> char {
-    // Reuse similar charset (no need to duplicate the one in outer scope)
     const CHARS: &[char] = &['a', 'Z', 'é', '猫', '🙂', ' ', '0'];
-    let r = *seed; // advance via caller
+    let r = *seed;
     *seed = seed.wrapping_mul(6364136223846793005u64).wrapping_add(1);
     CHARS[(r as usize) % CHARS.len()]
 }

@@ -18,6 +18,3 @@ mod viewport;
 use super::*;
 
 pub(super) use editing::make_key;
-
-// Phase 2-b quit guard + message tests (via simulated keys; no real terminal)
-// (actual tests moved to file_state.rs and other submodules for size)

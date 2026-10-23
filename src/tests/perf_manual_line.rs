@@ -18,8 +18,6 @@ use super::helpers::{
 };
 
 fn measure_line_heavy_open(path: &Path, label_size: &'static str, size: u64) {
-    // These samples remain as legacy full-materialization comparisons. App::new
-    // for 100mib-line now takes the editable paged Huge-file path instead.
     eprintln!("phase: metadata {}", label_size);
     let ((), meta_sample) = measure_sample(
         match label_size {

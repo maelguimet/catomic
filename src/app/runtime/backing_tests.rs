@@ -31,7 +31,6 @@ impl Fixture {
         let mut file = File::create(&path).unwrap();
         file.write_all(b"first\nsecond\nthird\n").unwrap();
         if huge {
-            // Exercise production tier selection without allocating 100 MiB.
             file.set_len(100 * 1024 * 1024 + 1).unwrap();
         }
         Self { root, path }
@@ -54,7 +53,6 @@ impl Fixture {
         let mut file = OpenOptions::new().write(true).open(&self.path).unwrap();
         let before = file.metadata().unwrap().modified().unwrap();
         file.write_all(b"FIRST").unwrap();
-        // Do not depend on the filesystem's timestamp resolution or sleeps.
         file.set_modified(before + Duration::from_secs(2)).unwrap();
         file.sync_all().unwrap();
     }
@@ -124,7 +122,6 @@ fn blocked_content_input_disarms_quit_and_reload_confirmations() {
             );
             assert_eq!(app.buffer.edit_history_position(), history);
 
-            // A genuinely repeated, visible confirmation still works.
             app.dispatch_ready_terminal_event(&mut out, confirm)
                 .unwrap();
             if confirmation == 'q' {

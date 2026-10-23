@@ -110,6 +110,7 @@ pub(crate) fn atomic_create_private_string(
 enum StagedFile {
     Owned,
     Committed,
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     KeptAsRecoveryEvidence,
 }
 

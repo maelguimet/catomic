@@ -1,7 +1,7 @@
 //! Purpose: prove Linux saves preserve extended attributes and hard-link recovery evidence.
 //! Owns: xattr round-trips and failure-after-truncation hard-link commits.
 //! Must not: test App save policy or snapshot comparison.
-//! Invariants: a failed hard-link refill keeps the complete staged file.
+//! Invariants: a failed hard-link refill or rollback keeps the recovery file.
 
 use std::ffi::{CStr, CString};
 use std::fs::{self, File, OpenOptions};
@@ -12,7 +12,8 @@ use std::path::PathBuf;
 
 use super::{
     apply_preserved_attributes, commit, commit_hard_link_with, is_not_supported,
-    open_existing_target, read_attribute, read_preserved_attributes, ExistingTarget,
+    open_existing_target, read_attribute, read_preserved_attributes, rollback_exchange,
+    ExistingTarget,
 };
 use crate::file::io::{atomic_write_string, discard_failed_attempt, StagedFile};
 
@@ -235,4 +236,50 @@ fn successful_commits_mark_staged_file_committed() {
     assert_eq!(state, StagedFile::Committed);
     assert!(!staged.0.exists());
     assert_eq!(fs::read_to_string(&target.0).unwrap(), "second");
+}
+
+#[test]
+fn failed_rollback_keeps_displaced_original_as_recovery_evidence() {
+    let target = test_path("rollback-failed-target");
+    let displaced = test_path("rollback-failed-displaced");
+    fs::write(&displaced.0, "only copy of original").unwrap();
+    let mut state = StagedFile::Committed;
+
+    let error = rollback_exchange(
+        &displaced.0,
+        &target.0,
+        &mut state,
+        io::Error::other("validation failed"),
+    )
+    .expect_err("rollback onto a missing target must fail");
+
+    assert_eq!(state, StagedFile::KeptAsRecoveryEvidence);
+    discard_failed_attempt(Some(state), &displaced.0);
+    assert!(error.to_string().contains("displaced target remains at"));
+    assert_eq!(
+        fs::read_to_string(&displaced.0).unwrap(),
+        "only copy of original"
+    );
+}
+
+#[test]
+fn successful_rollback_restores_original_and_hands_back_temp_for_discard() {
+    let target = test_path("rollback-ok-target");
+    let displaced = test_path("rollback-ok-displaced");
+    fs::write(&target.0, "replacement").unwrap();
+    fs::write(&displaced.0, "original").unwrap();
+    let mut state = StagedFile::Committed;
+
+    rollback_exchange(
+        &displaced.0,
+        &target.0,
+        &mut state,
+        io::Error::other("validation failed"),
+    )
+    .expect_err("original error must surface");
+
+    assert_eq!(state, StagedFile::Owned);
+    discard_failed_attempt(Some(state), &displaced.0);
+    assert!(!displaced.0.exists());
+    assert_eq!(fs::read_to_string(&target.0).unwrap(), "original");
 }

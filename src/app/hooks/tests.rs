@@ -23,7 +23,7 @@ fn wait_for_preview(app: &mut super::super::App, out: &mut Vec<u8>) {
 }
 
 fn close_result(app: &mut super::super::App, out: &mut Vec<u8>) {
-    super::super::external_command::handle_key(
+    super::super::external_command::handle_preview_key(
         app,
         out,
         KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),

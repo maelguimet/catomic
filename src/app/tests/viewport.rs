@@ -73,7 +73,7 @@ fn foreground_redraw_preserves_unsaved_buffer_and_active_prompt() {
 
     assert_eq!(app.buffer.to_string(), "x");
     assert_eq!(app.buffer.edit_history_position(), history);
-    assert!(super::super::command_prompt::is_active(&app));
+    assert!(app.focus.command().is_some());
     assert_eq!(app.message.as_deref(), Some("Command: "));
     assert_eq!((app.screen.width, app.screen.height), (31, 9));
     assert!(!out.is_empty());

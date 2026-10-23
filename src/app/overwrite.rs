@@ -75,12 +75,5 @@ pub(crate) fn uses_overwrite_cursor(app: &super::App) -> bool {
 }
 
 fn alternate_input_surface(app: &super::App) -> bool {
-    super::help::is_viewing(app)
-        || super::recovery::is_viewing(app)
-        || super::external_command::is_viewing(app)
-        || super::replace::is_active(app)
-        || super::search::is_active(app)
-        || super::command_prompt::is_active(app)
-        || super::completion::is_active(app)
-        || super::view::is_preview(app)
+    !app.focus.base().is_editor() || super::command_prompt::is_running(app)
 }

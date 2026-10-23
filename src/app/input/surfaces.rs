@@ -1,40 +1,42 @@
-//! Purpose: make key and paste surface precedence explicit and independently testable.
-//! Owns: ordered dispatch across active prompts, previews, pickers, and editor surfaces.
+//! Purpose: route keys, paste, and scoped actions to the focused surface and its workers.
+//! Owns: the canonical key order between background workers and the focused surface.
 //! Must not: edit buffer content, translate keybindings, decode bytes, or start background work.
-//! Invariants: active surfaces precede editor actions.
+//! Invariants: paste and mobile reach the surface that receives keys; workers only intercept
+//!   their own cancel key, at their place in the key order.
 
 use std::io;
 
 use crate::config::actions::{Action, Scope};
 use crossterm::event::KeyEvent;
 
+use super::super::focus::Surface;
 use super::super::{
     command_prompt, completion, external_command, help, lint, recovery, replace, search, view, App,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum RawKeySurface {
-    Lint,
-    Help,
-    Recovery,
-    ExternalCommand,
-    Replace,
-    Search,
-    CommandPrompt,
-    Completion,
-    MarkdownPreview,
+enum KeyStop {
+    LintWorker,
+    CommandWorker,
+    GotoWorker,
+    CompletionTrigger,
+    Focus(Surface),
 }
 
-const RAW_KEY_PRECEDENCE: [RawKeySurface; 9] = [
-    RawKeySurface::Lint,
-    RawKeySurface::Help,
-    RawKeySurface::Recovery,
-    RawKeySurface::ExternalCommand,
-    RawKeySurface::Replace,
-    RawKeySurface::Search,
-    RawKeySurface::CommandPrompt,
-    RawKeySurface::Completion,
-    RawKeySurface::MarkdownPreview,
+const KEY_ORDER: [KeyStop; 13] = [
+    KeyStop::LintWorker,
+    KeyStop::Focus(Surface::Help),
+    KeyStop::Focus(Surface::RecoveryPreview),
+    KeyStop::CommandWorker,
+    KeyStop::Focus(Surface::CommandPreview),
+    KeyStop::Focus(Surface::Replace),
+    KeyStop::Focus(Surface::ReplaceReview),
+    KeyStop::Focus(Surface::Search),
+    KeyStop::Focus(Surface::Command),
+    KeyStop::GotoWorker,
+    KeyStop::Focus(Surface::Picker),
+    KeyStop::CompletionTrigger,
+    KeyStop::Focus(Surface::MarkdownPreview),
 ];
 
 pub(super) fn handle_raw_key(
@@ -42,31 +44,42 @@ pub(super) fn handle_raw_key(
     out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
-    for surface in RAW_KEY_PRECEDENCE {
-        if handle_raw_key_for(surface, app, out, key)? {
+    let focus = app.focus.surface();
+    for stop in KEY_ORDER {
+        let handled = match stop {
+            KeyStop::LintWorker => lint::handle_key(app, out, key)?,
+            KeyStop::CommandWorker => external_command::handle_worker_key(app, out, key)?,
+            KeyStop::GotoWorker => command_prompt::handle_goto_worker_key(app, out, key)?,
+            KeyStop::CompletionTrigger if focus == Surface::Editor => {
+                completion::handle_trigger_key(app, out, key)?
+            }
+            KeyStop::CompletionTrigger => false,
+            KeyStop::Focus(surface) if surface == focus => handle_focus_key(app, out, focus, key)?,
+            KeyStop::Focus(_) => false,
+        };
+        if handled {
             return Ok(true);
         }
     }
     Ok(false)
 }
 
-fn handle_raw_key_for(
-    surface: RawKeySurface,
+fn handle_focus_key(
     app: &mut App,
     out: &mut dyn crate::terminal::TerminalOutput,
+    surface: Surface,
     key: KeyEvent,
 ) -> io::Result<bool> {
     match surface {
-        RawKeySurface::Lint => lint::handle_key(app, out, key),
-        RawKeySurface::Help => help::handle_key(app, out, key),
-        RawKeySurface::Recovery => recovery::handle_key(app, out, key),
-        RawKeySurface::ExternalCommand => external_command::handle_key(app, out, key),
-        RawKeySurface::Replace => replace::handle_key(app, out, key),
-        RawKeySurface::Search => search::handle_active_key(app, out, key),
-        RawKeySurface::CommandPrompt => command_prompt::handle_active_key(app, out, key),
-        RawKeySurface::Completion => completion::handle_key(app, out, key),
-        RawKeySurface::MarkdownPreview if view::is_preview(app) => view::handle_key(app, out, key),
-        RawKeySurface::MarkdownPreview => Ok(false),
+        Surface::Help => help::handle_key(app, out, key),
+        Surface::RecoveryPreview => recovery::handle_key(app, out, key),
+        Surface::CommandPreview => external_command::handle_preview_key(app, out, key),
+        Surface::Replace | Surface::ReplaceReview => replace::handle_key(app, out, key),
+        Surface::Search => search::handle_active_key(app, out, key),
+        Surface::Command => command_prompt::handle_active_key(app, out, key),
+        Surface::Picker => completion::handle_active_key(app, out, key),
+        Surface::MarkdownPreview => view::handle_key(app, out, key),
+        Surface::Editor | Surface::MobileOverlay => Ok(false),
     }
 }
 
@@ -76,22 +89,32 @@ pub(super) fn dispatch_action(
     scope: Scope,
     action: Action,
 ) -> io::Result<()> {
-    let handled = match scope {
-        Scope::Help => help::dispatch_action(app, out, action)?,
-        Scope::Search => search::dispatch_action(app, out, action)?,
-        Scope::ReplaceReview => replace::dispatch_action(app, out, action)?,
-        Scope::Completion => completion::dispatch_action(app, out, action)?,
-        Scope::Prompt => {
-            replace::dispatch_action(app, out, action)?
-                || command_prompt::dispatch_action(app, out, action)?
+    let handled = match app.focus.base_surface() {
+        Surface::Help => help::dispatch_action(app, out, action)?,
+        Surface::Search => search::dispatch_action(app, out, action)?,
+        Surface::Replace | Surface::ReplaceReview => replace::dispatch_action(app, out, action)?,
+        Surface::Picker => completion::dispatch_action(app, out, action)?,
+        Surface::Command => command_prompt::dispatch_action(app, out, action)?,
+        Surface::RecoveryPreview => {
+            recovery::dispatch_action(app, out, action)? || view::dispatch_action(app, out, action)?
         }
-        Scope::Preview => {
-            recovery::dispatch_action(app, out, action)?
-                || external_command::dispatch_action(app, out, action)?
+        Surface::CommandPreview => {
+            external_command::dispatch_action(app, out, action)?
+                || view::dispatch_action(app, out, action)?
+        }
+        Surface::MarkdownPreview => {
+            external_command::dispatch_worker_action(app, out, action)?
                 || view::dispatch_action(app, out, action)?
                 || view::dispatch_preview_action(app, out, action)?
         }
-        Scope::Global | Scope::Editor => false,
+        Surface::Editor | Surface::MobileOverlay => match scope {
+            Scope::Prompt => command_prompt::dispatch_action(app, out, action)?,
+            Scope::Preview => {
+                external_command::dispatch_worker_action(app, out, action)?
+                    || view::dispatch_action(app, out, action)?
+            }
+            _ => false,
+        },
     };
     if !handled {
         app.render(out)?;
@@ -99,65 +122,23 @@ pub(super) fn dispatch_action(
     Ok(())
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PasteSurface {
-    Help,
-    Replace,
-    Search,
-    CommandPrompt,
-    Recovery,
-    ExternalCommand,
-    MarkdownPreview,
-}
-
-const PASTE_PRECEDENCE: [PasteSurface; 7] = [
-    PasteSurface::Help,
-    PasteSurface::Replace,
-    PasteSurface::Search,
-    PasteSurface::CommandPrompt,
-    PasteSurface::Recovery,
-    PasteSurface::ExternalCommand,
-    PasteSurface::MarkdownPreview,
-];
-
 pub(super) fn handle_paste(
     app: &mut App,
     out: &mut dyn crate::terminal::TerminalOutput,
     text: &str,
 ) -> io::Result<bool> {
-    for surface in PASTE_PRECEDENCE {
-        let handled = match surface {
-            PasteSurface::Help => help::handle_paste(app, out)?,
-            PasteSurface::Replace => replace::handle_paste(app, out, text)?,
-            PasteSurface::Search => search::handle_paste(app, out, text)?,
-            PasteSurface::CommandPrompt => command_prompt::handle_paste(app, out, text)?,
-            PasteSurface::Recovery => recovery::handle_paste(app, out)?,
-            PasteSurface::ExternalCommand => external_command::handle_paste(app, out)?,
-            PasteSurface::MarkdownPreview => view::handle_paste(app, out)?,
-        };
-        if handled {
-            return Ok(true);
-        }
+    match app.focus.surface() {
+        Surface::Help => help::handle_paste(app, out),
+        Surface::Replace | Surface::ReplaceReview => replace::handle_paste(app, out, text),
+        Surface::Search => search::handle_paste(app, out, text),
+        Surface::Command => command_prompt::handle_paste(app, out, text),
+        Surface::RecoveryPreview => recovery::handle_paste(app, out),
+        Surface::CommandPreview => external_command::handle_paste(app, out),
+        Surface::MarkdownPreview => view::handle_paste(app, out),
+        Surface::Editor | Surface::Picker | Surface::MobileOverlay => Ok(false),
     }
-    Ok(false)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn precedence_contracts_are_named_and_locked() {
-        assert_eq!(RAW_KEY_PRECEDENCE[0], RawKeySurface::Lint);
-        assert_eq!(RAW_KEY_PRECEDENCE[1], RawKeySurface::Help);
-        assert_eq!(RAW_KEY_PRECEDENCE[4], RawKeySurface::Replace);
-        assert_eq!(RAW_KEY_PRECEDENCE[5], RawKeySurface::Search);
-        assert_eq!(RAW_KEY_PRECEDENCE[6], RawKeySurface::CommandPrompt);
-        assert_eq!(RAW_KEY_PRECEDENCE[8], RawKeySurface::MarkdownPreview);
-        assert_eq!(PASTE_PRECEDENCE[0], PasteSurface::Help);
-        assert_eq!(PASTE_PRECEDENCE[1], PasteSurface::Replace);
-        assert_eq!(PASTE_PRECEDENCE[2], PasteSurface::Search);
-        assert_eq!(PASTE_PRECEDENCE[3], PasteSurface::CommandPrompt);
-        assert_eq!(PASTE_PRECEDENCE[6], PasteSurface::MarkdownPreview);
-    }
-}
+#[path = "surfaces_tests.rs"]
+mod tests;

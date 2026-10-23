@@ -7,19 +7,25 @@ use std::io;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use super::focus::{Focus, Prompt, Surface};
 use super::prompt_input::{PromptInput, PromptPresentation};
 #[cfg(test)]
 use crate::buffer::Cursor;
 use crate::config::actions::Action;
 mod review;
 
-#[derive(Default)]
-pub(crate) struct ReplaceState {
-    prompt: Option<ReplacePrompt>,
-    review: Option<review::Review>,
+pub(crate) enum ReplaceFlow {
+    Edit(ReplacePrompt),
+    Review(Box<review::Review>),
 }
 
-struct ReplacePrompt {
+impl ReplaceFlow {
+    pub(crate) fn is_review(&self) -> bool {
+        matches!(self, ReplaceFlow::Review(_))
+    }
+}
+
+pub(crate) struct ReplacePrompt {
     stage: PromptStage,
     find: PromptInput,
     replacement: PromptInput,
@@ -37,31 +43,51 @@ pub(crate) fn open_prompt(
     out: &mut dyn crate::terminal::TerminalOutput,
     all: bool,
 ) -> io::Result<()> {
+    super::focus::close(app);
     super::search::cancel_running_search(app);
-    super::completion::cancel(app);
     app.selection.clear();
-    app.replace.review = None;
-    app.replace.prompt = Some(ReplacePrompt {
+    app.focus = Focus::Prompt(Prompt::Replace(ReplaceFlow::Edit(ReplacePrompt {
         stage: PromptStage::Find,
         find: PromptInput::default(),
         replacement: PromptInput::default(),
         all,
-    });
+    })));
     update_message(app);
     app.render(out)
 }
 
 pub(crate) fn cancel(app: &mut super::App) {
-    app.replace.prompt = None;
-    app.replace.review = None;
-}
-
-pub(super) fn is_active(app: &super::App) -> bool {
-    app.replace.prompt.is_some() || app.replace.review.is_some()
+    super::focus::take(app, Surface::Replace);
+    super::focus::take(app, Surface::ReplaceReview);
 }
 
 pub(super) fn is_reviewing(app: &super::App) -> bool {
-    app.replace.review.is_some()
+    app.focus.replace().is_some_and(ReplaceFlow::is_review)
+}
+
+fn prompt_mut(app: &mut super::App) -> Option<&mut ReplacePrompt> {
+    match app.focus.replace_mut() {
+        Some(ReplaceFlow::Edit(prompt)) => Some(prompt),
+        _ => None,
+    }
+}
+
+fn take_review(app: &mut super::App) -> Option<Box<review::Review>> {
+    match super::focus::take(app, Surface::ReplaceReview) {
+        Some(Focus::Prompt(Prompt::Replace(ReplaceFlow::Review(review)))) => Some(review),
+        _ => None,
+    }
+}
+
+fn put_review(app: &mut super::App, review: Box<review::Review>) {
+    app.focus = Focus::Prompt(Prompt::Replace(ReplaceFlow::Review(review)));
+}
+
+fn review(app: &super::App) -> Option<&review::Review> {
+    match app.focus.replace() {
+        Some(ReplaceFlow::Review(review)) => Some(review),
+        _ => None,
+    }
 }
 pub(super) use review::{active_match, is_running, poll};
 
@@ -70,27 +96,21 @@ pub(crate) fn handle_key(
     out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
-    if app.replace.review.is_some() {
-        if key.code == KeyCode::Char('q') && key.modifiers.contains(KeyModifiers::CONTROL) {
-            return Ok(false);
-        }
-        app.render(out)?;
-        return Ok(true);
-    }
-    if app.replace.prompt.is_none() {
-        return Ok(false);
-    }
     if key.code == KeyCode::Char('q') && key.modifiers.contains(KeyModifiers::CONTROL) {
         return Ok(false);
     }
+    if is_reviewing(app) {
+        app.render(out)?;
+        return Ok(true);
+    }
     match key.code {
         KeyCode::Esc => {
-            app.replace.prompt = None;
+            cancel(app);
             app.message = None;
         }
         KeyCode::Enter => return advance_or_apply(app, out).map(|()| true),
         _ => {
-            if let Some(prompt) = app.replace.prompt.as_mut() {
+            if let Some(prompt) = prompt_mut(app) {
                 active_text(prompt).key(key);
             }
             update_message(app);
@@ -105,11 +125,8 @@ pub(crate) fn dispatch_action(
     out: &mut dyn crate::terminal::TerminalOutput,
     action: Action,
 ) -> io::Result<bool> {
-    if app.replace.review.is_some() {
+    if is_reviewing(app) {
         return review::dispatch_action(app, out, action);
-    }
-    if app.replace.prompt.is_none() {
-        return Ok(false);
     }
     match action {
         Action::PromptCancel => {
@@ -119,7 +136,7 @@ pub(crate) fn dispatch_action(
         }
         Action::PromptSubmit => advance_or_apply(app, out)?,
         _ => {
-            let Some(prompt) = app.replace.prompt.as_mut() else {
+            let Some(prompt) = prompt_mut(app) else {
                 return Ok(false);
             };
             if active_text(prompt).action(action).is_none() {
@@ -137,12 +154,9 @@ pub(crate) fn handle_paste(
     out: &mut dyn crate::terminal::TerminalOutput,
     text: &str,
 ) -> io::Result<bool> {
-    if app.replace.review.is_some() {
+    let Some(prompt) = prompt_mut(app) else {
         app.render(out)?;
         return Ok(true);
-    }
-    let Some(prompt) = app.replace.prompt.as_mut() else {
-        return Ok(false);
     };
     active_text(prompt).insert(text);
     update_message(app);
@@ -158,7 +172,9 @@ fn active_text(prompt: &mut ReplacePrompt) -> &mut PromptInput {
 }
 
 pub(super) fn presentation(app: &super::App) -> Option<PromptPresentation> {
-    let prompt = app.replace.prompt.as_ref()?;
+    let Some(ReplaceFlow::Edit(prompt)) = app.focus.replace() else {
+        return None;
+    };
     let scope = if prompt.all { "Replace all" } else { "Replace" };
     let (label, text) = match prompt.stage {
         PromptStage::Find => (format!("{scope} find"), &prompt.find),
@@ -177,7 +193,9 @@ fn advance_or_apply(
     app: &mut super::App,
     out: &mut dyn crate::terminal::TerminalOutput,
 ) -> io::Result<()> {
-    let prompt = app.replace.prompt.as_mut().expect("replace prompt exists");
+    let Some(prompt) = prompt_mut(app) else {
+        return app.render(out);
+    };
     if matches!(prompt.stage, PromptStage::Find) {
         if prompt.find.is_empty() {
             prompt.find.notice("Replace query cannot be empty.");
@@ -193,7 +211,11 @@ fn advance_or_apply(
         update_message(app);
         return app.render(out);
     }
-    let prompt = app.replace.prompt.take().expect("replace prompt exists");
+    let Some(Focus::Prompt(Prompt::Replace(ReplaceFlow::Edit(prompt)))) =
+        super::focus::take(app, Surface::Replace)
+    else {
+        return app.render(out);
+    };
     if app.buffer.page_info().is_some() {
         app.message_info(
             "Replace is unavailable for paged files; use an external command with preview.",

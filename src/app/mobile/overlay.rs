@@ -5,6 +5,7 @@
 
 use crossterm::event::KeyCode;
 
+use super::super::focus::Focus;
 use crate::buffer::{Buffer, Cursor, PreviewBuffer};
 
 use super::actions::{MenuAction, MENU_ENTRIES};
@@ -15,12 +16,28 @@ const NOTICE_MESSAGE: &str = "Message details (read-only). Back returns.";
 #[derive(Default)]
 pub(crate) struct MobileUiState {
     pub(super) enabled: bool,
-    overlay: Option<Overlay>,
 }
 
-enum Overlay {
-    Menu(View),
-    Notice(View),
+pub(crate) struct Overlay {
+    kind: Kind,
+    view: View,
+    underneath: Focus,
+}
+
+#[derive(Clone, Copy)]
+enum Kind {
+    Menu,
+    Notice,
+}
+
+impl Overlay {
+    pub(crate) fn underneath(&self) -> &Focus {
+        &self.underneath
+    }
+
+    pub(crate) fn underneath_mut(&mut self) -> &mut Focus {
+        &mut self.underneath
+    }
 }
 
 struct View {
@@ -36,55 +53,61 @@ struct SavedSurface {
     message_role: crate::terminal::render::StatusRole,
 }
 
-pub(super) fn is_viewing(app: &super::super::App) -> bool {
-    app.mobile.overlay.is_some()
-}
-
-pub(super) fn is_menu(app: &super::super::App) -> bool {
-    matches!(app.mobile.overlay, Some(Overlay::Menu(_)))
-}
-
-pub(super) fn display_buffer(app: &super::super::App) -> Option<&dyn Buffer> {
-    match app.mobile.overlay.as_ref() {
-        Some(Overlay::Menu(view) | Overlay::Notice(view)) => Some(&view.buffer),
-        None => None,
+fn overlay(app: &super::super::App) -> Option<&Overlay> {
+    match &app.focus {
+        Focus::Overlay(overlay) => Some(overlay),
+        _ => None,
     }
 }
 
-pub(super) fn open_menu(app: &mut super::super::App) {
+pub(super) fn is_viewing(app: &super::super::App) -> bool {
+    overlay(app).is_some()
+}
+
+pub(super) fn is_menu(app: &super::super::App) -> bool {
+    overlay(app).is_some_and(|overlay| matches!(overlay.kind, Kind::Menu))
+}
+
+pub(super) fn display_buffer(app: &super::super::App) -> Option<&dyn Buffer> {
+    overlay(app).map(|overlay| &overlay.view.buffer as &dyn Buffer)
+}
+
+fn open(app: &mut super::super::App, kind: Kind, buffer: PreviewBuffer) {
     close(app);
+    let view = View {
+        buffer,
+        saved: capture(app),
+    };
+    let underneath = std::mem::take(&mut app.focus);
+    app.focus = Focus::Overlay(Box::new(Overlay {
+        kind,
+        view,
+        underneath,
+    }));
+    reset_viewport(app);
+    refresh_message(app);
+}
+
+pub(super) fn open_menu(app: &mut super::super::App) {
     let text = MENU_ENTRIES
         .iter()
         .map(|entry| entry.label)
         .collect::<Vec<_>>()
         .join("\n");
-    let view = View {
-        buffer: PreviewBuffer::from_owned_text(text),
-        saved: capture(app),
-    };
-    app.mobile.overlay = Some(Overlay::Menu(view));
-    reset_viewport(app);
-    refresh_message(app);
+    open(app, Kind::Menu, PreviewBuffer::from_owned_text(text));
 }
 
 pub(super) fn open_notice(app: &mut super::super::App, text: &str) {
-    close(app);
     let width = (app.screen.width as usize).max(1);
-    let view = View {
-        buffer: PreviewBuffer::from_owned_text(wrap_text(text, width)),
-        saved: capture(app),
-    };
-    app.mobile.overlay = Some(Overlay::Notice(view));
-    reset_viewport(app);
-    refresh_message(app);
+    let buffer = PreviewBuffer::from_owned_text(wrap_text(text, width));
+    open(app, Kind::Notice, buffer);
 }
 
 pub(super) fn refresh_message(app: &mut super::super::App) {
-    let message = match app.mobile.overlay.as_ref() {
-        Some(Overlay::Menu(_)) => Some(MENU_MESSAGE),
-        Some(Overlay::Notice(_)) => Some(NOTICE_MESSAGE),
-        None => None,
-    };
+    let message = overlay(app).map(|overlay| match overlay.kind {
+        Kind::Menu => MENU_MESSAGE,
+        Kind::Notice => NOTICE_MESSAGE,
+    });
     if let Some(message) = message {
         app.message_info(message);
     } else {
@@ -93,12 +116,18 @@ pub(super) fn refresh_message(app: &mut super::super::App) {
 }
 
 pub(super) fn close(app: &mut super::super::App) -> bool {
-    let Some(overlay) = app.mobile.overlay.take() else {
-        return false;
+    let overlay = match std::mem::take(&mut app.focus) {
+        Focus::Overlay(overlay) => overlay,
+        focus => {
+            app.focus = focus;
+            return false;
+        }
     };
-    let saved = match overlay {
-        Overlay::Menu(view) | Overlay::Notice(view) => view.saved,
-    };
+    let Overlay {
+        view, underneath, ..
+    } = *overlay;
+    app.focus = underneath;
+    let saved = view.saved;
     app.screen.scroll_top = saved.scroll_top;
     app.screen.scroll_left = saved.scroll_left;
     app.screen.wrap_col = saved.wrap_col;
@@ -108,11 +137,9 @@ pub(super) fn close(app: &mut super::super::App) -> bool {
 }
 
 pub(super) fn selected_action(app: &super::super::App) -> Option<MenuAction> {
-    let Some(Overlay::Menu(view)) = app.mobile.overlay.as_ref() else {
-        return None;
-    };
+    let overlay = overlay(app).filter(|overlay| matches!(overlay.kind, Kind::Menu))?;
     MENU_ENTRIES
-        .get(view.buffer.cursor().row)
+        .get(overlay.view.buffer.cursor().row)
         .map(|entry| entry.action)
 }
 
@@ -155,9 +182,9 @@ pub(super) fn set_cursor_row(app: &mut super::super::App, row: usize) {
 }
 
 fn active_view(app: &mut super::super::App) -> Option<&mut View> {
-    match app.mobile.overlay.as_mut() {
-        Some(Overlay::Menu(view) | Overlay::Notice(view)) => Some(view),
-        None => None,
+    match &mut app.focus {
+        Focus::Overlay(overlay) => Some(&mut overlay.view),
+        _ => None,
     }
 }
 

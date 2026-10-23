@@ -14,7 +14,7 @@ const SCAN_BYTES: usize = 32 * 1024;
 const MAX_BATCH_MATCHES: usize = 128;
 const MAX_BATCH_EDIT_BYTES: usize = 64 * 1024;
 
-pub(super) struct Review {
+pub(crate) struct Review {
     find: String,
     replacement: String,
     scan: ForwardSearchTask,
@@ -72,7 +72,7 @@ pub(super) fn start(
             }
         }
     };
-    app.replace.review = Some(Review {
+    let review = Box::new(Review {
         find: find.into(),
         replacement: replacement.into(),
         scan: ForwardSearchTask::new(find, origin, None),
@@ -88,23 +88,17 @@ pub(super) fn start(
         generation: app.file.content_generation,
         revision: app.buffer.content_revision(),
     });
+    super::put_review(app, review);
     update_message(app);
     poll(app, out)
 }
 
 pub(crate) fn is_running(app: &App) -> bool {
-    !app.pending_quit_confirm
-        && app
-            .replace
-            .review
-            .as_ref()
-            .is_some_and(|review| review.candidate.is_none())
+    !app.pending_quit_confirm && super::review(app).is_some_and(|review| review.candidate.is_none())
 }
 
 pub(crate) fn active_match(app: &App) -> Option<SearchMatch> {
-    app.replace
-        .review
-        .as_ref()
+    super::review(app)
         .filter(|review| review.current(app))?
         .candidate
         .map(|candidate| candidate.found)
@@ -115,7 +109,7 @@ pub(super) fn dispatch_action(
     out: &mut dyn TerminalOutput,
     action: Action,
 ) -> io::Result<bool> {
-    let Some(mut review) = app.replace.review.take() else {
+    let Some(mut review) = super::take_review(app) else {
         return Ok(false);
     };
     if !review.current(app) {
@@ -151,27 +145,27 @@ pub(super) fn dispatch_action(
             review.resume();
         }
         _ => {
-            app.replace.review = Some(review);
+            super::put_review(app, review);
             update_message(app);
             app.render(out)?;
             return Ok(true);
         }
     }
-    app.replace.review = Some(review);
+    super::put_review(app, review);
     update_message(app);
     poll(app, out)?;
     Ok(true)
 }
 
 pub(crate) fn poll(app: &mut App, out: &mut dyn TerminalOutput) -> io::Result<()> {
-    let Some(mut review) = app.replace.review.take() else {
+    let Some(mut review) = super::take_review(app) else {
         return Ok(());
     };
     if !review.current(app) {
         return finish(app, out, &review, "stopped because the source changed");
     }
     if app.pending_quit_confirm || review.candidate.is_some() {
-        app.replace.review = Some(review);
+        super::put_review(app, review);
         return Ok(());
     }
     for _ in 0..2 {
@@ -224,7 +218,7 @@ pub(crate) fn poll(app: &mut App, out: &mut dyn TerminalOutput) -> io::Result<()
             }
         }
     }
-    app.replace.review = Some(review);
+    super::put_review(app, review);
     update_message(app);
     app.render(out)
 }
@@ -324,7 +318,7 @@ fn chord(app: &App, action: Action) -> String {
 }
 
 fn update_message(app: &mut App) {
-    let Some(review) = app.replace.review.as_ref() else {
+    let Some(review) = super::review(app) else {
         return;
     };
     let cancel = chord(app, Action::ReplaceCancel);

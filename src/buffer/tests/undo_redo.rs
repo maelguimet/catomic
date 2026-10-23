@@ -167,7 +167,7 @@ fn semantic_boundaries_keep_typing_runs_independent() {
     pt.undo();
     assert_eq!(pt.to_string(), "ab\ncd");
 
-    pt.finish_undo_group(); // Save and buffer switching use this semantic boundary.
+    pt.finish_undo_group();
     pt.insert_char('!');
     pt.undo();
     assert_eq!(pt.to_string(), "ab\ncd");
@@ -179,7 +179,7 @@ fn undo_redo_and_save_boundaries_keep_dirty_tokens_exact() {
     pt.insert_char('a');
     pt.insert_char('b');
     let saved = pt.edit_history_position();
-    pt.finish_undo_group(); // successful Save closes the active run before recording this token
+    pt.finish_undo_group();
 
     pt.insert_char('c');
     let dirty = pt.edit_history_position();
@@ -217,29 +217,23 @@ fn undo_redo_basic_and_new_edit_clears_redo() {
     pt.insert_char('c');
     assert_eq!(pt.to_string(), "ab\nc");
 
-    // undo last insert 'c'
     pt.undo();
     assert_eq!(pt.to_string(), "ab\n");
     assert_eq!(pt.cursor().row, 1);
     assert_eq!(pt.cursor().col, 0);
 
-    // undo newline
     pt.undo();
     assert_eq!(pt.to_string(), "ab");
 
-    // redo the newline
     pt.redo();
     assert_eq!(pt.to_string(), "ab\n");
 
-    // redo 'c'
     pt.redo();
     assert_eq!(pt.to_string(), "ab\nc");
 
-    // new edit after undo clears redo stack
-    pt.undo(); // back to "ab\n"
+    pt.undo();
     pt.insert_char('X');
     assert_eq!(pt.to_string(), "ab\nX");
-    // redo should now be no-op (cleared)
     pt.redo();
     assert_eq!(pt.to_string(), "ab\nX");
 }
@@ -254,15 +248,12 @@ fn undo_delete_and_redo_reuses_pieces_no_dupe_add() {
     let add_before = pt.add.len();
     let pieces_before = pt.pieces_len();
 
-    // delete 'z' (last)
     pt.delete_back();
     assert_eq!(pt.to_string(), "xy");
 
     pt.undo();
     assert_eq!(pt.to_string(), "xyz");
-    // Redo insert must not have appended extra text to add buffer.
     assert_eq!(pt.add.len(), add_before, "redo must not grow add buffer");
-    // Piece count should not explode from re-adding same range.
     assert!(pt.pieces_len() <= pieces_before + 2);
 
     pt.redo();
@@ -277,8 +268,8 @@ fn undo_redo_delete_forward() {
     }
     assert_eq!(pt.to_string(), "abc");
     pt.move_left();
-    pt.move_left(); // before 'b'
-    pt.delete_forward(); // remove 'b' -> "ac"
+    pt.move_left();
+    pt.delete_forward();
     assert_eq!(pt.to_string(), "ac");
     pt.undo();
     assert_eq!(pt.to_string(), "abc");
@@ -288,19 +279,17 @@ fn undo_redo_delete_forward() {
 
 #[test]
 fn undo_redo_newline_join_via_deletes() {
-    // via delete_back at col0 of second line
     let mut pt = PieceTable::from_text("ab\ncd");
-    pt.move_down(); // at col0 of "cd"
-    pt.delete_back(); // join nl -> "abcd"
+    pt.move_down();
+    pt.delete_back();
     assert_eq!(pt.to_string(), "abcd");
     pt.undo();
     assert_eq!(pt.to_string(), "ab\ncd");
 
-    // via delete_forward at end of first line
     let mut pt2 = PieceTable::from_text("ab\ncd");
     pt2.move_right();
-    pt2.move_right(); // after 'b'
-    pt2.delete_forward(); // delete the nl -> "abcd"
+    pt2.move_right();
+    pt2.delete_forward();
     assert_eq!(pt2.to_string(), "abcd");
     pt2.undo();
     assert_eq!(pt2.to_string(), "ab\ncd");
@@ -318,33 +307,27 @@ fn undo_redo_multibyte_utf8() {
             pt.insert_char(ch);
         }
     }
-    // "aé\n🙂b" or similar; exercise undos around multibyte + boundary
     assert!(pt.to_string().contains("é"));
     pt.move_left();
-    pt.move_left(); // some pos
+    pt.move_left();
     pt.delete_back();
     let before = pt.to_string();
     pt.undo();
     assert_ne!(pt.to_string(), before);
     pt.redo();
-    // cursor and content stable after roundtrip
     assert_eq!(pt.to_string(), before);
 }
 
 #[test]
 fn no_op_edits_do_not_create_undo_entries() {
     let mut pt = PieceTable::new();
-    // no-op at boundaries
     pt.delete_back();
     pt.delete_forward();
     pt.delete_back();
-    // real edit
     pt.insert_char('X');
     assert_eq!(pt.to_string(), "X");
-    // undo should revert only the real insert (no-ops added 0 entries)
     pt.undo();
     assert_eq!(pt.to_string(), "");
-    // one more noop then real, undo reverts only real
     pt.delete_forward();
     pt.insert_char('Y');
     pt.undo();
@@ -353,18 +336,16 @@ fn no_op_edits_do_not_create_undo_entries() {
 
 #[test]
 fn undo_after_save_behavior() {
-    // "save" = capture to_string (as golden harness does before/after write)
-    // undo must affect only the in-memory buffer, not any prior saved snapshot
     let mut pt = PieceTable::new();
     pt.insert_char('h');
     pt.insert_char('i');
-    let saved = pt.to_string(); // simulate save
+    let saved = pt.to_string();
     pt.insert_newline();
     pt.insert_char('!');
     assert_eq!(pt.to_string(), "hi\n!");
     pt.undo();
-    assert_eq!(pt.to_string(), "hi\n"); // undid only last
+    assert_eq!(pt.to_string(), "hi\n");
     pt.undo();
-    assert_eq!(pt.to_string(), "hi"); // back to saved
-    assert_eq!(saved, "hi"); // prior save snapshot unaffected
+    assert_eq!(pt.to_string(), "hi");
+    assert_eq!(saved, "hi");
 }

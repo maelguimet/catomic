@@ -39,15 +39,12 @@ fn small_existing_opens_with_no_large_file_warning() {
         app.file.size_tier,
         Some(crate::file::size::FileSizeTier::Small)
     );
-    // No large-file warning for Small.
     let msg = app.message.as_deref().unwrap_or("");
     assert!(
         !msg.contains("Large file") && !msg.contains("too large"),
         "Small must not set large-file warning, got: {:?}",
         app.message
     );
-    // Direct proof for single-capture: present file carries Present snapshot whose len
-    // matches the derived size_bytes (same probe used for guardrail decision).
     match &app.file.disk_snapshot {
         Some(crate::file::io::FileSnapshot::Present { len, .. }) => {
             assert_eq!(*len, app.file.size_bytes.unwrap());
@@ -60,19 +57,16 @@ fn small_existing_opens_with_no_large_file_warning() {
 
 #[test]
 fn large_just_over_10mib_opens_and_sets_warning_message() {
-    // One ~10 MiB read is explicitly allowed for guardrail test.
-    // No 100 MiB or 1 GiB in default tests.
     let p = temp_path("large_10m_plus.txt");
     cleanup(&p);
 
-    // Generate just over SMALL limit using a repeating pattern (deterministic).
     let mut f = OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(true)
         .open(&p)
         .unwrap();
-    let chunk = b"0123456789abcdef"; // 16 bytes
+    let chunk = b"0123456789abcdef";
     let target = crate::file::size::SMALL_FILE_LIMIT_BYTES + 1;
     let mut written: u64 = 0;
     while written < target {
@@ -108,7 +102,6 @@ fn extreme_sparse_metadata_selects_paged_open_without_refusal() {
     let p = temp_path("extreme_sparse_paged.bin");
     cleanup(&p);
 
-    // Create empty file then set_len to just over HUGE without writing content.
     {
         let f = OpenOptions::new()
             .create(true)
@@ -120,16 +113,12 @@ fn extreme_sparse_metadata_selects_paged_open_without_refusal() {
         match f.set_len(huge_plus) {
             Ok(()) => {}
             Err(_) => {
-                // Environment/filesystem may not support sparse file of this size.
-                // Skip cleanly without reading or failing the suite.
                 cleanup(&p);
                 return;
             }
         }
     }
 
-    // Probe only the metadata policy here: opening a sparse one-line GiB file would
-    // deliberately scan that logical line and does not belong in the default suite.
     let meta = crate::app::open::prepare_open_file_meta(Some(&p.to_string_lossy())).unwrap();
     assert_eq!(
         meta.content_plan,
@@ -145,7 +134,6 @@ fn extreme_sparse_metadata_selects_paged_open_without_refusal() {
         .unwrap_or("")
         .contains("paged mode"));
 
-    // Ensure we did not leave content (sparse or not); best-effort.
     cleanup(&p);
 }
 
@@ -165,7 +153,6 @@ fn missing_file_opens_empty_with_size_none_and_no_warning() {
         "missing must not produce size warning, got: {:?}",
         app.message
     );
-    // Direct proof for single-capture cleanup: missing carries explicit Absent snapshot.
     assert_eq!(
         app.file.disk_snapshot,
         Some(crate::file::io::FileSnapshot::Absent),
@@ -177,14 +164,11 @@ fn missing_file_opens_empty_with_size_none_and_no_warning() {
 fn invalid_utf8_small_still_errors_as_before() {
     let p = temp_path("bad_utf8_small.txt");
     cleanup(&p);
-    // Small on-disk size but invalid UTF-8 content.
     let bad: &[u8] = &[0xff, 0xfe, 0x00];
     fs::write(&p, bad).unwrap();
 
     let res = App::new(Some(&p.to_string_lossy()));
     assert!(res.is_err(), "invalid UTF-8 must still surface read error");
-    // Size probe happened (small file), but error from read is returned; App not built.
-    // No assertion on specific kind beyond that read failed (matches prior behavior).
 
     cleanup(&p);
 }

@@ -105,7 +105,6 @@ fn due_autosave_preserves_unresolved_recovery_before_and_after_preview_cancel() 
     for _ in 0..2 {
         force_due(&mut app);
         poll(&mut app, &mut out).unwrap();
-        // Join any incorrectly scheduled write before checking the actual sidecar.
         if let Some(task) = app.recovery.task.take() {
             assert!(matches!(task.finish(), CatnapResult::Written { .. }));
         }
@@ -472,7 +471,6 @@ fn source_appearing_during_recovery_preview_refuses_application() {
     start_preview(&mut app, &mut out).unwrap();
     assert!(is_viewing(&app));
     let source_history = app.buffer.content_revision();
-    // Even an empty file matching the buffer changes the absent source snapshot.
     std::fs::write(&original, "").unwrap();
 
     handle_key(

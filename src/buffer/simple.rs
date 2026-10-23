@@ -25,10 +25,6 @@ impl SimpleBuffer {
     }
 
     pub fn from_text(text: &str) -> Self {
-        // Normalize line endings (Phase 0 is Linux-first, saves use \n).
-        // Use split('\n') (not .lines()) so a trailing '\n' produces a final
-        // empty string entry. This preserves "file ends with newline" shape
-        // across open + save.
         let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
         let lines: Vec<String> = if normalized.is_empty() {
             vec![String::new()]
@@ -42,9 +38,6 @@ impl SimpleBuffer {
             lines
         };
 
-        // Editor convention: from_text (open file) starts cursor at top-left,
-        // same as new(). Previously placed at EOF; fixed before using
-        // SimpleBuffer as oracle for PieceTable parity tests.
         Self {
             lines,
             cursor: Cursor { row: 0, col: 0 },
@@ -170,7 +163,6 @@ impl Buffer for SimpleBuffer {
                 self.revision = self.revision.wrapping_add(1);
             }
         } else if self.cursor.row > 0 {
-            // Join with previous line
             let current = self.lines.remove(self.cursor.row);
             self.cursor.row -= 1;
             let prev = &mut self.lines[self.cursor.row];
@@ -189,7 +181,6 @@ impl Buffer for SimpleBuffer {
             *line = chars.into_iter().collect();
             self.revision = self.revision.wrapping_add(1);
         } else if self.cursor.row + 1 < self.lines.len() {
-            // Join next line into current
             let next = self.lines.remove(self.cursor.row + 1);
             self.lines[self.cursor.row].push_str(&next);
             self.revision = self.revision.wrapping_add(1);
@@ -231,17 +222,11 @@ impl Buffer for SimpleBuffer {
         }
     }
 
-    fn undo(&mut self) {
-        // SimpleBuffer has no undo history (Phase 1C is PieceTable only for now).
-    }
+    fn undo(&mut self) {}
 
-    fn redo(&mut self) {
-        // SimpleBuffer has no undo history (Phase 1C is PieceTable only for now).
-    }
+    fn redo(&mut self) {}
 
     fn edit_history_position(&self) -> u64 {
-        // SimpleBuffer undo is a no-op stub; constant position is sufficient
-        // for compilation and for any tests that construct it directly.
         0
     }
 

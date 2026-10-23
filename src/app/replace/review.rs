@@ -42,8 +42,6 @@ impl Review {
     fn resume(&mut self) {
         self.candidate = None;
         let stop_before = self.wrapped.then(|| {
-            // A wrapped candidate may cross the untouched original cursor, but
-            // must end before the first accepted tail replacement begins.
             self.first_accepted.map_or(self.boundary, |first| {
                 self.boundary.min(first.saturating_sub(self.find.len() - 1))
             })
@@ -133,8 +131,6 @@ pub(super) fn dispatch_action(
         }
         Action::ReplaceSkip => {
             if let Some(candidate) = review.candidate {
-                // Search is scalar aligned and overlapping candidates remain
-                // available after Skip. Accept instead resumes after the insertion.
                 review.next_byte =
                     candidate.start_byte + review.find.chars().next().map_or(1, char::len_utf8);
                 review.skipped += 1;
@@ -172,7 +168,6 @@ pub(crate) fn poll(app: &mut App, out: &mut dyn TerminalOutput) -> io::Result<()
         super::put_review(app, review);
         return Ok(());
     }
-    // At most two bounded scans: the second is permitted only when wrapping.
     for _ in 0..2 {
         let count = if review.all {
             MAX_BATCH_MATCHES
@@ -281,8 +276,6 @@ fn apply(app: &mut App, review: &mut Review, matches: &[ForwardMatch]) -> io::Re
         .ok_or_else(|| io::Error::other("replacement source unavailable"))?;
     app.buffer
         .set_cursor(source.cursor_for_byte_offset(review.next_byte)?);
-    // The scan keeps its exact byte position; the editing cursor belongs after
-    // any grapheme newly joined across the replacement boundary.
     crate::app::navigation::snap_current_grapheme_forward(app)?;
     app.reveal_cursor();
     review.resume();

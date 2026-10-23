@@ -20,8 +20,6 @@ fn cleanup(p: &std::path::Path) {
     let _ = fs::remove_file(p);
 }
 
-// Pure classification boundary tests (no FS, no large allocs)
-
 #[test]
 fn classify_exact_10mib_is_small() {
     assert_eq!(
@@ -77,13 +75,11 @@ fn classify_zero_and_small_values_are_small() {
     assert_eq!(classify_file_size(1024), FileSizeTier::Small);
 }
 
-// file_size_bytes tests: small real temp files only; no huge allocs.
-
 #[test]
 fn file_size_bytes_reports_exact_len_for_existing() {
     let p = temp_path("exists.bin");
     cleanup(&p);
-    let data = b"hello size test\n"; // 16 bytes
+    let data = b"hello size test\n";
     fs::write(&p, data).unwrap();
     let sz = file_size_bytes(&p).expect("size for existing");
     assert_eq!(sz, data.len() as u64);
@@ -97,8 +93,6 @@ fn file_size_bytes_missing_returns_notfound() {
     let err = file_size_bytes(&p).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::NotFound);
 }
-
-// Phase 2-ag: OpenSizeDecision + message + formatter pure tests (no FS, deterministic)
 
 #[test]
 fn open_decision_small_exact_and_below_is_open_normally() {

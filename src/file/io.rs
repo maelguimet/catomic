@@ -40,8 +40,6 @@ pub use snapshot::{
     FileSnapshot,
 };
 pub(crate) use snapshot::{ensure_path_matches_snapshot, PinnedFile};
-#[allow(unused_imports)] // Public field types of the re-exported FileSnapshot.
-pub use snapshot::{FileChangeId, FileContentIdentity};
 
 /// Read an entire UTF-8 file for tests and performance baselines.
 /// Moves the bytes into a String after UTF-8 validation. App open/reload uses
@@ -108,6 +106,20 @@ pub(crate) fn atomic_create_private_string(
     .map(|_| ())
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StagedFile {
+    Owned,
+    Committed,
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    KeptAsRecoveryEvidence,
+}
+
+fn discard_failed_attempt(staged: Option<StagedFile>, temp_path: &Path) {
+    if staged == Some(StagedFile::Owned) {
+        let _ = fs::remove_file(temp_path);
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum AtomicWritePolicy {
     Ordinary,
@@ -129,9 +141,7 @@ fn atomic_write_with_policy(
         .unwrap_or_else(|| PathBuf::from("."));
     let temp_path = atomic_staging_path(target);
 
-    // Inner closure so we can cleanup a temp we created exactly on failure path.
-    // A create_new collision belongs to someone else and must remain untouched.
-    let mut created_temp = false;
+    let mut staged_file = None;
     let res: io::Result<u64> = (|| {
         #[cfg(any(target_os = "linux", target_os = "android"))]
         let existing_permissions = if private {
@@ -169,9 +179,9 @@ fn atomic_write_with_policy(
             options.mode(0o600);
         }
         let f = options.open(&temp_path)?;
-        created_temp = true;
+        let staged = staged_file.insert(StagedFile::Owned);
         #[cfg(unix)]
-        let final_permissions = if private {
+        let mode_to_restore_after_writes = if private {
             None
         } else {
             Some(match existing_permissions {
@@ -180,13 +190,7 @@ fn atomic_write_with_policy(
             })
         };
         #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            // No content byte is exposed under the umask-derived temporary mode.
-            // New files restore that captured mode after streaming; existing files
-            // restore the target mode after writing has cleared any special bits.
-            f.set_permissions(fs::Permissions::from_mode(0o600))?;
-        }
+        hide_contents_from_other_users_while_staging(&f)?;
         let mut f = f;
         let written = {
             let mut writer = CountingWriter::new(&mut f);
@@ -195,40 +199,33 @@ fn atomic_write_with_policy(
             writer.written
         };
         #[cfg(unix)]
-        if let Some(permissions) = final_permissions {
-            f.set_permissions(permissions)?;
+        if let Some(permissions) = mode_to_restore_after_writes {
+            restore_mode_after_writes_cleared_special_bits(&f, permissions)?;
         }
         #[cfg(any(target_os = "linux", target_os = "android"))]
         if !private {
             atomic_unix::preserve_replacement_metadata(&f, target_state.existing.as_ref(), target)?;
         }
         f.sync_all()?;
-        // Ensure file is closed before rename on all platforms.
         drop(f);
 
         if policy == AtomicWritePolicy::PrivateReplace {
             fs::rename(&temp_path, target)?;
-            created_temp = false;
+            *staged = StagedFile::Committed;
         } else if policy == AtomicWritePolicy::PrivateCreate {
-            commit_private_create(&temp_path, target, &mut created_temp)?;
+            commit_private_create(&temp_path, target, staged)?;
         } else {
             #[cfg(any(target_os = "linux", target_os = "android"))]
-            atomic_unix::commit(
-                &temp_path,
-                target,
-                target_state.existing.as_ref(),
-                &mut created_temp,
-            )?;
+            atomic_unix::commit(&temp_path, target, target_state.existing.as_ref(), staged)?;
 
             #[cfg(not(any(target_os = "linux", target_os = "android")))]
             {
                 validate_regular_save_target(target)?;
                 fs::rename(&temp_path, target)?;
-                created_temp = false;
+                *staged = StagedFile::Committed;
             }
         }
 
-        // Best-effort: sync the directory so rename is durable (Unix).
         #[cfg(unix)]
         {
             if let Ok(dirf) = File::open(&parent) {
@@ -238,43 +235,56 @@ fn atomic_write_with_policy(
         Ok(written)
     })();
 
-    if res.is_err() && created_temp {
-        // Best-effort cleanup of only the temp this attempt created.
-        let _ = fs::remove_file(&temp_path);
+    if res.is_err() {
+        discard_failed_attempt(staged_file, &temp_path);
     }
     res
 }
 
+#[cfg(unix)]
+fn hide_contents_from_other_users_while_staging(staged: &File) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    staged.set_permissions(fs::Permissions::from_mode(0o600))
+}
+
+#[cfg(unix)]
+fn restore_mode_after_writes_cleared_special_bits(
+    staged: &File,
+    permissions: fs::Permissions,
+) -> io::Result<()> {
+    staged.set_permissions(permissions)
+}
+
 fn atomic_staging_path(target: &Path) -> PathBuf {
-    // Hash the basename instead of appending to it: a legal NAME_MAX target
-    // still needs a legal sibling. Thread identity separates concurrent saves;
-    // the basename separates nested saves to different targets on one thread.
-    // Hash collisions are harmless: create_new fails without touching the owner.
-    let mut identity = std::collections::hash_map::DefaultHasher::new();
-    target.file_name().hash(&mut identity);
-    std::thread::current().id().hash(&mut identity);
     let name = format!(
         ".catomic.tmp.{}.{:016x}",
         std::process::id(),
-        identity.finish()
+        fixed_width_identity_so_name_max_targets_get_a_legal_sibling(target)
     );
     target.parent().unwrap_or_else(|| Path::new(".")).join(name)
+}
+
+fn fixed_width_identity_so_name_max_targets_get_a_legal_sibling(target: &Path) -> u64 {
+    let mut identity = std::collections::hash_map::DefaultHasher::new();
+    target.file_name().hash(&mut identity);
+    std::thread::current().id().hash(&mut identity);
+    identity.finish()
 }
 
 fn commit_private_create(
     temp_path: &Path,
     target: &Path,
-    cleanup_temp: &mut bool,
+    staged: &mut StagedFile,
 ) -> io::Result<()> {
     #[cfg(target_os = "linux")]
     {
-        atomic_unix::commit(temp_path, target, None, cleanup_temp)
+        atomic_unix::commit(temp_path, target, None, staged)
     }
     #[cfg(not(target_os = "linux"))]
     {
         fs::hard_link(temp_path, target)?;
         fs::remove_file(temp_path)?;
-        *cleanup_temp = false;
+        *staged = StagedFile::Committed;
         Ok(())
     }
 }

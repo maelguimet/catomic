@@ -91,7 +91,6 @@ fn complete_with_limit(
                 .zip(name.bytes())
                 .take_while(|(a, b)| a == b)
                 .count();
-            // Only publish a shared extended-grapheme boundary of both names.
             let boundary = common
                 .grapheme_indices(true)
                 .map(|(byte, _)| byte)

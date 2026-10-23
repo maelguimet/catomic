@@ -11,8 +11,6 @@ use std::io::Write;
 
 use crate::buffer::{Buffer, PieceTable, SimpleBuffer};
 
-/// Run identical from_text cases against SimpleBuffer (oracle) and PieceTable.
-/// Only queries and construction are covered here.
 fn assert_parity(text: &str) {
     let sb = SimpleBuffer::from_text(text);
     let pt = PieceTable::from_text(text);
@@ -40,10 +38,8 @@ fn assert_observable_parity(label: &str, sb: &SimpleBuffer, pt: &PieceTable) {
     assert_eq!(pt.cursor().row, 0);
     assert_eq!(pt.cursor().col, 0);
 
-    // lines()
     assert_eq!(pt.lines(), sb.lines());
 
-    // spot-check line(row) for all rows
     let max = pt.line_count();
     for r in 0..max {
         assert_eq!(
@@ -56,7 +52,6 @@ fn assert_observable_parity(label: &str, sb: &SimpleBuffer, pt: &PieceTable) {
     assert!(pt.line(max).is_none());
     assert!(sb.line(max).is_none());
 
-    // visible_lines full window
     let vis_pt = pt.visible_lines(0, pt.line_count() + 5);
     let vis_sb = sb.visible_lines(0, sb.line_count() + 5);
     assert_eq!(vis_pt.len(), vis_sb.len());
@@ -94,7 +89,6 @@ fn parity_trailing_newline_multi() {
 
 #[test]
 fn parity_crlf_normalization_matches() {
-    // Both must normalize the same and produce identical \n output.
     assert_parity("a\r\nb\r\nc");
     assert_parity("a\rb\rc\r");
     assert_parity("mixed\r\nunix\nwindows\r\n");

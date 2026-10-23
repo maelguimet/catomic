@@ -68,7 +68,6 @@ pub(crate) fn save_conflict_message(status: &ExternalFileStatus) -> String {
             "File status check failed. Press Ctrl+S again to overwrite.".to_string()
         }
         ExternalFileStatus::NoPath | ExternalFileStatus::Unchanged => {
-            // Callers should not reach here for conflict messages.
             "File status check failed. Press Ctrl+S again to overwrite.".to_string()
         }
     }
@@ -139,7 +138,6 @@ pub(crate) fn handle_save(
         return do_atomic_save(app, out);
     }
 
-    // Conflict status: decide force only if pending token matches the *current observed* state.
     let should_force = current_path.as_deref().is_some_and(|path| {
         app.pending_save_conflict
             .as_ref()
@@ -149,8 +147,6 @@ pub(crate) fn handle_save(
     if should_force {
         do_atomic_save(app, out)
     } else {
-        // First time seeing this concrete conflict, or the live state drifted:
-        // refuse, record a fresh token bound to the *current* observation (incl. snapshot).
         let target_path = current_path.expect("conflict status requires a path");
         super::reload::remember_external_observation(app, &obs);
         app.pending_save_conflict = Some(PendingSaveConflict {
@@ -342,6 +338,18 @@ pub(crate) fn do_atomic_save(
     do_atomic_save_to(app, out, target)
 }
 
+fn keep_prior_snapshot_unless_saved_file_is_present(app: &mut super::App, target: &Path) {
+    if let Ok(snapshot @ FileSnapshot::Present { .. }) = file::io::capture_file_snapshot(target) {
+        app.file.disk_snapshot = Some(snapshot);
+    }
+}
+
+fn record_saved_size_preferring_metadata(app: &mut super::App, target: &Path, written_len: u64) {
+    let size = crate::file::size::file_size_bytes(target).unwrap_or(written_len);
+    app.file.size_bytes = Some(size);
+    app.file.size_tier = Some(crate::file::size::classify_file_size(size));
+}
+
 fn do_atomic_save_to(
     app: &mut super::App,
     out: &mut dyn crate::terminal::TerminalOutput,
@@ -351,9 +359,6 @@ fn do_atomic_save_to(
     app.buffer.finish_undo_group();
     let path_changed = app.file.path.as_ref() != Some(&target);
     let save_result = file::io::atomic_write_with(&target, |writer| {
-        // Replacement saves change the old inode's ctime, and hard-link saves
-        // rewrite it. Preserve original bytes before either can invalidate the
-        // strict descriptor checks used by page coordinates and undo/redo.
         app.buffer
             .preserve_file_backing(&mut file::io::snapshot_linked_file)?;
         file::text_format::write_buffer(&*app.buffer, writer, app.file.text_format)
@@ -363,33 +368,11 @@ fn do_atomic_save_to(
             if path_changed {
                 super::lint::invalidate(app);
                 app.file.path = Some(target.clone());
-                // Refresh only after the write succeeds, so failed Save As keeps
-                // both the prior path and watcher association intact.
                 super::watch::refresh_file_watcher(app);
             }
             super::file_state::mark_saved(&mut app.file, &*app.buffer);
-            // Success: update disk snapshot for the saved path (same for force or normal).
-            // - Failure to capture post-save leaves prior snapshot unchanged.
-            // - Never overwrite with Absent; do not corrupt saved token on meta failure.
-            if let Ok(s) = file::io::capture_file_snapshot(&target) {
-                if matches!(s, FileSnapshot::Present { .. }) {
-                    app.file.disk_snapshot = Some(s);
-                }
-                // else: leave old snapshot (Absent or prior Present); token already clean.
-            }
-            // Update size metadata (metadata-first): prefer post-save fs::metadata.
-            // Only content-derived fallback allowed here: the exact len we just wrote,
-            // when stat after our atomic_write fails (rare; we produced these bytes).
-            // file::size::file_size_bytes remains strictly metadata-only.
-            // Size bookkeeping must not affect save/reload/watcher behavior.
-            if let Ok(sz) = crate::file::size::file_size_bytes(&target) {
-                app.file.size_bytes = Some(sz);
-                app.file.size_tier = Some(crate::file::size::classify_file_size(sz));
-            } else {
-                // Post-write stat failed: use the exact count from the streaming writer.
-                app.file.size_bytes = Some(written_len);
-                app.file.size_tier = Some(crate::file::size::classify_file_size(written_len));
-            }
+            keep_prior_snapshot_unless_saved_file_is_present(app, &target);
+            record_saved_size_preferring_metadata(app, &target, written_len);
             app.pending_quit_confirm = false;
             app.pending_save_conflict = None;
             app.pending_reload = None;
@@ -416,8 +399,6 @@ fn do_atomic_save_to(
         }
         Err(e) => {
             app.message_error(format!("Save error: {}", e));
-            // keep dirty; do not clear save conflict (user may still want to force after fixing env)
-            // snapshot intentionally NOT updated on failure
         }
     }
     app.render(out)

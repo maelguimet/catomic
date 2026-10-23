@@ -36,7 +36,7 @@ fn app_new_none_has_no_size_metadata() {
 fn app_new_existing_records_size_bytes_and_tier() {
     let p = temp_path("exist_size.txt");
     cleanup(&p);
-    let data = "abc\ndef\n"; // 8 bytes
+    let data = "abc\ndef\n";
     fs::write(&p, data).unwrap();
 
     let app = App::new(Some(&p.to_string_lossy())).unwrap();
@@ -46,7 +46,6 @@ fn app_new_existing_records_size_bytes_and_tier() {
         app.file.size_tier,
         Some(crate::file::size::FileSizeTier::Small)
     );
-    // buffer loaded
     assert_eq!(app.buffer.to_string(), data);
 
     cleanup(&p);
@@ -66,20 +65,12 @@ fn app_new_missing_has_empty_buffer_and_size_none() {
         app.file.disk_snapshot,
         Some(crate::file::io::FileSnapshot::Absent)
     );
-
-    // no file to clean
 }
 
 #[test]
 fn successful_save_with_explicit_first_path_updates_size_metadata() {
-    // Safer replacement for prior "from_untitled" size test.
-    // Avoids global "untitled.txt" contention entirely. We pre-assign a unique target
-    // path (as if user had a remembered name before first write) so save path is
-    // deterministic and does not touch the conventional default.
-    // Exercises the size capture + tier after successful first write to a path.
     let p = temp_path("first_save_explicit.txt");
     cleanup(&p);
-    // ensure absent so first write creates it
     let _ = fs::remove_file(&p);
 
     let mut app = App::new(None).unwrap();
@@ -91,9 +82,6 @@ fn successful_save_with_explicit_first_path_updates_size_metadata() {
     assert!(app.file.size_bytes.is_none());
     assert!(app.file.path.is_none());
 
-    // Target an explicit path for this save (unique, no global name).
-    // Set snapshot to Absent to match "remembered missing path" open-missing contract
-    // so observe reports Unchanged (not Deleted) and save proceeds without conflict.
     app.file.path = Some(p.clone());
     app.file.disk_snapshot = Some(crate::file::io::FileSnapshot::Absent);
 
@@ -126,7 +114,6 @@ fn successful_save_existing_updates_size_after_content_change() {
     let mut app = App::new(Some(&p.to_string_lossy())).unwrap();
     assert_eq!(app.file.size_bytes, Some(3));
 
-    // edit to longer content
     app.handle_key(make_key(KeyCode::Char('a'), KeyModifiers::NONE))
         .unwrap();
     app.handle_key(make_key(KeyCode::Char('b'), KeyModifiers::NONE))
@@ -151,21 +138,18 @@ fn successful_save_existing_updates_size_after_content_change() {
 fn confirmed_reload_modified_updates_size_to_external() {
     let p = temp_path("reload_mod_size.txt");
     cleanup(&p);
-    fs::write(&p, "BASE").unwrap(); // 4
+    fs::write(&p, "BASE").unwrap();
 
     let mut app = App::new(Some(&p.to_string_lossy())).unwrap();
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
 
-    // external change to different size
-    fs::write(&p, "EXTERNALLONGER").unwrap(); // 14
+    fs::write(&p, "EXTERNALLONGER").unwrap();
 
-    // first R arms
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.pending_reload.is_some());
 
-    // second R performs reload
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
 
@@ -193,12 +177,10 @@ fn confirmed_reload_deleted_clears_size_metadata() {
 
     let _ = fs::remove_file(&p);
 
-    // arm
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.pending_reload.is_some());
 
-    // perform clear
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
 
@@ -211,14 +193,12 @@ fn confirmed_reload_deleted_clears_size_metadata() {
     assert!(app.file.size_bytes.is_none());
     assert!(app.file.size_tier.is_none());
 
-    // recreate for hygiene
     fs::write(&p, "TOGO").unwrap();
     let _ = fs::remove_file(&p);
 }
 
 #[test]
 fn failed_save_does_not_update_size_metadata() {
-    // Force save failure by targeting a directory as "file".
     let bad = {
         let mut d = std::env::temp_dir();
         d.push(format!("catomic_fsize_bad_dir_{}", std::process::id()));
@@ -231,16 +211,14 @@ fn failed_save_does_not_update_size_metadata() {
     let mut app = App::new(None).unwrap();
     app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::NONE))
         .unwrap();
-    app.file.path = Some(bad.clone()); // force target to dir to fail atomic write
+    app.file.path = Some(bad.clone());
 
     let before_size = app.file.size_bytes;
     let before_tier = app.file.size_tier;
 
-    // attempt save (will error)
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
 
-    // still dirty, message set to error; size must be unchanged
     assert!(app.file.dirty);
     assert!(app.message.as_deref().unwrap_or("").contains("Save error"));
     assert_eq!(app.message_role, crate::terminal::render::StatusRole::Error);
@@ -250,9 +228,6 @@ fn failed_save_does_not_update_size_metadata() {
     let _ = fs::remove_dir_all(&bad);
 }
 
-// Snapshot and save_conflict suites must continue to pass without size-related
-// behavior or message changes (exercised via their own modules; here just a
-// smoke that App construction and a save still behave for their invariants).
 #[test]
 fn size_metadata_does_not_alter_snapshot_or_conflict_behavior_smoke() {
     let p = temp_path("size_no_side_on_snapshot.txt");
@@ -260,13 +235,10 @@ fn size_metadata_does_not_alter_snapshot_or_conflict_behavior_smoke() {
     fs::write(&p, "KEEP").unwrap();
 
     let mut app = App::new(Some(&p.to_string_lossy())).unwrap();
-    // local edit makes dirty (exercises full conflict-refuse keep-dirty path)
     app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::NONE))
         .unwrap();
-    // external mod
     fs::write(&p, "CHANGED").unwrap();
 
-    // first S refuses (conflict path unchanged by size)
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.file.dirty);

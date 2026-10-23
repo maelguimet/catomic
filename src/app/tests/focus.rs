@@ -105,3 +105,29 @@ fn mobile_bar_follows_the_surface_that_receives_keys() {
     let bar = mobile::action_bar_text(&app).unwrap();
     assert!(bar.starts_with("[No][OK]"), "{bar}");
 }
+
+#[test]
+fn closing_a_mobile_overlay_restores_the_prompt_beneath_it() {
+    let mut app = App::new(None).unwrap();
+    let mut out = Vec::new();
+    replace::open_prompt(&mut app, &mut out, false).unwrap();
+    mobile::open_notice_for_test(&mut app, "notice");
+    assert_eq!(app.focus.surface(), Surface::MobileOverlay);
+
+    assert!(mobile::close_overlay_for_test(&mut app));
+    assert_eq!(app.focus.surface(), Surface::Replace);
+    type_key(&mut app, &mut out, 'a');
+    assert_eq!(app.message.as_deref(), Some("Replace find: a"));
+}
+
+#[test]
+fn opening_a_mobile_overlay_replaces_the_previous_overlay() {
+    let mut app = App::new(None).unwrap();
+    let mut out = Vec::new();
+    replace::open_prompt(&mut app, &mut out, false).unwrap();
+    mobile::open_notice_for_test(&mut app, "first");
+    mobile::open_notice_for_test(&mut app, "second");
+
+    assert!(mobile::close_overlay_for_test(&mut app));
+    assert_eq!(app.focus.surface(), Surface::Replace);
+}

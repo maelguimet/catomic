@@ -227,11 +227,26 @@ fn observed_present_snapshot(obs: &ExternalFileObservation) -> io::Result<&FileS
     }
 }
 
-fn ensure_format_and_paged_baseline_describe_confirmed_revision(
+fn paged_reload_buffer(
     path: &Path,
-    confirmed_revision: &FileSnapshot,
-) -> io::Result<()> {
-    crate::file::io::ensure_path_matches_snapshot(path, confirmed_revision)
+    mut source: crate::file::io::PinnedFile,
+    page_lines: usize,
+) -> io::Result<(
+    Box<dyn buffer::Buffer>,
+    crate::file::text_format::TextFormat,
+)> {
+    let loaded_snapshot = source.snapshot().clone();
+    let format = crate::file::text_format::detect_file_format_from(source.file_mut())?;
+    if format.utf8_bom || format.line_ending == crate::file::text_format::LineEnding::Cr {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "UTF-8 BOM and CR-only files must be opened below the paged-file threshold",
+        ));
+    }
+    source.ensure_descriptor_unchanged(path)?;
+    let buffer = buffer::PagedFileBuffer::from_file(source.into_file(), page_lines)?;
+    crate::file::io::ensure_path_matches_snapshot(path, &loaded_snapshot)?;
+    Ok((Box::new(buffer), format))
 }
 
 fn build_modified_reload_buffer(
@@ -264,19 +279,7 @@ fn build_modified_reload_buffer(
         Box<dyn buffer::Buffer>,
         crate::file::text_format::TextFormat,
     ) = match size::open_size_decision(size_bytes) {
-        OpenSizeDecision::Paged => {
-            let format = crate::file::text_format::detect_file_format_from(source.file_mut())?;
-            if format.utf8_bom || format.line_ending == crate::file::text_format::LineEnding::Cr {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "UTF-8 BOM and CR-only files must be opened below the paged-file threshold",
-                ));
-            }
-            source.ensure_descriptor_unchanged(path)?;
-            let buffer = buffer::PagedFileBuffer::from_file(source.into_file(), page_lines)?;
-            ensure_format_and_paged_baseline_describe_confirmed_revision(path, &loaded_snapshot)?;
-            (Box::new(buffer) as Box<dyn buffer::Buffer>, format)
-        }
+        OpenSizeDecision::Paged => paged_reload_buffer(path, source, page_lines)?,
         OpenSizeDecision::Normal | OpenSizeDecision::Warn => {
             let bytes = source.read_all_verified(path)?;
             let decoded = crate::file::text_format::decode(bytes)?;
@@ -522,6 +525,10 @@ pub(crate) fn pending_matches_observation(app: &super::App, obs: &ExternalFileOb
             ExternalFileStatus::Modified | ExternalFileStatus::Deleted
         )
 }
+
+#[cfg(test)]
+#[path = "reload/paged_tests.rs"]
+mod paged_tests;
 
 #[cfg(test)]
 mod tests {

@@ -350,12 +350,6 @@ fn record_saved_size_preferring_metadata(app: &mut super::App, target: &Path, wr
     app.file.size_tier = Some(crate::file::size::classify_file_size(size));
 }
 
-fn preserve_original_bytes_before_save_changes_ctime_or_rewrites_hard_link(
-    buffer: &mut dyn crate::buffer::Buffer,
-) -> io::Result<()> {
-    buffer.preserve_file_backing(&mut file::io::snapshot_linked_file)
-}
-
 fn do_atomic_save_to(
     app: &mut super::App,
     out: &mut dyn crate::terminal::TerminalOutput,
@@ -365,7 +359,8 @@ fn do_atomic_save_to(
     app.buffer.finish_undo_group();
     let path_changed = app.file.path.as_ref() != Some(&target);
     let save_result = file::io::atomic_write_with(&target, |writer| {
-        preserve_original_bytes_before_save_changes_ctime_or_rewrites_hard_link(&mut *app.buffer)?;
+        app.buffer
+            .preserve_file_backing(&mut file::io::snapshot_linked_file)?;
         file::text_format::write_buffer(&*app.buffer, writer, app.file.text_format)
     });
     match save_result {

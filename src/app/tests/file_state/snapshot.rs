@@ -8,6 +8,7 @@
 
 use super::super::*;
 use super::make_key;
+use crate::app::confirmation::ConflictingChange;
 use crossterm::event::{KeyCode, KeyModifiers};
 
 #[test]
@@ -125,7 +126,7 @@ fn app_file_state_external_append_reports_modified_no_mutation() {
     let snap_before = app.file.disk_snapshot.clone();
     let dirty_before = app.file.dirty;
     let msg_before = app.message.clone();
-    let pend_before = app.pending_quit_confirm;
+    let pend_before = app.confirmation.clone();
 
     std::fs::write(&p, "baseEXT").unwrap();
 
@@ -135,7 +136,7 @@ fn app_file_state_external_append_reports_modified_no_mutation() {
     assert_eq!(app.file.disk_snapshot, snap_before);
     assert_eq!(app.file.dirty, dirty_before);
     assert_eq!(app.message, msg_before);
-    assert_eq!(app.pending_quit_confirm, pend_before);
+    assert_eq!(app.confirmation, pend_before);
 
     let _ = std::fs::remove_file(&p);
 }
@@ -154,7 +155,7 @@ fn app_file_state_external_delete_reports_deleted_no_mutation() {
     assert!(!app.file.dirty);
     let before_dirty = app.file.dirty;
     let before_msg = app.message.clone();
-    let before_pend = app.pending_quit_confirm;
+    let before_pend = app.confirmation.clone();
 
     let _ = std::fs::remove_file(&p);
 
@@ -163,7 +164,7 @@ fn app_file_state_external_delete_reports_deleted_no_mutation() {
 
     assert_eq!(app.file.dirty, before_dirty);
     assert_eq!(app.message, before_msg);
-    assert_eq!(app.pending_quit_confirm, before_pend);
+    assert_eq!(app.confirmation, before_pend);
 
     let _ = std::fs::remove_file(&p);
 }
@@ -258,7 +259,7 @@ fn app_file_state_manual_check_no_path_sets_message_no_dirty_mutation() {
     assert!(!app.file.dirty);
     let dirty_before = app.file.dirty;
     let snap_before = app.file.disk_snapshot.clone();
-    let pend_before = app.pending_save_conflict.clone();
+    let pend_before = app.confirmation.clone();
 
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
@@ -266,7 +267,7 @@ fn app_file_state_manual_check_no_path_sets_message_no_dirty_mutation() {
     assert_eq!(app.message.as_deref(), Some("No file path."));
     assert_eq!(app.file.dirty, dirty_before);
     assert_eq!(app.file.disk_snapshot, snap_before);
-    assert_eq!(app.pending_save_conflict, pend_before);
+    assert_eq!(app.confirmation, pend_before);
 }
 
 #[test]
@@ -316,7 +317,7 @@ fn app_file_state_manual_check_external_modified_reports_changed_no_mutation() {
         Some("File changed on disk. Press Ctrl+R again to reload from disk.")
     );
     assert!(
-        app.pending_reload.is_some(),
+        app.observed_change.is_some(),
         "first Modified should arm reload pending"
     );
     assert_eq!(app.file.dirty, dirty_before);
@@ -349,7 +350,7 @@ fn app_file_state_manual_check_external_deleted_reports_deleted_no_mutation() {
         Some("File deleted on disk. Press Ctrl+R again to clear buffer.")
     );
     assert!(
-        app.pending_reload.is_some(),
+        app.observed_change.is_some(),
         "first Deleted should arm reload pending"
     );
     assert_eq!(app.file.dirty, dirty_before);
@@ -374,11 +375,11 @@ fn app_file_state_manual_check_replaces_pending_save_conflict() {
 
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(app.pending_save_conflict.is_some());
+    assert!(app.confirmation.save_conflict().is_some());
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(app.pending_save_conflict.is_none());
-    assert!(app.pending_reload.is_some());
+    assert!(app.confirmation.save_conflict().is_none());
+    assert!(app.observed_change.is_some());
     assert!(app
         .message
         .as_deref()
@@ -394,7 +395,7 @@ fn app_file_state_ctrl_r_nopath_no_pending() {
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
     assert_eq!(app.message.as_deref(), Some("No file path."));
-    assert!(app.pending_reload.is_none());
+    assert!(app.observed_change.is_none());
 }
 
 #[test]
@@ -414,7 +415,7 @@ fn app_file_state_ctrl_r_unchanged_no_pending_no_mutation() {
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.message.is_none());
-    assert!(app.pending_reload.is_none());
+    assert!(app.observed_change.is_none());
     assert_eq!(app.file.dirty, dirty_b);
     assert_eq!(app.file.disk_snapshot, snap_b);
 
@@ -439,14 +440,14 @@ fn app_file_state_reload_modified_clean_second_press() {
         .as_deref()
         .unwrap_or("")
         .contains("Press Ctrl+R again"));
-    assert!(app.pending_reload.is_some());
+    assert!(app.observed_change.is_some());
     assert!(!app.file.dirty);
 
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
     assert_eq!(app.buffer.to_string(), "DISKNEW");
     assert!(!app.file.dirty);
-    assert!(app.pending_reload.is_none());
+    assert!(app.observed_change.is_none());
     assert!(app.message.is_none());
 
     let _ = std::fs::remove_file(&p);
@@ -474,13 +475,13 @@ fn app_file_state_reload_modified_dirty_discards() {
         .as_deref()
         .unwrap_or("")
         .contains("discard local changes"));
-    assert!(app.pending_reload.is_some());
+    assert!(app.observed_change.is_some());
 
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
     assert_eq!(app.buffer.to_string(), "DISKCHG");
     assert!(!app.file.dirty);
-    assert!(app.pending_reload.is_none());
+    assert!(app.observed_change.is_none());
 
     let _ = std::fs::remove_file(&p);
 }
@@ -498,7 +499,7 @@ fn app_file_state_reload_modified_drift_refuses_then_succeeds() {
 
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(app.pending_reload.is_some());
+    assert!(app.observed_change.is_some());
 
     std::fs::write(&p, "V3").unwrap();
 
@@ -514,7 +515,7 @@ fn app_file_state_reload_modified_drift_refuses_then_succeeds() {
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
     assert_eq!(app.buffer.to_string(), "V3");
-    assert!(app.pending_reload.is_none());
+    assert!(app.observed_change.is_none());
 
     let _ = std::fs::remove_file(&p);
 }
@@ -539,7 +540,7 @@ fn app_file_state_reload_deleted_clean_second_clears() {
         .as_deref()
         .unwrap_or("")
         .contains("clear buffer"));
-    assert!(app.pending_reload.is_some());
+    assert!(app.observed_change.is_some());
 
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
@@ -549,7 +550,7 @@ fn app_file_state_reload_deleted_clean_second_clears() {
         Some(crate::file::io::FileSnapshot::Absent) => {}
         _ => panic!("expected Absent after deleted reload"),
     }
-    assert!(app.pending_reload.is_none());
+    assert!(app.observed_change.is_none());
 }
 
 #[test]
@@ -565,18 +566,19 @@ fn app_file_state_reload_status_change_mod_to_del() {
 
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(
-        app.pending_reload.as_ref().unwrap().status
-            == crate::file::io::ExternalFileStatus::Modified
-    );
+    assert!(matches!(
+        app.observed_change.as_ref().unwrap().change,
+        ConflictingChange::Modified(_)
+    ));
 
     let _ = std::fs::remove_file(&p);
 
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(
-        app.pending_reload.as_ref().unwrap().status == crate::file::io::ExternalFileStatus::Deleted
-    );
+    assert!(matches!(
+        app.observed_change.as_ref().unwrap().change,
+        ConflictingChange::Deleted
+    ));
     assert!(app.buffer.to_string().contains("M1") || app.buffer.to_string().contains("M2"));
 
     let _ = std::fs::remove_file(&p);
@@ -587,7 +589,7 @@ fn app_file_state_reload_unknown_never_arms() {
     let mut app = App::new(None).unwrap();
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(app.pending_reload.is_none());
+    assert!(app.observed_change.is_none());
 }
 
 #[test]
@@ -605,13 +607,13 @@ fn app_file_state_reload_clears_save_conflict() {
 
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(app.pending_save_conflict.is_some());
+    assert!(app.confirmation.save_conflict().is_some());
 
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(app.pending_save_conflict.is_none());
+    assert!(app.confirmation.save_conflict().is_none());
     assert!(!app.file.dirty);
 
     let _ = std::fs::remove_file(&p);
@@ -630,18 +632,15 @@ fn app_file_state_edit_after_reload_pending_downgrades_it() {
 
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(app.pending_reload.is_some());
+    assert!(app.observed_change.is_some());
 
     app.handle_key(make_key(KeyCode::Char('x'), KeyModifiers::NONE))
         .unwrap();
-    assert!(app
-        .pending_reload
-        .as_ref()
-        .is_some_and(|pending| !pending.is_explicitly_armed));
+    assert!(app.observed_change.is_some() && app.confirmation.armed_reload().is_none());
 
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(app.pending_reload.is_some());
+    assert!(app.observed_change.is_some());
 
     let _ = std::fs::remove_file(&p);
 }
@@ -659,7 +658,7 @@ fn app_file_state_reload_modified_read_failure_keeps_state_and_pending() {
 
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(app.pending_reload.is_some());
+    assert!(app.observed_change.is_some());
     let before_buffer = app.buffer.to_string();
     let before_dirty = app.file.dirty;
     let before_saved = app.file.saved_history_position;
@@ -686,7 +685,7 @@ fn app_file_state_reload_modified_read_failure_keeps_state_and_pending() {
         "snapshot must not change on read fail"
     );
     assert!(
-        app.pending_reload.is_some(),
+        app.observed_change.is_some(),
         "pending must be kept on read fail to allow retry"
     );
     let msg = app.message.as_deref().unwrap_or("");
@@ -719,14 +718,12 @@ fn app_file_state_generic_newline_downgrades_reload_pending() {
 
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(app.pending_reload.is_some(), "first R should arm");
+    assert!(app.observed_change.is_some(), "first R should arm");
 
     app.handle_key(make_key(KeyCode::Char('\n'), KeyModifiers::NONE))
         .unwrap();
     assert!(
-        app.pending_reload
-            .as_ref()
-            .is_some_and(|pending| !pending.is_explicitly_armed),
+        app.observed_change.is_some() && app.confirmation.armed_reload().is_none(),
         "generic newline must retain only a passive observation"
     );
     assert_eq!(app.buffer.to_string(), "\nBASE");
@@ -734,7 +731,7 @@ fn app_file_state_generic_newline_downgrades_reload_pending() {
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(
-        app.pending_reload.is_some(),
+        app.observed_change.is_some(),
         "after cancellation, next R must re-arm"
     );
     assert_eq!(app.buffer.to_string(), "\nBASE");

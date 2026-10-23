@@ -44,9 +44,11 @@ fn finish_page_change(app: &mut super::App) {
     app.selection.clear();
     app.screen.scroll_top = 0;
     app.screen.scroll_left = 0;
-    if !app.pending_quit_confirm
-        && app.pending_save_conflict.is_none()
-        && app.pending_reload.is_none()
+    if !matches!(
+        app.confirmation,
+        super::confirmation::Confirmation::Quit
+            | super::confirmation::Confirmation::SaveConflict(_)
+    ) && app.observed_change.is_none()
     {
         app.message = None;
     }

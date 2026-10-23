@@ -11,7 +11,7 @@
 //!   expand repository/network/UI policy; call try_recv outside check_file_watcher_once.
 //! Invariants: signals are hints only; watcher Unchanged/NoPath observations are ignored
 //!   (no message/pending change, no render) when no reload observation exists (to avoid
-//!   self-save noise); when a pending_reload exists they clear it, restore normal status,
+//!   self-save noise); when an observed change exists they clear it, restore normal status,
 //!   and return visible (so runtime renders once); Modified/Deleted/Unknown/Error remain
 //!   user-visible; clean Modified/Deleted observations auto-reload when configured;
 //!   passive observations never count as explicit reload confirmation;
@@ -29,6 +29,7 @@
 use std::io;
 use std::path::PathBuf;
 
+use super::confirmation::ConflictingChange;
 use crate::file;
 use crate::file::io::observe_external_file;
 
@@ -99,11 +100,11 @@ pub(crate) fn replace_file_watcher_for_test(
 /// - Changed/Deleted + (Modified/Deleted/Unknown) => delegate to the passive
 ///   observation path (records revision without explicit confirmation), return true.
 /// - Changed/Deleted + Unchanged:
-///   * if pending_reload was set: clear it and restore normal status,
+///   * if a change was observed: clear it and restore normal status,
 ///     return true (stale observation resolved).
 ///   * else: ignore completely (no msg change, no render), return false.
 /// - Changed/Deleted + NoPath:
-///   * if pending_reload was set: clear it, set "No file path.", return true.
+///   * if a change was observed: clear it, set "No file path.", return true.
 ///   * else: ignore completely.
 /// - Error => set "File watcher error: {e}", return true. Do not clear pending
 ///   unless a future test proves a reason.
@@ -125,8 +126,8 @@ pub(crate) fn apply_file_watch_signal(
             let obs = observe_external_file(current_path.as_deref(), baseline);
             match obs.status {
                 ExternalFileStatus::Unchanged => {
-                    if app.pending_reload.is_some() {
-                        app.pending_reload = None;
+                    if app.observed_change.is_some() {
+                        super::reload::forget_external_observation(app);
                         app.message = None;
                         true
                     } else {
@@ -134,8 +135,8 @@ pub(crate) fn apply_file_watch_signal(
                     }
                 }
                 ExternalFileStatus::NoPath => {
-                    if app.pending_reload.is_some() {
-                        app.pending_reload = None;
+                    if app.observed_change.is_some() {
+                        super::reload::forget_external_observation(app);
                         app.message_info("No file path.");
                         true
                     } else {
@@ -146,38 +147,34 @@ pub(crate) fn apply_file_watch_signal(
                 | ExternalFileStatus::Deleted
                 | ExternalFileStatus::Unknown(_) => {
                     super::lint::invalidate(app);
-                    let matching_save_conflict = current_path.as_deref().is_some_and(|path| {
-                        app.pending_save_conflict
-                            .as_ref()
-                            .is_some_and(|pending| pending.matches_observation(path, &obs))
+                    let matching_save_conflict = current_path.as_deref().and_then(|path| {
+                        app.confirmation
+                            .save_conflict()
+                            .filter(|pending| pending.matches_observation(path, &obs))
+                            .map(|pending| pending.change.clone())
                     });
+                    let drifted_reload = app.confirmation.armed_reload().is_some()
+                        && !super::reload::armed_reload_matches(app, &obs);
+                    let reloadable =
+                        ConflictingChange::observed(&obs).and_then(|change| change.reloadable());
                     if app.auto_reload
                         && !app.file.dirty
                         && !matches!(obs.status, ExternalFileStatus::Unknown(_))
                     {
                         super::reload::perform_observed_reload(app, &obs);
-                    } else if app
-                        .pending_reload
-                        .as_ref()
-                        .is_some_and(|pending| pending.is_explicitly_armed)
-                        && !super::reload::pending_matches_observation(app, &obs)
-                        && matches!(
-                            obs.status,
-                            ExternalFileStatus::Modified | ExternalFileStatus::Deleted
-                        )
-                    {
+                    } else if let (true, Some(change)) = (drifted_reload, reloadable) {
                         super::reload::remember_external_observation(app, &obs);
                         app.message_warning(super::reload::reload_drift_message_for_ui(
-                            &obs.status,
+                            &change,
                             app.file.dirty,
                             super::mobile::is_enabled(app),
                         ));
                     } else {
                         super::reload::apply_watch_observation(app, &obs);
                     }
-                    if matching_save_conflict {
+                    if let Some(change) = matching_save_conflict {
                         app.message_warning(super::save::save_conflict_message_for_ui(
-                            &obs.status,
+                            &change,
                             super::mobile::is_enabled(app),
                         ));
                     }
@@ -239,7 +236,7 @@ pub(crate) fn check_file_watcher_once(app: &mut super::App) -> bool {
 ///
 /// Unchanged/NoPath from watcher:
 /// - when no prior reload observation: consumed, no render, prior message intact.
-/// - when pending_reload existed: clears it and returns true -> renders normal status.
+/// - when a change was observed: clears it and returns true -> renders normal status.
 ///
 /// Modified/Deleted/Error (and Unchanged/NoPath that clear a stale pending) render.
 ///

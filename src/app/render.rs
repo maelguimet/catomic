@@ -45,8 +45,11 @@ fn render(app: &App, out: &mut dyn crate::terminal::TerminalOutput) -> io::Resul
         _ => None,
     };
     if let Some(prompt) = prompt.filter(|_| {
-        !app.pending_quit_confirm
-            && !super::command_prompt::config_discard_confirmation_pending(app)
+        !matches!(
+            app.confirmation,
+            super::confirmation::Confirmation::Quit
+                | super::confirmation::Confirmation::DiscardConfig
+        )
     }) {
         options.status_cursor = Some(prompt.caret_cell.unwrap_or(0));
         options.status_role = term::render::StatusRole::Prompt;
@@ -311,15 +314,10 @@ fn active_buffer_is_saved(app: &App) -> bool {
             app.file.disk_snapshot.as_ref(),
             Some(crate::file::io::FileSnapshot::Present { .. })
         )
-        && !app.pending_reload.as_ref().is_some_and(|pending| {
-            app.file.path.as_deref() == Some(pending.path.as_path())
-                && matches!(
-                    pending.status,
-                    crate::file::io::ExternalFileStatus::Modified
-                        | crate::file::io::ExternalFileStatus::Deleted
-                        | crate::file::io::ExternalFileStatus::Unknown(_)
-                )
-        })
+        && !app
+            .observed_change
+            .as_ref()
+            .is_some_and(|observed| app.file.path.as_deref() == Some(observed.path.as_path()))
 }
 
 #[cfg(test)]
@@ -453,9 +451,7 @@ mod tests {
             .unwrap();
         assert!(!app.file.dirty);
         assert!(
-            app.pending_reload
-                .as_ref()
-                .is_some_and(|pending| !pending.is_explicitly_armed),
+            app.observed_change.is_some() && app.confirmation.armed_reload().is_none(),
             "undo must retain the passive external observation"
         );
         assert_eq!(saved_label(&app), "(not saved)");

@@ -4,6 +4,7 @@
 //! Invariants: temporary paged files are removed after completed tests.
 
 use super::*;
+use crate::app::confirmation::Confirmation;
 use crossterm::event::{KeyEventKind, KeyEventState};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -199,14 +200,14 @@ fn command_prompt_dispatches_goto_and_does_not_bypass_dirty_quit_guard() {
     app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
         .unwrap();
     assert!(!app.should_quit);
-    assert!(app.pending_quit_confirm);
+    assert!(app.confirmation.is_quit());
 
     open_command_prompt(&mut app, &mut out).unwrap();
     type_text(&mut app, &mut out, "q");
     app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
         .unwrap();
     assert!(!app.should_quit);
-    assert!(app.pending_quit_confirm);
+    assert!(app.confirmation.is_quit());
 
     app.handle_key_with(&mut out, key(KeyCode::Char('q'), KeyModifiers::CONTROL))
         .unwrap();
@@ -260,12 +261,12 @@ fn config_discard_warning_is_cancelled_by_editor_movement() {
         .unwrap();
     app.handle_key_with(&mut out, key(KeyCode::Char('q'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(config_discard_confirmation_pending(&app));
+    assert!(app.confirmation == Confirmation::DiscardConfig);
 
     app.handle_key_with(&mut out, key(KeyCode::Left, KeyModifiers::NONE))
         .unwrap();
 
-    assert!(!config_discard_confirmation_pending(&app));
+    assert!(app.confirmation != Confirmation::DiscardConfig);
     assert!(app.message.is_none());
     std::fs::remove_dir_all(path.parent().unwrap().parent().unwrap()).unwrap();
 }
@@ -285,7 +286,7 @@ fn mobile_menu_cancels_config_discard_confirmation() {
         .unwrap();
     app.handle_key_with(&mut out, key(KeyCode::Char('q'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(config_discard_confirmation_pending(&app));
+    assert!(app.confirmation == Confirmation::DiscardConfig);
 
     super::super::mobile::handle_mouse(
         &mut app,
@@ -299,7 +300,7 @@ fn mobile_menu_cancels_config_discard_confirmation() {
     )
     .unwrap();
 
-    assert!(!config_discard_confirmation_pending(&app));
+    assert!(app.confirmation != Confirmation::DiscardConfig);
     assert!(super::super::mobile::is_viewing(&app));
     std::fs::remove_dir_all(path.parent().unwrap().parent().unwrap()).unwrap();
 }
@@ -405,15 +406,15 @@ fn command_prompt_save_as_overwrites_existing_target_on_second_identical_submiss
 
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "existing\n");
     assert!(app
-        .pending_save_conflict
-        .as_ref()
+        .confirmation
+        .save_conflict()
         .is_some_and(|pending| pending.is_command_prompt_save_as));
 
     submit_command(&mut app, &mut out, &command);
 
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "x");
     assert_eq!(app.file.path.as_deref(), Some(path.as_path()));
-    assert!(app.pending_save_conflict.is_none());
+    assert!(app.confirmation.save_conflict().is_none());
     std::fs::remove_dir_all(path.parent().unwrap().parent().unwrap()).unwrap();
 }
 
@@ -429,7 +430,7 @@ fn command_prompt_save_as_rearms_when_existing_target_drifts() {
     let command = format!("save as {}", path.display());
 
     submit_command(&mut app, &mut out, &command);
-    let first_snapshot = app.pending_save_conflict.as_ref().unwrap().snapshot.clone();
+    let first_snapshot = app.confirmation.save_conflict().unwrap().change.clone();
     std::fs::write(&path, "external state changed\n").unwrap();
 
     submit_command(&mut app, &mut out, &command);
@@ -439,9 +440,9 @@ fn command_prompt_save_as_rearms_when_existing_target_drifts() {
         "external state changed\n"
     );
     assert!(app.file.dirty);
-    let pending = app.pending_save_conflict.as_ref().unwrap();
+    let pending = app.confirmation.save_conflict().unwrap();
     assert!(pending.is_command_prompt_save_as);
-    assert_ne!(pending.snapshot, first_snapshot);
+    assert_ne!(pending.change, first_snapshot);
     std::fs::remove_dir_all(path.parent().unwrap().parent().unwrap()).unwrap();
 }
 
@@ -464,8 +465,8 @@ fn command_prompt_save_as_rearms_for_a_different_existing_path() {
     assert_eq!(std::fs::read_to_string(&first).unwrap(), "first\n");
     assert_eq!(std::fs::read_to_string(&second).unwrap(), "second\n");
     assert_eq!(
-        app.pending_save_conflict
-            .as_ref()
+        app.confirmation
+            .save_conflict()
             .map(|pending| pending.path.as_path()),
         Some(second.as_path())
     );
@@ -485,11 +486,11 @@ fn command_prompt_save_as_confirmation_is_cancelled_by_an_unrelated_command() {
         .unwrap();
 
     submit_command(&mut app, &mut out, &format!("save as {}", path.display()));
-    assert!(app.pending_save_conflict.is_some());
+    assert!(app.confirmation.save_conflict().is_some());
 
     submit_command(&mut app, &mut out, "help");
 
-    assert!(app.pending_save_conflict.is_none());
+    assert!(app.confirmation.save_conflict().is_none());
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "existing\n");
     std::fs::remove_dir_all(path.parent().unwrap().parent().unwrap()).unwrap();
 }
@@ -607,7 +608,7 @@ fn assert_save_as_refuses_non_regular(path: &Path, app: &mut super::super::App) 
         super::super::save::handle_save_as(app, &mut out, path.to_str().unwrap()).unwrap();
         assert!(app.file.path.is_none());
         assert!(app.file.dirty);
-        assert!(app.pending_save_conflict.is_none());
+        assert!(app.confirmation.save_conflict().is_none());
         assert!(app
             .message
             .as_deref()
@@ -1072,7 +1073,7 @@ fn editing_or_pasting_in_prompt_disarms_dirty_quit_without_touching_source() {
     for input in [Some(KeyCode::Char('x')), Some(KeyCode::Left), None] {
         app.handle_key_with(&mut out, key(KeyCode::Char('q'), KeyModifiers::CONTROL))
             .unwrap();
-        assert!(app.pending_quit_confirm);
+        assert!(app.confirmation.is_quit());
         assert!(!app.should_quit);
         out.clear();
         match input {
@@ -1081,7 +1082,7 @@ fn editing_or_pasting_in_prompt_disarms_dirty_quit_without_touching_source() {
                 .unwrap(),
             None => super::super::input::handle_paste(&mut app, &mut out, "paste").unwrap(),
         }
-        assert!(!app.pending_quit_confirm);
+        assert!(!app.confirmation.is_quit());
         assert!(String::from_utf8_lossy(&out).contains("Command:"));
         assert_eq!(app.buffer.to_string(), "dirty source");
         assert!(app.file.dirty);

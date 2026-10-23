@@ -55,7 +55,7 @@ fn app_file_state_same_metadata_content_collision_refuses_save() {
         .unwrap();
 
     assert!(app.file.dirty, "metadata collision must not overwrite disk");
-    assert!(app.pending_save_conflict.is_some());
+    assert!(app.confirmation.save_conflict().is_some());
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "EXT1");
     let _ = std::fs::remove_file(&path);
 }
@@ -74,7 +74,7 @@ fn app_file_state_same_metadata_content_collision_arms_reload_before_discard() {
         app.file.dirty,
         "first reload press must preserve local edits"
     );
-    assert!(app.pending_reload.is_some());
+    assert!(app.observed_change.is_some());
     assert_eq!(app.buffer.to_string(), local);
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "EXT1");
     let _ = std::fs::remove_file(&path);
@@ -82,15 +82,15 @@ fn app_file_state_same_metadata_content_collision_arms_reload_before_discard() {
 
 #[test]
 fn unstable_snapshot_capture_never_matches_force_save_confirmation() {
-    let status = crate::file::io::ExternalFileStatus::Unknown(std::io::ErrorKind::Interrupted);
-    let pending = super::super::save::PendingSaveConflict {
+    let pending = crate::app::confirmation::SaveConflict {
         path: std::path::PathBuf::from("unstable.txt"),
-        status: status.clone(),
-        snapshot: None,
+        change: crate::app::confirmation::ConflictingChange::Unknown(
+            std::io::ErrorKind::Interrupted,
+        ),
         is_command_prompt_save_as: false,
     };
     let observation = crate::file::io::ExternalFileObservation {
-        status,
+        status: crate::file::io::ExternalFileStatus::Unknown(std::io::ErrorKind::Interrupted),
         live_snapshot: None,
     };
 

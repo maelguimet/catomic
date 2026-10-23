@@ -31,12 +31,7 @@ fn watcher_unchanged_clears_stale_pending_and_restores_status() {
     std::fs::write(&p, "EXT").unwrap();
     let sig = crate::file::watcher::FileWatchSignal::Changed;
     let _ = crate::app::watch::apply_file_watch_signal(&mut app, sig);
-    assert!(
-        !app.pending_reload
-            .as_ref()
-            .expect("precondition: watcher observation retained")
-            .is_explicitly_armed
-    );
+    assert!(app.observed_change.is_some() && app.confirmation.armed_reload().is_none());
 
     std::fs::write(&p, "BASE").unwrap();
     if let Ok(s) = crate::file::io::capture_file_snapshot(std::path::Path::new(&p)) {
@@ -56,7 +51,7 @@ fn watcher_unchanged_clears_stale_pending_and_restores_status() {
         "Unchanged with prior pending must visibly restore normal status"
     );
     assert!(
-        app.pending_reload.is_none(),
+        app.observed_change.is_none(),
         "stale pending must be cleared"
     );
     assert_eq!(app.message.as_deref(), None, "must restore normal status");
@@ -83,7 +78,7 @@ fn watcher_unchanged_with_no_pending_ignores_and_preserves_saved() {
     assert!(!app.file.dirty);
 
     app.message_warning("Prior warning.");
-    let before_pend = app.pending_reload.clone();
+    let before_pend = (app.observed_change.clone(), app.confirmation.clone());
 
     let visible = crate::app::watch::apply_file_watch_signal(
         &mut app,
@@ -92,7 +87,10 @@ fn watcher_unchanged_with_no_pending_ignores_and_preserves_saved() {
 
     assert!(!visible);
     assert_eq!(app.message.as_deref(), Some("Prior warning."));
-    assert_eq!(app.pending_reload, before_pend);
+    assert_eq!(
+        (app.observed_change.clone(), app.confirmation.clone()),
+        before_pend
+    );
 
     let _ = std::fs::remove_file(&p);
 }
@@ -112,12 +110,17 @@ fn watcher_nopath_with_pending_clears_it() {
     let (tw, _tx) = crate::file::watcher::FileWatcher::new_for_test(app.file.path.clone().unwrap());
     crate::app::watch::replace_file_watcher_for_test(&mut app, tw);
 
-    app.pending_reload = Some(crate::app::reload::PendingReload {
-        path: app.file.path.clone().unwrap(),
-        status: crate::file::io::ExternalFileStatus::Modified,
-        snapshot: app.file.disk_snapshot.clone(),
-        is_explicitly_armed: true,
+    let path = app.file.path.clone().unwrap();
+    let snapshot = crate::file::io::FileSnapshot::Absent;
+    app.observed_change = Some(crate::app::reload::ObservedExternalChange {
+        path: path.clone(),
+        change: crate::app::confirmation::ConflictingChange::Modified(snapshot.clone()),
     });
+    app.confirmation =
+        crate::app::confirmation::Confirmation::Reload(crate::app::confirmation::ArmedReload {
+            path,
+            change: crate::app::confirmation::ReloadableChange::Modified(snapshot),
+        });
     app.message_warning("prior");
 
     app.file.path = None;
@@ -131,7 +134,11 @@ fn watcher_nopath_with_pending_clears_it() {
         visible,
         "NoPath with pending must report visible to render the resolution"
     );
-    assert!(app.pending_reload.is_none());
+    assert!(app.observed_change.is_none());
+    assert_eq!(
+        app.confirmation,
+        crate::app::confirmation::Confirmation::None
+    );
     assert_eq!(app.message.as_deref(), Some("No file path."));
 
     let _ = std::fs::remove_file(&p);
@@ -169,12 +176,7 @@ fn queued_changed_then_unchanged_clears_stale_pending_and_renders() {
         r1,
         "first Changed+Modified must record a visible observation"
     );
-    assert!(
-        !app.pending_reload
-            .as_ref()
-            .expect("watcher observation retained")
-            .is_explicitly_armed
-    );
+    assert!(app.observed_change.is_some() && app.confirmation.armed_reload().is_none());
     assert_eq!(
         app.message_role,
         crate::terminal::render::StatusRole::Warning
@@ -198,7 +200,7 @@ fn queued_changed_then_unchanged_clears_stale_pending_and_renders() {
         r2,
         "Unchanged observation with stale pending must be visible and render"
     );
-    assert!(app.pending_reload.is_none(), "pending must be cleared");
+    assert!(app.observed_change.is_none(), "pending must be cleared");
     assert!(app.message.is_none());
     assert!(!out2.is_empty(), "must render on resolution");
     assert_eq!(
@@ -221,13 +223,13 @@ fn manual_ctrl_r_unchanged_restores_normal_status() {
     let mut app = App::new(Some(&p)).unwrap();
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(app.pending_reload.is_none());
+    assert!(app.observed_change.is_none());
 
     app.handle_key(make_key(KeyCode::Char('r'), KeyModifiers::CONTROL))
         .unwrap();
 
     assert!(app.message.is_none());
-    assert!(app.pending_reload.is_none());
+    assert!(app.observed_change.is_none());
 
     let _ = std::fs::remove_file(&p);
 }

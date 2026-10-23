@@ -400,12 +400,12 @@ fn dirty_quit_confirmation_pauses_bulk_until_explicit_review_action() {
         KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL),
     )
     .unwrap();
-    assert!(app.pending_quit_confirm);
+    assert!(app.confirmation.is_quit());
     assert!(!is_running(&app));
     poll(&mut app, &mut out).unwrap();
     assert_eq!(app.buffer.to_string().matches("dog").count(), accepted);
     key(&mut app, &mut out, KeyCode::Esc);
-    assert!(!app.pending_quit_confirm);
+    assert!(!app.confirmation.is_quit());
     assert!(app.focus.replace().is_none());
     assert_eq!(app.buffer.to_string().matches("dog").count(), accepted);
 }

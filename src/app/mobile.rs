@@ -292,12 +292,10 @@ fn vertical_action(scope: Scope, down: bool) -> Action {
 }
 
 fn pending_save_as_confirmation(app: &super::App) -> bool {
-    !app.pending_quit_confirm
-        && app.pending_reload.is_none()
-        && !super::command_prompt::config_discard_confirmation_pending(app)
+    app.observed_change.is_none()
         && app
-            .pending_save_conflict
-            .as_ref()
+            .confirmation
+            .save_conflict()
             .is_some_and(|pending| app.file.path.as_deref() != Some(pending.path.as_path()))
 }
 
@@ -329,7 +327,7 @@ fn editor_surface(app: &super::App) -> Surface {
         Surface::Prompt
     } else if super::external_command::is_running(app) {
         Surface::Running
-    } else if app.pending_save_conflict.is_some() || app.pending_reload.is_some() {
+    } else if app.confirmation.save_conflict().is_some() || app.observed_change.is_some() {
         Surface::Message
     } else if app.selection.active().is_some() {
         Surface::Selection

@@ -42,10 +42,7 @@ pub(super) fn recover(
         Err(error) if BackingFileChanged::is(&error) => {
             super::file_state::refresh_dirty(&mut app.file, &*app.buffer);
             super::completion::cancel(app);
-            app.pending_quit_confirm = false;
-            app.pending_save_conflict = None;
-            super::command_prompt::clear_config_discard_confirmation(app);
-            super::reload::cancel_confirmation(app);
+            app.confirmation = super::confirmation::Confirmation::None;
             app.message_error(UNAVAILABLE);
             app.render(out)
         }

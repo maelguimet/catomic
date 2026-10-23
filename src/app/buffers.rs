@@ -15,8 +15,8 @@ use crate::file::identity::BufferFileIdentity;
 use crate::file::watcher::FileWatcher;
 
 use super::{
-    command_prompt, completion, external_command, hooks, lint, recovery, reload, save, search,
-    selection, view, App, FileState, StartupConfig,
+    command_prompt, completion, external_command, hooks, lint, recovery, reload, search, selection,
+    view, App, FileState, StartupConfig,
 };
 
 mod lifecycle;
@@ -27,8 +27,7 @@ pub(crate) struct BufferSlot {
     file_watcher: Option<FileWatcher>,
     message: Option<String>,
     message_role: crate::terminal::render::StatusRole,
-    pending_save_conflict: Option<save::PendingSaveConflict>,
-    pending_reload: Option<reload::PendingReload>,
+    observed_change: Option<reload::ObservedExternalChange>,
     search: search::SearchUiState,
     recovery: recovery::RecoveryState,
     selection: selection::SelectionUiState,
@@ -53,8 +52,7 @@ impl BufferSlot {
             file_watcher: app.file_watcher,
             message: app.message,
             message_role: app.message_role,
-            pending_save_conflict: app.pending_save_conflict,
-            pending_reload: app.pending_reload,
+            observed_change: app.observed_change,
             search: app.search,
             recovery: app.recovery,
             selection: app.selection,
@@ -72,11 +70,7 @@ impl BufferSlot {
         mem::swap(&mut self.file_watcher, &mut app.file_watcher);
         mem::swap(&mut self.message, &mut app.message);
         mem::swap(&mut self.message_role, &mut app.message_role);
-        mem::swap(
-            &mut self.pending_save_conflict,
-            &mut app.pending_save_conflict,
-        );
-        mem::swap(&mut self.pending_reload, &mut app.pending_reload);
+        mem::swap(&mut self.observed_change, &mut app.observed_change);
         mem::swap(&mut self.search, &mut app.search);
         mem::swap(&mut self.recovery, &mut app.recovery);
         mem::swap(&mut self.selection, &mut app.selection);
@@ -162,9 +156,9 @@ impl App {
         if recovery::close(self) {
             self.message = None;
         }
-        if self.pending_quit_confirm {
+        if self.confirmation.is_armed() {
             self.message = None;
-            self.pending_quit_confirm = false;
+            self.confirmation = super::confirmation::Confirmation::None;
         }
         let mut slot = match direction {
             BufferDirection::Next => self.inactive_buffers.pop_front(),
@@ -176,7 +170,7 @@ impl App {
             BufferDirection::Next => self.inactive_buffers.push_back(slot),
             BufferDirection::Previous => self.inactive_buffers.push_front(slot),
         }
-        if self.pending_save_conflict.is_none() && self.pending_reload.is_none() {
+        if self.observed_change.is_none() {
             self.message = None;
         }
 
@@ -281,6 +275,7 @@ mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     use super::*;
+    use crate::app::save;
 
     fn temp_file(label: &str, text: &str) -> PathBuf {
         let nonce = SystemTime::now()
@@ -570,7 +565,7 @@ mod tests {
         app.handle_key_with(&mut out, key(KeyCode::Char('q'), KeyModifiers::CONTROL))
             .unwrap();
         assert!(!app.should_quit);
-        assert!(app.pending_quit_confirm);
+        assert!(app.confirmation.is_quit());
         assert!(app
             .message
             .as_deref()

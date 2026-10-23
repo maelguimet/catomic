@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use super::confirmation::Confirmation;
 use super::focus::{Focus, Prompt, Surface};
 use super::prompt_input::{PromptInput, PromptPresentation};
 use crate::config::actions::Action;
@@ -23,7 +24,6 @@ pub(crate) struct CommandPromptState {
 struct ConfigReturn {
     config_path: PathBuf,
     buffer_index: usize,
-    discard_pending: bool,
 }
 
 pub(super) enum ConfigCloseRequest {
@@ -100,35 +100,26 @@ pub(super) fn submits_pending_command_save_as(app: &super::App) -> bool {
 }
 
 pub(super) fn request_config_close(app: &mut super::App) -> Option<ConfigCloseRequest> {
-    let config_return = app.command_prompt.config_return.as_mut()?;
+    let config_return = app.command_prompt.config_return.as_ref()?;
     if app.file.path.as_deref() != Some(config_return.config_path.as_path()) {
         return None;
     }
-    if app.file.dirty && !config_return.discard_pending {
-        config_return.discard_pending = true;
+    if app.file.dirty && !matches!(app.confirmation, Confirmation::DiscardConfig) {
+        app.confirmation = Confirmation::DiscardConfig;
         return Some(ConfigCloseRequest::WarnDirty);
     }
     let discard = app.file.dirty;
-    app.command_prompt
-        .config_return
-        .take()
-        .map(|config_return| ConfigCloseRequest::Close {
-            return_target: config_return.buffer_index,
-            discard,
-        })
+    forget_config_return(app).map(|config_return| ConfigCloseRequest::Close {
+        return_target: config_return.buffer_index,
+        discard,
+    })
 }
 
-pub(super) fn clear_config_discard_confirmation(app: &mut super::App) {
-    if let Some(config_return) = app.command_prompt.config_return.as_mut() {
-        config_return.discard_pending = false;
+fn forget_config_return(app: &mut super::App) -> Option<ConfigReturn> {
+    if matches!(app.confirmation, Confirmation::DiscardConfig) {
+        app.confirmation = Confirmation::None;
     }
-}
-
-pub(super) fn config_discard_confirmation_pending(app: &super::App) -> bool {
-    app.command_prompt
-        .config_return
-        .as_ref()
-        .is_some_and(|config_return| config_return.discard_pending)
+    app.command_prompt.config_return.take()
 }
 
 pub(super) fn forget_active_config_detour(app: &mut super::App) {
@@ -140,7 +131,7 @@ pub(super) fn forget_active_config_detour(app: &mut super::App) {
             app.file.path.as_deref() == Some(config_return.config_path.as_path())
         });
     if active_config {
-        app.command_prompt.config_return = None;
+        forget_config_return(app);
     }
 }
 
@@ -174,7 +165,7 @@ pub(crate) fn handle_active_key(
         KeyCode::Esc => {
             app.message = None;
             super::focus::take(app, Surface::Command);
-            app.pending_save_conflict = None;
+            app.confirmation.clear_save_conflict();
         }
         KeyCode::Enter => return submit(app, out).map(|()| true),
         KeyCode::Tab => complete_path(app),
@@ -318,7 +309,7 @@ fn execute_command(
 ) -> io::Result<()> {
     let keeps_pending_save_as = command_matches_pending_save_as(app, command);
     if !keeps_pending_save_as {
-        app.pending_save_conflict = None;
+        app.confirmation.clear_save_conflict();
     }
     if let Some(path) = command_save_as_argument(command) {
         return super::save::handle_command_prompt_save_as(app, out, path);
@@ -366,7 +357,7 @@ fn command_save_as_argument(command: &str) -> Option<&str> {
 }
 
 fn command_matches_pending_save_as(app: &super::App, command: &str) -> bool {
-    let Some(pending) = app.pending_save_conflict.as_ref() else {
+    let Some(pending) = app.confirmation.save_conflict() else {
         return false;
     };
     if !pending.is_command_prompt_save_as {
@@ -517,7 +508,6 @@ fn open_config_path(
         app.command_prompt.config_return = Some(ConfigReturn {
             config_path: path.to_path_buf(),
             buffer_index: source_buffer_index,
-            discard_pending: false,
         });
     }
     app.message = None;

@@ -11,6 +11,8 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 
+use super::StagedFile;
+
 pub(super) struct ExistingTarget {
     file: File,
     baseline: UnixMetadata,
@@ -387,14 +389,14 @@ pub(super) fn commit(
     temp_path: &Path,
     target: &Path,
     existing: Option<&ExistingTarget>,
-    cleanup_temp: &mut bool,
+    staged: &mut StagedFile,
 ) -> io::Result<()> {
     match existing {
         Some(existing) if existing.is_hard_linked() => {
-            commit_hard_link(temp_path, target, existing, cleanup_temp)
+            commit_hard_link(temp_path, target, existing, staged)
         }
-        Some(existing) => commit_replacement(temp_path, target, existing, cleanup_temp),
-        None => commit_new_file(temp_path, target, cleanup_temp),
+        Some(existing) => commit_replacement(temp_path, target, existing, staged),
+        None => commit_new_file(temp_path, target, staged),
     }
 }
 
@@ -402,15 +404,9 @@ fn commit_hard_link(
     temp_path: &Path,
     target: &Path,
     existing: &ExistingTarget,
-    cleanup_temp: &mut bool,
+    staged: &mut StagedFile,
 ) -> io::Result<()> {
-    commit_hard_link_with(
-        temp_path,
-        target,
-        existing,
-        cleanup_temp,
-        refill_truncated_inode,
-    )
+    commit_hard_link_with(temp_path, target, existing, staged, refill_truncated_inode)
 }
 
 type RefillTruncatedInode = fn(&mut File, &mut File, &ExistingTarget, &Path) -> io::Result<()>;
@@ -419,7 +415,7 @@ fn commit_hard_link_with(
     temp_path: &Path,
     target: &Path,
     existing: &ExistingTarget,
-    cleanup_temp: &mut bool,
+    state: &mut StagedFile,
     refill: RefillTruncatedInode,
 ) -> io::Result<()> {
     validate_target_path(target, existing)?;
@@ -427,7 +423,7 @@ fn commit_hard_link_with(
     let mut destination = existing.file.try_clone()?;
     destination.seek(io::SeekFrom::Start(0))?;
 
-    keep_staged_file_because_truncation_makes_rollback_impossible(cleanup_temp);
+    *state = StagedFile::KeptAsRecoveryEvidence;
     let write_result = destination
         .set_len(0)
         .and_then(|()| refill(&mut staged, &mut destination, existing, target));
@@ -441,6 +437,7 @@ fn commit_hard_link_with(
             ),
         ));
     }
+    *state = StagedFile::Committed;
     fs::remove_file(temp_path).map_err(|error| {
         io::Error::new(
             error.kind(),
@@ -450,10 +447,6 @@ fn commit_hard_link_with(
             ),
         )
     })
-}
-
-fn keep_staged_file_because_truncation_makes_rollback_impossible(cleanup_temp: &mut bool) {
-    *cleanup_temp = false;
 }
 
 fn refill_truncated_inode(
@@ -480,10 +473,10 @@ fn refill_truncated_inode(
     destination.sync_all()
 }
 
-fn commit_new_file(temp_path: &Path, target: &Path, cleanup_temp: &mut bool) -> io::Result<()> {
+fn commit_new_file(temp_path: &Path, target: &Path, staged: &mut StagedFile) -> io::Result<()> {
     match renameat2(temp_path, target, libc::RENAME_NOREPLACE as libc::c_uint) {
         Ok(()) => {
-            *cleanup_temp = false;
+            *staged = StagedFile::Committed;
             Ok(())
         }
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => match fs::metadata(target) {
@@ -504,17 +497,17 @@ fn commit_replacement(
     temp_path: &Path,
     target: &Path,
     existing: &ExistingTarget,
-    cleanup_temp: &mut bool,
+    staged: &mut StagedFile,
 ) -> io::Result<()> {
     validate_target_path(target, existing)?;
     renameat2(temp_path, target, libc::RENAME_EXCHANGE as libc::c_uint)?;
-    *cleanup_temp = false;
+    *staged = StagedFile::Committed;
 
     if let Err(error) = validate_displaced_target(temp_path, existing) {
-        return rollback_exchange(temp_path, target, cleanup_temp, error);
+        return rollback_exchange(temp_path, target, staged, error);
     }
     if let Err(error) = fs::remove_file(temp_path) {
-        return rollback_exchange(temp_path, target, cleanup_temp, error);
+        return rollback_exchange(temp_path, target, staged, error);
     }
     Ok(())
 }
@@ -561,22 +554,21 @@ fn same_preserved_metadata(live: UnixMetadata, baseline: UnixMetadata) -> bool {
 fn rollback_exchange(
     temp_path: &Path,
     target: &Path,
-    cleanup_temp: &mut bool,
+    staged: &mut StagedFile,
     original_error: io::Error,
 ) -> io::Result<()> {
-    match renameat2(
-        temp_path,
-        target,
-        libc::RENAME_EXCHANGE as libc::c_uint,
-    ) {
+    match renameat2(temp_path, target, libc::RENAME_EXCHANGE as libc::c_uint) {
         Ok(()) => {
-            *cleanup_temp = true;
+            *staged = StagedFile::Owned;
             Err(original_error)
         }
-        Err(rollback_error) => Err(io::Error::other(format!(
+        Err(rollback_error) => {
+            *staged = StagedFile::KeptAsRecoveryEvidence;
+            Err(io::Error::other(format!(
             "atomic save failed ({original_error}) and rollback failed ({rollback_error}); displaced target remains at {}",
             temp_path.display()
-        ))),
+            )))
+        }
     }
 }
 

@@ -11,10 +11,10 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
 use super::{
-    apply_preserved_attributes, commit_hard_link_with, is_not_supported, open_existing_target,
-    read_attribute, read_preserved_attributes, ExistingTarget,
+    apply_preserved_attributes, commit, commit_hard_link_with, is_not_supported,
+    open_existing_target, read_attribute, read_preserved_attributes, ExistingTarget,
 };
-use crate::file::io::atomic_write_string;
+use crate::file::io::{atomic_write_string, discard_failed_attempt, StagedFile};
 
 struct TestPath(PathBuf);
 
@@ -186,22 +186,53 @@ fn hard_link_failure_after_truncation_keeps_staged_file_as_recovery_evidence() {
     fs::hard_link(&target.0, &peer.0).unwrap();
     fs::write(&staged.0, "complete replacement").unwrap();
     let existing = open_existing_target(&target.0).unwrap().unwrap();
-    let mut cleanup_temp = true;
+    let mut state = StagedFile::Owned;
 
-    let error = commit_hard_link_with(
-        &staged.0,
-        &target.0,
-        &existing,
-        &mut cleanup_temp,
-        fail_refill,
-    )
-    .expect_err("refill failure must surface");
+    let error = commit_hard_link_with(&staged.0, &target.0, &existing, &mut state, fail_refill)
+        .expect_err("refill failure must surface");
 
-    assert!(!cleanup_temp);
+    assert_eq!(state, StagedFile::KeptAsRecoveryEvidence);
+    discard_failed_attempt(Some(state), &staged.0);
     assert!(error.to_string().contains("staged replacement remains at"));
     assert_eq!(fs::read_to_string(&peer.0).unwrap(), "");
     assert_eq!(
         fs::read_to_string(&staged.0).unwrap(),
         "complete replacement"
     );
+}
+
+#[test]
+fn commit_refused_before_rename_leaves_staged_file_owned_for_discard() {
+    let target = test_path("refused-target");
+    let staged = test_path("refused-staged");
+    fs::write(&target.0, "original").unwrap();
+    fs::write(&staged.0, "replacement").unwrap();
+    let existing = open_existing_target(&target.0).unwrap().unwrap();
+    fs::write(&target.0, "changed underneath").unwrap();
+    let mut state = StagedFile::Owned;
+
+    commit(&staged.0, &target.0, Some(&existing), &mut state).expect_err("changed target");
+
+    assert_eq!(state, StagedFile::Owned);
+    discard_failed_attempt(Some(state), &staged.0);
+    assert!(!staged.0.exists());
+    assert_eq!(fs::read_to_string(&target.0).unwrap(), "changed underneath");
+}
+
+#[test]
+fn successful_commits_mark_staged_file_committed() {
+    let target = test_path("committed-target");
+    let staged = test_path("committed-staged");
+    fs::write(&staged.0, "first").unwrap();
+    let mut state = StagedFile::Owned;
+    commit(&staged.0, &target.0, None, &mut state).unwrap();
+    assert_eq!(state, StagedFile::Committed);
+
+    fs::write(&staged.0, "second").unwrap();
+    let existing = open_existing_target(&target.0).unwrap().unwrap();
+    let mut state = StagedFile::Owned;
+    commit(&staged.0, &target.0, Some(&existing), &mut state).unwrap();
+    assert_eq!(state, StagedFile::Committed);
+    assert!(!staged.0.exists());
+    assert_eq!(fs::read_to_string(&target.0).unwrap(), "second");
 }

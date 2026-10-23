@@ -234,8 +234,6 @@ fn failed_xterm_format_reset_retries_without_repeating_other_resets() {
 #[test]
 fn raw_mode_alone_still_restores_once_after_output_setup_fails() {
     let guard = terminal_guard();
-    // setup() marks raw mode before writing any output mode; simulate output
-    // setup failing on its first write without entering a real raw terminal.
     guard.restorer.mark_active(RAW_MODE);
     assert!(guard.enable_output_modes(&mut FailAfter::new(0)).is_err());
 

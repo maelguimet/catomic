@@ -1,90 +1,62 @@
 //! Manual reload-from-disk confirmation.
 //!
-//! Purpose: owns the pending reload confirmation token, message helpers,
-//! and the Ctrl+R decision + perform logic (extracted in 2-t for mod.rs hygiene).
-//! Uses bounded on-disk identities (ExternalFileStatus + FileSnapshot) via
-//! observe_external_file.
-//! Owns: PendingReload struct, passive watcher observations, arm/perform helpers,
-//!   handle_reload_key.
+//! Purpose: record unresolved disk changes, arm `Confirmation::Reload`, and perform reloads.
+//! Owns: ObservedExternalChange, reload messages, arm/perform helpers, handle_reload_key.
 //! Must not: own watcher polling, background work, snapshot capture policy,
 //!   config parsing, repository scans, or external services.
-//! Invariants: pending is bound to concrete (path + status + live snapshot);
-//!   watcher observations never arm destructive confirmation; unrelated actions
-//!   downgrade an armed confirmation while retaining the observed divergence;
-//!   a second explicit press only acts on an explicitly armed exact match;
-//!   content mutations disarm it;
+//! Invariants: an armed reload is bound to path + exact modified snapshot or deletion;
+//!   watcher observations never arm it; unrelated actions disarm it while keeping the
+//!   observed change; a second explicit press only acts on an exact match;
 //!   automatic reload is invoked only for clean buffers by caller policy;
-//!   successful reloads refresh watcher path identities;
-//!   input routing disarms it before any unrelated editor action.
+//!   successful reloads refresh watcher path identities.
 
 use std::io;
 use std::path::{Path, PathBuf};
 
+use super::confirmation::{ArmedReload, Confirmation, ConflictingChange, ReloadableChange};
 use crate::buffer;
 use crate::file::io::{
     observe_external_file, ExternalFileObservation, ExternalFileStatus, FileSnapshot,
 };
 use crate::file::size::{self, FileSizeTier, OpenSizeDecision};
 
-/// Exact disk revision recorded for watcher display and explicit confirmation.
-/// Once explicitly armed, drift before the second press refuses the reload
-/// (similar to PendingSaveConflict).
+/// Unresolved disk change for the active buffer, kept for display only.
+/// Arming a reload is a separate `Confirmation::Reload` bound to the same change.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct PendingReload {
-    /// Target path at arm time.
+pub(crate) struct ObservedExternalChange {
     pub path: PathBuf,
-    pub status: ExternalFileStatus,
-    /// Live snapshot (or None) recorded by the watcher or explicit action.
-    /// For Modified: must match exactly before an armed second press may reload.
-    /// For Deleted: kind match sufficient.
-    pub snapshot: Option<FileSnapshot>,
-    /// Watcher observations record the revision without counting as the user's
-    /// first destructive reload action.
-    pub is_explicitly_armed: bool,
+    pub change: ConflictingChange,
 }
 
-/// Cancel only the destructive confirmation while retaining the authoritative
-/// observation that the accepted buffer revision differs from disk.
-pub(crate) fn cancel_confirmation(app: &mut super::App) {
-    if let Some(pending) = &mut app.pending_reload {
-        pending.is_explicitly_armed = false;
-    }
+pub(crate) fn forget_external_observation(app: &mut super::App) {
+    app.observed_change = None;
+    app.confirmation.disarm_reload();
 }
 
 /// Retain a fresh unresolved disk observation without treating it as a user
 /// confirmation. Modified, Deleted, and Unknown observations all mean the
 /// accepted buffer/disk relationship cannot currently be called saved.
 pub(crate) fn remember_external_observation(app: &mut super::App, obs: &ExternalFileObservation) {
-    let Some(path) = app.file.path.clone() else {
-        app.pending_reload = None;
-        return;
-    };
-    if matches!(
-        obs.status,
-        ExternalFileStatus::Modified | ExternalFileStatus::Deleted | ExternalFileStatus::Unknown(_)
-    ) {
-        app.pending_reload = Some(PendingReload {
-            path,
-            status: obs.status.clone(),
-            snapshot: obs.live_snapshot.clone(),
-            is_explicitly_armed: false,
-        });
-    } else {
-        app.pending_reload = None;
-    }
+    app.confirmation.disarm_reload();
+    app.observed_change = app
+        .file
+        .path
+        .clone()
+        .zip(ConflictingChange::observed(obs))
+        .map(|(path, change)| ObservedExternalChange { path, change });
 }
 
 /// Returns the message for first Ctrl+R press that arms a reload confirmation.
-pub(crate) fn reload_arm_message(status: &ExternalFileStatus, dirty: bool) -> String {
-    match status {
-        ExternalFileStatus::Modified => {
+pub(crate) fn reload_arm_message(change: &ReloadableChange, dirty: bool) -> String {
+    match change {
+        ReloadableChange::Modified(_) => {
             if dirty {
                 "File changed on disk. Press Ctrl+R again to reload from disk (discard local changes).".to_string()
             } else {
                 "File changed on disk. Press Ctrl+R again to reload from disk.".to_string()
             }
         }
-        ExternalFileStatus::Deleted => {
+        ReloadableChange::Deleted => {
             if dirty {
                 "File deleted on disk. Press Ctrl+R again to clear buffer (discard local changes)."
                     .to_string()
@@ -92,56 +64,50 @@ pub(crate) fn reload_arm_message(status: &ExternalFileStatus, dirty: bool) -> St
                 "File deleted on disk. Press Ctrl+R again to clear buffer.".to_string()
             }
         }
-        _ => {
-            // Should not arm for these; caller decides.
-            format!("File status check failed: unexpected arm for {:?}", status)
-        }
     }
 }
 
 pub(crate) fn reload_arm_message_for_ui(
-    status: &ExternalFileStatus,
+    change: &ReloadableChange,
     dirty: bool,
     mobile: bool,
 ) -> String {
     if !mobile {
-        return reload_arm_message(status, dirty);
+        return reload_arm_message(change, dirty);
     }
-    match status {
-        ExternalFileStatus::Modified => mobile_reload_message(
+    match change {
+        ReloadableChange::Modified(_) => mobile_reload_message(
             "File changed on disk. Tap Menu > Check / reload file again to reload from disk",
             dirty,
         ),
-        ExternalFileStatus::Deleted => mobile_reload_message(
+        ReloadableChange::Deleted => mobile_reload_message(
             "File deleted on disk. Tap Menu > Check / reload file again to clear the buffer",
             dirty,
         ),
-        _ => reload_arm_message(status, dirty),
     }
 }
 
 /// Returns the warning for a passive watcher observation. Unlike the explicit
 /// arm message, this tells the user that two actions are still required.
 pub(crate) fn reload_watch_message_for_ui(
-    status: &ExternalFileStatus,
+    change: &ReloadableChange,
     dirty: bool,
     mobile: bool,
 ) -> String {
     if mobile {
-        return match status {
-            ExternalFileStatus::Modified => mobile_reload_message(
+        return match change {
+            ReloadableChange::Modified(_) => mobile_reload_message(
                 "File changed on disk. Tap Menu > Check / reload file twice to reload from disk",
                 dirty,
             ),
-            ExternalFileStatus::Deleted => mobile_reload_message(
+            ReloadableChange::Deleted => mobile_reload_message(
                 "File deleted on disk. Tap Menu > Check / reload file twice to clear the buffer",
                 dirty,
             ),
-            _ => reload_arm_message(status, dirty),
         };
     }
-    match status {
-        ExternalFileStatus::Modified => {
+    match change {
+        ReloadableChange::Modified(_) => {
             if dirty {
                 "File changed on disk. Press Ctrl+R twice to reload from disk (discard local changes)."
                     .to_string()
@@ -149,7 +115,7 @@ pub(crate) fn reload_watch_message_for_ui(
                 "File changed on disk. Press Ctrl+R twice to reload from disk.".to_string()
             }
         }
-        ExternalFileStatus::Deleted => {
+        ReloadableChange::Deleted => {
             if dirty {
                 "File deleted on disk. Press Ctrl+R twice to clear buffer (discard local changes)."
                     .to_string()
@@ -157,48 +123,45 @@ pub(crate) fn reload_watch_message_for_ui(
                 "File deleted on disk. Press Ctrl+R twice to clear buffer.".to_string()
             }
         }
-        _ => reload_arm_message(status, dirty),
     }
 }
 
-pub(crate) fn reload_drift_message(status: &ExternalFileStatus, dirty: bool) -> String {
+pub(crate) fn reload_drift_message(change: &ReloadableChange, dirty: bool) -> String {
     let local = if dirty {
         " Local changes preserved."
     } else {
         ""
     };
-    match status {
-        ExternalFileStatus::Modified => format!(
+    match change {
+        ReloadableChange::Modified(_) => format!(
             "File changed again on disk. Press Ctrl+R to re-arm reload confirmation.{local}"
         ),
-        ExternalFileStatus::Deleted => format!(
+        ReloadableChange::Deleted => format!(
             "File was deleted after reload was armed. Press Ctrl+R to re-arm confirmation.{local}"
         ),
-        _ => format!("File state changed after reload was armed.{local}"),
     }
 }
 
 pub(crate) fn reload_drift_message_for_ui(
-    status: &ExternalFileStatus,
+    change: &ReloadableChange,
     dirty: bool,
     mobile: bool,
 ) -> String {
     if !mobile {
-        return reload_drift_message(status, dirty);
+        return reload_drift_message(change, dirty);
     }
     let local = if dirty {
         " Local changes preserved."
     } else {
         ""
     };
-    match status {
-        ExternalFileStatus::Modified => format!(
+    match change {
+        ReloadableChange::Modified(_) => format!(
             "File changed again on disk. Tap Menu > Check / reload file to re-arm confirmation.{local}"
         ),
-        ExternalFileStatus::Deleted => format!(
+        ReloadableChange::Deleted => format!(
             "File was deleted after reload was armed. Tap Menu > Check / reload file to re-arm confirmation.{local}"
         ),
-        _ => format!("File state changed after reload was armed.{local}"),
     }
 }
 
@@ -226,6 +189,28 @@ fn observed_present_snapshot(obs: &ExternalFileObservation) -> io::Result<&FileS
             "reload modified path missing present size snapshot",
         )),
     }
+}
+
+fn paged_reload_buffer(
+    path: &Path,
+    mut source: crate::file::io::PinnedFile,
+    page_lines: usize,
+) -> io::Result<(
+    Box<dyn buffer::Buffer>,
+    crate::file::text_format::TextFormat,
+)> {
+    let loaded_snapshot = source.snapshot().clone();
+    let format = crate::file::text_format::detect_file_format_from(source.file_mut())?;
+    if format.utf8_bom || format.line_ending == crate::file::text_format::LineEnding::Cr {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "UTF-8 BOM and CR-only files must be opened below the paged-file threshold",
+        ));
+    }
+    source.ensure_descriptor_unchanged(path)?;
+    let buffer = buffer::PagedFileBuffer::from_file(source.into_file(), page_lines)?;
+    crate::file::io::ensure_path_matches_snapshot(path, &loaded_snapshot)?;
+    Ok((Box::new(buffer), format))
 }
 
 fn build_modified_reload_buffer(
@@ -258,21 +243,7 @@ fn build_modified_reload_buffer(
         Box<dyn buffer::Buffer>,
         crate::file::text_format::TextFormat,
     ) = match size::open_size_decision(size_bytes) {
-        OpenSizeDecision::Paged => {
-            let format = crate::file::text_format::detect_file_format_from(source.file_mut())?;
-            if format.utf8_bom || format.line_ending == crate::file::text_format::LineEnding::Cr {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "UTF-8 BOM and CR-only files must be opened below the paged-file threshold",
-                ));
-            }
-            source.ensure_descriptor_unchanged(path)?;
-            let buffer = buffer::PagedFileBuffer::from_file(source.into_file(), page_lines)?;
-            // Format detection and the paged baseline must describe the
-            // confirmed revision, as on open.
-            crate::file::io::ensure_path_matches_snapshot(path, &loaded_snapshot)?;
-            (Box::new(buffer) as Box<dyn buffer::Buffer>, format)
-        }
+        OpenSizeDecision::Paged => paged_reload_buffer(path, source, page_lines)?,
         OpenSizeDecision::Normal | OpenSizeDecision::Warn => {
             let bytes = source.read_all_verified(path)?;
             let decoded = crate::file::text_format::decode(bytes)?;
@@ -417,9 +388,8 @@ fn finish_reload(app: &mut super::App, message: Option<String>) {
     super::watch::refresh_file_watcher(app);
     app.message = message;
     app.message_role = crate::terminal::render::StatusRole::Info;
-    app.pending_reload = None;
-    app.pending_save_conflict = None;
-    app.pending_quit_confirm = false;
+    app.observed_change = None;
+    app.confirmation = Confirmation::None;
     app.reveal_cursor();
 }
 
@@ -442,40 +412,37 @@ fn apply_observation(
     obs: &ExternalFileObservation,
     is_explicit_action: bool,
 ) {
-    match obs.status {
-        ExternalFileStatus::NoPath => {
+    let keeps_arm = armed_reload_matches(app, obs);
+    remember_external_observation(app, obs);
+    let Some(observed) = app.observed_change.clone() else {
+        if obs.status == ExternalFileStatus::NoPath {
             app.message_info("No file path.");
-            app.pending_reload = None;
-        }
-        ExternalFileStatus::Unchanged => {
+        } else {
             app.message = None;
-            app.pending_reload = None;
         }
-        ExternalFileStatus::Unknown(kind) => {
-            remember_external_observation(app, obs);
+        return;
+    };
+    let change = match observed.change {
+        ConflictingChange::Unknown(kind) => {
             app.message_error(format!("File status check failed: {:?}", kind));
+            return;
         }
-        ExternalFileStatus::Modified | ExternalFileStatus::Deleted => {
-            let was_explicitly_armed = pending_matches_observation(app, obs)
-                && app
-                    .pending_reload
-                    .as_ref()
-                    .is_some_and(|pending| pending.is_explicitly_armed);
-            let is_explicitly_armed = is_explicit_action || was_explicitly_armed;
-            remember_external_observation(app, obs);
-            if let Some(pending) = &mut app.pending_reload {
-                pending.is_explicitly_armed = is_explicitly_armed;
-            }
-            let dirty = app.file.dirty;
-            let mobile = super::mobile::is_enabled(app);
-            let text = if is_explicitly_armed {
-                reload_arm_message_for_ui(&obs.status, dirty, mobile)
-            } else {
-                reload_watch_message_for_ui(&obs.status, dirty, mobile)
-            };
-            app.message_warning(text);
-        }
-    }
+        ConflictingChange::Modified(snapshot) => ReloadableChange::Modified(snapshot),
+        ConflictingChange::Deleted => ReloadableChange::Deleted,
+    };
+    let dirty = app.file.dirty;
+    let mobile = super::mobile::is_enabled(app);
+    let text = if is_explicit_action || keeps_arm {
+        let text = reload_arm_message_for_ui(&change, dirty, mobile);
+        app.confirmation = Confirmation::Reload(ArmedReload {
+            path: observed.path,
+            change,
+        });
+        text
+    } else {
+        reload_watch_message_for_ui(&change, dirty, mobile)
+    };
+    app.message_warning(text);
 }
 
 /// Handle Ctrl+R for manual reload (decision + arm or perform).
@@ -490,35 +457,29 @@ pub(crate) fn handle_reload_key(
     let baseline = app.file.disk_snapshot.as_ref();
     let obs = observe_external_file(current_path.as_deref(), baseline);
 
-    let should_perform = app
-        .pending_reload
-        .as_ref()
-        .is_some_and(|pending| pending.is_explicitly_armed)
-        && pending_matches_observation(app, &obs);
-
-    if should_perform {
+    if armed_reload_matches(app, &obs) {
         perform_observed_reload(app, &obs);
         app.render(out)?;
     } else {
-        // Reuse the single observation already computed; do not re-observe.
         apply_check_observation(app, &obs);
         app.render(out)?;
     }
     Ok(())
 }
 
-pub(crate) fn pending_matches_observation(app: &super::App, obs: &ExternalFileObservation) -> bool {
-    let (Some(pending), Some(path)) = (&app.pending_reload, &app.file.path) else {
+pub(crate) fn armed_reload_matches(app: &super::App, obs: &ExternalFileObservation) -> bool {
+    let (Some(armed), Some(path)) = (app.confirmation.armed_reload(), &app.file.path) else {
         return false;
     };
-    pending.path == *path
-        && pending.status == obs.status
-        && pending.snapshot == obs.live_snapshot
-        && matches!(
-            obs.status,
-            ExternalFileStatus::Modified | ExternalFileStatus::Deleted
-        )
+    armed.path == *path
+        && ConflictingChange::observed(obs)
+            .and_then(|change| change.reloadable())
+            .is_some_and(|change| change == armed.change)
 }
+
+#[cfg(test)]
+#[path = "reload/paged_tests.rs"]
+mod paged_tests;
 
 #[cfg(test)]
 mod tests {
@@ -668,7 +629,7 @@ mod tests {
         std::fs::write(&path, "BBBB").unwrap();
         let confirmed = observe_external_file(Some(&path), app.file.disk_snapshot.as_ref());
         apply_check_observation(&mut app, &confirmed);
-        assert!(app.pending_reload.is_some());
+        assert!(app.observed_change.is_some());
 
         std::fs::write(&path, "CCCC").unwrap();
         perform_observed_reload(&mut app, &confirmed);
@@ -676,10 +637,7 @@ mod tests {
         assert_eq!(app.buffer.to_string(), local_buffer);
         assert!(app.file.dirty);
         assert_eq!(app.file.disk_snapshot, base_snapshot);
-        assert!(app
-            .pending_reload
-            .as_ref()
-            .is_some_and(|pending| !pending.is_explicitly_armed));
+        assert!(app.observed_change.is_some() && app.confirmation.armed_reload().is_none());
         assert!(app
             .message
             .as_deref()
@@ -699,10 +657,7 @@ mod tests {
         std::fs::write(&path, "BBBB").unwrap();
         let confirmed = observe_external_file(Some(&path), app.file.disk_snapshot.as_ref());
         apply_check_observation(&mut app, &confirmed);
-        assert!(app
-            .pending_reload
-            .as_ref()
-            .is_some_and(|pending| pending.is_explicitly_armed));
+        assert!(app.confirmation.armed_reload().is_some());
 
         std::fs::write(&path, "CCCC").unwrap();
         perform_observed_reload(&mut app, &confirmed);
@@ -710,10 +665,7 @@ mod tests {
         assert_eq!(app.buffer.to_string(), "base");
         assert!(!app.file.dirty);
         assert_eq!(app.file.disk_snapshot, base_snapshot);
-        assert!(app
-            .pending_reload
-            .as_ref()
-            .is_some_and(|pending| !pending.is_explicitly_armed));
+        assert!(app.observed_change.is_some() && app.confirmation.armed_reload().is_none());
         assert!(super::super::render::status_line(&app)
             .text
             .contains("(not saved)"));

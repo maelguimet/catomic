@@ -26,7 +26,7 @@
 //!   and again before dispatching a ready terminal event.
 //! - Signals are hints only; App policy decides automatic or confirmed reload.
 //! - Unchanged/NoPath from watcher are ignored unless they clear a stale
-//!   pending_reload (see apply_file_watch_signal).
+//!   observed change (see apply_file_watch_signal).
 //! - Bounded snapshot observation (observe_external_file) is the source of truth.
 //! - Manual Ctrl+R and save conflict paths are independent.
 
@@ -99,7 +99,6 @@ impl FileWatcher {
             move |res: notify::Result<Event>| {
                 let signal = map_notify_result_to_signal(&callback_targets, res);
                 if let Some(signal) = signal {
-                    // Best effort send; receiver side handles absence.
                     let _ = tx.send(signal);
                 }
             },
@@ -134,8 +133,6 @@ impl FileWatcher {
     /// Returns None if no event is ready. A disconnected channel means the
     /// worker is gone; it is reported once as `Stopped`, never as "no event".
     pub fn try_recv(&self) -> Option<FileWatchSignal> {
-        // Test injection has precedence for deterministic seams (no OS timing,
-        // covers Error signals without synthesizing notify errors).
         #[cfg(test)]
         {
             if let Ok(mut g) = self.test_inject.lock() {

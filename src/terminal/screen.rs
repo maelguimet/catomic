@@ -140,7 +140,6 @@ impl Screen {
         } else if row >= self.scroll_top.saturating_add(vh) {
             self.scroll_top = row.saturating_add(1).saturating_sub(vh);
         }
-        // else: row already inside [scroll_top, scroll_top + vh), unchanged
     }
 
     /// Ensure `col` (scalar char index) is visible within the content width.
@@ -164,7 +163,6 @@ impl Screen {
         } else if col >= self.scroll_left.saturating_add(width) {
             self.scroll_left = col.saturating_add(1).saturating_sub(width);
         }
-        // else: col already inside [scroll_left, scroll_left + vw), unchanged
     }
 }
 
@@ -174,7 +172,7 @@ mod tests {
 
     #[test]
     fn reveal_row_above_scrolls_up() {
-        let mut s = Screen::new(80, 10); // vh = 8
+        let mut s = Screen::new(80, 10);
         s.scroll_top = 5;
         s.reveal_row(3);
         assert_eq!(s.scroll_top, 3, "row above viewport must scroll up to it");
@@ -182,7 +180,7 @@ mod tests {
 
     #[test]
     fn reveal_row_below_scrolls_down() {
-        let mut s = Screen::new(80, 10); // vh = 8, content rows [scroll_top, scroll_top+7]
+        let mut s = Screen::new(80, 10);
         s.scroll_top = 0;
         s.reveal_row(9);
         assert_eq!(
@@ -193,13 +191,13 @@ mod tests {
 
     #[test]
     fn reveal_row_already_visible_does_not_move() {
-        let mut s = Screen::new(80, 10); // vh=8
-        s.scroll_top = 2; // visible content: 2..9
+        let mut s = Screen::new(80, 10);
+        s.scroll_top = 2;
         s.reveal_row(2);
         assert_eq!(s.scroll_top, 2);
         s.reveal_row(5);
         assert_eq!(s.scroll_top, 2);
-        s.reveal_row(9); // 2 + 8 - 1 == 9 is still inside
+        s.reveal_row(9);
         assert_eq!(s.scroll_top, 2);
     }
 
@@ -210,7 +208,7 @@ mod tests {
         s.reveal_row(100);
         assert_eq!(s.scroll_top, 0);
 
-        let mut s = Screen::new(80, 1); // chrome hidden, vh=1
+        let mut s = Screen::new(80, 1);
         s.scroll_top = 7;
         s.reveal_row(0);
         assert_eq!(s.scroll_top, 0);
@@ -218,7 +216,6 @@ mod tests {
 
     #[test]
     fn reveal_row_one_height_respects_bottom_row_reservation() {
-        // height=2 => visible_height=1; only one content row visible at a time
         let mut s = Screen::new(80, 2);
         s.scroll_top = 0;
         s.reveal_row(0);
@@ -230,17 +227,14 @@ mod tests {
             "scroll to keep row 1 as the single visible content row"
         );
 
-        // larger jump
         let mut s = Screen::new(80, 2);
         s.reveal_row(10);
         assert_eq!(s.scroll_top, 10);
     }
 
-    // Phase 2-e: reveal_col unit tests (scalar columns, visible_width = width)
-
     #[test]
     fn reveal_col_left_of_viewport_scrolls_left() {
-        let mut s = Screen::new(10, 5); // vw=10
+        let mut s = Screen::new(10, 5);
         s.scroll_left = 5;
         s.reveal_col(2);
         assert_eq!(s.scroll_left, 2, "col left of viewport must scroll to it");
@@ -248,9 +242,9 @@ mod tests {
 
     #[test]
     fn reveal_col_right_of_viewport_scrolls_right() {
-        let mut s = Screen::new(5, 5); // vw=5, visible [0,4] if scroll=0
+        let mut s = Screen::new(5, 5);
         s.scroll_left = 0;
-        s.reveal_col(5); // 5 >= 0+5 => scroll = 5+1-5=1
+        s.reveal_col(5);
         assert_eq!(
             s.scroll_left, 1,
             "col right of viewport scrolls so it is last visible"
@@ -259,13 +253,13 @@ mod tests {
 
     #[test]
     fn reveal_col_already_visible_does_not_move() {
-        let mut s = Screen::new(10, 5); // vw=10
-        s.scroll_left = 3; // visible [3,12]
+        let mut s = Screen::new(10, 5);
+        s.scroll_left = 3;
         s.reveal_col(3);
         assert_eq!(s.scroll_left, 3);
         s.reveal_col(7);
         assert_eq!(s.scroll_left, 3);
-        s.reveal_col(12); // 3+10-1=12 still inside
+        s.reveal_col(12);
         assert_eq!(s.scroll_left, 3);
     }
 
@@ -284,7 +278,6 @@ mod tests {
 
     #[test]
     fn reveal_col_one_width_behaves_sanely() {
-        // width=1 => vw=1; only one char visible at a time
         let mut s = Screen::new(1, 5);
         s.scroll_left = 0;
         s.reveal_col(0);
@@ -296,13 +289,10 @@ mod tests {
             "scroll to keep col 1 as the single visible char"
         );
 
-        // larger jump
         let mut s = Screen::new(1, 5);
         s.reveal_col(10);
         assert_eq!(s.scroll_left, 10);
     }
-
-    // Phase 2-f: clamp_scroll invariant tests for zero-size / tiny terminals
 
     #[test]
     fn clamp_scroll_zero_height_forces_scroll_top_zero() {
@@ -326,7 +316,7 @@ mod tests {
 
     #[test]
     fn clamp_scroll_nonzero_dimensions_preserve_offsets() {
-        let mut s = Screen::new(40, 12); // vh=10, vw=40
+        let mut s = Screen::new(40, 12);
         s.scroll_top = 5;
         s.scroll_left = 12;
         s.clamp_scroll();
@@ -336,12 +326,10 @@ mod tests {
 
     #[test]
     fn reveal_row_and_col_still_satisfy_after_repeated_calls() {
-        // After multiple reveals, the cursor should be inside the viewport.
-        let mut s = Screen::new(10, 6); // vh=4, vw=10
+        let mut s = Screen::new(10, 6);
         s.scroll_top = 0;
         s.scroll_left = 0;
 
-        // Simulate a cursor wandering and repeated reveal
         for row in 0..20 {
             s.reveal_row(row);
             let vh = s.visible_height();

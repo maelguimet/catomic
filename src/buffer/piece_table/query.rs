@@ -76,7 +76,6 @@ impl PieceTable {
                 return Ok(true);
             }
 
-            // overlap
             let local_start = start.saturating_sub(acc);
             let local_end = if p_end > end { end - acc } else { p.len };
             if local_end > local_start {
@@ -374,8 +373,6 @@ impl PieceTable {
             let range = self.cells.grapheme_scalar_range_at(at, col, |range| {
                 self.try_slice_to_cow_in_read_operation(range.start, range.end, original)
             })?;
-            // A raw inserted CRLF is one global grapheme, but LF belongs to
-            // the row delimiter rather than either line's scalar columns.
             Ok(range.start..range.end.min(count))
         })
     }

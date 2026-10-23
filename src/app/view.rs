@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use super::focus::{Focus, ReadOnlyView, Surface};
 use crate::buffer::{Buffer, Cursor, PreviewBuffer};
 use crate::config::actions::Action;
 use crate::editor::markdown_preview::MarkdownAnnotations;
@@ -18,11 +19,10 @@ use crate::editor::syntax::{self, SyntaxKind};
 pub(crate) struct ViewOptions {
     pub(crate) whitespace: bool,
     pub(crate) soft_wrap: bool,
-    preview: Option<PreviewDocument>,
 }
 
 #[derive(Debug)]
-struct PreviewDocument {
+pub(crate) struct PreviewDocument {
     buffer: PreviewBuffer,
     annotations: MarkdownAnnotations,
     layout_width: usize,
@@ -38,9 +38,8 @@ pub(crate) fn display_presentation(
     if let Some(presentation) = super::help::presentation(app) {
         return Some(presentation);
     }
-    app.view
-        .preview
-        .as_ref()
+    app.focus
+        .markdown_preview()
         .map(|preview| crate::terminal::render::DocumentPresentation {
             annotations: &preview.annotations,
         })
@@ -104,7 +103,7 @@ pub(crate) fn handle_key(
     out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
-    if !is_preview(app) || is_quit(key) {
+    if is_quit(key) {
         return Ok(false);
     }
     handle_preview_key(app, out, key)?;
@@ -131,9 +130,6 @@ pub(crate) fn dispatch_preview_action(
     out: &mut dyn crate::terminal::TerminalOutput,
     action: Action,
 ) -> io::Result<bool> {
-    if !is_preview(app) {
-        return Ok(false);
-    }
     if matches!(action, Action::MarkdownPreview | Action::PreviewCancel) {
         cancel_preview(app);
         app.message = None;
@@ -141,7 +137,10 @@ pub(crate) fn dispatch_preview_action(
         return Ok(true);
     }
     let height = app.screen.visible_height().max(1);
-    let preview = &mut app.view.preview.as_mut().expect("preview active").buffer;
+    let Some(preview) = app.focus.markdown_preview_mut() else {
+        return Ok(false);
+    };
+    let preview = &mut preview.buffer;
     match action {
         Action::MoveLeft => preview.move_left(),
         Action::MoveRight => preview.move_right(),
@@ -169,68 +168,48 @@ pub(crate) fn handle_paste(
     app: &mut super::App,
     out: &mut dyn crate::terminal::TerminalOutput,
 ) -> io::Result<bool> {
-    if !is_preview(app) {
-        return Ok(false);
-    }
     read_only_message(app);
     app.render(out)?;
     Ok(true)
 }
 
 pub(crate) fn is_preview(app: &super::App) -> bool {
-    app.view.preview.is_some()
+    app.focus.markdown_preview().is_some()
 }
 
 pub(crate) fn display_buffer(app: &super::App) -> &dyn Buffer {
-    if let Some(buffer) = super::mobile::display_buffer(app) {
-        return buffer;
-    }
-    if let Some(buffer) = super::help::display_buffer(app) {
-        return buffer;
-    }
-    if let Some(buffer) = super::recovery::display_buffer(app) {
-        return buffer;
-    }
-    if let Some(buffer) = super::external_command::display_buffer(app) {
-        return buffer;
-    }
-    app.view
-        .preview
-        .as_ref()
-        .map(|preview| &preview.buffer as &dyn Buffer)
-        .unwrap_or(&*app.buffer)
+    let surface = match app.focus.surface() {
+        Surface::MobileOverlay => super::mobile::display_buffer(app),
+        Surface::Help => super::help::display_buffer(app),
+        Surface::RecoveryPreview => super::recovery::display_buffer(app),
+        Surface::CommandPreview => super::external_command::display_buffer(app),
+        Surface::MarkdownPreview => app
+            .focus
+            .markdown_preview()
+            .map(|preview| &preview.buffer as &dyn Buffer),
+        _ => None,
+    };
+    surface.unwrap_or(&*app.buffer)
 }
 
 pub(crate) fn source_is_displayed(app: &super::App) -> bool {
-    // Mouse coordinates are only valid for the source when the rendered trait
-    // object is that exact buffer, not one of the read-only overlay buffers.
     let source: &dyn Buffer = &*app.buffer;
     std::ptr::eq(display_buffer(app), source)
 }
 
 pub(crate) fn display_syntax(app: &super::App) -> SyntaxKind {
-    if super::help::is_viewing(app) {
-        SyntaxKind::MarkdownPreview
-    } else if super::mobile::is_viewing(app)
-        || super::recovery::is_viewing(app)
-        || super::external_command::is_viewing(app)
-    {
-        SyntaxKind::Plain
-    } else if is_preview(app) {
-        SyntaxKind::MarkdownPreview
-    } else {
-        syntax::syntax_for_path(app.file.path.as_deref())
+    match app.focus.surface() {
+        Surface::Help | Surface::MarkdownPreview => SyntaxKind::MarkdownPreview,
+        Surface::MobileOverlay | Surface::RecoveryPreview | Surface::CommandPreview => {
+            SyntaxKind::Plain
+        }
+        _ => syntax::syntax_for_path(app.file.path.as_deref()),
     }
 }
 
 pub(crate) fn display_surface(app: &super::App) -> crate::terminal::render::ContentSurface {
     use crate::terminal::render::ContentSurface;
-    if super::mobile::is_viewing(app)
-        || super::help::is_viewing(app)
-        || super::recovery::is_viewing(app)
-        || super::external_command::is_viewing(app)
-        || is_preview(app)
-    {
+    if matches!(app.focus, Focus::ReadOnly(_) | Focus::Overlay(_)) {
         ContentSurface::Preview
     } else {
         ContentSurface::Normal
@@ -261,16 +240,17 @@ pub(crate) fn content_width(app: &super::App) -> usize {
 }
 
 pub(crate) fn soft_wrap_active(app: &super::App) -> bool {
-    !super::mobile::is_viewing(app)
-        && (super::help::is_viewing(app)
-            || (app.view.soft_wrap
-                && !is_preview(app)
-                && !super::recovery::is_viewing(app)
-                && !super::external_command::is_viewing(app)))
+    match &app.focus {
+        Focus::ReadOnly(ReadOnlyView::Help(_)) => true,
+        Focus::ReadOnly(_) | Focus::Overlay(_) => false,
+        _ => app.view.soft_wrap,
+    }
 }
 
 pub(crate) fn cancel_preview(app: &mut super::App) {
-    if let Some(preview) = app.view.preview.take() {
+    if let Some(Focus::ReadOnly(ReadOnlyView::MarkdownPreview(preview))) =
+        super::focus::take(app, Surface::MarkdownPreview)
+    {
         app.screen.scroll_top = if app.screen.scroll_top == preview.initial_preview_scroll_top {
             preview.source_scroll_top
         } else {
@@ -287,7 +267,7 @@ pub(crate) fn cancel_preview(app: &mut super::App) {
 }
 
 pub(crate) fn relayout_preview(app: &mut super::App) {
-    let Some(preview) = app.view.preview.as_ref() else {
+    let Some(preview) = app.focus.markdown_preview() else {
         return;
     };
     let width = crate::editor::markdown_preview::layout_width(content_width(app));
@@ -328,7 +308,7 @@ pub(crate) fn relayout_preview(app: &mut super::App) {
             .min(buffer.line_count().saturating_sub(1));
             let col = cursor.col.min(buffer.line_char_count(row).unwrap_or(0));
             buffer.set_cursor(Cursor { row, col });
-            if let Some(preview) = app.view.preview.as_mut() {
+            if let Some(preview) = app.focus.markdown_preview_mut() {
                 preview.buffer = buffer;
                 preview.annotations = annotations;
                 preview.layout_width = width;
@@ -348,6 +328,8 @@ fn toggle_preview(
     if is_preview(app) {
         cancel_preview(app);
         app.message = None;
+    } else if !app.focus.is_editor() {
+        return Ok(false);
     } else {
         let width = crate::editor::markdown_preview::layout_width(content_width(app));
         match crate::editor::markdown_preview::render_with_width(&app.buffer.to_string(), width) {
@@ -366,15 +348,16 @@ fn toggle_preview(
                     row: cursor_row,
                     col: 0,
                 });
-                app.view.preview = Some(PreviewDocument {
-                    buffer,
-                    annotations,
-                    layout_width: width,
-                    source_scroll_top,
-                    initial_preview_scroll_top,
-                    source_scroll_left: app.screen.scroll_left,
-                    source_wrap_col: app.screen.wrap_col,
-                });
+                app.focus =
+                    Focus::ReadOnly(ReadOnlyView::MarkdownPreview(Box::new(PreviewDocument {
+                        buffer,
+                        annotations,
+                        layout_width: width,
+                        source_scroll_top,
+                        initial_preview_scroll_top,
+                        source_scroll_left: app.screen.scroll_left,
+                        source_wrap_col: app.screen.wrap_col,
+                    })));
                 app.screen.scroll_top = initial_preview_scroll_top;
                 app.screen.scroll_left = 0;
                 app.screen.wrap_col = 0;
@@ -478,7 +461,10 @@ fn handle_preview_key(
         return app.render(out);
     }
     let height = app.screen.visible_height().max(1);
-    let preview = &mut app.view.preview.as_mut().expect("preview active").buffer;
+    let Some(preview) = app.focus.markdown_preview_mut() else {
+        return app.render(out);
+    };
+    let preview = &mut preview.buffer;
     match key.code {
         KeyCode::Left => preview.move_left(),
         KeyCode::Right => preview.move_right(),
@@ -681,7 +667,7 @@ mod tests {
         let mut out = Vec::new();
 
         press(&mut app, &mut out, KeyCode::F(6));
-        let preview_text = app.view.preview.as_ref().unwrap().buffer.to_string();
+        let preview_text = app.focus.markdown_preview().unwrap().buffer.to_string();
         out.clear();
         press(&mut app, &mut out, KeyCode::End);
 
@@ -804,7 +790,7 @@ mod tests {
 
         app.handle_resize(16, 10, &mut out).unwrap();
 
-        let preview = app.view.preview.as_ref().unwrap().buffer.to_string();
+        let preview = app.focus.markdown_preview().unwrap().buffer.to_string();
         assert!(preview
             .lines()
             .all(|line| crate::editor::text_layout::cell_width_from(line, 0) <= 16));

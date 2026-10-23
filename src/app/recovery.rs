@@ -11,6 +11,7 @@ use crate::file::recovery::{CatnapResult, CatnapTask, RecoveryCandidate};
 mod preview;
 pub(crate) use preview::{
     close, dispatch_action, display_buffer, handle_key, handle_paste, is_viewing, start_preview,
+    RecoveryPreview,
 };
 
 pub(crate) struct RecoveryState {
@@ -18,7 +19,6 @@ pub(crate) struct RecoveryState {
     last_written_history: Option<u64>,
     task: Option<CatnapTask>,
     offered_candidate: Option<RecoveryCandidate>,
-    preview: Option<preview::RecoveryPreview>,
 }
 
 impl Default for RecoveryState {
@@ -28,7 +28,6 @@ impl Default for RecoveryState {
             last_written_history: None,
             task: None,
             offered_candidate: None,
-            preview: None,
         }
     }
 }
@@ -99,7 +98,7 @@ fn autosave_is_due(app: &super::App) -> bool {
         && app.file.dirty
         && app.file.path.is_some()
         && app.recovery.task.is_none()
-        && app.recovery.preview.is_none()
+        && !is_viewing(app)
         && app.recovery.offered_candidate.is_none()
         && app.recovery.last_written_history != Some(app.buffer.content_revision())
         && app.recovery.last_attempt.elapsed() >= Duration::from_secs(config.interval_secs)

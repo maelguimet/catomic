@@ -151,8 +151,8 @@ fn preview_surfaces_keep_editor_actions_and_paste_away_from_the_source() {
         assert!(app.file.dirty);
         assert!(app.typing_mode.is_overwrite());
         assert!(!super::super::overwrite::uses_overwrite_cursor(&app));
-        assert!(!super::super::completion::is_active(&app));
-        assert!(!super::super::command_prompt::is_active(&app));
+        assert!(app.focus.picker().is_none());
+        assert!(app.focus.command().is_none());
         assert_eq!(
             super::super::view::display_buffer(&app).to_string(),
             preview_text
@@ -179,7 +179,7 @@ fn action_defaults_can_be_unbound_without_falling_through_to_hardcoded_keys() {
 
     assert!(app.file.path.is_none());
     assert!(app.file.dirty);
-    assert!(!super::super::command_prompt::is_active(&app));
+    assert!(app.focus.command().is_none());
 }
 
 #[test]
@@ -194,27 +194,28 @@ fn prompt_local_action_remap_reaches_the_existing_cancel_path() {
     app.handle_key_with(&mut out, make_key(KeyCode::Char('x'), KeyModifiers::ALT))
         .unwrap();
 
-    assert!(!super::super::command_prompt::is_active(&app));
+    assert!(app.focus.command().is_none());
     assert!(app.message.is_none());
 }
 
 #[test]
-fn active_search_precedes_an_also_active_command_prompt() {
+fn opening_search_replaces_a_focused_command_prompt() {
     let mut app = App::new(None).unwrap();
     let mut out = Vec::new();
     super::super::command_prompt::open_command_prompt(&mut app, &mut out).unwrap();
     super::super::search::open_prompt(&mut app, &mut out).unwrap();
+    assert!(app.focus.command().is_none());
 
     app.handle_key_with(&mut out, make_key(KeyCode::Char('x'), KeyModifiers::NONE))
         .unwrap();
-    assert!(super::super::search::is_active(&app));
+    assert!(app.focus.search().is_some());
     let search_message = app.message.as_deref().unwrap_or("");
     assert!(search_message.contains('x'), "{search_message}");
-    assert!(!search_message.starts_with("Command:"));
 
     app.handle_key_with(&mut out, make_key(KeyCode::Esc, KeyModifiers::NONE))
         .unwrap();
     app.handle_key_with(&mut out, make_key(KeyCode::Char('y'), KeyModifiers::NONE))
         .unwrap();
-    assert_eq!(app.message.as_deref(), Some("Command: y"));
+    assert!(app.focus.is_editor());
+    assert_eq!(app.buffer.to_string(), "y");
 }

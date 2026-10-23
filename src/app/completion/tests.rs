@@ -13,6 +13,13 @@ fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
     KeyEvent::new(code, modifiers)
 }
 
+fn emoji(app: &App) -> &super::ActiveEmojiPicker {
+    match app.focus.picker() {
+        Some(super::super::focus::Picker::Emoji(active)) => active,
+        _ => panic!("emoji picker is focused"),
+    }
+}
+
 fn completion_app() -> App {
     let mut app = App::new(None).unwrap();
     app.buffer = Box::new(PieceTable::from_text("alpha alpine alphabet\nal"));
@@ -88,7 +95,7 @@ fn selected_tab_indents_lines_as_one_undoable_edit() {
         .unwrap();
 
     assert_eq!(app.buffer.to_string(), "    one\n    two");
-    assert!(!super::is_active(&app));
+    assert!(app.focus.picker().is_none());
     assert!(app.message.is_none());
     app.handle_key_with(&mut out, key(KeyCode::Char('z'), KeyModifiers::CONTROL))
         .unwrap();
@@ -109,7 +116,7 @@ fn selected_ctrl_space_keeps_the_selection_and_requests_dismissal() {
 
     assert_eq!(app.buffer.to_string(), original);
     assert_eq!(app.selection.active().unwrap().ordered(), selection);
-    assert!(!super::is_active(&app));
+    assert!(app.focus.picker().is_none());
     assert_eq!(
         app.message.as_deref(),
         Some("Dismiss the selection before completing a word.")
@@ -129,7 +136,7 @@ fn selected_shift_tab_unindents_lines_as_one_undoable_edit() {
         .unwrap();
 
     assert_eq!(app.buffer.to_string(), "one\ntwo");
-    assert!(!super::is_active(&app));
+    assert!(app.focus.picker().is_none());
     app.handle_key_with(&mut out, key(KeyCode::Char('z'), KeyModifiers::CONTROL))
         .unwrap();
     assert_eq!(app.buffer.to_string(), original);
@@ -292,18 +299,15 @@ fn emoji_picker_updates_with_typing_and_backspace() {
     let mut app = App::new(None).unwrap();
     let mut out = Vec::new();
     type_text(&mut app, &mut out, ":hu");
-    assert_eq!(app.completion.emoji.as_ref().unwrap().query, "hu");
+    assert_eq!(emoji(&app).query, "hu");
 
     type_text(&mut app, &mut out, "n");
-    assert_eq!(app.completion.emoji.as_ref().unwrap().query, "hun");
-    assert_eq!(
-        app.completion.emoji.as_ref().unwrap().candidates[0].glyph,
-        "💯"
-    );
+    assert_eq!(emoji(&app).query, "hun");
+    assert_eq!(emoji(&app).candidates[0].glyph, "💯");
 
     app.handle_key_with(&mut out, key(KeyCode::Backspace, KeyModifiers::NONE))
         .unwrap();
-    assert_eq!(app.completion.emoji.as_ref().unwrap().query, "hu");
+    assert_eq!(emoji(&app).query, "hu");
 }
 
 #[test]
@@ -311,7 +315,7 @@ fn emoji_navigation_changes_selection_before_acceptance() {
     let mut app = App::new(None).unwrap();
     let mut out = Vec::new();
     type_text(&mut app, &mut out, ":face");
-    let active = app.completion.emoji.as_ref().unwrap();
+    let active = emoji(&app);
     assert!(active.candidates.len() > 1);
     let second = active.candidates[1].glyph;
 
@@ -333,7 +337,7 @@ fn escape_dismisses_emoji_picker_without_changing_query() {
         .unwrap();
 
     assert_eq!(app.buffer.to_string(), ":hun");
-    assert!(!super::is_active(&app));
+    assert!(app.focus.picker().is_none());
 }
 
 #[test]
@@ -347,7 +351,7 @@ fn cursor_movement_dismisses_emoji_picker_without_editing() {
 
     assert_eq!(app.buffer.to_string(), ":hun");
     assert_eq!(app.buffer.cursor(), Cursor { row: 0, col: 3 });
-    assert!(!super::is_active(&app));
+    assert!(app.focus.picker().is_none());
 }
 
 #[test]
@@ -355,7 +359,7 @@ fn colon_inside_a_token_keeps_normal_enter_behavior() {
     let mut app = App::new(None).unwrap();
     let mut out = Vec::new();
     type_text(&mut app, &mut out, "word:hun");
-    assert!(!super::is_active(&app));
+    assert!(app.focus.picker().is_none());
 
     app.handle_key_with(&mut out, key(KeyCode::Enter, KeyModifiers::NONE))
         .unwrap();

@@ -285,8 +285,6 @@ fn atomic_write_can_stage_different_targets_on_the_same_thread() {
     cleanup(&second);
 }
 
-// Phase 2-l onward: FileSnapshot / ExternalFileStatus tests.
-
 #[test]
 fn capture_snapshot_existing_captures_len_and_mtime_state() {
     let p = temp_path("snap_existing.txt");
@@ -301,7 +299,6 @@ fn capture_snapshot_existing_captures_len_and_mtime_state() {
             content_identity,
         } => {
             assert_eq!(len, 12, "len must match written bytes");
-            // mtime may be None on some FS; just ensure we did not panic and type is present
             let _ = mtime;
             #[cfg(unix)]
             assert!(change_id.is_some(), "Unix snapshots must include identity");
@@ -318,7 +315,6 @@ fn capture_snapshot_existing_captures_len_and_mtime_state() {
 #[test]
 fn capture_snapshot_missing_returns_absent_not_error() {
     let p = temp_path("snap_missing_definitely_not_here_12345.txt");
-    // ensure absent
     let _ = fs::remove_file(&p);
     let snap = capture_file_snapshot(&p).expect("capture must not error on missing");
     assert_eq!(
@@ -328,12 +324,8 @@ fn capture_snapshot_missing_returns_absent_not_error() {
     );
 }
 
-// Phase 2-m: harden Absent vs error semantics.
-// capture_file_snapshot must return Absent ONLY for actual missing (NotFound).
-// Other metadata errors must surface as Err, not be turned into Absent.
 #[test]
 fn capture_file_snapshot_returns_absent_only_for_not_found() {
-    // Existing file: must be Present, never Absent.
     let p = temp_path("absent_only_existing.txt");
     cleanup(&p);
     fs::write(&p, "data").unwrap();
@@ -343,20 +335,16 @@ fn capture_file_snapshot_returns_absent_only_for_not_found() {
         "existing must be Present, not Absent"
     );
 
-    // Missing: explicit Absent.
     let _ = fs::remove_file(&p);
     let snap = capture_file_snapshot(&p).expect("capture missing");
     assert_eq!(snap, FileSnapshot::Absent, "missing must be Absent");
 
-    // Re-create and confirm again not Absent.
     fs::write(&p, "again").unwrap();
     let snap = capture_file_snapshot(&p).expect("capture re-existing");
     assert!(matches!(snap, FileSnapshot::Present { .. }));
     cleanup(&p);
 }
 
-// Phase 2-m: compare_to_snapshot on non-NotFound metadata error must yield Unknown(kind),
-// not Deleted/Modified/Unchanged. Linux std-only: stat file-as-dir via join("child").
 #[test]
 fn compare_to_snapshot_non_notfound_meta_error_is_unknown() {
     use std::io;
@@ -365,7 +353,6 @@ fn compare_to_snapshot_non_notfound_meta_error_is_unknown() {
     cleanup(&reg);
     fs::write(&reg, "x").unwrap();
 
-    // regular_file.join("child") reliably produces NotADirectory (or similar non-NotFound) on Linux.
     let bad = reg.join("child");
     let snap = FileSnapshot::Present {
         len: 1,
@@ -391,26 +378,19 @@ fn compare_to_snapshot_non_notfound_meta_error_is_unknown() {
     cleanup(&reg);
 }
 
-// Phase 2-p: observe_external_file lower-level tests.
-// Verify live snapshot distinguishes different Modified states; covers Deleted/Unknown.
-
 #[test]
 fn observe_external_modified_live_snapshot_identity() {
-    // Same baseline; external change between two observes must produce different live snapshots.
     let p = temp_path("obs_mod_identity.txt");
     cleanup(&p);
     fs::write(&p, "BASE").unwrap();
     let base_snap = capture_file_snapshot(&p).unwrap();
 
-    // First observation (no drift yet): should be Unchanged, live == base
     let obs1 = observe_external_file(Some(&p), Some(&base_snap));
     assert_eq!(obs1.status, ExternalFileStatus::Unchanged);
     assert_eq!(obs1.live_snapshot, Some(base_snap.clone()));
 
-    // External change (append)
     fs::write(&p, "BASEEXT").unwrap();
 
-    // Second observation against same baseline: Modified, live differs from base
     let obs2 = observe_external_file(Some(&p), Some(&base_snap));
     assert_eq!(obs2.status, ExternalFileStatus::Modified);
     assert!(obs2.live_snapshot.is_some());
@@ -420,7 +400,6 @@ fn observe_external_modified_live_snapshot_identity() {
         "live snapshot after external change must differ"
     );
 
-    // Third observation (no further change): same live as obs2
     let obs3 = observe_external_file(Some(&p), Some(&base_snap));
     assert_eq!(obs3.status, ExternalFileStatus::Modified);
     assert_eq!(obs3.live_snapshot, Some(live2));
@@ -469,8 +448,6 @@ fn observe_external_deleted_yields_deleted_and_absent() {
 
     let _ = fs::remove_file(&p);
 
-    // NotFound -> Ok(Absent) inside capture; observe must report Deleted + Some(Absent),
-    // *not* Unknown. (Hard non-NotFound errors are the ones that become Unknown + None.)
     let obs = observe_external_file(Some(&p), Some(&base));
     assert_eq!(obs.status, ExternalFileStatus::Deleted);
     assert_eq!(obs.live_snapshot, Some(FileSnapshot::Absent));
@@ -500,14 +477,9 @@ fn observe_external_unknown_on_non_notfound_meta_error() {
         }
         other => panic!("expected Unknown, got {:?}", other),
     }
-    // Hard error (non-NotFound) must have live_snapshot None.
-    // NotFound is turned into Ok(Absent) by capture_file_snapshot itself.
     assert!(obs.live_snapshot.is_none());
     cleanup(&reg);
 }
-
-// Phase 2-u: single-capture observe + pure helper coverage at API level.
-// Ensure status derives from the *captured* live snapshot + baseline (no double capture smell).
 
 #[test]
 fn observe_single_capture_derives_status_from_captured_live() {
@@ -516,19 +488,16 @@ fn observe_single_capture_derives_status_from_captured_live() {
     fs::write(&p, "V1").unwrap();
     let base = capture_file_snapshot(&p).unwrap();
 
-    // Same state: Unchanged, live == base
     let obs1 = observe_external_file(Some(&p), Some(&base));
     assert_eq!(obs1.status, ExternalFileStatus::Unchanged);
     assert_eq!(obs1.live_snapshot, Some(base.clone()));
 
-    // External change: Modified with a *different* live snapshot
     fs::write(&p, "V1EXT").unwrap();
     let obs2 = observe_external_file(Some(&p), Some(&base));
     assert_eq!(obs2.status, ExternalFileStatus::Modified);
     let live2 = obs2.live_snapshot.expect("live must be present");
     assert_ne!(live2, base, "live after change must differ from baseline");
 
-    // Re-observe same changed state yields same live snapshot object (equality)
     let obs3 = observe_external_file(Some(&p), Some(&base));
     assert_eq!(obs3.status, ExternalFileStatus::Modified);
     assert_eq!(obs3.live_snapshot, Some(live2.clone()));

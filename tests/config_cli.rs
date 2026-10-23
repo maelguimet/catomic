@@ -41,7 +41,6 @@ impl Fixture {
 
         let directory = self.root.join("catomic");
         fs::create_dir_all(&directory)?;
-        // Match the production write policy independently of the host umask.
         fs::set_permissions(directory, fs::Permissions::from_mode(0o700))
     }
 
@@ -87,8 +86,6 @@ fn run_with_input(
 fn write_input_and_wait(mut child: Child, input: &[u8]) -> Result<Output, Box<dyn Error>> {
     let written = child.stdin.take().expect("piped stdin").write_all(input);
     let output = child.wait_with_output()?;
-    // Validation may reject the request before reading confirmation. Preserve
-    // that exit status and diagnostic instead of failing on its closed pipe.
     if let Err(error) = written {
         if error.kind() != io::ErrorKind::BrokenPipe {
             return Err(error.into());
@@ -106,8 +103,6 @@ fn input_to_exited_child_preserves_status_and_stderr() -> TestResult {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
-    // Keep the writer open while waiting so the next write deterministically
-    // encounters a closed reader, regardless of process scheduling.
     let stdin = child.stdin.take().expect("piped stdin");
     child.wait()?;
     child.stdin = Some(stdin);

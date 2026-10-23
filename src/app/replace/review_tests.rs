@@ -41,7 +41,7 @@ fn accepted_replacement_leaves_joined_graphemes_behind_the_cursor() {
             start(&mut app, &mut out, "x", replacement);
             key(&mut app, &mut out, KeyCode::Char(action));
             poll(&mut app, &mut out).unwrap();
-            assert!(!is_active(&app));
+            assert!(app.focus.replace().is_none());
             assert_eq!(app.buffer.to_string(), joined);
             assert_eq!(
                 app.buffer.cursor(),
@@ -97,7 +97,7 @@ fn review_waits_for_explicit_accept_then_skips_and_cancels_without_retyping() {
     assert_eq!(app.buffer.to_string(), "cat fox cat");
     assert_eq!(app.buffer.cursor(), Cursor { row: 0, col: 8 });
     key(&mut app, &mut out, KeyCode::Esc);
-    assert!(!is_active(&app));
+    assert!(app.focus.replace().is_none());
     assert!(app
         .message
         .as_deref()
@@ -120,7 +120,7 @@ fn review_wraps_once_and_never_revisits_replacement_containing_the_query() {
     key(&mut app, &mut out, KeyCode::Char('n'));
     assert_eq!(app.buffer.cursor(), Cursor { row: 0, col: 3 });
     key(&mut app, &mut out, KeyCode::Char('a'));
-    assert!(!is_active(&app));
+    assert!(app.focus.replace().is_none());
     assert_eq!(app.buffer.to_string(), "aa aaaa aaaa");
     assert!(app
         .message
@@ -143,7 +143,7 @@ fn skip_preserves_overlapping_candidates_and_accept_advances_past_inserted_text(
     assert_eq!(app.buffer.cursor(), Cursor { row: 0, col: 1 });
     key(&mut app, &mut out, KeyCode::Char('y'));
     assert_eq!(app.buffer.to_string(), "axa");
-    assert!(!is_active(&app));
+    assert!(app.focus.replace().is_none());
 }
 
 #[test]
@@ -160,7 +160,7 @@ fn review_paste_and_unrelated_typing_never_edit_the_source() {
     assert_eq!(app.buffer.to_string(), "👩\u{200d}💻\n a\u{301} 猫");
     assert_eq!(app.buffer.cursor(), Cursor { row: 1, col: 4 });
     key(&mut app, &mut out, KeyCode::Esc);
-    assert!(!is_active(&app));
+    assert!(app.focus.replace().is_none());
 }
 
 #[test]
@@ -179,7 +179,7 @@ fn remaining_all_is_bounded_cancellable_and_each_bulk_group_undoes_together() {
     );
     assert!(is_running(&app));
     key(&mut app, &mut out, KeyCode::Esc);
-    assert!(!is_active(&app));
+    assert!(app.focus.replace().is_none());
     poll(&mut app, &mut out).unwrap();
     assert_eq!(app.buffer.to_string().matches("dog").count(), accepted);
     app.buffer.undo();
@@ -198,7 +198,7 @@ fn large_absent_search_yields_and_can_cancel_before_scanning_the_whole_buffer() 
     assert!(active_match(&app).is_none());
     key(&mut app, &mut out, KeyCode::Esc);
     poll(&mut app, &mut out).unwrap();
-    assert!(!is_active(&app));
+    assert!(app.focus.replace().is_none());
     assert_eq!(app.buffer.to_string(), original);
     assert!(!app.file.dirty);
 }
@@ -213,7 +213,7 @@ fn changed_source_cannot_apply_a_stale_candidate() {
         .unwrap();
     assert!(active_match(&app).is_none());
     key(&mut app, &mut out, KeyCode::Char('y'));
-    assert!(!is_active(&app));
+    assert!(app.focus.replace().is_none());
     assert_eq!(app.buffer.to_string(), "NEW cat");
     assert!(app
         .message
@@ -247,7 +247,7 @@ fn review_actions_can_be_remapped_and_unbound_without_typing_fallthrough() {
         key(&mut app, &mut out, code);
     }
     assert_eq!(app.buffer.to_string(), "cat cat");
-    assert!(is_active(&app));
+    assert!(app.focus.replace().is_some());
     key(&mut app, &mut out, KeyCode::Char('s'));
     assert_eq!(app.buffer.cursor(), Cursor { row: 0, col: 4 });
     app.handle_key_with(
@@ -256,7 +256,7 @@ fn review_actions_can_be_remapped_and_unbound_without_typing_fallthrough() {
     )
     .unwrap();
     assert_eq!(app.buffer.to_string(), "cat dog");
-    assert!(!is_active(&app));
+    assert!(app.focus.replace().is_none());
     start(&mut app, &mut out, "dog", "fox");
     assert!(app
         .message
@@ -269,7 +269,7 @@ fn review_actions_can_be_remapped_and_unbound_without_typing_fallthrough() {
     )
     .unwrap();
     assert_eq!(app.buffer.to_string(), "cat dog");
-    assert!(!is_active(&app));
+    assert!(app.focus.replace().is_none());
 }
 
 #[test]
@@ -279,7 +279,7 @@ fn identical_replacement_terminates_without_dirtying_or_recording_empty_undo() {
     let history = app.buffer.edit_history_position();
     start(&mut app, &mut out, "aa", "aa");
     key(&mut app, &mut out, KeyCode::Char('a'));
-    assert!(!is_active(&app));
+    assert!(app.focus.replace().is_none());
     assert_eq!(app.buffer.edit_history_position(), history);
     assert!(!app.file.dirty);
 }
@@ -295,11 +295,11 @@ fn empty_replacement_at_eof_and_initial_origin_inside_match_complete_once() {
         let mut out = Vec::new();
         start(&mut app, &mut out, query, "");
         key(&mut app, &mut out, KeyCode::Char('a'));
-        assert!(!is_active(&app));
+        assert!(app.focus.replace().is_none());
         assert_eq!(app.buffer.to_string(), expected);
         assert!(active_match(&app).is_none());
-        assert!(!crate::app::search::is_active(&app));
-        assert!(!crate::app::completion::is_active(&app));
+        assert!(app.focus.search().is_none());
+        assert!(app.focus.picker().is_none());
     }
 }
 
@@ -312,7 +312,7 @@ fn paged_replacement_is_refused_without_mutating_the_visible_page() {
     app.buffer = Box::new(crate::buffer::PagedFileBuffer::open(&path, 1).unwrap());
     let mut out = Vec::new();
     start(&mut app, &mut out, "cat", "dog");
-    assert!(!is_active(&app));
+    assert!(app.focus.replace().is_none());
     assert!(app
         .message
         .as_deref()
@@ -330,7 +330,7 @@ fn source_clicks_and_prior_search_completion_do_not_disrupt_review() {
     crate::app::search::open_prompt(&mut app, &mut out).unwrap();
     crate::app::search::handle_paste(&mut app, &mut out, "cat").unwrap();
     open_prompt(&mut app, &mut out, false).unwrap();
-    assert!(!crate::app::search::is_active(&app));
+    assert!(app.focus.search().is_none());
     crate::app::input::handle_paste(&mut app, &mut out, "cat").unwrap();
     key(&mut app, &mut out, KeyCode::Enter);
     crate::app::input::handle_paste(&mut app, &mut out, "dog").unwrap();
@@ -350,7 +350,7 @@ fn source_clicks_and_prior_search_completion_do_not_disrupt_review() {
     assert!(app.selection.active().is_none());
     key(&mut app, &mut out, KeyCode::Esc);
     assert!(active_match(&app).is_none());
-    assert!(!crate::app::completion::is_active(&app));
+    assert!(app.focus.picker().is_none());
 }
 
 #[test]
@@ -363,7 +363,7 @@ fn wrapping_does_not_offer_a_match_that_overlaps_an_accepted_insertion() {
         key(&mut app, &mut out, KeyCode::Char('y'));
         assert_eq!(app.buffer.to_string(), expected);
         assert!(
-            !is_active(&app),
+            app.focus.replace().is_none(),
             "wrapped matches must not include inserted text"
         );
         assert!(app.message.as_deref().unwrap_or("").contains("1 replaced"));
@@ -382,7 +382,7 @@ fn all_after_accept_wraps_only_through_unhandled_nonoverlapping_text() {
         for _ in 0..3 {
             poll(&mut app, &mut out).unwrap();
         }
-        assert!(!is_active(&app));
+        assert!(app.focus.replace().is_none());
         assert_eq!(app.buffer.to_string(), expected);
         assert!(app.message.as_deref().unwrap_or("").contains("3 replaced"));
     }
@@ -400,13 +400,13 @@ fn dirty_quit_confirmation_pauses_bulk_until_explicit_review_action() {
         KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL),
     )
     .unwrap();
-    assert!(app.pending_quit_confirm);
+    assert!(app.confirmation.is_quit());
     assert!(!is_running(&app));
     poll(&mut app, &mut out).unwrap();
     assert_eq!(app.buffer.to_string().matches("dog").count(), accepted);
     key(&mut app, &mut out, KeyCode::Esc);
-    assert!(!app.pending_quit_confirm);
-    assert!(!is_active(&app));
+    assert!(!app.confirmation.is_quit());
+    assert!(app.focus.replace().is_none());
     assert_eq!(app.buffer.to_string().matches("dog").count(), accepted);
 }
 

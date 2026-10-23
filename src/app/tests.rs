@@ -7,8 +7,10 @@
 //! Invariants: loaded only under #[cfg(test)] via `mod tests;` in app.rs;
 //!              uses `use super::*;` to access private App methods (e.g. handle_key_with).
 
+mod confirmation;
 mod editing;
 mod file_state;
+mod focus;
 mod grapheme_edits;
 mod keybindings;
 mod overwrite;
@@ -18,6 +20,3 @@ mod viewport;
 use super::*;
 
 pub(super) use editing::make_key;
-
-// Phase 2-b quit guard + message tests (via simulated keys; no real terminal)
-// (actual tests moved to file_state.rs and other submodules for size)

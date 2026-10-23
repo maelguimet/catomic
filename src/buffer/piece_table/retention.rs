@@ -84,15 +84,10 @@ impl PieceTable {
         let reclaimable = self.add.len().saturating_sub(reachable_bytes);
         self.undo_stack.reset_discarded_add_bytes();
 
-        // Avoid copying a large live add store for a marginal return. The
-        // minimum threshold also prevents ordinary typing from rebuilding.
         if reclaimable < minimum_reclaim || reclaimable < self.add.len().saturating_add(3) / 4 {
             return 0;
         }
 
-        // Leave a small fraction of the reclamation threshold as append
-        // headroom so the first post-compaction edit does not immediately
-        // double a large live allocation.
         let append_headroom = if reachable_bytes == 0 {
             0
         } else {

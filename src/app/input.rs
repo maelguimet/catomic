@@ -10,6 +10,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 
 use crate::config::actions::{Action, Scope};
 
+use super::confirmation::Confirmation;
 use super::file_state::{note_content_change, refresh_dirty};
 use super::{
     buffers, command_prompt, completion, help, lint, mobile, navigation, overwrite, paging, reload,
@@ -83,19 +84,13 @@ pub(super) fn record_content_edit(app: &mut super::App, message: Option<String>)
     lint::invalidate(app);
     app.selection.clear();
     refresh_dirty(&mut app.file, &*app.buffer);
-    // An edit can join the text on either side of its scalar cursor into one
-    // extended grapheme (for example, regional indicators or a ZWJ sequence).
-    // Keep the post-edit position on the forward boundary so the next movement
-    // or deletion handles that new grapheme as one unit. This needs a buffer
-    // read, so it follows the committed-edit bookkeeping above.
+    // An edit can join the text around the cursor into one extended grapheme
+    // (regional indicators, ZWJ); snap forward so the next motion treats it as one.
     navigation::snap_current_grapheme_forward(app)?;
     completion::after_content_edit(app)?;
     app.external_changes
         .reconcile(app.buffer.content_revision());
-    command_prompt::clear_config_discard_confirmation(app);
-    app.pending_quit_confirm = false;
-    app.pending_save_conflict = None;
-    reload::cancel_confirmation(app);
+    app.confirmation = Confirmation::None;
     app.message = message;
     app.message_role = crate::terminal::render::StatusRole::Info;
     app.reveal_cursor();
@@ -174,10 +169,6 @@ fn handle_raw_key(
 }
 
 pub(super) fn prepare_editor_action(app: &mut super::App, action: Option<Action>) {
-    // Any explicit editor action is a semantic boundary for scalar typing or
-    // deletion runs except the Backspace/Delete actions that can extend the
-    // current deletion run. This also covers touch/mouse actions, which call
-    // this helper with no keyboard action before changing selection state.
     if !matches!(action, Some(Action::DeleteBackward | Action::DeleteForward)) {
         app.buffer.finish_undo_group();
     }
@@ -186,28 +177,22 @@ pub(super) fn prepare_editor_action(app: &mut super::App, action: Option<Action>
         || (matches!(action, Some(Action::PromptSubmit))
             && (command_prompt::is_save_as_prompt(app)
                 || command_prompt::submits_pending_command_save_as(app)));
-    let reopens_pending_command_save_as = matches!(action, Some(Action::CommandPrompt))
-        && app
-            .pending_save_conflict
-            .as_ref()
-            .is_some_and(|pending| pending.is_command_prompt_save_as);
     let is_reload = matches!(action, Some(Action::Reload));
-    let keeps_confirmation = (is_quit
-        && (app.pending_quit_confirm || command_prompt::config_discard_confirmation_pending(app)))
-        || (is_save && app.pending_save_conflict.is_some())
-        || reopens_pending_command_save_as
-        || (is_reload && app.pending_reload.is_some());
-    if !is_quit {
-        app.pending_quit_confirm = false;
-        command_prompt::clear_config_discard_confirmation(app);
-    }
-    if !is_save && !reopens_pending_command_save_as {
-        app.pending_save_conflict = None;
-    }
-    if !is_reload {
-        reload::cancel_confirmation(app);
-    }
+    let keeps_confirmation = match &app.confirmation {
+        Confirmation::None => false,
+        Confirmation::Quit | Confirmation::DiscardConfig => is_quit,
+        Confirmation::SaveConflict(pending) => {
+            is_save
+                || (pending.is_command_prompt_save_as
+                    && matches!(action, Some(Action::CommandPrompt)))
+        }
+        Confirmation::Reload(_) => is_reload,
+    };
     if !keeps_confirmation {
+        app.confirmation = Confirmation::None;
+    }
+    let keeps_message = keeps_confirmation || (is_reload && app.observed_change.is_some());
+    if !keeps_message {
         app.message = None;
         app.message_role = crate::terminal::render::StatusRole::Info;
     }
@@ -235,8 +220,6 @@ pub(super) fn dispatch_action(
     if matches!(scope, Scope::Prompt | Scope::Search)
         && (super::prompt_input::is_edit_action(action) || action == Action::PromptCompletePath)
     {
-        // Prompt navigation/editing must not finish source undo groups or touch
-        // its selection. It still disarms a previously displayed quit warning.
         prepare_prompt_edit(app);
         return surfaces::dispatch_action(app, out, scope, action);
     }
@@ -352,31 +335,17 @@ mod tests {
 
     #[test]
     fn unrelated_global_action_cancels_editor_confirmations() {
-        let mut app = super::super::App::new(None).unwrap();
-        let mut out = Vec::new();
-        app.pending_quit_confirm = true;
-        app.pending_save_conflict = Some(super::super::save::PendingSaveConflict {
-            path: "save.txt".into(),
-            status: crate::file::io::ExternalFileStatus::Modified,
-            snapshot: None,
-            is_command_prompt_save_as: false,
-        });
-        app.pending_reload = Some(super::super::reload::PendingReload {
-            path: "reload.txt".into(),
-            status: crate::file::io::ExternalFileStatus::Modified,
-            snapshot: None,
-            is_explicitly_armed: true,
-        });
+        use super::super::confirmation::fixtures::{assert_disarmed, editor_confirmations};
+        for (name, arm) in editor_confirmations() {
+            let mut app = super::super::App::new(None).unwrap();
+            let mut out = Vec::new();
+            arm(&mut app);
 
-        dispatch_action(&mut app, &mut out, Action::Help).unwrap();
+            dispatch_action(&mut app, &mut out, Action::Help).unwrap();
 
-        assert!(!app.pending_quit_confirm);
-        assert!(app.pending_save_conflict.is_none());
-        assert!(app
-            .pending_reload
-            .as_ref()
-            .is_some_and(|pending| !pending.is_explicitly_armed));
-        assert!(super::super::help::is_viewing(&app));
+            assert_disarmed(&app, name);
+            assert!(super::super::help::is_viewing(&app));
+        }
     }
 
     #[test]
@@ -435,11 +404,8 @@ fn paste(
 }
 
 fn prepare_prompt_edit(app: &mut super::App) {
-    app.pending_quit_confirm = false;
-    command_prompt::clear_config_discard_confirmation(app);
-    // Save submission checks the exact path and disk snapshot. Retain that
-    // confirmation while the user re-enters/edits the pending destination.
-    reload::cancel_confirmation(app);
+    app.confirmation.clear_quit_and_discard();
+    app.confirmation.disarm_reload();
 }
 
 pub(super) fn handle_quit(
@@ -478,11 +444,11 @@ pub(super) fn handle_quit(
     }
 
     let dirty_count = app.dirty_buffer_count();
-    if dirty_count == 0 || app.pending_quit_confirm {
+    if dirty_count == 0 || app.confirmation.is_quit() {
         app.should_quit = true;
         return Ok(());
     }
-    app.pending_quit_confirm = true;
+    app.confirmation = Confirmation::Quit;
     app.message_warning(if mobile::is_enabled(app) && dirty_count == 1 {
         "Unsaved changes. Tap Menu > Quit again to discard, or tap Save.".to_string()
     } else if mobile::is_enabled(app) {

@@ -76,6 +76,10 @@ outputs, and lifetimes, and dropping their owner must cancel or reap their work.
 The App-owned source buffer is always editable: open and reload select
 `PieceTable` or `PagedFileBuffer`. Read-only help and previews use separate display
 buffers; their input scopes intercept edits before source-buffer dispatch.
+Exactly one surface is focused at a time, and keys, paste, and mobile actions
+all route to it ([decision 0016](decisions/0016-single-input-focus.md)).
+Destructive confirmations are a single `Confirmation` value, separate from
+passive disk observations ([decision 0017](decisions/0017-single-confirmation.md)).
 Detected paged backing drift is a recoverable storage error. App content actions
 validate descriptor availability, while rendering can show an immutable
 unavailable-content notice without replacing the source. Dirty state and history

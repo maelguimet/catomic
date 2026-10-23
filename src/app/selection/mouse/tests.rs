@@ -172,7 +172,7 @@ fn click_maps_through_both_viewport_offsets() {
 #[test]
 fn click_cancels_a_pending_confirmation_and_message() {
     let mut app = app_with("abc");
-    app.pending_quit_confirm = true;
+    app.confirmation = crate::app::confirmation::Confirmation::Quit;
     app.message_warning("Press Ctrl+Q again to quit without saving.");
     let mut out = Vec::new();
 
@@ -183,7 +183,7 @@ fn click_cancels_a_pending_confirmation_and_message() {
     )
     .unwrap();
 
-    assert!(!app.pending_quit_confirm);
+    assert!(!app.confirmation.is_quit());
     assert!(app.message.is_none());
 }
 
@@ -470,40 +470,25 @@ fn mobile_two_tap_selection_ends_on_a_wrapped_unicode_grapheme_boundary() {
 
 #[test]
 fn touch_endpoint_cancels_every_unrelated_editor_confirmation() {
-    let mut app = app_with("select me");
-    super::super::super::mobile::configure(&mut app, true);
-    super::super::begin_touch_selection(&mut app);
-    app.pending_quit_confirm = true;
-    app.pending_save_conflict = Some(super::super::super::save::PendingSaveConflict {
-        path: "save.txt".into(),
-        status: crate::file::io::ExternalFileStatus::Modified,
-        snapshot: None,
-        is_command_prompt_save_as: false,
-    });
-    app.pending_reload = Some(super::super::super::reload::PendingReload {
-        path: "reload.txt".into(),
-        status: crate::file::io::ExternalFileStatus::Modified,
-        snapshot: None,
-        is_explicitly_armed: true,
-    });
-    app.message = Some("armed confirmation".to_string());
-    let mut out = Vec::new();
+    use crate::app::confirmation::fixtures::{assert_disarmed, editor_confirmations};
+    for (name, arm) in editor_confirmations() {
+        let mut app = app_with("select me");
+        super::super::super::mobile::configure(&mut app, true);
+        super::super::begin_touch_selection(&mut app);
+        arm(&mut app);
+        let mut out = Vec::new();
 
-    handle_mouse(
-        &mut app,
-        &mut out,
-        event(MouseEventKind::Down(MouseButton::Left), 6, 0),
-    )
-    .unwrap();
+        handle_mouse(
+            &mut app,
+            &mut out,
+            event(MouseEventKind::Down(MouseButton::Left), 6, 0),
+        )
+        .unwrap();
 
-    assert!(!app.pending_quit_confirm);
-    assert!(app.pending_save_conflict.is_none());
-    assert!(app
-        .pending_reload
-        .as_ref()
-        .is_some_and(|pending| !pending.is_explicitly_armed));
-    assert!(!super::super::is_touch_selecting(&app));
-    assert_eq!(app.clipboard, "select");
+        assert_disarmed(&app, name);
+        assert!(!super::super::is_touch_selecting(&app));
+        assert_eq!(app.clipboard, "select");
+    }
 }
 
 #[test]

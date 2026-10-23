@@ -1431,9 +1431,6 @@ fn wrap_document(
     let mut global_start = 0usize;
     let mut span_start = 0usize;
     let mut link_start = 0usize;
-    // The builder already terminates every emitted row. Omitting the synthetic
-    // empty item after a trailing newline avoids crossing capacity by one byte
-    // and doubling the canonical output allocation for newline-dense documents.
     for text in document.text.split_terminator('\n') {
         let scalar_len = text.chars().count();
         let global_end = global_start.saturating_add(scalar_len);

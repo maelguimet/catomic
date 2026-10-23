@@ -11,10 +11,6 @@ use super::super::super::*;
 use super::super::make_key;
 use crossterm::event::{KeyCode, KeyModifiers};
 
-// Phase 2-aa: apply_file_watch_signal deterministic tests (signals are hints only).
-// Always use fresh observe_external_file; watcher observations do not count as Ctrl+R.
-// Never trust signal variant for content action; no reload, no dirty/snapshot changes.
-
 #[test]
 fn apply_file_watch_signal_changed_on_unchanged_disk_ignores_to_avoid_noise() {
     let mut tmp = std::env::temp_dir();
@@ -25,24 +21,21 @@ fn apply_file_watch_signal_changed_on_unchanged_disk_ignores_to_avoid_noise() {
 
     let mut app = App::new(Some(&p)).unwrap();
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
-        .unwrap(); // ensure a clean snapshot before setting the sentinel
+        .unwrap();
     assert!(!app.file.dirty);
 
-    // Set a warning sentinel that must be preserved.
     app.message_warning("Prior warning.");
 
-    // Simulate a Changed signal for our own write (unchanged vs snapshot)
     let sig = crate::file::watcher::FileWatchSignal::Changed;
     let visible = crate::app::watch::apply_file_watch_signal(&mut app, sig);
 
-    // Must be ignored: no overwrite of message, no arm, no mutation
     assert!(!visible, "watcher unchanged must report not visible");
     assert_eq!(
         app.message.as_deref(),
         Some("Prior warning."),
         "must not overwrite prior message with unchanged"
     );
-    assert!(app.pending_reload.is_none());
+    assert!(app.observed_change.is_none());
     assert_eq!(app.buffer.to_string(), "BASE");
     assert!(!app.file.dirty);
 
@@ -59,14 +52,13 @@ fn apply_file_watch_signal_changed_clean_buffer_auto_reloads() {
 
     let mut app = App::new(Some(&p)).unwrap();
 
-    // External change
     std::fs::write(&p, "ORIGEXT").unwrap();
 
     let sig = crate::file::watcher::FileWatchSignal::Changed;
     crate::app::watch::apply_file_watch_signal(&mut app, sig);
 
     assert!(app.message.is_none());
-    assert!(app.pending_reload.is_none());
+    assert!(app.observed_change.is_none());
     assert_eq!(app.buffer.to_string(), "ORIGEXT");
     assert!(!app.file.dirty);
 
@@ -86,10 +78,9 @@ fn apply_file_watch_signal_changed_dirty_external_warns_without_explicit_arm() {
 
     let mut app = App::new(Some(&p)).unwrap();
     app.handle_key(make_key(KeyCode::Char('x'), KeyModifiers::NONE))
-        .unwrap(); // local dirty
+        .unwrap();
     assert!(app.file.dirty);
 
-    // External change
     std::fs::write(&p, "BASEEXT").unwrap();
 
     let sig = crate::file::watcher::FileWatchSignal::Changed;
@@ -102,14 +93,11 @@ fn apply_file_watch_signal_changed_dirty_external_warns_without_explicit_arm() {
         app.message
     );
     assert!(
-        !app.pending_reload
-            .as_ref()
-            .expect("watcher must retain the observed revision")
-            .is_explicitly_armed,
+        app.observed_change.is_some() && app.confirmation.armed_reload().is_none(),
         "passive watcher warning must not arm destructive reload"
     );
     assert!(app.file.dirty, "must not clear dirty");
-    assert_eq!(app.buffer.to_string(), "xBASE"); // local edit preserved
+    assert_eq!(app.buffer.to_string(), "xBASE");
 
     let _ = std::fs::remove_file(&p);
 }
@@ -132,7 +120,7 @@ fn watcher_does_not_hide_matching_save_overwrite_confirmation() {
 
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(app.pending_save_conflict.is_some());
+    assert!(app.confirmation.save_conflict().is_some());
     assert_eq!(
         app.message.as_deref(),
         Some("File changed on disk. Press Ctrl+S again to overwrite.")
@@ -144,13 +132,8 @@ fn watcher_does_not_hide_matching_save_overwrite_confirmation() {
     );
 
     assert!(visible);
-    assert!(app.pending_save_conflict.is_some());
-    assert!(
-        !app.pending_reload
-            .as_ref()
-            .expect("watcher must retain the observed revision")
-            .is_explicitly_armed
-    );
+    assert!(app.confirmation.save_conflict().is_some());
+    assert!(app.observed_change.is_some() && app.confirmation.armed_reload().is_none());
     assert_eq!(
         app.message.as_deref(),
         Some("File changed on disk. Press Ctrl+S again to overwrite."),
@@ -174,17 +157,16 @@ fn apply_file_watch_signal_deleted_clean_buffer_auto_clears() {
         .unwrap();
     assert!(!app.file.dirty);
 
-    let _ = std::fs::remove_file(&p); // external delete
+    let _ = std::fs::remove_file(&p);
 
     let sig = crate::file::watcher::FileWatchSignal::Deleted;
     crate::app::watch::apply_file_watch_signal(&mut app, sig);
 
     assert_eq!(app.message.as_deref(), None);
-    assert!(app.pending_reload.is_none());
+    assert!(app.observed_change.is_none());
     assert_eq!(app.buffer.to_string(), "");
     assert!(!app.file.dirty);
 
-    // re-create for cleanup
     std::fs::write(&p, "TODEL").unwrap();
     let _ = std::fs::remove_file(&p);
 }
@@ -214,14 +196,9 @@ fn apply_file_watch_signal_error_sets_message_only() {
     assert_eq!(app.buffer.to_string(), before_buf);
     assert_eq!(app.file.dirty, before_dirty);
     assert_eq!(app.file.disk_snapshot, before_snap);
-    // pending state left as-is (no concrete reason to clear)
 
     let _ = std::fs::remove_file(&p);
 }
-
-// check_file_watcher_once (no-render seam) tests. Stable no-OS cases.
-// Only tests no-watcher and "watcher present but no queued signal" (stable, no live wait).
-// Real event delivery would require OS notify which is out of scope for deterministic tests.
 
 #[test]
 fn check_file_watcher_once_no_watcher_returns_false_no_mutation() {
@@ -229,20 +206,21 @@ fn check_file_watcher_once_no_watcher_returns_false_no_mutation() {
     assert!(app.file_watcher.is_none());
 
     let before_msg = app.message.clone();
-    let before_pend = app.pending_reload.clone();
+    let before_pend = (app.observed_change.clone(), app.confirmation.clone());
     let before_dirty = app.file.dirty;
 
     let had = crate::app::watch::check_file_watcher_once(&mut app);
     assert!(!had);
     assert_eq!(app.message, before_msg);
-    assert_eq!(app.pending_reload, before_pend);
+    assert_eq!(
+        (app.observed_change.clone(), app.confirmation.clone()),
+        before_pend
+    );
     assert_eq!(app.file.dirty, before_dirty);
 }
 
 #[test]
 fn check_file_watcher_once_with_watcher_no_signal_returns_false_no_mutation() {
-    // Construct App with a real temp file -> watcher Some (parent exists).
-    // Immediately after new there should be no pending notify event in the mpsc.
     let mut tmp = std::env::temp_dir();
     tmp.push(format!(
         "catomic_2aa_check_nosig_{}.txt",
@@ -259,7 +237,7 @@ fn check_file_watcher_once_with_watcher_no_signal_returns_false_no_mutation() {
     );
 
     let before_msg = app.message.clone();
-    let before_pend = app.pending_reload.clone();
+    let before_pend = (app.observed_change.clone(), app.confirmation.clone());
 
     let had = crate::app::watch::check_file_watcher_once(&mut app);
     assert!(
@@ -267,17 +245,13 @@ fn check_file_watcher_once_with_watcher_no_signal_returns_false_no_mutation() {
         "no queued signal expected immediately after construct"
     );
     assert_eq!(app.message, before_msg);
-    assert_eq!(app.pending_reload, before_pend);
+    assert_eq!(
+        (app.observed_change.clone(), app.confirmation.clone()),
+        before_pend
+    );
 
     let _ = std::fs::remove_file(&p);
 }
-
-// Phase 2-ab: deterministic runtime seam tests for the check-and-render helper.
-// These exercise the loop integration point without live notify or event injection.
-// A real queued Changed/Deleted from the OS would cause the helper to return true,
-// render, and retain a passive observation; that delivery path is integration-only
-// rather than part of the default deterministic suite. We cover the stable no-signal
-// cases and assert that they do not spuriously render.
 
 #[test]
 fn check_file_watcher_once_and_render_no_watcher_returns_false_writes_nothing() {
@@ -324,5 +298,3 @@ fn check_file_watcher_once_and_render_watcher_no_signal_returns_false_writes_not
 
     let _ = std::fs::remove_file(&p);
 }
-
-// Queued + render cases live in watcher_runtime.rs (uses the cfg(test) seam).

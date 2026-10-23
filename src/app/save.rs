@@ -8,90 +8,46 @@ use std::ffi::OsStr;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use super::confirmation::{Confirmation, ConflictingChange, SaveConflict};
 use crate::file;
-use crate::file::io::{ExternalFileObservation, ExternalFileStatus, FileSnapshot};
-
-/// Token recorded on first save refusal for a conflict.
-/// Binds to the specific observed disk state (path + status + live snapshot at refusal time),
-/// not only the status variant. This prevents force-saving when the disk has drifted
-/// again under the same variant (e.g. Modified at t1 vs Modified at t2).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct PendingSaveConflict {
-    /// The target path at the time the conflict was recorded.
-    pub path: PathBuf,
-    pub status: ExternalFileStatus,
-    /// Live snapshot observed when we refused. For Modified this distinguishes
-    /// different external states; for Deleted/Unknown kind-matching suffices.
-    pub snapshot: Option<FileSnapshot>,
-    /// Only command-prompt Save As confirmations may survive reopening the
-    /// command prompt. Other save routes keep their existing cancellation rules.
-    pub is_command_prompt_save_as: bool,
-}
-
-impl PendingSaveConflict {
-    pub(crate) fn matches_observation(
-        &self,
-        path: &Path,
-        observation: &ExternalFileObservation,
-    ) -> bool {
-        if self.path != path {
-            return false;
-        }
-        match (&self.status, &observation.status) {
-            (ExternalFileStatus::Modified, ExternalFileStatus::Modified) => {
-                self.snapshot == observation.live_snapshot
-            }
-            (ExternalFileStatus::Deleted, ExternalFileStatus::Deleted) => true,
-            (ExternalFileStatus::Unknown(first), ExternalFileStatus::Unknown(second)) => {
-                first == second && *first != io::ErrorKind::Interrupted
-            }
-            _ => false,
-        }
-    }
-}
+use crate::file::io::FileSnapshot;
 
 /// Returns the exact refusal message text used for a given external status.
 /// Used by guard to avoid duplicating strings.
-pub(crate) fn save_conflict_message(status: &ExternalFileStatus) -> String {
-    match status {
-        ExternalFileStatus::Modified => {
+pub(crate) fn save_conflict_message(change: &ConflictingChange) -> String {
+    match change {
+        ConflictingChange::Modified(_) => {
             "File changed on disk. Press Ctrl+S again to overwrite.".to_string()
         }
-        ExternalFileStatus::Deleted => {
+        ConflictingChange::Deleted => {
             "File was deleted on disk. Press Ctrl+S again to recreate.".to_string()
         }
-        ExternalFileStatus::Unknown(io::ErrorKind::Interrupted) => {
+        ConflictingChange::Unknown(io::ErrorKind::Interrupted) => {
             "File changed during status check. Save blocked; try again when it is stable."
                 .to_string()
         }
-        ExternalFileStatus::Unknown(_) => {
-            "File status check failed. Press Ctrl+S again to overwrite.".to_string()
-        }
-        ExternalFileStatus::NoPath | ExternalFileStatus::Unchanged => {
-            // Callers should not reach here for conflict messages.
+        ConflictingChange::Unknown(_) => {
             "File status check failed. Press Ctrl+S again to overwrite.".to_string()
         }
     }
 }
 
-pub(crate) fn save_conflict_message_for_ui(status: &ExternalFileStatus, mobile: bool) -> String {
+pub(crate) fn save_conflict_message_for_ui(change: &ConflictingChange, mobile: bool) -> String {
     if !mobile {
-        return save_conflict_message(status);
+        return save_conflict_message(change);
     }
-    match status {
-        ExternalFileStatus::Modified => {
+    match change {
+        ConflictingChange::Modified(_) => {
             "File changed on disk. Tap Save again to overwrite.".to_string()
         }
-        ExternalFileStatus::Deleted => {
+        ConflictingChange::Deleted => {
             "File was deleted on disk. Tap Save again to recreate.".to_string()
         }
-        ExternalFileStatus::Unknown(io::ErrorKind::Interrupted) => {
+        ConflictingChange::Unknown(io::ErrorKind::Interrupted) => {
             "File changed during status check. Save blocked; try again when it is stable."
                 .to_string()
         }
-        ExternalFileStatus::Unknown(_)
-        | ExternalFileStatus::NoPath
-        | ExternalFileStatus::Unchanged => {
+        ConflictingChange::Unknown(_) => {
             "File status check failed. Tap Save again to overwrite.".to_string()
         }
     }
@@ -105,66 +61,55 @@ pub(crate) fn handle_save(
     app: &mut super::App,
     out: &mut dyn crate::terminal::TerminalOutput,
 ) -> io::Result<()> {
-    if app.file.path.is_none() {
-        app.pending_save_conflict = None;
+    let Some(current_path) = app.file.path.clone() else {
+        app.confirmation.clear_save_conflict();
         return super::command_prompt::open_save_as_prompt(app, out);
-    }
+    };
 
-    let current_path = app.file.path.clone();
-    if let Some(path) = current_path.as_deref() {
-        match app.another_buffer_represents_path(path) {
-            Ok(true) => {
-                app.pending_save_conflict = None;
-                app.message_warning(
-                    "Save blocked: this file is also open in another buffer. Close the conflicting buffer first.",
-                );
-                return app.render(out);
-            }
-            Ok(false) => {}
-            Err(error) => {
-                app.pending_save_conflict = None;
-                app.message_error(format!(
-                    "Save error: could not compare open buffers: {error}"
-                ));
-                return app.render(out);
-            }
+    match app.another_buffer_represents_path(&current_path) {
+        Ok(true) => {
+            app.confirmation.clear_save_conflict();
+            app.message_warning(
+                "Save blocked: this file is also open in another buffer. Close the conflicting buffer first.",
+            );
+            return app.render(out);
+        }
+        Ok(false) => {}
+        Err(error) => {
+            app.confirmation.clear_save_conflict();
+            app.message_error(format!(
+                "Save error: could not compare open buffers: {error}"
+            ));
+            return app.render(out);
         }
     }
 
     let baseline = app.file.disk_snapshot.as_ref();
-    let obs = crate::file::io::observe_external_file(current_path.as_deref(), baseline);
+    let obs = crate::file::io::observe_external_file(Some(&current_path), baseline);
+    let Some(change) = ConflictingChange::observed(&obs) else {
+        app.confirmation.clear_save_conflict();
+        return do_atomic_save(app, out);
+    };
 
-    if obs.status == ExternalFileStatus::NoPath || obs.status == ExternalFileStatus::Unchanged {
-        app.pending_save_conflict = None;
+    let should_force = app
+        .confirmation
+        .save_conflict()
+        .is_some_and(|pending| pending.matches_observation(&current_path, &obs));
+    if should_force {
         return do_atomic_save(app, out);
     }
 
-    // Conflict status: decide force only if pending token matches the *current observed* state.
-    let should_force = current_path.as_deref().is_some_and(|path| {
-        app.pending_save_conflict
-            .as_ref()
-            .is_some_and(|pending| pending.matches_observation(path, &obs))
+    super::reload::remember_external_observation(app, &obs);
+    app.message_warning(save_conflict_message_for_ui(
+        &change,
+        super::mobile::is_enabled(app),
+    ));
+    app.confirmation = Confirmation::SaveConflict(SaveConflict {
+        path: current_path,
+        change,
+        is_command_prompt_save_as: false,
     });
-
-    if should_force {
-        do_atomic_save(app, out)
-    } else {
-        // First time seeing this concrete conflict, or the live state drifted:
-        // refuse, record a fresh token bound to the *current* observation (incl. snapshot).
-        let target_path = current_path.expect("conflict status requires a path");
-        super::reload::remember_external_observation(app, &obs);
-        app.pending_save_conflict = Some(PendingSaveConflict {
-            path: target_path,
-            status: obs.status.clone(),
-            snapshot: obs.live_snapshot.clone(),
-            is_command_prompt_save_as: false,
-        });
-        app.message_warning(save_conflict_message_for_ui(
-            &obs.status,
-            super::mobile::is_enabled(app),
-        ));
-        app.render(out)
-    }
+    app.render(out)
 }
 
 /// Save the active buffer under an explicitly requested path. Relative paths are
@@ -201,13 +146,13 @@ fn handle_save_as_with_route(
         }
     };
     if let Err(error) = file::io::validate_regular_save_target(&target) {
-        app.pending_save_conflict = None;
+        app.confirmation.clear_save_conflict();
         app.message_error(format!("Save As error: {error}"));
         return app.render(out);
     }
     match app.another_buffer_represents_path(&target) {
         Ok(true) => {
-            app.pending_save_conflict = None;
+            app.confirmation.clear_save_conflict();
             app.message_warning(
                 "Save As blocked: target is already open in another buffer. Switch to or close that buffer first.",
             );
@@ -215,7 +160,7 @@ fn handle_save_as_with_route(
         }
         Ok(false) => {}
         Err(error) => {
-            app.pending_save_conflict = None;
+            app.confirmation.clear_save_conflict();
             app.message_error(format!(
                 "Save As error: could not compare open buffers: {error}"
             ));
@@ -233,62 +178,57 @@ fn handle_save_as_with_route(
 
     let absent_baseline = FileSnapshot::Absent;
     let obs = crate::file::io::observe_external_file(Some(&target), Some(&absent_baseline));
-    if obs.status == ExternalFileStatus::Unchanged {
-        app.pending_save_conflict = None;
+    let Some(change) = ConflictingChange::observed(&obs) else {
+        app.confirmation.clear_save_conflict();
         return do_atomic_save_to(app, out, target);
-    }
+    };
 
-    let should_force = app.pending_save_conflict.as_ref().is_some_and(|pending| {
-        pending.path == target
-            && pending.status == obs.status
-            && pending.snapshot == obs.live_snapshot
-            && pending.is_command_prompt_save_as == is_command_prompt_save_as
-            && obs.status != ExternalFileStatus::Unknown(io::ErrorKind::Interrupted)
+    let should_force = app.confirmation.save_conflict().is_some_and(|pending| {
+        pending.is_command_prompt_save_as == is_command_prompt_save_as
+            && pending.matches_observation(&target, &obs)
     });
     if should_force {
         return do_atomic_save_to(app, out, target);
     }
 
-    app.pending_save_conflict = Some(PendingSaveConflict {
-        path: target,
-        status: obs.status.clone(),
-        snapshot: obs.live_snapshot,
-        is_command_prompt_save_as,
-    });
     app.message_warning(save_as_conflict_message(
-        &obs.status,
+        &change,
         super::mobile::is_enabled(app),
     ));
+    app.confirmation = Confirmation::SaveConflict(SaveConflict {
+        path: target,
+        change,
+        is_command_prompt_save_as,
+    });
     app.render(out)
 }
 
-fn save_as_conflict_message(status: &ExternalFileStatus, mobile: bool) -> String {
+fn save_as_conflict_message(change: &ConflictingChange, mobile: bool) -> String {
     if mobile {
-        let outcome = match status {
-            ExternalFileStatus::Modified => "overwrite",
-            ExternalFileStatus::Unknown(io::ErrorKind::Interrupted)
-            | ExternalFileStatus::Deleted => "recheck",
-            ExternalFileStatus::Unknown(_) => "overwrite",
-            ExternalFileStatus::NoPath | ExternalFileStatus::Unchanged => unreachable!(),
+        let outcome = match change {
+            ConflictingChange::Modified(_) => "overwrite",
+            ConflictingChange::Unknown(io::ErrorKind::Interrupted) | ConflictingChange::Deleted => {
+                "recheck"
+            }
+            ConflictingChange::Unknown(_) => "overwrite",
         };
         return format!(
             "Save As target changed or exists. Tap Menu > Save as, then submit the same path again to {outcome}."
         );
     }
-    match status {
-        ExternalFileStatus::Modified => {
+    match change {
+        ConflictingChange::Modified(_) => {
             "Save As target already exists. Submit the same path again to overwrite.".to_string()
         }
-        ExternalFileStatus::Unknown(io::ErrorKind::Interrupted) => {
+        ConflictingChange::Unknown(io::ErrorKind::Interrupted) => {
             "Save As target changed while checking. Submit the path again to recheck.".to_string()
         }
-        ExternalFileStatus::Unknown(error) => format!(
+        ConflictingChange::Unknown(error) => format!(
             "Save As target could not be checked ({error:?}). Submit the same path again to overwrite."
         ),
-        ExternalFileStatus::Deleted => {
+        ConflictingChange::Deleted => {
             "Save As target changed while checking. Submit the same path again to retry.".to_string()
         }
-        ExternalFileStatus::NoPath | ExternalFileStatus::Unchanged => unreachable!(),
     }
 }
 
@@ -342,6 +282,18 @@ pub(crate) fn do_atomic_save(
     do_atomic_save_to(app, out, target)
 }
 
+fn keep_prior_snapshot_unless_saved_file_is_present(app: &mut super::App, target: &Path) {
+    if let Ok(snapshot @ FileSnapshot::Present { .. }) = file::io::capture_file_snapshot(target) {
+        app.file.disk_snapshot = Some(snapshot);
+    }
+}
+
+fn record_saved_size_preferring_metadata(app: &mut super::App, target: &Path, written_len: u64) {
+    let size = crate::file::size::file_size_bytes(target).unwrap_or(written_len);
+    app.file.size_bytes = Some(size);
+    app.file.size_tier = Some(crate::file::size::classify_file_size(size));
+}
+
 fn do_atomic_save_to(
     app: &mut super::App,
     out: &mut dyn crate::terminal::TerminalOutput,
@@ -351,9 +303,6 @@ fn do_atomic_save_to(
     app.buffer.finish_undo_group();
     let path_changed = app.file.path.as_ref() != Some(&target);
     let save_result = file::io::atomic_write_with(&target, |writer| {
-        // Replacement saves change the old inode's ctime, and hard-link saves
-        // rewrite it. Preserve original bytes before either can invalidate the
-        // strict descriptor checks used by page coordinates and undo/redo.
         app.buffer
             .preserve_file_backing(&mut file::io::snapshot_linked_file)?;
         file::text_format::write_buffer(&*app.buffer, writer, app.file.text_format)
@@ -363,36 +312,13 @@ fn do_atomic_save_to(
             if path_changed {
                 super::lint::invalidate(app);
                 app.file.path = Some(target.clone());
-                // Refresh only after the write succeeds, so failed Save As keeps
-                // both the prior path and watcher association intact.
                 super::watch::refresh_file_watcher(app);
             }
             super::file_state::mark_saved(&mut app.file, &*app.buffer);
-            // Success: update disk snapshot for the saved path (same for force or normal).
-            // - Failure to capture post-save leaves prior snapshot unchanged.
-            // - Never overwrite with Absent; do not corrupt saved token on meta failure.
-            if let Ok(s) = file::io::capture_file_snapshot(&target) {
-                if matches!(s, FileSnapshot::Present { .. }) {
-                    app.file.disk_snapshot = Some(s);
-                }
-                // else: leave old snapshot (Absent or prior Present); token already clean.
-            }
-            // Update size metadata (metadata-first): prefer post-save fs::metadata.
-            // Only content-derived fallback allowed here: the exact len we just wrote,
-            // when stat after our atomic_write fails (rare; we produced these bytes).
-            // file::size::file_size_bytes remains strictly metadata-only.
-            // Size bookkeeping must not affect save/reload/watcher behavior.
-            if let Ok(sz) = crate::file::size::file_size_bytes(&target) {
-                app.file.size_bytes = Some(sz);
-                app.file.size_tier = Some(crate::file::size::classify_file_size(sz));
-            } else {
-                // Post-write stat failed: use the exact count from the streaming writer.
-                app.file.size_bytes = Some(written_len);
-                app.file.size_tier = Some(crate::file::size::classify_file_size(written_len));
-            }
-            app.pending_quit_confirm = false;
-            app.pending_save_conflict = None;
-            app.pending_reload = None;
+            keep_prior_snapshot_unless_saved_file_is_present(app, &target);
+            record_saved_size_preferring_metadata(app, &target, written_len);
+            app.confirmation = Confirmation::None;
+            app.observed_change = None;
             match super::recovery::after_save(app) {
                 Ok(()) => {
                     app.message = None;
@@ -416,8 +342,6 @@ fn do_atomic_save_to(
         }
         Err(e) => {
             app.message_error(format!("Save error: {}", e));
-            // keep dirty; do not clear save conflict (user may still want to force after fixing env)
-            // snapshot intentionally NOT updated on failure
         }
     }
     app.render(out)

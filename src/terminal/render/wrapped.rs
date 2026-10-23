@@ -249,8 +249,6 @@ pub(crate) fn start_col_near_cursor(
     if width == 0 || height == 0 {
         return Ok(0);
     }
-    // Bound work by a viewport-sized scalar suffix, even on a huge logical
-    // line. Resolve its first boundary in the buffer's global grapheme context.
     let capacity = width.saturating_mul(height).saturating_sub(1);
     let approximate = cursor.col.saturating_sub(capacity);
     let range = buffer.grapheme_range(cursor.row, approximate)?;
@@ -274,8 +272,6 @@ pub(crate) fn start_col_near_cursor(
             let cell = row
                 .layout
                 .scalar_to_cell(cursor.col.saturating_sub(start_col));
-            // An oversized final cluster has no cell for its trailing cursor.
-            // Start at that boundary so an empty row can display the caret.
             return Ok(if cell > width || (cell == width && !row.line_end) {
                 cursor.col
             } else {

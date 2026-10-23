@@ -16,7 +16,6 @@ fn app_file_state_new_starts_clean() {
     let app = App::new(None).unwrap();
     assert!(!app.file.dirty, "new app without path starts clean");
     assert!(app.file.path.is_none());
-    // screen field added in 2-c; verify default here too (no behavior change)
     assert_eq!(app.screen.height, 24);
     assert_eq!(app.screen.scroll_top, 0);
 
@@ -30,9 +29,6 @@ fn app_file_state_new_starts_clean() {
 
 #[test]
 fn app_dirty_lifecycle_via_keys() {
-    // Use explicit temp path for the test so we NEVER write bare "untitled.txt"
-    // into the repo cwd. App::new with a path (even non-existing) starts clean
-    // and save will target that path instead of defaulting.
     let mut tmp = std::env::temp_dir();
     tmp.push(format!(
         "catomic_test_dirty_lifecycle_{}_{}.txt",
@@ -40,7 +36,7 @@ fn app_dirty_lifecycle_via_keys() {
         "lifecycle"
     ));
     let test_path = tmp.to_string_lossy().to_string();
-    let _ = std::fs::remove_file(&test_path); // ensure clean start
+    let _ = std::fs::remove_file(&test_path);
 
     let mut app = App::new(Some(&test_path)).unwrap();
     assert!(!app.file.dirty);
@@ -49,7 +45,6 @@ fn app_dirty_lifecycle_via_keys() {
         Some(std::path::Path::new(&test_path))
     );
 
-    // char insert marks dirty
     app.handle_key(KeyEvent {
         code: KeyCode::Char('a'),
         modifiers: KeyModifiers::NONE,
@@ -59,7 +54,6 @@ fn app_dirty_lifecycle_via_keys() {
     .unwrap();
     assert!(app.file.dirty, "edit marks dirty");
 
-    // save (via atomic) clears dirty; uses explicit path (no untitled.txt)
     app.handle_key(KeyEvent {
         code: KeyCode::Char('s'),
         modifiers: KeyModifiers::CONTROL,
@@ -70,7 +64,6 @@ fn app_dirty_lifecycle_via_keys() {
     assert!(!app.file.dirty, "successful save marks clean");
     assert!(app.file.path.is_some());
 
-    // edit after save marks dirty again
     app.handle_key(KeyEvent {
         code: KeyCode::Char('b'),
         modifiers: KeyModifiers::NONE,
@@ -80,7 +73,6 @@ fn app_dirty_lifecycle_via_keys() {
     .unwrap();
     assert!(app.file.dirty, "post-save edit marks dirty again");
 
-    // Clean up ONLY the temp path created/used by this test.
     let _ = std::fs::remove_file(&test_path);
 }
 
@@ -99,16 +91,14 @@ fn app_ctrl_s_after_dirty_clears_dirty_and_pending() {
         .unwrap();
     assert!(app.file.dirty);
 
-    // trigger quit warn
     app.handle_key(make_key(KeyCode::Char('q'), KeyModifiers::CONTROL))
         .unwrap();
-    assert!(app.pending_quit_confirm);
+    assert!(app.confirmation.is_quit());
 
-    // Ctrl+S: success clears dirty + pending + msg
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(!app.file.dirty);
-    assert!(!app.pending_quit_confirm);
+    assert!(!app.confirmation.is_quit());
     assert!(app.message.is_none());
 
     let _ = std::fs::remove_file(&p);
@@ -116,11 +106,8 @@ fn app_ctrl_s_after_dirty_clears_dirty_and_pending() {
 
 #[test]
 fn app_save_error_keeps_dirty_and_sets_error_message() {
-    // Use a dedicated subdir under temp (never bare temp_dir or root sibling)
-    // so that path points to a directory -> atomic_write fails as intended.
     let mut bad = std::env::temp_dir();
     bad.push(format!("catomic_bad_save_dir_{}", std::process::id()));
-    // ensure clean and is a dir
     let _ = std::fs::remove_dir_all(&bad);
     std::fs::create_dir_all(&bad).expect("create dedicated bad dir");
     assert!(bad.is_dir());
@@ -141,7 +128,6 @@ fn app_save_error_keeps_dirty_and_sets_error_message() {
         app.message
     );
 
-    // cleanup dedicated dir only
     let _ = std::fs::remove_dir_all(&bad);
 }
 
@@ -170,8 +156,6 @@ fn app_save_refuses_read_only_target_and_keeps_buffer_dirty() {
     assert_eq!(app.message_role, crate::terminal::render::StatusRole::Error);
     let _ = std::fs::remove_file(path);
 }
-
-// Phase 2-j: exact save-point dirty tracking tests (history token, no to_string compare on hot paths)
 
 #[test]
 fn app_file_state_new_and_open_initialize_saved_history_token_and_clean() {
@@ -202,13 +186,11 @@ fn app_file_state_insert_then_save_then_undo_redo_exact_dirty() {
     assert!(!app.file.dirty);
     let saved0 = app.file.saved_history_position;
 
-    // insert makes dirty
     app.handle_key(make_key(KeyCode::Char('x'), KeyModifiers::NONE))
         .unwrap();
     assert!(app.file.dirty, "insert makes dirty");
     assert!(app.buffer.edit_history_position() != saved0);
 
-    // save marks clean at new token
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(!app.file.dirty, "save clears dirty");
@@ -216,13 +198,11 @@ fn app_file_state_insert_then_save_then_undo_redo_exact_dirty() {
     assert!(saved_after != saved0);
     assert_eq!(saved_after, app.buffer.edit_history_position());
 
-    // undo back to prior (away from saved) => dirty
     app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.file.dirty, "undo away from saved token makes dirty");
     assert_eq!(app.buffer.edit_history_position(), saved0);
 
-    // redo back to saved => clean
     app.handle_key(make_key(KeyCode::Char('y'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(!app.file.dirty, "redo to saved token clears dirty");
@@ -335,7 +315,6 @@ fn app_file_state_undo_to_clean_then_redo_makes_dirty_again() {
         .unwrap();
     assert!(app.file.dirty);
 
-    // undo the 'b' back exactly to saved
     app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(
@@ -344,7 +323,6 @@ fn app_file_state_undo_to_clean_then_redo_makes_dirty_again() {
     );
     assert_eq!(app.buffer.edit_history_position(), clean_pos);
 
-    // redo away
     app.handle_key(make_key(KeyCode::Char('y'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.file.dirty, "redo away from saved must set dirty");
@@ -377,11 +355,9 @@ fn app_file_state_save_sets_new_clean_point_undo_redo_roundtrip() {
     assert!(s2 != s1, "second save must update saved token");
     assert!(!app.file.dirty);
 
-    // undo to s1
     app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(app.file.dirty);
-    // redo to s2
     app.handle_key(make_key(KeyCode::Char('y'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(!app.file.dirty);
@@ -396,13 +372,11 @@ fn app_file_state_noop_undo_redo_on_clean_stays_clean() {
     assert!(!app.file.dirty);
     let p0 = app.buffer.edit_history_position();
 
-    // no-op undo on clean
     app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(!app.file.dirty, "no-op undo must not dirty a clean buffer");
     assert_eq!(app.buffer.edit_history_position(), p0);
 
-    // no-op redo on clean
     app.handle_key(make_key(KeyCode::Char('y'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(!app.file.dirty, "no-op redo must not dirty a clean buffer");
@@ -420,13 +394,11 @@ fn app_file_state_movement_render_resize_do_not_affect_dirty() {
     let _ = std::fs::remove_file(&p);
 
     let mut app = App::new(Some(&p)).unwrap();
-    // make dirty via content
     app.handle_key(make_key(KeyCode::Char('z'), KeyModifiers::NONE))
         .unwrap();
     assert!(app.file.dirty);
     let pos_dirty = app.buffer.edit_history_position();
 
-    // movement must not change dirty
     app.handle_key(make_key(KeyCode::Left, KeyModifiers::NONE))
         .unwrap();
     app.handle_key(make_key(KeyCode::Right, KeyModifiers::NONE))
@@ -438,18 +410,15 @@ fn app_file_state_movement_render_resize_do_not_affect_dirty() {
     assert!(app.file.dirty);
     assert_eq!(app.buffer.edit_history_position(), pos_dirty);
 
-    // render explicit must not
     let mut out = Vec::new();
     app.render(&mut out).unwrap();
     assert!(app.file.dirty);
 
-    // resize
     let mut out2 = Vec::new();
     app.handle_resize(40, 12, &mut out2).unwrap();
     assert!(app.file.dirty);
     assert_eq!(app.buffer.edit_history_position(), pos_dirty);
 
-    // now save to clean, movements still must not flip it
     app.handle_key(make_key(KeyCode::Char('s'), KeyModifiers::CONTROL))
         .unwrap();
     assert!(!app.file.dirty);

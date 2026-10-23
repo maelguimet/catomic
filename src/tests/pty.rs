@@ -22,18 +22,12 @@ mod tests {
 
     #[test]
     fn terminal_guard_drops_without_setup() {
-        // Guard must be safe to drop even if setup was never called
-        // (or failed). teardown() inside swallows errors.
         let _guard = TerminalGuard::new();
-        // Drop at end of scope; must not panic.
     }
 
     #[test]
     fn terminal_guard_restores_on_panic_without_real_tty() {
         let _lock = panic_hook_test_lock().lock().unwrap();
-        // Exercise the unwind path. We deliberately avoid calling setup()
-        // because this test runs without a tty in most CI/piped envs.
-        // The guard still exercises its Drop::teardown (best-effort).
         let result = panic::catch_unwind(AssertUnwindSafe(|| {
             let _guard = TerminalGuard::new();
             panic!("simulated editor panic (no raw mode entered)");

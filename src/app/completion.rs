@@ -7,19 +7,14 @@ use std::io;
 
 use crossterm::event::{KeyCode, KeyEvent};
 
+use super::focus::{Focus, Picker, Surface};
 use crate::buffer::Cursor;
 use crate::config::actions::Action;
 use crate::editor::emoji::{self, EmojiCandidate};
 mod candidates;
 use candidates::PREFIX_COLS;
 
-#[derive(Default)]
-pub(crate) struct CompletionUiState {
-    word: Option<ActiveWordCompletion>,
-    emoji: Option<ActiveEmojiPicker>,
-}
-
-struct ActiveWordCompletion {
+pub(crate) struct ActiveWordCompletion {
     prefix: String,
     start: Cursor,
     end: Cursor,
@@ -27,7 +22,7 @@ struct ActiveWordCompletion {
     selected: usize,
 }
 
-struct ActiveEmojiPicker {
+pub(crate) struct ActiveEmojiPicker {
     query: String,
     start: Cursor,
     end: Cursor,
@@ -46,14 +41,11 @@ enum OpenOutcome {
     NoCandidate,
 }
 
-pub(crate) fn handle_key(
+pub(crate) fn handle_trigger_key(
     app: &mut super::App,
     out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
-    if is_active(app) {
-        return handle_active_key(app, out, key);
-    }
     if !is_trigger(key) {
         return Ok(false);
     }
@@ -62,9 +54,14 @@ pub(crate) fn handle_key(
 }
 
 pub(crate) fn cancel(app: &mut super::App) -> bool {
-    let cancelled_word = app.completion.word.take().is_some();
-    let cancelled_emoji = app.completion.emoji.take().is_some();
-    cancelled_word || cancelled_emoji
+    super::focus::take(app, Surface::Picker).is_some()
+}
+
+fn word(app: &super::App) -> Option<&ActiveWordCompletion> {
+    match app.focus.picker() {
+        Some(Picker::Word(active)) => Some(active),
+        _ => None,
+    }
 }
 
 fn open(
@@ -105,13 +102,14 @@ fn open(
         row: cursor.row,
         col: cursor.col.saturating_sub(prefix.text.chars().count()),
     };
-    app.completion.word = Some(ActiveWordCompletion {
+    super::focus::close(app);
+    app.focus = Focus::Picker(Picker::Word(ActiveWordCompletion {
         prefix: prefix.text,
         start,
         end: cursor,
         candidates: completion_candidates,
         selected: 0,
-    });
+    }));
     update_message(app);
     app.render(out)?;
     Ok(OpenOutcome::Handled)
@@ -129,9 +127,6 @@ pub(crate) fn dispatch_action(
     out: &mut dyn crate::terminal::TerminalOutput,
     action: Action,
 ) -> io::Result<bool> {
-    if !is_active(app) {
-        return Ok(false);
-    }
     match action {
         Action::CompletionNext => cycle(app, true),
         Action::CompletionPrevious => cycle(app, false),
@@ -142,7 +137,7 @@ pub(crate) fn dispatch_action(
         }
         _ => return Ok(false),
     }
-    update_word_message_unless_dismissed(app);
+    update_message(app);
     app.render(out)?;
     Ok(true)
 }
@@ -158,12 +153,12 @@ pub(crate) fn dispatch_editor_action(
     Ok(open(app, out)? == OpenOutcome::Handled)
 }
 
-fn handle_active_key(
+pub(crate) fn handle_active_key(
     app: &mut super::App,
     out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
-    if app.completion.emoji.is_some() {
+    if matches!(app.focus.picker(), Some(Picker::Emoji(_))) {
         return handle_emoji_key(app, out, key);
     }
     match key.code {
@@ -181,27 +176,26 @@ fn handle_active_key(
             return Ok(false);
         }
     }
-    update_word_message_unless_dismissed(app);
+    update_message(app);
     app.render(out)?;
     Ok(true)
 }
 
 fn cycle(app: &mut super::App, forward: bool) {
-    if let Some(active) = app.completion.emoji.as_mut() {
-        let count = active.candidates.len();
-        active.selected = cycled_index(active.selected, count, forward);
-        return;
-    }
-    let active = app.completion.word.as_mut().expect("active completion");
-    let count = active.candidates.len();
-    active.selected = cycled_index(active.selected, count, forward);
+    let (selected, count) = match app.focus.picker_mut() {
+        Some(Picker::Emoji(active)) => (&mut active.selected, active.candidates.len()),
+        Some(Picker::Word(active)) => (&mut active.selected, active.candidates.len()),
+        None => return,
+    };
+    *selected = cycled_index(*selected, count, forward);
 }
 
 fn accept(app: &mut super::App, out: &mut dyn crate::terminal::TerminalOutput) -> io::Result<()> {
-    if app.completion.emoji.is_some() {
-        return accept_emoji(app, out);
-    }
-    let active = app.completion.word.take().expect("active completion");
+    let active = match super::focus::take(app, Surface::Picker) {
+        Some(Focus::Picker(Picker::Word(active))) => active,
+        Some(Focus::Picker(Picker::Emoji(active))) => return accept_emoji(app, out, active),
+        _ => return app.render(out),
+    };
     let unchanged = app.buffer.cursor() == active.end
         && app.buffer.text_range(active.start, active.end)? == active.prefix;
     if !unchanged {
@@ -215,7 +209,9 @@ fn accept(app: &mut super::App, out: &mut dyn crate::terminal::TerminalOutput) -
 }
 
 fn update_message(app: &mut super::App) {
-    let active = app.completion.word.as_ref().expect("active completion");
+    let Some(active) = word(app) else {
+        return;
+    };
     app.message_info(format!(
         "Completion {}/{}: {} (Tab next, Enter accept, Esc dismiss)",
         active.selected + 1,
@@ -224,24 +220,21 @@ fn update_message(app: &mut super::App) {
     ));
 }
 
-fn update_word_message_unless_dismissed(app: &mut super::App) {
-    if app.completion.word.is_some() {
-        update_message(app);
-    }
-}
-
-pub(super) fn is_active(app: &super::App) -> bool {
-    app.completion.word.is_some() || app.completion.emoji.is_some()
-}
-
 pub(super) fn after_content_edit(app: &mut super::App) -> io::Result<()> {
-    app.completion.word = None;
-    app.completion.emoji = emoji_picker_at_cursor(app)?;
+    if !matches!(app.focus.surface(), Surface::Editor | Surface::Picker) {
+        return Ok(());
+    }
+    cancel(app);
+    if let Some(picker) = emoji_picker_at_cursor(app)? {
+        app.focus = Focus::Picker(Picker::Emoji(picker));
+    }
     Ok(())
 }
 
 pub(super) fn emoji_picker_presentation(app: &super::App) -> Option<EmojiPickerPresentation> {
-    let active = app.completion.emoji.as_ref()?;
+    let Some(Picker::Emoji(active)) = app.focus.picker() else {
+        return None;
+    };
     let rows = active
         .candidates
         .iter()
@@ -268,7 +261,7 @@ pub(super) fn emoji_picker_presentation(app: &super::App) -> Option<EmojiPickerP
 }
 
 fn emoji_picker_at_cursor(app: &super::App) -> io::Result<Option<ActiveEmojiPicker>> {
-    if super::view::is_preview(app) || app.selection.active().is_some() {
+    if app.selection.active().is_some() {
         return Ok(None);
     }
     let end = app.buffer.cursor();
@@ -311,7 +304,7 @@ fn handle_emoji_key(
             cancel(app);
             app.message = None;
         }
-        KeyCode::Enter => return accept_emoji(app, out).map(|()| true),
+        KeyCode::Enter => return accept(app, out).map(|()| true),
         KeyCode::Up | KeyCode::BackTab => cycle(app, false),
         KeyCode::Down | KeyCode::Tab => cycle(app, true),
         KeyCode::Char(_) | KeyCode::Backspace | KeyCode::Delete => return Ok(false),
@@ -327,8 +320,8 @@ fn handle_emoji_key(
 fn accept_emoji(
     app: &mut super::App,
     out: &mut dyn crate::terminal::TerminalOutput,
+    active: ActiveEmojiPicker,
 ) -> io::Result<()> {
-    let active = app.completion.emoji.take().expect("active emoji picker");
     let original = format!(":{}", active.query);
     let unchanged = app.buffer.cursor() == active.end
         && app.buffer.text_range(active.start, active.end)? == original;

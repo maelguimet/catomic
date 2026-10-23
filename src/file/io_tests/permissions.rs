@@ -57,4 +57,20 @@ mod unix {
         cleanup(&reference);
         cleanup(&target);
     }
+
+    #[test]
+    fn save_restores_setuid_mode_after_writes_clear_special_bits() {
+        let target = temp_path("setuid_stream_mode.txt");
+        cleanup(&target);
+        fs::write(&target, "old").unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o4755)).unwrap();
+
+        atomic_write_with(&target, |writer| writer.write_all(b"new")).unwrap();
+
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o7777,
+            0o4755
+        );
+        cleanup(&target);
+    }
 }

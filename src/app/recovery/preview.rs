@@ -8,12 +8,13 @@ use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use super::super::focus::{Focus, ReadOnlyView, Surface};
 use crate::buffer::{Buffer, Cursor, PreviewBuffer};
 use crate::config::actions::Action;
 use crate::file::io::{ensure_path_matches_snapshot, FileSnapshot};
 use crate::file::recovery::RecoveryCandidate;
 
-pub(super) struct RecoveryPreview {
+pub(crate) struct RecoveryPreview {
     buffer: PreviewBuffer,
     candidate: RecoveryCandidate,
     source_path: PathBuf,
@@ -89,8 +90,8 @@ fn open(
             return preview_error(app, out, error);
         }
     };
-    super::super::view::cancel_preview(app);
-    app.recovery.preview = Some(RecoveryPreview {
+    super::super::focus::close(app);
+    let preview = RecoveryPreview {
         buffer: PreviewBuffer::from_text(candidate.text()),
         candidate,
         source_path,
@@ -99,7 +100,8 @@ fn open(
         source_snapshot,
         source_scroll_top: app.screen.scroll_top,
         source_scroll_left: app.screen.scroll_left,
-    });
+    };
+    app.focus = Focus::ReadOnly(ReadOnlyView::RecoveryPreview(Box::new(preview)));
     app.screen.scroll_top = 0;
     app.screen.scroll_left = 0;
     app.selection.clear();
@@ -112,7 +114,7 @@ pub(crate) fn handle_key(
     out: &mut dyn crate::terminal::TerminalOutput,
     key: KeyEvent,
 ) -> io::Result<bool> {
-    if !is_viewing(app) || is_quit(key) {
+    if is_quit(key) {
         return Ok(false);
     }
     match key.code {
@@ -136,9 +138,6 @@ pub(crate) fn dispatch_action(
     out: &mut dyn crate::terminal::TerminalOutput,
     action: Action,
 ) -> io::Result<bool> {
-    if !is_viewing(app) {
-        return Ok(false);
-    }
     match action {
         Action::PreviewAccept => apply(app, out)?,
         Action::PreviewCancel => cancel(app, out)?,
@@ -159,9 +158,6 @@ pub(crate) fn handle_paste(
     app: &mut super::super::App,
     out: &mut dyn crate::terminal::TerminalOutput,
 ) -> io::Result<bool> {
-    if !is_viewing(app) {
-        return Ok(false);
-    }
     preview_message(app);
     app.render(out)?;
     Ok(true)
@@ -171,7 +167,10 @@ fn apply(
     app: &mut super::super::App,
     out: &mut dyn crate::terminal::TerminalOutput,
 ) -> io::Result<()> {
-    let mut preview = app.recovery.preview.take().expect("recovery preview");
+    let Some(preview) = take(app) else {
+        return app.render(out);
+    };
+    let mut preview = *preview;
     restore_scroll(app, &preview);
     if app.file.path.as_ref() != Some(&preview.source_path)
         || app.buffer.content_revision() != preview.source_history
@@ -221,13 +220,19 @@ fn cancel(
 }
 
 pub(crate) fn close(app: &mut super::super::App) -> bool {
-    if let Some(preview) = app.recovery.preview.take() {
+    if let Some(preview) = take(app) {
         restore_scroll(app, &preview);
-        // Closing the preview leaves the recovery decision unresolved.
         app.recovery.offered_candidate = Some(preview.candidate);
         true
     } else {
         false
+    }
+}
+
+fn take(app: &mut super::super::App) -> Option<Box<RecoveryPreview>> {
+    match super::super::focus::take(app, Surface::RecoveryPreview) {
+        Some(Focus::ReadOnly(ReadOnlyView::RecoveryPreview(preview))) => Some(preview),
+        _ => None,
     }
 }
 
@@ -237,17 +242,16 @@ fn restore_scroll(app: &mut super::super::App, preview: &RecoveryPreview) {
 }
 
 fn move_cursor(app: &mut super::super::App, movement: impl FnOnce(&mut PreviewBuffer)) {
-    movement(&mut app.recovery.preview.as_mut().expect("preview").buffer);
+    if let Some(preview) = app.focus.recovery_preview_mut() {
+        movement(&mut preview.buffer);
+    }
 }
 
 fn reveal_cursor(app: &mut super::super::App) {
-    let cursor = app
-        .recovery
-        .preview
-        .as_ref()
-        .expect("preview")
-        .buffer
-        .cursor();
+    let Some(preview) = app.focus.recovery_preview() else {
+        return;
+    };
+    let cursor = preview.buffer.cursor();
     app.screen.reveal_row(cursor.row);
     app.screen
         .reveal_col_with_width(cursor.col, super::super::view::content_width(app));
@@ -262,12 +266,11 @@ fn is_quit(key: KeyEvent) -> bool {
 }
 
 pub(crate) fn is_viewing(app: &super::super::App) -> bool {
-    app.recovery.preview.is_some()
+    app.focus.recovery_preview().is_some()
 }
 
 pub(crate) fn display_buffer(app: &super::super::App) -> Option<&dyn Buffer> {
-    app.recovery
-        .preview
-        .as_ref()
+    app.focus
+        .recovery_preview()
         .map(|preview| &preview.buffer as &dyn Buffer)
 }

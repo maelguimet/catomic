@@ -24,5 +24,3 @@ mod scalar_coordinates;
 mod storage_parity;
 #[cfg(test)]
 mod undo_redo;
-
-// (All tests extracted; no more catch-all temp mod.)

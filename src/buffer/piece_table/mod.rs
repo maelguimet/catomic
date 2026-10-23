@@ -117,8 +117,6 @@ impl PieceTable {
                 .retained_metadata_bytes()
                 .saturating_add(self.index.retained_bytes())
                 .saturating_add(self.cells.retained_bytes()),
-            // The block-local representation neither scans document bytes nor
-            // shifts a tail of absolute line starts during ordinary edits.
             line_index_scanned_bytes: 0,
             line_index_shifted_entries: 0,
             line_index_blocks_touched: line_index_work.blocks_touched,

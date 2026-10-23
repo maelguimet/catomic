@@ -41,7 +41,6 @@ pub(crate) fn normalize_path(p: &Path) -> PathBuf {
         match comp {
             Component::CurDir => continue,
             Component::ParentDir => {
-                // pop only if safe (don't escape root for abs paths)
                 if let Some(last) = out.components().next_back() {
                     if !matches!(last, Component::RootDir | Component::Prefix(_)) {
                         let _ = out.pop();
@@ -92,38 +91,30 @@ mod tests {
 
     #[test]
     fn lexical_normalize_handles_dot_and_dotdot() {
-        // ./target == target (both relative)
         let dot = normalize_path(Path::new("./target.txt"));
         let plain = normalize_path(Path::new("target.txt"));
         assert_eq!(dot, plain);
 
-        // dir/../target == target
         let up = normalize_path(Path::new("dir/../target.txt"));
         assert_eq!(up, plain);
 
-        // absolute with ..
         let abs_up = normalize_path(Path::new("/tmp/a/../b.txt"));
         assert_eq!(abs_up, PathBuf::from("/tmp/b.txt"));
 
-        // missing still works
         let miss_up = normalize_path(Path::new("/no/such/../still/miss.txt"));
         assert_eq!(miss_up, PathBuf::from("/no/still/miss.txt"));
     }
 
     #[test]
     fn watch_parent_after_normalization() {
-        // bare relative normalizes to cwd + bare; its parent is the (normalized) cwd
         let bare = normalize_path(Path::new("bare.txt"));
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         assert_eq!(watch_parent(&bare), cwd);
 
-        // use absolute for complex .. cases (deterministic)
         let abs_nest = normalize_path(Path::new("/x/y/../z/file.txt"));
         assert_eq!(watch_parent(&abs_nest), PathBuf::from("/x/z"));
 
-        // relative with .. : parent after norm
         let rel_up = normalize_path(Path::new("a/b/../c/d.txt"));
-        // parent of (cwd/a/c/d.txt) == cwd/a/c
         let expected = {
             let mut e = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
             e.push("a");

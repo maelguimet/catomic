@@ -143,14 +143,7 @@ pub(crate) fn format_prompt(label: &str, text: &str, width: usize) -> String {
 }
 
 pub(crate) fn transient_role(app: &super::App) -> StatusRole {
-    if app.pending_quit_confirm
-        || app.pending_save_conflict.is_some()
-        || app
-            .pending_reload
-            .as_ref()
-            .is_some_and(|pending| pending.is_explicitly_armed)
-        || super::command_prompt::config_discard_confirmation_pending(app)
-    {
+    if app.confirmation.is_armed() {
         return StatusRole::Warning;
     }
     if prompt_is_active(app) {
@@ -177,17 +170,26 @@ impl super::App {
 }
 
 fn prompt_is_active(app: &super::App) -> bool {
-    super::command_prompt::is_active(app)
-        || super::search::is_active(app)
-        || super::replace::is_active(app)
-        || super::help::is_searching(app)
-        || super::recovery::is_viewing(app)
-        || super::external_command::is_viewing(app)
+    use super::focus::Surface;
+    matches!(
+        app.focus.base_surface(),
+        Surface::Search
+            | Surface::Replace
+            | Surface::ReplaceReview
+            | Surface::Command
+            | Surface::RecoveryPreview
+            | Surface::CommandPreview
+    ) || super::help::is_searching(app)
+        || super::command_prompt::is_running(app)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::confirmation::{
+        ArmedReload, Confirmation, ConflictingChange, ReloadableChange,
+    };
+    use crate::file::io::FileSnapshot;
 
     #[test]
     fn persistent_status_shows_cat_path_and_saved_state() {
@@ -325,30 +327,32 @@ mod tests {
             crate::terminal::render::StatusRole::Error
         );
 
-        app.pending_quit_confirm = true;
+        app.confirmation = Confirmation::Quit;
         assert_eq!(
             transient_role(&app),
             crate::terminal::render::StatusRole::Warning
         );
-        app.pending_quit_confirm = false;
+        app.confirmation = Confirmation::None;
 
-        app.pending_reload = Some(super::super::reload::PendingReload {
+        app.observed_change = Some(super::super::reload::ObservedExternalChange {
             path: "notes.txt".into(),
-            status: crate::file::io::ExternalFileStatus::Modified,
-            snapshot: None,
-            is_explicitly_armed: false,
+            change: ConflictingChange::Modified(FileSnapshot::Absent),
         });
         app.message_info("Informational message while disk divergence remains.");
         assert_eq!(
             transient_role(&app),
             crate::terminal::render::StatusRole::Info
         );
-        app.pending_reload.as_mut().unwrap().is_explicitly_armed = true;
+        app.confirmation = Confirmation::Reload(ArmedReload {
+            path: "notes.txt".into(),
+            change: ReloadableChange::Modified(FileSnapshot::Absent),
+        });
         assert_eq!(
             transient_role(&app),
             crate::terminal::render::StatusRole::Warning
         );
-        app.pending_reload = None;
+        app.confirmation = Confirmation::None;
+        app.observed_change = None;
 
         let mut out = Vec::new();
         super::super::command_prompt::open_command_prompt(&mut app, &mut out).unwrap();

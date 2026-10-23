@@ -12,9 +12,8 @@ use crate::config::big_files::BigFileConfig;
 use crate::terminal as term;
 
 use super::{
-    command_prompt, completion, external_command, hooks, mobile, open, overwrite, recovery,
-    replace, search, selection, startup_config::StartupConfig, surfaces, view, watch, App,
-    FileState,
+    command_prompt, external_command, hooks, mobile, open, overwrite, recovery, search, selection,
+    startup_config::StartupConfig, view, watch, App, FileState,
 };
 
 impl App {
@@ -71,7 +70,6 @@ impl App {
             view_preferences,
             mobile: mobile_config,
         } = config;
-        let completion = completion::CompletionUiState::default();
         let mut meta = open::prepare_open_file_meta(initial_path)?;
         let buffer = open::build_open_buffer(&mut meta, initial_path, big_files.page_lines)?;
         let initial_pos = buffer.edit_history_position();
@@ -110,15 +108,12 @@ impl App {
             should_quit: false,
             message: meta.initial_message,
             message_role: initial_message_role,
-            pending_quit_confirm: false,
-            pending_save_conflict: None,
-            pending_reload: None,
+            confirmation: super::confirmation::Confirmation::None,
+            observed_change: None,
             search: search::SearchUiState::default(),
-            replace: replace::ReplaceState::default(),
             command_prompt: command_prompt::CommandPromptState::default(),
-            completion,
             lint: super::lint::LintState::default(),
-            surfaces: surfaces::SurfaceState::default(),
+            focus: super::focus::Focus::Editor,
             external_changes: super::external_diff::ExternalChanges::default(),
             external_command: external_command::ExternalCommandState::default(),
             hooks: hooks::HookState::default(),
@@ -278,7 +273,7 @@ mod tests {
     fn ordinary_startup_constructs_no_transient_surfaces() {
         let app = App::new(None).unwrap();
 
-        assert!(app.surfaces.help.is_none());
+        assert!(app.focus.is_editor());
         assert!(!super::super::external_command::is_busy(&app));
         assert!(!super::super::recovery::is_viewing(&app));
     }
